@@ -455,9 +455,12 @@ export class FactoryService {
       // PLM-063: the production steps the firm keeps, in its own words, and its internal production target.
       const steps = body.productionSteps === undefined ? normaliseProductionSteps(current.productionSteps) : parseProductionSteps(body.productionSteps);
       const weeks = body.productionWeeks === undefined ? current.productionWeeks : parseProductionWeeks(body.productionWeeks);
+      // PLM-067: how many days before the latest planned ready date the client is reminded to pay that stage.
+      const reminderDays = body.balanceReminderDays === undefined ? current.balanceReminderDays : Number(body.balanceReminderDays);
+      if (!Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 90) throw new BadRequestException("Set the reminder from 0 to 90 days before the ready date.");
       await client.query(`UPDATE workspace_factory_settings SET require_drawing = $2, require_payment = $3, require_materials = $4, require_check = $5, production_steps = $7::jsonb,
-        production_weeks = $8, version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId, JSON.stringify(steps), weeks]);
+        production_weeks = $8, balance_reminder_days = $9, version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId, JSON.stringify(steps), weeks, reminderDays]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return this.settingsView(client, workspaceId, user.userId);
     });

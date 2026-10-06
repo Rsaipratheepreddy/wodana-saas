@@ -12,7 +12,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { catalogAdapter } from "./linked-import-catalog";
 import type { Applied, ImportContext, LinkRecord, LinkSettings, Step, TargetAdapter } from "./linked-import-run";
 import { recordKey } from "./linked-import-run";
-import { checkMapping, checkSheets, fingerprint, keyField, readRows, sameNumber, SourceError, type ColumnMapping, type ImportTarget, type SourceSheet } from "./linked-import-source";
+import { checkMapping, checkSheets, fingerprint, readRows, sameNumber, SourceError, type ColumnMapping, type ImportTarget, type SourceSheet } from "./linked-import-source";
 import { stockAdapter } from "./linked-import-stock";
 import { suppliersAdapter } from "./linked-import-suppliers";
 import { SheetSourceError, SheetSourceService } from "./sheet-source.service";
@@ -40,7 +40,9 @@ type LinkRow = LinkSettings & {
   schedule: Schedule; nextRunAt: string | null; ownerId: string; ownerName: string; locationName: string | null; legalEntityName: string | null; status: string; version: number;
 };
 type Draft = Omit<LinkRow, "id" | "nextRunAt" | "ownerId" | "ownerName" | "locationName" | "legalEntityName" | "status" | "version"> & { id: string | null };
-type Outcome = { status: "applied" | "partial" | "failed"; added: number; changed: number; unchanged: number; errors: number; missing: number; message: string };
+type Outcome = { status: "applied" | "partial" | "failed"; added: number; changed: number; unchanged: number; errors: number; missing: number; message: string;
+  /** The record each row of the sheet now names (catalog pictures are added to them after the run). */
+  placed?: Array<{ sheet: string; line: number; recordId: string }> };
 
 const LINK_SELECT = `SELECT link.id, link.target, link.name, link.catalog_id AS "catalogId", link.location_id AS "locationId", place.name AS "locationName", link.item_type AS "itemType",
     link.legal_entity_id AS "legalEntityId", entity.display_name AS "legalEntityName", link.sets_stock AS "setsStock", link.source, link.connection_id AS "connectionId", link.spreadsheet_id AS "spreadsheetId", link.sheet_name AS "sheetName", link.mapping,
@@ -144,8 +146,8 @@ export class LinkedImportsService {
       if (done) return this.linkDetail(client, workspaceId, done, user.userId);
       const linkId = await this.saveLink(client, workspaceId, user.userId, await this.draft(client, workspaceId, body, target), body.version);
       const link = await this.lockedLink(client, workspaceId, linkId);
-      await this.execute(client, workspaceId, user.userId, link, { sheets }, runId, "manual", typeof body.expectedFingerprint === "string" ? body.expectedFingerprint : null);
-      return this.linkDetail(client, workspaceId, linkId, user.userId);
+      const outcome = await this.execute(client, workspaceId, user.userId, link, { sheets }, runId, "manual", typeof body.expectedFingerprint === "string" ? body.expectedFingerprint : null);
+      return this.linkDetail(client, workspaceId, linkId, user.userId, outcome.placed);
     });
   }
 
@@ -167,12 +169,13 @@ export class LinkedImportsService {
       catch (error) { if (error instanceof ServiceUnavailableException) source = { failure: error.message }; else throw error; }
     }
     return this.access.withPermission(actor, workspaceId, permission, async (client, user) => {
+      let placed: Outcome["placed"];
       if (!(await this.runLink(client, workspaceId, runId))) {
         const locked = await this.lockedLink(client, workspaceId, linkId);
         if (locked.status !== "active") throw new NotFoundException("This import isn't linked any more.");
-        await this.execute(client, workspaceId, user.userId, locked, source!, runId, "manual", null);
+        placed = (await this.execute(client, workspaceId, user.userId, locked, source!, runId, "manual", null)).placed;
       }
-      return this.linkDetail(client, workspaceId, linkId, user.userId);
+      return this.linkDetail(client, workspaceId, linkId, user.userId, placed);
     });
   }
 
@@ -247,9 +250,8 @@ export class LinkedImportsService {
   /** Reads the source through the mapping and plans every row, plus the known keys no longer in it. */
   private async plan(client: Db, workspaceId: string, userId: string, link: Draft | LinkRow, sheets: SourceSheet[]) {
     const { rows, skippedTabs } = readRows(link.target, sheets, link.mapping);
-    const key = keyField(link.target, link.mapping);
-    const keyHeading = Object.entries(link.mapping.columns).find(([, field]) => field === key)![0];
-    if (!rows.length && skippedTabs.length) throw new SourceError(`No tab has the column ${keyHeading}.`);
+    const keyHeadings = Object.entries(link.mapping.columns).filter(([, field]) => field === "code" || field === "name").map(([heading]) => heading);
+    if (!rows.length && skippedTabs.length) throw new SourceError(`No tab has the column ${keyHeadings.join(" or ")}.`);
     const records = link.id ? await this.records(client, workspaceId, link.id) : new Map<string, LinkRecord>();
     const context: ImportContext = { client, workspaceId, userId, link, records };
     const adapter = this.adapter(link.target);
@@ -307,7 +309,7 @@ export class LinkedImportsService {
       await planned.adapter.finish?.(planned.context, applied);
       const count = (name: string) => planned!.steps.filter((step) => step.outcome === name).length;
       outcome = { status: count("error") ? "partial" : "applied", added: count("added"), changed: count("changed"), unchanged: count("unchanged"), errors: count("error"),
-        missing: planned.missing.length, message: "" };
+        missing: planned.missing.length, message: "", placed: [...kept.values()].map(({ step, result }) => ({ sheet: step.sheet, line: step.line, recordId: result.recordId })) };
       for (const step of [...planned.steps, ...planned.missing].sort(byConcern)) {
         const missing = (step as { missing?: boolean }).missing === true;
         if (step.outcome === "unchanged" && !missing) continue;
@@ -330,7 +332,7 @@ export class LinkedImportsService {
          next_run_at = CASE schedule WHEN 'hourly' THEN now() + interval '1 hour' WHEN 'daily' THEN now() + interval '1 day' ELSE NULL END
        WHERE workspace_id = $1 AND id = $2`, [workspaceId, link.id]);
     await recordAudit(client, { workspaceId, actorUserId: trigger === "manual" ? userId : null, source: trigger === "manual" ? "user" : "internal", action: `linked_import.${outcome.status}`,
-      entityType: "import_link", entityId: link.id, after: { runId, trigger, target: link.target, source: link.source, ...outcome } });
+      entityType: "import_link", entityId: link.id, after: { runId, trigger, target: link.target, source: link.source, ...outcome, placed: undefined } });
     await this.tellOwner(client, workspaceId, link, runId, trigger, userId, outcome, previous, digest);
     return outcome;
   }
@@ -418,6 +420,11 @@ export class LinkedImportsService {
         draft.itemType = itemType;
       }
     }
+    if (target === "suppliers" && mapping.entities) {
+      const ids = [...new Set(Object.values(mapping.entities))];
+      const found = (await client.query(`SELECT id FROM legal_entities WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`, [workspaceId, ids])).rowCount;
+      if (found !== ids.length) throw new BadRequestException("Choose one of your companies for each tab.");
+    }
     if (target === "suppliers" && body.legalEntityId !== undefined) {
       const entityId = body.legalEntityId === null || body.legalEntityId === "" ? null : uuid(body.legalEntityId, "Company");
       if (entityId && !(await client.query(`SELECT 1 FROM legal_entities WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, entityId])).rowCount)
@@ -470,14 +477,23 @@ export class LinkedImportsService {
     return links.map((link) => ({ ...link, lastRun: last.get(link.id) ?? null }));
   }
 
-  private async linkDetail(client: Db, workspaceId: string, linkId: string, userId: string) {
+  /**
+   * A link with its runs. Right after a catalog run, also where each sheet row went and how many pictures that
+   * item has, so the browser can add a picture the file holds to items that have none.
+   */
+  private async linkDetail(client: Db, workspaceId: string, linkId: string, userId: string, placed?: Outcome["placed"]) {
     const link = await this.readLink(client, workspaceId, linkId);
     if (!link) throw new NotFoundException("Import not found.");
     const runs = (await client.query(`${RUN_SELECT} WHERE run.workspace_id = $1 AND run.link_id = $2 ORDER BY run.seq DESC LIMIT 10`, [workspaceId, linkId])).rows;
     const rows = runs.length ? (await client.query(
       `SELECT sheet, line, key_value AS key, name, outcome, message FROM import_run_rows WHERE workspace_id = $1 AND run_id = $2
         ORDER BY array_position(ARRAY['error', 'missing', 'added', 'changed'], outcome::text), position LIMIT ${SHOWN_ROWS}`, [workspaceId, runs[0].id])).rows : [];
-    return { link, runs, rows, canManage: await this.access.hasPermission(client, workspaceId, userId, PERMISSIONS[link.target].manage) };
+    const detail = { link, runs, rows, canManage: await this.access.hasPermission(client, workspaceId, userId, PERMISSIONS[link.target].manage) };
+    if (link.target !== "catalog" || !placed?.length) return detail;
+    const images = new Map((await client.query<{ itemId: string; count: number }>(
+      `SELECT item_id AS "itemId", count(*)::int AS count FROM catalog_item_images WHERE workspace_id = $1 AND item_id = ANY($2::uuid[]) GROUP BY item_id`,
+      [workspaceId, [...new Set(placed.map((entry) => entry.recordId))]])).rows.map((row) => [row.itemId, row.count]));
+    return { ...detail, records: placed.map((entry) => ({ ...entry, images: images.get(entry.recordId) ?? 0 })) };
   }
 
   private async readLink(client: Db, workspaceId: string, linkId: string) {

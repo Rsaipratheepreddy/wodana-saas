@@ -7,7 +7,7 @@ import { href } from "./report-scope";
  * (a won proposal, a receipt, a lead…) with the dimensions its chart groups by — and the figure, the chart and the
  * drill-down list are all read from the same facts, so a bar always reconciles with the records it opens.
  */
-export type RecordKind = "lead" | "opportunity" | "case" | "project" | "quote" | "approval" | "invoice" | "receipt";
+export type RecordKind = "lead" | "opportunity" | "case" | "project" | "quote" | "approval" | "invoice" | "receipt" | "refund";
 
 export type Fact = {
   id: string;
@@ -162,6 +162,7 @@ export function recordRow(fact: Fact): RecordRow {
     : fact.kind === "quote" ? href.quote(parentId ?? "", fact.id)
     : fact.kind === "approval" ? href.case(parentId ?? fact.id, "execution-release")
     : fact.kind === "invoice" ? href.invoice(fact.id)
+    : fact.kind === "refund" ? href.financeRequest(fact.id)
     : href.case(parentId ?? fact.id);
   return { ...rest, href: link };
 }

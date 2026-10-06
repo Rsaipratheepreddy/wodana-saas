@@ -32,4 +32,30 @@ describe("Settings → Quotations: the default payment plan (m24)", () => {
     expect(created.milestones[0]).toMatchObject({ title: "Advance", requiredForRelease: true });
     expect(await screen.findByRole("button", { name: /Default payment plan/ })).toHaveTextContent("Standard payment plan");
   });
+
+  it("sets QS review to the rules: which quotations, the catalogue kinds, and the work packages marked for QS", async () => {
+    let current: Record<string, unknown> = { ...settings, qsReview: true, qsReviewScope: "all", qsReviewItemTypes: [] };
+    let trades = [{ id: "wp-1", name: "Joinery", archived: false, qsReview: false }, { id: "wp-2", name: "Loose furniture", archived: false, qsReview: false }];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+      if (url.includes("work-packages/wp-1") && init?.method === "PATCH") { trades = trades.map((item) => (item.id === "wp-1" ? { ...item, ...body } : item)); return { ok: true, status: 200, json: async () => trades }; }
+      if (url.includes("/settings") && init?.method === "PUT") { current = { ...body, version: Number(current.version) + 1 }; return { ok: true, status: 200, json: async () => current }; }
+      return { ok: true, status: 200, json: async () => ({ settings: current, workPackages: trades, priceBooks: [], paymentTemplates: [], canManage: true }) };
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<DesignSystemProvider><QuotationSettingsPage workspaceId="w" /></DesignSystemProvider>);
+    // Every quotation (as before): no rules to set.
+    expect(await screen.findByRole("button", { name: /Quotations the QS prices/ })).toHaveTextContent("Every quotation");
+    expect(screen.queryByRole("checkbox", { name: "QS review" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Quotations the QS prices/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Only where the rules apply" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Assembly" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(current).toMatchObject({ qsReviewScope: "rules", qsReviewItemTypes: ["assembly"] }));
+    // Joinery is marked on the work package itself.
+    await userEvent.click(screen.getAllByRole("checkbox", { name: "QS review" })[0]);
+    await waitFor(() => expect(trades[0].qsReview).toBe(true));
+    const patch = fetcher.mock.calls.find(([url, init]) => String(url).includes("work-packages/wp-1") && init?.method === "PATCH")!;
+    expect(JSON.parse(String(patch[1]!.body))).toEqual({ qsReview: true });
+  });
 });

@@ -7,7 +7,7 @@ import { cleanCategories, normalName, readSupplier, readSuppliers, readTerms, ty
 import type { SuppliersService } from "../purchasing/suppliers.service";
 import { checkTaxNumber, normaliseTaxNumber, readTaxNumberRule } from "../purchasing/tax-registration";
 import { recordKey, type Step, type TargetAdapter } from "./linked-import-run";
-import { SourceError } from "./linked-import-source";
+import { SourceError, type SourceRow } from "./linked-import-source";
 
 type Db = Pick<PoolClient, "query">;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,25 +36,49 @@ export async function readPhoneRule(db: Db, workspaceId: string): Promise<PhoneR
  * for the region is left out, with the reason.
  */
 export function sheetPhone(text: string, rule: PhoneRule): { phone: string | null; problem: string | null } {
-  const first = text.split(/\s*(?:[/,;|&\n]|\bor\b)\s*/i).map((part) => part.trim()).find((part) => /\d/.test(part)) ?? "";
-  if (!first) return { phone: null, problem: null };
-  const international = /^(\+|00)/.test(first);
-  const digits = first.startsWith("00") ? digitsOf(first).slice(2) : digitsOf(first);
+  const parts = text.split(/\s*(?:[/,;|&\n]|\bor\b)\s*/i).map((part) => part.trim()).filter((part) => /\d/.test(part));
+  if (!parts.length) return { phone: null, problem: null };
+  // Each part as written; then (two numbers or a name in one part) its words, a run at a time.
+  const candidates = [...parts];
+  for (const part of parts) {
+    const words = part.split(/\s+|(?<=\d)-(?=[^\d\s])/).filter(Boolean);
+    for (let from = 0; from < words.length; from++)
+      for (let to = from + 1; to <= Math.min(words.length, from + 6); to++) candidates.push(words.slice(from, to).join(" ").replace(/[^\d)]+$/, ""));
+  }
+  for (const candidate of candidates) {
+    const phone = readPhone(candidate, rule);
+    if (phone) return { phone, problem: null };
+  }
+  return { phone: null, problem: `Phone ${parts[0]} isn't a valid number, so it wasn't imported.` };
+}
+
+function readPhone(written: string, rule: PhoneRule): string | null {
+  if (!/\d/.test(written)) return null;
+  const international = /^(\+|00)/.test(written);
+  const digits = written.startsWith("00") ? digitsOf(written).slice(2) : digitsOf(written);
   const parsed = parsePhoneNumberFromString(international ? `+${digits}` : digits, rule.country ?? undefined);
-  if (parsed?.isValid()) return { phone: parsed.number, problem: null };
+  if (parsed?.isValid()) return parsed.number;
   if (!international && rule.callingCode && rule.lengths) {
     const [min, max] = rule.lengths;
     const national = digits.startsWith(rule.callingCode) && digits.length - rule.callingCode.length >= min && digits.length - rule.callingCode.length <= max
       ? digits.slice(rule.callingCode.length) : digits.replace(/^0+/, "");
-    if (national.length >= min && national.length <= max) return { phone: `+${rule.callingCode}${national}`, problem: null };
+    if (national.length >= min && national.length <= max) return `+${rule.callingCode}${national}`;
   }
-  return { phone: null, problem: `Phone ${first} isn't a valid number, so it wasn't imported.` };
+  return null;
 }
 
 /** A sheet's supplier code as a Wodana code (letters, digits, - and _), or null when it can't be one. */
 export function supplierCodeOf(text: string) {
   const code = text.normalize("NFKD").toUpperCase().replace(/[^A-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
   return /^[A-Z0-9][A-Z0-9_-]{0,79}$/.test(code) ? code : null;
+}
+
+/** A cell holding the contact and their number ("Ramiz - +971 52 846 6806"): the name before the first digit, the number from it. */
+export function splitContact(text: string): { name: string; phone: string } {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const at = clean.search(/[+\d]/);
+  if (at < 0) return { name: clean, phone: "" };
+  return { name: clean.slice(0, at).replace(/[\s\-–—:,/|(]+$/, "").trim(), phone: clean.slice(at).trim() };
 }
 
 type Attributes = Map<string, { name: string; value: string }>;
@@ -91,8 +115,33 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
       const attributes = await readAttributes(client, workspaceId);
       const taxRule = await readTaxNumberRule(client, workspaceId);
       const phoneRule = await readPhoneRule(client, workspaceId);
-      const entity = link.legalEntityId ? (await client.query<{ id: string; name: string }>(
-        `SELECT id, display_name AS name FROM legal_entities WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, link.legalEntityId])).rows[0] ?? null : null;
+      // The company each tab's suppliers sell to: the tab's own, else the link's.
+      const tabEntities = link.mapping?.entities ?? {};
+      const entityIds = [...new Set([link.legalEntityId, ...Object.values(tabEntities)].filter((id): id is string => Boolean(id)))];
+      const entities = new Map(entityIds.length ? (await client.query<{ id: string; name: string }>(
+        `SELECT id, display_name AS name FROM legal_entities WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`, [workspaceId, entityIds])).rows.map((row) => [row.id, row]) : []);
+      const fillOnly = link.mapping?.fillOnly === true;
+      // One supplier on several rows (each company's tab lists it, or a list repeats it) is one supplier: the first row,
+      // with what later rows add, buys for every tab's company; the later rows say where they went.
+      const firstOf = new Map<string, SourceRow>();
+      const sameAs = new Map<SourceRow, SourceRow>();
+      const companiesOf = new Map<string, Set<string>>();
+      for (const row of rows) {
+        const key = lower(row.key);
+        if (!key) continue;
+        const entityId = tabEntities[row.sheet] ?? link.legalEntityId;
+        if (entityId && entities.has(entityId)) companiesOf.set(key, (companiesOf.get(key) ?? new Set()).add(entityId));
+        const earlier = firstOf.get(key);
+        if (!earlier) { firstOf.set(key, row); continue; }
+        sameAs.set(row, earlier);
+        for (const [field, value] of Object.entries(row.values) as Array<[keyof SourceRow["values"], string]>) {
+          if (!value?.trim()) continue;
+          // What they supply adds up; any other field is the first row's, or the first that has it.
+          if (field === "categories" && earlier.values.categories?.trim()) earlier.values.categories = `${earlier.values.categories}, ${value}`;
+          else if (!earlier.values[field]?.trim()) earlier.values[field] = value;
+        }
+        for (const [heading, value] of Object.entries(row.attributes)) if (value && earlier.attributes[heading] === undefined) earlier.attributes[heading] = value;
+      }
       // What earlier rows of this sheet claimed: a supplier, a new name, a tax number, a phone.
       const claimed = { keys: new Set<string>(), suppliers: new Set<string>(), names: new Set<string>(), tax: new Map<string, string>(), phones: new Map<string, string>() };
       const steps: Step[] = [];
@@ -105,6 +154,8 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
         const fail = (message: string): Step => ({ ...base, outcome: "error", message });
         try {
           if (!key) { steps.push(fail(row.values.code === undefined ? "No supplier name." : "No supplier code.")); continue; }
+          const earlier = sameAs.get(row);
+          if (earlier) { steps.push({ ...base, outcome: "unchanged", message: `Same supplier as ${earlier.sheet} row ${earlier.line}.` }); continue; }
           if (claimed.keys.has(lower(key))) { steps.push(fail(`${key} is on another row.`)); continue; }
           claimed.keys.add(lower(key));
           const wodanaCode = code ? supplierCodeOf(code) : null;
@@ -117,55 +168,64 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
           if (!match && !name) { steps.push(fail("Name the supplier: it's new to Wodana.")); continue; }
           if (match && claimed.suppliers.has(match.id)) { steps.push(fail(`Another row is already ${match.name}.`)); continue; }
           if (!match && claimed.names.has(normalName(name))) { steps.push(fail(`Another row is already ${name}.`)); continue; }
-          const finalName = name || match!.name;
+          const companies = [...(companiesOf.get(lower(key)) ?? [])].map((id) => entities.get(id)!);
+          // Only filling in: a known supplier keeps what Wodana has and takes only what it's missing.
+          const keep = fillOnly && Boolean(match);
+          const finalName = keep ? match!.name : name || match!.name;
           if (name && match && normalName(name) !== normalName(match.name) && byName.get(normalName(name))) { steps.push(fail("Another supplier has this name.")); continue; }
 
           const messages: string[] = [];
           const cell = (field: keyof typeof row.values) => (row.values[field] ?? "").replace(/\s+/g, " ").trim();
-          // An empty cell keeps what Wodana has.
-          const legalName = cell("legalName") || match?.legalName || null;
+          const contact = splitContact(cell("contact"));
+          // An empty cell keeps what Wodana has (and, only filling in, so does a filled field).
+          const pick = (written: string, have: string | null | undefined) => (keep ? have || written || null : written || have || null);
+          const legalName = pick(cell("legalName"), match?.legalName);
           if ((legalName ?? "").length > 240) { steps.push(fail("The legal name is longer than 240 characters.")); continue; }
-          const contactName = cell("contactName") || match?.contactName || null;
+          const contactName = pick(cell("contactName") || contact.name, match?.contactName);
           if ((contactName ?? "").length > 180) { steps.push(fail("The contact is longer than 180 characters.")); continue; }
-          const address = cell("address") || match?.locality || null;
+          const address = pick(cell("address"), match?.locality);
           if ((address ?? "").length > 160) { steps.push(fail("The address is longer than 160 characters.")); continue; }
-          const notes = (row.values.notes ?? "").trim() || match?.notes || "";
+          const notes = pick((row.values.notes ?? "").trim(), match?.notes) ?? "";
           if (notes.length > 10000) { steps.push(fail("The notes are longer than 10,000 characters.")); continue; }
 
           let phone = match?.phone ?? null;
-          if (cell("phone")) {
-            const read = sheetPhone(cell("phone"), phoneRule);
+          const phoneText = cell("phone") || contact.phone;
+          if (phoneText && !(keep && phone)) {
+            const read = sheetPhone(phoneText, phoneRule);
             if (read.problem) messages.push(read.problem);
             else if (read.phone && digitsOf(read.phone) !== digitsOf(match?.phone)) phone = read.phone;
           }
           if (phone && phone !== match?.phone) {
             const owner = phoneOwners.get(digitsOf(phone)) ?? claimed.phones.get(digitsOf(phone));
-            if (owner && owner !== (match?.id ?? "")) { steps.push(fail("Another supplier has this phone number.")); continue; }
+            // A number another supplier has (a shared office line) is left out, not the supplier.
+            if (owner && owner !== (match?.id ?? "")) { messages.push(`Another supplier has the phone ${phone}, so it wasn't imported.`); phone = match?.phone ?? null; }
           }
 
           let email = match?.email ?? null;
-          const writtenEmail = cell("email").split(/[\s,;/]+/).find(Boolean) ?? "";
-          if (writtenEmail) {
+          // The first address in the cell ("Email: a@b.example / c@d.example").
+          const words = cell("email").split(/[\s,;/]+/).filter(Boolean);
+          const writtenEmail = words.find((word) => word.length <= 320 && EMAIL.test(word)) ?? words[0] ?? "";
+          if (writtenEmail && !(keep && email)) {
             if (writtenEmail.length <= 320 && EMAIL.test(writtenEmail)) email = writtenEmail;
             else messages.push(`Email ${writtenEmail} isn't valid, so it wasn't imported.`);
           }
 
           // The tax number: a new or changed one must have the country's format, and belong to no other supplier.
           let tax = match?.taxRegistrationNumber ?? null;
-          if (cell("taxNumber") && normaliseTaxNumber(cell("taxNumber")) !== normaliseTaxNumber(tax ?? "")) tax = checkTaxNumber(cell("taxNumber"), taxRule) || null;
+          if (cell("taxNumber") && !(keep && tax) && normaliseTaxNumber(cell("taxNumber")) !== normaliseTaxNumber(tax ?? "")) tax = checkTaxNumber(cell("taxNumber"), taxRule) || null;
           if (tax && tax !== match?.taxRegistrationNumber) {
             const owner = taxOwners.get(normaliseTaxNumber(tax)) ?? claimed.tax.get(normaliseTaxNumber(tax));
             if (owner && owner !== (match?.id ?? "")) { steps.push(fail("Another supplier has this tax number.")); continue; }
           }
 
-          const terms = cell("paymentTerms") ? readTerms(cell("paymentTerms")) : null;
+          const terms = cell("paymentTerms") && !keep ? readTerms(cell("paymentTerms")) : null;
           const written = (row.values.categories ?? "").split(/[,;\n]+/).map((part) => part.trim()).filter(Boolean);
           const categories = cleanCategories([...(match?.categories ?? []), ...written], match?.categories ?? []);
-          const entityIds = [...new Set([...(match?.entityIds ?? []), ...(entity ? [entity.id] : [])])];
+          const entityIds = [...new Set([...(match?.entityIds ?? []), ...companies.map((company) => company.id)])];
 
           const haveAttributes = match ? attributes.get(match.id) ?? new Map() : new Map() as Attributes;
           const nextAttributes = Object.entries(row.attributes).map(([heading, value]) => ({ name: heading.trim().slice(0, 120), value: value.slice(0, 1000) }))
-            .filter((attribute) => attribute.name && haveAttributes.get(lower(attribute.name))?.value !== attribute.value);
+            .filter((attribute) => attribute.name && haveAttributes.get(lower(attribute.name))?.value !== attribute.value && !(keep && haveAttributes.get(lower(attribute.name))?.value));
 
           if (match) {
             if (finalName !== match.name) base.changes.push(`Name ${match.name} → ${finalName}`);
@@ -180,7 +240,7 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
             const added = categories.filter((category) => !match.categories.includes(category));
             if (added.length) base.changes.push(`Categories + ${added.join(", ")}`);
             if (notes !== match.notes) base.changes.push("Notes");
-            if (entity && !match.entityIds.includes(entity.id)) base.changes.push(`Buys for ${entity.name}`);
+            for (const company of companies) if (!match.entityIds.includes(company.id)) base.changes.push(`Buys for ${company.name}`);
           }
           const detailsChange = !match || base.changes.length > 0;
           base.changes.push(...nextAttributes.map((attribute) => attribute.name));

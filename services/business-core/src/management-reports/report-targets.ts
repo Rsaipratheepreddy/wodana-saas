@@ -23,6 +23,7 @@ export const TARGET_KPIS: Record<string, TargetDefinition> = {
   sales_won_value: { unit: "money", direction: "higher", additive: true, perMember: true },
   sales_won_count: { unit: "count", direction: "higher", additive: true, perMember: true },
   revenue_collected: { unit: "money", direction: "higher", additive: true, perMember: false },
+  net_revenue: { unit: "money", direction: "higher", additive: true, perMember: false },
   deals_closed: { unit: "count", direction: "higher", additive: true, perMember: true },
   profit_margin: { unit: "percent", direction: "higher", additive: false, perMember: false },
   new_leads: { unit: "count", direction: "higher", additive: true, perMember: false },

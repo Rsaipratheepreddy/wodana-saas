@@ -181,6 +181,66 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
     });
   });
 
+  it("imports a collection sheet of category blocks without codes: names as keys, drawings from cell links, sizes from plain cells", async () => {
+    await world(async (w) => {
+      const service = w.as(w.owner);
+      const { id: catalogId } = await w.catalogs.createCatalog(actor, w.workspaceId, { name: "Collection" });
+      const heading = ["REMARKS", "ITEM", "DESCRIPTION", "IMAGE", "HEIGHT (CM)", "LENGTH (CM)", "DEPTH (CM)", "PRICE (AED)", "Technical Drawing", "Materials Needed", "Hours Needed"];
+      const sheet = (width: string): SourceSheet[] => [{ name: "Living", rows: [
+        ["", "", "", "", "", "", "", "", "", "Add more sofas"],
+        ["", "SOFA"],
+        heading,
+        ["", "SOFA", "Aria Sofa - 3 seater", "", "Total H 108 cm - seat H 53 cm", width, "120 cm", "AED23,500.00", "Aria Sofa-3 Seater", "Wood, fabric, foam", "Carpentry 12 hours"],
+        ["Add to the brochure", "", "", "", "", "", "", "", "", "", ""],
+        ["", "SOFA", "Aria Sofa - 4 seater", "", "", "400 cm", "120 cm", "28500", "no cad file", "", ""],
+        [],
+        ["", "ARMCHAIRS"],
+        heading,
+        ["", "CHAIR", "Luna Chair", "", "80", "70", "75", "ENQUIRE NOW", "", "", ""],
+      ], links: { "3:8": "https://drive.example/file/aria-3.pdf" } }];
+      const mapping = { columns: { ITEM: "attribute", DESCRIPTION: "name", "HEIGHT (CM)": "height", "LENGTH (CM)": "width", "DEPTH (CM)": "depth", "PRICE (AED)": "price",
+        "Technical Drawing": "technicalDrawing", "Materials Needed": "attribute", "Hours Needed": "attribute" } };
+      const draft = { target: "catalog", source: "upload", name: "Collection", catalogId, itemType: "ready_made", mapping, sheets: sheet("300 cm") };
+      const preview = await service.preview(actor, w.workspaceId, draft);
+      expect(preview.summary).toEqual({ added: 3, changed: 0, unchanged: 0, errors: 0, missing: 0 });
+      expect(preview.rows.map((row) => [row.key, row.message])).toEqual([
+        ["SOFA / Aria Sofa - 3 seater", "No unit: set to pieces. HEIGHT (CM) isn't one number, so it's kept as text."],
+        ["SOFA / Aria Sofa - 4 seater", "No unit: set to pieces. No link to a technical drawing in no cad file."],
+        ["ARMCHAIRS / Luna Chair", "No unit: set to pieces. No selling price: ENQUIRE NOW."],
+      ]);
+      const linked = await service.apply(actor, w.workspaceId, { ...draft, runId: randomUUID(), expectedFingerprint: preview.fingerprint });
+      expect(linked.runs[0]).toMatchObject({ status: "applied", added: 3 });
+      expect((linked as { records?: unknown[] }).records).toEqual(expect.arrayContaining([expect.objectContaining({ sheet: "Living", line: 4, images: 0 })]));
+      const items = (await w.client.query(
+        `SELECT item.code, item.name, category.name AS category, item.technical_drawing_url AS drawing, size.width::text AS width, size.depth::text AS depth, size.height::text AS height,
+                size.unit, size.source, entry.price::text AS price
+           FROM catalog_items item LEFT JOIN catalog_categories category ON category.id = item.category_id
+           LEFT JOIN catalog_item_dimensions size ON size.item_id = item.id LEFT JOIN price_entries entry ON entry.item_id = item.id AND entry.status <> 'expired'
+          WHERE item.workspace_id = $1 ORDER BY item.code`, [w.workspaceId])).rows;
+      expect(items).toEqual([
+        { code: "ARIA-SOFA-3-SEATER", name: "Aria Sofa - 3 seater", category: "SOFA", drawing: "https://drive.example/file/aria-3.pdf", width: "300.00", depth: "120.00", height: null, unit: "cm", source: "import", price: "23500.000000" },
+        { code: "ARIA-SOFA-4-SEATER", name: "Aria Sofa - 4 seater", category: "SOFA", drawing: null, width: "400.00", depth: "120.00", height: null, unit: "cm", source: "import", price: "28500.000000" },
+        { code: "LUNA-CHAIR", name: "Luna Chair", category: "ARMCHAIRS", drawing: null, width: "70.00", depth: "75.00", height: "80.00", unit: "cm", source: "import", price: null },
+      ]);
+      const kept = (await w.client.query(`SELECT attribute.label, value.value FROM catalog_item_values value JOIN catalog_attributes attribute ON attribute.id = value.attribute_id
+        JOIN catalog_items item ON item.id = value.item_id WHERE item.code = 'ARIA-SOFA-3-SEATER' AND item.workspace_id = $1 ORDER BY attribute.label`, [w.workspaceId])).rows;
+      expect(kept).toEqual([{ label: "HEIGHT (CM)", value: "Total H 108 cm - seat H 53 cm" }, { label: "Hours Needed", value: "Carpentry 12 hours" }, { label: "ITEM", value: "SOFA" },
+        { label: "Materials Needed", value: "Wood, fabric, foam" }]);
+
+      // The same sheet again changes nothing; a new length is a size change.
+      const linkId = linked.link.id;
+      expect((await service.refresh(actor, w.workspaceId, linkId, { runId: randomUUID(), sheets: sheet("300 cm") })).runs[0]).toMatchObject({ status: "applied", added: 0, changed: 0, unchanged: 3 });
+      const resized = await service.refresh(actor, w.workspaceId, linkId, { runId: randomUUID(), sheets: sheet("3,100 mm") });
+      expect(resized.rows.find((row: { key: string }) => row.key === "SOFA / Aria Sofa - 3 seater")).toMatchObject({ outcome: "changed",
+        message: "HEIGHT (CM) isn't one number, so it's kept as text. Width 300 → 310 cm" });
+      expect((await w.client.query(`SELECT size.width::text AS width, size.version FROM catalog_item_dimensions size JOIN catalog_items item ON item.id = size.item_id
+        WHERE item.code = 'ARIA-SOFA-3-SEATER' AND item.workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ width: "310.00", version: 2 }]);
+      // A second link over the same catalog finds the items by name in their category.
+      const again = await service.preview(actor, w.workspaceId, { ...draft, name: "Collection copy", sheets: sheet("310 cm") });
+      expect(again.summary).toMatchObject({ added: 0, errors: 0, unchanged: 3 });
+    });
+  });
+
   it("refreshes a linked Google Sheet on its schedule as its owner, and tells the owner once when it fails", async () => {
     await world(async (w) => {
       const service = w.as(w.owner);
@@ -243,16 +303,17 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
       ]);
       const draft = { target: "suppliers", source: "upload", name: "Factory suppliers", legalEntityId: factory, mapping: SUPPLIER_MAPPING, sheets: first };
       const preview = await service.preview(actor, w.workspaceId, draft);
-      expect(preview.summary).toEqual({ added: 1, changed: 1, unchanged: 0, errors: 3, missing: 0 });
+      expect(preview.summary).toEqual({ added: 1, changed: 1, unchanged: 1, errors: 2, missing: 0 });
+      // A supplier on two rows is one supplier.
       expect(preview.rows.map((row) => [row.key, row.outcome, row.message])).toEqual([
         ["Bad TRN Trading", "error", "TRN should look like 100123456700003."],
         ["Copy Cat LLC", "error", "Another supplier has this tax number."],
-        ["SIOM Marble", "error", "SIOM Marble is on another row."],
         ["SIOM Marble", "added", ""],
         ["Nile Marble & Granite", "changed", ""],
+        ["SIOM Marble", "unchanged", "Same supplier as Suppliers row 2."],
       ]);
       const linked = await service.apply(actor, w.workspaceId, { ...draft, runId: randomUUID(), expectedFingerprint: preview.fingerprint });
-      expect(linked.runs[0]).toMatchObject({ status: "partial", added: 1, changed: 1, errors: 3 });
+      expect(linked.runs[0]).toMatchObject({ status: "partial", added: 1, changed: 1, errors: 2 });
       expect(linked.link).toMatchObject({ target: "suppliers", legalEntityId: factory, legalEntityName: "Factory" });
       const state = await suppliers.list(actor, w.workspaceId);
       const siom = state.suppliers.find((item) => item.name === "SIOM Marble")!;
@@ -267,7 +328,7 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
 
       // The same list again changes nothing; a supplier that leaves it is flagged, never removed.
       const again = await service.refresh(actor, w.workspaceId, linked.link.id, { runId: randomUUID(), sheets: first });
-      expect(again.runs[0]).toMatchObject({ added: 0, changed: 0, unchanged: 2, errors: 3 });
+      expect(again.runs[0]).toMatchObject({ added: 0, changed: 0, unchanged: 3, errors: 2 });
       const later = await service.refresh(actor, w.workspaceId, linked.link.id, { runId: randomUUID(), sheets: supplierList([first[0].rows[1]]) });
       expect(later.runs[0]).toMatchObject({ unchanged: 1, missing: 1 });
       expect(later.rows).toEqual(expect.arrayContaining([expect.objectContaining({ key: "Nile Marble & Granite", outcome: "missing" })]));
@@ -279,6 +340,39 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
       expect(second.runs[0]).toMatchObject({ added: 1 });
       expect((await suppliers.list(actor, w.workspaceId)).suppliers.find((item) => item.name === "Gulf Lighting")).toMatchObject({ code: "SUP-9" });
       expect((await service.overview(actor, w.workspaceId, { target: "suppliers" })).links.map((link) => link.name).sort()).toEqual(["Factory suppliers", "Showroom suppliers"]);
+    });
+  });
+
+  it("imports one company's supplier list per tab: a supplier on two tabs buys for both; a shared phone is left out; only filling in keeps what's known", async () => {
+    await world(async (w) => {
+      await w.client.query(`UPDATE workspaces SET default_locale = 'en-AE' WHERE id = $1`, [w.workspaceId]);
+      const [factory, interiors] = [randomUUID(), randomUUID()];
+      for (const [id, code] of [[factory, "FAC"], [interiors, "INT"]])
+        await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,$3,$3,$3,'AE','AED','en-AE','Asia/Dubai')`, [id, w.workspaceId, code]);
+      const service = w.as(w.owner);
+      const heading = ["Supplier Type", "Company Name", "Contact Person / Number", "Email"];
+      const sheets: SourceSheet[] = [
+        { name: "Factory", rows: [heading, ["Factory suppliers"], ["MARBLE"], ["Marble", "Stone Co", "Ramiz - +971 52 846 6806", ""], ["Paint", "Paint Co", "Sara - 050 111 2222", "x@paint.example"]] },
+        { name: "Interiors", rows: [heading, ["Lighting", "Stone Co", "", "hello@stone.example"], ["Lighting", "Lamp Co", "+971 52 846 6806", ""]] },
+        { name: "Spend", rows: [["Company Name", "Jan"], ["Stone Co", "100"]] },
+      ];
+      const mapping = { columns: { "Supplier Type": "categories", "Company Name": "name", "Contact Person / Number": "contact", Email: "email" }, entities: { Factory: factory, Interiors: interiors } };
+      const draft = { target: "suppliers", source: "upload", name: "Suppliers", mapping, sheets };
+      const preview = await service.preview(actor, w.workspaceId, draft);
+      expect(preview.summary).toEqual({ added: 3, changed: 0, unchanged: 1, errors: 0, missing: 0 });
+      expect(preview.skippedTabs).toEqual(["Spend"]);
+      expect(preview.rows.find((row) => row.key === "Lamp Co")?.message).toBe("Another supplier has the phone +971528466806, so it wasn't imported.");
+      await service.apply(actor, w.workspaceId, { ...draft, runId: randomUUID(), expectedFingerprint: preview.fingerprint });
+      const suppliers = new SuppliersService({ withPermission: (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId: w.owner }),
+        hasPermission: async () => true } as never);
+      const stone = (await suppliers.list(actor, w.workspaceId)).suppliers.find((item) => item.name === "Stone Co")!;
+      expect(stone).toMatchObject({ contactName: "Ramiz", phone: "+971528466806", email: "hello@stone.example", categories: ["Marble", "Lighting"] });
+      expect([...stone.entityIds].sort()).toEqual([factory, interiors].sort());
+
+      // A second list only fills in: a known supplier's contact stays; what it's missing is added.
+      const chain = await service.preview(actor, w.workspaceId, { target: "suppliers", source: "upload", name: "Chain", mapping: { columns: { "Company Name": "name", "Contact Person": "contactName", Location: "address" }, fillOnly: true },
+        sheets: [{ name: "Chain", rows: [["Company Name", "Contact Person", "Location"], ["stone co.", "Someone else", "Al Quoz"]] }] });
+      expect(chain.rows).toEqual([expect.objectContaining({ key: "stone co.", outcome: "changed", changes: ["Address"] })]);
     });
   });
 

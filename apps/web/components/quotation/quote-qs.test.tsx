@@ -21,6 +21,20 @@ describe("the QS hand-off in the quote header (PLM-082/084)", () => {
     expect(qsBlocks(null)).toBe(false);
   });
 
+  it("says why the QS step is there or not, where the firm's QS rules decided it", () => {
+    const { rerender } = render(<DesignSystemProvider><QsActions workspaceId="w" caseId="c" quoteId="q"
+      qs={{ ...base, reason: { code: "lines", workPackages: ["Joinery"], itemTypes: ["assembly"] } }} onChanged={vi.fn()} onError={vi.fn()} /></DesignSystemProvider>);
+    expect(screen.getByText("QS review: needed because of Joinery, Assembly lines")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send to QS" })).toBeInTheDocument();
+    rerender(<DesignSystemProvider><QsActions workspaceId="w" caseId="c" quoteId="q" qs={{ ...base, required: false, stage: "not_required", reason: { code: "design_fee" } }}
+      onChanged={vi.fn()} onError={vi.fn()} /></DesignSystemProvider>);
+    expect(screen.getByText("QS review: not needed for a Design Fee proposal")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send to QS" })).not.toBeInTheDocument();
+    rerender(<DesignSystemProvider><QsActions workspaceId="w" caseId="c" quoteId="q" qs={{ ...base, required: false, stage: "not_required", reason: { code: "off" } }}
+      onChanged={vi.fn()} onError={vi.fn()} /></DesignSystemProvider>);
+    expect(screen.queryByText(/QS review/)).not.toBeInTheDocument();
+  });
+
   it("lets Sales send it to a named QS", async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ ...base, stage: "with_qs", review }), { status: 200 }));
     vi.stubGlobal("fetch", fetch);

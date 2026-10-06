@@ -390,6 +390,7 @@ export class DesignJourneyService {
       `SELECT journey.package_id AS "packageId", journey.package_name AS "packageName", journey.included_revisions AS "includedRevisions", journey.includes_space_planning AS "includesSpacePlanning", journey.includes_renders AS "includesRenders",
               journey.reviewer_role_code AS "reviewerRoleCode", journey.inspiration_days AS "inspirationDays", journey.site_visit_hours AS "siteVisitHours", journey.started_at AS "startedAt",
               journey.design_internal_days AS "designInternalDays", journey.design_client_days AS "designClientDays", journey.material_selection_days AS "materialSelectionDays", journey.estimate_days AS "estimateDays",
+              journey.render_internal_days AS "renderInternalDays", journey.render_client_days AS "renderClientDays",
               journey.site_visit_questions AS questions, to_char(journey.approved_on, 'YYYY-MM-DD') AS "approvedOn", journey.approval_asset_id AS "approvalAssetId", asset.original_name AS "approvalAssetName",
               journey.approval_signer AS "approvalSigner", journey.approval_method AS "approvalMethod", journey.estimate_due_at AS "estimateDueAt", journey.estimate_quote_id AS "estimateQuoteId", journey.version
          FROM design_journeys journey LEFT JOIN pre_project_brief_assets asset ON asset.workspace_id = journey.workspace_id AND asset.id = journey.approval_asset_id

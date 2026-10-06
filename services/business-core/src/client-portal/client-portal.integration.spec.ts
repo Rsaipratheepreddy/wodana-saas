@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { commercialRepository } from "../commercial/commercial-repository";
 import { freezeHash } from "../commercial/commercial.domain";
+import { startClientCalls } from "../client-calls/client-calls.store";
 import { CommercialService, teamReplyFiles } from "../commercial/commercial.service";
 import type { CommercialData } from "../commercial/commercial.types";
 import { CrmNotificationsService } from "../crm/notifications/crm-notifications.service";
@@ -46,6 +47,7 @@ projects[].sections.progress projects[].sections.decisions projects[].sections.p
 projects[].manager projects[].stage projects[].stage.number projects[].stage.total projects[].stage.name projects[].handoverDate
 projects[].next projects[].next[] projects[].next[].kind projects[].next[].id projects[].next[].title projects[].next[].due
 projects[].latestUpdate projects[].latestUpdate.id projects[].latestUpdate.at projects[].latestUpdate.text
+projects[].updates projects[].updates.mode projects[].updates.frequency projects[].updates.version
 projects[].progress projects[].progress.stages projects[].progress.stages[] projects[].progress.stages[].name projects[].progress.stages[].state
 projects[].progress.stages[].startedOn projects[].progress.stages[].finishedOn projects[].progress.updates projects[].progress.updates[]
 projects[].progress.updates[].id projects[].progress.updates[].at projects[].progress.updates[].text projects[].progress.photoDays projects[].progress.photoDays[]
@@ -542,6 +544,46 @@ integration("client portal (plan §6.22)", () => {
       expect(told).toEqual([expect.stringContaining("We're fixing it."), expect.stringContaining("That's the sample board, not your panel.")]);
       await w.client.query("UPDATE work_items SET status = 'done', completed_at = now() WHERE id = $1", [snagId]);
       expect((await w.portal.view(w.slug, token)).projects[0].progress!.issues.find((item) => item.number === 1)!.status).toBe("fixed");
+    });
+  });
+
+  it("lets the decision-maker choose calls, portal updates or neither, and how often; the Account Manager hears it (PLM-046)", async () => {
+    await world(async (w) => {
+      await open(w);
+      const token = await signIn(w, APPROVER);
+      expect((await w.portal.view(w.slug, token)).projects[0].updates).toBeNull();
+      const started = (await startClientCalls(w.client, w.workspaceId, w.caseId, "design_approval", w.manager))!;
+      expect((await w.portal.view(w.slug, token)).projects[0].updates).toEqual({ mode: "call", frequency: "weekly", version: 1 });
+
+      // A viewer reads it but can't change it.
+      const contact = (await w.admin.contacts(actor, w.workspaceId, w.caseId)).contacts.find((item) => item.phone === VIEWER)!;
+      await w.admin.saveContact(actor, w.workspaceId, w.caseId, { id: contact.id, version: contact.version, name: "Sam", phone: VIEWER, email: "sam@example.com", role: "viewer" });
+      const viewer = await signIn(w, VIEWER, "email");
+      await expect(w.portal.command(w.slug, viewer, { commandId: randomUUID(), action: "update_preference", caseId: w.caseId, choice: "portal", frequency: "weekly", version: 1 }))
+        .rejects.toThrow("decision-maker");
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "update_preference", caseId: w.caseId, choice: "portal", frequency: "off", version: 1 }))
+        .rejects.toThrow("how often");
+
+      const command = { commandId: randomUUID(), action: "update_preference", caseId: w.caseId, choice: "portal", frequency: "fortnightly", version: 1 };
+      const result = await w.portal.command(w.slug, token, command);
+      expect(result).toMatchObject({ ok: true, updates: { mode: "portal", frequency: "fortnightly", version: 2 } });
+      expect(await w.portal.command(w.slug, token, command)).toMatchObject({ replayed: true });
+      // The call ahead is cancelled; a reminder to post an update is in the Account Manager's name instead.
+      expect((await w.client.query("SELECT status::text FROM crm_activities WHERE workspace_id = $1 AND id = $2", [w.workspaceId, started.nextActivityId])).rows[0].status).toBe("cancelled");
+      expect((await w.client.query("SELECT type::text, owner_membership_id AS owner FROM crm_activities WHERE workspace_id = $1 AND status = 'pending'", [w.workspaceId])).rows)
+        .toEqual([{ type: "task", owner: w.designerMembership }]);
+      const heard = async () => (await w.client.query<{ recipient: string; body: string }>(
+        "SELECT recipient_id AS recipient, body FROM notifications WHERE workspace_id = $1 AND event_type = 'client_calls.client_changed' ORDER BY created_at, body", [w.workspaceId])).rows;
+      expect(await heard()).toEqual([{ recipient: w.designer, body: "Portal updates instead of calls, every two weeks" }]);
+      expect((await w.client.query(`SELECT action, source FROM audit_events WHERE workspace_id = $1 AND entity_id = $2 AND action IN ('client_calls.mode_changed.v1', 'client_portal.update_preference')
+        ORDER BY action`, [w.workspaceId, w.caseId])).rows).toEqual([{ action: "client_calls.mode_changed.v1", source: "client_portal" }, { action: "client_portal.update_preference", source: "client_portal" }]);
+
+      // A stale version is refused; turning them off stops the reminders and tells the Account Manager.
+      await expect(w.portal.command(w.slug, token, { ...command, commandId: randomUUID(), choice: "call", frequency: "weekly" })).rejects.toThrow("changed this");
+      await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "update_preference", caseId: w.caseId, choice: "off", version: 2 });
+      expect((await w.portal.view(w.slug, token)).projects[0].updates).toEqual({ mode: "portal", frequency: "off", version: 3 });
+      expect((await w.client.query("SELECT 1 FROM crm_activities WHERE workspace_id = $1 AND status = 'pending'", [w.workspaceId])).rowCount).toBe(0);
+      expect((await heard()).map((row) => row.body)).toContain("No update calls");
     });
   });
 

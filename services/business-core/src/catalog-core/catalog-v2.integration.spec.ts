@@ -44,6 +44,21 @@ integration("catalog v2 on PostgreSQL", () => {
   }
   const actor = {} as never;
 
+  it("keeps a link to a standard item's technical drawing, kept when an edit leaves it out (PLM-057)", async () => {
+    await scenario(async ({ as, workspaceId, refused }) => {
+      const author = as("author");
+      const { id: catalogId } = await author.createCatalog(actor, workspaceId, { name: "Core collection" });
+      await refused(() => author.createItem(actor, workspaceId, catalogId, { code: "SOFA3", name: "Sofa", itemType: "product", unitCode: "pcs", technicalDrawingUrl: "drive/sofa.pdf" }),
+        /technical drawing's link/);
+      const sofa = await author.createItem(actor, workspaceId, catalogId, { code: "SOFA3", name: "Sofa", itemType: "product", unitCode: "pcs", technicalDrawingUrl: " https://drive.example.com/sofa.pdf " });
+      expect(sofa.technicalDrawingUrl).toBe("https://drive.example.com/sofa.pdf");
+      const renamed = await author.updateItem(actor, workspaceId, catalogId, sofa.id, { version: sofa.version, code: "SOFA3", name: "Sofa 3 seater", itemType: "product", unitCode: "pcs" });
+      expect(renamed.technicalDrawingUrl).toBe("https://drive.example.com/sofa.pdf");
+      const cleared = await author.updateItem(actor, workspaceId, catalogId, sofa.id, { version: renamed.version, code: "SOFA3", name: "Sofa 3 seater", itemType: "product", unitCode: "pcs", technicalDrawingUrl: "" });
+      expect(cleared.technicalDrawingUrl).toBeNull();
+    });
+  });
+
   it("builds a wardrobe from priced components and explains the price", async () => {
     await scenario(async ({ as, workspaceId, refused }) => {
       const author = as("author");

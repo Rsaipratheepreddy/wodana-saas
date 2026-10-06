@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState, FormDialog, MoneyField } from "@/design-system";
+import { Button, DateField, EmptyState, InlineNotice, NumericInput, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState, FormDialog, MoneyField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
 import type { FactorySettings, FactorySettingsState, ProductionStep, Workcenter, WorkcenterRate } from "@/lib/factory/types";
@@ -30,6 +30,7 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editingSteps, setEditingSteps] = useState(false);
+  const [reminderDays, setReminderDays] = useState<number | null>(null);
   const stepLabel = useProductionStepLabel();
   const load = useCallback(async () => {
     try { setData(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
@@ -38,10 +39,11 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   if (error && !data) return isNoAccessError(error) ? <NoAccessState area={t("Factory")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!data) return <Skeleton lines={6} shape="form" />;
   const readOnly = !data.canManage;
-  const flip = async (key: Flag, value: boolean) => {
+  const save = async (patch: Record<string, unknown>) => {
     setError("");
-    try { setData(await api.saveSettings({ version: data.settings.version, [key]: value })); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); await load(); }
+    try { setData(await api.saveSettings({ version: data.settings.version, ...patch })); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); await load(); }
   };
+  const flip = (key: Flag, value: boolean) => save({ [key]: value });
   const row = (key: Flag, label: string, hint: string) => <SettingsRow label={label} hint={hint}>
     <Switch aria-label={label} isDisabled={readOnly} isSelected={(data.settings as FactorySettings)[key]} onChange={(value) => void flip(key, value)} />
   </SettingsRow>;
@@ -70,6 +72,11 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
       </SettingsRow>
       <SettingsRow label={t("Production target")} hint={t("Projects over it are flagged on the schedule.")}>
         <span>{data.settings.productionWeeks ? t("{count} weeks", { count: data.settings.productionWeeks }) : t("Not set")}</span>
+      </SettingsRow>
+      <SettingsRow label={t("Remind the client to pay")} hint={t("Days before the latest planned ready date of the work orders tied to a payment.")}>
+        <NumericInput label={<span className="wd-visually-hidden">{t("Remind the client to pay")}</span>} aria-label={t("Remind the client to pay")} minValue={0} maxValue={90}
+          isDisabled={readOnly} suffix={t("days")} value={reminderDays ?? data.settings.balanceReminderDays ?? 7} onChange={(value) => setReminderDays(Number.isFinite(value) ? value : null)}
+          onBlur={() => { if (reminderDays !== null && reminderDays !== (data.settings.balanceReminderDays ?? 7)) void save({ balanceReminderDays: reminderDays }); }} />
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="workcenters" title={t("Workcenters")}>

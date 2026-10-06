@@ -129,7 +129,7 @@ export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: 
           description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
           <h2 className="wd-visually-hidden" id="portal-view-title">{labels.sections[current]}</h2>
           {notice ? <InlineNotice tone="success" message={notice} /> : null}
-          {current === "overview" ? <div className={styles.summary}><ProfileDetails project={project} site={site} format={format} today={view.today} go={go} /></div> : null}
+          {current === "overview" ? <div className={styles.summary}><ProfileDetails project={project} site={site} format={format} today={view.today} go={go} api={api} reload={reload} /></div> : null}
           <section aria-labelledby="portal-view-title" className={styles.view}><Section {...props} /></section>
         </>}
       </div>

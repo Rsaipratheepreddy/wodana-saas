@@ -17,7 +17,7 @@ import type { SectionProps } from "./section-types";
  * due date, the latest day on site, what's coming up, their budget (R1), then the feed — typed cards, newest first
  * (the day shown above isn't repeated in it). On a narrow screen the key dates, balance and team follow at the foot.
  */
-export function HomeSection({ project, site, api, format, today, open, go, wide }: SectionProps) {
+export function HomeSection({ project, site, api, format, today, open, go, reload, wide }: SectionProps) {
   const t = useT();
   const step = useStepText(format);
   const act = (item: PortalStep) => {
@@ -124,6 +124,6 @@ export function HomeSection({ project, site, api, format, today, open, go, wide 
       {feed.length ? <FeedList cards={feed} format={format} onOpen={openCard} thumb={thumb} /> : null}
     </section> : null}
 
-    {wide ? null : <div className={styles.profileFoot}><ProfileDetails project={project} site={site} format={format} today={today} go={go} /></div>}
+    {wide ? null : <div className={styles.profileFoot}><ProfileDetails project={project} site={site} format={format} today={today} go={go} api={api} reload={reload} /></div>}
   </div>;
 }

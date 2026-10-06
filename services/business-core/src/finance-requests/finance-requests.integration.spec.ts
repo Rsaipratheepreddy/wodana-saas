@@ -107,7 +107,7 @@ integration("Finance requests on real Postgres (raise, Finance's board, approval
       client.release();
     }
     // Finance enters its inbox through the app; nothing is seeded.
-    await tenant(workspaceId, people.finance, (client) => saveRequestSettings(client, ctx(client, "finance"), { action: "save_settings", version: 0, financeInbox: "finance@example.com", refundDays: 15 }));
+    await tenant(workspaceId, people.finance, (client) => saveRequestSettings(client, ctx(client, "finance"), { action: "save_settings", version: 0, financeInbox: "finance@example.com" }));
   });
   afterAll(() => pool?.end());
 
@@ -178,16 +178,18 @@ integration("Finance requests on real Postgres (raise, Finance's board, approval
     expect(count).toBe(1);
   });
 
+  const plusDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
   it("holds a refund until it's approved, keeps the bank details with Finance and shows the expected refund day", async () => {
     const methodId = randomUUID();
     await tenant(workspaceId, people.finance, (client) => saveRequestSettings(client, ctx(client, "finance"), { action: "save_method", id: methodId, label: "Bank transfer",
-      refundGuidance: "Beneficiary is added within 24 hours.", needsBankDetails: true }));
+      refundGuidance: "Beneficiary is added within 24 hours.", needsBankDetails: true, refundDays: 15 }));
     const refund = { action: "submit", id: randomUUID(), kind: "refund", opportunityId: ids.opportunity, currency: "AED", invoiceNumber: "INV-1042", reason: "Sofa not delivered",
       paymentMethodId: methodId, lines: [{ description: "Sofa", unitPrice: "3200" }] };
     await expect(run("sales", refund)).rejects.toThrow(/bank details/);
     const raised = await run("sales", { ...refund, bankDetails: "IBAN AE07 0331 2345 6789 0123 456" });
     expect(raised.request).toMatchObject({ total: "3200.0000", bankDetails: null, hasBankDetails: true, approvalStatus: "pending" });
-    expect(raised.request.expectedRefundOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(raised.request.expectedRefundOn).toBe(plusDays(raised.request.refundFrom, 15));
     expect(raised.guidance).toBe("Beneficiary is added within 24 hours.");
     const id = raised.request.id;
     const forFinance = await view("finance", id);
@@ -201,6 +203,35 @@ integration("Finance requests on real Postgres (raise, Finance's board, approval
     expect(approved.request.approvalStatus).toBe("approved");
     const done = await run("finance", { action: "done", id, version: approved.request.version });
     expect(done.request.status).toBe("done");
+  });
+
+  it("gives each refund method its own timeline (PLM-109): the request keeps the days of the method chosen when it was raised", async () => {
+    const stripe = randomUUID(), tabby = randomUUID();
+    const save = (body: Record<string, unknown>) => tenant(workspaceId, people.finance, (client) => saveRequestSettings(client, ctx(client, "finance"), body));
+    await save({ action: "save_method", id: stripe, label: "Stripe", refundGuidance: "Refunded to the card through Stripe.", refundDays: "7" });
+    await save({ action: "save_method", id: tabby, label: "Tabby" });
+    await expect(save({ action: "save_method", id: randomUUID(), label: "Cheque", refundDays: 0 })).rejects.toThrow(/1 to 365/);
+    await expect(save({ action: "save_method", id: randomUUID(), label: "Cheque", refundDays: "2.5" })).rejects.toThrow(/1 to 365/);
+    const context = await tenant(workspaceId, people.sales, (client) => readContext(client, ctx(client, "sales"), { opportunityId: ids.opportunity }));
+    expect(context.methods.filter((method) => [stripe, tabby].includes(method.id)).map((method) => [method.label, method.refundDays]))
+      .toEqual([["Stripe", 7], ["Tabby", null]]);
+    const refund = (method: string) => ({ action: "submit", id: randomUUID(), kind: "refund", opportunityId: ids.opportunity, currency: "AED", invoiceNumber: "INV-1043",
+      reason: "Cushions not delivered", paymentMethodId: method, lines: [{ description: "Cushions", unitPrice: "400" }] });
+    const byCard = await run("sales", refund(stripe));
+    expect(byCard.request).toMatchObject({ paymentMethod: "Stripe", refundDays: 7, expectedRefundOn: plusDays(byCard.request.refundFrom, 7) });
+    expect(byCard.guidance).toBe("Refunded to the card through Stripe.");
+    // A method without days shows no date.
+    expect((await run("sales", refund(tabby))).request.expectedRefundOn).toBeNull();
+    // Finance changes Stripe to 10 days: new refunds use 10, the one already raised keeps its 7.
+    const method = (await tenant(workspaceId, people.finance, (client) => readContext(client, ctx(client, "finance"), {}))).methods.find((item) => item.id === stripe)!;
+    await save({ action: "save_method", id: stripe, version: method.version, label: "Stripe", refundGuidance: method.refundGuidance, refundDays: 10 });
+    expect((await view("sales", byCard.request.id)).request.expectedRefundOn).toBe(plusDays(byCard.request.refundFrom, 7));
+    const later = await run("sales", refund(stripe));
+    expect(later.request.expectedRefundOn).toBe(plusDays(later.request.refundFrom, 10));
+    const audit = await tenant(workspaceId, people.finance, async (client) => (await client.query<{ after: { refundDays: number } }>(
+      `SELECT after FROM audit_events WHERE workspace_id = $1 AND action = 'finance_request.method_saved' AND entity_id = $2 ORDER BY occurred_at`, [workspaceId, stripe])).rows
+      .map((row) => row.after.refundDays));
+    expect(audit).toEqual([7, 10]);
   });
 
   it("sends a payable back to its requester when its approver returns it, and closes it when rejected", async () => {
@@ -258,7 +289,7 @@ integration("Finance requests on real Postgres (raise, Finance's board, approval
     expect(await raise()).toEqual({ raised: 0 });
     await tenant(workspaceId, people.finance, async (client) => saveRequestSettings(client, ctx(client, "finance"), { action: "save_settings",
       version: (await client.query<{ version: number }>("SELECT version FROM finance_request_settings WHERE workspace_id = $1", [workspaceId])).rows[0].version,
-      financeInbox: "finance@example.com", refundDays: 15, stageInvoiceRequests: true }));
+      financeInbox: "finance@example.com", stageInvoiceRequests: true }));
     expect(await raise()).toEqual({ raised: 1 });
     expect(await raise()).toEqual({ raised: 0 });
     const board = await tenant(workspaceId, people.finance, (client) => readBoard(client, ctx(client, "finance")));

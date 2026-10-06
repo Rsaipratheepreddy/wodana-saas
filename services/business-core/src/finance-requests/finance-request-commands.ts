@@ -44,9 +44,9 @@ export async function readBoard(db: Db, ctx: Ctx) {
   const settings = await readSettings(db, ctx.workspaceId);
   const rows = await readRequests(db, ctx.workspaceId, finance ? {} : { mine: ctx.userId });
   return {
-    requests: rows.map((row) => ({ ...present(row, finance), expectedRefundOn: refundDay(row, settings.refundDays) })),
+    requests: rows.map((row) => ({ ...present(row, finance), expectedRefundOn: refundDay(row) })),
     canManage: finance, canRaise, me: ctx.userId,
-    settings: { refundDays: settings.refundDays, financeInboxSet: Boolean(settings.financeInbox) },
+    settings: { financeInboxSet: Boolean(settings.financeInbox) },
   };
 }
 
@@ -65,10 +65,9 @@ export async function readDetail(db: Db, ctx: Ctx, id: string) {
       WHERE decision.workspace_id = $1 AND item.subject_kind = $2 AND item.subject_id = $3 AND (decision.decided_by = $4 OR decision.on_behalf_of = $4) LIMIT 1`,
     [ctx.workspaceId, kind, row.id, ctx.userId])).rowCount);
   if (!finance && !mine && !approver) throw new NotFoundException("Request not found.");
-  const settings = await readSettings(db, ctx.workspaceId);
   const method = row.paymentMethodId ? (await readPaymentMethods(db, ctx.workspaceId)).find((item) => item.id === row.paymentMethodId) ?? null : null;
   return {
-    request: { ...present(row, finance), expectedRefundOn: refundDay(row, settings.refundDays) },
+    request: { ...present(row, finance), expectedRefundOn: refundDay(row) },
     lines: await readLines(db, ctx.workspaceId, row.id), files: await readFiles(db, ctx.workspaceId, row.id), events: await readEvents(db, ctx.workspaceId, row.id),
     approval, canDecide: Boolean(eligibility?.canDecide && eligibility.via !== "waiver"),
     guidance: row.kind === "refund" ? method?.refundGuidance ?? "" : "",
@@ -77,9 +76,10 @@ export async function readDetail(db: Db, ctx: Ctx, id: string) {
   };
 }
 
-function refundDay(row: RequestRow, days: number | null) {
+/** A refund's expected day: its method's days (kept from when it was raised) after approval, or after submission until then. */
+function refundDay(row: RequestRow) {
   if (row.kind !== "refund" || row.status === "rejected") return null;
-  return expectedRefundOn(row.refundFrom, days);
+  return expectedRefundOn(row.refundFrom, row.refundDays);
 }
 
 // ---------------------------------------------------------------- commands
@@ -361,12 +361,14 @@ async function refundFields(db: Db, workspaceId: string, body: Record<string, un
   if (!reason) throw new BadRequestException("Say why the client is refunded.");
   const lines = parseLines(body.lines, currency, false).map((line) => ({ ...line, amount: line.unitPrice }));
   const method = await paymentMethod(db, workspaceId, body);
-  if (!method.label) throw new BadRequestException("Choose how the client paid.");
+  if (!method.label) throw new BadRequestException("Choose the refund method.");
   // Bank details only when the method needs them; never kept otherwise.
   const bankDetails = method.needsBankDetails ? text(body.bankDetails, 1000, "Bank details") : "";
   if (method.needsBankDetails && !bankDetails) throw new BadRequestException("Add the client's bank details: this method is refunded by bank transfer.");
   const legalEntityId = optionalUuid(body.legalEntityId, "Company");
-  return { invoiceNumber, reason, paymentMethodId: method.id, paymentMethod: method.label, bankDetails, legalEntityId, totalAmount: refundTotal(lines, currency), lines };
+  // PLM-109: the expected date follows the chosen method's days, kept on the request so a later settings change never moves it.
+  return { invoiceNumber, reason, paymentMethodId: method.id, paymentMethod: method.label, bankDetails, refundDays: method.refundDays, legalEntityId,
+    totalAmount: refundTotal(lines, currency), lines };
 }
 
 async function payableFields(db: Db, workspaceId: string, body: Record<string, unknown>, currency: string, projectId: string | null) {
@@ -399,9 +401,9 @@ async function paymentMethod(db: Db, workspaceId: string, body: Record<string, u
   if (id) {
     const method = (await readPaymentMethods(db, workspaceId)).find((item) => item.id === id);
     if (!method) throw new BadRequestException("Choose one of the payment methods.");
-    return { id, label: method.label, needsBankDetails: method.needsBankDetails };
+    return { id, label: method.label, needsBankDetails: method.needsBankDetails, refundDays: method.refundDays };
   }
-  return { id: null, label: text(body.paymentMethod, 80, "Payment method"), needsBankDetails: false };
+  return { id: null, label: text(body.paymentMethod, 80, "Payment method"), needsBankDetails: false, refundDays: null };
 }
 
 function parseLines(value: unknown, currency: string, signed: boolean): LineInput[] {

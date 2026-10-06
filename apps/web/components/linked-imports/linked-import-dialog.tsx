@@ -2,20 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileSpreadsheet, Link2, RefreshCw } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, EmptyState, FileUploader, MenuButton, SelectField, Spinner, Switch, TextInput, formatRelativeTime, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, FileUploader, MenuButton, SelectField, Spinner, Switch, TextInput, formatRelativeTime, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { linkedImportsApi, type ColumnMapping, type ImportDetail, type ImportLink, type ImportOverview, type ImportPreview, type ImportRun, type ImportSchedule, type ImportSource,
-  type ImportTarget, type PickerConfig, type PlanRow, type SourceSheet } from "@/lib/linked-imports/client";
+  type ImportTarget, type PickerConfig, type PlanRow } from "@/lib/linked-imports/client";
 import { pickSpreadsheet } from "@/lib/linked-imports/google-picker";
-import { IMPORT_FIELDS, hasKey, headingsOf, mappedColumns, suggestMapping } from "@/lib/linked-imports/mapping";
-import { readCatalogImportFile } from "@/lib/workspace/catalog-import-file";
+import { readImportFile, readImportImage, rowImage } from "@/lib/linked-imports/import-file";
+import { IMPORT_FIELDS, chosenTabs, hasKey, headingsOf, mappedColumns, suggestMapping } from "@/lib/linked-imports/mapping";
+import type { WorkbookSheet } from "@/lib/linked-imports/xlsx-workbook";
 import styles from "./linked-import-dialog.module.css";
 
 type T = ReturnType<typeof useT>;
 type View = "links" | "source" | "map" | "preview";
 type Draft = {
   linkId: string | null; version: number | null; source: ImportSource; connectionId: string | null; spreadsheetId: string | null;
-  sheets: SourceSheet[]; sheetName: string | null; mapping: ColumnMapping; name: string; locationId: string | null; setsStock: boolean; itemType: string; schedule: ImportSchedule;
+  sheets: WorkbookSheet[]; sheetName: string | null; mapping: ColumnMapping; name: string; locationId: string | null; setsStock: boolean; itemType: string; schedule: ImportSchedule;
+  /** The uploaded workbook, kept to add its pictures to the catalog items it made. */
+  file: File | null;
   /** Suppliers: the company the list is for, when it's one company's list. */
   legalEntityId: string | null;
 };
@@ -56,6 +59,7 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
   const [expanded, setExpanded] = useState<string | null>(null);
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pictures, setPictures] = useState<{ done: number; total: number } | null>(null);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
@@ -91,20 +95,26 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
   };
   const close = () => { setView("links"); setDraft(null); setPreview(null); setError(""); setExpanded(null); onClose(); };
 
-  const newDraft = (source: ImportSource, sheets: SourceSheet[], name: string, link: Partial<Draft> = {}): Draft => ({
-    linkId: null, version: null, source, connectionId: null, spreadsheetId: null, sheets, sheetName: null, name: name.slice(0, 200),
-    mapping: suggestMapping(target, headingsOf(sheets).map((entry) => entry.heading)), locationId: overview?.locations.find((place) => place.isDefault)?.id ?? overview?.locations[0]?.id ?? null,
-    setsStock: true, itemType: "product", schedule: source === "google_sheet" ? "hourly" : "off", legalEntityId: null, ...link,
-  });
+  const newDraft = (source: ImportSource, sheets: WorkbookSheet[], name: string, link: Partial<Draft> = {}): Draft => {
+    // Several tabs: the ones the sheet shows are chosen; a hidden tab (a template) isn't.
+    const tabs = sheets.length > 1 ? sheets.filter((sheet) => !sheet.hidden).map((sheet) => sheet.name) : undefined;
+    const shown = tabs ? sheets.filter((sheet) => tabs.includes(sheet.name)) : sheets;
+    return {
+      linkId: null, version: null, source, connectionId: null, spreadsheetId: null, sheets, sheetName: null, name: name.slice(0, 200), file: null,
+      mapping: { ...suggestMapping(target, headingsOf(shown).map((entry) => entry.heading)), ...(tabs?.length ? { tabs } : {}) },
+      locationId: overview?.locations.find((place) => place.isDefault)?.id ?? overview?.locations[0]?.id ?? null,
+      setsStock: true, itemType: "product", schedule: source === "google_sheet" ? "hourly" : "off", legalEntityId: null, ...link,
+    };
+  };
   const chooseFile = (file: File | undefined, link?: ImportLink) => file && run(async () => {
-    const sheets = (await readCatalogImportFile(file)).map((table) => ({ name: table.name, rows: table.rows }));
+    const sheets = await readImportFile(file);
     if (link) {
       // A new version of an uploaded sheet goes through the link's own mapping, straight to the preview.
-      const next = { ...newDraft("upload", sheets, link.name), ...fromLink(link) };
+      const next = { ...newDraft("upload", sheets, link.name), ...fromLink(link), file };
       setDraft(next); await review(next);
       return;
     }
-    setDraft(newDraft("upload", sheets, file.name.replace(/\.[^.]+$/, ""))); setView("map");
+    setDraft({ ...newDraft("upload", sheets, file.name.replace(/\.[^.]+$/, "")), file }); setView("map");
   });
   const chooseSheet = (link?: ImportLink) => run(async () => {
     const connection = link?.connectionId ?? connectionId;
@@ -127,14 +137,42 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
     ...(next.linkId ? { linkId: next.linkId, version: next.version } : { target, source: next.source, catalogId, connectionId: next.connectionId, spreadsheetId: next.spreadsheetId }),
     name: next.name.trim(), mapping: next.mapping, sheetName: next.sheetName, schedule: next.schedule,
     ...(target === "stock" ? { locationId: next.locationId, setsStock: next.setsStock } : target === "suppliers" ? { legalEntityId: next.legalEntityId } : { itemType: next.itemType }),
-    // An uploaded file is sent trimmed to its mapped columns (and the chosen tab); a linked sheet is read by Wodana.
-    ...(next.source === "upload" ? { sheets: mappedColumns(next.sheetName ? next.sheets.filter((sheet) => sheet.name === next.sheetName) : next.sheets, next.mapping, target) } : {}),
+    // An uploaded file is sent trimmed to its chosen tabs and mapped columns (pictures stay in the browser); a linked sheet is read by Wodana.
+    ...(next.source === "upload" ? { sheets: mappedColumns(next.sheetName ? next.sheets.filter((sheet) => sheet.name === next.sheetName) : next.sheets, next.mapping) } : {}),
   });
   const review = async (next: Draft) => { setPreview(await api.preview(body(next))); setView("preview"); };
+  /**
+   * After a catalog import from an Excel file: each row's picture goes to its item, for items that have no picture
+   * yet (one at a time, through the catalog's own upload). A linked Google Sheet's pictures can't be read.
+   */
+  const addPictures = async (detail: ImportDetail, next: Draft) => {
+    if (target !== "catalog" || !next.file || !detail.records?.length) return 0;
+    const wanted = new Map<string, ReturnType<typeof rowImage>>();
+    for (const record of detail.records) {
+      if (record.images || wanted.has(record.recordId)) continue;
+      const image = rowImage(next.sheets, record.sheet, record.line);
+      if (image) wanted.set(record.recordId, image);
+    }
+    let failed = 0, done = 0;
+    setPictures({ done, total: wanted.size });
+    for (const [itemId, image] of wanted) {
+      try {
+        const form = new FormData();
+        form.set("file", await readImportImage(next.file, image!));
+        const response = await fetch(`/api/catalog-images/items/${itemId}/${crypto.randomUUID()}?${new URLSearchParams({ workspaceId })}`, { method: "POST", body: form });
+        if (!response.ok) failed += 1;
+      } catch { failed += 1; }
+      setPictures({ done: ++done, total: wanted.size });
+    }
+    setPictures(null);
+    return failed;
+  };
   const apply = () => draft && preview && run(async () => {
     const detail = await api.apply({ ...body(draft), runId: crypto.randomUUID(), expectedFingerprint: preview.fingerprint });
     setDetails((current) => ({ ...current, [detail.link.id]: detail })); setExpanded(detail.link.id);
+    const failed = await addPictures(detail, draft);
     setDraft(null); setPreview(null); await load(); setView("links"); onImported();
+    if (failed) setError(t("{count} pictures couldn't be added to their items.", { count: failed }));
   });
   const refresh = (link: ImportLink) => run(async () => {
     const detail = await api.refresh(link.id, { runId: crypto.randomUUID() });
@@ -149,7 +187,7 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
     confirmLabel: t("Stop linking"), onConfirm: () => void change(link, { archive: true }) });
 
   const set = (patch: Partial<Draft>) => setDraft((current) => (current ? { ...current, ...patch } : current));
-  const canReview = Boolean(draft && draft.name.trim() && hasKey(draft.mapping, target) && (target !== "stock" || draft.locationId));
+  const canReview = Boolean(draft && draft.name.trim() && hasKey(draft.mapping) && (draft.mapping.tabs?.length ?? 1) > 0 && (target !== "stock" || draft.locationId));
   const googleReady = Boolean(picker?.configured && overview?.connections.length);
   const connection = overview?.connections.find((entry) => entry.id === connectionId);
   const footer = <div className="wd-dialog-actions">
@@ -170,6 +208,7 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
     <ControlledModalDialog footer={footer} isDirty={view === "map" || view === "preview"} isOpen={isOpen && !picking} onOpenChange={(open) => { if (!open) close(); }} size="lg" title={t("Import")}>
       <div className={styles.body}>
         {error ? <Callout title={t("Could not import")} tone="danger">{error}</Callout> : null}
+        {pictures ? <p className={styles.muted} role="status">{t("Adding pictures {done} of {total}", { done: pictures.done, total: pictures.total })}</p> : null}
         {!overview ? (error ? null : <div className={styles.loading}><Spinner /></div>)
           : view === "links" ? <ul className={styles.links} aria-label={t("Linked sheets")}>{overview.links.map((link) => <LinkCard key={link.id} link={link} detail={details[link.id]} t={t}
               canManage={overview.canManage} target={target} busy={busy} locale={locale} isExpanded={expanded === link.id} googleReady={googleReady}
@@ -178,7 +217,7 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
           : view === "source" ? <div className={styles.sources}>
               <section aria-label={t("Upload a file")}>
                 <FileUploader accept=".xlsx,.csv,.tsv" label={t("Upload a spreadsheet")} multiple={false} onFiles={(files) => void chooseFile(files[0])} />
-                <small className={styles.muted}>{t("Excel (.xlsx) or CSV, up to 2 MB.")}</small>
+                <small className={styles.muted}>{t("Excel (.xlsx) up to 512 MB, or CSV up to 2 MB.")}</small>
               </section>
               {googleReady ? <section aria-label={t("Link a Google Sheet")} className={styles.google}>
                 {overview.connections.length > 1 ? <SelectField items={overview.connections.map((entry) => ({ id: entry.id, label: entry.account ? `${entry.name} · ${entry.account}` : entry.name }))}
@@ -198,40 +237,64 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
 }
 
 function MapStep({ draft, overview, set, t, target }: { draft: Draft; overview: ImportOverview; set: (patch: Partial<Draft>) => void; t: T; target: ImportTarget }) {
-  const sheets = draft.sheetName ? draft.sheets.filter((sheet) => sheet.name === draft.sheetName) : draft.sheets;
+  const sheets = draft.sheetName ? draft.sheets.filter((sheet) => sheet.name === draft.sheetName) : chosenTabs(draft.sheets, draft.mapping);
   const headings = headingsOf(sheets.length ? sheets : draft.sheets);
+  const tabs = draft.mapping.tabs ?? draft.sheets.map((sheet) => sheet.name);
+  const entities = overview.entities ?? [];
+  const perTab = target === "suppliers" && entities.length > 1 && draft.sheets.length > 1;
+  // Ticking tabs replaces a linked sheet's single tab: every chosen tab is read.
+  const tick = (name: string, on: boolean) => {
+    const current = draft.sheetName ? [draft.sheetName] : tabs;
+    const next = draft.sheets.map((sheet) => sheet.name).filter((tab) => (tab === name ? on : current.includes(tab)));
+    set({ sheetName: null, mapping: { ...draft.mapping, tabs: next } });
+  };
+  const company = (name: string, entityId: string) => {
+    const chosen = Object.fromEntries(Object.entries(draft.mapping.entities ?? {}).filter(([tab]) => tab !== name));
+    if (entityId) chosen[name] = entityId;
+    set({ mapping: { ...draft.mapping, entities: chosen } });
+  };
   const fields = [{ id: "", label: t("Don't import") }, ...IMPORT_FIELDS[target].map((field) => ({ id: field.id, label: t(field.label) }))];
-  const taken = new Set(Object.values(draft.mapping.columns).filter((field) => field && field !== "attribute"));
   const choose = (heading: string, field: string) => {
-    const columns = Object.fromEntries(Object.entries(draft.mapping.columns).filter(([key, value]) => key !== heading && (field === "attribute" || value !== field)));
+    // A field comes from one column, except across tabs that spell its heading differently (chosen again for each).
+    const columns = Object.fromEntries(Object.entries(draft.mapping.columns).filter(([key]) => key !== heading));
     if (field) columns[heading] = field;
-    set({ mapping: { columns } });
+    set({ mapping: { ...draft.mapping, columns } });
   };
   return <div className={styles.map}>
     <div className={styles.settings}>
       <TextInput isRequired label={t("Name")} maxLength={200} onChange={(name) => set({ name })} value={draft.name} />
-      {draft.sheets.length > 1 ? <SelectField items={[{ id: "", label: t("Every tab") }, ...draft.sheets.map((sheet) => ({ id: sheet.name, label: sheet.name }))]} label={t("Tab")}
-        onSelectionChange={(key) => set({ sheetName: String(key ?? "") || null })} selectedKey={draft.sheetName ?? ""} /> : null}
+
       {target === "stock" ? <SelectField isRequired items={overview.locations.map((place) => ({ id: place.id, label: place.name }))} label={t("Place")}
         description={t("Where the quantities are, unless a row names its place.")} onSelectionChange={(key) => set({ locationId: String(key) })} selectedKey={draft.locationId} /> : null}
       {target === "catalog" ? <SelectField items={ITEM_TYPES.map((type) => ({ id: type, label: itemTypeLabel(t, type) }))} label={t("New items are")}
         onSelectionChange={(key) => set({ itemType: String(key) })} selectedKey={draft.itemType} /> : null}
-      {target === "suppliers" && (overview.entities?.length ?? 0) > 1 ? <SelectField items={[{ id: "", label: t("Every company") }, ...overview.entities!.map((entity) => ({ id: entity.id, label: entity.name }))]}
+      {target === "suppliers" && entities.length > 1 && !perTab ? <SelectField items={[{ id: "", label: t("Every company") }, ...overview.entities!.map((entity) => ({ id: entity.id, label: entity.name }))]}
         label={t("Company")} onSelectionChange={(key) => set({ legalEntityId: String(key ?? "") || null })} selectedKey={draft.legalEntityId ?? ""} /> : null}
       {draft.source === "google_sheet" ? <SelectField items={(["hourly", "daily", "off"] as ImportSchedule[]).map((id) => ({ id, label: scheduleLabel(t, id) }))} label={t("Refresh")}
         onSelectionChange={(key) => set({ schedule: String(key) as ImportSchedule })} selectedKey={draft.schedule} /> : null}
       {target === "stock" ? <Switch isSelected={draft.setsStock} onChange={(setsStock) => set({ setsStock })}>{t("Sheet sets stock quantities")}</Switch> : null}
+      {target === "suppliers" ? <Switch isSelected={draft.mapping.fillOnly === true} onChange={(fillOnly) => set({ mapping: { ...draft.mapping, fillOnly } })}>
+        {t("Only fill in what known suppliers are missing")}</Switch> : null}
     </div>
+    {draft.sheets.length > 1 ? <ul className={styles.tabs} aria-label={t("Tabs")}>{draft.sheets.map((sheet) => {
+      const on = draft.sheetName ? sheet.name === draft.sheetName : tabs.includes(sheet.name);
+      return <li key={sheet.name}>
+        <Checkbox isSelected={on} onChange={(value) => tick(sheet.name, value)}><bdi>{sheet.name}</bdi></Checkbox>
+        {perTab && on ? <SelectField aria-label={t("Company for {tab}", { tab: sheet.name })} accent="neutral" label=""
+          items={[{ id: "", label: draft.legalEntityId ? t("The import's company") : t("Every company") }, ...entities.map((entity) => ({ id: entity.id, label: entity.name }))]}
+          onSelectionChange={(key) => company(sheet.name, String(key ?? ""))} selectedKey={draft.mapping.entities?.[sheet.name] ?? ""} /> : null}
+      </li>;
+    })}</ul> : null}
     {headings.length ? <ul className={styles.columns} aria-label={t("Columns")}>{headings.map(({ heading, sample }) => {
       const field = draft.mapping.columns[heading] ?? "";
       return <li key={heading}>
         <span className={styles.heading}><strong>{heading}</strong>{sample ? <small dir="auto">{sample}</small> : null}</span>
-        <SelectField aria-label={t("Field for {column}", { column: heading })} accent="neutral" items={fields.filter((option) => !option.id || option.id === field || option.id === "attribute" || !taken.has(option.id))}
+        <SelectField aria-label={t("Field for {column}", { column: heading })} accent="neutral" items={fields}
           label="" onSelectionChange={(key) => choose(heading, String(key ?? ""))} selectedKey={field} />
       </li>;
     })}</ul> : <EmptyState title={t("No columns found")} description={t("The sheet has no heading row.")} />}
-    {!hasKey(draft.mapping, target) && headings.length ? <small className={styles.danger}>{target === "suppliers" ? t("Choose the column with the supplier's code or name: rows are matched by it.")
-      : t("Choose the column with the item code: rows are matched by it.")}</small> : null}
+    {!hasKey(draft.mapping) && headings.length ? <small className={styles.danger}>{target === "suppliers" ? t("Choose the column with the supplier's code or name: rows are matched by it.")
+      : t("Choose the column with the item code or name: rows are matched by it.")}</small> : null}
   </div>;
 }
 
@@ -245,7 +308,7 @@ function PreviewStep({ preview, t }: { preview: ImportPreview; t: T }) {
       <span data-tone={summary.errors ? "danger" : undefined}><strong>{summary.errors}</strong> {t("need a fix")}</span>
       <span><strong>{summary.missing}</strong> {t("not in sheet")}</span>
     </div>
-    {preview.skippedTabs.length ? <small className={styles.muted}>{t("Tabs without the code column are skipped: {tabs}", { tabs: preview.skippedTabs.join(", ") })}</small> : null}
+    {preview.skippedTabs.length ? <small className={styles.muted}>{t("Tabs without the mapped columns are skipped: {tabs}", { tabs: preview.skippedTabs.join(", ") })}</small> : null}
     <Rows rows={preview.rows} t={t} empty={t("Nothing changes.")} />
   </>;
 }

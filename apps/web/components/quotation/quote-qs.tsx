@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, FormDialog, FormNotSaved, SelectField, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { proposalApi, type QsState } from "@/lib/proposals/client";
+import type { Translate } from "@/lib/i18n/keys";
+import { proposalApi, type QsReason, type QsState } from "@/lib/proposals/client";
 import styles from "./quote-builder.module.css";
 
 /** The quote's QS step, reloaded whenever the quote changes (a price change makes a confirmation stale). */
@@ -15,6 +16,26 @@ export function useQs(workspaceId: string, caseId: string, quoteId: string, revi
   }, [workspaceId, caseId, quoteId, kind]);
   useEffect(() => { void load(); }, [load, revision]);
   return { qs, setQs, reload: load };
+}
+
+/** The catalogue kinds a firm can mark for QS review, named as in the catalogue. */
+export const qsItemTypeLabels = (t: Translate): Record<string, string> => ({
+  product: t("Product"), material: t("Material"), assembly: t("Assembly"), service: t("Service"), package: t("Package"), ready_made: t("Ready-made"),
+});
+
+/** Why the QS step is there or not, where the firm's QS rules decided it ("QS review: needed because of joinery lines"). */
+export function qsReasonText(reason: QsReason | undefined, t: Translate): string | null {
+  if (!reason) return null;
+  if (reason.code === "lines") {
+    const kinds = qsItemTypeLabels(t);
+    const names = [...reason.workPackages, ...reason.itemTypes.map((type) => kinds[type] ?? type)].join(", ");
+    return t("QS review: needed because of {names} lines", { names });
+  }
+  if (reason.code === "boq_required") return t("QS review: needed because this order needs a BOQ");
+  if (reason.code === "design_fee") return t("QS review: not needed for a Design Fee proposal");
+  if (reason.code === "standard_only") return t("QS review: not needed for standard items");
+  if (reason.code === "no_boq") return t("QS review: not needed, this order needs no BOQ");
+  return null;
 }
 
 /** Whether the QS step holds sending back: required and not confirmed at the current pricing. */
@@ -32,7 +53,9 @@ export function QsActions({ workspaceId, caseId, quoteId, qs, onChanged, onError
   const [sending, setSending] = useState(false);
   const [returning, setReturning] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (!qs.required && !qs.review) return null;
+  const why = qsReasonText(qs.reason, t);
+  const reason = why ? <span className={styles.waiting}>{why}</span> : null;
+  if (!qs.required && !qs.review) return reason;
   const holder = qs.review?.assigneeName ?? t("the QS");
   const confirm = async () => {
     setBusy(true); onError("");
@@ -58,6 +81,7 @@ export function QsActions({ workspaceId, caseId, quoteId, qs, onChanged, onError
     </>;
   }
   return <>
+    {qs.stage === "confirmed" ? null : reason}
     {content}
     {sending ? <SendToQsDialog people={qs.people} current={qs.review?.status === "with_qs" ? qs.review.assigneeUserId : null} onClose={() => setSending(false)}
       onSend={async (assignee, note) => {

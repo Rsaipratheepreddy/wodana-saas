@@ -11,6 +11,8 @@ export type FactorySettings = {
   requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number;
   /** PLM-063: the production steps the firm keeps (stored as configuration; read leniently by production-status), and its internal target in weeks. */
   productionSteps: unknown; productionWeeks: number | null;
+  /** PLM-067: days before the latest planned ready date of a payment stage's work orders that the client is reminded to pay. */
+  balanceReminderDays: number;
 };
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
 
@@ -120,7 +122,7 @@ export async function ensureFactorySettings(db: Db, workspaceId: string): Promis
   await db.query(`INSERT INTO workspace_factory_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
   return (await db.query<FactorySettings>(
     `SELECT require_drawing AS "requireDrawing", require_payment AS "requirePayment", require_materials AS "requireMaterials", require_check AS "requireCheck", version,
-            production_steps AS "productionSteps", production_weeks AS "productionWeeks"
+            production_steps AS "productionSteps", production_weeks AS "productionWeeks", balance_reminder_days AS "balanceReminderDays"
        FROM workspace_factory_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

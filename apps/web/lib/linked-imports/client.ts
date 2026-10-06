@@ -3,8 +3,10 @@
 export type ImportTarget = "stock" | "catalog" | "suppliers";
 export type ImportSource = "upload" | "google_sheet";
 export type ImportSchedule = "off" | "hourly" | "daily";
-export type SourceSheet = { name: string; rows: string[][] };
-export type ColumnMapping = { columns: Record<string, string> };
+/** A tab as read: its cells as text; cell links ("row:column", 0-based); the block titles the browser worked out (by heading row); hidden in the sheet. */
+export type SourceSheet = { name: string; rows: string[][]; links?: Record<string, string>; titles?: Record<string, string>; hidden?: boolean };
+/** Columns to fields; the tabs chosen; suppliers: each tab's company, and only filling in what known suppliers miss. */
+export type ColumnMapping = { columns: Record<string, string>; tabs?: string[]; entities?: Record<string, string>; fillOnly?: boolean };
 
 export type ImportRun = {
   id: string; at: string; status: "applied" | "partial" | "failed"; trigger: "manual" | "schedule";
@@ -28,7 +30,11 @@ export type ImportPreview = {
   summary: { added: number; changed: number; unchanged: number; errors: number; missing: number };
   rows: PlanRow[];
 };
-export type ImportDetail = { link: ImportLink; runs: ImportRun[]; rows: PlanRow[]; canManage: boolean };
+export type ImportDetail = {
+  link: ImportLink; runs: ImportRun[]; rows: PlanRow[]; canManage: boolean;
+  /** Right after a catalog run: the item each sheet row went to, and how many pictures it has. */
+  records?: Array<{ sheet: string; line: number; recordId: string; images: number }>;
+};
 export type SheetRead = { title: string; sheets: SourceSheet[]; rowCounts: Record<string, number> };
 export type PickerConfig = { configured: boolean; apiKey: string; appId: string };
 

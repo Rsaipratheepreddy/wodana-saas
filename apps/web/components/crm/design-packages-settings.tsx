@@ -40,11 +40,16 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   const timingsChanged = timings.inspirationDays !== savedTimings.inspirationDays || timings.siteVisitHours !== savedTimings.siteVisitHours;
   const flowChanged = Boolean(flow && settings?.flow && JSON.stringify(flow) !== JSON.stringify(settings.flow));
   const flowValid = !flow || (flow.siteVisitQuestions.every((item) => item.question.trim()) && flow.designClientDays >= flow.designInternalDays
-    && [flow.designInternalDays, flow.designClientDays, flow.materialSelectionDays, flow.estimateDays].every((days) => days >= 1));
+    && [flow.designInternalDays, flow.designClientDays, flow.materialSelectionDays, flow.estimateDays].every((days) => days >= 1)
+    && (flow.renderClientDays ?? flow.designClientDays) >= (flow.renderInternalDays ?? flow.designInternalDays));
   const setFlowValue = <K extends keyof DesignFlow>(key: K, value: DesignFlow[K]) => { setJustSaved(false); setFlow((current) => current ? { ...current, [key]: value } : current); };
   const days = (key: "designInternalDays" | "designClientDays" | "materialSelectionDays" | "estimateDays", max: number, label: string) =>
     <TextInput aria-label={label} isDisabled={!canManage} label={null} inputMode="numeric" suffix={t("days")} value={String(flow?.[key] ?? "")}
       onChange={(value) => setFlowValue(key, Math.min(max, Number(value.replace(/\D/g, "") || 0)))} />;
+  /** A render deadline of its own, or empty to follow the design deadline. */
+  const renderDays = (key: "renderInternalDays" | "renderClientDays", label: string, fallback: number) =>
+    <TextInput aria-label={label} isDisabled={!canManage} label={null} inputMode="numeric" suffix={t("days")} placeholder={String(fallback)} value={flow?.[key] ? String(flow[key]) : ""}
+      onChange={(value) => { const digits = value.replace(/\D/g, ""); setFlowValue(key, digits ? Math.min(365, Math.max(1, Number(digits))) : null); }} />;
   const saveChanges = async () => {
     setSaving(true); setFailure(""); setNotice("");
     try {
@@ -94,6 +99,8 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     {flow ? <SettingsSection id="design-flow" title={t("Design flow")}>
       <SettingsRow hint={t("What the team works to on concepts, space planning and renders.")} label={t("Internal deadline")}>{days("designInternalDays", 365, t("Internal deadline"))}</SettingsRow>
       <SettingsRow hint={t("What the client is promised; at least the internal deadline.")} label={t("Client deadline")}>{days("designClientDays", 365, t("Client deadline"))}</SettingsRow>
+      <SettingsRow hint={t("Empty: the internal deadline above.")} label={t("3D renders, internal")}>{renderDays("renderInternalDays", t("3D renders, internal"), flow.designInternalDays)}</SettingsRow>
+      <SettingsRow hint={t("Empty: the client deadline above.")} label={t("3D renders, client")}>{renderDays("renderClientDays", t("3D renders, client"), flow.designClientDays)}</SettingsRow>
       <SettingsRow hint={t("From the start of material selection to the confirmed material list.")} label={t("Material selection")}>{days("materialSelectionDays", 90, t("Material selection"))}</SettingsRow>
       <SettingsRow hint={t("From the design approval to sharing the estimate.")} label={t("Estimate")}>{days("estimateDays", 90, t("Estimate"))}</SettingsRow>
       <SettingsRow hint={t("Free slots come from this booking page's hours, buffers and the designer's calendar.")} label={t("Showroom appointment")}>

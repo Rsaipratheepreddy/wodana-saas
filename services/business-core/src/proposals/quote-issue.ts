@@ -4,7 +4,7 @@ import { recordAudit } from "../audit/record-audit";
 import { quotePricingSnapshot, readSettings } from "../quotation/quotation-builder.service";
 import { markupDisclosure } from "./markup-disclosure";
 import { pricingHash, qsStage } from "./qs-review.domain";
-import { boqRequiredForCase } from "../fulfilment/fulfilment-rules";
+import { qsRequirement } from "./qs-requirement";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -82,8 +82,8 @@ export async function qsReviewFor(db: Db, workspaceId: string, caseId: string, q
  */
 export async function beforeQuoteIssued(db: Db, input: { workspaceId: string; caseId: string; quoteId: string; familyId: string | null; kind: string; actorUserId: string }) {
   const settings = await readSettings(db as PoolClient, input.workspaceId);
-  // PLM-083: the QS prices the order (its BOQ) when the order needs one: its own choice, else its path's default, else the firm's setting.
-  if (input.kind === "quotation" && await boqRequiredForCase(db, input.workspaceId, input.caseId, settings.qsReview)) {
+  // PLM-082/083/084: the QS confirms the pricing where the firm's rules say this quotation needs it (qs-requirement.ts).
+  if (input.kind === "quotation" && (await qsRequirement(db, input.workspaceId, input.caseId, input.quoteId)).required) {
     const review = await qsReviewFor(db, input.workspaceId, input.caseId, input.quoteId);
     const snapshot = await quotePricingSnapshot(db as PoolClient, input.workspaceId, input.caseId, input.quoteId);
     const stage = qsStage(true, review, pricingHash(snapshot.lines));

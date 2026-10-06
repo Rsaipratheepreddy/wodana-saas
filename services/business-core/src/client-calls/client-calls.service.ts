@@ -1,10 +1,10 @@
 import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { isFrequency } from "./client-calls.domain";
-import { clientCallsView, setClientCallFrequency } from "./client-calls.store";
+import { isFrequency, isMode } from "./client-calls.domain";
+import { clientCallsView, setClientCalls } from "./client-calls.store";
 
-/** PLM-046: a job's recurring client update call, read and changed on the case. */
+/** PLM-046: a job's recurring client update (a call, or a progress update in the portal), read and changed on the case. */
 @Injectable()
 export class ClientCallsService {
   constructor(private readonly access: WorkspaceAccessService) {}
@@ -16,15 +16,17 @@ export class ClientCallsService {
     });
   }
 
-  /** Weekly, every two weeks, monthly, or off (the client declined). Version-checked; audited. */
-  set(actor: RequestActor, workspaceId: string, caseId: string, input: { frequency?: unknown; version?: unknown }) {
+  /** By call or by portal update; weekly, every two weeks, monthly, or off (the client declined). Version-checked; audited. */
+  set(actor: RequestActor, workspaceId: string, caseId: string, input: { frequency?: unknown; mode?: unknown; version?: unknown }) {
     if (!isFrequency(input.frequency)) throw new UnprocessableEntityException("Choose how often");
+    if (input.mode !== undefined && !isMode(input.mode)) throw new UnprocessableEntityException("Choose a call or a portal update");
     const frequency = input.frequency;
+    const mode = isMode(input.mode) ? input.mode : undefined;
     const version = Number(input.version ?? 0);
     return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.edit"], async (client, user) => {
       await this.exists(client, workspaceId, caseId);
       await client.query(`SELECT 1 FROM pre_project_cases WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, caseId]);
-      const result = await setClientCallFrequency(client, workspaceId, caseId, frequency, version, user.userId);
+      const result = await setClientCalls(client, workspaceId, caseId, { frequency, mode }, version, user.userId);
       if (result.conflict) throw new ConflictException("Someone changed the client calls. Reload and try again.");
       return clientCallsView(client, workspaceId, caseId);
     });

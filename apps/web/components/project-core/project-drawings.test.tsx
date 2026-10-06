@@ -51,3 +51,30 @@ it("PLM-059: the project manager sends checked drawings and records the client's
   expect(screen.getByText(/Maya Client/)).toHaveTextContent("In the client portal");
   expect(screen.queryByRole("button", { name: /Upload|Record|Send/ })).not.toBeInTheDocument();
 });
+
+it("PLM-057: shows which items need drawings and which already have one, and the team decides per item with the reason", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const items = [
+    { lineId: "l1", title: "Kitchen cabinets", area: "Kitchen", catalogItemId: null, catalogId: null, catalogName: null, catalogDrawingUrl: null,
+      rule: { needed: true, reason: "bespoke" as const }, needed: true, override: null, version: 1 },
+    { lineId: "l2", title: "Sofa 3 seater", area: "Living", catalogItemId: "i2", catalogId: "c1", catalogName: "Harriet sofa", catalogDrawingUrl: "https://drive.example.com/harriet.pdf",
+      rule: { needed: false, reason: "catalogue_drawing" as const }, needed: false, override: null, version: 1 },
+  ];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
+    return { ok: true, json: async () => (url.includes("/drawings") ? state({ revisions: [], needed: true, items, canDecideItems: true }) : { project: { version: 5 } }) };
+  }));
+  render(<ProjectDrawings workspaceId="w" projectId="p" version={4} />);
+  expect(await screen.findByText("Kitchen cabinets")).toBeInTheDocument();
+  expect(screen.getByText("Bespoke")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Harriet sofa" })).toHaveAttribute("href", "https://drive.example.com/harriet.pdf");
+  expect(screen.getByText("1 need drawings")).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole("button", { name: "Change" })[1]);
+  fireEvent.click(await screen.findByRole("radio", { name: "Needed" }));
+  expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  fireEvent.change(screen.getByRole("textbox", { name: /Why/ }), { target: { value: "Client changed the arm width" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(calls.some((call) => (call.body as { action?: string } | null)?.action === "set_drawing_need")).toBe(true));
+  expect(calls.find((call) => (call.body as { action?: string } | null)?.action === "set_drawing_need")!.body)
+    .toEqual({ action: "set_drawing_need", version: 4, lineId: "l2", needed: true, reason: "Client changed the arm width" });
+});

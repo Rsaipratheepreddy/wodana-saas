@@ -135,6 +135,7 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
         installation.permit?.required || installation.permit?.collected ? { label: t("Building permit"), tone: installation.permit.valid ? undefined : "danger",
           value: <>{installation.permit.valid ? t("Collected") : installation.permit.collected ? t("Doesn't cover the delivery day") : t("Missing")}
             <small>{[installation.permit.validTo ? t("Valid until {date}", { date: format.short(installation.permit.validTo) }) : "",
+              installation.permit.valid && installation.permit.reminderOn ? t("Reminder on {date}", { date: format.short(installation.permit.reminderOn) }) : "",
               installation.permit.collectOn && !installation.permit.valid ? t("Collection on {date}", { date: format.short(installation.permit.collectOn) }) : ""].filter(Boolean).join(" · ")}</small></> } : null,
         crewFact(t("Delivery crew"), installation.deliveryCrew),
         installation.deliveryCrew?.vehicle || installation.deliveryCrew?.driver ? { label: t("Vehicle"), value: <>{installation.deliveryCrew.vehicle?.name ?? t("Not set")}

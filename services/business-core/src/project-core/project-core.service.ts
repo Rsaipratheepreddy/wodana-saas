@@ -34,6 +34,7 @@ import { holdLength, shiftForHold } from "./project-hold";
 import { noticeStageReady } from "./project-stage-watch";
 import { markNotApplicable, notApplicableRoles } from "./project-team";
 import { assertDecidable, assertSendable, drawingRoute, productionReleased, readLatestRevision } from "./project-drawings";
+import { readDrawingItems } from "./project-drawing-needs";
 import { decideDrawings } from "./project-drawing-decisions";
 import { advanceStage } from "./project-advance";
 import { DRAWING_CHECKS } from "./project-checks";
@@ -522,6 +523,25 @@ export class ProjectCoreService {
         await tellOverOrdered(client, workspaceId, projectId, user.userId, { id: sealId, label });
         notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
         audit = { quoteId: quote.id, label, total: scope.pricing.total };
+      } else if (action === "set_drawing_need") {
+        // PLM-057: whether an item needs technical drawings, decided by the project manager or the technical team against
+        // the rule (bespoke and made-to-order always; standard only without a catalogue drawing), with the reason.
+        open();
+        const stages = await readStages(client, workspaceId, [projectId]);
+        const drawingRoles = new Set(stages.filter((stage) => stage.ownerRole && stage.checks.some((check) => DRAWING_CHECKS.includes(check.kind))).map((stage) => stage.ownerRole!));
+        if (!manager && !team.some((member) => member.membershipId === membershipId && member.roles.some((role) => drawingRoles.has(role))))
+          throw new ForbiddenException("Only the project manager or the technical team can decide which items need drawings.");
+        const item = (await readDrawingItems(client, workspaceId, projectId)).find((entry) => entry.lineId === body.lineId);
+        if (!item) throw new NotFoundException("Item not found.");
+        if (body.needed !== null && typeof body.needed !== "boolean") throw new BadRequestException("Choose whether it needs drawings.");
+        const needed = body.needed as boolean | null;
+        const reason = needed === null ? "" : typeof body.reason === "string" ? body.reason.trim() : "";
+        if (needed !== null && !reason) throw new BadRequestException("Say why.");
+        if (reason.length > 500) throw new BadRequestException("Keep the reason under 500 characters.");
+        if ((item.override?.needed ?? null) === needed && (item.override?.reason ?? "") === reason) return this.detail(client, workspaceId, projectId, user);
+        await client.query(`UPDATE project_boq_lines SET drawing_needed = $3, drawing_reason = $4, drawing_set_by = $5, drawing_set_at = now(), version = version + 1, updated_at = now()
+          WHERE workspace_id = $1 AND id = $2`, [workspaceId, item.lineId, needed, reason, user.userId]);
+        audit = { lineId: item.lineId, title: item.title, rule: item.rule, from: item.override?.needed ?? null, to: needed, reason };
       } else if (["check_drawings", "send_drawings", "decide_drawings"].includes(action)) {
         // The technical drawings (PLM-058 … 060): checked on site, sent to the client, and the client's decision recorded.
         open();

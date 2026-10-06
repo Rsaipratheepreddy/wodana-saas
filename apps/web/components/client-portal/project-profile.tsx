@@ -1,10 +1,12 @@
 "use client";
 
-import { CalendarDays, ChevronRight, ExternalLink, Mail, MapPin, MessageCircle, Phone, UserRound, UsersRound, Wallet } from "lucide-react";
-import { Avatar, Button, Progress, SelectField } from "@/design-system";
+import { BellRing, CalendarDays, ChevronRight, ExternalLink, Mail, MapPin, MessageCircle, Phone, UserRound, UsersRound, Wallet } from "lucide-react";
+import { useState } from "react";
+import { Avatar, Button, InlineNotice, Progress, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import { stageName } from "@/lib/client-portal/stage-names";
-import type { PortalProject, PortalSite, PortalStep, PortalTeamMember, PortalTeamRole, PortalView } from "@/lib/client-portal/types";
+import type { PortalProject, PortalSite, PortalStep, PortalTeamMember, PortalTeamRole, PortalUpdateFrequency, PortalView } from "@/lib/client-portal/types";
 import { formatPhoneForDisplay, whatsappUrl } from "@/lib/phone";
 import { daysBetween, isolate, type PortalFormat } from "./portal-format";
 import { usePortalLabels } from "./portal-labels";
@@ -180,12 +182,50 @@ function Team({ project, site }: { project: PortalProject; site: PortalSite }) {
   </section>;
 }
 
-/** Key dates, the balance and the team: in the side column on a wide screen, at the foot of the Overview on a narrow one. */
-export function ProfileDetails({ project, site, format, today, go }: { project: PortalProject; site: PortalSite; format: PortalFormat; today: string; go: Go }) {
+type UpdateChoice = "call" | "portal" | "off";
+
+/**
+ * PLM-046: how the client hears how the work goes: a call with their Account Manager, a progress update in the portal
+ * instead, or neither; and how often. The decision-maker changes it (the team hears it); others read it.
+ */
+function Updates({ project, api, reload }: { project: PortalProject; api: PortalApi; reload: () => Promise<void> }) {
+  const t = useT();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const updates = project.updates;
+  if (!updates) return null;
+  const choice: UpdateChoice = updates.frequency === "off" ? "off" : updates.mode;
+  const often = updates.frequency === "off" ? "weekly" : updates.frequency;
+  const canChange = project.role === "approver" && !saving;
+  const save = async (next: UpdateChoice, frequency: Exclude<PortalUpdateFrequency, "off">) => {
+    if (next === choice && (next === "off" || frequency === often)) return;
+    setSaving(true); setError("");
+    try { await api.command(commandId(), { action: "update_preference", caseId: project.id, choice: next, frequency, version: updates.version }); await reload(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { setSaving(false); }
+  };
+  const choices: Array<{ id: UpdateChoice; label: string }> = [{ id: "call", label: t("Call") }, { id: "portal", label: t("Portal update") }, { id: "off", label: t("No updates") }];
+  const rhythms: Array<{ id: Exclude<PortalUpdateFrequency, "off">; label: string }> = [
+    { id: "weekly", label: t("Weekly") }, { id: "fortnightly", label: t("Every two weeks") }, { id: "monthly", label: t("Monthly") }];
+  return <section className={styles.profileBlock} aria-labelledby={`updates-${project.id}`}>
+    <h2 className={styles.groupTitle} id={`updates-${project.id}`}><BellRing aria-hidden="true" className={styles.cardIcon} size={15} />{t("Your updates")}</h2>
+    <SelectField label={t("Update by")} isDisabled={!canChange} selectedKey={choice} items={choices}
+      onSelectionChange={(key) => { if (key) void save(String(key) as UpdateChoice, often); }} />
+    {choice !== "off" ? <SelectField label={t("How often")} isDisabled={!canChange} selectedKey={often} items={rhythms}
+      onSelectionChange={(key) => { if (key) void save(choice, String(key) as Exclude<PortalUpdateFrequency, "off">); }} /> : null}
+    {error ? <InlineNotice tone="error" message={error} /> : null}
+  </section>;
+}
+
+/** Key dates, the balance, the team and how they keep the client updated: in the side column on a wide screen, at the foot of the Overview on a narrow one. */
+export function ProfileDetails({ project, site, format, today, go, api, reload }: { project: PortalProject; site: PortalSite; format: PortalFormat; today: string; go: Go;
+  /** To change how the client hears how the work goes (absent where it is only read). */
+  api?: PortalApi; reload?: () => Promise<void> }) {
   return <>
     <KeyDates project={project} format={format} today={today} />
     <Balance project={project} format={format} go={go} />
     <Team project={project} site={site} />
+    {api && reload ? <Updates project={project} api={api} reload={reload} /> : null}
   </>;
 }
 

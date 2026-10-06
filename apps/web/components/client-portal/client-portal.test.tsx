@@ -520,4 +520,35 @@ describe("client portal", () => {
     await user.click(card.getByRole("button", { name: /Next for you.*Material list to sign off/ }));
     expect(await screen.findByRole("dialog", { name: "Material list · R1" })).toBeInTheDocument();
   });
+
+  it("lets the decision-maker choose a call, a portal update or no updates, and how often (PLM-046)", async () => {
+    let updates: PortalProject["updates"] = { mode: "call", frequency: "weekly", version: 1 };
+    const fetcher = mount((url) => {
+      if (url.endsWith("/command")) { updates = { mode: "portal", frequency: "weekly", version: 2 }; return { body: { ok: true, updates } }; }
+      return { body: view({}, [project({ updates })]) };
+    });
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    const block = within(await screen.findByRole("region", { name: "Your updates" }));
+    expect(block.getByRole("button", { name: /Update by/ })).toHaveTextContent("Call");
+    expect(block.getByRole("button", { name: /How often/ })).toHaveTextContent("Weekly");
+    await user.click(block.getByRole("button", { name: /Update by/ }));
+    await user.click(await screen.findByRole("option", { name: "Portal update" }));
+    await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "update_preference", caseId: "c1", choice: "portal", frequency: "weekly", version: 1 })]));
+    await waitFor(() => expect(within(screen.getByRole("region", { name: "Your updates" })).getByRole("button", { name: /Update by/ })).toHaveTextContent("Portal update"));
+  });
+
+  it("shows a viewer their updates without letting them change them, and nothing before the team sets them up (PLM-046)", async () => {
+    mount(() => ({ body: view({}, [project({ role: "viewer", updates: { mode: "call", frequency: "off", version: 3 } })]) }));
+    const { unmount } = render(<PortalApp site={site} />);
+    const block = within(await screen.findByRole("region", { name: "Your updates" }));
+    expect(block.getByRole("button", { name: /Update by/ })).toHaveTextContent("No updates");
+    expect(block.getByRole("button", { name: /Update by/ })).toBeDisabled();
+    expect(block.queryByRole("button", { name: /How often/ })).toBeNull();
+    unmount();
+    mount(() => ({ body: view({}, [project({ updates: null })]) }));
+    render(<PortalApp site={site} />);
+    await screen.findByRole("complementary", { name: "Your project" });
+    expect(screen.queryByRole("region", { name: "Your updates" })).toBeNull();
+  });
 });

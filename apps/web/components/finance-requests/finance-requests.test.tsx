@@ -32,7 +32,7 @@ const context = (patch: Partial<RequestContext> = {}): RequestContext => ({
   deal: { id: "o1", reference: "O-0012", title: "Villa 12", legalEntityId: "e1", salespersonName: "Sara Sales", currency: "AED" }, project: null, caseId: "k1",
   stages: [{ id: "deposit", title: "Deposit 50%", trigger: "", dueDate: "2026-10-01", currency: "AED", amount: "10500.0000", legalEntityId: null }], quotes: [],
   companies: [{ id: "e1", name: "Studio Interiors", currency: "AED", taxLabel: "VAT", rates: [{ code: "sr", label: "Standard", rate: "5", isDefault: true }] }], defaultCompanyId: "e1",
-  methods: [], people: [{ id: "u1", name: "Fatima Finance" }], currency: "AED", taxNumberLabel: "TRN", refundDays: null, me: "u2", ...patch,
+  methods: [], people: [{ id: "u1", name: "Fatima Finance" }], currency: "AED", taxNumberLabel: "TRN", me: "u2", ...patch,
 });
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
@@ -55,7 +55,7 @@ describe("finance requests", () => {
 
   it("lists the requester's requests with where each stands, and shows them as a board by status", async () => {
     const board: FinanceRequestsBoard = { requests: [request(), request({ id: "r2", reference: "FR-0002", kind: "refund", status: "needs_info", total: "3200.0000", approvalStatus: "pending" })],
-      canManage: false, canRaise: true, me: "u2", settings: { refundDays: null, financeInboxSet: true } };
+      canManage: false, canRaise: true, me: "u2", settings: { financeInboxSet: true } };
     mount(() => board);
     render(<DesignSystemProvider><FinanceRequests workspaceId="w" openId={null} onOpen={vi.fn()} raising={false} onRaised={vi.fn()} /></DesignSystemProvider>);
     expect(await screen.findAllByText("Mohamed Vora")).toHaveLength(2);
@@ -88,6 +88,31 @@ describe("finance requests", () => {
       clientEmail: "mohamed@example.com", lines: [{ description: "Kitchen joinery", quantity: "1", unitPrice: "10000" }] });
     expect(sent.body.commandId).toEqual(expect.any(String));
     expect(await screen.findByText("FR-0001 is with Finance.")).toBeInTheDocument();
+  });
+
+  it("asks for the refund method and shows that method's guidance and timeline (PLM-109)", async () => {
+    const methods = [
+      { id: "m1", label: "Bank transfer / card", refundGuidance: "Beneficiary is added within 24 hours.", needsBankDetails: true, refundDays: 15, position: 1, version: 1 },
+      { id: "m2", label: "Stripe", refundGuidance: "", needsBankDetails: false, refundDays: 7, position: 2, version: 1 },
+      { id: "m3", label: "Tabby", refundGuidance: "", needsBankDetails: false, refundDays: null, position: 3, version: 1 },
+    ];
+    mount((url) => (url.includes("/context") ? context({ methods }) : []));
+    render(<DesignSystemProvider><RequestForm api={financeRequestsApi("w")} origin={{ opportunityId: "o1" }} onClose={vi.fn()} onSaved={vi.fn()} /></DesignSystemProvider>);
+    const dialog = await screen.findByRole("dialog", { name: "New request to Finance" });
+    await waitFor(() => expect(within(dialog).getByRole("textbox", { name: "Client" })).toHaveValue("Mohamed Vora"));
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Refund" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: /Refund method/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Stripe" }));
+    expect(within(dialog).getByText("Expected about 7 days after approval.")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("textbox", { name: /Client bank details/ })).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: /Refund method/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Bank transfer / card" }));
+    expect(within(dialog).getByText("Expected about 15 days after approval.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Beneficiary is added within 24 hours.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: /Client bank details/ })).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: /Refund method/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Tabby" }));
+    expect(within(dialog).queryByText(/Expected about/)).not.toBeInTheDocument();
   });
 
   it("fills a payment stage's line before tax, and asks a company client for its tax number", async () => {

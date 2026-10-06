@@ -47,28 +47,38 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
       const seen = new Set<string>();
       const steps: Step[] = [];
 
+      const codeMapped = Object.values(link.mapping?.columns ?? {}).includes("code");
       for (const row of rows) {
-        const code = row.key.trim();
-        const name = (row.values.name ?? "").trim();
+        // Matched by the code; a row without one by its name, size and colour (the item's name in Wodana carries the size and colour).
+        const key = row.key.trim();
+        const code = (row.values.code ?? "").trim();
+        const variant = [row.values.size, row.values.colour].map((part) => (part ?? "").trim()).filter(Boolean).join(", ");
+        const written = (row.values.name ?? "").trim();
+        const name = written && variant ? `${written} (${variant})` : written;
         const unit = (row.values.unit ?? "").trim();
-        const base = { sheet: row.sheet, line: row.line, key: code, name: name || code, changes: [] as string[], message: "", recordKey: null as string | null, locationId: null as string | null };
+        const base = { sheet: row.sheet, line: row.line, key, name: name || key, changes: [] as string[], message: "", recordKey: null as string | null, locationId: null as string | null };
         const fail = (message: string): Step => ({ ...base, outcome: "error", message });
         try {
-          if (!code) { steps.push(fail("No item code.")); continue; }
+          if (!key) { steps.push(fail(codeMapped ? "No item code or name." : "No item name.")); continue; }
           if (code.length > 80) { steps.push(fail("The code is longer than 80 characters.")); continue; }
           if (name.length > 240) { steps.push(fail("The name is longer than 240 characters.")); continue; }
           if (unit.length > 40) { steps.push(fail("The unit is longer than 40 characters.")); continue; }
           const place = placeFor(row, places, home);
           base.locationId = place.id;
-          base.recordKey = recordKey(code, place.id);
-          if (seen.has(base.recordKey)) { steps.push(fail(`Code ${code} is on another row for ${place.name}.`)); continue; }
+          base.recordKey = recordKey(key, place.id);
+          if (seen.has(base.recordKey)) { steps.push(fail(code ? `Code ${code} is on another row for ${place.name}.` : `${key} is on another row for ${place.name}.`)); continue; }
           seen.add(base.recordKey);
-          const quantity = row.values.quantity === undefined ? null : sheetNumber(row.values.quantity, "Quantity", { places: 4, max: "99999999999999" });
+          const received = row.values.quantity === undefined ? null : sheetNumber(row.values.quantity, "Quantity", { places: 4, max: "99999999999999" });
+          // A sheet that keeps what came in and what was used: what's left is on hand.
+          const used = row.values.usedQuantity === undefined ? null : sheetNumber(row.values.usedQuantity, "Used quantity", { places: 4, max: "99999999999999" });
+          if (used !== null && Dec.of(used).cmp(received ?? "0") > 0) { steps.push(fail(`${quantityText(used)} used is more than the ${quantityText(received ?? "0")} received.`)); continue; }
+          const quantity = used === null ? received : Dec.of(received ?? "0").sub(used).toString();
           const cost = row.values.cost === undefined ? null : sheetNumber(row.values.cost, "Cost", { places: 4, max: "99999999999999" });
 
-          const known = context.records.get(base.recordKey) ?? [...context.records.values()].find((record) => lower(record.key) === lower(code));
+          const known = context.records.get(base.recordKey) ?? [...context.records.values()].find((record) => lower(record.key) === lower(key));
           let item = known ? byId.get(known.recordId) : undefined;
-          if (!item) {
+          if (!item && !code && name) item = byName.get(normalKey(name, unit));
+          if (!item && code) {
             const matches = byCode.get(lower(code)) ?? [];
             if (matches.length > 1) { steps.push(fail(`${matches.length} stock items have code ${code}. Keep one code per item.`)); continue; }
             item = matches[0];
@@ -77,7 +87,7 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
           if (!item) {
             if (!name) { steps.push(fail("Name the item: it's new to Wodana.")); continue; }
             const same = byName.get(normalKey(name, unit));
-            if (same?.code.trim() && lower(same.code) !== lower(code)) { steps.push(fail(`${name} is already item ${same.code}.`)); continue; }
+            if (same?.code.trim() && code && lower(same.code) !== lower(code)) { steps.push(fail(`${name} is already item ${same.code}.`)); continue; }
             adopt = same ?? null;
           }
           const target = item ?? adopt;
@@ -90,7 +100,7 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
           if (target?.catalogItemId && name && name !== target.name) base.message = "The catalog names this item.";
           if (rename) base.changes.push(`Name ${target!.name} → ${name}`);
           if (reunit) base.changes.push(`Unit ${target!.unit || "—"} → ${unit || "—"}`);
-          if (adopt && lower(adopt.code) !== lower(code)) base.changes.push(`Code → ${code}`);
+          if (adopt && code && lower(adopt.code) !== lower(code)) base.changes.push(`Code → ${code}`);
 
           // The quantity: only when the sheet's number moved since the last import and Wodana holds something else.
           let count: string | null = null;
@@ -107,12 +117,12 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
           const keepQuantity = link.setsStock ? quantity : null;
           if (!target) {
             steps.push({ ...base, outcome: "added", apply: async () => {
-              const earlier = made.get(lower(code));
+              const earlier = made.get(lower(code || key));
               const itemId = earlier ?? await stockItemFor(client, workspaceId, { catalogItemId: null, name, unit, code });
               await client.query(`UPDATE stock_items SET code = $3 WHERE workspace_id = $1 AND id = $2 AND code = ''`, [workspaceId, itemId, code]);
               if (count !== null) await countTo(itemId, place, count, cost);
               // Kept only once the row is saved: a failed row is rolled back with the item it made.
-              if (!earlier) made.set(lower(code), itemId);
+              if (!earlier) made.set(lower(code || key), itemId);
               return { recordId: itemId, locationId: place.id, quantity: keepQuantity };
             } });
             continue;
@@ -122,9 +132,9 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
             if (adopt || rename || reunit) {
               const nextName = rename ? name : target.name, nextUnit = reunit ? unit : target.unit;
               await client.query(`UPDATE stock_items SET name = $3, unit = $4, normal_key = $5, code = CASE WHEN $6::boolean THEN $7 ELSE code END WHERE workspace_id = $1 AND id = $2`,
-                [workspaceId, target.id, nextName, nextUnit, normalKey(nextName, nextUnit), Boolean(adopt), code]);
+                [workspaceId, target.id, nextName, nextUnit, normalKey(nextName, nextUnit), Boolean(adopt && code), code]);
               await recordAudit(client, { workspaceId, actorUserId: context.userId, action: "stock.item_changed", entityType: "stock_item", entityId: target.id,
-                before: { name: target.name, unit: target.unit, code: target.code }, after: { name: nextName, unit: nextUnit, code: adopt ? code : target.code, reason: IMPORT_REASON } });
+                before: { name: target.name, unit: target.unit, code: target.code }, after: { name: nextName, unit: nextUnit, code: adopt && code ? code : target.code, reason: IMPORT_REASON } });
             }
             if (count !== null) await countTo(target.id, place, count, cost);
             return { recordId: target.id, locationId: place.id, quantity: keepQuantity };

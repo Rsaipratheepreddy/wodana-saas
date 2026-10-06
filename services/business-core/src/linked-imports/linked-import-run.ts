@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import type { ImportTarget, PlannedRow, SourceRow } from "./linked-import-source";
+import type { ColumnMapping, ImportTarget, PlannedRow, SourceRow } from "./linked-import-source";
 
 /** What a link imports into, and how. */
 export type LinkSettings = {
@@ -7,6 +7,8 @@ export type LinkSettings = {
   catalogId: string | null; locationId: string | null; itemType: string | null; setsStock: boolean;
   /** Suppliers: the company the sheet's suppliers sell to (added to each), when it's one company's list. */
   legalEntityId: string | null;
+  /** How the sheet's columns map (the chosen tabs, and for suppliers each tab's company). */
+  mapping?: ColumnMapping;
 };
 
 /** Which Wodana record a key became (and, for stock, at which place and the quantity last taken from the sheet). */

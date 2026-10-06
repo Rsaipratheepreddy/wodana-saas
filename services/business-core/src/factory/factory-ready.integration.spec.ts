@@ -10,6 +10,7 @@ import { seedDefaultNotificationTemplates } from "../notifications/default-templ
 import { ProjectCoreService } from "../project-core/project-core.service";
 import { OrdersService } from "../purchasing/orders.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
+import { remindBeforeReady } from "./factory-ready";
 import { FactoryService } from "./factory.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -221,6 +222,41 @@ integration("factory order ready (PLM-064, PLM-065, PLM-067)", () => {
       expect((await told(w, "factory.order_ready"))[0].body).toContain("payment reminders are off");
       expect((await told(w, "factory.project_ready")).length).toBe(0);
       expect((await w.client.query("SELECT count(*)::int AS count FROM crm_payment_reminders WHERE workspace_id = $1", [w.workspaceId])).rows[0].count).toBe(0);
+    });
+  });
+
+  it("PLM-067: reminds the client the firm's days before the latest planned ready date of the stage's work orders, once, with the reason", async () => {
+    await world(async (w) => {
+      const { maker, checker, joinery, lines } = await started(w);
+      const cabinets = lines.find((line) => line.title === "Kitchen cabinets")!, worktop = lines.find((line) => line.title === "Worktop")!;
+      await w.client.query("INSERT INTO client_portal_settings (workspace_id, slug, enabled) VALUES ($1, $2, true)", [w.workspaceId, `fr-${w.workspaceId.slice(0, 8)}`]);
+      await w.client.query("INSERT INTO client_portal_grants (workspace_id, case_id, name, phone, role, email) VALUES ($1, $2, 'Maya Client', '+971500000001', 'approver', 'maya@example.com')", [w.workspaceId, w.caseId]);
+      const today = (await w.client.query<{ today: string }>("SELECT (now() AT TIME ZONE 'Asia/Dubai')::date::text AS today")).rows[0].today;
+      const plus = (by: number) => new Date(Date.parse(`${today}T00:00:00Z`) + by * 86_400_000).toISOString().slice(0, 10);
+      const settings = await maker.settings(actor, w.workspaceId);
+      expect(settings.settings.balanceReminderDays).toBe(7);
+      await expect(maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, balanceReminderDays: 120 })).rejects.toThrow(/0 to 90/);
+      const first = randomUUID(), second = randomUUID();
+      let order = await maker.plan(actor, w.workspaceId, { id: first, lineId: cabinets.id, quantity: "4.5", workcenterId: joinery, plannedStart: today, plannedEnd: plus(5) });
+      order = await maker.command(actor, w.workspaceId, first, { action: "link_payment", paymentId: "p2", version: order.order.version });
+      // The worktop has no planned date yet: the stage waits.
+      let worktopOrder = await maker.plan(actor, w.workspaceId, { id: second, lineId: worktop.id, quantity: "2.25", workcenterId: joinery });
+      expect(worktopOrder.order.readyPaymentId).toBe("p2");
+      expect(await remindBeforeReady(w.client, w.workspaceId, today)).toBe(0);
+      // Planned for 12 days from now: the latest ready date is more than a week away.
+      worktopOrder = await maker.command(actor, w.workspaceId, second, { action: "update", plannedStart: today, plannedEnd: plus(12), version: worktopOrder.order.version });
+      expect(await remindBeforeReady(w.client, w.workspaceId, today)).toBe(0);
+      // Brought forward to 6 days: within the week before, so the client is reminded now, once.
+      worktopOrder = await maker.command(actor, w.workspaceId, second, { action: "update", plannedStart: today, plannedEnd: plus(6), version: worktopOrder.order.version });
+      expect(await remindBeforeReady(w.client, w.workspaceId, today)).toBe(1);
+      expect(await remindBeforeReady(w.client, w.workspaceId, today)).toBe(0);
+      order = await maker.order(actor, w.workspaceId, first);
+      expect(order.readyReminder).toMatchObject({ reason: "before_ready", plannedReadyOn: plus(6), readyOn: null, outcome: "sent", channel: "email" });
+      // When everything is made, the stage isn't reminded again.
+      await makeIt(maker, checker, w.workspaceId, first, "4.5", "");
+      order = await makeIt(maker, checker, w.workspaceId, second, "2.25", "");
+      expect(order.readyReminder).toMatchObject({ reason: "before_ready" });
+      expect((await w.client.query("SELECT count(*)::int AS count FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.payment_due'", [w.workspaceId])).rows[0].count).toBe(1);
     });
   });
 });

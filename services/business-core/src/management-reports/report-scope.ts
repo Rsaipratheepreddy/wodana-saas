@@ -118,12 +118,28 @@ export const week = (expression: string) =>
 const NAME = (user: string) => `COALESCE(NULLIF(btrim(${user}.display_name), ''), ${user}.primary_email)`;
 
 /**
+ * A won deal is cancelled when its order was cancelled (on the deal, or by a full refund) or its job (the planning
+ * case) was cancelled; the earlier of the two dates. Cancelled deals stay recorded and are reported apart from Won.
+ * `o` is a crm_opportunities alias, `pc` its pre_project_cases row.
+ */
+export const dealCancelledAt = (o: string, pc: string) => `least(
+    (SELECT f.cancelled_at FROM crm_deal_fulfilment f WHERE f.workspace_id = ${o}.workspace_id AND f.opportunity_id = ${o}.id),
+    CASE WHEN ${pc}.status = 'cancelled' THEN ${pc}.cancelled_at END)`;
+/** Whether an opportunity was ever won: Won, or one of its proposals has its payment proof. */
+export const everWon = (o: string) => `(${o}.status = 'won' OR EXISTS (SELECT 1 FROM crm_opportunity_proposals won_proposal
+    WHERE won_proposal.workspace_id = ${o}.workspace_id AND won_proposal.opportunity_id = ${o}.id AND won_proposal.won_at IS NOT NULL))`;
+
+/**
  * Opportunities with what the filters read, already filtered: one row per opportunity (`oc`). The package is the
  * design journey's, else the one chosen in discovery; the client and the Account Manager are named for lists.
+ * `cancelled_at` is set on a won deal that was cancelled (dealCancelledAt), with why.
  */
 export const OPPORTUNITIES = `oc AS (
   SELECT o.id AS opportunity_id, o.reference, o.title, o.status, o.stage_id, o.amount, btrim(o.currency_code) AS currency_code,
          o.owner_membership_id AS am, o.lead_id, o.closed_at, o.created_at, o.outcome_reason,
+         CASE WHEN ${everWon("o")} THEN ${dealCancelledAt("o", "pc")} END AS cancelled_at,
+         COALESCE(NULLIF(btrim((SELECT f.cancel_reason FROM crm_deal_fulfilment f WHERE f.workspace_id = o.workspace_id AND f.opportunity_id = o.id AND f.cancelled_at IS NOT NULL)), ''),
+                  NULLIF(btrim(CASE WHEN pc.status = 'cancelled' THEN pc.cancellation_reason END), '')) AS cancel_reason,
          pc.id AS case_id, pc.status AS case_status, e.service_type AS enquiry_type,
          COALESCE(j.package_id, d.design_package_id) AS package_id, o.legal_entity_id AS entity_id,
          party.display_name AS client, ${NAME("am_user")} AS owner
@@ -149,6 +165,10 @@ export const OPPORTUNITIES = `oc AS (
 /** As OPPORTUNITIES, with the entity filter too (records whose money has no entity of its own). */
 export const OPPORTUNITY_ENTITY = `(p.entity_id IS NULL OR oc.entity_id = p.entity_id)`;
 
+/** No filter that only an opportunity or an enquiry can carry is on (a record without either still counts then). */
+export const NO_SALES_FILTERS = `(p.am IS NULL AND p.enquiry_type IS NULL AND p.client_type IS NULL AND p.source IS NULL AND p.channel IS NULL
+  AND p.region IS NULL AND p.package_id IS NULL)`;
+
 /**
  * Enquiries (leads) with what the filters read, already filtered, spam left out: one row per lead (`lc`). The lead's
  * opportunity (if it became one) gives the package and, first, the entity. Without the owner filter, a KPI applies the
@@ -156,6 +176,7 @@ export const OPPORTUNITY_ENTITY = `(p.entity_id IS NULL OR oc.entity_id = p.enti
  */
 export const leadsCte = (ownerFilter = true) => `lc AS (
   SELECT l.id AS lead_id, l.status, l.created_at, l.owner_membership_id AS am, l.next_action_at, l.duplicate_of_lead_id,
+         l.closed_at, l.disqualification_reason,
          e.reference, COALESCE(NULLIF(btrim(e.title), ''), e.reference) AS title, e.source, e.channel, e.original_source,
          e.service_type AS enquiry_type, party.display_name AS client, ${NAME("am_user")} AS owner, o.id AS opportunity_id
     FROM crm_leads l CROSS JOIN p
@@ -202,5 +223,6 @@ export const href = {
   case: (id: string, section = "") => `/workspace/pre-projects/cases/${id}${section ? `/${section}` : ""}`,
   project: (id: string) => `/workspace/projects/${id}/overview`,
   invoice: (id: string) => `/workspace/finance/client-invoices?invoice=${id}`,
+  financeRequest: (id: string) => `/workspace/finance/requests?request=${id}`,
   quote: (caseId: string, quoteId: string) => `/workspace/pre-projects/cases/${caseId}/quotations?quote=${encodeURIComponent(quoteId)}`,
 };

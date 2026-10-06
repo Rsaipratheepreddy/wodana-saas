@@ -9,11 +9,15 @@ import { quotationPath } from "@/lib/quotation/client";
 import { VIEW_LABEL } from "@/lib/quotation/format";
 import type { QuotationSettings as Settings, QuoteView } from "@/lib/quotation/types";
 import { ProposalKitSettings } from "./proposal-kit-settings";
+import { qsItemTypeLabels } from "./quote-qs";
 import { ProposalTemplateSettings } from "./proposal-template-settings";
 import { QuotationNumberingSettings } from "./quotation-numbering-settings";
 import styles from "./quotation-settings.module.css";
 
-type Loaded = { settings: Settings; workPackages: Array<{ id: string; name: string; archived: boolean }>; priceBooks: Array<{ id: string; name: string; currency: string; status: string }>;
+/** Catalogue kinds a firm can mark for QS review, in the order the server keeps them (sorted). */
+const QS_ITEM_TYPES = ["assembly", "material", "package", "product", "ready_made", "service"] as const;
+
+type Loaded = { settings: Settings; workPackages: Array<{ id: string; name: string; archived: boolean; qsReview?: boolean }>; priceBooks: Array<{ id: string; name: string; currency: string; status: string }>;
   paymentTemplates?: Array<{ id: string; name: string }>; canManage: boolean };
 
 async function call<T>(url: string, method = "GET", body?: unknown): Promise<T> {
@@ -53,6 +57,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
   const dirty = JSON.stringify(form) !== JSON.stringify(data.settings);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => { setForm({ ...form, [key]: value }); setSaved(false); };
   const number = (value: string) => value.replace(/[^\d.]/g, "");
+  const kinds = qsItemTypeLabels(t);
 
   const save = async () => {
     setBusy(true); setError("");
@@ -68,7 +73,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
     try { await call(quotationPath(workspaceId, "work-packages"), "POST", { id: crypto.randomUUID(), name }); setTrade(""); await load(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
   };
-  const updateTrade = async (id: string, patch: { name?: string; archived?: boolean }) => {
+  const updateTrade = async (id: string, patch: { name?: string; archived?: boolean; qsReview?: boolean }) => {
     try { const list = await call<Loaded["workPackages"]>(quotationPath(workspaceId, `work-packages/${id}`), "PATCH", patch); setData({ ...data, workPackages: list }); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
   };
@@ -130,6 +135,15 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("QS prices quotations")} hint={t("A QS confirms the pricing before a quotation can go to the client.")}>
         <Switch aria-label={t("QS prices quotations")} isDisabled={readOnly} isSelected={Boolean(form.qsReview)} onChange={(value) => set("qsReview", value)} />
       </SettingsRow>
+      {form.qsReview ? <SettingsRow label={t("Quotations the QS prices")} hint={t("Rules: work packages and catalogue kinds marked for QS review, and orders that need a BOQ. Design Fee proposals skip the QS.")}>
+        <SelectField aria-label={t("Quotations the QS prices")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.qsReviewScope ?? "all"}
+          onSelectionChange={(key) => set("qsReviewScope", key === "rules" ? "rules" : "all")}
+          items={[{ id: "all", label: t("Every quotation") }, { id: "rules", label: t("Only where the rules apply") }]} />
+      </SettingsRow> : null}
+      {form.qsReview && form.qsReviewScope === "rules" ? <SettingsRow align="start" label={t("Catalogue kinds for QS review")}>
+        <div className={styles.kinds}>{QS_ITEM_TYPES.map((type) => <Checkbox key={type} isDisabled={readOnly} isSelected={(form.qsReviewItemTypes ?? []).includes(type)}
+          onChange={(on) => set("qsReviewItemTypes", QS_ITEM_TYPES.filter((item) => (item === type ? on : (form.qsReviewItemTypes ?? []).includes(item))))}>{kinds[type]}</Checkbox>)}</div>
+      </SettingsRow> : null}
       <SettingsRow label={t("Signing link open for (days)")}>
         <TextInput aria-label={t("Signing link open for (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.signingLinkDays ?? 14)}
           onChange={(value) => set("signingLinkDays", Number(value.replace(/\D/g, "") || 0))} />
@@ -159,6 +173,8 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
     <SettingsSection id="work-packages" title={t("Work packages")}>
       {data.workPackages.length ? <ul className={styles.trades}>{data.workPackages.map((item) => <li key={item.id} data-archived={item.archived || undefined}>
         <TradeName name={item.name} readOnly={readOnly || item.archived} onRename={(name) => void updateTrade(item.id, { name })} />
+        {form.qsReview && form.qsReviewScope === "rules" && !item.archived ? <Checkbox isDisabled={readOnly} isSelected={Boolean(item.qsReview)}
+          onChange={(qsReview) => void updateTrade(item.id, { qsReview })}>{t("QS review")}</Checkbox> : null}
         {readOnly ? null : <Button size="compact" variant="quiet" onPress={() => void updateTrade(item.id, { archived: !item.archived })}>{item.archived ? t("Restore") : t("Archive")}</Button>}
       </li>)}</ul> : <p className={styles.muted}>{t("No work packages yet. Add the trades you quote by, like joinery or electrical.")}</p>}
       {readOnly ? null : <Form className={styles.addTrade} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void addTrade(); }}>

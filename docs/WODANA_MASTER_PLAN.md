@@ -180,7 +180,7 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
     - **Dashboards (PLM-104/105):** wanted from the start, at medium priority, built right after the flow from the management sheet in the tracker.
     - **Suppliers and entities:** two supplier-list sheets, plus PLM's TRN and docs, are in the "Wodana x PLM" shared folder.
 13. **Palm answers, 6 Oct (second round):**
-    - **Refunds:** a refund-method dropdown, each method with its own timeline, editable in Settings. Methods: bank transfer / card, Stripe, Tabby (TBC); Finance sends the final list.
+    - **Refunds:** a refund-method dropdown, each method with its own timeline, editable in Settings. Methods: bank transfer / card, Stripe, Tabby (TBC); Finance sends the final list. *Built:* Finance › Requests › Settings › Payment methods carries each method's refund days and guidance; the refund request picks its Refund method and keeps that method's days, so the expected date (calendar days after approval) never moves when the setting changes. Palm enters its methods in the app.
     - **Payables:** Finance is the first approver; a second approver above an amount is optional. Both are settings, values to follow.
     - **Factory steps:** Scheduled → In Production → Quality Check → Ready → Permit Collection → Delivery, kept editable. The Factory Manager and Project Director confirm.
     - **Vehicles:**
@@ -198,8 +198,8 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
     - **Balance reminder:** when all items for that payment are ready, ideally 1 week before the latest ready date.
     - **Renders:** up to 8 weeks for the client (internal 0–5 weeks), 2 revisions included.
     - **Client update:** weekly call by default from design approval. The client can decline or change the frequency, or choose portal update reminders instead of calls.
-    - **Sales:** quote validity 7 days. QS review only for joinery, bespoke furniture and main proposals that include joinery; standard furniture and Design Fee proposals skip QS. Lead response: 1 working hour, Mon–Fri 9:00–18:00, so a lead at 18:05 Friday is due Monday 10:00.
-    - **Dashboards:** Lost = lost opportunities only ("Not interested" enquiries shown separately). Won excludes cancelled deals, which stay recorded and are reported separately (cancellations/refunds line, net revenue). Targets to follow.
+    - **Sales:** quote validity 7 days. QS review only for joinery, bespoke furniture and main proposals that include joinery; standard furniture and Design Fee proposals skip QS. Lead response: 1 working hour, Mon–Fri 9:00–18:00, so a lead at 18:05 Friday is due Monday 10:00. *Built:* QS rules per quotation (§6.8); the first-response clock already runs on the workspace's working week (integration-tested with exactly this case).
+    - **Dashboards:** Lost = lost opportunities only ("Not interested" enquiries shown separately). Won excludes cancelled deals, which stay recorded and are reported separately (cancellations/refunds line, net revenue). Targets to follow. *Built:* §6.27a.
 12. Locked name/phone after Qualified (E1-6): should an edit request go to an admin for approval, or is "ask a Sales admin" enough?
 
 ### 0.6 Handover
@@ -1057,7 +1057,7 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 | PLM-103 / PLM-009 Proposal 1 and 2 | **Build** (answered by the tab) | Two proposals in one job: Proposal 1 = design fee, Proposal 2 = main quotation. Each has its own proof, Won date, Deal File approval and lock. Reports show design and production revenue separately, and the opportunity is counted once in conversion. |
 | PLM-101 Opportunity value verify and lock | **Better** | On the E3 approval engine: value entered → Finance verifies (notice) → the Deal File approver locks it. A change after the lock is a new approval with the old and new values. |
 | E3 approval engine | **Build** | Policies per workspace: what (deal file, value lock, quote send, discount, refund, payable, PO, change request), amount ≥ X in the document currency, approvers in order (role or person), Owner for large amounts, escalation after N hours, separation of duties (the requester can't approve), delegation when away. One Approvals inbox. Edge cases E3-1…E3-6. |
-| PLM-082 / 084 QS before the client | **Build** | Quotation hand-off Sales Admin → QS (named status "With QS"), QS prices and confirms (an E3 decision with who and when), and sending to the client is blocked until QS has confirmed. Read-only for Sales on QS lines. |
+| PLM-082 / 084 QS before the client | **Build** | Quotation hand-off Sales Admin → QS (named status "With QS"), QS prices and confirms (an E3 decision with who and when), and sending to the client is blocked until QS has confirmed. Read-only for Sales on QS lines. **Where it applies** (Settings › Quotations): the QS switch is the master switch; "Quotations the QS prices" is every quotation (unless the order needs no BOQ) or only where the rules apply: the deal's order or path needs a BOQ, or the quotation has a line in a work package marked "QS review" or a catalogue item of a kind marked for QS review. Under the rules, Design Fee proposals and standard-items-only quotations skip the QS. The quote shows why ("QS review: needed because of Joinery lines"). |
 | PLM-085 5-page proposal | **Build** | A proposal template per firm: pages 1–3 and 5 locked (uploaded designed pages or Canva later), page 4 = the live quotation. One PDF; locked pages can't be edited from the quote. |
 | Quotation numbering (client 2, #13) | **Build** | Prefix, suffix and sequence per entity and document type, gap-free, from settings; uploading an external quotation keeps its own number. |
 | R8 e-sign | **Build** | Our own e-signature for proposals and change requests: typed or drawn, signer identity, time, IP, document hash, certificate page; the signed PDF goes to the decisions ledger (E5). |
@@ -1673,23 +1673,26 @@ Edge cases: provider down (queue and retry, visible status); token revoked (conn
 **1 · Owner overview**
 | KPI | Definition |
 | --- | --- |
-| Sales Won | Proposals whose payment proof was attached in the period (each of Design Fee and Proposal 2 once, on its Won date); value net of tax; a deal won before proposals existed counts as Proposal 2. Monthly bar, Design Fee vs Proposal 2 stacked. Targets: value and count. |
+| Sales Won | Proposals whose payment proof was attached in the period (each of Design Fee and Proposal 2 once, on its Won date); value net of tax; a deal won before proposals existed counts as Proposal 2. Cancelled deals are never Won (see Cancellations and refunds). Monthly bar, Design Fee vs Proposal 2 stacked. Targets: value and count. |
 | Revenue collected | Client receipts with status Finance verified, dated when verified (else reported), net of tax by their payment stage's quotation; receipt's entity. Line with invoiced (issued tax invoices' net, by issue date). |
+| Net revenue | Revenue collected less refunds paid in the period: client refund requests Finance completed (Done), dated when closed, net of tax by the deal's main quotation (else as entered, noted); the request's company, else its deal's. A refund without a deal counts only while no sales filter is on. Drill-down lists receipts and refunds (refunds negative). Line: net, collected, refunded. Target: value. |
+| Cancellations and refunds | Won deals cancelled in the period — the order cancelled (on the deal or by a full refund) or the job cancelled, dated when cancelled; value = their won proposals net of tax, else the deal's value — and the period's refunds paid (as in Net revenue). Figure = cancelled deals; refunds beside it. Monthly columns, cancelled value vs refunded. Cancelled deals stay recorded, never deleted. |
 | Outstanding balances | Live jobs: each payment stage's amount less Finance-verified, non-reversed allocations (≥ 0); incl. tax; ageing by due date (not due, 1–30, 31–60, 60+ overdue, no due date). |
 | Deals waiting for approval | Deal File approval requests still pending (submitted or Finance-verified, not approved). Live. |
 | Active projects by stage | Won jobs: Design (design journey not approved), Estimate (no open design, no project started, not collected/delivered or cancelled), then started projects by current stage — install/delivery/permit → Delivery, snag/handover → Snagging, the rest → Production. Live. |
 | Delayed items | Design stages open past their internal due time, estimates not linked by their due time, projects past the promised date, projects with open tasks past due (one item each). Live. |
-| Deals Closed / Completed | Won deals whose Enquiry Type closing rule (PLM-102) is met, read-only from the records, dated by the last required record; cancelled deals never close; value = won proposals net. By Enquiry Type. |
+| Deals Closed / Completed | Won deals whose Enquiry Type closing rule (PLM-102) is met, read-only from the records, dated by the last required record; cancelled deals (order or job cancelled) never close; value = won proposals net. By Enquiry Type. |
 | Profit margin | Projects started in the period: Σ(sealed agreed net incl. variations − QS cost of the same quotations) ÷ Σ agreed net; projects without a QS cost for every sealed quotation are left out and counted. |
 
 **2 · Sales and pipeline**
 | KPI | Definition |
 | --- | --- |
 | New leads | Enquiries created in the period, spam and duplicates left out; 12-month stacked bar by source (top five + Other). |
-| Conversion funnel | Leads created in the period → became an opportunity → reached Qualified (stage code `qualification`) or later → reached Proposal or later → Won; % of the step before; Lead → Won % is the target. |
+| Conversion funnel | Leads created in the period → became an opportunity → reached Qualified (stage code `qualification`) or later → reached Proposal or later → Won (not cancelled); % of the step before; Lead → Won % is the target. |
 | Pipeline value | Open opportunities now, by current stage: count and value (net by the latest live quotation, else as entered). |
 | Won by Account Manager | The period's Sales Won by opportunity owner: count, value, average deal size; each against that person's Won value target. |
-| Lost | Opportunities marked Lost in the period: count, value, by recorded reason. |
+| Lost | Lost opportunities only: opportunities marked Lost in the period (a cancelled won deal is under Cancellations and refunds): count, value, by recorded reason. |
+| Not interested enquiries | Enquiries closed (disqualified) in the period before becoming an opportunity — not interested, unreachable or another reason — by the reason recorded; spam and duplicates left out. |
 | Duplicates / Returning customers | Enquiries in the period the duplicate rule marked Duplicate (PLM-093) / recorded as a returning customer (PLM-037). |
 | Follow-ups due / overdue | Open enquiries whose last contact was "come back later" (their come-back date) and open opportunities' pending next follow-up (not meetings). Overdue when the date has passed. |
 | Quotes expiring | Quotations sent and awaiting the client whose validity ends between today and the workspace's expiry-warning window. |

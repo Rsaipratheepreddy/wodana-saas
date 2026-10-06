@@ -44,6 +44,7 @@ export async function salesAdminMembership(db: Db, workspaceId: string): Promise
 export async function journeyTimings(db: Db, workspaceId: string, caseId: string): Promise<StageTimings & { kind: JourneyKind }> {
   const row = (await db.query<StageTimings & { packageId: string | null; packageName: string | null }>(
     `SELECT site_visit_hours AS "siteVisitHours", design_internal_days AS "designInternalDays", design_client_days AS "designClientDays", material_selection_days AS "materialSelectionDays",
+            render_internal_days AS "renderInternalDays", render_client_days AS "renderClientDays",
             package_id AS "packageId", package_name AS "packageName" FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
   return { ...row, kind: row?.packageId || row?.packageName ? "design" : "site_and_materials" };
 }
@@ -62,18 +63,20 @@ export async function startJourney(db: Db, workspaceId: string, caseId: string, 
             package.includes_renders AS "includesRenders", package.required_role_code AS "requiredRoleCode"
        FROM crm_opportunity_discovery discovery JOIN design_packages package ON package.workspace_id = discovery.workspace_id AND package.id = discovery.design_package_id
       WHERE discovery.workspace_id = $1 AND discovery.opportunity_id = $2`, [workspaceId, facts.opportunityId])).rows[0];
-  const settings = (await db.query<{ inspirationDays: number; siteVisitHours: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number; questions: unknown }>(
+  const settings = (await db.query<{ inspirationDays: number; siteVisitHours: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number; questions: unknown;
+    renderInternalDays: number | null; renderClientDays: number | null }>(
     `SELECT inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours", design_internal_days AS "designInternalDays", design_client_days AS "designClientDays",
+            render_internal_days AS "renderInternalDays", render_client_days AS "renderClientDays",
             material_selection_days AS "materialSelectionDays", estimate_days AS "estimateDays", site_visit_questions AS questions
        FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   const questions = settings ? normaliseSiteQuestions(settings.questions) : DEFAULT_SITE_VISIT_QUESTIONS;
   const created = await db.query(
     `INSERT INTO design_journeys (workspace_id, case_id, package_id, package_name, included_revisions, includes_space_planning, includes_renders, reviewer_role_code, inspiration_days, site_visit_hours,
-                                  design_internal_days, design_client_days, material_selection_days, estimate_days, site_visit_questions, started_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) ON CONFLICT (workspace_id, case_id) DO NOTHING`,
+                                  design_internal_days, design_client_days, material_selection_days, estimate_days, site_visit_questions, started_by, render_internal_days, render_client_days)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) ON CONFLICT (workspace_id, case_id) DO NOTHING`,
     [workspaceId, caseId, pkg?.id ?? null, pkg?.name ?? null, pkg?.includedRevisions ?? 2, pkg?.includesSpacePlanning ?? false, pkg?.includesRenders ?? false,
       pkg?.requiredRoleCode ?? null, settings?.inspirationDays ?? 7, settings?.siteVisitHours ?? 72, settings?.designInternalDays ?? 35, settings?.designClientDays ?? 56,
-      settings?.materialSelectionDays ?? 7, settings?.estimateDays ?? 7, JSON.stringify(questions), userId]);
+      settings?.materialSelectionDays ?? 7, settings?.estimateDays ?? 7, JSON.stringify(questions), userId, settings?.renderInternalDays ?? null, settings?.renderClientDays ?? null]);
   if (!created.rowCount) return false;
   const kind: JourneyKind = pkg ? "design" : "site_and_materials";
   const order = kind === "design" ? journeyStages({ includesSpacePlanning: pkg.includesSpacePlanning, includesRenders: pkg.includesRenders }) : SITE_AND_MATERIALS_STAGES;

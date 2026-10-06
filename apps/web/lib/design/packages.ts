@@ -9,6 +9,8 @@ export type DesignTimings = { inspirationDays: number; siteVisitHours: number };
 export type DesignFlow = {
   designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number; visualiserRoleCode: string;
   showroomBookingTypeId: string | null; siteVisitQuestions: Array<{ key: string; question: string }>;
+  /** The 3D renders' own internal and client-facing days; null follows the design deadlines. */
+  renderInternalDays?: number | null; renderClientDays?: number | null;
 };
 export type DesignSettings = { minimumDeposit: { amount: string; currency: string } | null; version: number; timings?: DesignTimings; packages: DesignPackage[];
   flow?: DesignFlow; bookingTypes?: Array<{ id: string; name: string }> };

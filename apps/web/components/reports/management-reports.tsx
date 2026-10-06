@@ -22,6 +22,7 @@ const KPI_LABELS: Record<string, MessageKey> = {
   sales_won: tKey("Sales Won"), revenue_collected: tKey("Revenue collected"), outstanding: tKey("Outstanding balances"),
   deals_awaiting_approval: tKey("Deals waiting for approval"), active_projects: tKey("Active projects by stage"), delayed_items: tKey("Delayed items"),
   deals_closed: tKey("Deals Closed / Completed"), profit_margin: tKey("Profit margin"),
+  net_revenue: tKey("Net revenue"), cancellations_refunds: tKey("Cancellations and refunds"), not_interested: tKey("Not interested enquiries"),
   new_leads: tKey("New leads"), conversion_funnel: tKey("Conversion funnel"), pipeline_value: tKey("Pipeline value"), won_by_account_manager: tKey("Won by Account Manager"),
   lost: tKey("Lost"), duplicates: tKey("Duplicates"), returning_customers: tKey("Returning customers"), follow_ups: tKey("Follow-ups due / overdue"), quotes_expiring: tKey("Quotes expiring"),
   response_rate: tKey("Response rate"), first_response_hours: tKey("Average first response"), reassignments: tKey("Reassignments"), unassigned_leads: tKey("Unassigned leads"),
@@ -33,6 +34,7 @@ const KPI_LABELS: Record<string, MessageKey> = {
 /** Fixed chart keys the server sends (stages, ages, series), named here. */
 const KEY_LABELS: Record<string, MessageKey> = {
   design: tKey("Design"), main: tKey("Proposal 2"), collected: tKey("Collected"), invoiced: tKey("Invoiced"), margin: tKey("Margin"), rate: tKey("Response rate"),
+  net: tKey("Net revenue"), cancelled: tKey("Cancelled"), refund: tKey("Refunded"),
   not_due: tKey("Not due yet"), overdue_1_30: tKey("1–30 days overdue"), overdue_31_60: tKey("31–60 days overdue"), overdue_60_plus: tKey("Over 60 days overdue"), no_due_date: tKey("No due date"),
   estimate: tKey("Estimate"), production: tKey("Production"), delivery: tKey("Delivery"), snagging: tKey("Snagging"),
   inspiration: tKey("Inspiration"), site_visit: tKey("Site visit"), development: tKey("Development"), materials: tKey("Materials"), renders: tKey("Renders"),
@@ -221,6 +223,9 @@ function kpiDetail(kpi: Kpi, format: Formatters, t: Translate): string | null {
     case "sales_won": return t("{count} won · Design Fee {design} · Proposal 2 {main}", { count: kpi.count, design: format.money(String(extra.designValue ?? "0")), main: format.money(String(extra.mainValue ?? "0")) })
       + (extra.countTarget ? ` · ${t("Count target {target} ({percent})", { target: format.number(String(extra.countTarget), 0), percent: extra.countPercent ? `${format.number(String(extra.countPercent))}%` : "—" })}` : "");
     case "revenue_collected": return t("Invoiced {amount}", { amount: format.money(String(extra.invoiced ?? "0")) });
+    case "net_revenue": return t("Collected {collected} · Refunded {refunded}", { collected: format.money(String(extra.collected ?? "0")), refunded: format.money(String(extra.refunded ?? "0")) });
+    case "cancellations_refunds": return t("{amount} cancelled · {count} refunds paid, {refunds}", { amount: format.money(kpi.amount ?? "0"), count: Number(extra.refundCount ?? 0),
+      refunds: format.money(String(extra.refundValue ?? "0")) });
     case "deals_awaiting_approval": case "deals_closed": case "lost": case "quotes_expiring": case "package_mix": return kpi.amount ? format.money(kpi.amount) : null;
     case "won_by_account_manager": return extra.average ? t("Average deal {amount}", { amount: format.money(String(extra.average)) }) : null;
     case "follow_ups": return t("{overdue} overdue · {due} due", { overdue: Number(extra.overdue ?? 0), due: Number(extra.due ?? 0) });

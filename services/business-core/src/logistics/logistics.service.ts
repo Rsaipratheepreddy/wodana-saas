@@ -11,8 +11,8 @@ import { noticeStageReady } from "../project-core/project-stage-watch";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { BOOKERS, clashes, isDay, isLogisticsKind, KIND_LABEL, parsePeople, parseVehicle, permitCollected, permitFor, slotKey, type LogisticsKind } from "./logistics.domain";
-import { crewLine, installationTeam, permissionHolders, permitWarningDays, readSlots, tell, type SlotView } from "./logistics.store";
+import { BOOKERS, clashes, isDay, isLogisticsKind, KIND_LABEL, parsePeople, parseVehicle, permitCollected, permitFor, permitReminderOn, slotKey, type LogisticsKind } from "./logistics.domain";
+import { crewLine, installationTeam, permissionHolders, permitReminderDays, permitWarningDays, readSlots, tell, type SlotView } from "./logistics.store";
 import { permitRequired, readPermitFacts, type PermitOwner } from "./permits";
 
 type Db = PoolClient;
@@ -38,6 +38,8 @@ export type BookingInput = {
 };
 export type PermitInput = {
   permitType?: unknown; permitNumber?: unknown; validFrom?: unknown; validTo?: unknown; collectedOn?: unknown; collectedByWorkerId?: unknown; note?: unknown; version?: unknown;
+  /** Days before it ends that its reminder goes (PLM-136); empty follows the firm's default. */
+  reminderDays?: unknown;
 };
 
 /** What a booking is for: a project's (or a work order's) day, or a deal's delivery when the order has no project. */
@@ -303,21 +305,25 @@ export class LogisticsService {
    * How many working days before a delivery or installation a missing building permit is raised (0–30), and whether
    * deals delivered without a project need a permit too. Version-checked; audited.
    */
-  async saveSettings(actor: RequestActor, workspaceId: string, input: { version?: unknown; permitWarningDays?: unknown; dealDeliveryPermit?: unknown }) {
+  async saveSettings(actor: RequestActor, workspaceId: string, input: { version?: unknown; permitWarningDays?: unknown; dealDeliveryPermit?: unknown; permitExpiryReminderDays?: unknown }) {
     const days = input.permitWarningDays === undefined ? undefined : Number(input.permitWarningDays);
     if (days !== undefined && (!Number.isInteger(days) || days < 0 || days > 30)) throw new UnprocessableEntityException("Days are between 0 and 30.");
+    const reminder = input.permitExpiryReminderDays === undefined ? undefined : Number(input.permitExpiryReminderDays);
+    if (reminder !== undefined && (!Number.isInteger(reminder) || reminder < 0 || reminder > 365)) throw new UnprocessableEntityException("Reminder days are between 0 and 365.");
     if (input.dealDeliveryPermit !== undefined && typeof input.dealDeliveryPermit !== "boolean") throw new BadRequestException("Choose on or off.");
     return this.access.withAnyPermission(actor, workspaceId, SETUP, async (client, user) => {
       const before = await this.settingsOf(client, workspaceId);
       if (before.version !== Number(input.version ?? 0)) throw new ConflictException("Someone changed these settings. Reload and try again.");
-      const next = { permitWarningDays: days ?? before.permitWarningDays, dealDeliveryPermit: typeof input.dealDeliveryPermit === "boolean" ? input.dealDeliveryPermit : before.dealDeliveryPermit };
-      if (next.permitWarningDays !== before.permitWarningDays || next.dealDeliveryPermit !== before.dealDeliveryPermit) {
+      const next = { permitWarningDays: days ?? before.permitWarningDays, dealDeliveryPermit: typeof input.dealDeliveryPermit === "boolean" ? input.dealDeliveryPermit : before.dealDeliveryPermit,
+        permitExpiryReminderDays: reminder ?? before.permitExpiryReminderDays };
+      if (next.permitWarningDays !== before.permitWarningDays || next.dealDeliveryPermit !== before.dealDeliveryPermit || next.permitExpiryReminderDays !== before.permitExpiryReminderDays) {
         await client.query(
-          `INSERT INTO workspace_logistics_settings (workspace_id, permit_warning_days, deal_delivery_permit, updated_by) VALUES ($1, $2, $3, $4)
+          `INSERT INTO workspace_logistics_settings (workspace_id, permit_warning_days, deal_delivery_permit, permit_expiry_reminder_days, updated_by) VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (workspace_id) DO UPDATE SET permit_warning_days = excluded.permit_warning_days, deal_delivery_permit = excluded.deal_delivery_permit,
-             updated_by = excluded.updated_by, updated_at = now(), version = workspace_logistics_settings.version + 1`, [workspaceId, next.permitWarningDays, next.dealDeliveryPermit, user.userId]);
+             permit_expiry_reminder_days = excluded.permit_expiry_reminder_days, updated_by = excluded.updated_by, updated_at = now(), version = workspace_logistics_settings.version + 1`,
+          [workspaceId, next.permitWarningDays, next.dealDeliveryPermit, next.permitExpiryReminderDays, user.userId]);
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "logistics.settings_changed.v1", entityType: "workspace_logistics_settings", entityId: workspaceId,
-          before: { permitWarningDays: before.permitWarningDays, dealDeliveryPermit: before.dealDeliveryPermit }, after: next });
+          before: { permitWarningDays: before.permitWarningDays, dealDeliveryPermit: before.dealDeliveryPermit, permitExpiryReminderDays: before.permitExpiryReminderDays }, after: next });
       }
       return this.vehiclesView(client, workspaceId, user.userId);
     });
@@ -351,6 +357,7 @@ export class LogisticsService {
     if (input.collectedOn !== undefined && input.collectedOn !== "" && !isDay(input.collectedOn)) throw new UnprocessableEntityException("Choose the day it was collected.");
     const collectedBy = this.optionalId(input.collectedByWorkerId === "" ? undefined : input.collectedByWorkerId, "Choose who collected it.");
     const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) : "";
+    const reminderDays = this.reminderDays(input.reminderDays);
     const prepared = await prepareReferenceUpload(file);
     const validFrom = input.validFrom, validTo = input.validTo;
     const subject: Subject = { kind: "permit", projectId: owner.projectId ?? null, opportunityId: owner.opportunityId ?? null, workOrderId: null, permitId };
@@ -375,10 +382,10 @@ export class LogisticsService {
       const key = `permits/${workspaceId}/${permitId}`;
       await storage.put(`${key}/original`, prepared.body, prepared.mimeType);
       const values = [workspaceId, permitId, type, number, validFrom, validTo, collectedOn, collectedBy, note, prepared.name, prepared.mimeType, prepared.body.length, `${key}/original`,
-        prepared.digest, user.userId];
+        prepared.digest, user.userId, reminderDays];
       if (before) await client.query(
         `UPDATE building_permits SET status = 'collected', permit_type = $3, permit_number = $4, valid_from = $5, valid_to = $6, collected_on = $7, collected_by_worker_id = $8, note = $9,
-                file_name = $10, file_mime = $11, file_size = $12, file_key = $13, file_sha256 = $14, recorded_by = $15, recorded_at = now(), version = version + 1
+                file_name = $10, file_mime = $11, file_size = $12, file_key = $13, file_sha256 = $14, recorded_by = $15, recorded_at = now(), reminder_days = $16, version = version + 1
           WHERE workspace_id = $1 AND id = $2`, values);
       else {
         // A collection still planned for the project or deal is done: this permit is what it brought back.
@@ -386,12 +393,12 @@ export class LogisticsService {
           WHERE workspace_id = $1 AND (project_id = $2::uuid OR opportunity_id = $3::uuid) AND status = 'planned'`, [workspaceId, subject.projectId, subject.opportunityId, user.userId]);
         await client.query(
           `INSERT INTO building_permits (workspace_id, id, status, permit_type, permit_number, valid_from, valid_to, collected_on, collected_by_worker_id, note, file_name, file_mime, file_size,
-                  file_key, file_sha256, created_by, recorded_by, recorded_at, project_id, opportunity_id)
-           VALUES ($1, $2, 'collected', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, now(), $16, $17)`, [...values, subject.projectId, subject.opportunityId]);
+                  file_key, file_sha256, created_by, recorded_by, recorded_at, reminder_days, project_id, opportunity_id)
+           VALUES ($1, $2, 'collected', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, now(), $16, $17, $18)`, [...values, subject.projectId, subject.opportunityId]);
       }
       await this.touch(client, workspaceId, subject);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "logistics.permit_collected.v1", entityType: subject.projectId ? "project" : "crm_opportunity",
-        entityId: (subject.projectId ?? subject.opportunityId)!, after: { permitId, type, number, validFrom, validTo, collectedOn, collectedBy, file: prepared.name, sha256: prepared.digest } });
+        entityId: (subject.projectId ?? subject.opportunityId)!, after: { permitId, type, number, validFrom, validTo, collectedOn, collectedBy, reminderDays, file: prepared.name, sha256: prepared.digest } });
       const users = (subject.projectId ? (await installationTeam(client, workspaceId, subject.projectId)).map((person) => person.userId) : await this.dealOwner(client, workspaceId, subject.opportunityId!))
         .filter((id) => id !== user.userId);
       await tell(client, { workspaceId, users, code: "logistics.permit_collected", deepLink: this.link(subject), key: `logistics:permit:${permitId}:collected`, inAppOnly: true,
@@ -428,6 +435,30 @@ export class LogisticsService {
     });
   }
 
+  /**
+   * When a recorded permit reminds before it ends (PLM-136): its own days, or back to the firm's default (null). A
+   * reminder already sent stays sent unless the permit's end moves past it. Version-checked; audited.
+   */
+  async setPermitReminder(actor: RequestActor, workspaceId: string, owner: PermitOwner, permitId: string, input: { reminderDays?: unknown; version?: unknown }) {
+    const reminderDays = this.reminderDays(input.reminderDays);
+    const subject: Subject = { kind: "permit", projectId: owner.projectId ?? null, opportunityId: owner.opportunityId ?? null, workOrderId: null, permitId };
+    return this.access.withAnyPermission(actor, workspaceId, [...READ, ...BOOKERS], async (client, user) => {
+      const rights = await this.rights(client, workspaceId, subject, user);
+      if (!rights.book) throw new ForbiddenException(this.refusal(subject));
+      const before = (await client.query<{ status: string; reminderDays: number | null; version: number }>(
+        `SELECT status, reminder_days AS "reminderDays", version FROM building_permits WHERE workspace_id = $1 AND id = $2 AND (project_id = $3::uuid OR opportunity_id = $4::uuid) FOR UPDATE`,
+        [workspaceId, permitId, subject.projectId, subject.opportunityId])).rows[0];
+      if (!before) throw new NotFoundException("Permit not found.");
+      if (before.version !== Number(input.version)) throw new ConflictException("This permit changed. Reload and try again.");
+      if (before.status !== "collected") throw new ConflictException("Only a recorded permit has a reminder.");
+      if ((before.reminderDays ?? null) === reminderDays) return this.permitsView(client, workspaceId, owner, user);
+      await client.query(`UPDATE building_permits SET reminder_days = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, permitId, reminderDays]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "logistics.permit_reminder_changed.v1", entityType: subject.projectId ? "project" : "crm_opportunity",
+        entityId: (subject.projectId ?? subject.opportunityId)!, before: { permitId, reminderDays: before.reminderDays }, after: { permitId, reminderDays } });
+      return this.permitsView(client, workspaceId, owner, user);
+    });
+  }
+
   /** A permit's file, for someone who reads the bookings. */
   async permitFile(actor: RequestActor, workspaceId: string, permitId: string) {
     return this.access.withAnyPermission(actor, workspaceId, READ, async (client) => {
@@ -442,6 +473,14 @@ export class LogisticsService {
   }
 
   // ---------- helpers ----------
+
+  /** A permit's own reminder days (0–365), or null to follow the firm's default. */
+  private reminderDays(value: unknown) {
+    if (value === undefined || value === null || value === "") return null;
+    const days = Number(value);
+    if (!Number.isInteger(days) || days < 0 || days > 365) throw new UnprocessableEntityException("Reminder days are between 0 and 365.");
+    return days;
+  }
 
   private subject(input: { kind?: unknown; projectId?: unknown; opportunityId?: unknown; workOrderId?: unknown; permitId?: unknown }, allowNewPermit = false): Subject {
     if (!isLogisticsKind(input.kind)) throw new BadRequestException("Choose what to book.");
@@ -686,16 +725,18 @@ export class LogisticsService {
   }
 
   private async settingsOf(client: Db, workspaceId: string) {
-    const row = (await client.query<{ days: number; deal: boolean; version: number }>(
-      `SELECT permit_warning_days AS days, deal_delivery_permit AS deal, version FROM workspace_logistics_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
-    return { permitWarningDays: Number(row?.days ?? 3), dealDeliveryPermit: Boolean(row?.deal), version: Number(row?.version ?? 0) };
+    const row = (await client.query<{ days: number; deal: boolean; reminder: number; version: number }>(
+      `SELECT permit_warning_days AS days, deal_delivery_permit AS deal, permit_expiry_reminder_days AS reminder, version FROM workspace_logistics_settings WHERE workspace_id = $1`,
+      [workspaceId])).rows[0];
+    return { permitWarningDays: Number(row?.days ?? 3), dealDeliveryPermit: Boolean(row?.deal), permitExpiryReminderDays: Number(row?.reminder ?? 7), version: Number(row?.version ?? 0) };
   }
 
   private async vehiclesView(client: Db, workspaceId: string, userId: string) {
     const vehicles = (await client.query(
       `SELECT id, name, plate, kind, capacity_note AS "capacityNote", active, version FROM logistics_vehicles WHERE workspace_id = $1 ORDER BY active DESC, lower(name), id`, [workspaceId])).rows;
     const settings = await this.settingsOf(client, workspaceId);
-    return { vehicles, permitWarningDays: settings.permitWarningDays, dealDeliveryPermit: settings.dealDeliveryPermit, settingsVersion: settings.version,
+    return { vehicles, permitWarningDays: settings.permitWarningDays, dealDeliveryPermit: settings.dealDeliveryPermit, permitExpiryReminderDays: settings.permitExpiryReminderDays,
+      settingsVersion: settings.version,
       canManage: await this.any(client, workspaceId, userId, SETUP) };
   }
 
@@ -705,7 +746,8 @@ export class LogisticsService {
     const permits = ids.length ? (await client.query(
       `SELECT permit.id, permit.status, permit.collect_on::text AS "collectOn", permit.permit_type AS "permitType", permit.permit_number AS "permitNumber",
               permit.valid_from::text AS "validFrom", permit.valid_to::text AS "validTo", permit.collected_on::text AS "collectedOn", worker.name AS "collectedBy", permit.note,
-              permit.file_name AS "fileName", permit.file_mime AS "fileMime", recorder.display_name AS "recordedBy", permit.recorded_at AS "recordedAt", permit.version
+              permit.file_name AS "fileName", permit.file_mime AS "fileMime", recorder.display_name AS "recordedBy", permit.recorded_at AS "recordedAt",
+              permit.reminder_days AS "reminderDays", permit.expiry_reminded_at AS "remindedAt", permit.version
          FROM building_permits permit LEFT JOIN hrms_workers worker ON worker.workspace_id = permit.workspace_id AND worker.id = permit.collected_by_worker_id
          LEFT JOIN users recorder ON recorder.id = permit.recorded_by
         WHERE permit.workspace_id = $1 AND permit.id = ANY($2::uuid[]) ORDER BY permit.created_at DESC, permit.id`, [workspaceId, ids])).rows : [];
@@ -717,7 +759,11 @@ export class LogisticsService {
     const today = await this.today(client, workspaceId);
     const rights = await this.rights(client, workspaceId, { kind: "permit", projectId: owner.projectId ?? null, opportunityId: owner.opportunityId ?? null, workOrderId: null, permitId: null }, user);
     const first = [days?.deliveryOn, days?.installationOn].filter((day): day is string => Boolean(day)).sort()[0] ?? null;
-    return { required: await permitRequired(client, workspaceId, owner), deliveryOn: days?.deliveryOn ?? null, installationOn: days?.installationOn ?? null, today, permits,
+    // When each recorded permit reminds before it ends (its own days, else the firm's).
+    const reminderDefault = await permitReminderDays(client, workspaceId);
+    for (const permit of permits as Array<Record<string, unknown>>)
+      permit.reminderOn = permit.status === "collected" && typeof permit.validTo === "string" ? permitReminderOn(permit.validTo, (permit.reminderDays as number | null) ?? null, reminderDefault) : null;
+    return { reminderDays: reminderDefault, required: await permitRequired(client, workspaceId, owner), deliveryOn: days?.deliveryOn ?? null, installationOn: days?.installationOn ?? null, today, permits,
       valid: permitCollected(facts, [days?.deliveryOn ?? null, days?.installationOn ?? null], today), covering: first ? permitFor(facts, first)?.id ?? null : null, canRecord: rights.book };
   }
 

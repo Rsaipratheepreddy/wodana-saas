@@ -29,6 +29,7 @@ import { addInspiration, boardComment, react, removeInspiration } from "./portal
 import { tellStaffClientSignedIn } from "./portal-notices";
 import { invoiceDocument, receiptDocument, reportPayment } from "./portal-payments";
 import { askAboutDay, reactToDay } from "./portal-progress";
+import { chooseUpdates } from "./portal-updates";
 import { isImage, readView, workspaceToday } from "./portal-read";
 import { readPortalSettings, SECTIONS, type PortalSettings, type Section } from "./portal-settings";
 import { findSite, readSite } from "./portal-site";
@@ -47,7 +48,7 @@ const COMMANDS: Record<string, [Handler, Section]> = {
   warranty_claim: [claimWarranty, "warranty"], request: [raiseRequest, "messages"], comment: [comment, "messages"], read_thread: [readThread, "messages"],
   react: [react, "moodboard"], board_comment: [boardComment, "moodboard"], add_inspiration: [addInspiration, "moodboard"], remove_inspiration: [removeInspiration, "moodboard"],
   report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"], site_access: [siteAccess, "progress"],
-  progress_react: [reactToDay, "progress"], progress_question: [askAboutDay, "progress"],
+  progress_react: [reactToDay, "progress"], progress_question: [askAboutDay, "progress"], update_preference: [chooseUpdates, "progress"],
   design_comment: [designComment, "decisions"], design_reply: [designReply, "decisions"], design_resolve: [designResolve, "decisions"],
   presentation_choice: [presentationChoice, "decisions"], ledger_decision: [ledgerDecision, "decisions"],
   change_raise: [raiseChange, "decisions"], change_decision: [decidePortalChange, "decisions"], ledger_alternative: [chooseAlternative, "decisions"],

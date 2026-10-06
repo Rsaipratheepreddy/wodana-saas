@@ -11,10 +11,13 @@ const STOCK = [
 ];
 
 describe("linked import source", () => {
-  it("needs a known field per column, one column per field and the code column", () => {
-    expect(() => checkMapping("stock", { columns: { Item: "name" } })).toThrow(/item code/);
-    expect(() => checkMapping("stock", { columns: { Code: "code", A: "name", B: "name" } })).toThrow(/one column only/);
+  it("needs a known field per column and the code or name column; a field may come from headings tabs spell differently", () => {
+    expect(() => checkMapping("stock", { columns: { Qty: "quantity" } })).toThrow(/item code or name/);
+    expect(checkMapping("stock", { columns: { Item: "name" } })).toEqual({ columns: { Item: "name" } });
+    expect(checkMapping("stock", { columns: { Code: "code", A: "name", B: "name" } }).columns).toEqual({ Code: "code", A: "name", B: "name" });
     expect(() => checkMapping("stock", { columns: { Code: "code", Price: "price" } })).toThrow(SourceError);
+    expect(checkMapping("catalog", { columns: { Name: "name" }, tabs: [" Sofa ", "Sofa", "Beds"] })).toEqual({ columns: { Name: "name" }, tabs: ["Sofa", "Beds"] });
+    expect(() => checkMapping("catalog", { columns: { Name: "name" }, tabs: [] })).toThrow(/tabs/);
     expect(checkMapping("catalog", { columns: { " Code ": "code", Fabric: "attribute", Finish: "attribute", Notes: "" } })).toEqual({ columns: { Code: "code", Fabric: "attribute", Finish: "attribute" } });
   });
 
@@ -37,9 +40,59 @@ describe("linked import source", () => {
     expect(rows.map((row) => [row.key, row.values.category, row.attributes])).toEqual([["SOF-1", "Sofas", { Fabric: "Boucle" }], ["CHR-1", "Chairs", {}]]);
   });
 
+  it("reads blocks of a category title and its heading row, each block's title its rows' category, notes skipped", () => {
+    const mapping = checkMapping("catalog", { columns: { DESCRIPTION: "name", "PRICE (AED)": "price", "Technical Drawing": "technicalDrawing", "Drawings links": "technicalDrawing",
+      REMARKS: "attribute" }, tabs: ["Living", "Dining"] });
+    const living = { name: "Living", rows: [
+      ["", "", "Ask the workshop for more", ""],
+      ["", "SOFA", "", ""],
+      ["REMARKS", "DESCRIPTION", "PRICE (AED)", "Technical Drawing"],
+      ["", "Aria Sofa – 3 seater", "AED23,500.00", "Aria Sofa 3"],
+      ["Check the fabric", "", "", ""],
+      ["", "", "", ""],
+      ["", "ARMCHAIRS", "", ""],
+      ["REMARKS", "DESCRIPTION", "PRICE (AED)", "Technical Drawing"],
+      ["", "Luna Chair", "ENQUIRE", "no cad file"],
+    ], links: { "3:3": "https://drive.example/aria.pdf", "8:9": "https://drive.example/elsewhere.pdf" } };
+    const dining = { name: "Dining", rows: [["DESCRIPTION", "Technical Drawing", "Drawings links"], ["Oak Table", "Oak painted", "Oak Table"]], links: { "1:2": "https://drive.example/oak.pdf" } };
+    const notes = { name: "Notes", rows: [["DESCRIPTION", "PRICE (AED)"], ["Not imported", "1"]] };
+    const { rows, skippedTabs } = readRows("catalog", [living, dining, notes], mapping);
+    expect(skippedTabs).toEqual([]);
+    expect(rows.map((row) => [row.line, row.key, row.values.category, row.values.price, row.links?.technicalDrawing ?? null])).toEqual([
+      [4, "SOFA / Aria Sofa – 3 seater", "SOFA", "AED23,500.00", "https://drive.example/aria.pdf"],
+      [9, "ARMCHAIRS / Luna Chair", "ARMCHAIRS", "ENQUIRE", null],
+      [2, "Dining / Oak Table", "Dining", undefined, "https://drive.example/oak.pdf"],
+    ]);
+    // A field from two columns: the first filled value, and the first link.
+    expect(rows[2].values.technicalDrawing).toBe("Oak painted");
+    expect(rows[0].headings).toMatchObject({ name: "DESCRIPTION", price: "PRICE (AED)" });
+    // A mapped category column wins over the block's title.
+    const withCategory = checkMapping("catalog", { columns: { DESCRIPTION: "name", Type: "category" } });
+    expect(readRows("catalog", [{ name: "T", rows: [["COLLECTION"], ["Type", "DESCRIPTION"], ["Chairs", "Luna"]] }], withCategory).rows[0].values.category).toBe("Chairs");
+    // Titles the browser worked out replace reading title rows (a one-cell row is then a row).
+    const trimmed = { name: "T", rows: [[], ["DESCRIPTION", "PRICE (AED)"], ["Luna", ""]], titles: { 1: "CHAIRS" } };
+    expect(readRows("catalog", checkSheets([trimmed]), { ...mapping, tabs: undefined }).rows.map((row) => [row.key, row.values.category])).toEqual([["CHAIRS / Luna", "CHAIRS"]]);
+  });
+
+  it("tells two rows of one name apart by their size, and keys a stock row without a code by its name, size and colour", () => {
+    const mapping = checkMapping("catalog", { columns: { Name: "name", Length: "width", Height: "height" } });
+    const { rows } = readRows("catalog", [{ name: "Desks", rows: [["Name", "Length", "Height"], ["Daisy Desk", "170 cm", "75 cm"], ["Daisy Desk", "200 cm", "75 cm"]] }], mapping);
+    expect(rows.map((row) => row.key)).toEqual(["Daisy Desk · 170 cm × 75 cm", "Daisy Desk · 200 cm × 75 cm"]);
+    const stock = checkMapping("stock", { columns: { "Model code": "code", "Item name": "name", Size: "size", Colour: "colour", Qty: "quantity", Used: "usedQuantity" } });
+    const read = readRows("stock", [{ name: "Wood", rows: [["WOOD MATERIALS"], ["Model code", "Item name", "Size", "Colour", "Qty", "Used"],
+      ["W-1", "White wood", "2x2", "", "10", "2"], ["", "Drawer channel", "250MM", "Grey", "4", ""], ["", "Hinge", "", "", "", ""]] }], stock).rows;
+    expect(read.map((row) => row.key)).toEqual(["W-1", "Drawer channel · 250MM · Grey", "Hinge"]);
+  });
+
+  it("keeps cell links that are http(s), within bounds", () => {
+    const [sheet] = checkSheets([{ name: "S", rows: [["a"]], links: { "0:0": "https://x.example/a.pdf", "0:1": "javascript:alert(1)", bad: "https://x.example", "1:0": 5 }, hidden: true }]);
+    expect(sheet).toEqual({ name: "S", rows: [["a"]], links: { "0:0": "https://x.example/a.pdf" }, hidden: true });
+  });
+
   it("reads numbers the way sheets write them", () => {
     expect(sheetNumber("1,240.5", "Qty")).toBe("1240.5");
     expect(sheetNumber("AED 42", "Cost")).toBe("42");
+    expect(sheetNumber("AED23,500.00", "Price")).toBe("23500");
     expect(sheetNumber("€ 1.234,50", "Cost")).toBe("1234.5");
     expect(sheetNumber("12,5", "Qty")).toBe("12.5");
     expect(sheetNumber("1 200", "Qty")).toBe("1200");

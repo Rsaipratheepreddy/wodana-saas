@@ -1,7 +1,10 @@
 import type { PoolClient } from "pg";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { evaluateStages, readProject, readStages, readTeam } from "./project-core.store";
+import { advanceStage, skipWithoutDrawings } from "./project-advance";
+import { drawingOnlyStage, projectNeedsDrawings } from "./project-drawing-needs";
 import { autoFinishProject } from "./project-finish";
+import { noticeProject, type ProjectNotice } from "./project-notices";
 import { noticeFactorySlotDue } from "./project-release";
 import { syncStageTasks } from "./project-stage-tasks";
 
@@ -17,6 +20,8 @@ type Db = Pick<PoolClient, "query">;
 export async function noticeStageReady(db: Db, workspaceId: string, projectId: string, actorUserId: string | null = null) {
   const project = await readProject(db, workspaceId, projectId);
   if (!project || project.status !== "active") return 0;
+  // A drawings-only stage with no item to draw moves on by itself (PLM-057).
+  await skipCurrentWithoutDrawings(db, workspaceId, projectId, actorUserId);
   // The current stage's record-driven tasks follow the records (PLM-057 … 059), and the factory hears to book its
   // slot once the deposit is in (PLM-068).
   await syncStageTasks(db, workspaceId, projectId, actorUserId);
@@ -46,4 +51,28 @@ export async function noticeStageReady(db: Db, workspaceId: string, projectId: s
     if (result.queued) sent += 1;
   }
   return sent;
+}
+
+/**
+ * The current stage holds only drawing checks and no item needs drawings (every item standard, with its catalogue
+ * drawing): it is skipped with the reason and the project moves on, as a stage skipped by hand does. Nothing happens
+ * without a project manager (no stage starts without one).
+ */
+export async function skipCurrentWithoutDrawings(db: Db, workspaceId: string, projectId: string, actorUserId: string | null) {
+  const project = await readProject(db, workspaceId, projectId);
+  if (!project || project.status !== "active") return false;
+  const stages = await readStages(db, workspaceId, [projectId]);
+  const current = stages.find((stage) => stage.status === "current");
+  if (!current || !drawingOnlyStage(current) || await projectNeedsDrawings(db, workspaceId, projectId)) return false;
+  const team = (await readTeam(db, workspaceId, [projectId])).get(projectId) ?? [];
+  const lead = team.find((member) => member.lead);
+  if (!lead) return false;
+  const actor = actorUserId ?? (await db.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2`,
+    [workspaceId, lead.membershipId])).rows[0]?.userId;
+  if (!actor) return false;
+  await skipWithoutDrawings(db, workspaceId, projectId, current, actor);
+  const notices: Array<{ key: string; notice: ProjectNotice }> = [];
+  await advanceStage(db as PoolClient, workspaceId, project, stages, current, team, actor, notices);
+  for (const item of notices) await noticeProject(db, { workspaceId, projectId, key: item.key, actorUserId: actor, notice: item.notice });
+  return true;
 }

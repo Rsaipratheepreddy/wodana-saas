@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
 import { materialsShort, plain, readWorkOrderMaterials } from "./factory";
+import { remindBeforeReady } from "./factory-ready";
 import { remindSamplesDue } from "./factory-samples";
 
 type Db = Pick<PoolClient, "query">;
@@ -18,7 +19,9 @@ export async function processFactoryDeadlines(db: Db, workspaceId: string) {
   const stale = await holdStaleDrawings(db, workspaceId);
   // PLM-061: a sample due today (or late) and not ready reminds the factory once.
   const samples = await remindSamplesDue(db, workspaceId, today);
-  return { sent: stale + samples + await chaseMaterials(db, workspaceId, today) };
+  // PLM-067: a payment stage whose work orders are planned to be ready within the firm's days reminds the client once.
+  const balances = await remindBeforeReady(db, workspaceId, today);
+  return { sent: stale + samples + balances + await chaseMaterials(db, workspaceId, today) };
 }
 
 /**

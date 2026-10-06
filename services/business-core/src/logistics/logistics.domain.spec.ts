@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkPasses, DEFAULT_STAGES, HARD_CHECKS, TASK_CHECKS, type CheckFacts } from "../project-core/project-checks";
 import { stageTaskAssignee } from "../project-core/project-stage-tasks";
-import { clashes, parsePeople, parseVehicle, permitAlert, permitCollected, permitFor, permitProblem, slotKey, type PermitFact, type Slot } from "./logistics.domain";
+import { clashes, parsePeople, parseVehicle, permitAlert, permitCollected, permitFor, permitProblem, permitReminderOn, renewalsDue, slotKey, type PermitFact, type Slot } from "./logistics.domain";
 
 const calendar = { workingDays: [1, 2, 3, 4, 5], holidays: [] };
 const collected = (id: string, validFrom: string, validTo: string): PermitFact => ({ id, status: "collected", validFrom, validTo, collectOn: null });
@@ -99,5 +99,27 @@ describe("building permits (PLM-136)", () => {
     const team = [{ membershipId: "pm", name: "PM", roles: ["project_manager"], lead: true }, { membershipId: "inst", name: "Installer", roles: ["installation_lead"], lead: false }];
     expect(stageTaskAssignee("permit_collected", "installation_lead", team)).toBe("inst");
     expect(stageTaskAssignee("permit_collected", "site_supervisor", team.slice(0, 1))).toBe("pm");
+  });
+});
+
+describe("permit expiry reminders (PLM-136)", () => {
+  const permit = (id: string, validTo: string, reminderDays: number | null = null, remindedAt: string | null = null) =>
+    ({ id, status: "collected" as const, validTo, reminderDays, remindedAt });
+  it("remind each permit its own days before it ends, else the firm's", () => {
+    expect(permitReminderOn("2026-10-20", null, 7)).toBe("2026-10-13");
+    expect(permitReminderOn("2026-10-20", 2, 7)).toBe("2026-10-18");
+    expect(permitReminderOn("2026-10-20", 0, 7)).toBe("2026-10-20");
+  });
+  it("keep a long-lasting permit quiet until its day, then remind once", () => {
+    expect(renewalsDue([permit("long", "2027-06-30")], "2026-10-06", 7)).toEqual([]);
+    expect(renewalsDue([permit("short", "2026-10-10")], "2026-10-06", 7).map((item) => item.id)).toEqual(["short"]);
+    expect(renewalsDue([permit("short", "2026-10-10", null, "2026-10-04T08:00:00Z")], "2026-10-06", 7)).toEqual([]);
+    // Its own 2 days: not yet.
+    expect(renewalsDue([permit("short", "2026-10-10", 2)], "2026-10-06", 7)).toEqual([]);
+    // Ended already: nothing to renew from a reminder.
+    expect(renewalsDue([permit("gone", "2026-10-05")], "2026-10-06", 7)).toEqual([]);
+  });
+  it("stay quiet once a later permit renewed it", () => {
+    expect(renewalsDue([permit("old", "2026-10-10"), permit("new", "2026-12-31")], "2026-10-06", 7)).toEqual([]);
   });
 });

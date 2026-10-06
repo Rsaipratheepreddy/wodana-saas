@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { UserPlus } from "lucide-react";
-import { Button, ComboboxField, DateField, FileUploader, FormDialog, FormRow, MoreDetails, SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Button, ComboboxField, DateField, FileUploader, FormDialog, FormRow, MoreDetails, NumericInput, SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { calendarDayKey } from "@/lib/crm/calendar";
 import { atWallClock } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -37,6 +37,8 @@ export function RecordPermitDialog({ workspaceId, owner, permitId, today: todayP
   const [collectedOn, setCollectedOn] = useState<string | null>(today);
   const [collectedBy, setCollectedBy] = useState("none");
   const [note, setNote] = useState("");
+  /** Its own reminder days before it ends; empty follows the firm's (PLM-136). */
+  const [reminderDays, setReminderDays] = useState<number | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [adding, setAdding] = useState(false);
   useEffect(() => {
@@ -50,7 +52,8 @@ export function RecordPermitDialog({ workspaceId, owner, permitId, today: todayP
       isSubmitDisabled={!valid} lead={!options && !failure ? <Skeleton lines={4} shape="form" /> : null}
       onSubmit={async () => {
         onSaved(await api.collectPermit(owner, id, { permitType: type.trim(), permitNumber: number.trim(), validFrom: validFrom!, validTo: validTo!, collectedOn: collectedOn ?? "",
-          collectedByWorkerId: collectedBy === "none" ? "" : collectedBy, note: note.trim() }, file!));
+          collectedByWorkerId: collectedBy === "none" ? "" : collectedBy, note: note.trim(),
+          reminderDays: reminderDays === null ? "" : String(reminderDays) }, file!));
       }}>
       <FormRow>
         <ComboboxField label={t("Permit type")} allowsCustomValue inputValue={type} onInputChange={setType} items={(options?.permitTypes ?? []).map((item) => ({ id: item, label: item }))}
@@ -64,12 +67,16 @@ export function RecordPermitDialog({ workspaceId, owner, permitId, today: todayP
       </FormRow>
       <FileUploader accept="application/pdf,image/*" appearance="button" multiple={false} label={file ? file.name : t("Attach the permit")} onFiles={(files) => setFile(files[0] ?? null)} />
       <FormRow>
-        <DateField label={t("Collected on")} maxValue={parseDate(today)} value={collectedOn ? parseDate(collectedOn) : null} onChange={(value) => setCollectedOn(value ? value.toString() : null)} />
+        <DateField label={t("Obtained on")} maxValue={parseDate(today)} value={collectedOn ? parseDate(collectedOn) : null} onChange={(value) => setCollectedOn(value ? value.toString() : null)} />
         <SelectField label={t("Collected by")} selectedKey={collectedBy} onSelectionChange={(key) => setCollectedBy(String(key ?? "none"))}
           items={[{ id: "none", label: t("Not recorded") }, ...(options?.workers ?? []).map((worker) => ({ id: worker.id, label: worker.name, description: worker.trade }))]} />
       </FormRow>
       {options?.canAddPeople ? <div><Button size="compact" variant="quiet" onPress={() => setAdding(true)}><UserPlus aria-hidden="true" size={14} />{t("Add person")}</Button></div> : null}
-      <MoreDetails filled={note.trim() ? 1 : 0}><TextAreaField label={t("Note")} maxLength={500} value={note} onChange={setNote} /></MoreDetails>
+      <MoreDetails filled={(note.trim() ? 1 : 0) + (reminderDays === null ? 0 : 1)}>
+        <NumericInput label={t("Remind before it ends")} description={t("Empty follows the firm's setting.")} suffix={t("days")} minValue={0} maxValue={365}
+          value={reminderDays ?? Number.NaN} onChange={(value) => setReminderDays(Number.isFinite(value) ? value : null)} />
+        <TextAreaField label={t("Note")} maxLength={500} value={note} onChange={setNote} />
+      </MoreDetails>
     </FormDialog>
     {adding ? <AddPersonDialog workspaceId={workspaceId} trade={t("Installer")} crews={options?.crews ?? []} onClose={() => setAdding(false)}
       onSaved={(worker: Worker) => { setOptions((value) => (value ? { ...value, workers: [...value.workers, worker] } : value)); setCollectedBy(worker.id); setAdding(false); }} /> : null}

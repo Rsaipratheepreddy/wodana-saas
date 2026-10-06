@@ -9,8 +9,20 @@ import {
 import { opportunityFlow, type ResolvedFlow } from "../flows/flow-store";
 import { loadStepSkips } from "../flows/step-skips";
 import { dealRule } from "../../fulfilment/fulfilment-rules";
+import { qsRequirement } from "../../proposals/qs-requirement";
 
 type Db = Pick<PoolClient, "query">;
+
+/** The QS rules' reasons for skipping a quotation. */
+const QS_SKIPPED = new Set(["no_boq", "design_fee", "standard_only"]);
+
+/** Whether the latest quotation has no QS step to wait for; a firm without a QS skips it only where the order needs no BOQ, as before. */
+async function qsSkipped(db: Db, workspaceId: string, opportunityId: string, caseId: string | null, quoteId: string | null) {
+  if (!caseId || !quoteId) return false;
+  const requirement = await qsRequirement(db, workspaceId, caseId, quoteId);
+  if (requirement.reason.code === "off") return (await dealRule(db, workspaceId, opportunityId))?.boqRequired === false;
+  return QS_SKIPPED.has(requirement.reason.code);
+}
 
 type FactsRow = {
   hasLead: boolean; enquiryType: string | null; enquiryTypeLabel: string | null; flow: string | null; flowVersionId: string | null; clientType: string | null;
@@ -19,7 +31,7 @@ type FactsRow = {
   packageCode: string | null;
   furniturePath: FurniturePath | null; feasibilityAt: Date | null; feasibilityBy: string | null; materialsChange: boolean;
   clientApprovedAt: Date | null; clientApprovedBy: string | null;
-  caseId: string | null; quotationExists: boolean; qsApproved: boolean; quoteSent: boolean; quoteAccepted: boolean;
+  caseId: string | null; quotationExists: boolean; latestQuotationId: string | null; qsApproved: boolean; quoteSent: boolean; quoteAccepted: boolean;
   proofCount: number; proofAt: Date | null; proofBy: string | null; verifiedPayment: boolean; dealApproved: boolean;
   designStagesDone: string[] | null; siteVisitAt: Date | null; siteVisitBy: string | null; materialListSignedOff: boolean;
 };
@@ -61,6 +73,8 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
             source_case.id AS "caseId",
             EXISTS (SELECT 1 FROM commercial_quotes quote WHERE quote.workspace_id = opportunity.workspace_id AND quote.case_id = source_case.id
                       AND quote.kind = 'quotation' AND quote.status NOT IN ('withdrawn', 'superseded')) AS "quotationExists",
+            (SELECT quote.id FROM commercial_quotes quote WHERE quote.workspace_id = opportunity.workspace_id AND quote.case_id = source_case.id
+                      AND quote.kind = 'quotation' AND quote.status NOT IN ('withdrawn', 'superseded') ORDER BY quote.number DESC LIMIT 1) AS "latestQuotationId",
             EXISTS (SELECT 1 FROM commercial_quotes quote WHERE quote.workspace_id = opportunity.workspace_id AND quote.case_id = source_case.id
                       AND quote.kind = 'quotation' AND quote.status IN ('internal_approved', 'issued', 'accepted')) AS "qsApproved",
             EXISTS (SELECT 1 FROM commercial_quotes quote WHERE quote.workspace_id = opportunity.workspace_id AND quote.case_id = source_case.id
@@ -123,8 +137,9 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
     packageCode: row.packageCode,
     siteVisitRecorded: Boolean(row.siteVisitAt),
     quotationExists: row.quotationExists,
-    // PLM-083: an order that needs no BOQ has no QS step: a quotation on the table is enough.
-    qsApproved: row.qsApproved || (row.quotationExists && (await dealRule(db, workspaceId, opportunityId))?.boqRequired === false),
+    // PLM-083/084: where the firm's QS rules skip this quotation (the order needs no BOQ, a Design Fee proposal, standard
+    // items only), there is no QS step: a quotation on the table is enough.
+    qsApproved: row.qsApproved || (row.quotationExists && await qsSkipped(db, workspaceId, opportunityId, row.caseId, row.latestQuotationId)),
     quoteSent: row.quoteSent,
     quoteAccepted: row.quoteAccepted,
     clientApprovedOnSpot,

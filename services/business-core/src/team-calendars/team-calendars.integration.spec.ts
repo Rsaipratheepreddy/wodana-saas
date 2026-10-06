@@ -202,6 +202,54 @@ integration("team calendars, client update calls and areas after Won", () => {
     expect(await processClientCalls(w.client, w.workspaceId)).toEqual({ booked: 0 });
   }));
 
+  it("makes the client updates portal updates: the call ahead is cancelled, the Account Manager is reminded on the day, the next follows on a working day (PLM-046)", () => world(async (w) => {
+    const started = await startClientCalls(w.client, w.workspaceId, w.caseId, "design_approval", w.people.designer);
+    const calls = new ClientCallsService(access(w, w.people.owner, DESIGN));
+    const portal = await calls.set(actor, w.workspaceId, w.caseId, { frequency: "weekly", mode: "portal", version: started!.version });
+    expect(portal).toMatchObject({ mode: "portal", frequency: "weekly", version: started!.version + 1 });
+    const status = async (id: string) => (await w.client.query<{ status: string; outcome: string | null }>(
+      `SELECT status::text, completion_outcome AS outcome FROM crm_activities WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, id])).rows[0];
+    expect((await status(started!.nextActivityId!)).status).toBe("cancelled");
+    const task = (await w.client.query(`SELECT type::text, owner_membership_id AS owner, title, customer_visible AS "customerVisible", status::text FROM crm_activities WHERE workspace_id = $1 AND id = $2`,
+      [w.workspaceId, portal.next!.activityId])).rows[0];
+    expect(task).toEqual({ type: "task", owner: w.members.owner, title: "Post a progress update · Maya Client", customerVisible: false, status: "pending" });
+    const first = portal.next!.on!;
+    expect(first > w.today).toBe(true);
+    expect([1, 2, 3, 4, 5]).toContain(new Date(`${first}T00:00:00Z`).getUTCDay());
+    expect((await w.client.query(`SELECT source FROM audit_events WHERE workspace_id = $1 AND entity_id = $2 AND action = 'client_calls.mode_changed.v1'`, [w.workspaceId, w.caseId])).rows)
+      .toEqual([{ source: "user" }]);
+
+    // Nothing is said before the day; on the day the Account Manager hears it once, linked to the project's updates.
+    expect(await processClientCalls(w.client, w.workspaceId)).toEqual({ booked: 0 });
+    expect(await told(w, "client_calls.portal_update_due")).toEqual([]);
+    await w.client.query("UPDATE client_update_calls SET next_on = $3 WHERE workspace_id = $1 AND case_id = $2", [w.workspaceId, w.caseId, w.today]);
+    expect(await processClientCalls(w.client, w.workspaceId)).toEqual({ booked: 0 });
+    await processClientCalls(w.client, w.workspaceId);
+    expect(await told(w, "client_calls.portal_update_due")).toEqual([expect.objectContaining({ recipient: w.people.owner, subject: "Post a progress update · Maya Client" })]);
+    expect((await told(w, "client_calls.portal_update_due", "email")).map((row) => row.recipient)).toEqual([w.people.owner]);
+    expect((await w.client.query(`SELECT DISTINCT deep_link AS link FROM notifications WHERE workspace_id = $1 AND event_type = 'client_calls.portal_update_due'`, [w.workspaceId])).rows)
+      .toEqual([{ link: `/workspace/projects/${w.projectId}/updates` }]);
+
+    // An update shared with the client closes the reminder, and the next is a week on, on a working day.
+    await w.client.query("UPDATE crm_activities SET created_at = now() - interval '1 hour' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, portal.next!.activityId]);
+    await w.client.query(`INSERT INTO project_status_updates (id, workspace_id, project_id, health, note, created_by, shared_at, shared_by) VALUES ($1, $2, $3, 'on_track', 'Cabinets fitted', $4, now(), $4)`,
+      [randomUUID(), w.workspaceId, w.projectId, w.people.manager]);
+    expect(await processClientCalls(w.client, w.workspaceId)).toEqual({ booked: 1 });
+    expect(await status(portal.next!.activityId)).toEqual({ status: "completed", outcome: "Progress update shared" });
+    const next = await calls.get(actor, w.workspaceId, w.caseId);
+    expect(next.next!.activityId).not.toBe(portal.next!.activityId);
+    expect(Date.parse(next.next!.on!) - Date.parse(w.today)).toBeGreaterThanOrEqual(7 * 86_400_000);
+    expect([1, 2, 3, 4, 5]).toContain(new Date(`${next.next!.on}T00:00:00Z`).getUTCDay());
+    expect(await processClientCalls(w.client, w.workspaceId)).toEqual({ booked: 0 });
+
+    // Back to calls: the reminder is cancelled and a call is booked in the calendar.
+    const back = await calls.set(actor, w.workspaceId, w.caseId, { frequency: "weekly", mode: "call", version: next.version });
+    expect((await status(next.next!.activityId)).status).toBe("cancelled");
+    expect(back.mode).toBe("call");
+    expect((await w.client.query(`SELECT 1 FROM crm_activities activity JOIN crm_appointments appointment ON appointment.workspace_id = activity.workspace_id AND appointment.activity_id = activity.id
+      WHERE activity.workspace_id = $1 AND activity.id = $2 AND activity.type = 'call' AND activity.status = 'pending'`, [w.workspaceId, back.next!.activityId])).rowCount).toBe(1);
+  }));
+
   it("starts the calls from the accepted estimate on a job without design (PLM-046)", () => world(async (w) => {
     await winOpportunityOnAcceptance(w.client, { workspaceId: w.workspaceId, caseId: w.caseId, quoteNumber: 3, round: "main", actorUserId: w.people.owner, source: "user" });
     const row = (await w.client.query<{ startedFrom: string; frequency: string }>(`SELECT started_from AS "startedFrom", frequency FROM client_update_calls WHERE workspace_id = $1 AND case_id = $2`,

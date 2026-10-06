@@ -41,7 +41,7 @@ export type ProjectInstallation = {
   /** Who goes on the delivery (with the vehicle and driver) and on the installation: people by name (Palm, 6 Oct). */
   deliveryCrew?: (Crew & { assignmentId: string | null }) | null; installationCrew?: (Crew & { assignmentId: string | null }) | null;
   /** The building permit the delivery needs on a route that checks it: covering the delivery day (or valid today), until when, the planned collection. */
-  permit?: { required: boolean; valid: boolean; validTo: string | null; collectOn: string | null; plannedId: string | null; collected: boolean };
+  permit?: { required: boolean; valid: boolean; validTo: string | null; reminderOn?: string | null; collectOn: string | null; plannedId: string | null; collected: boolean };
 };
 export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; workTemplates: WorkTemplate[]; canManage: boolean };
 /** One step of a package's standard work: working days, the role that does it, its stage, and whether it runs with the step before. */
@@ -134,9 +134,18 @@ export type DrawingRevision = {
   files: DrawingFile[];
 };
 /** The project's technical drawings (PLM-057 … 060), newest revision first, with what this person may do next. */
+export type DrawingReason = "bespoke" | "made_to_order" | "no_catalogue_drawing" | "catalogue_drawing";
+/** One item and whether it needs technical drawings (PLM-057): the rule, the team's decision, and the catalogue drawing it already has. */
+export type DrawingItem = {
+  lineId: string; title: string; area: string | null; catalogItemId: string | null; catalogId: string | null; catalogName: string | null; catalogDrawingUrl: string | null;
+  rule: { needed: boolean; reason: DrawingReason }; needed: boolean;
+  override: { needed: boolean; reason: string; byName: string | null; at: string | null } | null; version: number;
+};
 export type DrawingsState = {
   revisions: DrawingRevision[]; version: number; caseId: string; inRoute: boolean; needsSiteCheck: boolean;
   canUpload: boolean; canCheck: boolean; canSend: boolean; canDecide: boolean;
+  /** Whether any item needs drawings; the items; who may decide per item. */
+  needed?: boolean; items?: DrawingItem[]; canDecideItems?: boolean;
 };
 
 export type CostSource = "stock" | "service" | "price_difference" | "charge" | "labour" | "petty_cash";

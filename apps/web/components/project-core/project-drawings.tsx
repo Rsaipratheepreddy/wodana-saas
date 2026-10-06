@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Send } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
-  Button, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormSection, GroupedTable, InlineNotice, SegmentedControl, Skeleton, TextAreaField, TextInput,
+  Badge, Button, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormSection, GroupedTable, InlineNotice, SegmentedControl, Skeleton, TextAreaField, TextInput,
   type GroupedTableColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
-import type { DrawingFile, DrawingRevision, DrawingStatus, DrawingsState } from "@/lib/project-core/types";
+import type { DrawingFile, DrawingItem, DrawingReason, DrawingRevision, DrawingStatus, DrawingsState } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
@@ -39,6 +39,7 @@ export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: 
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<"check" | "decide" | null>(null);
+  const [deciding, setDeciding] = useState<DrawingItem | null>(null);
   const load = useCallback(async () => {
     try { setData(await api.drawings(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The drawings didn't load.")); }
   }, [api, projectId, t]);
@@ -91,12 +92,16 @@ export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: 
       </div>
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {data.items?.length ? <DrawingItems items={data.items} canDecide={Boolean(data.canDecideItems)} onDecide={setDeciding} /> : null}
     {latest ? <RevisionFacts revision={latest} /> : null}
     {data.revisions.length
       ? <GroupedTable<DrawingFile> ariaLabel={t("Drawings")} columns={columns} selectable={false} getRowId={(file) => file.id} getRowLabel={(file) => file.name}
           sections={data.revisions.map((revision) => ({ id: revision.id, label: t("R{number} · {status}", { number: revision.number, status: labels[revision.status] }),
             rows: revision.files, emptyMessage: t("No files yet."), headerLabels: { file: "", by: format.when(revision.createdAt) } }))} />
       : <EmptyState illustration={null} title={t("No drawings yet")} description={data.canUpload ? t("Upload the technical drawings as PDFs or images.") : undefined} />}
+    {deciding ? <DrawingNeedDialog item={deciding} onClose={() => setDeciding(null)} onSave={async (needed, reason) => {
+      await command("set_drawing_need", { lineId: deciding.lineId, needed, reason }, true); setDeciding(null);
+    }} /> : null}
     {dialog === "check" && latest ? <SiteCheckDialog revision={latest} onClose={() => setDialog(null)}
       onSave={async (result, note) => { await command("check_drawings", { revisionId: latest.id, result, note }, true); setDialog(null); }} /> : null}
     {dialog === "decide" && latest ? <ClientDecisionDialog revision={latest} today={format.today()} onClose={() => setDialog(null)}
@@ -163,5 +168,51 @@ function ClientDecisionDialog({ revision, today, onClose, onSave }: {
       {decision === "approve" && !signed ? <FileUploader accept={ACCEPT} label={t("The client's signed approval")} onFiles={(added) => setFiles((current) => [...current, ...added].slice(0, 5))} /> : null}
       <TextAreaField label={decision === "changes" ? t("What the client wants changed") : t("Note")} isRequired={decision === "changes"} maxLength={1000} value={note} onChange={setNote} />
     </FormSection>
+  </FormDialog>;
+}
+
+function useReasonLabels() {
+  const t = useT();
+  return useMemo<Record<DrawingReason, string>>(() => ({
+    bespoke: t("Bespoke"), made_to_order: t("Made to order"), no_catalogue_drawing: t("No catalogue drawing"), catalogue_drawing: t("Catalogue drawing attached"),
+  }), [t]);
+}
+
+/**
+ * The items and whether each needs technical drawings (PLM-057): bespoke and made-to-order always; a standard item only
+ * without a catalogue drawing (linked here); the team's decision, with who and why, wins over the rule.
+ */
+function DrawingItems({ items, canDecide, onDecide }: { items: DrawingItem[]; canDecide: boolean; onDecide: (item: DrawingItem) => void }) {
+  const t = useT();
+  const reasons = useReasonLabels();
+  const columns: GroupedTableColumn<DrawingItem>[] = [
+    { id: "item", label: t("Item"), width: "40%", render: (item) => <span className={styles.lineCell}><span>{item.title}</span>{item.area ? <small>{item.area}</small> : null}</span> },
+    { id: "drawings", label: t("Drawings"), width: "35%", render: (item) => <span className={styles.lineCell}>
+      <span><Badge tone={item.needed ? "warning" : "success"}>{item.needed ? t("Needed") : t("Not needed")}</Badge></span>
+      <small>{item.override ? [item.override.reason, item.override.byName].filter(Boolean).join(" · ") : reasons[item.rule.reason]}</small>
+    </span> },
+    { id: "catalogue", label: t("Catalogue drawing"), width: canDecide ? "15%" : "25%", mobileHidden: true, render: (item) => item.catalogDrawingUrl
+      ? <a className={styles.detailLink} href={item.catalogDrawingUrl} target="_blank" rel="noreferrer">{item.catalogName ?? t("Open the drawing")}</a> : <span className={styles.muted}>—</span> },
+    ...(canDecide ? [{ id: "action", label: "", width: "10%", align: "end" as const, render: (item: DrawingItem) =>
+      <Button size="compact" variant="quiet" onPress={() => onDecide(item)}>{t("Change")}</Button> }] : []),
+  ];
+  return <GroupedTable<DrawingItem> ariaLabel={t("Items")} columns={columns} selectable={false} getRowId={(item) => item.lineId} getRowLabel={(item) => item.title}
+    onRowAction={canDecide ? (item) => onDecide(item) : undefined}
+    sections={[{ id: "items", label: t("Items"), rows: items, emptyMessage: t("No items yet."), headerLabels: { item: "", drawings: t("{count} need drawings", { count: items.filter((item) => item.needed).length }), catalogue: "", action: "" } }]} />;
+}
+
+/** Whether one item needs drawings: as the rule says, or the team's decision with the reason. */
+function DrawingNeedDialog({ item, onClose, onSave }: { item: DrawingItem; onClose: () => void; onSave: (needed: boolean | null, reason: string) => Promise<void> }) {
+  const t = useT();
+  const reasons = useReasonLabels();
+  const [choice, setChoice] = useState<"rule" | "needed" | "not_needed">(item.override ? (item.override.needed ? "needed" : "not_needed") : "rule");
+  const [reason, setReason] = useState(item.override?.reason ?? "");
+  const ruleLabel = t("As the rule says ({rule})", { rule: `${item.rule.needed ? t("Needed") : t("Not needed")} · ${reasons[item.rule.reason]}` });
+  return <FormDialog size="md" title={item.title} onClose={onClose} isDirty={choice !== (item.override ? (item.override.needed ? "needed" : "not_needed") : "rule") || reason !== (item.override?.reason ?? "")}
+    isSubmitDisabled={choice !== "rule" && !reason.trim()} submitLabel={t("Save")}
+    onSubmit={() => onSave(choice === "rule" ? null : choice === "needed", choice === "rule" ? "" : reason.trim())}>
+    <SegmentedControl label={t("Technical drawings")} value={choice} onChange={(value) => setChoice(value as typeof choice)}
+      options={[{ id: "rule", label: ruleLabel }, { id: "needed", label: t("Needed") }, { id: "not_needed", label: t("Not needed") }]} />
+    {choice !== "rule" ? <TextAreaField label={t("Why")} isRequired maxLength={500} value={reason} onChange={setReason} /> : null}
   </FormDialog>;
 }

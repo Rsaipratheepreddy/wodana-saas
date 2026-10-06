@@ -247,6 +247,65 @@ integration("P3 quotation side: numbering, proposals, QS, e-sign and markup disc
     });
   });
 
+  it("asks for the QS only where the firm's rules apply (Palm, second round): joinery or bespoke lines, a BOQ deal; never a Design Fee or standard items", async () => {
+    await world(async (w) => {
+      const sales = w.builder(w.sales, SALES_PERMISSIONS);
+      const salesQs = new QsReviewService(w.access(w.sales, SALES_PERMISSIONS));
+      const joinery = (await sales.addWorkPackage(actor, w.workspaceId, { id: randomUUID(), name: "Joinery" })).id;
+      const loose = (await sales.addWorkPackage(actor, w.workspaceId, { id: randomUUID(), name: "Loose furniture" })).id;
+      const { settings } = await sales.settings(actor, w.workspaceId);
+      await expect(sales.saveSettings(actor, w.workspaceId, { version: settings.version, qsReviewItemTypes: ["sofa"] })).rejects.toThrow();
+      await expect(sales.saveSettings(actor, w.workspaceId, { version: settings.version, qsReviewScope: "some" })).rejects.toThrow();
+      const saved = await sales.saveSettings(actor, w.workspaceId, { version: settings.version, qsReview: true, qsReviewScope: "rules", qsReviewItemTypes: ["assembly", "assembly"] });
+      expect(saved).toMatchObject({ qsReview: true, qsReviewScope: "rules", qsReviewItemTypes: ["assembly"] });
+      // The firm marks Joinery for QS review on the work package itself.
+      const trades = await sales.updateWorkPackage(actor, w.workspaceId, joinery, { qsReview: true });
+      expect(trades.map((trade) => [trade.name, trade.qsReview])).toEqual([["Joinery", true], ["Loose furniture", false]]);
+      const audits = (await w.client.query(`SELECT action, after FROM audit_events WHERE workspace_id = $1 AND action IN ('quotation.settings_changed.v1', 'quotation.work_package_changed.v1') ORDER BY occurred_at`,
+        [w.workspaceId])).rows;
+      expect(audits.find((row) => row.action === "quotation.settings_changed.v1")?.after).toMatchObject({ qsReviewScope: "rules", qsReviewItemTypes: ["assembly"] });
+      expect(audits.find((row) => row.action === "quotation.work_package_changed.v1")?.after).toEqual({ qsReview: true });
+
+      // Standard items only: no QS; Sales prices the lines and the quotation goes out.
+      await w.client.query("UPDATE commercial_quote_lines SET work_package_id = $3 WHERE workspace_id = $1 AND quote_id = $2", [w.workspaceId, w.quoteId, loose]);
+      expect(await salesQs.state(actor, w.workspaceId, w.caseId, w.quoteId)).toMatchObject({ required: false, reason: { code: "standard_only" }, stage: "not_required" });
+      await sales.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "b", version: 1, rate: "850" } }] });
+
+      // A joinery line: the QS prices it, and the reason names the work package.
+      await sales.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: 1, workPackageId: joinery } }] });
+      expect(await salesQs.state(actor, w.workspaceId, w.caseId, w.quoteId)).toMatchObject({ required: true, reason: { code: "lines", workPackages: ["Joinery"], itemTypes: [] }, stage: "to_send" });
+      await expect(sales.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "b", version: 2, rate: "900" } }] })).rejects.toThrow(/QS sets the prices/);
+      await expect(issue(w)).rejects.toThrow(/Send this quotation to the QS/);
+
+      // The same lines on a Design Fee proposal skip the QS.
+      await w.client.query("UPDATE commercial_quotes SET round = 'design' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, w.quoteId]);
+      expect(await salesQs.state(actor, w.workspaceId, w.caseId, w.quoteId)).toMatchObject({ required: false, reason: { code: "design_fee" } });
+      await w.client.query("UPDATE commercial_quotes SET round = 'main' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, w.quoteId]);
+
+      // A bespoke catalogue item (a kind the firm marked) needs the QS too.
+      await w.client.query("UPDATE commercial_quote_lines SET work_package_id = $3 WHERE workspace_id = $1 AND quote_id = $2", [w.workspaceId, w.quoteId, loose]);
+      const catalog = randomUUID(), item = randomUUID();
+      await w.client.query("INSERT INTO catalogs(id,workspace_id,code,name) VALUES($1,$2,'sell','Sell')", [catalog, w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_items(id,workspace_id,catalog_id,code,name,item_type,unit_code) VALUES($1,$2,$3,'BSP-1','Bespoke sideboard','assembly','nos')", [item, w.workspaceId, catalog]);
+      await w.client.query("UPDATE commercial_quote_lines SET catalog_item_id = $3 WHERE workspace_id = $1 AND quote_id = $2 AND id = 'a'", [w.workspaceId, w.quoteId, item]);
+      expect((await salesQs.state(actor, w.workspaceId, w.caseId, w.quoteId)).reason).toEqual({ code: "lines", workPackages: [], itemTypes: ["assembly"] });
+      await w.client.query("UPDATE commercial_quote_lines SET catalog_item_id = NULL WHERE workspace_id = $1 AND quote_id = $2", [w.workspaceId, w.quoteId]);
+
+      // A deal whose order needs a BOQ needs the QS even with standard items.
+      const opportunity = (await w.client.query<{ id: string }>("SELECT opportunity_id AS id FROM pre_project_cases WHERE id = $1", [w.caseId])).rows[0].id;
+      await w.client.query("INSERT INTO crm_deal_fulfilment(workspace_id,opportunity_id,boq_required) VALUES($1,$2,true)", [w.workspaceId, opportunity]);
+      expect(await salesQs.state(actor, w.workspaceId, w.caseId, w.quoteId)).toMatchObject({ required: true, reason: { code: "boq_required" } });
+      await w.client.query("UPDATE crm_deal_fulfilment SET boq_required = NULL WHERE workspace_id = $1 AND opportunity_id = $2", [w.workspaceId, opportunity]);
+
+      // The switch stays the master switch: off, nothing needs the QS.
+      await w.client.query("UPDATE commercial_quote_lines SET work_package_id = $3 WHERE workspace_id = $1 AND quote_id = $2", [w.workspaceId, w.quoteId, joinery]);
+      const current = (await sales.settings(actor, w.workspaceId)).settings;
+      await sales.saveSettings(actor, w.workspaceId, { version: current.version, qsReview: false });
+      expect((await salesQs.state(actor, w.workspaceId, w.caseId, w.quoteId)).reason).toEqual({ code: "off" });
+      expect(await issue(w)).toBe("STU-Q-001-DXB");
+    });
+  });
+
   it("shows the client the same total in every markup mode, and keeps the mode the quote was sent with", async () => {
     await world(async (w) => {
       await w.client.query(`INSERT INTO workspace_quotation_settings (workspace_id, markup_disclosure) VALUES ($1, 'fee_based') ON CONFLICT (workspace_id) DO UPDATE SET markup_disclosure = 'fee_based'`, [w.workspaceId]);

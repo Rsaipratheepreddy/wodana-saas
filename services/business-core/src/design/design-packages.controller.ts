@@ -34,6 +34,8 @@ class DesignFlowSettingsDto {
   @IsInt() @Min(0) version!: number;
   @IsInt() @Min(1) @Max(365) designInternalDays!: number;
   @IsInt() @Min(1) @Max(365) designClientDays!: number;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsInt() @Min(1) @Max(365) renderInternalDays?: number | null;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsInt() @Min(1) @Max(365) renderClientDays?: number | null;
   @IsInt() @Min(1) @Max(90) materialSelectionDays!: number;
   @IsInt() @Min(1) @Max(90) estimateDays!: number;
   @IsString() @MaxLength(60) visualiserRoleCode!: string;

@@ -1,17 +1,22 @@
 import { createHash } from "node:crypto";
-import { HttpException } from "@nestjs/common";
+import { ConflictException, HttpException } from "@nestjs/common";
+import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import type { AttributeDefinition } from "../catalog-core/attributes";
 import { AttributeValueError, normalizeAttributeValues } from "../catalog-core/attributes";
 import { normalizeUnit, PACK_UNITS } from "../catalog-core/catalog-import";
 import type { CatalogV2Service, ItemInput } from "../catalog-core/catalog-v2.service";
 import { recordKey, type ImportContext, type Step, type TargetAdapter } from "./linked-import-run";
-import { sameNumber, sheetNumber, SourceError } from "./linked-import-source";
+import { linkOf, sameNumber, sheetNumber, SourceError } from "./linked-import-source";
 
 const ITEM_TYPES = ["product", "material", "assembly", "service", "package", "ready_made"] as const;
 type ItemType = (typeof ITEM_TYPES)[number];
 type Item = { id: string; code: string; name: string; itemType: ItemType; unitCode: string; categoryId: string | null; description: string | null; wastePercent: string | null;
-  purchaseRoundTo: string | null; productionDays: number | null; status: string; version: number; values: Record<string, string> };
+  purchaseRoundTo: string | null; productionDays: number | null; technicalDrawingUrl: string | null; status: string; version: number; values: Record<string, string>;
+  size: Size | null };
+type SizeUnit = "mm" | "cm" | "m" | "in" | "ft";
+type SizeField = "width" | "depth" | "height";
+type Size = { width: string | null; depth: string | null; height: string | null; unit: SizeUnit; version: number };
 type Definition = AttributeDefinition & { categoryId: string | null };
 type Price = { method: string; price: string | null; cost: string | null };
 
@@ -23,6 +28,44 @@ export function attributeCode(heading: string) {
   if (!code) return `a_${createHash("sha256").update(heading.trim()).digest("hex").slice(0, 10)}`;
   return /^[a-z]/.test(code) ? code : `a_${code}`.slice(0, 60);
 }
+/** A new item's code from its name ("Aria Sofa – 3 seater" → ARIA-SOFA-3-SEATER), unique in the catalog. */
+export function codeFromName(name: string, taken: Set<string>) {
+  const base = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/, "") || "ITEM";
+  let code = base;
+  for (let next = 2; taken.has(code.toLowerCase()); next++) code = `${base.slice(0, 80 - String(next).length - 1).replace(/-+$/, "")}-${next}`;
+  taken.add(code.toLowerCase());
+  return code;
+}
+
+const MM_PER: Record<SizeUnit, string> = { mm: "1", cm: "10", m: "1000", in: "25.4", ft: "304.8" };
+const UNIT_WORDS: Array<[RegExp, SizeUnit]> = [[/^(mm|millimet(er|re)s?)$/i, "mm"], [/^(cm|centimet(er|re)s?)$/i, "cm"], [/^(m|met(er|re)s?)$/i, "m"],
+  [/^(in|inch|inches|")$/i, "in"], [/^(ft|feet|foot|')$/i, "ft"]];
+const unitWord = (text: string) => UNIT_WORDS.find(([pattern]) => pattern.test(text.trim()))?.[1] ?? null;
+/** The unit a heading names ("HEIGHT (CM)", "Width mm"), if any. */
+export function headingUnit(heading: string): SizeUnit | null {
+  const bracket = /\(([^)]*)\)/.exec(heading)?.[1];
+  if (bracket && unitWord(bracket)) return unitWord(bracket);
+  const last = heading.trim().split(/\s+/).at(-1) ?? "";
+  return heading.trim().split(/\s+/).length > 1 ? unitWord(last) : null;
+}
+/**
+ * One size as a cell writes it: a plain number with an optional unit ("300 cm", "120", "1,200 mm"). The unit is
+ * the cell's, else the heading's, else the workspace's. Anything else ("Total H 108 cm – seat 53 cm") is null.
+ */
+export function sizeCell(text: string, heading: string, fallback: SizeUnit): { value: string; unit: SizeUnit } | null {
+  const match = /^([\d.,\s]*\d)\s*([a-z"']*)\.?$/i.exec(text.trim());
+  if (!match) return null;
+  const unit = match[2] ? unitWord(match[2]) : headingUnit(heading) ?? fallback;
+  if (!unit) return null;
+  const digits = match[1].replace(/\s+/g, "");
+  const number = /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(digits) ? digits.replace(/,/g, "") : /^\d+([.,]\d+)?$/.test(digits) ? digits.replace(",", ".") : null;
+  if (!number) return null;
+  const value = Dec.of(number).round(2);
+  if (value.cmp(0) <= 0 || value.cmp("9999999999.99") > 0) return null;
+  return { value: value.toString(), unit };
+}
+const inUnit = (value: string, from: SizeUnit, to: SizeUnit) => (from === to ? Dec.of(value) : Dec.of(value).mul(MM_PER[from]).div(MM_PER[to])).round(2).toString();
+const SIZE_LABEL: Record<SizeField, string> = { height: "Height", width: "Width", depth: "Depth" };
 function itemType(written: string): ItemType | null {
   const key = written.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if ((ITEM_TYPES as readonly string[]).includes(key)) return key as ItemType;
@@ -42,11 +85,21 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
       const catalogId = link.catalogId!;
       const items = (await client.query<Item>(
         `SELECT item.id, item.code, item.name, item.item_type AS "itemType", item.unit_code AS "unitCode", item.category_id AS "categoryId", item.description,
-                item.waste_percent::text AS "wastePercent", item.purchase_round_to::text AS "purchaseRoundTo", item.production_days AS "productionDays", item.status, item.version,
+                item.waste_percent::text AS "wastePercent", item.purchase_round_to::text AS "purchaseRoundTo", item.production_days AS "productionDays",
+                item.technical_drawing_url AS "technicalDrawingUrl", item.status, item.version,
+                (SELECT jsonb_build_object('width', size.width::text, 'depth', size.depth::text, 'height', size.height::text, 'unit', size.unit, 'version', size.version)
+                   FROM catalog_item_dimensions size WHERE size.workspace_id = item.workspace_id AND size.item_id = item.id) AS size,
                 coalesce((SELECT jsonb_object_agg(attribute.code, value.value) FROM catalog_item_values value JOIN catalog_attributes attribute ON attribute.id = value.attribute_id
                   WHERE value.workspace_id = item.workspace_id AND value.item_id = item.id), '{}'::jsonb) AS "values"
            FROM catalog_items item WHERE item.workspace_id = $1 AND item.catalog_id = $2`, [workspaceId, catalogId])).rows;
+      const byId = new Map(items.map((item) => [item.id, item]));
       const byCode = new Map(items.map((item) => [lower(item.code), item]));
+      const byName = new Map<string, Item[]>();
+      for (const item of items) byName.set(lower(item.name), [...(byName.get(lower(item.name)) ?? []), item]);
+      const taken = new Set(items.map((item) => lower(item.code)));
+      const codeMapped = Object.values(link.mapping?.columns ?? {}).includes("code");
+      const unitSystem = (await client.query<{ unitSystem: string }>(`SELECT unit_system::text AS "unitSystem" FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.unitSystem;
+      const defaultUnit: SizeUnit = unitSystem === "imperial" ? "in" : "cm";
       const categories = new Map((await client.query<{ id: string; name: string }>(
         `SELECT id, name FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND status = 'active' ORDER BY parent_id NULLS FIRST, sort_order`,
         [workspaceId, catalogId])).rows.reverse().map((row) => [lower(row.name), row.id]));
@@ -68,22 +121,39 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
         return ancestors.get(categoryId)!;
       };
       const seen = new Set<string>();
+      const claimed = new Set<string>();
       const steps: Step[] = [];
 
       for (const row of rows) {
-        const code = row.key.trim();
-        const item = byCode.get(lower(code));
+        const key = row.key.trim();
+        const written = (row.values.code ?? "").trim();
         const name = (row.values.name ?? "").trim();
-        const base = { sheet: row.sheet, line: row.line, key: code, name: name || item?.name || code, changes: [] as string[], message: "", recordKey: code ? recordKey(code, null) : null, locationId: null };
+        const base = { sheet: row.sheet, line: row.line, key, name: name || key, changes: [] as string[], message: "", recordKey: key ? recordKey(key, null) : null, locationId: null };
         const fail = (message: string): Step => ({ ...base, outcome: "error", message });
         try {
-          if (!code) { steps.push(fail("No item code.")); continue; }
-          if (code.length > 80) { steps.push(fail("The code is longer than 80 characters.")); continue; }
-          if (seen.has(lower(code))) { steps.push(fail(`Code ${code} is on another row.`)); continue; }
-          seen.add(lower(code));
+          if (!key) { steps.push(fail(codeMapped ? "No item code or name." : "No item name.")); continue; }
+          if (written.length > 80) { steps.push(fail("The code is longer than 80 characters.")); continue; }
+          if (seen.has(lower(key))) { steps.push(fail(written ? `Code ${written} is on another row.` : `${key} is on another row.`)); continue; }
+          seen.add(lower(key));
           if (name.length > 200) { steps.push(fail("The name is longer than 200 characters.")); continue; }
+          // The item: the one this key named before, else by its code, else (no code) the one item of that name in the row's category.
+          const known = context.records.get(recordKey(key, null));
+          let item = known ? byId.get(known.recordId) : undefined;
+          if (!item && written) item = byCode.get(lower(written));
+          if (!item && !written) {
+            const categoryName = (row.values.category ?? "").trim();
+            const inCategory = categoryName ? categories.get(lower(categoryName)) ?? null : undefined;
+            const same = (byName.get(lower(name)) ?? []).filter((candidate) => inCategory === undefined || (inCategory !== null && candidate.categoryId === inCategory));
+            if (same.length > 1) { steps.push(fail(`${same.length} items are called ${name}. Add a code column to tell them apart.`)); continue; }
+            item = same[0];
+          }
+          if (item && claimed.has(item.id)) { steps.push(fail(`Another row is already ${item.name}.`)); continue; }
+          if (item) claimed.add(item.id);
+          if (item) base.name = name || item.name;
           if (!item && !name) { steps.push(fail("Name the item: it's new to the catalog.")); continue; }
           if (item?.status === "archived") { steps.push(fail(`${item.name} is archived in the catalog. Restore it to import it.`)); continue; }
+          const code = item?.code ?? (written || codeFromName(name, taken));
+          if (!item && written) taken.add(lower(written));
           const messages: string[] = [];
 
           // Unit: the catalog's code for it as written; an unknown unit is refused, a pack unit is added on first use.
@@ -105,13 +175,54 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
           const description = (row.values.description ?? "").trim() || (item?.description ?? null);
           if (description && description.length > 4000) { steps.push(fail("The description is longer than 4000 characters.")); continue; }
           const productionDays = row.values.productionDays === undefined ? undefined : sheetNumber(row.values.productionDays, "Production time", { places: 0, whole: true, max: "3650" });
-          const price = row.values.price === undefined ? null : sheetNumber(row.values.price, "Selling price", { places: 6, max: "999999999999" });
+          // A price in words ("ENQUIRE", "N/A") is on request: the item has none. Nought is none too.
+          const priceText = (row.values.price ?? "").trim();
+          let price = priceText && !/\d/.test(priceText) ? null : sheetNumber(row.values.price, "Selling price", { places: 6, max: "999999999999" });
+          if (priceText && !/\d/.test(priceText)) messages.push(`No selling price: ${priceText}.`);
+          if (price !== null && Dec.of(price).cmp(0) === 0) price = null;
           const cost = row.values.cost === undefined ? null : sheetNumber(row.values.cost, "Cost", { places: 6, max: "999999999999" });
+
+          // The technical drawing: the cell's link, or the cell itself when it's a link; anything else leaves the item's as it is.
+          let drawing: string | undefined;
+          const drawingText = (row.values.technicalDrawing ?? "").trim();
+          if (row.values.technicalDrawing !== undefined) {
+            const url = row.links?.technicalDrawing ?? linkOf(drawingText);
+            if (url) drawing = url;
+            else if (drawingText) messages.push(`No link to a technical drawing in ${drawingText}.`);
+          }
+
+          // The size: a cell with one number fills it; any other text is kept as an attribute under its heading.
+          const sheetSizes: Partial<Record<SizeField, { value: string; unit: SizeUnit }>> = {};
+          const sizeTexts: Record<string, string> = {};
+          for (const field of ["height", "width", "depth"] as SizeField[]) {
+            const text = (row.values[field] ?? "").trim();
+            if (!text) continue;
+            const heading = row.headings?.[field] ?? SIZE_LABEL[field];
+            const read = sizeCell(text, heading, defaultUnit);
+            if (read) sheetSizes[field] = read;
+            else { sizeTexts[heading] = text; messages.push(`${heading} isn't one number, so it's kept as text.`); }
+          }
+          const currentSize = item?.size ?? null;
+          const sizeFields = Object.keys(sheetSizes) as SizeField[];
+          let nextSize: Omit<Size, "version"> | null = null;
+          const sizeChanges: string[] = [];
+          if (sizeFields.length) {
+            // The item keeps the unit it's measured in; a new size takes the sheet's.
+            const unit = currentSize?.unit ?? sheetSizes[sizeFields[0]]!.unit;
+            nextSize = { unit, width: null, depth: null, height: null };
+            for (const field of ["width", "depth", "height"] as SizeField[]) {
+              const fromSheet = sheetSizes[field];
+              const before = currentSize?.[field] ? inUnit(currentSize[field]!, currentSize.unit, unit) : null;
+              nextSize[field] = fromSheet ? inUnit(fromSheet.value, fromSheet.unit, unit) : before;
+              if (fromSheet && !sameNumber(before, nextSize[field])) sizeChanges.push(`${SIZE_LABEL[field]} ${before ?? "—"} → ${nextSize[field]} ${unit}`);
+            }
+            if (!sizeChanges.length) nextSize = null;
+          }
 
           // Attributes: the sheet's extra columns over what the item already has; a new heading becomes a text attribute.
           const values: Record<string, string> = { ...(item?.values ?? {}) };
           const newAttributes: string[] = [];
-          for (const [heading, raw] of Object.entries(row.attributes)) {
+          for (const [heading, raw] of Object.entries({ ...row.attributes, ...sizeTexts })) {
             const definition = definitions.find((entry) => lower(entry.label) === lower(heading) || entry.code === attributeCode(heading));
             if (!definition) { newAttributes.push(heading); values[attributeCode(heading)] = raw.slice(0, 500); continue; }
             const choice = definition.choices.find((option) => lower(option.label) === lower(raw) || lower(option.value) === lower(raw));
@@ -135,9 +246,10 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
           const priceChanges = nextPrice !== null && !(current?.method === "fixed" && sameNumber(current.price, nextPrice.price) && sameNumber(current.cost, nextPrice.cost));
 
           const input: ItemInput = {
-            version: item?.version, code: item?.code ?? code, name: name || item!.name, itemType: type, unitCode, categoryId, description,
+            version: item?.version, code, name: name || item!.name, itemType: type, unitCode, categoryId, description,
             wastePercent: item?.wastePercent ?? null, purchaseRoundTo: item?.purchaseRoundTo ?? null, values,
             ...(productionDays === undefined || productionDays === null ? {} : { productionDays: Number(productionDays) }),
+            ...(drawing === undefined ? {} : { technicalDrawingUrl: drawing }),
           };
           if (item) {
             if (name && name !== item.name) base.changes.push(`Name ${item.name} → ${name}`);
@@ -149,8 +261,10 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
             const before = item.values;
             const changedValues = Object.keys(values).filter((code) => (before[code] ?? "") !== values[code]);
             if (changedValues.length) base.changes.push(...changedValues.map((code) => definitions.find((definition) => definition.code === code)?.label ?? newAttributes.find((heading) => attributeCode(heading) === code) ?? code));
+            if (drawing !== undefined && drawing !== item.technicalDrawingUrl) base.changes.push("Technical drawing");
           }
           const detailsChange = !item || base.changes.length > 0;
+          if (item) base.changes.push(...sizeChanges);
           if (priceChanges) base.changes.push(`Price ${shown(current?.price)} → ${shown(nextPrice!.price)}${sameNumber(nextPrice!.cost, current?.cost) ? "" : `, cost ${shown(current?.cost)} → ${shown(nextPrice!.cost)}`} (draft until reviewed)`);
           base.message = messages.join(" ");
           if (item && !base.changes.length) { steps.push({ ...base, outcome: "unchanged", keep: { recordId: item.id, locationId: null, quantity: null } }); continue; }
@@ -190,6 +304,18 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
             let itemId = item?.id;
             if (!item) itemId = await catalogs.insertItem(client, workspaceId, catalogId, { ...input, categoryId: category, values: kept }, userId);
             else if (detailsChange) await catalogs.reviseItem(client, workspaceId, catalogId, item.id, { ...input, categoryId: category, values: kept }, userId);
+            if (nextSize) {
+              // Version-checked against what the preview read: a size someone changed since isn't overwritten.
+              const now = (await client.query<{ version: number }>(`SELECT version FROM catalog_item_dimensions WHERE workspace_id = $1 AND item_id = $2 FOR UPDATE`, [workspaceId, itemId])).rows[0];
+              if ((now?.version ?? 0) !== (currentSize?.version ?? 0)) throw new ConflictException("The item's size changed since the preview. Review it again.");
+              await client.query(
+                `INSERT INTO catalog_item_dimensions (workspace_id, item_id, width, depth, height, unit, source, updated_by) VALUES ($1, $2, $3::numeric, $4::numeric, $5::numeric, $6, 'import', $7)
+                 ON CONFLICT (workspace_id, item_id) DO UPDATE SET width = EXCLUDED.width, depth = EXCLUDED.depth, height = EXCLUDED.height, unit = EXCLUDED.unit,
+                   source = 'import', clip_id = NULL, updated_by = EXCLUDED.updated_by, updated_at = now(), version = catalog_item_dimensions.version + 1`,
+                [workspaceId, itemId, nextSize.width, nextSize.depth, nextSize.height, nextSize.unit, userId]);
+              await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.item_size_saved.v1", entityType: "catalog_item", entityId: itemId!,
+                before: currentSize ? { width: currentSize.width, depth: currentSize.depth, height: currentSize.height, unit: currentSize.unit } : null, after: { ...nextSize, source: "import", linkId: link.id } });
+            }
             if (priceChanges) {
               made.book ??= (await catalogs.insertPriceBook(client, workspaceId, catalogId, { name: `${currency} prices`, currency: currency! }, userId)).id;
               await catalogs.draftPrice(client, workspaceId, made.book, itemId!, { method: "fixed", price: nextPrice!.price, cost: nextPrice!.cost }, userId);

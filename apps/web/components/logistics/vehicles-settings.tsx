@@ -22,8 +22,9 @@ export function LogisticsSettingsSections({ workspaceId }: { workspaceId: string
   const [hidden, setHidden] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [days, setDays] = useState<number | null>(null);
+  const [reminder, setReminder] = useState<number | null>(null);
   const load = useCallback(async () => {
-    try { const next = await api.vehicles(); setData(next); setDays(next.permitWarningDays); setError(""); }
+    try { const next = await api.vehicles(); setData(next); setDays(next.permitWarningDays); setReminder(next.permitExpiryReminderDays ?? 7); setError(""); }
     catch (cause) { if ((cause as { status?: number }).status === 403) setHidden(true); else setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -32,6 +33,11 @@ export function LogisticsSettingsSections({ workspaceId }: { workspaceId: string
   const saveDays = async () => {
     if (days === null || days === data.permitWarningDays) return;
     try { setData(await api.saveSettings({ version: data.settingsVersion, permitWarningDays: days })); setError(""); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); await load(); }
+  };
+  const saveReminder = async () => {
+    if (reminder === null || reminder === (data.permitExpiryReminderDays ?? 7)) return;
+    try { setData(await api.saveSettings({ version: data.settingsVersion, permitExpiryReminderDays: reminder })); setError(""); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); await load(); }
   };
   return <>
@@ -56,6 +62,11 @@ export function LogisticsSettingsSections({ workspaceId }: { workspaceId: string
       <SettingsRow label={t("Warn before a delivery")} hint={t("Working days before a delivery with no building permit for its day.")}>
         <NumericInput label={<span className="wd-visually-hidden">{t("Warn before a delivery")}</span>} aria-label={t("Warn before a delivery")} minValue={0} maxValue={30} isDisabled={!data.canManage} value={days ?? data.permitWarningDays}
           onChange={(value) => setDays(Number.isFinite(value) ? value : null)} onBlur={() => void saveDays()} />
+      </SettingsRow>
+      <SettingsRow label={t("Remind before a permit ends")} hint={t("Days before each permit ends, unless the permit has its own.")}>
+        <NumericInput label={<span className="wd-visually-hidden">{t("Remind before a permit ends")}</span>} aria-label={t("Remind before a permit ends")} minValue={0} maxValue={365}
+          isDisabled={!data.canManage} value={reminder ?? data.permitExpiryReminderDays ?? 7} onChange={(value) => setReminder(Number.isFinite(value) ? value : null)}
+          onBlur={() => void saveReminder()} />
       </SettingsRow>
     </SettingsSection>
     {draft ? <VehicleDialog draft={draft} onClose={() => setDraft(null)} onSave={async (next) => {

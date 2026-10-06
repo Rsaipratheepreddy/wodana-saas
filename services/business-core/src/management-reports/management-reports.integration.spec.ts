@@ -34,6 +34,7 @@ integration("management dashboards with PostgreSQL", () => {
       sNew: id(), sQualified: id(), sProposal: id(), sWon: id(), sLost: id(), taxType: id(), taxSource: id(), pkConcept: id(), pkBespoke: id(), policy: id(),
       L1: id(), L2: id(), L3: id(), L4: id(), L5: id(), L6: id(), L7: id(), L8: id(), L9: id(),
       O1: id(), O2: id(), O3: id(), O4: id(), O5: id(), C1: id(), C3: id(), C4: id(), P1: id(),
+      O6: id(), O7: id(), C7: id(), L10: id(), L11: id(), L12: id(), R1: id(), R2: id(), R3: id(),
     };
     try {
       await client.query("BEGIN");
@@ -181,6 +182,29 @@ integration("management dashboards with PostgreSQL", () => {
         VALUES($1,$2,$3,$4,'automatic','{"reason":"unanswered_takeover"}','2026-09-03T15:05:00Z'),($1,$5,$3,$3,'automatic','{"reason":"no_eligible_alternate","kept":"true"}','2026-09-06T15:05:00Z')`,
         [ids.ws, ids.L2, ids.mAli, ids.mSara, ids.L5]);
 
+      // Cancelled deals stay recorded (never Won): O6 (Sara) won its design fee on the 3rd, its order cancelled on the 16th;
+      // O7 (Ali) won on the 4th, its job cancelled on the 17th.
+      await opportunity("O6", { lead: null, owner: ids.mSara, stage: ids.sWon, status: "won", amount: "4200", closedAt: "2026-09-03T14:00:00Z" });
+      await opportunity("O7", { lead: null, owner: ids.mAli, stage: ids.sWon, status: "won", amount: "3000", closedAt: "2026-09-04T14:00:00Z" });
+      await proposal(ids.O6, "design", "4200", "2026-09-03T14:00:00Z");
+      await client.query("INSERT INTO crm_deal_fulfilment(workspace_id,opportunity_id,cancelled_at,cancelled_by,cancel_reason) VALUES($1,$2,'2026-09-16T14:00:00Z',$3,'Client relocated')",
+        [ids.ws, ids.O6, ids.owner]);
+      await client.query(`INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,status,created_by,cancelled_at,cancelled_by,cancellation_reason)
+        VALUES($1,$2,$3,'cancelled',$4,'2026-09-17T14:00:00Z',$4,'Budget withdrawn')`, [ids.C7, ids.ws, ids.O7, ids.owner]);
+      // Refunds Finance completed: 1,050 on O1 (1,000 before tax) in the period; 300 without a deal in the period; 500 without a deal in August.
+      const refund = (key: string, number: number, opp: string | null, amount: string, closedAt: string) => client.query(
+        `INSERT INTO finance_requests(id,workspace_id,number,kind,status,requested_by,party_id,opportunity_id,currency,total_amount,reason,invoice_number,closed_by,closed_at,close_note)
+         VALUES($1,$2,$3,'refund','done',$4,$5,$6,'USD',$7,'Item not delivered','INV-1',$4,$8,'')`, [ids[key], ids.ws, number, ids.owner, ids.party, opp, amount, closedAt]);
+      await refund("R1", 1, ids.O1, "1050", "2026-09-19T14:00:00Z");
+      await refund("R2", 2, null, "300", "2026-09-12T14:00:00Z");
+      await refund("R3", 3, null, "500", "2026-08-12T14:00:00Z");
+      // Enquiries closed as not interested this month (they came in during August, so New leads doesn't move).
+      await lead("L10", "2026-08-20T14:00:00Z", { owner: ids.mAli, type: "full_id", source: "website", status: "disqualified" });
+      await lead("L11", "2026-08-21T14:00:00Z", { owner: ids.mSara, type: "furniture_only", source: "instagram", status: "disqualified" });
+      await lead("L12", "2026-08-22T14:00:00Z", { owner: ids.mSara, type: "full_id", source: "website", status: "disqualified" });
+      for (const [key, reason, closedAt] of [["L10", "Not interested", "2026-09-11T14:00:00Z"], ["L11", "Budget too low", "2026-09-12T14:00:00Z"], ["L12", "Not interested", "2026-08-30T14:00:00Z"]])
+        await client.query("UPDATE crm_leads SET disqualification_reason = $2, closed_at = $3 WHERE id = $1", [ids[key], reason, closedAt]);
+
       await work(client, ids);
     } finally {
       await client.query("ROLLBACK");
@@ -231,6 +255,16 @@ integration("management dashboards with PostgreSQL", () => {
       // O1 (Full ID → design handover) closed when the design was approved on the 8th.
       expect(kpi(kpis, "deals_closed")).toMatchObject({ value: "1", amount: "30000.00" });
       expect(kpi(kpis, "profit_margin")).toMatchObject({ value: "25.00", count: 1 });
+
+      // Won left out O6 and O7 (cancelled); they are reported here, with the refunds Finance paid in the period.
+      const cancelled = kpi(kpis, "cancellations_refunds");
+      expect(cancelled).toMatchObject({ value: "2", count: 2, amount: "7200.00", extra: { refundCount: 2, refundValue: "1300.00" } });
+      const cancelledChart = cancelled.chart as Extract<Kpi["chart"], { type: "columns" }>;
+      expect(cancelledChart.values.map((row) => row.slice(-2))).toEqual([["0.00", "7200.00"], ["500.00", "1300.00"]]);
+      // Net revenue: 10,000 collected less 1,300 refunded (1,000 before tax on O1, 300 as entered without a deal).
+      const net = kpi(kpis, "net_revenue");
+      expect(net).toMatchObject({ value: "8700.00", extra: { collected: "10000.00", refunded: "1300.00" }, notes: { otherCurrency: 1 } });
+      expect((net.chart as Extract<Kpi["chart"], { type: "lines" }>).values.map((row) => row.slice(-2))).toEqual([["-500.00", "8700.00"], ["0.00", "10000.00"], ["500.00", "1300.00"]]);
     });
   });
 
@@ -250,6 +284,11 @@ integration("management dashboards with PostgreSQL", () => {
         ["Ali Manager", 2, "30000.00", "15000.00"], ["Sara Manager", 1, "8000.00", "8000.00"]]);
       expect(kpi(kpis, "lost")).toMatchObject({ value: "1", amount: "2100.00" });
       expect((kpi(kpis, "lost").chart as Extract<Kpi["chart"], { type: "bars" }>).items[0]).toMatchObject({ key: "price", label: "Price", count: 1 });
+      // Not interested: L10 and L11 closed this month (L12 closed in August), by reason; never counted as Lost.
+      const notInterested = kpi(kpis, "not_interested");
+      expect(notInterested).toMatchObject({ value: "2", count: 2 });
+      expect((notInterested.chart as Extract<Kpi["chart"], { type: "bars" }>).items.map((item) => [item.key, item.label, item.count]))
+        .toEqual([["budget too low", "Budget too low", 1], ["not interested", "Not interested", 1]]);
       expect(kpi(kpis, "duplicates").value).toBe("1");
       expect(kpi(kpis, "returning_customers").value).toBe("1");
       expect(kpi(kpis, "follow_ups")).toMatchObject({ value: "2", extra: { overdue: 1, due: 1 } });
@@ -306,6 +345,10 @@ integration("management dashboards with PostgreSQL", () => {
       expect(kpi(company.kpis, "new_leads").value).toBe("1");
       const sara = await readDashboard(client, ids.ws, "owner-overview", { ...PERIOD, accountManager: ids.mSara }, NOW);
       expect(kpi(sara.kpis, "sales_won")).toMatchObject({ value: "8000.00", count: 1 });
+      // Sara's cancelled deal (O6); the refund without a deal drops out once a sales filter is on.
+      expect(kpi(sara.kpis, "cancellations_refunds")).toMatchObject({ value: "1", amount: "4200.00", extra: { refundCount: 0 } });
+      expect(kpi(sara.kpis, "net_revenue").value).toBe("0.00");
+      expect(kpi((await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, accountManager: ids.mAli }, NOW)).kpis, "not_interested").value).toBe("1");
       const concept = await readDashboard(client, ids.ws, "design-projects", { ...PERIOD, package: ids.pkConcept }, NOW);
       expect(kpi(concept.kpis, "package_mix").value).toBe("1");
       // Targets aren't compared while a filter other than the period and Account Manager is on.
@@ -316,6 +359,15 @@ integration("management dashboards with PostgreSQL", () => {
       const design = await readRecords(client, ids.ws, "owner-overview", { ...PERIOD, kpi: "sales_won", bucket: "month=2026-09;series=design" }, NOW);
       expect(design.records.map((record) => [record.reference, record.amount, record.href])).toEqual([
         ["O-O4", "8000.000000", `/workspace/crm/opportunities?record=${ids.O4}`], ["O-O1", "10000.000000", `/workspace/crm/opportunities?record=${ids.O1}`]]);
+      const refunds = await readRecords(client, ids.ws, "owner-overview", { ...PERIOD, kpi: "cancellations_refunds", bucket: "period=1;series=refund" }, NOW);
+      expect(refunds.records.map((record) => [record.reference, record.amount, record.href])).toEqual([
+        ["FR-0001", "1000.000000", `/workspace/finance/requests?request=${ids.R1}`], ["FR-0002", "300.000000", `/workspace/finance/requests?request=${ids.R2}`]]);
+      const cancelledDeals = await readRecords(client, ids.ws, "owner-overview", { ...PERIOD, kpi: "cancellations_refunds", bucket: "period=1;series=cancelled" }, NOW);
+      expect(cancelledDeals.records.map((record) => [record.reference, record.detail]).sort()).toEqual([["O-O6", "Client relocated"], ["O-O7", "Budget withdrawn"]]);
+      const netRecords = await readRecords(client, ids.ws, "owner-overview", { ...PERIOD, kpi: "net_revenue" }, NOW);
+      expect(netRecords.records.map((record) => [record.kind, record.amount])).toEqual(expect.arrayContaining([["receipt", "10000.000000"], ["refund", "-1000.000000"], ["refund", "-300.000000"]]));
+      const reasons = await readRecords(client, ids.ws, "sales-pipeline", { ...PERIOD, kpi: "not_interested", bucket: "period=1;reason=not interested" }, NOW);
+      expect(reasons.records.map((record) => record.reference)).toEqual(["E-L10"]);
       const missed = await readRecords(client, ids.ws, "lead-response", { ...PERIOD, kpi: "response_rate", bucket: "period=1;outcome=missed" }, NOW);
       expect(missed.records.map((record) => record.reference).sort()).toEqual(["E-L2", "E-L3"]);
       await expect(readRecords(client, ids.ws, "owner-overview", { ...PERIOD, kpi: "nope" }, NOW)).rejects.toThrow("Unknown KPI");

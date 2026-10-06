@@ -8,6 +8,7 @@ import { projectHandedOver } from "../site/handover";
 import { everythingOrdered } from "../purchasing/orders";
 import { materialsSignedOff } from "./project-materials";
 import { readDrawingFacts } from "./project-drawings";
+import { projectNeedsDrawings } from "./project-drawing-needs";
 import { checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, DRAWING_CHECKS, INSTALLATION_CHECKS, LEAD_ROLE, type ProjectRole, type StageCheck, type TemplateStage } from "./project-checks";
 import { readInstallationFacts } from "./project-installation";
 import { normaliseKeepInformed, type KeepInformed } from "./project-keep-informed";
@@ -180,7 +181,9 @@ export async function evaluateStages(db: Db, workspaceId: string, project: Pick<
   const handover = needsHandover ? await projectHandedOver(db, workspaceId, project) : false;
   // The latest drawing revision (PLM-057 … 059) and the factory slot (PLM-068), read only when a current stage asks.
   const needsDrawings = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => DRAWING_CHECKS.includes(check.kind)));
-  const drawings = needsDrawings ? await readDrawingFacts(db, workspaceId, project.id) : undefined;
+  // No item needs drawings (standard pieces with their catalogue drawing): the drawing checks have nothing to wait for.
+  const drawings = needsDrawings ? (await projectNeedsDrawings(db, workspaceId, project.id) ? await readDrawingFacts(db, workspaceId, project.id)
+    : { uploaded: true, siteChecked: true, approved: true }) : undefined;
   // A role marked "not applicable" on this project (PLM-100) is settled: its "role named" check passes.
   const needsRoles = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "role_assigned"));
   const notApplicableRoles = new Set(needsRoles ? (await db.query<{ role: string }>(

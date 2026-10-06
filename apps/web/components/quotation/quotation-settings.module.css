@@ -25,3 +25,4 @@
 @media (max-width: 40rem) { .milestones > li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .numbering { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); align-items: end; gap: var(--wd-space-2); inline-size: 100%; }
 .pageSlot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.kinds { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); }

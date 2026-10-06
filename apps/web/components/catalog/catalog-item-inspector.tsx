@@ -15,6 +15,8 @@ import styles from "./catalog-page.module.css";
 
 type ItemDetail = {
   id: string; code: string; name: string; itemType: string; unitCode: string; categoryId: string | null; version: number; description: string | null; wastePercent: string | null; purchaseRoundTo: string | null;
+  /** A link to the item's technical drawing (PLM-057: a standard item with one needs no project drawing). */
+  technicalDrawingUrl?: string | null;
   values: Record<string, string>;
   components: Array<{ componentItemId: string; name: string; quantityFormula: string; unitCode: string }>;
   prices: PriceRow[];
@@ -47,18 +49,20 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
     ...(item.wastePercent ? [[t("Waste"), `${Number(item.wastePercent)}%`] as [string, string]] : []),
     ...(item.purchaseRoundTo ? [[t("Buy in multiples of"), `${Number(item.purchaseRoundTo)} ${item.unitCode}`] as [string, string]] : []),
   ];
+  const drawingLink = item.technicalDrawingUrl ? <a href={item.technicalDrawingUrl} target="_blank" rel="noreferrer" dir="ltr">{t("Open the drawing")}</a> : null;
   const saved = () => { setEditing(null); setAttempt((value) => value + 1); onChanged?.(); };
   /**
    * One fact changed in place: the item is saved whole (the catalog replaces it), with this change and its version.
    * A clash with someone else's change loads the latest.
    */
-  const saveFact = async (patch: Partial<Pick<ItemDetail, "code" | "itemType" | "unitCode" | "categoryId" | "description" | "wastePercent" | "purchaseRoundTo">>, values = item.values) => {
+  const saveFact = async (patch: Partial<Pick<ItemDetail, "code" | "itemType" | "unitCode" | "categoryId" | "description" | "wastePercent" | "purchaseRoundTo" | "technicalDrawingUrl">>, values = item.values) => {
     const next = { ...item, ...patch };
     const applies = structure?.attributes.filter((attribute) => !attribute.categoryId || attribute.categoryId === (next.categoryId ?? "")) ?? [];
     try {
       await catalogApi(workspaceId, `${catalogId}/items/${item.id}`, { method: "PUT", body: {
         version: item.version, code: next.code, name: next.name, itemType: next.itemType, unitCode: next.unitCode, categoryId: next.categoryId || undefined,
         description: next.description || undefined, wastePercent: next.wastePercent || undefined, purchaseRoundTo: next.purchaseRoundTo || undefined,
+        ...("technicalDrawingUrl" in patch ? { technicalDrawingUrl: patch.technicalDrawingUrl ?? "" } : {}),
         values: Object.fromEntries(applies.map((attribute) => [attribute.code, values[attribute.code] ?? ""]).filter(([, value]) => value !== "")),
       } });
       setItem({ ...next, values, version: item.version + 1 });
@@ -98,8 +102,12 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
         validate={decimalProblem} value={item.wastePercent ? String(Number(item.wastePercent)) : ""} />
       <EditableField display={item.purchaseRoundTo ? `${Number(item.purchaseRoundTo)} ${item.unitCode}` : undefined} label={t("Buy in multiples of")} onReload={reload}
         onSave={(purchaseRoundTo) => saveFact({ purchaseRoundTo: purchaseRoundTo || null })} validate={decimalProblem} value={item.purchaseRoundTo ? String(Number(item.purchaseRoundTo)) : ""} />
+      <EditableField display={drawingLink ?? undefined} label={t("Technical drawing")} maxLength={2000} onReload={reload}
+        onSave={(url) => saveFact({ technicalDrawingUrl: url.trim() || null })} validate={(text) => text.trim() && !/^https?:\/\/\S+$/i.test(text.trim()) ? t("Paste the drawing's link, starting with https://") : null}
+        value={item.technicalDrawingUrl ?? ""} />
       <EditableField kind="multiline" label={t("Description")} maxLength={4000} onReload={reload} onSave={(description) => saveFact({ description: description || null })} value={item.description ?? ""} />
-    </dl> : <dl className={styles.facts}>{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd dir="auto">{value}</dd></div>)}</dl>}
+    </dl> : <dl className={styles.facts}>{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd dir="auto">{value}</dd></div>)}
+      {drawingLink ? <div><dt>{t("Technical drawing")}</dt><dd>{drawingLink}</dd></div> : null}</dl>}
     <Tabs items={[
       { id: "pictures", label: t("Pictures"), panel: <CatalogItemImages workspaceId={workspaceId} itemId={item.id} canManage={canManage} /> },
       ...(["product", "ready_made", "material"].includes(item.itemType) ? [{ id: "size", label: t("Size and source"), panel: <CatalogItemSource canManage={canManage} itemId={item.id} workspaceId={workspaceId} /> }] : []),

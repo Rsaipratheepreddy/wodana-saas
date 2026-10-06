@@ -46,7 +46,8 @@ export async function orderReady(db: Db, workspaceId: string, order: ReadyOrder,
 /**
  * The payment reminder an order-ready date triggers: the stage the work order is tied to, once every work
  * order tied to it is ready (or closed). One per stage, ever: the claim row is the idempotency key, and it
- * records why nothing went (reminders off, nothing owed, already paid or reminded today).
+ * records why nothing went (reminders off, nothing owed, already paid or reminded today). A stage already
+ * reminded ahead of its planned ready date (remindBeforeReady) isn't reminded again.
  */
 export async function remindForReady(db: Db, workspaceId: string, order: Pick<ReadyOrder, "id" | "projectId">, actorId: string) {
   const link = (await db.query<{ caseId: string; paymentId: string | null; readyOn: string | null }>(
@@ -54,34 +55,76 @@ export async function remindForReady(db: Db, workspaceId: string, order: Pick<Re
        FROM work_orders wo JOIN delivery_projects project ON project.workspace_id = wo.workspace_id AND project.id = wo.project_id
       WHERE wo.workspace_id = $1 AND wo.id = $2`, [workspaceId, order.id])).rows[0];
   if (!link?.paymentId || !link.readyOn) return null;
-  const title = (await db.query<{ title: string }>(`SELECT title FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
-    [workspaceId, link.caseId, link.paymentId])).rows[0]?.title;
+  const title = await paymentTitle(db, workspaceId, link.caseId, link.paymentId);
   if (!title) return null;
   // Every work order tied to the stage is ready (or closed): the order is ready as the client sees it.
   const open = (await db.query(`SELECT 1 FROM work_orders WHERE workspace_id = $1 AND project_id = $2 AND ready_payment_id = $3 AND status IN ('planned', 'released', 'in_production', 'on_hold') LIMIT 1`,
     [workspaceId, order.projectId, link.paymentId])).rowCount;
   if (open) return { title, outcome: "waiting" as const };
+  return claimAndRemind(db, workspaceId, { caseId: link.caseId, paymentId: link.paymentId, projectId: order.projectId, workOrderId: order.id, readyOn: link.readyOn, plannedReadyOn: null,
+    reason: "all_ready" }, title, actorId);
+}
+
+/**
+ * PLM-067 (Palm: "when all items for that payment are ready, ideally 1 week before the latest ready date"): the daily
+ * pass reminds the client to pay a stage the firm's days (7 by default) before the latest planned ready date of the
+ * work orders tied to it, when every one of them that is still being made has a planned date. Without planned dates
+ * the reminder waits until they are all ready (remindForReady). Once per stage either way; the reason and the planned
+ * date are recorded and shown.
+ */
+export async function remindBeforeReady(db: Db, workspaceId: string, today: string) {
+  const days = (await db.query<{ days: number }>(`SELECT balance_reminder_days AS days FROM workspace_factory_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.days ?? 7;
+  const stages = (await db.query<{ caseId: string; projectId: string; paymentId: string; plannedReadyOn: string; workOrderId: string }>(
+    `SELECT project.case_id AS "caseId", wo.project_id AS "projectId", wo.ready_payment_id AS "paymentId", max(wo.planned_end)::text AS "plannedReadyOn",
+            (array_agg(wo.id ORDER BY wo.planned_end DESC NULLS FIRST, wo.id))[1] AS "workOrderId"
+       FROM work_orders wo JOIN delivery_projects project ON project.workspace_id = wo.workspace_id AND project.id = wo.project_id AND project.status = 'active'
+      WHERE wo.workspace_id = $1 AND wo.ready_payment_id IS NOT NULL AND wo.status NOT IN ('cancelled', 'short_closed')
+        AND NOT EXISTS (SELECT 1 FROM factory_ready_reminders claim WHERE claim.workspace_id = wo.workspace_id AND claim.case_id = project.case_id AND claim.payment_id = wo.ready_payment_id)
+      GROUP BY project.case_id, wo.project_id, wo.ready_payment_id
+     HAVING bool_or(wo.status <> 'ready') AND bool_and(wo.status = 'ready' OR wo.planned_end IS NOT NULL)
+        AND max(wo.planned_end) - $3::int <= $2::date
+      ORDER BY 1, 3`, [workspaceId, today, Number(days)])).rows;
+  let sent = 0;
+  for (const stage of stages) {
+    const title = await paymentTitle(db, workspaceId, stage.caseId, stage.paymentId);
+    if (!title) continue;
+    const actor = (await db.query<{ userId: string }>(`SELECT coalesce(started_by, created_by) AS "userId" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, stage.projectId])).rows[0]?.userId ?? null;
+    const result = await claimAndRemind(db, workspaceId, { ...stage, readyOn: null, reason: "before_ready" }, title, actor);
+    if (result?.outcome === "sent") sent++;
+  }
+  return sent;
+}
+
+async function paymentTitle(db: Db, workspaceId: string, caseId: string, paymentId: string) {
+  return (await db.query<{ title: string }>(`SELECT title FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, paymentId])).rows[0]?.title ?? null;
+}
+
+/** Claims the stage's one reminder (the claim is the idempotency key), sends it through the usual payment reminder, and records what came of it and why. */
+async function claimAndRemind(db: Db, workspaceId: string, stage: { caseId: string; paymentId: string; projectId: string; workOrderId: string; readyOn: string | null;
+  plannedReadyOn: string | null; reason: "all_ready" | "before_ready" }, title: string, actorId: string | null) {
   const claimed = (await db.query(
-    `INSERT INTO factory_ready_reminders (workspace_id, case_id, payment_id, project_id, work_order_id, ready_on, outcome) VALUES ($1, $2, $3, $4, $5, $6, 'pending')
-     ON CONFLICT (workspace_id, case_id, payment_id) DO NOTHING`, [workspaceId, link.caseId, link.paymentId, order.projectId, order.id, link.readyOn])).rowCount;
+    `INSERT INTO factory_ready_reminders (workspace_id, case_id, payment_id, project_id, work_order_id, ready_on, outcome, reason, planned_ready_on) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)
+     ON CONFLICT (workspace_id, case_id, payment_id) DO NOTHING`,
+    [workspaceId, stage.caseId, stage.paymentId, stage.projectId, stage.workOrderId, stage.readyOn, stage.reason, stage.plannedReadyOn])).rowCount;
   if (!claimed) return { title, outcome: "earlier" as const };
   const today = (await db.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
   let outcome: ReminderOutcome;
   let channel: string | null = null;
-  const item = await paymentDueItem(db, workspaceId, link.caseId, link.paymentId, today);
+  const item = await paymentDueItem(db, workspaceId, stage.caseId, stage.paymentId, today);
   if (!(await clientMessageRule(db, workspaceId, "payments.reminder")).enabled) outcome = "reminders_off";
   else if (!item) outcome = "nothing_owed";
   else if (item.status !== "pending") outcome = "not_pending";
-  else if ((await db.query(`SELECT 1 FROM crm_payment_reminders WHERE workspace_id = $1 AND payment_id = $2 AND sent_on = $3`, [workspaceId, link.paymentId, today])).rowCount) outcome = "already_today";
+  else if ((await db.query(`SELECT 1 FROM crm_payment_reminders WHERE workspace_id = $1 AND payment_id = $2 AND sent_on = $3`, [workspaceId, stage.paymentId, today])).rowCount) outcome = "already_today";
   else {
     const sent = await sendPaymentReminder(db, workspaceId, item, today, null, actorId);
     channel = sent.channel;
     outcome = sent.channel ? "sent" : String(sent.reason).slice(0, 40);
   }
   await db.query(`UPDATE factory_ready_reminders SET outcome = $4, channel = $5 WHERE workspace_id = $1 AND case_id = $2 AND payment_id = $3`,
-    [workspaceId, link.caseId, link.paymentId, outcome, channel]);
-  await recordAudit(db, { workspaceId, actorUserId: actorId, action: "work_order.ready_reminder", entityType: "work_order", entityId: order.id,
-    after: { caseId: link.caseId, paymentId: link.paymentId, readyOn: link.readyOn, outcome, channel } });
+    [workspaceId, stage.caseId, stage.paymentId, outcome, channel]);
+  await recordAudit(db, { workspaceId, actorUserId: actorId, action: "work_order.ready_reminder", entityType: "work_order", entityId: stage.workOrderId,
+    after: { caseId: stage.caseId, paymentId: stage.paymentId, readyOn: stage.readyOn, plannedReadyOn: stage.plannedReadyOn, reason: stage.reason, outcome, channel } });
   return { title, outcome, channel };
 }
 
@@ -97,8 +140,8 @@ export function reminderText(reminder: Awaited<ReturnType<typeof remindForReady>
 /** The reminder an order-ready date triggered for a payment stage, if one was due yet. */
 export async function readReadyReminder(db: Db, workspaceId: string, caseId: string, paymentId: string | null) {
   if (!paymentId) return null;
-  return (await db.query<{ readyOn: string; outcome: string; channel: string | null; at: string; on: string }>(
-    `SELECT reminder.ready_on::text AS "readyOn", reminder.outcome, reminder.channel, reminder.created_at AS at,
+  return (await db.query<{ readyOn: string | null; outcome: string; channel: string | null; at: string; on: string; reason: "all_ready" | "before_ready"; plannedReadyOn: string | null }>(
+    `SELECT reminder.ready_on::text AS "readyOn", reminder.outcome, reminder.channel, reminder.created_at AS at, reminder.reason, reminder.planned_ready_on::text AS "plannedReadyOn",
             (reminder.created_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS on
        FROM factory_ready_reminders reminder JOIN workspaces workspace ON workspace.id = reminder.workspace_id
       WHERE reminder.workspace_id = $1 AND reminder.case_id = $2 AND reminder.payment_id = $3`,

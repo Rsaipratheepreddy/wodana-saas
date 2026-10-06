@@ -160,6 +160,9 @@ export type PortalDayCard = {
 export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "drawings" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
   due: string | null };
 
+export type PortalUpdateFrequency = "weekly" | "fortnightly" | "monthly" | "off";
+export type PortalUpdates = { mode: "call" | "portal"; frequency: PortalUpdateFrequency; version: number };
+
 /** Someone the client deals with: their project manager, designer or sales contact (one person may be two). */
 export type PortalTeamRole = "manager" | "designer" | "sales";
 export type PortalTeamMember = { roles: PortalTeamRole[]; name: string; email: string | null; avatar: string | null };
@@ -182,6 +185,8 @@ export type PortalProject = {
   /** Team replies the client hasn't read, across conversations. */
   unread: number;
   latestUpdate: { id: string; at: string; text: string } | null;
+  /** How the client hears how the work goes (PLM-046): a call or a portal update, and how often; null until the team sets it up. */
+  updates?: PortalUpdates | null;
   progress: null | {
     stages: Array<{ name: string | null; state: "done" | "current" | "upcoming"; startedOn: string | null; finishedOn: string | null }>;
     updates: Array<{ id: string; at: string; text: string }>;

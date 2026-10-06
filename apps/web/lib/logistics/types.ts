@@ -36,10 +36,16 @@ export type BookingSubject = { kind: LogisticsKind; projectId?: string | null; o
 /** Whose permit: a project or a deal (it shows on both). */
 export type PermitOwner = { projectId: string; opportunityId?: undefined } | { opportunityId: string; projectId?: undefined };
 
-export type VehiclesState = { vehicles: Array<Vehicle & { active: boolean; version: number }>; permitWarningDays: number; dealDeliveryPermit: boolean; settingsVersion: number; canManage: boolean };
+export type VehiclesState = {
+  vehicles: Array<Vehicle & { active: boolean; version: number }>; permitWarningDays: number; dealDeliveryPermit: boolean; settingsVersion: number; canManage: boolean;
+  /** Days before a permit ends that its reminder goes, unless the permit has its own (PLM-136). */
+  permitExpiryReminderDays?: number;
+};
 
 export type Permit = {
   id: string; status: "planned" | "collected"; collectOn: string | null; permitType: string; permitNumber: string; validFrom: string | null; validTo: string | null; collectedOn: string | null;
   collectedBy: string | null; note: string; fileName: string | null; fileMime: string | null; recordedBy: string | null; recordedAt: string | null; version: number;
+  /** Its own reminder days (null: the firm's), the day the reminder goes and when it went. */
+  reminderDays?: number | null; reminderOn?: string | null; remindedAt?: string | null;
 };
-export type PermitsState = { required: boolean; deliveryOn: string | null; installationOn: string | null; today: string; permits: Permit[]; valid: boolean; covering: string | null; canRecord: boolean };
+export type PermitsState = { reminderDays?: number; required: boolean; deliveryOn: string | null; installationOn: string | null; today: string; permits: Permit[]; valid: boolean; covering: string | null; canRecord: boolean };

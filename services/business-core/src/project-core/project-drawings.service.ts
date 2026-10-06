@@ -5,6 +5,7 @@ import { recordAudit } from "../audit/record-audit";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { readDrawingItems } from "./project-drawing-needs";
 import { DRAWING_CHECKS } from "./project-checks";
 import { membershipOf, readProject, readStages, readTeam } from "./project-core.store";
 import {
@@ -143,7 +144,9 @@ export class ProjectDrawingsService {
     let sendable = false;
     if (latest) try { assertSendable({ ...latest, drawingFiles }, route.needsSiteCheck); sendable = true; } catch { sendable = false; }
     return {
-      revisions, version: project.version, caseId: project.caseId, inRoute: route.inRoute, needsSiteCheck: route.needsSiteCheck,
+      revisions, version: project.version, caseId: project.caseId, inRoute: route.inRoute, needed: route.needed, needsSiteCheck: route.needsSiteCheck,
+      // PLM-057: the items, whether each needs drawings (the rule or the team's decision) and the catalogue drawing it already has.
+      items: await readDrawingItems(client, workspaceId, project.id), canDecideItems: open && (manager || drawer),
       canUpload: open && onTeam && (latest?.status === "uploaded" || canStartRevision(latest)),
       canCheck: open && (manager || drawer) && latest?.status === "uploaded" && drawingFiles > 0,
       canSend: open && manager && sendable,

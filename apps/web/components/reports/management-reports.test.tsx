@@ -21,6 +21,10 @@ const dashboard: Dashboard = {
     { code: "profit_margin", unit: "percent", value: null, count: 0, targetable: true },
     { code: "outstanding", unit: "money", value: "26000.00", count: 2, targetable: false, notes: { amountsIncludeTax: true },
       chart: { type: "bars", dimension: "age", unit: "money", items: [{ key: "overdue_1_30", label: "overdue_1_30", value: "21000.00", count: 1 }] } },
+    { code: "net_revenue", unit: "money", value: "8700.00", count: 3, amount: "8700.00", targetable: true, extra: { collected: "10000.00", refunded: "1300.00" } },
+    { code: "cancellations_refunds", unit: "count", value: "2", count: 2, amount: "7200.00", targetable: false, extra: { refundCount: 2, refundValue: "1300.00" },
+      chart: { type: "columns", dimension: "month", seriesDimension: "series", categories: [{ key: "2026-09", label: "2026-09" }],
+        series: [{ id: "cancelled", label: "Cancelled" }, { id: "refund", label: "Refunded" }], values: [["7200"], ["1300"]], unit: "money" } },
   ],
 };
 
@@ -54,6 +58,10 @@ describe("management dashboards", () => {
     expect(within(won).getByText("$40,000")).toBeInTheDocument();
     expect(within(screen.getByRole("heading", { name: "Profit margin" }).closest("section") as HTMLElement).getByText("Not enough data yet")).toBeInTheDocument();
     expect(screen.getByText("Includes tax")).toBeInTheDocument();
+    // Net revenue is collected less refunds; cancelled deals and refunds are their own figure (never in Won).
+    expect(within(screen.getByRole("heading", { name: "Net revenue" }).closest("section") as HTMLElement).getByText("Collected $10,000 · Refunded $1,300")).toBeInTheDocument();
+    expect(within(screen.getByRole("heading", { name: "Cancellations and refunds" }).closest("section") as HTMLElement)
+      .getByText("$7,200 cancelled · 2 refunds paid, $1,300")).toBeInTheDocument();
     // The period is this month to date by default; the server receives it.
     expect(String(fetcher.mock.calls.find(([url]) => String(url).includes("/owner-overview?"))?.[0])).toMatch(/from=\d{4}-\d{2}-01&to=\d{4}-\d{2}-\d{2}/);
 

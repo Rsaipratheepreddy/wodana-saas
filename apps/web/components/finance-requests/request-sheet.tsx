@@ -90,7 +90,7 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
         {request.orderNumber ? <div><dt>{t("Order")}</dt><dd>{request.orderNumber}{request.orderGross ? <span>{money(request.orderGross)}</span> : null}</dd></div> : null}
         {request.invoiceNumber ? <div><dt>{t("Client invoice number")}</dt><dd>{request.invoiceNumber}</dd></div> : null}
         {request.reason ? <div><dt>{t("Reason")}</dt><dd>{request.reason}</dd></div> : null}
-        {request.paymentMethod ? <div><dt>{t("Payment method")}</dt><dd>{request.paymentMethod}</dd></div> : null}
+        {request.paymentMethod ? <div><dt>{request.kind === "refund" ? t("Refund method") : t("Payment method")}</dt><dd>{request.paymentMethod}</dd></div> : null}
         {request.kind === "refund" && request.hasBankDetails ? <div><dt>{t("Client bank details")}</dt><dd>{request.bankDetails ?? t("Given (Finance only)")}</dd></div> : null}
         {request.expectedRefundOn ? <div><dt>{t("Expected refund")}</dt><dd>{format.day(request.expectedRefundOn)}</dd></div> : null}
         {request.supplierReference ? <div><dt>{t("Supplier quote or invoice")}</dt><dd>{request.supplierReference}{request.invoicePending ? <span className={styles.status} data-tone="warning">{t("Invoice pending")}</span> : null}</dd></div> : null}

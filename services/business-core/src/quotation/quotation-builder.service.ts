@@ -21,7 +21,7 @@ import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
 import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } from "./proposal-kit";
 import { MARKUP_DISCLOSURES, type MarkupDisclosure } from "../proposals/markup-disclosure";
 import { touchesQsFields } from "../proposals/qs-review.domain";
-import { boqRequiredForCase } from "../fulfilment/fulfilment-rules";
+import { QS_ITEM_TYPES, QS_SCOPES, qsRequirement, type QsItemType, type QsScope } from "../proposals/qs-requirement";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -44,8 +44,12 @@ export type QuotationSettings = {
   defaultPaymentTemplateId: string | null;
   /** R3: how markup is shown to the client (quote, PDF and portal alike). */
   markupDisclosure: MarkupDisclosure;
-  /** PLM-082: a quotation goes to a QS who confirms its pricing before it can be sent. */
+  /** PLM-082: a quotation goes to a QS who confirms its pricing before it can be sent (the master switch). */
   qsReview: boolean;
+  /** Every quotation, or only where the rules apply (the deal needs a BOQ, or lines the firm marked); Palm's second round. */
+  qsReviewScope: QsScope;
+  /** Catalogue item kinds whose lines need the QS under the rules (work packages are marked on the work package). */
+  qsReviewItemTypes: QsItemType[];
   /** How many days a signing link stays open (R8). */
   signingLinkDays: number;
   /** PLM-106: the firm's intro deck, shown on the opportunity. */
@@ -55,7 +59,7 @@ export type QuotationSettings = {
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
   discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null,
-  markupDisclosure: "all_inclusive", qsReview: false, signingLinkDays: 14, introDeckUrl: null, version: 0,
+  markupDisclosure: "all_inclusive", qsReview: false, qsReviewScope: "all", qsReviewItemTypes: [], signingLinkDays: 14, introDeckUrl: null, version: 0,
 };
 
 type LineRow = {
@@ -138,6 +142,11 @@ export class QuotationBuilderService {
       }
       if (input.markupDisclosure !== undefined) next.markupDisclosure = oneOf(input.markupDisclosure, MARKUP_DISCLOSURES, "markup disclosure");
       if (input.qsReview !== undefined) next.qsReview = bool(input.qsReview);
+      if (input.qsReviewScope !== undefined) next.qsReviewScope = oneOf(input.qsReviewScope, QS_SCOPES, "QS scope");
+      if (input.qsReviewItemTypes !== undefined) {
+        if (!Array.isArray(input.qsReviewItemTypes) || input.qsReviewItemTypes.length > QS_ITEM_TYPES.length) throw new BadRequestException("Choose catalogue kinds from the list.");
+        next.qsReviewItemTypes = [...new Set(input.qsReviewItemTypes.map((value) => oneOf(value, QS_ITEM_TYPES, "catalogue kind")))].sort();
+      }
       if (input.signingLinkDays !== undefined) {
         const days = Number(input.signingLinkDays);
         if (!Number.isInteger(days) || days < 1 || days > 90) throw new BadRequestException("A signing link stays open 1 to 90 days.");
@@ -152,18 +161,19 @@ export class QuotationBuilderService {
       await client.query(
         `INSERT INTO workspace_quotation_settings (workspace_id, default_view, prices_include_tax, rounding, default_markup_percent, margin_floor_percent,
            discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, expiry_warning_days, default_payment_template_id,
-           markup_disclosure, qs_review, signing_link_days, intro_deck_url, version, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, $14, $15, $16, $17, $18, 1, $11, now())
+           markup_disclosure, qs_review, signing_link_days, intro_deck_url, qs_review_scope, qs_review_item_types, version, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, $14, $15, $16, $17, $18, $19, $20::varchar(16)[], 1, $11, now())
          ON CONFLICT (workspace_id) DO UPDATE SET default_view = excluded.default_view, prices_include_tax = excluded.prices_include_tax,
            rounding = excluded.rounding, default_markup_percent = excluded.default_markup_percent, margin_floor_percent = excluded.margin_floor_percent,
            discount_approval_percent = excluded.discount_approval_percent, validity_days = excluded.validity_days, internal_review = excluded.internal_review,
            price_book_id = excluded.price_book_id, decision_reminder_days = excluded.decision_reminder_days, expiry_warning_days = excluded.expiry_warning_days,
            default_payment_template_id = excluded.default_payment_template_id, markup_disclosure = excluded.markup_disclosure, qs_review = excluded.qs_review,
            signing_link_days = excluded.signing_link_days, intro_deck_url = excluded.intro_deck_url,
+           qs_review_scope = excluded.qs_review_scope, qs_review_item_types = excluded.qs_review_item_types,
            version = workspace_quotation_settings.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
           next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays, next.defaultPaymentTemplateId,
-          next.markupDisclosure, next.qsReview, next.signingLinkDays, next.introDeckUrl]);
+          next.markupDisclosure, next.qsReview, next.signingLinkDays, next.introDeckUrl, next.qsReviewScope, next.qsReviewItemTypes]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -204,14 +214,18 @@ export class QuotationBuilderService {
     });
   }
 
-  updateWorkPackage(actor: RequestActor, workspaceId: string, id: string, input: { name?: string; archived?: boolean }) {
+  /** Renames, archives or restores a work package, or marks whether its lines need the QS under the firm's QS rules. */
+  updateWorkPackage(actor: RequestActor, workspaceId: string, id: string, input: { name?: string; archived?: boolean; qsReview?: boolean }) {
     return this.access.withAnyPermission(actor, workspaceId, SETTINGS, async (client, user) => {
-      const before = (await client.query(`SELECT name, archived_at AS "archivedAt" FROM workspace_work_packages WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0];
+      const before = (await client.query(`SELECT name, archived_at AS "archivedAt", qs_review AS "qsReview" FROM workspace_work_packages WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0];
       if (!before) throw new NotFoundException("Work package not found.");
       const name = input.name === undefined ? null : text(input.name, "Name", 120);
+      const archived = input.archived === undefined ? null : bool(input.archived);
+      const qsReview = input.qsReview === undefined ? null : bool(input.qsReview);
       try {
-        await client.query(`UPDATE workspace_work_packages SET name = coalesce($3, name), archived_at = CASE WHEN $4::boolean IS NULL THEN archived_at WHEN $4 THEN coalesce(archived_at, now()) ELSE NULL END
-          WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, name, input.archived ?? null]);
+        await client.query(`UPDATE workspace_work_packages SET name = coalesce($3, name), archived_at = CASE WHEN $4::boolean IS NULL THEN archived_at WHEN $4 THEN coalesce(archived_at, now()) ELSE NULL END,
+            qs_review = coalesce($5, qs_review)
+          WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, name, archived, qsReview]);
       } catch (error) {
         if ((error as { code?: string }).code === "23505") throw new ConflictException("A work package with this name already exists.");
         throw error;
@@ -259,8 +273,8 @@ export class QuotationBuilderService {
       const canEditCosts = await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.manage");
       const settings = await readSettings(client, workspaceId);
       // PLM-082: where the QS prices quotations, the price fields are theirs (a catalog pick still fills them).
-      // PLM-083: only where the order needs a BOQ (its choice, else its path's default, else the firm's setting); others read the QS's lines.
-      const qsPrices = quote.kind === "quotation" && await boqRequiredForCase(client, workspaceId, caseId, settings.qsReview)
+      // Only where this quotation needs the QS (the firm's rules, qs-requirement.ts); others read the QS's lines.
+      const qsPrices = quote.kind === "quotation" && (await qsRequirement(client, workspaceId, caseId, quoteId)).required
         && !(await this.access.hasPermission(client, workspaceId, user.userId, QS_PERMISSION));
       const decimals = currencyDecimals(quote.currency);
       const areas = new Map((await caseAreas(client, workspaceId, caseId)).map((area) => [area.id, area.name]));
@@ -819,14 +833,15 @@ export async function readSettings(db: Db, workspaceId: string): Promise<Quotati
     `SELECT default_view AS "defaultView", prices_include_tax AS "pricesIncludeTax", rounding, default_markup_percent::text AS "defaultMarkupPercent",
             margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", validity_days AS "validityDays",
             internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", default_payment_template_id AS "defaultPaymentTemplateId",
-            markup_disclosure AS "markupDisclosure", qs_review AS "qsReview", signing_link_days AS "signingLinkDays", intro_deck_url AS "introDeckUrl", version
+            markup_disclosure AS "markupDisclosure", qs_review AS "qsReview", signing_link_days AS "signingLinkDays", intro_deck_url AS "introDeckUrl",
+            qs_review_scope AS "qsReviewScope", qs_review_item_types::text[] AS "qsReviewItemTypes", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }
 
 async function workPackages(db: Db, workspaceId: string, includeArchived: boolean) {
-  return (await db.query<{ id: string; name: string; archived: boolean }>(
-    `SELECT id, name, archived_at IS NOT NULL AS archived FROM workspace_work_packages WHERE workspace_id = $1 AND ($2 OR archived_at IS NULL) ORDER BY position, name`,
+  return (await db.query<{ id: string; name: string; archived: boolean; qsReview: boolean }>(
+    `SELECT id, name, archived_at IS NOT NULL AS archived, qs_review AS "qsReview" FROM workspace_work_packages WHERE workspace_id = $1 AND ($2 OR archived_at IS NULL) ORDER BY position, name`,
     [workspaceId, includeArchived])).rows;
 }
 

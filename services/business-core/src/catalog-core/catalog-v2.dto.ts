@@ -36,6 +36,7 @@ export class ItemDto {
   @ApiPropertyOptional() @IsOptional() @Matches(DECIMAL) purchaseRoundTo?: string;
   @ApiPropertyOptional() @IsOptional() @IsObject() values?: Record<string, unknown>;
   @ApiPropertyOptional({ description: "Working days to make one" }) @IsOptional() @IsInt() @Min(0) productionDays?: number;
+  @ApiPropertyOptional({ description: "A link to the item's technical drawing; empty clears it" }) @IsOptional() @IsString() @MaxLength(2000) technicalDrawingUrl?: string | null;
 }
 export class ArchiveItemDto { @ApiProperty() @IsInt() @Min(1) version!: number; }
 export class ComponentDto {

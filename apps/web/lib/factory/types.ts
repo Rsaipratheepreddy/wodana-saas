@@ -6,6 +6,8 @@ export type FactorySettings = {
   requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number;
   /** PLM-063: the production steps the firm keeps (in their order) with its own words, and its internal production target in weeks. */
   productionSteps?: ProductionStep[]; productionWeeks?: number | null;
+  /** PLM-067: days before the latest planned ready date of a payment stage's work orders that the client is reminded to pay. */
+  balanceReminderDays?: number;
 };
 
 export type { ProductionRow, ProductionState, ProductionStep, ProductionStepKind, ProductionSummary, ProductionWindow } from "./production";
@@ -108,7 +110,9 @@ export type WorkOrderState = FactoryRights & {
   /** The project's payment stages it can be tied to, and the reminder its ready date triggered for the tied stage. */
   payments?: Array<{ id: string; title: string; status: "pending" | "proof_submitted" | "verified" }>;
   /** `on` is the day it was decided, in the workspace's time zone. */
-  readyReminder?: { readyOn: string; outcome: string; channel: "whatsapp" | "email" | null; at: string; on: string } | null;
+  readyReminder?: { readyOn: string | null; outcome: string; channel: "whatsapp" | "email" | null; at: string; on: string;
+    /** Why it went: everything tied to the stage was ready, or the planned ready date was near (with that date). */
+    reason?: "all_ready" | "before_ready"; plannedReadyOn?: string | null } | null;
 };
 /** Settings → Factory; hourly rates (oldest first) only for people who set them or see costs. */
 export type FactorySettingsState = {

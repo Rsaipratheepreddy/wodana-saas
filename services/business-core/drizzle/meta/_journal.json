@@ -1184,6 +1184,20 @@
       "when": 1801740003700,
       "tag": "0275_workspace_clear_records",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1801740003800,
+      "tag": "0276_refund_methods_qs_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1801740003900,
+      "tag": "0277_permit_reminders_drawing_needs",
+      "breakpoints": true
     }
   ]
 }

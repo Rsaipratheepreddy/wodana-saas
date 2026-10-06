@@ -33,6 +33,8 @@ export type RequestRow = {
   approvedAt: string | null;
   /** The workspace's day a refund's clock starts: its approval, or its submission while not approved. */
   refundFrom: string;
+  /** A refund's expected days, from its method when it was raised (null: no date shown). */
+  refundDays: number | null;
 };
 
 export type RequestFilter = {
@@ -78,7 +80,7 @@ export async function readRequests(db: Db, workspaceId: string, filter: RequestF
             request.close_note AS "closeNote",
             (request.kind = 'payable' AND NOT EXISTS (SELECT 1 FROM finance_request_files file WHERE file.workspace_id = request.workspace_id
               AND file.request_id = request.id AND file.kind = 'tax_invoice')) AS "invoicePending",
-            approval.status AS "approvalStatus", approval.decided_at AS "approvedAt",
+            approval.status AS "approvalStatus", approval.decided_at AS "approvedAt", request.refund_days AS "refundDays",
             (CASE WHEN approval.status = 'approved' THEN approval.decided_at ELSE request.created_at END
               AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS "refundFrom"
        FROM finance_requests request
@@ -146,19 +148,23 @@ export function moneyText(amount: string, currency: string) {
 
 export const KIND_NAME: Record<RequestKind, string> = { invoice: "Invoice", refund: "Refund", payable: "Payable" };
 
-/** The settings, or the product defaults (no inbox, no refund days, no automatic stage requests). */
-export type RequestSettings = { financeInbox: string | null; refundDays: number | null; stageInvoiceRequests: boolean; version: number };
+/**
+ * The settings, or the product defaults (no inbox, no automatic stage requests). How long a refund takes is set per
+ * payment method (PLM-109), not here.
+ */
+export type RequestSettings = { financeInbox: string | null; stageInvoiceRequests: boolean; version: number };
 export async function readSettings(db: Db, workspaceId: string): Promise<RequestSettings> {
   const row = (await db.query<RequestSettings>(
-    `SELECT finance_inbox AS "financeInbox", refund_days AS "refundDays", stage_invoice_requests AS "stageInvoiceRequests", version
+    `SELECT finance_inbox AS "financeInbox", stage_invoice_requests AS "stageInvoiceRequests", version
        FROM finance_request_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
-  return row ?? { financeInbox: null, refundDays: null, stageInvoiceRequests: false, version: 0 };
+  return row ?? { financeInbox: null, stageInvoiceRequests: false, version: 0 };
 }
 
-export type PaymentMethod = { id: string; label: string; refundGuidance: string; needsBankDetails: boolean; position: number; version: number };
+/** A payment method: how a client paid, its refund guidance, whether a refund needs bank details and how many days one usually takes. */
+export type PaymentMethod = { id: string; label: string; refundGuidance: string; needsBankDetails: boolean; refundDays: number | null; position: number; version: number };
 export async function readPaymentMethods(db: Db, workspaceId: string): Promise<PaymentMethod[]> {
   return (await db.query<PaymentMethod>(
-    `SELECT id, label, refund_guidance AS "refundGuidance", needs_bank_details AS "needsBankDetails", position, version
+    `SELECT id, label, refund_guidance AS "refundGuidance", needs_bank_details AS "needsBankDetails", refund_days AS "refundDays", position, version
        FROM finance_payment_methods WHERE workspace_id = $1 AND archived_at IS NULL ORDER BY position, lower(label)`, [workspaceId])).rows;
 }
 

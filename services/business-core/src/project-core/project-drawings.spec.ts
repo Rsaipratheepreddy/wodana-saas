@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { drawingNeed, drawingOnlyStage, type DrawingLine } from "./project-drawing-needs";
 import { checkPasses, DEFAULT_ROLES, parseStages, TASK_CHECKS, type CheckFacts } from "./project-checks";
 import { assertDecidable, assertSendable, canStartRevision, drawingFacts, routeHolds } from "./project-drawings";
 import { stageTaskAssignee, stageTaskLinks } from "./project-stage-tasks";
@@ -83,5 +84,28 @@ describe("technical drawings to production release", () => {
     expect(links.map((link) => link.key)).toEqual(["drawings", "measurements", "materials", "designs"]);
     expect(links.find((link) => link.key === "measurements")?.href).toBe("/workspace/pre-projects/cases/c1/measurements");
     expect(stageTaskLinks(null, { id: "p1", caseId: "c1" })).toEqual([]);
+  });
+});
+
+describe("which items need technical drawings (PLM-057)", () => {
+  const line = (over: Partial<DrawingLine>): DrawingLine => ({ kind: "item", catalogItemId: "i", itemType: "product", catalogDrawingUrl: null, override: null, ...over });
+  it("always draws bespoke and made-to-order items; a standard item only without its catalogue drawing", () => {
+    expect(drawingNeed(line({ catalogItemId: null }), false)).toMatchObject({ applies: true, needed: true, rule: { reason: "bespoke" } });
+    expect(drawingNeed(line({ itemType: "assembly", catalogDrawingUrl: "https://x/d.pdf" }), false)).toMatchObject({ needed: true, rule: { reason: "made_to_order" } });
+    expect(drawingNeed(line({}), false)).toMatchObject({ needed: true, rule: { reason: "no_catalogue_drawing" } });
+    expect(drawingNeed(line({ itemType: "ready_made", catalogDrawingUrl: "https://x/d.pdf" }), false)).toMatchObject({ needed: false, rule: { reason: "catalogue_drawing" } });
+    // A bespoke order draws everything.
+    expect(drawingNeed(line({ catalogDrawingUrl: "https://x/d.pdf" }), true)).toMatchObject({ needed: true, rule: { reason: "bespoke" } });
+  });
+  it("leaves services and materials out, and follows the team's decision over the rule", () => {
+    expect(drawingNeed(line({ kind: "service" }), false).applies).toBe(false);
+    expect(drawingNeed(line({ itemType: "material" }), false).applies).toBe(false);
+    expect(drawingNeed(line({ catalogDrawingUrl: "https://x/d.pdf", override: true }), false)).toMatchObject({ needed: true, rule: { needed: false } });
+    expect(drawingNeed(line({ catalogItemId: null, override: false }), false)).toMatchObject({ needed: false, rule: { needed: true } });
+  });
+  it("skips by itself only a stage holding nothing but drawing checks", () => {
+    expect(drawingOnlyStage({ checks: [{ key: "a", kind: "drawings_uploaded" }, { key: "b", kind: "drawings_client_approved" }] })).toBe(true);
+    expect(drawingOnlyStage({ checks: [{ key: "a", kind: "drawings_uploaded" }, { key: "b", kind: "payment_verified" }] })).toBe(false);
+    expect(drawingOnlyStage({ checks: [] })).toBe(false);
   });
 });

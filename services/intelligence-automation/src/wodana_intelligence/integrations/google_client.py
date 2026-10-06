@@ -20,6 +20,15 @@ GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3"
 GOOGLE_SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
+_SHEET_LINK_CELL = "hyperlink,textFormatRuns(format(link(uri)))"
+_SHEET_CHIP_CELL = "chipRuns(chip(richLinkProperties(uri)))"
+SHEET_LINK_FIELDS = (
+    "sheets(properties(title),data(startRow,startColumn,"
+    f"rowData(values({_SHEET_LINK_CELL},{_SHEET_CHIP_CELL}))))"
+)
+SHEET_LINK_FIELDS_WITHOUT_CHIPS = (
+    f"sheets(properties(title),data(startRow,startColumn,rowData(values({_SHEET_LINK_CELL}))))"
+)
 
 
 class GoogleApiError(RuntimeError):
@@ -298,7 +307,7 @@ class GoogleCalendarClient:
         """A spreadsheet's title and its tabs (drive.file: only a file picked for Wodana)."""
         response = await self._client.get(
             f"{GOOGLE_SHEETS_API}/{quote(spreadsheet_id, safe='')}",
-            params={"fields": "properties.title,sheets.properties(title,sheetType)"},
+            params={"fields": "properties.title,sheets.properties(title,sheetType,hidden)"},
             headers=self._authorization(access_token),
         )
         return self._json(response, "sheet_read_failed")
@@ -321,6 +330,29 @@ class GoogleCalendarClient:
             value_range.get("values", []) if isinstance(value_range, dict) else []
             for value_range in payload.get("valueRanges", [])
         ]
+
+    async def sheet_links(
+        self, access_token: str, spreadsheet_id: str, ranges: Sequence[str]
+    ) -> dict[str, Any]:
+        """
+        The links behind each range's cells: a cell's hyperlink, a link on part of its text, or a
+        Drive file smart chip. Asks without chips once if Google refuses that field mask.
+        """
+        response = await self._sheet_grid(access_token, spreadsheet_id, ranges, SHEET_LINK_FIELDS)
+        if response.status_code == 400:
+            response = await self._sheet_grid(
+                access_token, spreadsheet_id, ranges, SHEET_LINK_FIELDS_WITHOUT_CHIPS
+            )
+        return self._json(response, "sheet_read_failed")
+
+    async def _sheet_grid(
+        self, access_token: str, spreadsheet_id: str, ranges: Sequence[str], fields: str
+    ) -> httpx.Response:
+        return await self._client.get(
+            f"{GOOGLE_SHEETS_API}/{quote(spreadsheet_id, safe='')}",
+            params=[*(("ranges", value) for value in ranges), ("fields", fields)],
+            headers=self._authorization(access_token),
+        )
 
     async def revoke(self, token: str) -> None:
         response = await self._client.post(

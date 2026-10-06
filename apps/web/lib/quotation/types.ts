@@ -8,8 +8,12 @@ export type QuotationSettings = {
   priceBookId: string | null; decisionReminderDays: number[]; expiryWarningDays: number; defaultPaymentTemplateId: string | null;
   /** R3: how markup is shown to the client. */
   markupDisclosure?: "all_inclusive" | "disclosed_markup" | "fee_based";
-  /** PLM-082: a QS confirms the pricing before a quotation goes to the client. */
+  /** PLM-082: a QS confirms the pricing before a quotation goes to the client (the master switch). */
   qsReview?: boolean;
+  /** Every quotation, or only where the rules apply: a BOQ order, or lines in a marked work package or catalogue kind. */
+  qsReviewScope?: "all" | "rules";
+  /** Catalogue kinds whose lines need the QS under the rules. */
+  qsReviewItemTypes?: string[];
   /** How many days a signing link stays open (R8). */
   signingLinkDays?: number;
   /** PLM-106: the firm's intro deck link. */

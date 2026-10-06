@@ -1,5 +1,7 @@
 import hashlib
 import json
+import logging
+import re
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
@@ -46,6 +48,12 @@ DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 SHEET_TABS = 50
 SHEET_ROWS = 5000
 SHEET_COLUMNS = 100
+# The links behind a linked sheet's cells (e.g. a drawing's name linking to its file).
+SHEET_LINKS_PER_TAB = 5000
+SHEET_LINK_LENGTH = 2000
+_SHEET_LINK = re.compile(r"https?://\S+", re.IGNORECASE)
+
+logger = logging.getLogger("wodana.google-sheets")
 
 
 class IntegrationFlowError(RuntimeError):
@@ -661,14 +669,18 @@ class GoogleIntegrationService:
         credential = await self._access_credential(runtime)
         try:
             meta = await self._google.spreadsheet(credential.access_token, spreadsheet_id)
-            tabs = [
-                str(sheet["properties"]["title"])
+            grid_tabs = [
+                sheet["properties"]
                 for sheet in meta.get("sheets", [])
                 if isinstance(sheet, dict)
                 and isinstance(sheet.get("properties"), dict)
                 and sheet["properties"].get("title")
                 and sheet["properties"].get("sheetType", "GRID") == "GRID"
             ]
+            tabs = [str(properties["title"]) for properties in grid_tabs]
+            hidden = {
+                str(properties["title"]) for properties in grid_tabs if properties.get("hidden")
+            }
             if sheet_name is not None:
                 if sheet_name not in tabs:
                     raise IntegrationFlowError(
@@ -693,8 +705,19 @@ class GoogleIntegrationService:
                     409,
                 ) from error
             raise IntegrationFlowError(error.code, str(error), error.status_code) from error
-        sheets = [
-            {
+        links: dict[str, dict[str, str]] = {}
+        if ranges:
+            try:
+                links = _sheet_links(
+                    await self._google.sheet_links(credential.access_token, spreadsheet_id, ranges),
+                    tabs,
+                    last_row,
+                )
+            except Exception as error:  # links are a bonus; the cells still import without them
+                logger.warning("Sheet links could not be read (%s)", type(error).__name__)
+        sheets: list[dict[str, Any]] = []
+        for tab, rows in zip(tabs, values):
+            sheet: dict[str, Any] = {
                 "name": tab,
                 "rows": [
                     ["" if cell is None else str(cell) for cell in row[:SHEET_COLUMNS]]
@@ -702,8 +725,11 @@ class GoogleIntegrationService:
                     if isinstance(row, list)
                 ],
             }
-            for tab, rows in zip(tabs, values)
-        ]
+            if links.get(tab):
+                sheet["links"] = links[tab]
+            if tab in hidden:
+                sheet["hidden"] = True
+            sheets.append(sheet)
         with suppress(Exception):
             await self._business_core.record_health(
                 str(connection_id), str(workspace_id), "google.sheets.read", True
@@ -911,3 +937,75 @@ class GoogleIntegrationService:
             start=event.get("start", {}),
             end=event.get("end", {}),
         )
+
+
+def _sheet_links(
+    payload: Mapping[str, Any], tabs: list[str], last_row: int
+) -> dict[str, dict[str, str]]:
+    """Each tab's cell links keyed "row:col" (0-based, absolute), http(s) only, within bounds."""
+    wanted = set(tabs)
+    found: dict[str, dict[str, str]] = {}
+    for sheet in payload.get("sheets") or []:
+        if not isinstance(sheet, dict) or not isinstance(sheet.get("properties"), dict):
+            continue
+        title = sheet["properties"].get("title")
+        if not isinstance(title, str) or title not in wanted:
+            continue
+        tab_links = found.setdefault(title, {})
+        for grid in sheet.get("data") or []:
+            if not isinstance(grid, dict):
+                continue
+            start_row = _grid_offset(grid.get("startRow"))
+            start_column = _grid_offset(grid.get("startColumn"))
+            for row_index, row_data in enumerate(grid.get("rowData") or []):
+                row = start_row + row_index
+                if row >= last_row:
+                    break
+                if not isinstance(row_data, dict):
+                    continue
+                for column_index, cell in enumerate(row_data.get("values") or []):
+                    column = start_column + column_index
+                    if column >= SHEET_COLUMNS:
+                        break
+                    if len(tab_links) >= SHEET_LINKS_PER_TAB:
+                        break
+                    url = _cell_link(cell)
+                    if url is not None:
+                        tab_links[f"{row}:{column}"] = url
+    return {title: tab_links for title, tab_links in found.items() if tab_links}
+
+
+def _grid_offset(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _cell_link(cell: Any) -> Optional[str]:
+    """A cell's link: its hyperlink, else the first linked text run, else the first file chip."""
+    if not isinstance(cell, dict):
+        return None
+    candidates: list[Any] = [
+        cell.get("hyperlink"),
+        _first_run_link(cell.get("textFormatRuns"), ("format", "link", "uri")),
+        _first_run_link(cell.get("chipRuns"), ("chip", "richLinkProperties", "uri")),
+    ]
+    for candidate in candidates:
+        if (
+            isinstance(candidate, str)
+            and len(candidate) <= SHEET_LINK_LENGTH
+            and _SHEET_LINK.fullmatch(candidate)
+        ):
+            return candidate
+    return None
+
+
+def _first_run_link(runs: Any, path: tuple[str, ...]) -> Optional[str]:
+    """The first run (of a cell's text or chips) that carries a link at path."""
+    if not isinstance(runs, list):
+        return None
+    for run in runs:
+        value: Any = run
+        for key in path:
+            value = value.get(key) if isinstance(value, dict) else None
+        if isinstance(value, str) and value:
+            return value
+    return None

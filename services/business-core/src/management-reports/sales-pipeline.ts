@@ -1,6 +1,6 @@
 import { type KpiSpec, moneyNotes, readFacts } from "./report-context";
 import { type Fact, FACT_COLUMNS, categories, grid, groupBy, inPeriod, monthKeys, percent, sum } from "./report-kit";
-import { LEADS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, month, moneyDims, netMoney, netRatio } from "./report-scope";
+import { LEADS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, dealCancelledAt, month, moneyDims, netMoney, netRatio } from "./report-scope";
 import { targetFor } from "./report-targets";
 import { WON_SQL } from "./owner-overview";
 
@@ -53,7 +53,7 @@ const newLeads: KpiSpec = {
  *   Opportunity — it became an opportunity;
  *   Qualified — the opportunity reached the Qualified stage (stage code `qualification`) or any later one, or was won;
  *   Proposal — it reached the Proposal stage (code `proposal`) or a later one (Negotiation, Won), or was won;
- *   Won — a payment proof was attached (a proposal or the opportunity is Won).
+ *   Won — a payment proof was attached (a proposal or the opportunity is Won), and the deal wasn't cancelled.
  * Each step's % is of the step before; Lead → Won % is Won ÷ leads.
  */
 const reached = (codes: string) => `(o.status = 'won' OR EXISTS (SELECT 1 FROM crm_stage_history h JOIN crm_pipeline_stages s ON s.workspace_id = h.workspace_id AND s.id = h.to_stage_id
@@ -67,9 +67,11 @@ SELECT ${FACT_COLUMNS} FROM (
            'opportunity', CASE WHEN o.id IS NOT NULL THEN '1' ELSE '0' END,
            'qualified', CASE WHEN o.id IS NOT NULL AND ${reached("('qualification', 'proposal', 'negotiation', 'won')")} THEN '1' ELSE '0' END,
            'proposal', CASE WHEN o.id IS NOT NULL AND ${reached("('proposal', 'negotiation', 'won')")} THEN '1' ELSE '0' END,
-           'won', CASE WHEN o.status = 'won' OR EXISTS (SELECT 1 FROM crm_opportunity_proposals pr WHERE pr.workspace_id = o.workspace_id AND pr.opportunity_id = o.id AND pr.won_at IS NOT NULL) THEN '1' ELSE '0' END) AS dims
+           'won', CASE WHEN (o.status = 'won' OR EXISTS (SELECT 1 FROM crm_opportunity_proposals pr WHERE pr.workspace_id = o.workspace_id AND pr.opportunity_id = o.id AND pr.won_at IS NOT NULL))
+                         AND ${dealCancelledAt("o", "pc")} IS NULL THEN '1' ELSE '0' END) AS dims
     FROM lc CROSS JOIN p
     LEFT JOIN crm_opportunities o ON o.workspace_id = p.ws AND o.id = lc.opportunity_id
+    LEFT JOIN LATERAL (SELECT c.status, c.cancelled_at FROM pre_project_cases c WHERE c.workspace_id = p.ws AND c.opportunity_id = o.id ORDER BY c.created_at LIMIT 1) pc ON true
    WHERE lc.status <> 'duplicate' AND lc.created_at >= p.from_at AND lc.created_at < p.to_at
 ) facts ORDER BY at DESC`;
 
@@ -148,7 +150,8 @@ const wonByAccountManager: KpiSpec = {
 
 /**
  * Lost: opportunities marked Lost in the period (closed date), count and value (net of tax by their latest quotation,
- * else as entered), by the reason recorded when they were lost.
+ * else as entered), by the reason recorded when they were lost. Lost opportunities only: enquiries closed as not
+ * interested are their own figure, and a won deal that was cancelled is under Cancellations and refunds.
  */
 const LOST_SQL = `WITH ${P}, ${OPPORTUNITIES}
 SELECT ${FACT_COLUMNS} FROM (
@@ -158,7 +161,7 @@ SELECT ${FACT_COLUMNS} FROM (
     FROM oc CROSS JOIN p
     LEFT JOIN LATERAL (SELECT ${netRatio("q")} AS value FROM commercial_quotes q WHERE q.workspace_id = p.ws AND q.case_id = oc.case_id AND q.kind = 'quotation'
                         AND q.status NOT IN ('superseded', 'withdrawn') ORDER BY q.updated_at DESC LIMIT 1) ratio ON true
-   WHERE oc.status = 'lost' AND oc.closed_at >= p.from_at AND oc.closed_at < p.to_at AND ${OPPORTUNITY_ENTITY}
+   WHERE oc.status = 'lost' AND oc.cancelled_at IS NULL AND oc.closed_at >= p.from_at AND oc.closed_at < p.to_at AND ${OPPORTUNITY_ENTITY}
 ) facts ORDER BY at DESC`;
 
 const lost: KpiSpec = {
@@ -170,6 +173,32 @@ const lost: KpiSpec = {
       code: "lost", unit: "count", value: String(facts.length), count: facts.length, amount: sum(facts.map((fact) => fact.amount)).toFixed(ctx.places), targetable: false,
       chart: { type: "bars", dimension: "reason", unit: "count", items: groups.map((group) => ({ key: group.key, label: group.label, value: String(group.count), count: group.count, amount: group.amountText })) },
       notes: moneyNotes(facts),
+    };
+  },
+};
+
+/**
+ * Not interested enquiries: enquiries closed (disqualified) in the period before becoming an opportunity — the client
+ * wasn't interested, couldn't be reached, or another reason — by the reason recorded when they were closed. Spam and
+ * duplicates are left out (they are never disqualified).
+ */
+const NOT_INTERESTED_SQL = `WITH ${P}, ${LEADS}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT lc.lead_id::text AS id, 'lead' AS kind, NULL::text AS parent_id, lc.reference, lc.title, lc.client, lc.owner, lc.am::text AS owner_id,
+         lc.closed_at AS at, NULL::text AS amount, NULL::text AS measure, NULLIF(btrim(lc.disqualification_reason), '') AS detail,
+         jsonb_build_object('period', '1', 'reason', COALESCE(lower(NULLIF(btrim(lc.disqualification_reason), '')), 'none')) AS dims
+    FROM lc CROSS JOIN p
+   WHERE lc.status = 'disqualified' AND lc.opportunity_id IS NULL AND lc.closed_at >= p.from_at AND lc.closed_at < p.to_at
+) facts ORDER BY at DESC`;
+
+const notInterested: KpiSpec = {
+  code: "not_interested",
+  facts: (ctx) => readFacts(ctx, NOT_INTERESTED_SQL),
+  build: (ctx, facts) => {
+    const groups = groupBy(facts, "reason", (fact) => fact.detail ?? "", ctx.places).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    return {
+      code: "not_interested", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+      chart: { type: "bars", dimension: "reason", unit: "count", items: groups.map((group) => ({ key: group.key, label: group.label, value: String(group.count), count: group.count })) },
     };
   },
 };
@@ -259,6 +288,6 @@ const quotesExpiring: KpiSpec = {
   }),
 };
 
-export const SALES_PIPELINE: KpiSpec[] = [newLeads, conversion, pipeline, wonByAccountManager, lost, repeatKpi("duplicates", "duplicate"),
+export const SALES_PIPELINE: KpiSpec[] = [newLeads, conversion, pipeline, wonByAccountManager, lost, notInterested, repeatKpi("duplicates", "duplicate"),
   repeatKpi("returning_customers", "returning"), followUps, quotesExpiring];
 

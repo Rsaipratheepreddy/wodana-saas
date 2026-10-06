@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { DRAWING_CHECKS, type StageCheck } from "./project-checks";
+import { projectNeedsDrawings } from "./project-drawing-needs";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -108,20 +109,31 @@ async function routeStages(db: Db, workspaceId: string, projectId: string) {
 
 /**
  * Whether production must wait for the client's drawing approval, and whether it has it (PLM-059): only when the
- * project's route holds the approval check on a stage that wasn't skipped (standard furniture skips it).
+ * project's route holds the approval check on a stage that wasn't skipped, and some item needs drawings (standard
+ * furniture whose catalogue drawing is attached doesn't).
  */
 export async function drawingsGate(db: Db, workspaceId: string, projectId: string) {
-  const required = routeHolds(await routeStages(db, workspaceId, projectId), ["drawings_client_approved"]);
+  const required = routeHolds(await routeStages(db, workspaceId, projectId), ["drawings_client_approved"]) && await projectNeedsDrawings(db, workspaceId, projectId);
   return { required, approved: required ? (await readDrawingFacts(db, workspaceId, projectId)).approved : true };
 }
 
-/** Whether the route asks for drawings at all, for a site check before they go to the client, and for a factory slot. */
+/**
+ * Whether the route asks for drawings at all, for a site check before they go to the client, and for a factory slot;
+ * and whether any item needs drawings (`needed`: none does when every item is standard with its catalogue drawing).
+ */
 export async function drawingRoute(db: Db, workspaceId: string, projectId: string) {
   const stages = await routeStages(db, workspaceId, projectId);
-  return { inRoute: routeHolds(stages, DRAWING_CHECKS), needsSiteCheck: routeHolds(stages, ["drawings_site_checked"]), factorySlot: routeHolds(stages, ["factory_slot_booked"]) };
+  const inRoute = routeHolds(stages, DRAWING_CHECKS);
+  return { inRoute, needed: inRoute && await projectNeedsDrawings(db, workspaceId, projectId), needsSiteCheck: routeHolds(stages, ["drawings_site_checked"]),
+    factorySlot: routeHolds(stages, ["factory_slot_booked"]) };
 }
 
-/** The project's production release: its latest drawings are approved by the client (PLM-060 / PLM-062). */
+/**
+ * The project's production release: its latest drawings are approved by the client (PLM-060 / PLM-062), or its route
+ * keeps drawings and no item needs them.
+ */
 export async function productionReleased(db: Db, workspaceId: string, projectId: string) {
-  return (await readDrawingFacts(db, workspaceId, projectId)).approved;
+  if ((await readDrawingFacts(db, workspaceId, projectId)).approved) return true;
+  const route = await drawingRoute(db, workspaceId, projectId);
+  return route.inRoute && !route.needed;
 }

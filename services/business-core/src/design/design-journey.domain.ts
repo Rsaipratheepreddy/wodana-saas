@@ -28,11 +28,17 @@ export const addHours = (from: Date, hours: number) => new Date(from.getTime() +
 /** Stages with a design deadline: internal (the team's) and client-facing (what the client was promised) run separately (PLM-049/051). */
 export const DESIGN_DEADLINE_STAGES: JourneyStage[] = ["concepts", "space_planning", "renders"];
 
-export type StageTimings = { siteVisitHours: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number };
+export type StageTimings = {
+  siteVisitHours: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number;
+  /** The 3D renders' own deadlines (internal and client-facing); null follows the design days. */
+  renderInternalDays?: number | null; renderClientDays?: number | null;
+};
 
 /** The internal deadline, the client-facing one and the booking reminder a stage starts with. */
 export function stageDeadlines(stage: JourneyStage, now: Date, timings: StageTimings): { dueAt: Date | null; clientDueAt: Date | null; bookingReminderAt: Date | null } {
   if (stage === "site_visit") return { dueAt: addHours(now, timings.siteVisitHours), clientDueAt: null, bookingReminderAt: null };
+  if (stage === "renders") return { dueAt: addDays(now, timings.renderInternalDays ?? timings.designInternalDays), clientDueAt: addDays(now, timings.renderClientDays ?? timings.designClientDays),
+    bookingReminderAt: null };
   if (DESIGN_DEADLINE_STAGES.includes(stage)) return { dueAt: addDays(now, timings.designInternalDays), clientDueAt: addDays(now, timings.designClientDays), bookingReminderAt: null };
   // PLM-050: a week for the showroom appointment; the reminder to book it starts straight away and repeats daily until booked.
   if (stage === "material_selection") return { dueAt: addDays(now, timings.materialSelectionDays), clientDueAt: null, bookingReminderAt: now };

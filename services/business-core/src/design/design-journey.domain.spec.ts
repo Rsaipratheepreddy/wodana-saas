@@ -34,6 +34,15 @@ describe("design flow after Won (PLM-049/050/051/053/128, PLM-081)", () => {
     expect(stageDeadlines("approval", now, timings)).toEqual({ dueAt: null, clientDueAt: null, bookingReminderAt: null });
   });
 
+  it("gives the 3D renders their own internal and client-facing days when the firm sets them, else the design days", () => {
+    // Palm: renders up to 8 weeks for the client, 5 weeks inside (configuration, not code).
+    const renders = stageDeadlines("renders", now, { ...timings, designInternalDays: 21, designClientDays: 28, renderInternalDays: 35, renderClientDays: 56 });
+    expect([renders.dueAt?.toISOString(), renders.clientDueAt?.toISOString()]).toEqual(["2026-11-09T08:00:00.000Z", "2026-11-30T08:00:00.000Z"]);
+    const concepts = stageDeadlines("concepts", now, { ...timings, designInternalDays: 21, designClientDays: 28, renderInternalDays: 35, renderClientDays: 56 });
+    expect(concepts.clientDueAt?.toISOString()).toBe("2026-11-02T08:00:00.000Z");
+    expect(stageDeadlines("renders", now, { ...timings, renderInternalDays: null, renderClientDays: null }).dueAt?.toISOString()).toBe("2026-11-09T08:00:00.000Z");
+  });
+
   it("counts revisions after the first presentation and flags the one beyond the package's included revisions as chargeable", () => {
     expect(stageRevisions(0, 2)).toEqual({ used: 0, included: 2, chargeable: false });
     expect(stageRevisions(1, 2)).toEqual({ used: 0, included: 2, chargeable: false });

@@ -107,6 +107,25 @@ export function permitAlert(input: { days: Array<{ use: PermitUse; day: string |
   return today >= from ? { ...next, kind: "missing" } : null;
 }
 
+/** The day a permit's expiry reminder goes: its own days before it ends (an override), else the firm's. */
+export function permitReminderOn(validTo: string, reminderDays: number | null, defaultDays: number) {
+  const days = Math.max(0, reminderDays ?? defaultDays);
+  return new Date(Date.parse(`${validTo}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+export type RenewalCandidate = { id: string; status: PermitFact["status"]; validTo: string | null; reminderDays: number | null; remindedAt: string | null };
+
+/**
+ * The collected permits whose expiry reminder is due today (PLM-136, Palm: "some permits expire early and some we have
+ * for a long time"): once per permit, from its reminder day until it ends, unless a later collected permit already
+ * runs past it (renewed). A long-lasting permit stays quiet until its own reminder day.
+ */
+export function renewalsDue(permits: RenewalCandidate[], today: string, defaultDays: number) {
+  const collected = permits.filter((permit) => permit.status === "collected" && permit.validTo);
+  return collected.filter((permit) => !permit.remindedAt && permit.validTo! >= today && permitReminderOn(permit.validTo!, permit.reminderDays, defaultDays) <= today
+    && !collected.some((other) => other.id !== permit.id && other.validTo! > permit.validTo!));
+}
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 export const isDay = (value: unknown): value is string => typeof value === "string" && DAY.test(value) && !Number.isNaN(Date.parse(value));
 

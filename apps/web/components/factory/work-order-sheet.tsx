@@ -211,7 +211,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
           label: payment.status === "pending" ? payment.title : t("{title} (paid)", { title: payment.title }) }))]} onReload={() => void load()}
         onSave={(paymentId) => save("link_payment", { paymentId: paymentId === NO_PAYMENT ? null : paymentId })} value={order.readyPaymentId ?? ""} /> : null}
       {reminder ? <div><dt>{t("Payment reminder")}</dt><dd>{reminder.outcome === "sent"
-        ? t("Sent to the client on {date}", { date: format.day(reminder.on) }) : t("Not sent: {reason}", { reason: reminderReason(reminder.outcome) })}</dd></div> : null}
+        ? t("Sent to the client on {date}", { date: format.day(reminder.on) }) : t("Not sent: {reason}", { reason: reminderReason(reminder.outcome) })}
+        {reminder.reason === "before_ready" && reminder.plannedReadyOn ? <small>{t("Ahead of the planned ready date {date}", { date: format.day(reminder.plannedReadyOn) })}</small>
+          : reminder.reason === "all_ready" ? <small>{t("Everything tied to this payment was ready")}</small> : null}</dd></div> : null}
       {order.batchName ? <div><dt>{t("Batch")}</dt><dd>{t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName })}</dd></div> : null}
       <div><dt>{t("Drawing")}</dt><dd>
         <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })

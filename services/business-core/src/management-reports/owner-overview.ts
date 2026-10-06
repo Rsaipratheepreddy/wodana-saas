@@ -2,7 +2,7 @@ import type { FurniturePath } from "../crm/opportunities/flow-gates";
 import { readDealClosing } from "./deal-closing-read";
 import { type ReportContext, type KpiSpec, moneyNotes, readFacts } from "./report-context";
 import { type Fact, FACT_COLUMNS, categories, grid, groupBy, inPeriod, monthKeys, sum } from "./report-kit";
-import { OPPORTUNITIES, OPPORTUNITY_ENTITY, P, month, moneyDims, netMoney, netRatio, stamp } from "./report-scope";
+import { NO_SALES_FILTERS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, month, moneyDims, netMoney, netRatio, stamp } from "./report-scope";
 import { targetFor } from "./report-targets";
 
 /**
@@ -22,17 +22,18 @@ export const proposalRatio = (kind: string, quoteId: string, caseId: string) => 
  * Sales Won: proposals whose payment proof was attached (Won, PLM-122) — Proposal 1 (Design Fee) and Proposal 2 (main)
  * each count once, on its own Won date (PLM-103/009). A deal won before proposals existed counts as Proposal 2 on the
  * opportunity's Won date with its value. Value = the proposal's value net of tax (its quotation's tax share), base
- * currency only. Count = proposals won.
+ * currency only. Count = proposals won. A cancelled deal is never Won: it stays recorded and is reported under
+ * Cancellations and refunds.
  */
 export const WON_SQL = `WITH ${P}, ${OPPORTUNITIES},
 won AS (
   SELECT oc.opportunity_id, pr.kind AS series, pr.won_at AS at, pr.amount, pr.currency_code AS cur, ${proposalRatio("pr.kind", "pr.quote_id", "oc.case_id")} AS ratio
     FROM crm_opportunity_proposals pr CROSS JOIN p JOIN oc ON oc.opportunity_id = pr.opportunity_id
-   WHERE pr.workspace_id = p.ws AND pr.won_at >= p.series_from_at AND pr.won_at < p.to_at AND ${OPPORTUNITY_ENTITY}
+   WHERE pr.workspace_id = p.ws AND pr.won_at >= p.series_from_at AND pr.won_at < p.to_at AND oc.cancelled_at IS NULL AND ${OPPORTUNITY_ENTITY}
   UNION ALL
   SELECT oc.opportunity_id, 'main', oc.closed_at, oc.amount, oc.currency_code, ${proposalRatio("'main'", "NULL::uuid", "oc.case_id")}
     FROM oc CROSS JOIN p
-   WHERE oc.status = 'won' AND oc.closed_at >= p.series_from_at AND oc.closed_at < p.to_at AND ${OPPORTUNITY_ENTITY}
+   WHERE oc.status = 'won' AND oc.closed_at >= p.series_from_at AND oc.closed_at < p.to_at AND oc.cancelled_at IS NULL AND ${OPPORTUNITY_ENTITY}
      AND NOT EXISTS (SELECT 1 FROM crm_opportunity_proposals pr WHERE pr.workspace_id = p.ws AND pr.opportunity_id = oc.opportunity_id AND pr.won_at IS NOT NULL)
 )
 SELECT ${FACT_COLUMNS} FROM (
@@ -73,14 +74,8 @@ function countTarget(ctx: ReportContext, code: string, count: number): Record<st
   return result.target ? { countTarget: result.target.target, countPercent: result.target.percent, countTone: result.target.tone, countGap: result.target.gap } : {};
 }
 
-/**
- * Revenue collected: client payments Finance verified (receipts with status finance_verified), dated when Finance
- * verified them (else when reported, for older rows), net of tax by the share of the quotation the payment stage
- * belongs to; base currency only; entity = the receipt's entity. Invoiced (the trend's second line): tax invoices
- * issued (not credited), by issue date, their net.
- */
-const COLLECTED_SQL = `WITH ${P}, ${OPPORTUNITIES},
-receipt AS (
+/** Client receipts Finance verified, net of tax by their payment stage's quotation (Revenue collected and Net revenue). */
+const RECEIPT_CTE = `receipt AS (
   SELECT r.id, r.case_id, r.amount, r.currency AS cur, ${stamp("COALESCE(NULLIF(r.detail->>'verifiedAt', ''), r.detail->>'reportedAt')")} AS at,
          (SELECT ${netRatio("q")} FROM commercial_payments pay JOIN commercial_quotes q ON q.workspace_id = pay.workspace_id AND q.case_id = pay.case_id AND q.id = pay.source_quote_id
            WHERE pay.workspace_id = r.workspace_id AND pay.case_id = r.case_id AND pay.id = r.payment_id) AS ratio,
@@ -88,13 +83,46 @@ receipt AS (
     FROM commercial_receipts r CROSS JOIN p
     JOIN pre_project_cases c ON c.workspace_id = r.workspace_id AND c.id = r.case_id
    WHERE r.workspace_id = p.ws AND r.status = 'finance_verified' AND (p.entity_id IS NULL OR r.legal_entity_id = p.entity_id::text)
-)
-SELECT ${FACT_COLUMNS} FROM (
-  SELECT receipt.id AS id, 'receipt' AS kind, receipt.case_id::text AS parent_id, oc.reference, oc.title, oc.client, oc.owner, oc.am::text AS owner_id,
+)`;
+const RECEIPT_FACTS = `SELECT receipt.id AS id, 'receipt' AS kind, receipt.case_id::text AS parent_id, oc.reference, oc.title, oc.client, oc.owner, oc.am::text AS owner_id,
          receipt.at, ${netMoney("receipt.amount", "receipt.cur", "receipt.ratio")} AS amount, NULL::text AS measure, 'collected' AS detail,
          jsonb_build_object('period', ${PERIOD("receipt.at")}, 'month', ${month("receipt.at")}, 'series', 'collected', ${moneyDims("receipt.cur", "receipt.ratio")}) AS dims
     FROM receipt CROSS JOIN p JOIN oc ON oc.opportunity_id = receipt.opportunity_id
-   WHERE receipt.at >= p.series_from_at AND receipt.at < p.to_at
+   WHERE receipt.at >= p.series_from_at AND receipt.at < p.to_at`;
+
+/**
+ * Refunds paid: client refund requests Finance completed (Done), dated when Finance closed them, net of tax by the
+ * deal's main quotation (else as entered, noted); entity = the request's company, else its deal's. A refund raised
+ * without a deal counts only while no sales filter (Account Manager, enquiry type, package…) is on. `sign` is -1 where
+ * a refund takes money away (Net revenue).
+ */
+const REFUND_CTE = `refund AS (
+  SELECT r.id, r.number, r.total_amount AS amount, btrim(r.currency) AS cur, r.closed_at AS at, r.reason, r.opportunity_id, oc.case_id,
+         CASE WHEN oc.case_id IS NOT NULL THEN ${proposalRatio("'main'", "NULL::uuid", "oc.case_id")} END AS ratio,
+         party.display_name AS party_name
+    FROM finance_requests r CROSS JOIN p
+    LEFT JOIN oc ON oc.opportunity_id = r.opportunity_id
+    LEFT JOIN crm_parties party ON party.workspace_id = r.workspace_id AND party.id = r.party_id
+   WHERE r.workspace_id = p.ws AND r.kind = 'refund' AND r.status = 'done' AND r.closed_at >= p.series_from_at AND r.closed_at < p.to_at
+     AND (oc.opportunity_id IS NOT NULL OR (r.opportunity_id IS NULL AND ${NO_SALES_FILTERS}))
+     AND (p.entity_id IS NULL OR COALESCE(r.legal_entity_id, oc.entity_id) = p.entity_id)
+)`;
+const refundFacts = (sign: 1 | -1) => `SELECT refund.id::text AS id, 'refund' AS kind, refund.case_id::text AS parent_id, 'FR-' || lpad(refund.number::text, 4, '0') AS reference,
+         COALESCE(oc.title, refund.reason) AS title, COALESCE(oc.client, refund.party_name) AS client, oc.owner, oc.am::text AS owner_id, refund.at,
+         CASE WHEN refund.cur = p.currency THEN round(${sign} * refund.amount * COALESCE(refund.ratio, 1), 6)::text END AS amount, NULL::text AS measure,
+         'refund' AS detail,
+         jsonb_build_object('period', ${PERIOD("refund.at")}, 'month', ${month("refund.at")}, 'series', 'refund', ${moneyDims("refund.cur", "refund.ratio")}) AS dims
+    FROM refund CROSS JOIN p LEFT JOIN oc ON oc.opportunity_id = refund.opportunity_id`;
+
+/**
+ * Revenue collected: client payments Finance verified (receipts with status finance_verified), dated when Finance
+ * verified them (else when reported, for older rows), net of tax by the share of the quotation the payment stage
+ * belongs to; base currency only; entity = the receipt's entity. Invoiced (the trend's second line): tax invoices
+ * issued (not credited), by issue date, their net.
+ */
+const COLLECTED_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${RECEIPT_CTE}
+SELECT ${FACT_COLUMNS} FROM (
+  ${RECEIPT_FACTS}
   UNION ALL
   SELECT invoice.id::text, 'invoice', invoice.case_id::text, invoice.number, COALESCE(NULLIF(btrim(invoice.milestone_title), ''), invoice.number), oc.client, oc.owner, oc.am::text,
          (invoice.issue_date::timestamp AT TIME ZONE p.tz), CASE WHEN btrim(invoice.currency) = p.currency THEN invoice.net::text END, NULL, 'invoiced',
@@ -326,8 +354,7 @@ SELECT oc.opportunity_id::text AS id, oc.case_id::text AS parent_id, oc.referenc
   JOIN crm_opportunities o ON o.workspace_id = p.ws AND o.id = oc.opportunity_id
   LEFT JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = p.ws AND taxonomy.code = 'enquiry_type'
   LEFT JOIN crm_taxonomy_options choice ON choice.workspace_id = p.ws AND choice.taxonomy_id = taxonomy.id AND choice.code = oc.enquiry_type
- WHERE oc.status = 'won' AND oc.closed_at < p.to_at AND ${OPPORTUNITY_ENTITY}
-   AND NOT EXISTS (SELECT 1 FROM crm_deal_fulfilment f WHERE f.workspace_id = p.ws AND f.opportunity_id = oc.opportunity_id AND f.cancelled_at IS NOT NULL)`;
+ WHERE oc.status = 'won' AND oc.closed_at < p.to_at AND oc.cancelled_at IS NULL AND ${OPPORTUNITY_ENTITY}`;
 
 export async function closedFacts(ctx: ReportContext): Promise<Fact[]> {
   const candidates = (await ctx.db.query<{ id: string; parent_id: string | null; reference: string | null; title: string; client: string | null; owner: string | null;
@@ -424,4 +451,80 @@ const profitMargin: KpiSpec = {
   },
 };
 
-export const OWNER_OVERVIEW: KpiSpec[] = [salesWon, revenueCollected, outstanding, dealsAwaiting, activeProjects, delayedItems, dealsClosed, profitMargin];
+/**
+ * Cancellations and refunds: won deals cancelled in the period (their order or job cancelled; dated when cancelled;
+ * value = their won proposals net of tax, else the deal's value), and client refunds Finance completed in the period
+ * (as in Net revenue). The figure is the number of cancelled deals; the refunds are shown with it. Monthly columns,
+ * cancelled value vs refunds paid. Cancelled deals stay recorded; they never count as Won.
+ */
+const CANCELLED_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${REFUND_CTE}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT oc.opportunity_id::text AS id, 'opportunity' AS kind, oc.case_id::text AS parent_id, oc.reference, oc.title, oc.client, oc.owner, oc.am::text AS owner_id,
+         oc.cancelled_at AS at,
+         CASE WHEN oc.currency_code = p.currency THEN round(COALESCE(won.net, oc.amount * COALESCE(main.ratio, 1)), 6)::text END AS amount,
+         NULL::text AS measure, oc.cancel_reason AS detail,
+         jsonb_build_object('period', ${PERIOD("oc.cancelled_at")}, 'month', ${month("oc.cancelled_at")}, 'series', 'cancelled',
+           'currency', CASE WHEN oc.currency_code = p.currency THEN 'base' ELSE 'other' END,
+           'tax', CASE WHEN won.net IS NOT NULL THEN CASE WHEN won.separated THEN 'net' ELSE 'gross' END WHEN main.ratio IS NOT NULL THEN 'net' ELSE 'gross' END) AS dims
+    FROM oc CROSS JOIN p
+    LEFT JOIN LATERAL (SELECT sum(proposal.amount * COALESCE(proposal.ratio, 1)) AS net, bool_and(proposal.ratio IS NOT NULL) AS separated
+                         FROM (SELECT pr.amount, ${proposalRatio("pr.kind", "pr.quote_id", "oc.case_id")} AS ratio FROM crm_opportunity_proposals pr
+                                WHERE pr.workspace_id = p.ws AND pr.opportunity_id = oc.opportunity_id AND pr.won_at IS NOT NULL AND btrim(pr.currency_code) = p.currency) proposal) won ON true
+    LEFT JOIN LATERAL (SELECT ${proposalRatio("'main'", "NULL::uuid", "oc.case_id")} AS ratio) main ON true
+   WHERE oc.cancelled_at >= p.series_from_at AND oc.cancelled_at < p.to_at AND ${OPPORTUNITY_ENTITY}
+  UNION ALL
+  ${refundFacts(1)}
+) facts ORDER BY at DESC`;
+
+const cancellations: KpiSpec = {
+  code: "cancellations_refunds",
+  facts: (ctx) => readFacts(ctx, CANCELLED_SQL),
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    const cancelled = period.filter((fact) => fact.dims.series === "cancelled"), refunds = period.filter((fact) => fact.dims.series === "refund");
+    const keys = monthKeys(ctx.filters);
+    const series = [{ id: "cancelled", label: "Cancelled" }, { id: "refund", label: "Refunded" }];
+    return {
+      code: "cancellations_refunds", unit: "count", value: String(cancelled.length), count: cancelled.length,
+      amount: sum(cancelled.map((fact) => fact.amount)).toFixed(ctx.places), targetable: false,
+      extra: { refundCount: refunds.length, refundValue: sum(refunds.map((fact) => fact.amount)).toFixed(ctx.places) },
+      chart: { type: "columns", dimension: "month", seriesDimension: "series", categories: categories(keys), series, values: grid(facts, "month", keys, series, "series", "amount", ctx.places), unit: "money" },
+      notes: moneyNotes(facts),
+    };
+  },
+};
+
+/**
+ * Net revenue: Revenue collected (client receipts Finance verified, net of tax) less refunds paid (client refunds
+ * Finance completed, net of tax), both in the period. The drill-down lists both; refunds show as negative amounts.
+ */
+const NET_REVENUE_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${RECEIPT_CTE}, ${REFUND_CTE}
+SELECT ${FACT_COLUMNS} FROM (
+  ${RECEIPT_FACTS}
+  UNION ALL
+  ${refundFacts(-1)}
+) facts ORDER BY at DESC`;
+
+const netRevenue: KpiSpec = {
+  code: "net_revenue",
+  facts: (ctx) => readFacts(ctx, NET_REVENUE_SQL),
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    const amount = sum(period.map((fact) => fact.amount)).toFixed(ctx.places);
+    const of = (items: Fact[], series: string) => sum(items.filter((fact) => fact.dims.series === series).map((fact) => fact.amount));
+    const keys = monthKeys(ctx.filters);
+    const monthly = keys.map((key) => facts.filter((fact) => fact.dims.month === key));
+    return {
+      code: "net_revenue", unit: "money", value: amount, count: period.length, amount, targetable: true,
+      ...targetFor(ctx.targets, "net_revenue", ctx.filters, amount),
+      extra: { collected: of(period, "collected").toFixed(ctx.places), refunded: of(period, "refund").neg().toFixed(ctx.places) },
+      chart: { type: "lines", dimension: "month", categories: categories(keys), unit: "money",
+        series: [{ id: "net", label: "Net revenue" }, { id: "collected", label: "Collected" }, { id: "refund", label: "Refunded" }],
+        values: [monthly.map((items) => sum(items.map((fact) => fact.amount)).toFixed(ctx.places)), monthly.map((items) => of(items, "collected").toFixed(ctx.places)),
+          monthly.map((items) => of(items, "refund").neg().toFixed(ctx.places))] },
+      notes: moneyNotes(facts),
+    };
+  },
+};
+
+export const OWNER_OVERVIEW: KpiSpec[] = [salesWon, revenueCollected, netRevenue, cancellations, outstanding, dealsAwaiting, activeProjects, delayedItems, dealsClosed, profitMargin];

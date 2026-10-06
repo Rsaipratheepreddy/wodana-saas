@@ -25,6 +25,8 @@ export type ItemInput = {
   description?: string | null; wastePercent?: string | null; purchaseRoundTo?: string | null; values?: Record<string, unknown>;
   /** Working days to make one (a product's production time); left out keeps what the item has. */
   productionDays?: number | null;
+  /** A link to the item's technical drawing (PLM-057: a standard item with one needs no project drawing); left out keeps what the item has. */
+  technicalDrawingUrl?: string | null;
 };
 export type PriceEntryInput = {
   variantId?: string | null; method: PriceMethod["method"];
@@ -166,9 +168,11 @@ export class CatalogV2Service {
     await this.catalog(client, workspaceId, catalogId);
     const clean = await this.cleanItem(client, workspaceId, catalogId, input);
     const created = await this.unique(() => client.query<{ id: string }>(
-      `INSERT INTO catalog_items (workspace_id, catalog_id, category_id, code, name, item_type, unit_code, description, waste_percent, purchase_round_to, created_by, updated_by, production_days)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $11, $12) RETURNING id`,
-      [workspaceId, catalogId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, userId, clean.productionDays ?? null]),
+      `INSERT INTO catalog_items (workspace_id, catalog_id, category_id, code, name, item_type, unit_code, description, waste_percent, purchase_round_to, created_by, updated_by, production_days,
+         technical_drawing_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $11, $12, $13) RETURNING id`,
+      [workspaceId, catalogId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, userId, clean.productionDays ?? null,
+        clean.technicalDrawingUrl ?? null]),
       `Code ${clean.code} is already used in this catalog`);
     const itemId = created.rows[0].id;
     await this.writeValues(client, workspaceId, itemId, clean.values);
@@ -191,9 +195,10 @@ export class CatalogV2Service {
     await this.unique(() => client.query(
       `UPDATE catalog_items SET category_id = $3, code = $4, name = $5, item_type = $6, unit_code = $7, description = $8, waste_percent = $9::numeric,
          purchase_round_to = $10::numeric, updated_by = $11, version = version + 1, updated_at = now(),
-         production_days = CASE WHEN $12::boolean THEN $13::integer ELSE production_days END WHERE workspace_id = $1 AND id = $2`,
+         production_days = CASE WHEN $12::boolean THEN $13::integer ELSE production_days END,
+         technical_drawing_url = CASE WHEN $14::boolean THEN $15::varchar ELSE technical_drawing_url END WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, itemId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, userId,
-        clean.productionDays !== undefined, clean.productionDays ?? null]),
+        clean.productionDays !== undefined, clean.productionDays ?? null, clean.technicalDrawingUrl !== undefined, clean.technicalDrawingUrl ?? null]),
       `Code ${clean.code} is already used in this catalog`);
     await client.query(`DELETE FROM catalog_item_values WHERE workspace_id = $1 AND item_id = $2`, [workspaceId, itemId]);
     await this.writeValues(client, workspaceId, itemId, clean.values);
@@ -497,9 +502,10 @@ export class CatalogV2Service {
 
   // ---------- helpers ----------
   private async itemDetail(client: PoolClient, workspaceId: string, catalogId: string, itemId: string, canViewCosts: boolean) {
-    const item = await client.query<{ id: string; code: string; name: string; itemType: string; unitCode: string; categoryId: string | null; description: string | null; wastePercent: string | null; purchaseRoundTo: string | null; productionDays: number | null; status: string; version: number }>(
+    const item = await client.query<{ id: string; code: string; name: string; itemType: string; unitCode: string; categoryId: string | null; description: string | null; wastePercent: string | null; purchaseRoundTo: string | null; productionDays: number | null; technicalDrawingUrl: string | null; status: string; version: number }>(
       `SELECT id, code, name, item_type AS "itemType", unit_code AS "unitCode", category_id AS "categoryId", description,
-              waste_percent::text AS "wastePercent", purchase_round_to::text AS "purchaseRoundTo", production_days AS "productionDays", status, version
+              waste_percent::text AS "wastePercent", purchase_round_to::text AS "purchaseRoundTo", production_days AS "productionDays",
+              technical_drawing_url AS "technicalDrawingUrl", status, version
        FROM catalog_items WHERE workspace_id = $1 AND catalog_id = $2 AND id = $3`, [workspaceId, catalogId, itemId]);
     if (!item.rowCount) throw new NotFoundException("Item not found");
     const row = item.rows[0];
@@ -581,8 +587,18 @@ export class CatalogV2Service {
       wastePercent: input.wastePercent ? this.decimal(input.wastePercent, "Waste") : null,
       purchaseRoundTo: input.purchaseRoundTo ? this.decimal(input.purchaseRoundTo, "Buy in multiples of") : null,
       productionDays: this.productionDays(input.productionDays),
+      technicalDrawingUrl: this.drawingUrl(input.technicalDrawingUrl),
       values,
     };
+  }
+
+  /** An http(s) link to the technical drawing (a PDF in Drive, the supplier's page…); empty clears it, left out keeps it. */
+  private drawingUrl(value: string | null | undefined) {
+    if (value === undefined) return undefined;
+    const url = typeof value === "string" ? value.trim() : "";
+    if (!url) return null;
+    if (url.length > 2000 || !/^https?:\/\/\S+$/i.test(url)) throw new UnprocessableEntityException("Paste the technical drawing's link (http or https)");
+    return url;
   }
 
   private productionDays(value: number | null | undefined) {

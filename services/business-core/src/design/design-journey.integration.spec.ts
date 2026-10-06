@@ -272,6 +272,22 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
     });
   });
 
+  it("gives the 3D renders their own internal and client deadlines when the firm sets them (Palm: 5 weeks inside, 8 weeks for the client)", async () => {
+    await withCase({ spacePlanning: false, renders: true }, async (client, ids, service) => {
+      await client.query(`UPDATE workspace_design_settings SET render_internal_days = 35, render_client_days = 56 WHERE workspace_id = $1`, [ids.workspaceId]);
+      await service.start(actor, ids.workspaceId, ids.caseId);
+      await client.query(`UPDATE design_journey_stages SET status = CASE WHEN stage IN ('inspiration','site_visit','concepts') THEN 'done' WHEN stage = 'material_selection' THEN 'active' ELSE status END,
+        completed_at = CASE WHEN stage IN ('inspiration','site_visit','concepts') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]);
+      const view = await service.skipStage(actor, ids.workspaceId, ids.caseId, "material_selection", { version: (await stage(client, ids, "material_selection")).version, note: "Client-supplied finishes" });
+      const renders = view.stages.find((row) => row.stage === "renders")!;
+      const days = (at: unknown) => Math.round((new Date(at as string).getTime() - Date.now()) / 86_400_000);
+      expect([days(renders.dueAt), days((renders as { clientDueAt?: unknown }).clientDueAt)]).toEqual([35, 56]);
+      // The journey keeps its copy: changing the settings later doesn't move this client's deadlines.
+      expect((await client.query(`SELECT render_internal_days AS internal, render_client_days AS client FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`,
+        [ids.workspaceId, ids.caseId])).rows[0]).toEqual({ internal: 35, client: 56 });
+    });
+  });
+
   it("queues what's waiting on each person and tells the right people at each review step", async () => {
     await withCase({ spacePlanning: false, renders: false }, async (client, ids) => {
       const asset = randomUUID();

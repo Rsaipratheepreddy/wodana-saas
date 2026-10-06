@@ -20,8 +20,12 @@ export type DocumentCard = {
 };
 
 export type QsStage = "not_required" | "to_send" | "with_qs" | "confirmed" | "stale" | "returned";
+/** Why a quotation does or doesn't need the QS (the firm's QS rules, Settings › Quotations). */
+export type QsReason =
+  | { code: "off" | "not_quotation" | "every_quotation" | "no_boq" | "design_fee" | "boq_required" | "standard_only" }
+  | { code: "lines"; workPackages: string[]; itemTypes: string[] };
 export type QsState = {
-  required: boolean; stage: QsStage; reference: string | null; canSend: boolean; canDecide: boolean;
+  required: boolean; reason?: QsReason; stage: QsStage; reference: string | null; canSend: boolean; canDecide: boolean;
   review: null | { id: string; status: "with_qs" | "confirmed" | "returned"; assigneeUserId: string; assigneeName: string | null; requestedBy: string; requestedByName: string | null;
     requestedAt: string; note: string; decidedBy: string | null; decidedByName: string | null; decidedAt: string | null; decisionNote: string; version: number };
   people: Array<{ userId: string; name: string }>;

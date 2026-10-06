@@ -1,13 +1,13 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { IsIn, IsInt, Min } from "class-validator";
+import { IsIn, IsInt, IsOptional, Min } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { ClientCallsService } from "./client-calls.service";
 
-class FrequencyDto { @IsIn(["weekly", "fortnightly", "monthly", "off"]) frequency!: string; @IsInt() @Min(0) version!: number; }
+class FrequencyDto { @IsIn(["weekly", "fortnightly", "monthly", "off"]) frequency!: string; @IsOptional() @IsIn(["call", "portal"]) mode?: string; @IsInt() @Min(0) version!: number; }
 
-/** PLM-046: the recurring client update call of a job. */
+/** PLM-046: the recurring client update of a job (a call, or a progress update in the portal). */
 @ApiTags("client-calls")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/pre-projects/:caseId/client-calls")

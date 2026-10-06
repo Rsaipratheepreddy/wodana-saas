@@ -9,6 +9,7 @@ import { quotePricingSnapshot } from "../quotation/quotation-builder.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { pricingHash, qsStage, type QsReviewState } from "./qs-review.domain";
 import { quotationReference } from "./quote-issue";
+import { qsRequirement } from "./qs-requirement";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit", QS = "commercial.estimate";
@@ -120,8 +121,9 @@ export class QsReviewService {
 
   private async read(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string) {
     const quote = await this.quote(client, workspaceId, caseId, quoteId, false);
-    const required = Boolean((await client.query<{ on: boolean }>(`SELECT qs_review AS on FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.on)
-      && quote.kind === "quotation";
+    // Whether this quotation needs the QS, and why (the firm's switch and rules; shown in the quote flow).
+    const requirement = await qsRequirement(client, workspaceId, caseId, quoteId);
+    const required = requirement.required;
     const review = (await client.query<QsReviewState & { approvalId: string | null }>(
       `${REVIEW_SELECT} WHERE review.workspace_id = $1 AND review.case_id = $2 AND review.quote_id = $3 ORDER BY review.requested_at DESC, review.id DESC LIMIT 1`,
       [workspaceId, caseId, quoteId])).rows[0] ?? null;
@@ -130,7 +132,7 @@ export class QsReviewService {
     const approval = review ? await approvalStatus(client, workspaceId, "quote_qs", review.id) : null;
     const isQs = await this.access.hasPermission(client, workspaceId, userId, QS);
     return {
-      required, stage,
+      required, reason: requirement.reason, stage,
       review: review ? { ...review, approvalId: undefined, approval: approval ? { id: approval.id, status: approval.status, waitingFor: approval.waitingFor, steps: approval.steps } : null } : null,
       reference: (await quotationReference(client, workspaceId, caseId, quote.familyId ?? quoteId))?.reference ?? null,
       // Who can do what next: Sales sends (or moves it to another QS); a QS other than the requester decides.

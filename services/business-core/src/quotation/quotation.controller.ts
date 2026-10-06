@@ -42,7 +42,7 @@ export class QuotationController {
   addWorkPackage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: { id?: string; name?: string }) { return this.builder.addWorkPackage(actor, workspaceId, input ?? {}); }
 
   @Patch("work-packages/:id")
-  updateWorkPackage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: { name?: string; archived?: boolean }) { return this.builder.updateWorkPackage(actor, workspaceId, id, input ?? {}); }
+  updateWorkPackage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: { name?: string; archived?: boolean; qsReview?: boolean }) { return this.builder.updateWorkPackage(actor, workspaceId, id, input ?? {}); }
 
   @Post("columns")
   addColumn(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.builder.addColumn(actor, workspaceId, input ?? {}); }

@@ -56,7 +56,6 @@ export async function readContext(db: Db, ctx: Ctx, input: { partyId?: unknown; 
   const quotes = caseId ? (await db.query<{ id: string; number: number; title: string; status: string; currency: string }>(
     `SELECT id, number, title, status, currency FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND status IN ('issued', 'accepted') ORDER BY number`,
     [workspaceId, caseId])).rows : [];
-  const settings = await readSettings(db, workspaceId);
   return {
     client, deal, project, caseId,
     stages: caseId ? await paymentStages(db, workspaceId, caseId) : [],
@@ -70,7 +69,7 @@ export async function readContext(db: Db, ctx: Ctx, input: { partyId?: unknown; 
       [workspaceId])).rows,
     currency: deal?.currency?.trim() || (await db.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].currency.trim(),
     taxNumberLabel: (await readTaxNumberRule(db, workspaceId)).label,
-    refundDays: settings.refundDays, me: ctx.userId,
+    me: ctx.userId,
   };
 }
 
@@ -131,9 +130,10 @@ export async function readRequestSettings(db: Db, ctx: Ctx) {
 const SETTINGS_ACTIONS = ["save_settings", "save_method", "archive_method"] as const;
 
 /**
- * Finance's settings, version-checked and audited: the finance inbox (empty: no email), the expected refund
- * days (empty: no date shown), automatic stage invoice requests, and the payment methods with their refund
- * guidance. Nothing here is a constant in code.
+ * Finance's settings, version-checked and audited: the finance inbox (empty: no email), automatic stage invoice
+ * requests, and the payment methods (the refund methods a refund request picks from) with their refund guidance,
+ * whether a refund needs bank details and how many days a refund usually takes (empty: no date shown). Nothing here
+ * is a constant in code.
  */
 export async function saveRequestSettings(db: Db, ctx: Ctx, body: Record<string, unknown>) {
   if (!(await ctx.can(MANAGE))) throw new ForbiddenException("Only Finance changes these settings.");
@@ -143,15 +143,13 @@ export async function saveRequestSettings(db: Db, ctx: Ctx, body: Record<string,
     const current = await readSettings(db, workspaceId);
     if (body.version !== current.version) throw new ConflictException("These settings changed elsewhere. Reload to see them.");
     const inbox = email(body.financeInbox, "Finance inbox") || null;
-    const days = body.refundDays === null || body.refundDays === undefined || body.refundDays === "" ? null : Number(body.refundDays);
-    if (days !== null && (!Number.isInteger(days) || days < 1 || days > 365)) throw new BadRequestException("Refund days must be a whole number from 1 to 365.");
     const stage = body.stageInvoiceRequests === true;
     await db.query(
-      `INSERT INTO finance_request_settings (workspace_id, finance_inbox, refund_days, stage_invoice_requests, updated_by) VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (workspace_id) DO UPDATE SET finance_inbox = $2, refund_days = $3, stage_invoice_requests = $4, updated_by = $5, updated_at = now(),
-         version = finance_request_settings.version + 1`, [workspaceId, inbox, days, stage, ctx.userId]);
+      `INSERT INTO finance_request_settings (workspace_id, finance_inbox, stage_invoice_requests, updated_by) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (workspace_id) DO UPDATE SET finance_inbox = $2, stage_invoice_requests = $3, updated_by = $4, updated_at = now(),
+         version = finance_request_settings.version + 1`, [workspaceId, inbox, stage, ctx.userId]);
     await recordAudit(db, { workspaceId, actorUserId: ctx.userId, action: "finance_request.settings_changed", entityType: "finance_request_settings", entityId: workspaceId,
-      before: current, after: { financeInbox: inbox, refundDays: days, stageInvoiceRequests: stage } });
+      before: current, after: { financeInbox: inbox, stageInvoiceRequests: stage } });
     return;
   }
   const id = uuid(body.id, "Payment method");
@@ -168,14 +166,23 @@ export async function saveRequestSettings(db: Db, ctx: Ctx, body: Record<string,
   if (!label) throw new BadRequestException("Name the payment method.");
   const guidance = text(body.refundGuidance, 1000, "Refund guidance");
   const bank = body.needsBankDetails === true;
+  const days = refundDays(body.refundDays);
   const taken = (await db.query(`SELECT 1 FROM finance_payment_methods WHERE workspace_id = $1 AND id <> $2 AND archived_at IS NULL AND lower(btrim(label)) = lower($3)`,
     [workspaceId, id, label])).rowCount;
   if (taken) throw new ConflictException("A payment method with this name exists.");
-  if (existing) await db.query(`UPDATE finance_payment_methods SET label = $3, refund_guidance = $4, needs_bank_details = $5, version = version + 1 WHERE workspace_id = $1 AND id = $2`,
-    [workspaceId, id, label, guidance, bank]);
-  else await db.query(`INSERT INTO finance_payment_methods (id, workspace_id, label, refund_guidance, needs_bank_details, position)
-    SELECT $2, $1, $3, $4, $5, coalesce(max(position), 0) + 1 FROM finance_payment_methods WHERE workspace_id = $1`, [workspaceId, id, label, guidance, bank]);
+  if (existing) await db.query(`UPDATE finance_payment_methods SET label = $3, refund_guidance = $4, needs_bank_details = $5, refund_days = $6, version = version + 1
+    WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, label, guidance, bank, days]);
+  else await db.query(`INSERT INTO finance_payment_methods (id, workspace_id, label, refund_guidance, needs_bank_details, refund_days, position)
+    SELECT $2, $1, $3, $4, $5, $6, coalesce(max(position), 0) + 1 FROM finance_payment_methods WHERE workspace_id = $1`, [workspaceId, id, label, guidance, bank, days]);
   await recordAudit(db, { workspaceId, actorUserId: ctx.userId, action: "finance_request.method_saved", entityType: "finance_payment_method", entityId: id,
-    after: { label, refundGuidance: guidance, needsBankDetails: bank, created: !existing } });
+    after: { label, refundGuidance: guidance, needsBankDetails: bank, refundDays: days, created: !existing } });
+}
+
+/** How many days a refund paid back this way usually takes: a whole number from 1 to 365, or empty (no date shown). */
+export function refundDays(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const days = typeof value === "number" ? value : typeof value === "string" && /^\d{1,3}$/.test(value.trim()) ? Number(value.trim()) : Number.NaN;
+  if (!Number.isInteger(days) || days < 1 || days > 365) throw new BadRequestException("Refund days must be a whole number from 1 to 365.");
+  return days;
 }
 

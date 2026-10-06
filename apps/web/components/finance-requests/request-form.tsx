@@ -182,6 +182,10 @@ export function RequestForm({ api, origin = {}, existing, onClose, onSaved }: {
   const methodField = context?.methods.length ? <SelectField label={t("Payment method")} isRequired placeholder={t("Choose")} selectedKey={paymentMethodId || null}
     onSelectionChange={(key) => setPaymentMethodId(key ? String(key) : "")} items={context.methods.map((item) => ({ id: item.id, label: item.label }))} />
     : <TextInput label={t("Payment method")} isRequired maxLength={80} value={paymentMethod} onChange={setPaymentMethod} />;
+  // PLM-109: a refund picks its refund method; each has its own guidance and timeline (Finance › Requests › Settings).
+  const refundMethodField = context?.methods.length ? <SelectField label={t("Refund method")} isRequired placeholder={t("Choose")} selectedKey={paymentMethodId || null}
+    onSelectionChange={(key) => setPaymentMethodId(key ? String(key) : "")} items={context.methods.map((item) => ({ id: item.id, label: item.label }))} />
+    : <TextInput label={t("Refund method")} isRequired maxLength={80} value={paymentMethod} onChange={setPaymentMethod} />;
 
   const linesSection = <FormSection title={kind === "refund" ? t("Items not delivered") : t("Lines")}>
     <ul className={styles.lines}>
@@ -250,11 +254,11 @@ export function RequestForm({ api, origin = {}, existing, onClose, onSaved }: {
     {kind === "refund" ? <FormSection title={t("Refund")}>
       <TextInput label={t("Client invoice number")} isRequired maxLength={80} value={invoiceNumber} onChange={setInvoiceNumber} />
       <TextAreaField label={t("Reason")} isRequired maxLength={2000} value={reason} onChange={setReason} />
-      {methodField}
+      {refundMethodField}
       {method?.refundGuidance ? <InlineNotice tone="info" message={method.refundGuidance} /> : null}
       {method?.needsBankDetails ? <TextAreaField label={t("Client bank details")} isRequired maxLength={1000} value={bankDetails} onChange={setBankDetails}
         description={t("Only Finance sees these.")} /> : null}
-      {context?.refundDays ? <p className={styles.muted}>{t("Expected about {days} days after approval.", { days: context.refundDays })}</p> : null}
+      {method?.refundDays ? <p className={styles.muted}>{t("Expected about {days} days after approval.", { days: method.refundDays })}</p> : null}
     </FormSection> : null}
 
     {kind !== "payable" ? linesSection : null}

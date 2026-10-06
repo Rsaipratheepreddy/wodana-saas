@@ -74,6 +74,12 @@ export class LogisticsController {
     return this.logistics.cancelPermit(actor, workspaceId, { projectId }, permitId, body ?? {});
   }
 
+  @Put("projects/:projectId/permits/:permitId/reminder")
+  permitReminder(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("permitId", ParseUUIDPipe) permitId: string, @Body() body: Record<string, unknown>) {
+    return this.logistics.setPermitReminder(actor, workspaceId, { projectId }, permitId, body ?? {});
+  }
+
   /** PLM-136: an order with no project (Furniture Only) keeps its permit on the deal. */
   @Get("deals/:opportunityId/permits")
   dealPermits(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string) {
@@ -91,6 +97,12 @@ export class LogisticsController {
   withdrawDealPermit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string,
     @Param("permitId", ParseUUIDPipe) permitId: string, @Body() body: Record<string, unknown>) {
     return this.logistics.cancelPermit(actor, workspaceId, { opportunityId }, permitId, body ?? {});
+  }
+
+  @Put("deals/:opportunityId/permits/:permitId/reminder")
+  dealPermitReminder(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string,
+    @Param("permitId", ParseUUIDPipe) permitId: string, @Body() body: Record<string, unknown>) {
+    return this.logistics.setPermitReminder(actor, workspaceId, { opportunityId }, permitId, body ?? {});
   }
 
   @Get("permits/:permitId/file")

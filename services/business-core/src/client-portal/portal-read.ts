@@ -19,6 +19,7 @@ import { effectiveSections, readProjectAccess, type PortalSettings, type Section
 import { readBudget } from "./portal-budget";
 import { readPortalChanges } from "./portal-changes";
 import { feedCards, whatChanged } from "./portal-feed";
+import { readUpdatePreference } from "./portal-updates";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -79,7 +80,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     paused: Boolean(access?.paused),
   };
   if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, address: null, startDate: null,
-    team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
+    team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, updates: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
     messages: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
@@ -105,6 +106,8 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   const latestUpdate = [progress?.updates[0], card ? { id: card.id, at: card.sentAt, text: card.summary } : undefined]
     .filter((item): item is { id: string; at: string; text: string } => Boolean(item)).sort((a, b) => (a.at < b.at ? 1 : -1))[0] ?? null;
   const dates = started && settings.progress.dates;
+  // How the client hears how the work goes (PLM-046): by call or in the portal, and how often; theirs to change while the job runs.
+  const updates = on("progress") && !["completed", "cancelled"].includes(base.status) ? await readUpdatePreference(db, workspaceId, row.caseId) : null;
   return {
     ...base, sections: sections as Sections,
     manager: started ? await readManager(db, workspaceId, row.projectId!) : null,
@@ -117,7 +120,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
     next: nextSteps(decisions, payments, progress, choices, changes),
     unread: messages?.unread ?? 0,
-    latestUpdate, progress, moodboard, decisions, payments, documents, warranty, messages, design, choices, changes, budget,
+    latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, design, choices, changes, budget,
     feed: feedCards(source), digest: since === undefined ? null : whatChanged(source, since),
   };
 }

@@ -32,7 +32,7 @@ export function logisticsApi(workspaceId: string) {
     addPerson: (input: { id: string; name: string; phone: string; trade: string; crewId?: string | null }) => request<Worker>(at("people"), json("POST", input)),
     vehicles: () => request<VehiclesState>(at("vehicles")),
     saveVehicle: (input: Record<string, unknown>) => request<VehiclesState>(at("vehicles"), json("POST", input)),
-    saveSettings: (input: { version: number; permitWarningDays?: number; dealDeliveryPermit?: boolean }) => request<VehiclesState>(at("settings"), json("PUT", input)),
+    saveSettings: (input: { version: number; permitWarningDays?: number; dealDeliveryPermit?: boolean; permitExpiryReminderDays?: number }) => request<VehiclesState>(at("settings"), json("PUT", input)),
     permits: (value: PermitOwner, signal?: AbortSignal) => request<PermitsState>(at(`${owner(value)}/permits`), { signal }),
     /** Records the collected permit with its file, on a project or a deal; replayed safely by its id and file. */
     collectPermit: (value: PermitOwner, permitId: string, fields: Record<string, string>, file: File) => {
@@ -42,6 +42,9 @@ export function logisticsApi(workspaceId: string) {
       return request<PermitsState>(at(`${owner(value)}/permits/${permitId}`), { method: "POST", body });
     },
     withdrawPermit: (value: PermitOwner, permitId: string, input: { version: number; reason: string }) => request<PermitsState>(at(`${owner(value)}/permits/${permitId}/withdraw`), json("POST", input)),
+    /** A recorded permit's own reminder days, or null for the firm's default (PLM-136). */
+    permitReminder: (value: PermitOwner, permitId: string, input: { version: number; reminderDays: number | null }) =>
+      request<PermitsState>(at(`${owner(value)}/permits/${permitId}/reminder`), json("PUT", input)),
     permitFileUrl: (permitId: string) => at(`permits/${permitId}/file`),
   };
 }

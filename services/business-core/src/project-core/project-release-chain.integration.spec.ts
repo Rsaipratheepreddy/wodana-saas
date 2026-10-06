@@ -295,4 +295,66 @@ integration("technical drawings to production release (PLM-056 … 062, 068)", (
       expect(detail.drawings).toMatchObject({ inRoute: false, latest: null });
     });
   });
+
+  it("PLM-057: drawings only for the items that need them; standard items with their catalogue drawing skip the stage by themselves", async () => {
+    await world(async (w) => {
+      const { projectId } = await startProject(w);
+      const pm = w.core(w.pm.user, MANAGE);
+      // A line with no catalogue item is bespoke: it needs drawings, and production waits for them.
+      let state = await w.drawings(w.tech.user, TEAM).read(actor, w.workspaceId, projectId);
+      expect(state).toMatchObject({ needed: true, canDecideItems: true, items: [expect.objectContaining({ title: "Kitchen cabinets", needed: true, rule: { needed: true, reason: "bespoke" }, override: null })] });
+      expect(await drawingsGate(w.client, w.workspaceId, projectId)).toEqual({ required: true, approved: false });
+
+      // The same line as a standard catalogue piece: without a drawing on the catalogue it still needs one; with it, it doesn't.
+      const catalog = randomUUID(), item = randomUUID();
+      await w.client.query("INSERT INTO catalogs (id, workspace_id, code, name) VALUES ($1, $2, 'core', 'Core collection')", [catalog, w.workspaceId]);
+      await w.client.query(`INSERT INTO catalog_units (workspace_id, code, label, kind, to_base) VALUES ($1, 'pcs', 'Pieces', 'count', 1) ON CONFLICT DO NOTHING`, [w.workspaceId]);
+      await w.client.query(`INSERT INTO catalog_items (id, workspace_id, catalog_id, code, name, item_type, unit_code) VALUES ($1, $2, $3, 'SOFA-3', 'Sofa 3 seater', 'product', 'pcs')`,
+        [item, w.workspaceId, catalog]);
+      await w.client.query(`UPDATE project_boq_lines SET catalog_item_id = $3 WHERE workspace_id = $1 AND project_id = $2`, [w.workspaceId, projectId, item]);
+      state = await w.drawings(w.tech.user, TEAM).read(actor, w.workspaceId, projectId);
+      expect(state.items[0]).toMatchObject({ needed: true, rule: { reason: "no_catalogue_drawing" }, catalogName: "Sofa 3 seater", catalogDrawingUrl: null });
+      await w.client.query(`UPDATE catalog_items SET technical_drawing_url = 'https://drive.example.com/sofa-3.pdf' WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, item]);
+      state = await w.drawings(w.tech.user, TEAM).read(actor, w.workspaceId, projectId);
+      expect(state).toMatchObject({ needed: false, items: [expect.objectContaining({ needed: false, rule: { needed: false, reason: "catalogue_drawing" }, catalogDrawingUrl: "https://drive.example.com/sofa-3.pdf" })] });
+      expect(await drawingsGate(w.client, w.workspaceId, projectId)).toEqual({ required: false, approved: true });
+
+      // The technical team can still ask for drawings, saying why; who and when are kept.
+      let detail = await pm.get(actor, w.workspaceId, projectId);
+      const tech = w.core(w.tech.user, TEAM);
+      await expect(tech.command(actor, w.workspaceId, projectId, { action: "set_drawing_need", lineId: state.items[0].lineId, needed: true, version: detail.project.version })).rejects.toThrow("Say why.");
+      await expect(w.core(w.factory.user, FACTORY).command(actor, w.workspaceId, projectId, { action: "set_drawing_need", lineId: state.items[0].lineId, needed: true, reason: "x", version: detail.project.version }))
+        .rejects.toThrow();
+      detail = await tech.command(actor, w.workspaceId, projectId, { action: "set_drawing_need", lineId: state.items[0].lineId, needed: true, reason: "Client changed the arm width", version: detail.project.version });
+      state = await w.drawings(w.tech.user, TEAM).read(actor, w.workspaceId, projectId);
+      expect(state.items[0]).toMatchObject({ needed: true, override: { needed: true, reason: "Client changed the arm width", byName: "Tara Technical" } });
+      expect(await drawingsGate(w.client, w.workspaceId, projectId)).toEqual({ required: true, approved: false });
+      // Back to the rule.
+      detail = await tech.command(actor, w.workspaceId, projectId, { action: "set_drawing_need", lineId: state.items[0].lineId, needed: null, version: detail.project.version });
+      expect((await w.drawings(w.tech.user, TEAM).read(actor, w.workspaceId, projectId)).items[0]).toMatchObject({ needed: false, override: null });
+
+      // Kickoff done: the drawings stage has nothing to draw, so it is skipped with the reason and production is current.
+      detail = await pm.command(actor, w.workspaceId, projectId, { action: "book_factory_slot", date: "2026-11-02", version: detail.project.version });
+      detail = await pm.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: detail.stages[0].id, version: detail.project.version });
+      expect(detail.stages[1]).toMatchObject({ name: "Technical drawings", status: "skipped", skipReason: "No item needs technical drawings." });
+      expect(detail.stages[2]).toMatchObject({ name: "Production", status: "current" });
+      expect((await tasks(w, projectId)).filter((task) => task.status === "todo")).toEqual([]);
+    });
+  });
+
+  it("PLM-057: a drawings stage already under way moves on once the team decides no item needs drawings", async () => {
+    await world(async (w) => {
+      const { projectId } = await startProject(w);
+      const pm = w.core(w.pm.user, MANAGE);
+      let detail = await pm.command(actor, w.workspaceId, projectId, { action: "book_factory_slot", date: "2026-11-02", version: (await pm.get(actor, w.workspaceId, projectId)).project.version });
+      detail = await pm.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: detail.stages[0].id, version: detail.project.version });
+      expect(detail.stages[1]).toMatchObject({ name: "Technical drawings", status: "current" });
+      const line = (await w.drawings(w.pm.user, MANAGE).read(actor, w.workspaceId, projectId)).items[0];
+      detail = await pm.command(actor, w.workspaceId, projectId, { action: "set_drawing_need", lineId: line.lineId, needed: false, reason: "Standard piece, drawing on file", version: detail.project.version });
+      expect(detail.stages[1]).toMatchObject({ status: "skipped", skipReason: "No item needs technical drawings." });
+      expect(detail.stages[2]).toMatchObject({ name: "Production", status: "current" });
+      // Its drawings task stops with it.
+      expect((await tasks(w, projectId)).find((task) => task.title === "Technical drawings")).toMatchObject({ status: "cancelled" });
+    });
+  });
 });

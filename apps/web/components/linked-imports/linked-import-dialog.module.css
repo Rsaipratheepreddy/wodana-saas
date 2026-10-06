@@ -16,6 +16,10 @@
 .heading { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .heading small { overflow: hidden; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; }
 .columns :global(.wd-field-label:empty) { display: none; }
+/* The tabs to import (and, for a supplier list, each tab's company). */
+.tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--wd-space-2) var(--wd-space-4); max-block-size: 14rem; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.tabs li { display: grid; gap: var(--wd-space-1); align-content: start; }
+.tabs :global(.wd-field-label:empty) { display: none; }
 
 /* The preview: counts, then every row that isn't unchanged (problems first). */
 .summary { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-6); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }

@@ -26,7 +26,8 @@ export type FinanceRequest = {
   financeReference: string; internalNote: string | null; handledBy: string | null; handledByName: string | null;
   closedByName: string | null; closedAt: string | null; closeNote: string; invoicePending: boolean;
   approvalStatus: "pending" | "approved" | "returned" | "rejected" | "cancelled" | "superseded" | null; approvedAt: string | null;
-  expectedRefundOn: string | null;
+  /** A refund's days, from its method when it was raised (PLM-109), and the day they lead to. */
+  refundDays?: number | null; expectedRefundOn: string | null;
 };
 
 export type RequestLine = { id: string; position: number; description: string; quantity: string; unitPrice: string; amount: string };
@@ -34,7 +35,7 @@ export type RequestFile = { id: string; kind: FileKind; name: string; contentTyp
 export type RequestEvent = { id: string; kind: string; fromStatus: string | null; toStatus: string | null; note: string; actorName: string | null; occurredAt: string };
 
 export type FinanceRequestsBoard = {
-  requests: FinanceRequest[]; canManage: boolean; canRaise: boolean; me: string; settings: { refundDays: number | null; financeInboxSet: boolean };
+  requests: FinanceRequest[]; canManage: boolean; canRaise: boolean; me: string; settings: { financeInboxSet: boolean };
 };
 
 export type FinanceRequestDetail = {
@@ -42,7 +43,8 @@ export type FinanceRequestDetail = {
   guidance: string; canManage: boolean; canResubmit: boolean; canAttach: boolean;
 };
 
-export type PaymentMethod = { id: string; label: string; refundGuidance: string; needsBankDetails: boolean; position: number; version: number };
+/** A payment method, which is also a refund method: its guidance, whether a refund needs bank details and its usual refund days (PLM-109). */
+export type PaymentMethod = { id: string; label: string; refundGuidance: string; needsBankDetails: boolean; refundDays: number | null; position: number; version: number };
 export type TaxRate = { code: string; label: string; rate: string; isDefault: boolean };
 export type Company = { id: string; name: string; currency: string; taxLabel: string; rates: TaxRate[] };
 export type PaymentStage = { id: string; title: string; trigger: string; dueDate: string | null; currency: string; amount: string; legalEntityId: string | null };
@@ -55,11 +57,11 @@ export type RequestContext = {
   project: { id: string; reference: string | null; name: string } | null;
   caseId: string | null; stages: PaymentStage[]; quotes: Array<{ id: string; label: string; status: string; currency: string }>;
   companies: Company[]; defaultCompanyId: string | null; methods: PaymentMethod[]; people: Array<{ id: string; name: string }>;
-  currency: string; taxNumberLabel: string | null; refundDays: number | null; me: string;
+  currency: string; taxNumberLabel: string | null; me: string;
 };
 
 export type RequestSettingsState = {
-  settings: { financeInbox: string | null; refundDays: number | null; stageInvoiceRequests: boolean; version: number };
+  settings: { financeInbox: string | null; stageInvoiceRequests: boolean; version: number };
   methods: PaymentMethod[]; canManage: boolean;
 };
 
