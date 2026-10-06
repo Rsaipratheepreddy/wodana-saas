@@ -125,3 +125,11 @@
 .wd-record-menu-actions .wd-button { justify-content: flex-start; }
 /* Phone numbers read left to right in every language (+971 50 123 4567), aligned with the other fields. */
 .wd-root[dir="rtl"] input[type="tel"] { direction: ltr; text-align: end; }
+/* Tabs and the list's tools share one row (search, Filter, ⋯ at the end), so there is no near-empty toolbar row. */
+.wd-page-shell-tabs { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); min-inline-size: 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.wd-page-shell-tabs-start { min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
+.wd-page-shell-tabs-start :is(.wd-list-tabs, .wd-tabs) { border-block-end: 0; }
+.wd-page-shell-tools { display: flex; flex: none; align-items: center; gap: var(--wd-space-1); }
+.wd-page-shell-tools:empty { display: none; }
+.wd-page-shell .wd-page-shell-tools > .wd-grid-toolbar.wd-record-toolbar { margin: 0; padding: 0; border: 0; min-block-size: 0; background: transparent; }
+.wd-page-shell > .wd-page-shell-header { padding-block-start: var(--wd-space-4); }

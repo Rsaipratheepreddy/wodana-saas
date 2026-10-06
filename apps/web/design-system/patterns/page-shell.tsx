@@ -1,4 +1,14 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { createContext, useContext, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+
+/**
+ * The end of the tabs row, where the page's list puts its toolbar (search, Filter, ⋯) so the tabs and the tools
+ * share one row instead of an almost empty toolbar row above the list. The first list on the page claims it.
+ */
+type ToolbarSlot = { element: HTMLElement | null; owner: MutableRefObject<string | null> };
+const ToolbarSlotContext = createContext<ToolbarSlot | null>(null);
+export function usePageToolbarSlot() { return useContext(ToolbarSlotContext); }
 
 /** How a page spaces its sections: one gap scale per page type (§5c D6). */
 export type PageKind = "list" | "record" | "form" | "dashboard";
@@ -19,16 +29,23 @@ export function PageShell({ action, "aria-label": ariaLabel, children, kind = "l
   title: ReactNode;
   toolbar?: ReactNode;
 }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const owner = useRef<string | null>(null);
   return <section aria-label={ariaLabel} className="wd-page-shell" data-kind={kind}>
     <header className="wd-page-shell-header">
       <div className="wd-page-shell-bar">
         <h1 className="wd-page-shell-title">{title}</h1>
         {action ? <div className="wd-page-shell-action">{action}</div> : null}
       </div>
-      {tabs ? <div className="wd-page-shell-tabs">{tabs}</div> : null}
+      {tabs ? <div className="wd-page-shell-tabs">
+        <div className="wd-page-shell-tabs-start">{tabs}</div>
+        <div className="wd-page-shell-tools" ref={setSlot}>{toolbar}</div>
+      </div> : null}
     </header>
-    {toolbar ? <div className="wd-page-shell-toolbar">{toolbar}</div> : null}
-    <div className="wd-page-shell-body">{children}</div>
+    {toolbar && !tabs ? <div className="wd-page-shell-toolbar">{toolbar}</div> : null}
+    <ToolbarSlotContext.Provider value={tabs ? { element: slot, owner } : null}>
+      <div className="wd-page-shell-body">{children}</div>
+    </ToolbarSlotContext.Provider>
   </section>;
 }
 

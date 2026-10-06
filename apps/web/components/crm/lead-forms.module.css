@@ -118,7 +118,7 @@
 .qrBlock img { border-radius: var(--wd-radius-sm); }
 .poster { display: none; }
 @media print {
-  :global(body *) { visibility: hidden; }
+  :global(body):has(.poster) * { visibility: hidden; }
   .poster, .poster * { visibility: visible; }
   .poster { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--wd-space-6); padding: var(--wd-space-16); background: var(--wd-color-surface); color: var(--wd-color-text); text-align: center; }
   .poster h2 { margin: 0; font-size: var(--wd-text-3xl); }

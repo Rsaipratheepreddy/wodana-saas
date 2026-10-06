@@ -208,3 +208,7 @@
 /* The source with its channel underneath (Palm Living Enquiry · WhatsApp). */
 .sourceCell { display: grid; gap: var(--wd-space-0-5); justify-items: start; min-inline-size: 0; }
 .sourceCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+/* Calm list (§5c D2): a state is coloured text with its icon, never a filled or outlined box. */
+.sheet .nextAction, .sheet .nextAction[data-overdue] { border-color: transparent; background: transparent; }
+.sheet .nextAction:hover { background: var(--wd-color-surface-hover); }

@@ -4,6 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import {
   Fragment,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -43,6 +44,8 @@ export type { ToolbarFilter } from "./data-grid-toolbar";
 import { ColumnHeaderMenu } from "../molecules/column-header-menu";
 import { useDesignSystem } from "../foundations/provider";
 import { useGridDefaultsSource, type GridDefault } from "../foundations/grid-defaults";
+import { usePageToolbarSlot } from "./page-shell";
+import { createPortal } from "react-dom";
 
 export type CellEditorContext<T> = { columnId: string; row: T; value: unknown };
 export type DataGridColumnMeta<T> = {
@@ -278,6 +281,14 @@ export function DataGrid<T>({
   const [inspected, setInspected] = useState<T | null>(null);
   const persistenceKey = persistKey ? `${persistKey}-view` : undefined;
   const hydratedPersistenceKey = useRef<string | undefined>(undefined);
+  // The page's tabs row can hold this list's toolbar (one row instead of two); the first list on the page claims it.
+  const pageSlot = usePageToolbarSlot();
+  const slotId = useId();
+  if (pageSlot && !toolbarLeading && (pageSlot.owner.current === null || pageSlot.owner.current === slotId)) pageSlot.owner.current = slotId;
+  useEffect(() => () => { if (pageSlot?.owner.current === slotId) pageSlot.owner.current = null; }, [pageSlot, slotId]);
+  const toolbarSlot = pageSlot && pageSlot.owner.current === slotId ? pageSlot.element : null;
+  // In the tabs row the page title is right above, so the grid's own title is not repeated there.
+  const toolbarTitle = toolbarSlot ? undefined : title;
   const gridDefaults = useGridDefaultsSource();
   const [workspaceDefault, setWorkspaceDefault] = useState<GridDefault | null>(null);
   // Once a person shows or hides a column themselves, a late-arriving workspace default doesn't undo it.
@@ -390,7 +401,7 @@ export function DataGrid<T>({
   };
 
   return <section className="wd-data-grid" aria-label={ariaLabel} data-grid-lines={gridLines || undefined} data-row-numbers={rowNumbers || undefined} data-wrap-text={wrapText || undefined}>
-    {showToolbar ? <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={title} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} onResetColumns={resetColumns} onSaveColumnDefault={saveColumnDefault} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
+    {showToolbar ? (toolbarSlot ? createPortal(<DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={toolbarTitle} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} onResetColumns={resetColumns} onSaveColumnDefault={saveColumnDefault} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} />, toolbarSlot) : <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={toolbarTitle} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} onResetColumns={resetColumns} onSaveColumnDefault={saveColumnDefault} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} />) : null}
     {selectedRows.length ? <div className="wd-bulk-bar"><strong>{t("{count} selected", { count: selectedRows.length })}</strong><div>{bulkActions?.(selectedRows)}</div><IconButton aria-label={t("Clear selection")} onPress={() => setSelection({})}><X size={14} /></IconButton></div> : null}
     {error ? <div className="wd-table-scroll wd-grid-state"><ErrorState title={error} /></div> : isLoading ? <div className="wd-table-scroll wd-grid-state"><div aria-label={t("Loading {name}", { name: ariaLabel })} className="wd-grid-loading" role="status"><TableSkeleton rows={8} widths={table.getVisibleLeafColumns().filter((column) => !column.id.startsWith("__")).map((column) => Math.max(1, column.getSize() / 100))} /></div></div> : !rows.length && !keepEmptyTable ? <div className="wd-table-scroll wd-grid-state">{emptyContent ?? <EmptyState description={emptyDescription} title={emptyTitle} />}</div> : <div className="wd-table-scroll" ref={scrollRef} tabIndex={0}>
       <table aria-label={ariaLabel} className="wd-table wd-record-table" data-virtual={virtual || undefined} style={{ inlineSize: table.getCenterTotalSize(), minInlineSize: "100%" }}>
