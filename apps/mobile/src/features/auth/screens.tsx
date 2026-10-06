@@ -18,7 +18,7 @@ import { useTheme } from '../../ui/theme';
 import { useOrganization } from './organization';
 
 /** The public sign-in frame: the workspace's logo at the top, one question in the middle, one action. */
-function AuthFrame({ heading, subtitle, children, onBack, footer, logo }: { heading: string; subtitle?: string; children: ReactNode; onBack?: () => void; footer?: ReactNode; logo: ReactNode }) {
+export function AuthFrame({ heading, subtitle, children, onBack, footer, logo }: { heading: string; subtitle?: string; children: ReactNode; onBack?: () => void; footer?: ReactNode; logo: ReactNode }) {
   const theme = useTheme();
   const t = useT();
   const insets = useSafeAreaInsets();
@@ -111,6 +111,9 @@ export function SignInScreen() {
     heading={remembered ? t('Welcome back') : t('Sign in')} subtitle={remembered ? t('Sign in to {name}.', { name: remembered.displayName }) : t('Use your work email.')}
     footer={<>
       <Text variant="caption" tone="tertiary" style={{ textAlign: 'center' }}>{t('Need access? Ask your administrator.')}</Text>
+      <Pressable accessibilityRole="link" hitSlop={10} onPress={() => router.push('/client')} testID="client-entry">
+        <Text variant="caption" tone="action">{t('Are you a client? Follow your project')}</Text>
+      </Pressable>
       <PoweredBy />
     </>}>
     <TextField label={t('Email')} placeholder={t('you@company.com')} value={email} editable={!pending} inputRef={emailRef} error={errors.email} size="lg" pill

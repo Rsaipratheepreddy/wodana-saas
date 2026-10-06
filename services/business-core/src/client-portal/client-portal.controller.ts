@@ -32,6 +32,15 @@ export class ClientPortalController {
 
   @Post("logout") logout(@Param("slug") slug: string, @Headers("authorization") auth = "") { return this.portal.logout(slug, bearer(auth)); }
 
+  /** The client app's push notices: this phone's state, registering it after the client's consent, and turning it off. */
+  @Get("devices/:installationId") device(@Param("slug") slug: string, @Param("installationId") installationId: string, @Headers("authorization") auth = "") {
+    return this.portal.device(slug, bearer(auth), installationId.slice(0, 40));
+  }
+
+  @Post("devices") registerDevice(@Param("slug") slug: string, @Body() body: unknown, @Headers("authorization") auth = "") { return this.portal.registerDevice(slug, bearer(auth), object(body)); }
+
+  @Post("devices/opt-out") optOutDevice(@Param("slug") slug: string, @Body() body: unknown, @Headers("authorization") auth = "") { return this.portal.optOutDevice(slug, bearer(auth), object(body)); }
+
   @Get("files/:kind/:id") async file(@Param("slug") slug: string, @Param("kind") kind: string, @Param("id") id: string, @Query("preview") preview: string | undefined,
     @Headers("authorization") auth = "") {
     const file = await this.portal.file(slug, bearer(auth), kind, id, preview === "1");

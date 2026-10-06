@@ -1,7 +1,8 @@
 import { Stack } from 'expo-router';
 import { useTheme } from '../../ui/theme';
 
-export const unstable_settings = { initialRouteName: 'sign-in' };
+// A firm's own client build opens on its portal's sign-in.
+export const unstable_settings = { initialRouteName: process.env.EXPO_PUBLIC_CLIENT_PORTAL ? 'client' : 'sign-in' };
 
 export default function AuthLayout() {
   const theme = useTheme();
@@ -9,5 +10,6 @@ export default function AuthLayout() {
     <Stack.Screen name="sign-in" />
     <Stack.Screen name="verify" />
     <Stack.Screen name="forgot" />
+    <Stack.Screen name="client" />
   </Stack>;
 }

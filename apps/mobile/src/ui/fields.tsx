@@ -24,15 +24,17 @@ export function Field({ label, hint, error, children, action }: { label?: string
 export type TextFieldProps = Omit<TextInputProps, 'style'> & {
   label?: string; hint?: string; error?: string; leading?: ReactNode; trailing?: ReactNode; inputRef?: Ref<TextInput>; action?: ReactNode;
   size?: 'md' | 'lg'; pill?: boolean;
+  /** Reads left to right in every language (a phone number): the leading part stays before the text in RTL too. */
+  ltr?: boolean;
 };
-export function TextField({ label, hint, error, leading, trailing, inputRef, multiline, action, size = 'md', pill, editable = true, ...props }: TextFieldProps) {
+export function TextField({ label, hint, error, leading, trailing, inputRef, multiline, action, size = 'md', pill, ltr, editable = true, ...props }: TextFieldProps) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const border = error ? theme.colors.danger : focused ? theme.colors.focus : theme.colors.borderControl;
   const height = size === 'lg' ? theme.touch.large : theme.touch.control;
   return <Field label={label} hint={hint} error={error} action={action}>
     <View style={{
-      flexDirection: 'row', alignItems: multiline ? 'flex-start' : 'center', gap: theme.space(2), minHeight: multiline ? 104 : height,
+      flexDirection: 'row', direction: ltr ? 'ltr' : undefined, alignItems: multiline ? 'flex-start' : 'center', gap: theme.space(2), minHeight: multiline ? 104 : height,
       borderWidth: focused ? 1.5 : 1, borderColor: border, borderRadius: pill ? theme.radius.pill : theme.radius.md, backgroundColor: editable ? theme.colors.surface : theme.colors.surfaceMuted,
       paddingHorizontal: theme.space(pill ? 5 : 3), paddingVertical: multiline ? theme.space(3) : 0,
     }}>
@@ -41,7 +43,7 @@ export function TextField({ label, hint, error, leading, trailing, inputRef, mul
         placeholderTextColor={theme.colors.textTertiary} selectionColor={theme.colors.actionPrimary} cursorColor={theme.colors.actionPrimary}
         onFocus={(event) => { setFocused(true); props.onFocus?.(event); }} onBlur={(event) => { setFocused(false); props.onBlur?.(event); }}
         style={{ flex: 1, minHeight: multiline ? 80 : height - 2, color: theme.colors.text, fontFamily: theme.font.regular, fontSize: theme.size.lg,
-          textAlignVertical: multiline ? 'top' : 'center', writingDirection: theme.rtl ? 'rtl' : 'ltr', paddingVertical: multiline ? 0 : theme.space(2), outlineStyle: 'none' } as never} />
+          textAlignVertical: multiline ? 'top' : 'center', writingDirection: theme.rtl && !ltr ? 'rtl' : 'ltr', paddingVertical: multiline ? 0 : theme.space(2), outlineStyle: 'none' } as never} />
       {trailing}
     </View>
   </Field>;

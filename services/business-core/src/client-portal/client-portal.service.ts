@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
@@ -9,6 +9,7 @@ import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { PreProjectDefinitionService } from "../pre-projects/pre-project-definition.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
+import { DeviceTokenStoreService } from "../crm/notifications/device-token-store.service";
 import { confirmName, mobileNumber, openSession, portalCodes, sendCode, signIn, signOut, useCode, type Channel, type Delivery, type PortalContact, type PortalCodes } from "./portal-auth";
 import {
   answerRequest, assertDecisionOpen, claimWarranty, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor,
@@ -19,6 +20,7 @@ import { chooseAlternative } from "./portal-alternatives";
 import { decidePortalChange, raiseChange } from "./portal-changes";
 import { recordVisits } from "./portal-feed";
 import { ledgerDecision, presentationChoice } from "./portal-design-decisions";
+import { deviceInput, deviceState, optOutDevice, registerDevice } from "./portal-devices";
 import { FilePresence, locateClientAsset, readStored, uploadClientFile } from "./portal-files";
 import { openInvitation } from "./portal-invitations";
 import { reportIssue } from "./portal-issues";
@@ -68,6 +70,7 @@ export class ClientPortalService {
     private readonly definitions: PreProjectDefinitionService,
     private readonly mailer: TransactionalEmailService,
     @Optional() private readonly storage?: BrandAssetStorageService,
+    @Optional() private readonly deviceTokens?: DeviceTokenStoreService,
   ) {
     const production = config.get("NODE_ENV") === "production";
     if (config.get("PORTAL_DEMO_OTP") === "true" && production) throw new Error("PORTAL_DEMO_OTP cannot be enabled in production.");
@@ -143,6 +146,37 @@ export class ClientPortalService {
 
   logout(slug: string, token: string) {
     return this.within(slug, async (client, workspaceId) => { await signOut(client, workspaceId, token); return { ok: true }; });
+  }
+
+  /**
+   * The client app's push notices (plan §0.3c): this phone is registered for the signed-in contact only after they said
+   * yes in the app and the phone allowed notifications; turning them off keeps the opt-out and drops the token.
+   */
+  device(slug: string, token: string, installationId: string) {
+    return this.within(slug, async (client, workspaceId) => deviceState(client, workspaceId, await openSession(client, workspaceId, token, this.codes.demo), installationId));
+  }
+
+  async registerDevice(slug: string, token: string, body: Record<string, unknown>) {
+    const input = deviceInput(body);
+    const store = this.deviceTokens;
+    if (!store) throw new ServiceUnavailableException("Notifications aren't available right now.");
+    return this.within(slug, async (client, workspaceId) => {
+      const contact = await openSession(client, workspaceId, token, this.codes.demo);
+      const result = await registerDevice(client, workspaceId, contact, store, input);
+      if (!result.replayed) await recordAudit(client, { workspaceId, actorUserId: null, source: "client_portal", action: "client_portal.device_registered",
+        entityType: "client_portal_contact", entityId: contact.grants[0].id, after: { installationId: input.installationId, platform: input.platform } });
+      return result;
+    });
+  }
+
+  optOutDevice(slug: string, token: string, body: Record<string, unknown>) {
+    return this.within(slug, async (client, workspaceId) => {
+      const contact = await openSession(client, workspaceId, token, this.codes.demo);
+      const result = await optOutDevice(client, workspaceId, contact, this.deviceTokens, body.installationId);
+      await recordAudit(client, { workspaceId, actorUserId: null, source: "client_portal", action: "client_portal.device_opted_out",
+        entityType: "client_portal_contact", entityId: contact.grants[0].id, after: { installationId: body.installationId } });
+      return result;
+    });
   }
 
   /**

@@ -22,6 +22,7 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { ClientPortalAdminService } from "./client-portal-admin.service";
 import { ClientPortalService } from "./client-portal.service";
 import type { Delivery } from "./portal-auth";
+import { deliverableDevices } from "./portal-devices";
 import { tellClients } from "./portal-notices";
 import { savePortalSettings } from "./portal-settings";
 import { CrmPaymentRemindersService } from "../crm/conversations/crm-payment-reminders.service";
@@ -1256,6 +1257,42 @@ integration("client portal (plan §6.22)", () => {
       await w.client.query(`UPDATE commercial_payments SET status = 'verified' WHERE workspace_id = $1 AND case_id = $2 AND id = 'p2'`, [w.workspaceId, w.caseId]);
       expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 0, reason: null });
       await expect(reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).rejects.toThrow(/Nothing is owed|paid or waiting/);
+    });
+  });
+  it("registers the client app's phone only with consent, remembers an opt-out, and stops pushes when the session ends (plan §0.3c)", async () => {
+    await world(async (w) => {
+      await open(w);
+      const token = await signIn(w, APPROVER);
+      const kept = new Map<string, string>();
+      (w.portal as unknown as { deviceTokens: unknown }).deviceTokens = {
+        put: async (_w: string, _o: string, value: string) => { const reference = `ref-${kept.size + 1}`; kept.set(reference, value); return reference; },
+        delete: async (reference: string | null | undefined) => { if (reference) kept.delete(reference); },
+      };
+      const installationId = randomUUID();
+      const phone = { requestId: randomUUID(), installationId, platform: "ios", token: "ExponentPushToken[client-phone-1]", locale: "ar-AE", timezone: "Asia/Dubai" };
+      await expect(w.portal.registerDevice(w.slug, token, phone)).rejects.toThrow(/Turn on notifications/);
+      expect(await w.portal.device(w.slug, token, installationId)).toMatchObject({ registered: false, consentedAt: null });
+
+      expect(await w.portal.registerDevice(w.slug, token, { ...phone, consent: true })).toMatchObject({ registered: true, replayed: false });
+      expect(await w.portal.registerDevice(w.slug, token, { ...phone, consent: true })).toMatchObject({ replayed: true });
+      const stored = (await w.client.query(`SELECT token_hash, encrypted_token_reference, phone FROM client_portal_devices WHERE workspace_id = $1`, [w.workspaceId])).rows;
+      expect(stored).toHaveLength(1);
+      expect(JSON.stringify(stored)).not.toContain("ExponentPushToken");
+      expect([...kept.values()]).toEqual(["ExponentPushToken[client-phone-1]"]);
+      expect(await deliverableDevices(w.client, w.workspaceId, APPROVER)).toHaveLength(1);
+      expect(await deliverableDevices(w.client, w.workspaceId, VIEWER)).toHaveLength(0);
+
+      // Off on the phone: the token goes, the opt-out stays, nothing is deliverable.
+      expect(await w.portal.optOutDevice(w.slug, token, { installationId })).toMatchObject({ registered: false, optedOutAt: expect.any(Date) });
+      expect(kept.size).toBe(0);
+      expect(await deliverableDevices(w.client, w.workspaceId, APPROVER)).toHaveLength(0);
+
+      // Turned back on, then signed out: a signed-out phone is never told anything.
+      await w.portal.registerDevice(w.slug, token, { ...phone, requestId: randomUUID(), consent: true });
+      expect(await deliverableDevices(w.client, w.workspaceId, APPROVER)).toHaveLength(1);
+      await w.portal.logout(w.slug, token);
+      expect(await deliverableDevices(w.client, w.workspaceId, APPROVER)).toHaveLength(0);
+      await expect(w.portal.registerDevice(w.slug, token, { ...phone, requestId: randomUUID(), consent: true })).rejects.toThrow(/signed out|Sign in/);
     });
   });
 });

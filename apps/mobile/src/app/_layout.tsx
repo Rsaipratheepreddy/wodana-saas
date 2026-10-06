@@ -12,6 +12,7 @@ import { supportedLanguage, useLanguage } from '../core/i18n';
 import { I18nProvider } from '../core/i18n-provider';
 import { queryClient } from '../core/query';
 import { OrganizationProvider, useOrganization } from '../features/auth/organization';
+import { PortalProvider, usePortal } from '../portal/provider';
 import { SessionGate } from '../features/auth/session-gate';
 import { ThemeProvider, useTheme } from '../ui/theme';
 import { ToastProvider } from '../ui/toast';
@@ -34,7 +35,9 @@ export default function RootLayout() {
       <AuthProvider>
         <QueryClientProvider client={queryClient}>
           <OrganizationProvider>
-            <Branded>{fontsLoaded || fontError ? <Navigation /> : null}</Branded>
+            <PortalProvider>
+              <Branded>{fontsLoaded || fontError ? <Navigation /> : null}</Branded>
+            </PortalProvider>
           </OrganizationProvider>
         </QueryClientProvider>
       </AuthProvider>
@@ -45,32 +48,43 @@ export default function RootLayout() {
 /**
  * The theme follows the signed-in workspace's co-branding, or the last workspace used on this phone before sign-in.
  * Until the person picks a language on this phone, it follows the one saved on their profile, else the workspace's.
+ * A client signed in to their firm's portal sees the firm's brand (always light, like the web portal, so the firm's
+ * logo reads) and, until they choose, the language of the firm's region. White-label builds plug in here too.
  */
 function Branded({ children }: { children: React.ReactNode }) {
   const { state } = useAuth();
   const { remembered } = useOrganization();
+  const portal = usePortal().state;
   const { direction, adopt, ready } = useLanguage();
   const membership = state.status === 'signedIn' ? state.profile.memberships.find((item) => item.workspaceId === state.workspaceId) : undefined;
   const preferred = state.status === 'signedIn' ? state.profile.preferredLocale : null;
+  const site = state.status !== 'signedIn' && portal.status !== 'checking' ? portal.site : null;
   const brand = membership
     ? { primaryColor: membership.workspacePrimaryColor, secondaryColor: membership.workspaceSecondaryColor }
-    : remembered ? { primaryColor: remembered.primaryColor, secondaryColor: remembered.secondaryColor } : null;
-  const profileLanguage = (preferred && preferred.toLowerCase() !== 'en' ? supportedLanguage(preferred) : null) ?? supportedLanguage(membership?.workspaceLocale);
+    : site ? { primaryColor: site.brand.primaryColor, secondaryColor: site.brand.secondaryColor }
+      : remembered ? { primaryColor: remembered.primaryColor, secondaryColor: remembered.secondaryColor } : null;
+  const profileLanguage = (preferred && preferred.toLowerCase() !== 'en' ? supportedLanguage(preferred) : null) ?? supportedLanguage(membership?.workspaceLocale)
+    ?? (portal.status === 'signedIn' ? supportedLanguage(site?.region.locale) : null);
   useEffect(() => { if (ready && profileLanguage) adopt(profileLanguage); }, [ready, profileLanguage, adopt]);
   // Sound & haptics follow the choice saved on the person's profile (on unless they turned it off).
   const feedback = state.status === 'signedIn' ? state.profile.feedbackEnabled !== false : true;
   useEffect(() => { setHapticsEnabled(feedback); }, [feedback]);
-  return <ThemeProvider brand={brand} script={direction === 'rtl' ? 'arabic' : 'latin'}><ToastProvider>{children}</ToastProvider></ThemeProvider>;
+  return <ThemeProvider brand={brand} scheme={site && portal.status === 'signedIn' ? 'light' : undefined} script={direction === 'rtl' ? 'arabic' : 'latin'}>
+    <ToastProvider>{children}</ToastProvider>
+  </ThemeProvider>;
 }
 
 function Navigation() {
   const theme = useTheme();
   const { state } = useAuth();
   const { ready } = useOrganization();
-  const settled = ready && state.status !== 'checking';
+  const portal = usePortal().state;
+  const settled = ready && state.status !== 'checking' && portal.status !== 'checking';
   useEffect(() => { if (settled) void SplashScreen.hideAsync().catch(() => undefined); }, [settled]);
   if (!settled) return <View style={{ flex: 1, backgroundColor: theme.colors.canvas }} />;
   const signedIn = state.status === 'signedIn';
+  // A client signed in to their firm's portal (and no staff sign-in on this phone) opens the client app.
+  const client = !signedIn && portal.status === 'signedIn';
   return <View style={{ flex: 1, backgroundColor: theme.colors.canvas }}>
     <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
     <SessionGate>
@@ -78,7 +92,10 @@ function Navigation() {
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(app)" />
         </Stack.Protected>
-        <Stack.Protected guard={!signedIn}>
+        <Stack.Protected guard={client}>
+          <Stack.Screen name="portal" />
+        </Stack.Protected>
+        <Stack.Protected guard={!signedIn && !client}>
           <Stack.Screen name="(auth)" />
         </Stack.Protected>
       </Stack>

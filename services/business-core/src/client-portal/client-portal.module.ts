@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { CommercialModule } from "../commercial/commercial.module";
+import { DeviceTokenStoreService } from "../crm/notifications/device-token-store.service";
 import { EmailModule } from "../email/email.module";
 import { PreProjectsModule } from "../pre-projects/pre-projects.module";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
@@ -12,6 +13,6 @@ import { ClientPortalService } from "./client-portal.service";
 @Module({
   imports: [WorkspacesModule, CommercialModule, PreProjectsModule, EmailModule],
   controllers: [ClientPortalController, ClientPortalSitesController, ClientPortalAdminController],
-  providers: [ClientPortalService, ClientPortalAdminService, BrandAssetStorageService],
+  providers: [ClientPortalService, ClientPortalAdminService, BrandAssetStorageService, DeviceTokenStoreService],
 })
 export class ClientPortalModule {}

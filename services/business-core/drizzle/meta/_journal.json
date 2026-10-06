@@ -1072,6 +1072,13 @@
       "when": 1801740002100,
       "tag": "0259_client_portal_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1801740002200,
+      "tag": "0260_client_portal_devices",
+      "breakpoints": true
     }
   ]
 }
