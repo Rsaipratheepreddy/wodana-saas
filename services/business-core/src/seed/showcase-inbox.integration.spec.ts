@@ -42,7 +42,7 @@ integration("showcase inbox seed", () => {
       await client.query("SET LOCAL ROLE wodana_app");
       await client.query("SELECT set_config('app.current_workspace_id',$1,true), set_config('app.current_actor_id',$2,true)", [workspaceId, owner]);
       const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(client, { userId: owner });
-      const inbox = new CrmInboxService({} as never, { withPermission: run, hasPermission: async () => true } as never, { record: async () => randomUUID() } as never);
+      const inbox = new CrmInboxService({} as never, { withPermission: run, withAnyPermission: run, hasPermission: async () => true } as never, { record: async () => randomUUID() } as never);
       const staff = { provider: "local", subject: owner, email: "owner@example.com", displayName: "Owen Owner", userId: owner, membershipId: ownerMember };
       const created: string[] = [], skipped: string[] = [];
       const context = {
