@@ -28,12 +28,13 @@ export function useStepText(format: PortalFormat) {
   return { title, due };
 }
 
-/** How far the project is, in percent: the team's own measure when shown, else the stages done. */
+/** How far the project is, in percent: the team's own measure when shown, never below the stages already done. */
 function percentOf(project: PortalProject) {
-  if (typeof project.progress?.percent === "number") return project.progress.percent;
   if (project.status === "completed") return 100;
-  if (!project.stage) return null;
-  return Math.round(((project.stage.number - 1) / project.stage.total) * 100);
+  const measured = typeof project.progress?.percent === "number" ? project.progress.percent : null;
+  const stagesDone = project.stage ? Math.round(((project.stage.number - 1) / project.stage.total) * 100) : null;
+  if (measured === null) return stagesDone;
+  return Math.max(measured, stagesDone ?? 0);
 }
 
 function StageSummary({ project }: { project: PortalProject }) {

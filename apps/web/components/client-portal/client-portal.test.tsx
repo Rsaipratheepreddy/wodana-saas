@@ -337,6 +337,17 @@ describe("client portal", () => {
     await waitFor(() => expect(sent(fetcher, "command").at(-1)).toEqual(expect.objectContaining({ action: "site_access", decision: "move", reason: "We travel that week", preferredDate: null })));
   });
 
+  it("never shows less progress than the stages done, and leads with the stages before the team's first day", async () => {
+    const early = project({ progress: { ...project().progress!, percent: 0, cards: [], weeks: [], updates: [], photoDays: [] } });
+    mount(() => ({ body: view({}, [early]) }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    expect(await screen.findByText("20% complete")).toBeInTheDocument();
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Progress/ }));
+    expect(await screen.findByRole("heading", { name: "Stages" })).toBeInTheDocument();
+    expect(screen.getByText("Your team's updates and photos will appear here.")).toBeInTheDocument();
+  });
+
   it("shows the team's days as cards under the stage and progress, with photos full size, a reaction and a question", async () => {
     const card = { id: "d1", date: "2026-09-26", sentAt: "2026-09-26T15:00:00.000Z", summary: "The kitchen carcasses are in and level.", noWork: false,
       hero: { id: "ph1", area: "Kitchen", phase: "after" as const, pairId: "ph0" }, photos: [{ id: "ph0", area: "Kitchen", phase: "before" as const, pairId: "ph1" }],

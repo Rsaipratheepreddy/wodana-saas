@@ -61,8 +61,23 @@ export function ProgressSection({ project, site, api, format, open, reload }: Se
     catch { /* the next load shows what was kept */ }
     finally { setReacting(null); }
   };
-  // The stage and how far the project is are in the project's profile, beside this feed.
+  const stages = <ol className={styles.timeline}>{progress.stages.map((item, index) => <li key={index}>
+      <span aria-hidden="true" className={styles.dot} data-state={item.state} />
+      <span className={styles.itemText}>
+        <span className={styles.itemTitle} dir="auto">{item.name ? stageName(t, item.name) : t("Stage {number}", { number: index + 1 })}</span>
+        <span className={styles.itemMeta}>{item.state === "upcoming" ? t("Coming up") : <StateLabel state={item.state} />}
+          {item.finishedOn ? ` · ${format.date(item.finishedOn)}` : item.startedOn ? ` · ${t("since {date}", { date: format.date(item.startedOn) })}` : ""}</span>
+      </span>
+    </li>)}</ol>;
+  // The stage and how far the project is are in the project's profile, beside this feed. Until the team posts a day, the
+  // stages lead, so the page is never just an "Issues" heading.
   return <div className={styles.section}>
+    {!feed.length && progress.stages.length ? <section className={styles.group} aria-labelledby="portal-stages">
+      <h2 className={styles.groupTitle} id="portal-stages">{t("Stages")}</h2>
+      {stages}
+      <p className={styles.muted}>{t("Your team's updates and photos will appear here.")}</p>
+    </section> : null}
+
     {feed.length ? <section className={styles.group} aria-labelledby="portal-feed">
       <h2 className={styles.groupTitle} id="portal-feed">{t("Day by day")}</h2>
       <ol className={styles.days}>{feed.map((item) => {
@@ -109,15 +124,6 @@ export function ProgressSection({ project, site, api, format, open, reload }: Se
       {report ? <div>{report}</div> : null}
     </section> : null}
 
-    {progress.stages.length ? <MoreDetails label={t("All stages")}>
-      <ol className={styles.timeline}>{progress.stages.map((item, index) => <li key={index}>
-        <span aria-hidden="true" className={styles.dot} data-state={item.state} />
-        <span className={styles.itemText}>
-          <span className={styles.itemTitle} dir="auto">{item.name ? stageName(t, item.name) : t("Stage {number}", { number: index + 1 })}</span>
-          <span className={styles.itemMeta}>{item.state === "upcoming" ? t("Coming up") : <StateLabel state={item.state} />}
-            {item.finishedOn ? ` · ${format.date(item.finishedOn)}` : item.startedOn ? ` · ${t("since {date}", { date: format.date(item.startedOn) })}` : ""}</span>
-        </span>
-      </li>)}</ol>
-    </MoreDetails> : null}
+    {progress.stages.length && feed.length ? <MoreDetails label={t("All stages")}>{stages}</MoreDetails> : null}
   </div>;
 }
