@@ -933,6 +933,27 @@ One design workspace in Planning, driven by the design package's stages. Reviews
 - **Quotes vs design:** the design-fee quote is independent (package × area). The main quote is derived from the design baseline when the route includes design; without design it is built from Requirements.
 - **Edge cases:** the client approves an old revision (rejected, shown the latest); a design change after a WO is released flags affected WOs/tasks "stale drawing"; a moodboard approval never satisfies the technical-drawing gate; a removed room archives its deliverables but keeps history.
 
+### 6.7a P4 build spec: Design → client (6 Oct)
+**Source:** PLM-047–054, 077, 128; CeCe's *Full ID* table; owner feedback (materials ledger, design comments both ways, portal, client app); §0.7 R1, R2, R4, R5, R11, AI2.
+
+**Batch 1 — design flow after Won + materials and decisions ledger**
+
+| Item | Decision | What ships |
+| --- | --- | --- |
+| PLM-128 site-visit checklist | **Build** | The firm's site-visit question list (Settings › Design, editable) on the site-visit task; completing the visit needs every wall measured with photos and the list answered (PLM-048 timing kept: within 72 h). One guided flow on web and phone: visit → measurements → photos → checklist. |
+| PLM-049 concepts and revisions | **Build** | Concept options as files/links (Canva link or upload) shown as cards; the client picks one in the portal; included revisions per stage from the package (Palm: 2), the next one is chargeable and flagged to Sales; the team sees only the internal deadline. |
+| PLM-050 material selection | **Build** | A showroom appointment booked with a reminder (booking slot engine, §6.5b), and the material list produced as a document from the ledger. |
+| PLM-051 renders | **Build** | Visualiser assignment, revision count with the extra-revision charge flag, renders only when the package includes them. |
+| PLM-053 design approval → estimate | **Build** | Approval with date, attachment and signer; it hands off to the Proposal 2 estimate step and notifies the Sales Admin and Account Manager. |
+| PLM-054 + owner: materials and decisions ledger (E5) | **Better** | Every material or design choice has a source (portal, meeting, WhatsApp, site), time, evidence and the client's confirmation; a change creates a new version with price and time impact; the list is locked at sign-off and procurement is blocked until it is (edge cases E5-1, E5-2, E5-6 fit check later). |
+| Design comments both ways | **Build** | Comments pinned on an image, threaded, staff and client in the same thread with an internal/client audience switch (reuse the portal design threads from the stash after review). |
+
+**Batch 2 — client surfaces:** portal revamp (feed, Waiting for you, document cards, payments, Q&A, warranty), client mobile app (Expo, same API), client budget tracker (R1), item approval with alternatives (R2), "what changed since you last looked" (AI2), change requests signed by link (R11 — uses P3's E3 and e-sign).
+
+**Batch 3 — product sourcing:** product clipper (R4), fit check (R5), Canva for design boards.
+
+**Exit (Milestone A, live):** a Full ID job from Won through site visit, concepts, materials, renders and approval to the Proposal 2 hand-off, with the client acting in the portal; PLM-047–054, 077, 128 verified.
+
 ### 6.8 Quotation
 Planning ends in two outcomes: the signed-off design and the accepted quotation. The accepted quotation is the source of truth the Project's BOQ, budget, procurement and payments start from.
 
