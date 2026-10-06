@@ -91,8 +91,11 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
   const route = resolveWorkspaceRoute(pathname, builderSearch);
   const recordTitle = projectPage ? breadcrumb?.title : selectedCase?.record.title;
   const pageTitle = route.record && recordTitle ? recordTitle : t(route.label as never);
-  const crumbs = route.homeTab ? route.trail.slice(0, -1) : route.trail;
-  const currentCrumb = route.homeTab ? t((route.trail.at(-1)?.label ?? route.label) as never) : pageTitle;
+  // A page that is one of its parent's tabs (Home › Approvals, Sales › Enquiries) is named by the tab and its title,
+  // so the breadcrumb ends at the parent instead of saying the name a third time.
+  const tabbed = route.homeTab || (!route.record && route.trail.at(-1)?.id === "sales");
+  const crumbs = tabbed ? route.trail.slice(0, -1) : route.trail;
+  const currentCrumb = tabbed ? t((route.trail.at(-1)?.label ?? route.label) as never) : pageTitle;
   const workspaceName = workspaces[0]?.name;
   useEffect(() => {
     document.title = workspaceName ? `${pageTitle} · ${workspaceName}` : pageTitle;

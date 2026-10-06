@@ -41,6 +41,13 @@ describe("WorkspaceShell theme", () => {
     view.rerender(<WorkspaceShell {...shellProps}><p>Project list</p></WorkspaceShell>);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).not.toHaveTextContent("Jumeirah Garden Villa");
   });
+  it("ends the breadcrumb at Sales on a Sales tab, so Enquiries is named by its tab and title only", () => {
+    route.pathname = "/workspace/crm/leads";
+    render(<WorkspaceShell {...shellProps}><p>Enquiries</p></WorkspaceShell>);
+    const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(breadcrumb).toHaveTextContent(/^Sales$/);
+    expect(within(breadcrumb).queryByRole("link")).toBeNull();
+  });
   it("gives the steps builder the whole screen: no sidebar and no top bar; the enquiry types list keeps them", () => {
     route.pathname = "/workspace/enquiry-types/12345678-1234-4234-8234-123456789abc";
     const view = render(<WorkspaceShell {...shellProps}><p>Builder</p></WorkspaceShell>);
@@ -63,7 +70,7 @@ describe("WorkspaceShell theme", () => {
     route.pathname = "/workspace/crm/leads";
     render(<WorkspaceShell {...shellProps}><p>Module content</p></WorkspaceShell>);
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/workspace");
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Enquiries");
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^Sales$/);
   });
   it("collapses and reopens the Business group with pointer and keyboard", async () => {
     route.pathname = "/workspace/projects";
