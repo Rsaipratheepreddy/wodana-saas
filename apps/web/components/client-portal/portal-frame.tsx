@@ -26,7 +26,7 @@ export function PortalFrame({ site, children, onSignOut, bare = false }: { site:
       </span>
       <div className={styles.headerEnd}>
         <LanguageSelect className={styles.language} compact label={null} />
-        {onSignOut ? <Button size="compact" variant="quiet" onPress={onSignOut}><LogOut aria-hidden="true" data-directional="true" size={15} />{t("Sign out")}</Button> : null}
+        {onSignOut ? <Button size="compact" variant="quiet" onPress={onSignOut}><LogOut aria-hidden="true" data-directional="true" size={15} /><span className={styles.signOutLabel}>{t("Sign out")}</span></Button> : null}
       </div>
     </header>
     <main className={styles.main}>{children}</main>
@@ -59,7 +59,7 @@ export function PortalActions({ onSignOut }: { onSignOut?: () => void }) {
   const t = useT();
   return <div className={styles.headerEnd}>
     <LanguageSelect className={styles.language} compact label={null} />
-    {onSignOut ? <Button size="compact" variant="quiet" onPress={onSignOut}><LogOut aria-hidden="true" data-directional="true" size={15} />{t("Sign out")}</Button> : null}
+    {onSignOut ? <Button size="compact" variant="quiet" onPress={onSignOut}><LogOut aria-hidden="true" data-directional="true" size={15} /><span className={styles.signOutLabel}>{t("Sign out")}</span></Button> : null}
   </div>;
 }
 
