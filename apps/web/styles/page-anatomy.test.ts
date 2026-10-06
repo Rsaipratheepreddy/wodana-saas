@@ -15,6 +15,8 @@ const OWN_TITLE = new Set([
   "components/booking/manage-booking.tsx",
   "components/booking/public-booking.tsx",
   "components/client-portal/confirm-name.tsx",
+  "components/esign/signing-page.tsx",
+  "components/pre-project/material-list-print.tsx",
   "components/client-portal/portal-document-print.tsx",
   "components/client-portal/project-profile.tsx",
   "components/client-portal/sign-in.tsx",

@@ -413,7 +413,7 @@ describe("LeadsPage", () => {
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(screen.getByRole("button", { name: /Filter by to check/ }));
     await user.click(screen.getByRole("option", { name: "Duplicates" }));
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Done" }));
     expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Duplicates")).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Dup Client" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open Fresh Client" })).not.toBeInTheDocument();
