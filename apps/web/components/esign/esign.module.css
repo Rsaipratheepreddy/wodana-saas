@@ -1,0 +1,121 @@
+.page {
+  display: grid;
+  align-content: start;
+  gap: var(--wd-space-5);
+  max-inline-size: var(--wd-content-narrow);
+  margin-inline: auto;
+  padding: var(--wd-space-6) var(--wd-space-4) var(--wd-space-12);
+  min-block-size: 100dvh;
+  background: var(--wd-color-canvas);
+  color: var(--wd-color-text);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--wd-space-2);
+  font-size: var(--wd-text-md);
+}
+
+.logo {
+  block-size: var(--wd-space-10);
+  inline-size: auto;
+  max-inline-size: 12rem;
+  object-fit: contain;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--wd-text-2xl);
+  line-height: var(--wd-leading-tight);
+}
+
+.document {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wd-space-3);
+  padding: var(--wd-space-4);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-muted);
+}
+
+.documentText {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: var(--wd-space-1);
+  min-inline-size: 0;
+}
+
+.documentText span {
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-sm);
+}
+
+.fingerprint {
+  overflow-wrap: anywhere;
+  color: var(--wd-color-text-tertiary);
+  font-family: var(--wd-font-mono);
+  font-size: var(--wd-text-2xs);
+}
+
+.viewer {
+  inline-size: 100%;
+  block-size: 70dvh;
+  border: 1px solid var(--wd-color-border);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-neutral-0);
+}
+
+.form {
+  display: grid;
+  gap: var(--wd-space-4);
+}
+
+.typed {
+  margin: 0;
+  padding-block: var(--wd-space-3);
+  border-block-end: 1px solid var(--wd-color-border-strong);
+  font-size: var(--wd-text-3xl);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.pad {
+  display: grid;
+  gap: var(--wd-space-2);
+}
+
+/* Paper in both themes: the signature is dark ink on white, as it prints. */
+.canvas {
+  inline-size: 100%;
+  block-size: 11rem;
+  border: 1px solid var(--wd-color-border-control);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-neutral-0);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.canvas:focus-visible {
+  outline: 2px solid var(--wd-color-focus);
+  outline-offset: 2px;
+}
+
+.padFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wd-space-2);
+}
+
+.hint {
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-sm);
+}
+
+@media (max-width: 640px) {
+  .viewer {
+    display: none;
+  }
+}

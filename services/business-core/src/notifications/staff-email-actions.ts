@@ -27,6 +27,7 @@ const EVENT_ACTIONS: Record<string, string> = {
   "site.access_move_asked": "Open deliveries",
   "warranty.claim": "Open claim",
   "payables.run_submitted": "Review payment run",
+  "approvals.requested": "Review and decide",
   "petty_cash.submitted": "Review expense",
   "stock.adjustment_needs_approval": "Review adjustment",
   "stock.low": "Restock",

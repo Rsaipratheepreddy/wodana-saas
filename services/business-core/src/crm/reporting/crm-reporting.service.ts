@@ -21,7 +21,7 @@ export class CrmReportingService {
 
   report(actor: RequestActor, workspaceId: string, report: string, query: ReportRangeQueryDto) {
     const permissions = ["crm.reports.view"];
-    if (report === "pipeline" || report === "forecast") permissions.push("crm.opportunities.sensitive_values");
+    if (report === "pipeline" || report === "forecast" || report === "won") permissions.push("crm.opportunities.sensitive_values");
     return this.access.withPermissions(actor, workspaceId, permissions, async (client) => {
       const { from, to } = this.range(query);
       if (report === "lead-flow") {
@@ -182,6 +182,19 @@ export class CrmReportingService {
         sources: { sql: `SELECT enquiry.source, enquiry.channel, count(DISTINCT enquiry.id)::int AS enquiries, count(DISTINCT lead.id)::int AS leads, count(DISTINCT opportunity.id)::int AS opportunities, count(DISTINCT opportunity.id) FILTER (WHERE opportunity.status = 'won')::int AS won FROM crm_enquiries enquiry LEFT JOIN crm_leads lead ON lead.enquiry_id = enquiry.id AND lead.workspace_id = enquiry.workspace_id LEFT JOIN crm_opportunities opportunity ON opportunity.lead_id = lead.id AND opportunity.workspace_id = lead.workspace_id WHERE enquiry.workspace_id = $1 AND enquiry.created_at >= $2 AND enquiry.created_at < $3 AND NOT EXISTS (SELECT 1 FROM crm_leads spam WHERE spam.workspace_id = enquiry.workspace_id AND spam.enquiry_id = enquiry.id AND spam.spam_at IS NOT NULL) GROUP BY enquiry.source, enquiry.channel ORDER BY enquiries DESC`, values: [workspaceId, from, to] },
         assignment: { sql: `SELECT history.assignment_method AS method, account.display_name AS owner, count(*)::int AS count FROM crm_assignment_history history LEFT JOIN workspace_memberships membership ON membership.id = history.owner_membership_id LEFT JOIN users account ON account.id = membership.user_id WHERE history.workspace_id = $1 AND history.assigned_at >= $2 AND history.assigned_at < $3 GROUP BY history.assignment_method, account.display_name ORDER BY count DESC`, values: [workspaceId, from, to] },
         pipeline: { sql: `SELECT pipeline.name AS pipeline, stage.name AS stage, opportunity.status, count(*)::int AS count, opportunity.currency_code AS currency, sum(opportunity.amount) AS value FROM crm_opportunities opportunity JOIN crm_pipelines pipeline ON pipeline.id = opportunity.pipeline_id JOIN crm_pipeline_stages stage ON stage.id = opportunity.stage_id WHERE opportunity.workspace_id = $1 AND opportunity.created_at >= $2 AND opportunity.created_at < $3 GROUP BY pipeline.name, stage.name, stage.position, opportunity.status, opportunity.currency_code ORDER BY pipeline.name, stage.position`, values: [workspaceId, from, to] },
+        // PLM-009 / PLM-103: Won counted when the payment proof is attached, once per proposal — Proposal 1 (design fee) and
+        // Proposal 2 (main) apart, so design and production revenue read separately; `opportunities` counts each job once.
+        // Deals won before proposals existed count as main.
+        won: { sql: `SELECT proposal.kind AS proposal, proposal.currency_code AS currency, count(*)::int AS count, sum(proposal.amount)::text AS value,
+            count(DISTINCT proposal.opportunity_id)::int AS opportunities
+          FROM crm_opportunity_proposals proposal WHERE proposal.workspace_id = $1 AND proposal.won_at >= $2 AND proposal.won_at < $3
+          GROUP BY proposal.kind, proposal.currency_code
+          UNION ALL
+          SELECT 'main' AS proposal, opportunity.currency_code AS currency, count(*)::int AS count, sum(opportunity.amount)::text AS value, count(*)::int AS opportunities
+          FROM crm_opportunities opportunity WHERE opportunity.workspace_id = $1 AND opportunity.status = 'won' AND opportunity.closed_at >= $2 AND opportunity.closed_at < $3
+            AND NOT EXISTS (SELECT 1 FROM crm_opportunity_proposals proposal WHERE proposal.workspace_id = opportunity.workspace_id AND proposal.opportunity_id = opportunity.id AND proposal.won_at IS NOT NULL)
+          GROUP BY opportunity.currency_code
+          ORDER BY proposal, currency`, values: [workspaceId, from, to] },
         forecast: { sql: `WITH latest AS (SELECT DISTINCT ON (opportunity_id) * FROM crm_forecast_snapshots WHERE workspace_id = $1 AND captured_at < $2 ORDER BY opportunity_id, captured_at DESC, id DESC) SELECT COALESCE(reporting_currency_code, currency_code) AS currency, status, count(*)::int AS count, sum(COALESCE(reporting_amount, amount)) AS amount, sum(COALESCE(reporting_amount, amount) * COALESCE(probability, 0) / 100) AS "weightedAmount" FROM latest GROUP BY COALESCE(reporting_currency_code, currency_code), status ORDER BY currency, status`, values: [workspaceId, to] },
       };
       const selected = reports[report];

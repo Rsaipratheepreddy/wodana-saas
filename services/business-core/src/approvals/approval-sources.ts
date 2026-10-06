@@ -1,4 +1,6 @@
 import type { PoolClient } from "pg";
+import { canDecideApproval, pendingForPerson } from "./approval-engine";
+import { KINDS_WITH_OWN_INBOX_ROW } from "./approval-policy";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -12,7 +14,11 @@ export type ApprovalKind =
   // A started project's payment milestone falling due (within 3 days, or past) that nobody has invoiced (D-14).
   | "invoice"
   // A change an AI app prepared through MCP (W-5): the person it acts as confirms it in Wodana.
-  | "ai_action";
+  | "ai_action"
+  // A request on the E3 approval engine whose module has no row of its own (an opportunity value, a refund…).
+  | "approval"
+  // A quotation handed to a QS to price and confirm ("With QS", PLM-082/084), decided on the quotation.
+  | "qs_review";
 
 /** What deciding in the row does: approve, and whether the other answer is a return or a refusal (with a note). */
 export type RowDecision = { approve: string; other: "return" | "reject" | null; approveNeedsNote: boolean };
@@ -44,6 +50,10 @@ export type ApprovalRow = {
   parentId: string | null;
   /** A look at what's being approved: a daily report's words for the client, its lead photo and how many photos it has. */
   preview?: { text: string; photoId: string | null; photos: number } | null;
+  /** E3: decided as cover for someone away (delegate) or because it waited past the escalation time. */
+  cover?: { via: "delegate" | "escalation"; for: string | null } | null;
+  /** E3-3: a change to an approved amount, old → new. */
+  change?: { from: string; to: string } | null;
 };
 
 export type ApprovalContext = {
@@ -129,27 +139,45 @@ const deals: Source = async (db, ctx) => {
   const [finance, approve] = [await ctx.can("commercial.finance.verify"), await ctx.can("commercial.deal.approve")];
   if (!finance && !approve) return [];
   const rows = (await db.query<{ caseId: string; status: string; submittedById: string | null; financeReviewedById: string | null; since: string | null;
-    amount: string | null; currency: string | null; quoteNumber: number | null; client: string; title: string }>(
+    amount: string | null; currency: string | null; quoteNumber: number | null; client: string; title: string; requestId: string | null; requestSince: Date | null }>(
     `SELECT commercial.case_id AS "caseId", commercial.content->'ownerReview'->>'status' AS status,
             commercial.content->'ownerReview'->>'submittedById' AS "submittedById", commercial.content->'ownerReview'->>'financeReviewedById' AS "financeReviewedById",
             coalesce(commercial.content->'ownerReview'->>'financeReviewedAt', commercial.content->'ownerReview'->>'submittedAt') AS since,
             quote.total::text AS amount, quote.currency, quote.number AS "quoteNumber",
-            coalesce(party.display_name, opportunity.title) AS client, opportunity.title
+            coalesce(party.display_name, opportunity.title) AS client, opportunity.title,
+            request.id AS "requestId", request.step_since AS "requestSince"
        FROM commercial_cases_view commercial
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = commercial.workspace_id AND pre_case.id = commercial.case_id
        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
        LEFT JOIN commercial_quotes quote ON quote.workspace_id = commercial.workspace_id AND quote.case_id = commercial.case_id
              AND quote.id::text = commercial.content->'ownerReview'->>'quoteId'
+       -- E3: the Deal File's open request on the approval engine, when it has one.
+       LEFT JOIN approval_requests request ON request.workspace_id = commercial.workspace_id AND request.subject_kind = 'deal_file'
+             AND request.subject_id::text = commercial.content->'ownerReview'->>'id' AND request.status = 'pending'
       WHERE commercial.workspace_id = $1 AND commercial.content->'ownerReview'->>'status' IN ('pending_finance', 'pending_approval')
       LIMIT 100`, [ctx.workspaceId])).rows;
-  return rows.filter((deal) => (deal.status === "pending_finance" ? finance : approve)).map((deal) => row({
-    kind: deal.status === "pending_finance" ? "deal_finance" : "deal_approval", group: "deals", id: deal.caseId, parentId: deal.caseId,
-    title: deal.quoteNumber ? `${deal.title} · Q-${deal.quoteNumber}` : deal.title, subject: deal.client, project: null,
-    amount: deal.amount, currency: deal.currency, since: deal.since,
-    own: deal.submittedById === ctx.userId || (deal.status === "pending_approval" && deal.financeReviewedById === ctx.userId),
-    href: `/workspace/pre-projects/cases/${deal.caseId}/execution-release`, decide: null,
-  }));
+  const out: ApprovalRow[] = [];
+  for (const deal of rows) {
+    const base = {
+      kind: deal.status === "pending_finance" ? "deal_finance" as const : "deal_approval" as const, group: "deals" as const, id: deal.caseId, parentId: deal.caseId,
+      title: deal.quoteNumber ? `${deal.title} · Q-${deal.quoteNumber}` : deal.title, subject: deal.client, project: null,
+      amount: deal.amount, currency: deal.currency, href: `/workspace/pre-projects/cases/${deal.caseId}/execution-release`, decide: null,
+    };
+    const holds = deal.status === "pending_finance" ? finance : approve;
+    if (deal.requestId) {
+      // E3 holds the step: the Owner above an amount, a delegate covering, an escalation, separation of duties.
+      const allowed = await canDecideApproval(db, ctx.workspaceId, deal.requestId, ctx.userId);
+      if (!allowed.canDecide && !(holds && (allowed.reason === "own" || allowed.reason === "earlier_step"))) continue;
+      out.push({ ...row({ ...base, since: deal.requestSince ?? deal.since, own: !allowed.canDecide }),
+        cover: allowed.via === "delegate" || allowed.via === "escalation" ? { via: allowed.via, for: null } : null });
+      continue;
+    }
+    if (!holds) continue;
+    out.push(row({ ...base, since: deal.since,
+      own: deal.submittedById === ctx.userId || (deal.status === "pending_approval" && deal.financeReviewedById === ctx.userId) }));
+  }
+  return out;
 };
 
 /**
@@ -422,7 +450,72 @@ const aiActions: Source = async (db, ctx) => {
   }));
 };
 
-export const APPROVAL_SOURCES: Source[] = [quotes, receipts, invoices, agreements, deals, orders, factory, site, stock, finance, aiActions];
+/**
+ * Quotations "With QS" (PLM-082/084): the named QS sees the quotation they were sent; someone covering for them or
+ * taking it after the escalation time (E3) sees it too, and so does anyone a firm's own policy names (a role or a
+ * person). The requester sees it as their own. Confirmed on the quotation (the pricing checks run there), so the row opens it.
+ */
+const qsReviews: Source = async (db, ctx) => {
+  const rows = (await db.query<{ reviewId: string; caseId: string; quoteId: string; reference: string; client: string; amount: string; currency: string;
+    assignee: string; assigneeName: string | null; requestedBy: string; requestedByName: string | null; requestId: string; since: Date; version: number }>(
+    `SELECT review.id AS "reviewId", review.case_id AS "caseId", review.quote_id AS "quoteId",
+            coalesce(reference.reference, 'Q-' || quote.number::text) AS reference, coalesce(party.display_name, opportunity.title) AS client,
+            quote.total::text AS amount, quote.currency, review.assignee_user_id AS assignee, assignee.display_name AS "assigneeName",
+            review.requested_by AS "requestedBy", requester.display_name AS "requestedByName", request.id AS "requestId", request.step_since AS since, review.version
+       FROM quote_qs_reviews review
+       JOIN approval_requests request ON request.workspace_id = review.workspace_id AND request.subject_kind = 'quote_qs' AND request.subject_id = review.id AND request.status = 'pending'
+       JOIN commercial_quotes quote ON quote.workspace_id = review.workspace_id AND quote.case_id = review.case_id AND quote.id = review.quote_id
+       LEFT JOIN quotation_references reference ON reference.workspace_id = quote.workspace_id AND reference.case_id = quote.case_id AND reference.family_id = coalesce(quote.family_id, quote.id)
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = review.workspace_id AND pre_case.id = review.case_id
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       LEFT JOIN users assignee ON assignee.id = review.assignee_user_id
+       LEFT JOIN users requester ON requester.id = review.requested_by
+      WHERE review.workspace_id = $1 AND review.status = 'with_qs'
+      ORDER BY request.step_since LIMIT 100`, [ctx.workspaceId])).rows;
+  const out: ApprovalRow[] = [];
+  for (const review of rows) {
+    const own = review.requestedBy === ctx.userId;
+    const allowed = own ? null : await canDecideApproval(db, ctx.workspaceId, review.requestId, ctx.userId);
+    // Any QS may decide under the default policy; the inbox shows it to the one it was sent to, unless the engine says
+    // someone else holds it (cover, escalation, a person or role the firm's policy names).
+    const named = review.assignee === ctx.userId || (allowed?.canDecide && allowed.via !== "direct") || (allowed?.canDecide && !(await ctx.can("commercial.estimate")));
+    if (!own && !(allowed?.canDecide && named)) continue;
+    out.push({
+      ...row({
+        kind: "qs_review", group: "quotes", id: review.reviewId, parentId: review.caseId, title: `${review.reference} · ${review.client}`,
+        subject: own ? review.assigneeName : review.requestedByName, project: null, amount: review.amount, currency: review.currency, since: review.since,
+        own, version: review.version, href: `/workspace/pre-projects/cases/${review.caseId}/quotations?quote=${encodeURIComponent(review.quoteId)}`, decide: null,
+      }),
+      cover: allowed?.via === "delegate" || allowed?.via === "escalation" ? { via: allowed.via, for: review.assigneeName } : null,
+    });
+  }
+  return out;
+};
+
+/** The group an engine request's kind shows under on the Approvals page. */
+const ENGINE_GROUP: Record<string, ApprovalGroup> = { opportunity_value: "deals", refund: "payments", change_request: "quotes", quote_send: "quotes", discount: "quotes", quote_qs: "quotes" };
+
+/**
+ * Requests on the E3 approval engine this person may decide now (directly, as a delegate, or after escalation), and
+ * their own (which someone else decides). Kinds whose module lists its own row are skipped here.
+ */
+const engine: Source = async (db, ctx) => {
+  const waiting = await pendingForPerson(db, ctx.workspaceId, ctx.userId, { excludeKinds: KINDS_WITH_OWN_INBOX_ROW });
+  return waiting.map(({ status, eligibility }) => ({
+    ...row({
+      kind: "approval", group: ENGINE_GROUP[status.kind] ?? "finance", id: status.id, title: status.title, subject: status.requestedBy.name || null,
+      project: null, amount: status.amount, currency: status.currency, since: status.stepSince, own: !eligibility.canDecide, version: status.version,
+      href: status.href ?? "/workspace/approvals",
+      // A waiver needs its reason, written where the record is.
+      decide: eligibility.via === "waiver" ? null : { approve: "approve", other: "return", approveNeedsNote: false },
+    }),
+    cover: eligibility.via === "delegate" || eligibility.via === "escalation" ? { via: eligibility.via, for: null } : null,
+    change: status.previousAmount && status.amount ? { from: status.previousAmount, to: status.amount } : null,
+  }));
+};
+
+export const APPROVAL_SOURCES: Source[] = [quotes, qsReviews, receipts, invoices, agreements, deals, orders, factory, site, stock, finance, aiActions, engine];
 
 /** Everything waiting on this person, oldest first; what they may decide before what is their own. */
 export async function waitingFor(db: Db, ctx: ApprovalContext) {

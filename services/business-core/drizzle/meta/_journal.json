@@ -1016,6 +1016,62 @@
       "when": 1801740001200,
       "tag": "0251_enquiry_team_requirements",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1801740001300,
+      "tag": "0252_quotation_proposals_esign",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1801740001500,
+      "tag": "0253_design_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1801740001600,
+      "tag": "0254_design_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1801740001700,
+      "tag": "0255_portal_design_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1801740001800,
+      "tag": "0256_approval_engine_deal_file",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1801740001900,
+      "tag": "0257_flow_step_skips",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1801740002000,
+      "tag": "0258_product_sourcing",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1801740002100,
+      "tag": "0259_client_portal_changes",
+      "breakpoints": true
     }
   ]
 }

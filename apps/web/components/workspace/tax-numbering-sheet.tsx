@@ -93,7 +93,7 @@ function NumberingSection({ data, canManage, workspaceId, entityId, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const update = (type: NumberingRow["documentType"], patch: Partial<NumberingRow>) => setRows((current) => current.map((row) => row.documentType === type ? { ...row, ...patch } : row));
-  const changed = rows.filter((row) => { const saved = data.numbering.find((item) => item.documentType === row.documentType)!; return !row.exists || row.prefix !== saved.prefix || row.padding !== saved.padding || row.resetPolicy !== saved.resetPolicy || row.nextNumber !== saved.nextNumber; });
+  const changed = rows.filter((row) => { const saved = data.numbering.find((item) => item.documentType === row.documentType)!; return !row.exists || row.prefix !== saved.prefix || (row.suffix ?? "") !== (saved.suffix ?? "") || row.padding !== saved.padding || row.resetPolicy !== saved.resetPolicy || row.nextNumber !== saved.nextNumber; });
   const save = async () => {
     setSaving(true); setMessage(null);
     try {
@@ -102,7 +102,7 @@ function NumberingSection({ data, canManage, workspaceId, entityId, onSaved }: {
         const saved = data.numbering.find((item) => item.documentType === row.documentType)!;
         next = await send<TaxNumbering>(`/api/workspace/legal-entities/${entityId}/numbering/${row.documentType}`, {
           method: "PATCH", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ workspaceId, version: row.version, prefix: row.prefix, padding: row.padding, resetPolicy: row.resetPolicy, ...(row.nextNumber !== saved.nextNumber ? { nextNumber: row.nextNumber } : {}) }),
+          body: JSON.stringify({ workspaceId, version: row.version, prefix: row.prefix, suffix: row.suffix ?? "", padding: row.padding, resetPolicy: row.resetPolicy, ...(row.nextNumber !== saved.nextNumber ? { nextNumber: row.nextNumber } : {}) }),
         });
       }
       if (next) { onSaved(next); setRows(next.numbering); }
@@ -115,8 +115,9 @@ function NumberingSection({ data, canManage, workspaceId, entityId, onSaved }: {
     <header className={styles.sectionHeader}><h3 id="numbering-heading">{t("Document numbering")}</h3></header>
     {message ? <InlineNotice message={message.text} tone={message.tone} /> : null}
     {rows.map((row) => <fieldset className={styles.sequence} key={row.documentType}>
-      <legend>{documentLabel[row.documentType]}<output className={styles.preview} dir="ltr">{previewNumber(row.prefix, row.padding, row.nextNumber)}</output></legend>
+      <legend>{documentLabel[row.documentType]}<output className={styles.preview} dir="ltr">{previewNumber(row.prefix, row.padding, row.nextNumber, undefined, row.suffix ?? "")}</output></legend>
       <TextInput description={t("Use {YYYY} for the year.")} isDisabled={!canManage} isRequired label={t("Prefix")} onChange={(value) => update(row.documentType, { prefix: value })} value={row.prefix} />
+      <TextInput isDisabled={!canManage} label={t("Suffix")} onChange={(value) => update(row.documentType, { suffix: value })} value={row.suffix ?? ""} />
       <SelectField isDisabled={!canManage} items={DIGITS} label={t("Digits")} onSelectionChange={(key) => update(row.documentType, { padding: Number(key) })} selectedKey={String(row.padding)} />
       <TextInput isDisabled={!canManage} label={t("Next number")} onChange={(value) => update(row.documentType, { nextNumber: Number(value.replace(/\D/g, "")) || 1 })} value={String(row.nextNumber)} />
       <Switch isDisabled={!canManage} isSelected={row.resetPolicy === "annual"} onChange={(value) => update(row.documentType, { resetPolicy: value ? "annual" : "never", prefix: value && !row.prefix.includes("{YYYY}") ? `${row.prefix}{YYYY}-` : row.prefix })}>{t("Start again each year")}</Switch>

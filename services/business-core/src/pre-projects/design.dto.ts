@@ -83,6 +83,8 @@ export class CreateDesignThreadDto {
  @Transform(trim) @IsString() @MinLength(1) @MaxLength(240) title!:string;
  @Transform(trim) @IsString() @MinLength(1) @MaxLength(5000) body!:string;
  @IsBoolean() blocking!:boolean;
+ /** The audience switch: false (team only, the default) or true (the client sees it in their portal). */
+ @IsOptional() @IsBoolean() clientVisible?:boolean;
 }
 export class ReplyDesignThreadDto {
  @IsUUID() id!:string;
@@ -93,3 +95,7 @@ export class ResolveDesignThreadDto {
  @IsIn(['open','resolved']) status!:string;
 }
 
+export class DesignThreadAudienceDto {
+ @IsInt() @Min(1) version!:number;
+ @IsBoolean() clientVisible!:boolean;
+}

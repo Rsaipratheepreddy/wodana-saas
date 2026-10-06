@@ -49,6 +49,32 @@ it("opens a thread at its pin to reply and resolve", async () => {
   await waitFor(() => expect(request).toHaveBeenCalledWith("w", "c", "designs/d/threads/t1/status", "POST", { version: 1, status: "resolved" }));
 });
 
+it("keeps a new comment with the team unless it is shared with the client, and shares a team thread later (audience switch)", async () => {
+  const request = vi.spyOn(content, "caseRequest").mockResolvedValue(design);
+  render(view(design));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Comment" }));
+  fireEvent.click(screen.getByRole("button", { name: "Place a comment on the drawing" }), { detail: 0 });
+  await user.type(screen.getByRole("textbox", { name: "Add a comment · @ to mention" }), "Client: is this height right?");
+  await user.click(screen.getByRole("radio", { name: "With client" }));
+  await user.click(screen.getByRole("button", { name: "Post" }));
+  await waitFor(() => expect(request).toHaveBeenCalledWith("w", "c", "designs/d/threads", "POST", expect.objectContaining({ clientVisible: true })));
+});
+
+it("marks the client's threads and lets the team share its own", async () => {
+  const request = vi.spyOn(content, "caseRequest").mockResolvedValue(design);
+  const fromClient = { ...thread, id: "t2", createdBy: null, createdByName: "Maya", fromClient: true, clientVisible: true, anchor: { x: 0.6, y: 0.6 } };
+  render(view({ ...design, threads: [thread, fromClient] } as unknown as content.CaseDesign));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Comment by Maya" }));
+  expect(screen.getByText("From client")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Share with client" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Comment by Designer" }));
+  expect(screen.getByText("Team only")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Share with client" }));
+  await waitFor(() => expect(request).toHaveBeenCalledWith("w", "c", "designs/d/threads/t1/audience", "POST", { version: 1, clientVisible: true }));
+});
+
 it("lists comments in the panel and opens one from the list", async () => {
   render(view({ ...design, threads: [thread] } as unknown as content.CaseDesign));
   const panel = screen.getByRole("complementary", { name: "Review" });

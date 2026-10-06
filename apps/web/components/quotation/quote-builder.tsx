@@ -19,6 +19,7 @@ import { FlowActions, QuotePayments, RevisionChanges } from "./quote-flow";
 import { QuoteNextSteps } from "./quote-next-steps";
 import { QuoteTerms } from "./quote-terms";
 import { QuoteProposal } from "./quote-proposal";
+import { QuoteFiles } from "./quote-files";
 import { InsertTemplate, SaveTemplate } from "./quote-templates";
 import { QuoteChat, type AssistantCommands } from "./quote-chat";
 import { QuoteCatalog } from "./quote-catalog";
@@ -82,7 +83,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const narrow = useSyncExternalStore(subscribeNarrow, readNarrow, () => false);
   const showPanel = narrow ? sheetOpen : panelOpen;
   // The document has its own settings beside the preview; the panel steps aside there.
-  const panelShown = showPanel && tab !== "document";
+  const panelShown = showPanel && tab !== "document" && tab !== "files";
   const [contextLineId, setContextLineId] = useState<string | null>(null);
   const [flash, setFlash] = useState<Set<string>>(new Set());
   const scrollTo = useRef<string | null>(null);
@@ -471,12 +472,13 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   return <section className={styles.builder} aria-label={t("Quotation builder")} data-panel={panelShown ? "open" : "closed"}>
     <header className={styles.top}>
       <Link href={backHref} className={styles.back} aria-label={t("All quotes")}><ArrowLeft aria-hidden="true" data-directional="true" size={16} /></Link>
-      <h1>{t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
+      <h1>{state.quote.reference ?? t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
       <Badge data-tour="quote-status" tone={QUOTE_STATUS[state.quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[state.quote.status]?.label ?? state.quote.status) as never)}</Badge>
       {state.family.length > 1 ? <span className={styles.revisions}><SegmentedControl label={t("Revisions")} value={state.quote.id} onChange={(id) => router.push(quoteHref(id))}
         options={state.family.map((item, index) => ({ id: item.id, label: t("R{number}", { number: index + 1 }) }))} /></span> : null}
       <span className={styles.tabs}><SegmentedControl label={t("Quote")} tour="quote-tab" value={tab} onChange={(key) => setTab(key as QuoteTab)}
-        options={[{ id: "items", label: t("Items") }, { id: "terms", label: t("Terms") }, { id: "payments", label: t("Payments") }, { id: "document", label: t("Document") }]} /></span>
+        options={[{ id: "items", label: t("Items") }, { id: "terms", label: t("Terms") }, { id: "payments", label: t("Payments") }, { id: "document", label: t("Document") },
+          ...(state.quote.kind === "quotation" ? [{ id: "files", label: t("Proposal & files") }] : [])]} /></span>
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
       <span className={styles.spacer} />
       <PeopleHere people={people} />
@@ -532,7 +534,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           ? t("This quote is in review. It can be changed again if it's sent back.") : state.quote.status === "internal_approved"
             ? t("This quote is approved and ready to send to the client.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
-        {tab === "document" ? <QuoteProposal workspaceId={workspaceId} caseId={caseId} quoteId={quoteId} api={api} sizeUnit={state.sizeUnit ?? "cm"} onPayments={() => setTab("payments")}
+        {tab === "files" ? <QuoteFiles workspaceId={workspaceId} caseId={caseId} state={state} />
+          : tab === "document" ? <QuoteProposal workspaceId={workspaceId} caseId={caseId} quoteId={quoteId} api={api} sizeUnit={state.sizeUnit ?? "cm"} onPayments={() => setTab("payments")}
           columns={customColumns.filter((custom) => custom.showInProposal).map(({ id, name }) => ({ id, name }))} facts={proposalFacts} />
           : tab === "terms" ? <QuoteTerms key={`terms:${state.quote.id}`} state={state} api={api} onError={setError}
             onSaved={(proposal) => setState((current) => (current ? { ...current, proposal } : current))} />
@@ -623,7 +626,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
 }
 
 type Panel = "assistant" | "catalog" | "comments" | "totals";
-export type QuoteTab = "items" | "terms" | "payments" | "document";
+export type QuoteTab = "items" | "terms" | "payments" | "document" | "files";
 /** Each area gets its own tint, in turn, so areas are told apart at a glance. */
 const GROUP_TONES = ["info", "success", "warning", "brand", "neutral"] as const;
 const GROUP_LABEL: Record<QuoteView, string> = { area: "Group by area", trade: "Group by trade", area_trade: "Group by area, then trade" };

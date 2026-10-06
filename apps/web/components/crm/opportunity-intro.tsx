@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useCrmResource } from "./crm-workbench";
+import { IntroDeckRow } from "./intro-deck-row";
 import styles from "./opportunity-intro.module.css";
 
 type Location = { mode?: "in_person" | "online"; url?: string | null; address?: string | null };
@@ -84,6 +85,7 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, 
           <Badge tone={intro.status === "completed" ? "success" : intro.status === "cancelled" ? "neutral" : "info"}>{intro.status === "completed" ? t("Held") : intro.status === "cancelled" ? t("Cancelled") : t("Booked")}</Badge>
         </span> : <span className={styles.empty}>{t("Not booked")}</span>}
       </FactRow>
+      <IntroDeckRow workspaceId={workspaceId} opportunityId={opportunityId} />
       <FactRow label={t("Designer")} action={view.designer && view.canChangeDesigner ? <Button size="compact" variant="quiet" onPress={() => setDialog("designer")}><UserRoundPen aria-hidden="true" size={13} />{t("Change")}</Button> : null}>
         {view.designer ? <span className={styles.designer}><span aria-hidden="true"><Avatar name={view.designer.name} seed={view.designer.membershipId} size="sm" /></span><strong>{view.designer.name}</strong></span> : <span className={styles.empty}>{t("Chosen when the intro is booked")}</span>}
       </FactRow>

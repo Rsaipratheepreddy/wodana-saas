@@ -32,6 +32,8 @@ COPY --from=production-dependencies /workspace/node_modules /workspace/node_modu
 COPY --from=production-dependencies /workspace/services/business-core/node_modules /workspace/services/business-core/node_modules
 COPY --from=production-dependencies /workspace/services/business-core/package.json /workspace/services/business-core/package.json
 COPY --from=builder /workspace/services/business-core/dist /workspace/services/business-core/dist
+# PDF fonts (Noto, OFL); dist/proposals/pdf-text.js reads them from ../../assets/fonts.
+COPY services/business-core/assets /workspace/services/business-core/assets
 COPY packages/contracts /workspace/packages/contracts
 # The Palm Living seed (dist/seed/palm-showcase) reads the tenant's documents from /workspace/docs.
 COPY docs/fixtures /workspace/docs/fixtures

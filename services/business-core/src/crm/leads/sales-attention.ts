@@ -90,19 +90,22 @@ export type SalesSettings = {
   salesAdminMembershipId: string | null;
   /** PLM-024: who reads internal notes, the enquiry team (default) or everyone with Sales access. */
   internalNotesVisibility: "team" | "sales";
+  /** PLM-099: the prefix of new opportunity references (product default O-); existing references never change. */
+  opportunityReferencePrefix: string;
   version: number;
 };
 
 export const DEFAULT_SALES_SETTINGS: SalesSettings = {
   takeoverCap: 2, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90,
-  salesAdminMembershipId: null, internalNotesVisibility: "team", version: 0,
+  salesAdminMembershipId: null, internalNotesVisibility: "team", opportunityReferencePrefix: "O-", version: 0,
 };
 
 export async function loadSalesSettings(db: Db, workspaceId: string): Promise<SalesSettings> {
   const row = await db.query<SalesSettings>(
     `SELECT takeover_cap AS "takeoverCap", unowned_escalation_minutes AS "unownedEscalationMinutes",
             client_review_minutes AS "clientReviewMinutes", duplicate_window_days AS "duplicateWindowDays",
-            sales_admin_membership_id AS "salesAdminMembershipId", internal_notes_visibility AS "internalNotesVisibility", version
+            sales_admin_membership_id AS "salesAdminMembershipId", internal_notes_visibility AS "internalNotesVisibility",
+            opportunity_reference_prefix AS "opportunityReferencePrefix", version
        FROM workspace_sales_settings WHERE workspace_id = $1`, [workspaceId]);
   return row.rows[0] ? { ...row.rows[0], internalNotesVisibility: row.rows[0].internalNotesVisibility === "sales" ? "sales" : "team", version: Number(row.rows[0].version) } : { ...DEFAULT_SALES_SETTINGS };
 }

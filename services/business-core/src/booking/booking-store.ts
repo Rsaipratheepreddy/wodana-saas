@@ -114,6 +114,15 @@ export async function loadHostAvailability(db: Db, workspaceId: string, input: {
   });
 }
 
+/**
+ * Holds these members' calendars until the transaction ends (their membership rows, locked in id order so two
+ * bookings never deadlock): a booking that re-checks their free time after this and writes in the same transaction
+ * can't be raced by another booking for any of the same people.
+ */
+export async function lockHostCalendars(db: Db, workspaceId: string, membershipIds: string[]) {
+  await db.query(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) ORDER BY id FOR NO KEY UPDATE`, [workspaceId, [...new Set(membershipIds)]]);
+}
+
 /** Free slots for a type between two firm-local dates. */
 export async function slotsFor(db: Db, workspaceId: string, type: BookingTypeRow, input: {
   from: string; to: string; enquiryType?: string | null; hostIds?: string[]; ignoreBookingId?: string | null; now?: Date;

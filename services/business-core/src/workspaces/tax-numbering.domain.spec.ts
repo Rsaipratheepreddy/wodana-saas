@@ -25,9 +25,15 @@ describe("document numbering", () => {
     expect(() => validateSequence({ prefix: "QUO-", padding: 5, resetPolicy: "annual" }, { nextNumber: 1, currentPeriod: null })).toThrow(/\{YYYY\}/);
     expect(() => validateSequence({ prefix: "QUO-", padding: 5, resetPolicy: "never", nextNumber: 3 }, { nextNumber: 10, currentPeriod: 2026 })).toThrow(/only move forward/);
     expect(validateSequence({ prefix: "QUO-{YYYY}-", padding: 4, resetPolicy: "annual", nextNumber: 250 }, { nextNumber: 1, currentPeriod: null }))
-      .toEqual({ prefix: "QUO-{YYYY}-", padding: 4, resetPolicy: "annual", nextNumber: 250 });
+      .toEqual({ prefix: "QUO-{YYYY}-", suffix: "", padding: 4, resetPolicy: "annual", nextNumber: 250 });
   });
-  it("previews the next number", () => {
+  it("previews the next number, with the suffix after it", () => {
     expect(previewNumber("MAIN-QUO-{YYYY}-", 5, 42, 2026)).toBe("MAIN-QUO-2026-00042");
+    expect(previewNumber("Q-", 4, 7, 2026, "-PL/{YYYY}")).toBe("Q-0007-PL/2026");
+  });
+  it("keeps the saved suffix unless a new one is sent, and refuses an unprintable one", () => {
+    expect(validateSequence({ prefix: "Q-", padding: 4, resetPolicy: "never" }, { nextNumber: 3, currentPeriod: null, suffix: "-DXB" }).suffix).toBe("-DXB");
+    expect(validateSequence({ prefix: "Q-", suffix: " -AD ", padding: 4, resetPolicy: "never" }, { nextNumber: 3, currentPeriod: null, suffix: "-DXB" }).suffix).toBe("-AD");
+    expect(() => validateSequence({ prefix: "Q-", suffix: "<b>", padding: 4, resetPolicy: "never" }, { nextNumber: 1, currentPeriod: null })).toThrow(/suffix/);
   });
 });

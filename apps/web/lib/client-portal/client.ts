@@ -32,7 +32,7 @@ export function portalApi(slug: string, t: Translate = untranslated) {
     /** One command; the id makes a retry of the same action safe. */
     command: <T = { ok: true }>(commandId: string, input: Record<string, unknown>) => call<T>(t, at("command"), "POST", { ...input, commandId }),
     logout: () => call<{ ok: true }>(t, at("logout"), "POST", {}),
-    file: (kind: "design" | "photo" | "handover" | "agreement" | "asset", id: string, preview = false) => `${at(`files/${kind}/${id}`)}${preview ? "?preview=1" : ""}`,
+    file: (kind: "design" | "photo" | "handover" | "agreement" | "asset" | "change", id: string, preview = false) => `${at(`files/${kind}/${id}`)}${preview ? "?preview=1" : ""}`,
     /** Adds a photo or PDF to the project before it's sent with something; the id makes a retried upload return the same file. */
     upload: (caseId: string, id: string, file: File) => upload(t, at(`cases/${caseId}/uploads/${id}`), file),
     /** A tax invoice or receipt of the client's, to print. */

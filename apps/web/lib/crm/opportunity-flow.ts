@@ -5,7 +5,12 @@ import { CrmRequestError, type MissingRequirement } from "./client";
 export type OpportunityFlowCode = "furniture" | "design" | "fit_out" | "basic";
 export type FlowStepState = "done" | "current" | "upcoming";
 export type FurniturePath = "take_home_now" | "in_stock_delivery" | "supplier_order" | "core_collection_factory" | "bespoke";
-export type PaymentProof = { id: string; kind: string; fileName: string; mimeType: string; hasPreview: boolean; note: string | null; recordedAt: string; recordedBy: string | null };
+/** What AI read on a proof: a proposal Finance confirms, never a value on its own. */
+export type ProofReading = { amount: string | null; currency: string | null; date: string | null; reference: string | null; payer: string | null; confidence: "high" | "medium" | "low"; readAt: string };
+export type PaymentProof = {
+  id: string; kind: string; fileName: string; mimeType: string; hasPreview: boolean; note: string | null; recordedAt: string; recordedBy: string | null;
+  reading?: ProofReading | null; proposal?: "design" | "main" | null;
+};
 /** One step of the job's line, as the flow reads it from the records. */
 export type FlowLineStep = {
   key: string; name: string; check: string; column: string; optional: boolean;
@@ -65,10 +70,11 @@ export function missingFrom(error: unknown): MissingRequirement[] {
 }
 
 /** Attach a payment proof: the opportunity becomes Won in the same step. */
-export async function attachPaymentProof(workspaceId: string, opportunityId: string, input: { version: number; kind: string; note: string; file: File }) {
+export async function attachPaymentProof(workspaceId: string, opportunityId: string, input: { version: number; kind: string; note: string; file: File; proposal?: "design" | "main" }) {
   const body = new FormData();
   body.set("version", String(input.version));
   body.set("kind", input.kind);
+  if (input.proposal) body.set("proposal", input.proposal);
   if (input.note.trim()) body.set("note", input.note.trim());
   body.set("file", input.file);
   const response = await fetch(`/api/workspace/crm/opportunity-proofs/${opportunityId}?workspaceId=${encodeURIComponent(workspaceId)}`, { method: "POST", body });

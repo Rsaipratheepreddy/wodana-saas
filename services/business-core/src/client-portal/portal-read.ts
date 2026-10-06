@@ -5,14 +5,20 @@ import type { PoolClient } from "pg";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
 import type { Grant, PortalContact } from "./portal-auth";
+import { readDesignReview } from "./portal-design";
 import { ASSUME_PRESENT, readAttachments, type FilePresence } from "./portal-files";
 import { readIssues } from "./portal-issues";
 import { readMessages } from "./portal-messages";
 import { readMoodboard, takesIdeas } from "./portal-moodboard";
+import { readDesignChoices } from "./portal-design-decisions";
 import { readPayments } from "./portal-payments";
 import { portalQuote } from "./portal-quote";
+import { portalQuoteExtras } from "../proposals/proposal-data";
 import { readClientSiteAccess } from "../site/site-access";
 import { effectiveSections, readProjectAccess, type PortalSettings, type Section, type Sections } from "./portal-settings";
+import { readBudget } from "./portal-budget";
+import { readPortalChanges } from "./portal-changes";
+import { feedCards, whatChanged } from "./portal-feed";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -50,19 +56,19 @@ export async function readCase(db: Db, workspaceId: string, caseId: string): Pro
 
 /** `files` says which stored files are really there (a photo whose file is missing is left out, never shown broken). */
 export async function readView(db: Db, workspaceId: string, contact: PortalContact, settings: PortalSettings, definitions: DefinitionSource,
-  files: FilePresence = ASSUME_PRESENT) {
+  files: FilePresence = ASSUME_PRESENT, visits?: Map<string, string | null>) {
   const today = await workspaceToday(db, workspaceId);
   const projects = [];
   for (const grant of contact.grants) {
     const row = await readCase(db, workspaceId, grant.caseId);
     if (!row) continue;
-    projects.push(await readProject(db, workspaceId, grant, row, settings, today, definitions, files));
+    projects.push(await readProject(db, workspaceId, grant, row, settings, today, definitions, files, visits ? visits.get(grant.id) ?? null : undefined));
   }
   return { contact: { name: contact.name, nameConfirmed: contact.nameConfirmed, phone: contact.phone }, today, projects };
 }
 
 async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseRow, settings: PortalSettings, today: string, definitions: DefinitionSource,
-  files: FilePresence) {
+  files: FilePresence, since?: string | null) {
   const access = row.projectId ? await readProjectAccess(db, workspaceId, row.projectId) : null;
   const sections = effectiveSections(settings, access);
   const started = Boolean(row.projectId);
@@ -74,7 +80,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   };
   if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, address: null, startDate: null,
     team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
-    messages: null };
+    messages: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
   const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, grant.id, today) : null;
@@ -84,7 +90,16 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   const documents = on("documents") ? await readDocuments(db, workspaceId, row, commercial) : null;
   const warranty = started && on("warranty") ? await readWarranty(db, workspaceId, row, today) : null;
   const messages = on("messages") ? await readMessages(db, workspaceId, grant, row.caseId, commercial) : null;
+  // The designs and their pinned comments, one conversation with the design team (part of what the client decides on).
+  const design = on("decisions") ? await readDesignReview(db, workspaceId, grant, row, files) : null;
+  // The concepts shown to the client to pick from, and the materials and decisions they confirm (plan §6.7a).
+  const choices = on("decisions") ? await readDesignChoices(db, workspaceId, grant, row.caseId, row.caseStatus === "active", ["active", "released"].includes(row.caseStatus)) : null;
   const stage = started ? await readStage(db, workspaceId, row.projectId!, row.projectStatus!, settings) : null;
+  // Change requests sent to the client or raised by them (R11), and their budget: agreed + approved changes = forecast (R1).
+  const changes = on("decisions") ? await readPortalChanges(db, workspaceId, grant, row.caseId, ["active", "released"].includes(row.caseStatus)) : null;
+  const budget = on("payments") && settings.invoiceAmounts ? await readBudget(db, workspaceId, row.caseId, row.currency, changes ?? []) : null;
+  // The home: one feed of typed cards, and what changed since this contact last looked (AI2) — both from this projection only.
+  const source = { progress, design, choices, decisions, documents, payments, messages, changes };
   // The newest word from the team: a written update or the latest day's card.
   const card = progress?.cards.find((item) => item.summary);
   const latestUpdate = [progress?.updates[0], card ? { id: card.id, at: card.sentAt, text: card.summary } : undefined]
@@ -100,9 +115,10 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     address: await readAddress(db, workspaceId, row), startDate: dates ? row.startDate : null,
     team: portalTeam(await readTeam(db, workspaceId, row)),
     rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
-    next: nextSteps(decisions, payments, progress),
+    next: nextSteps(decisions, payments, progress, choices, changes),
     unread: messages?.unread ?? 0,
-    latestUpdate, progress, moodboard, decisions, payments, documents, warranty, messages,
+    latestUpdate, progress, moodboard, decisions, payments, documents, warranty, messages, design, choices, changes, budget,
+    feed: feedCards(source), digest: since === undefined ? null : whatChanged(source, since),
   };
 }
 
@@ -290,7 +306,10 @@ async function readDailyCards(db: Db, workspaceId: string, projectId: string, gr
 async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: CaseRow, commercial: CommercialData, today: string, definitions: DefinitionSource,
   files: FilePresence) {
   const approver = grant.role === "approver";
-  const quotes = commercial.quotes.filter((quote) => quote.issuedAt).map((quote) => portalQuote(quote, grant.id, grant.role));
+  const issuedQuotes = commercial.quotes.filter((quote) => quote.issuedAt);
+  // The quotation number and the markup disclosure the client was sent (R3).
+  const extras = await portalQuoteExtras(db, workspaceId, row.caseId, issuedQuotes);
+  const quotes = issuedQuotes.map((quote) => ({ ...portalQuote(quote, grant.id, grant.role), reference: extras.get(quote.id)?.reference ?? null, disclosure: extras.get(quote.id)?.disclosure ?? null }));
   const found = (await db.query<{ id: string; title: string; type: string; number: number; status: string; dueAt: string | null; room: string | null; item: string | null;
     mimeType: string; objectKey: string; previewKey: string | null }>(
     `SELECT version.id, design.title, design.document_type AS type, version.number,
@@ -411,14 +430,22 @@ async function readHandovers(db: Db, workspaceId: string, projectId: string, app
   }));
 }
 
-/** Files published to the client: the signed agreement, approved designs and issued handover packs. */
+/**
+ * Files published to the client as document cards: the signed agreement, approved designs, issued handover packs and
+ * signed change requests — each with its version and date, and E5-4's "changed" marker when it replaced an earlier
+ * version the client had (the old one stays in its history). Never a bare link: the web shows a preview when there is one.
+ */
 async function readDocuments(db: Db, workspaceId: string, row: CaseRow, commercial: CommercialData) {
-  const documents: Array<{ id: string; kind: "agreement" | "design" | "handover"; title: string; group: string; date: string | null; mimeType: string }> = [];
+  type Card = { id: string; kind: "agreement" | "design" | "handover" | "change"; title: string; group: string; date: string | null; mimeType: string; version: number; changed: boolean;
+    hasPreview: boolean; at: string | null };
+  const documents: Card[] = [];
+  const add = (card: Omit<Card, "hasPreview">) => documents.push({ ...card, hasPreview: card.mimeType.startsWith("image/") });
   if (commercial.agreement?.status === "executed")
     for (const file of commercial.agreement.files ?? [])
-      documents.push({ id: file.id, kind: "agreement", title: file.name, group: commercial.agreement.reference, date: file.addedAt?.slice(0, 10) ?? null, mimeType: file.mimeType });
-  const designs = (await db.query<{ id: string; title: string; number: number; room: string | null; mimeType: string; date: string }>(
-    `SELECT version.id, design.title, version.number, room.name AS room, asset.mime_type AS "mimeType", version.created_at::date::text AS date
+      add({ id: file.id, kind: "agreement", title: file.name, group: commercial.agreement.reference, date: file.addedAt?.slice(0, 10) ?? null, mimeType: file.mimeType, version: 1, changed: false,
+        at: file.addedAt ?? null });
+  const designs = (await db.query<{ id: string; title: string; number: number; room: string | null; mimeType: string; date: string; at: Date }>(
+    `SELECT version.id, design.title, version.number, room.name AS room, asset.mime_type AS "mimeType", version.created_at::date::text AS date, version.created_at AS at
        FROM pre_project_design_versions version
        JOIN pre_project_designs design ON design.workspace_id = version.workspace_id AND design.id = version.design_id
        JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.id = version.asset_id
@@ -428,16 +455,27 @@ async function readDocuments(db: Db, workspaceId: string, row: CaseRow, commerci
                                AND approved.status = 'approved')
       ORDER BY coalesce(room.name, ''), design.title`, [workspaceId, row.caseId])).rows;
   for (const design of designs)
-    documents.push({ id: design.id, kind: "design", title: `${design.title} · V${design.number}`, group: design.room ?? "", date: design.date, mimeType: design.mimeType });
+    add({ id: design.id, kind: "design", title: design.title, group: design.room ?? "", date: design.date, mimeType: design.mimeType, version: design.number, changed: design.number > 1,
+      at: new Date(design.at).toISOString() });
   if (row.projectId) {
-    const handover = (await db.query<{ id: string; title: string; pack: string; revision: number; mimeType: string; date: string }>(
-      `SELECT document.id, document.title, pack.title AS pack, pack.revision, document.mime_type AS "mimeType", pack.issued_at::date::text AS date
+    const handover = (await db.query<{ id: string; title: string; pack: string; revision: number; mimeType: string; date: string; at: Date }>(
+      `SELECT document.id, document.title, pack.title AS pack, pack.revision, document.mime_type AS "mimeType", pack.issued_at::date::text AS date, pack.issued_at AS at
          FROM handover_documents document JOIN handover_packs pack ON pack.workspace_id = document.workspace_id AND pack.id = document.pack_id
         WHERE document.workspace_id = $1 AND pack.project_id = $2 AND pack.status <> 'draft' ORDER BY pack.revision DESC, document.created_at`,
       [workspaceId, row.projectId])).rows;
     for (const document of handover)
-      documents.push({ id: document.id, kind: "handover", title: document.title, group: `${document.pack} · R${document.revision}`, date: document.date, mimeType: document.mimeType });
+      add({ id: document.id, kind: "handover", title: document.title, group: document.pack, date: document.date, mimeType: document.mimeType, version: document.revision,
+        changed: document.revision > 1, at: new Date(document.at).toISOString() });
   }
+  // Signed change requests: the signed copy, with its certificate page.
+  const signed = (await db.query<{ id: string; reference: string; title: string; date: string; number: number; at: Date }>(
+    `SELECT change.id, 'CR-' || lpad(change.number::text, 3, '0') AS reference, change.title, change.decided_at::date::text AS date, document.current_version AS number,
+            change.decided_at AS at
+       FROM change_requests change JOIN quote_documents document ON document.workspace_id = change.workspace_id AND document.id = change.document_id
+      WHERE change.workspace_id = $1 AND change.case_id = $2 AND change.status = 'approved' AND change.decision_method = 'signed_link' ORDER BY change.number`, [workspaceId, row.caseId])).rows;
+  for (const change of signed)
+    add({ id: change.id, kind: "change", title: `${change.reference} · ${change.title}`, group: "", date: change.date, mimeType: "application/pdf", version: change.number, changed: false,
+      at: new Date(change.at).toISOString() });
   return documents;
 }
 
@@ -487,9 +525,17 @@ type Decisions = Awaited<ReturnType<typeof readDecisions>>;
 type Payments = Awaited<ReturnType<typeof readPayments>>;
 type Progress = Awaited<ReturnType<typeof readProgress>>;
 
-/** What's needed from the client now: decisions that wait for them, what's due to pay, then deliveries to confirm site access for. */
-function nextSteps(decisions: Decisions | null, payments: Payments | null, progress: Progress | null) {
-  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access"; id: string; title: string; due: string | null }> = [];
+type Choices = Awaited<ReturnType<typeof readDesignChoices>>;
+type Changes = Awaited<ReturnType<typeof readPortalChanges>>;
+
+/**
+ * "Waiting for you": every item the client must act on — decisions (quotes, designs, the requirements, concepts to
+ * choose, choices to confirm or replace, material lists, handovers, changes, the team's questions), what's due to
+ * pay, then deliveries to confirm site access for — each with its due date when it has one.
+ */
+function nextSteps(decisions: Decisions | null, payments: Payments | null, progress: Progress | null, choices: Choices | null = null, changes: Changes | null = null) {
+  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
+    due: string | null }> = [];
   if (decisions) {
     for (const quote of decisions.quotes.filter((item) => item.canDecide))
       steps.push({ kind: "quote", id: quote.id, title: `${quote.title} · V${quote.number}`, due: quote.validUntil });
@@ -499,6 +545,10 @@ function nextSteps(decisions: Decisions | null, payments: Payments | null, progr
     for (const pack of decisions.handovers.filter((item) => item.canDecide)) steps.push({ kind: "handover", id: pack.id, title: `${pack.title} · R${pack.revision}`, due: null });
     for (const request of decisions.requests.filter((item) => item.canDecide)) steps.push({ kind: "request", id: request.id, title: request.title, due: request.dueDate });
   }
+  for (const change of changes?.filter((item) => item.canDecide) ?? []) steps.push({ kind: "change", id: change.id, title: `${change.reference} · ${change.title}`, due: null });
+  for (const presentation of choices?.presentations.filter((item) => item.canDecide) ?? []) steps.push({ kind: "presentation", id: presentation.id, title: presentation.label, due: null });
+  for (const choice of choices?.choices.filter((item) => item.canDecide || item.alternatives.some((alternative) => alternative.canChoose)) ?? [])
+    steps.push({ kind: "choice", id: choice.entryId, title: choice.title, due: null });
   if (payments)
     for (const milestone of payments.milestones.filter((item) => item.invoice && ["due", "overdue", "part_paid"].includes(item.status)))
       steps.push({ kind: "invoice", id: milestone.invoice!.id, title: milestone.invoice!.number, due: milestone.dueDate });

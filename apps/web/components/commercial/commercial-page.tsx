@@ -33,6 +33,7 @@ import {
   statusLabel,
 } from "@/lib/commercial/client";
 import { ClientContacts } from "@/components/client-portal/client-contacts";
+import { ChangeRequestsPanel } from "@/components/change-requests/change-requests-panel";
 import { ScopeImport } from "./scope-import";
 import { PreProjectSectionLoading } from "../pre-project/section-loading";
 import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
@@ -485,7 +486,9 @@ export function CommercialPage({
           )
         ) : section === "client-portal" ? (
           <ClientContacts workspaceId={state.workspaceId} caseId={state.caseId} portalUrl={state.portalSlug ? `/portal/${state.portalSlug}` : null} portalEnabled={Boolean(state.portalEnabled)} locale={design.locale} onChanged={reload} />
-        ) : section === "variations" ? (
+        ) : section === "variations" ? (<>
+          {/* Priced change requests after the contract (plan §6.20, R11), above the client's conversations. */}
+          <ChangeRequestsPanel workspaceId={state.workspaceId} caseId={state.caseId} />
           <CommercialRequests
             state={state}
             run={run}
@@ -493,7 +496,7 @@ export function CommercialPage({
             error={error}
             openRequestId={openRequestId}
           />
-        ) : ["contracts", "payment-plan"].includes(section) ? (
+        </>) : ["contracts", "payment-plan"].includes(section) ? (
           <AgreementPayments
             initialView={section === "payment-plan" ? "payments" : "agreement"}
             openPaymentId={openPaymentId}

@@ -35,12 +35,14 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   try {
     const input = await request.formData();
     const file = input.get("file"), kind = String(input.get("kind") ?? ""), version = String(input.get("version") ?? ""), note = String(input.get("note") ?? "");
+    const proposal = String(input.get("proposal") ?? "");
     if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024) return invalidRequest(t("Choose an image or PDF up to 20 MB."));
-    if (!KINDS.has(kind) || !/^[1-9]\d{0,9}$/.test(version) || note.length > 1000) return invalidRequest(t("Invalid payment proof."));
+    if (!KINDS.has(kind) || !/^[1-9]\d{0,9}$/.test(version) || note.length > 1000 || !["", "design", "main"].includes(proposal)) return invalidRequest(t("Invalid payment proof."));
     const body = new FormData();
     body.set("version", version);
     body.set("kind", kind);
     if (note.trim()) body.set("note", note.trim());
+    if (proposal) body.set("proposal", proposal);
     body.set("file", file);
     return workspaceJsonResponse(`/workspaces/${workspaceId}/crm/opportunities/${opportunityId}/payment-proofs`, { method: "POST", body }, t("The payment proof could not be attached."));
   } catch { return invalidRequest(t("Choose a valid file.")); }

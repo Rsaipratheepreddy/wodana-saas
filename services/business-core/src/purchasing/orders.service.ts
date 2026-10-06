@@ -9,6 +9,8 @@ import { TransactionalEmailService } from "../email/transactional-email.service"
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { event as boqEvent } from "../project-core/project-scope";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
+import { ledgerProcurementProblem } from "../design/design-ledger.store";
+import { orderFitProblem } from "../product-sourcing/fit-check.store";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
   DELIVER_TO, SHIPMENT_STATUSES, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, linesNeededBy, nextOrderNumber, packQuantity, orderEvent, orderTotals, priceLine, readNeeds, readOrder,
@@ -768,9 +770,16 @@ export class OrdersService {
            JOIN project_material_items item ON item.workspace_id = line.workspace_id AND item.id = line.material_item_id
            JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
           WHERE line.workspace_id = $1 AND line.order_id = $2 AND item.client_choice`, [workspaceId, order.id])).rows;
-      for (const { projectId, reference } of chosen)
+      for (const { projectId, reference } of chosen) {
         if (!(await clientChoicesSignedOff(client, workspaceId, projectId))) throw new ConflictException(`The client hasn't signed off ${reference}'s material list yet.`);
+        // PLM-054: the design's materials and decisions list must be locked (signed off) before anything is ordered.
+        const ledger = await ledgerProcurementProblem(client, workspaceId, projectId);
+        if (ledger) throw new ConflictException(ledger);
+      }
     }
+    // E5-6: an item that doesn't fit through the site's measured access waits for an override with a reason.
+    const fit = await orderFitProblem(client, workspaceId, order.id);
+    if (fit) throw new ConflictException(fit);
   }
 
   /** The projects on an order that are on hold now. */

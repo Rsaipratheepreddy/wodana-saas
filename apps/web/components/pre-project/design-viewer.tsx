@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { Check, Download, Maximize2, MessageSquarePlus, Minimize2, Minus, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Send, X } from "lucide-react";
-import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, PillTabs, useDesignSystem, usePortalThemeAttributes } from "@/design-system";
+import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, PillTabs, SegmentedControl, useDesignSystem, usePortalThemeAttributes } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseApi, caseRequest, type CaseContent, type CaseDesign, type DesignOptions, type DesignThread } from "@/lib/pre-project/content";
 import { DESIGN_STATUS_LABEL, designStatusTone } from "@/lib/pre-project/design-workspace";
@@ -301,6 +301,8 @@ function NewComment({ data, design, versionId, point, members, allowBlocking, lo
   const t = useT();
   const [id] = useState(() => crypto.randomUUID());
   const [blocking, setBlocking] = useState(false);
+  // The audience switch: team only (the default) or with the client, in their portal.
+  const [audience, setAudience] = useState<"team" | "client">("team");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return <div className={styles.card}>
@@ -310,10 +312,11 @@ function NewComment({ data, design, versionId, point, members, allowBlocking, lo
     <Composer autoFocus members={members} busy={busy} locked={locked} placeholder={t("Add a comment · @ to mention")} onDirty={onDirty}
       onSend={async (body, mentions) => {
         setBusy(true); setError("");
-        try { onPosted(await caseRequest<CaseDesign>(data.workspaceId, data.caseId, `designs/${design.id}/threads`, "POST", { id, versionId, title: body.slice(0, 240), body, blocking, anchor: point, mentions }), id); return true; }
+        try { onPosted(await caseRequest<CaseDesign>(data.workspaceId, data.caseId, `designs/${design.id}/threads`, "POST", { id, versionId, title: body.slice(0, 240), body, blocking, anchor: point, mentions, clientVisible: audience === "client" }), id); return true; }
         catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not post the comment.")); return false; }
         finally { setBusy(false); }
       }}>
+      <SegmentedControl label={t("Who sees it")} value={audience} onChange={(value) => setAudience(value as "team" | "client")} options={[{ id: "team", label: t("Team only") }, { id: "client", label: t("With client") }]} />
       {allowBlocking ? <Checkbox isSelected={blocking} onChange={setBlocking}>{t("Must fix before approval")}</Checkbox> : null}
     </Composer>
   </div>;
@@ -329,7 +332,13 @@ function ThreadCard({ data, design, thread, options, reviewerId, writable, date,
   const [replyId, setReplyId] = useState(() => crypto.randomUUID());
   const members: Member[] = options.members ?? options.reviewers;
   const resolved = thread.status === "resolved";
-  const canResolve = writable && (thread.createdBy === options.actorId || reviewerId === options.actorId);
+  const canResolve = writable && (thread.fromClient || thread.createdBy === options.actorId || reviewerId === options.actorId);
+  const setAudience = async () => {
+    setBusy(true); setError("");
+    try { onUpdate(await caseRequest<CaseDesign>(data.workspaceId, data.caseId, `designs/${design.id}/threads/${thread.id}/audience`, "POST", { version: thread.version, clientVisible: !thread.clientVisible })); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { setBusy(false); }
+  };
   const setStatus = async () => {
     setBusy(true); setError("");
     try { onUpdate(await caseRequest<CaseDesign>(data.workspaceId, data.caseId, `designs/${design.id}/threads/${thread.id}/status`, "POST", { version: thread.version, status: resolved ? "open" : "resolved" })); if (!resolved) onClose(); }
@@ -339,7 +348,9 @@ function ThreadCard({ data, design, thread, options, reviewerId, writable, date,
   return <div className={styles.card}>
     <div className={styles.cardHead}>
       {thread.blocking && !resolved ? <Badge tone="danger">{t("Must fix")}</Badge> : resolved ? <Badge tone="success">{t("Resolved")}</Badge> : <span />}
+      {thread.fromClient ? <Badge tone="info">{t("From client")}</Badge> : thread.clientVisible ? <Badge tone="info">{t("With client")}</Badge> : <Badge tone="neutral">{t("Team only")}</Badge>}
       <span className={styles.spacer} />
+      {writable && !thread.fromClient && !thread.messages.some((message) => message.fromClient) ? <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => void setAudience()}>{thread.clientVisible ? t("Make team only") : t("Share with client")}</Button> : null}
       {canResolve ? <IconButton aria-label={resolved ? t("Reopen") : t("Resolve")} size="compact" variant="quiet" isDisabled={busy} onPress={() => void setStatus()}>{resolved ? <RotateCcw aria-hidden="true" size={14} /> : <Check aria-hidden="true" size={14} />}</IconButton> : null}
       <IconButton aria-label={t("Close")} size="compact" variant="quiet" onPress={onClose}><X aria-hidden="true" size={14} /></IconButton>
     </div>

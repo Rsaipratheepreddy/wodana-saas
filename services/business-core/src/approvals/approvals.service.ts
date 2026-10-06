@@ -12,6 +12,8 @@ import { PaymentRunsService } from "../purchasing/payment-runs.service";
 import { SiteService } from "../site/site.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { waitingFor, type ApprovalContext, type ApprovalKind, type ApprovalRow } from "./approval-sources";
+import { decideApproval } from "./approval-engine";
+import { APPROVAL_OUTCOMES } from "./approval-outcomes";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DECISIONS = new Set(["approve", "return", "reject"]);
@@ -90,6 +92,14 @@ export class ApprovalsService {
         return this.runs.command(actor, workspaceId, { action: approve ? "approve" : "return", id: row.id, version: row.version, note, commandId: randomUUID() });
       case "site_report":
         return this.site.command(actor, workspaceId, row.parentId!, { action: approve ? row.decide!.approve : "return", reportId: row.id, version: row.version, note });
+      case "approval":
+        // E3: the engine decides (who may, in which step, under which policy version), then the subject's module applies it.
+        return this.access.asMember(actor, workspaceId, async (client, user) => {
+          const decision = approve ? "approve" : "return";
+          const status = await decideApproval(client, { workspaceId, requestId: row.id, deciderUserId: user.userId, decision, note: note || null, expectedVersion: row.version });
+          await APPROVAL_OUTCOMES[status.kind]?.(client, workspaceId, status, decision, user.userId, note || null);
+          return status;
+        });
       case "petty_cash":
         return this.pettyCash.command(actor, workspaceId, row.parentId!, { action: approve ? "approve" : "reject", claimId: row.id, version: row.version, note, commandId: randomUUID() });
       default:

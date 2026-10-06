@@ -44,7 +44,7 @@ export default async function CasePage({ params, searchParams }: {
     const backHref = caseHref(caseId, new URLSearchParams(listSearch(query).toString()), "quotations");
     // The document pages (cover, terms, PDF) until the document styles are rebuilt; the lines are built in the quotation builder.
     // The document is the quote editor's Document tab (the older standalone editor could change lines behind the sheet).
-    const tab = query.get("view") === "document" ? "document" : (["terms", "payments", "document"] as const).find((item) => item === query.get("tab")) ?? "items";
+    const tab = query.get("view") === "document" ? "document" : (["terms", "payments", "document", "files"] as const).find((item) => item === query.get("tab")) ?? "items";
     return <><CaseSelection record={record} search={listSearch(query).toString()} /><QuoteBuilder key={query.get("quote")!} workspaceId={commercialState.workspaceId} caseId={caseId} quoteId={query.get("quote")!} backHref={backHref} initialTab={tab} /></>;
   }
   if (route.section === "quotations" && commercialState && !("error" in commercialState)) return <><CaseSelection record={record} search={listSearch(query).toString()} /><QuoteList key={caseId} initial={commercialState} baseHref={caseHref(caseId, new URLSearchParams(), "quotations").split("?")[0]} /></>;

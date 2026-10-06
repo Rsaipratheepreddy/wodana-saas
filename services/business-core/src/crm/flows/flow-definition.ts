@@ -55,6 +55,11 @@ export type FlowStepDefinition = {
   /** The pipeline column (stage code) the job enters when this step is done. */
   column: string;
   optional?: boolean;
+  /**
+   * Auto-passed (CeCe's "Auto-passed"): on this path the step passes on its own, with nothing to do. It shows on the
+   * job's line as done; it never blocks a move. Never on the payment proof step, never together with `optional`.
+   */
+  auto?: boolean;
   clientVisible?: boolean;
   deadline?: { amount: number; unit: DeadlineUnit };
   /** Roles told when the step becomes current. */
@@ -118,7 +123,7 @@ export function validateFlowDefinition(input: unknown): { ok: true; definition: 
   };
   const checkStep = (step: unknown, path: string): step is FlowStepDefinition => {
     if (!isObject(step)) { fail(path, "A step is an object"); return false; }
-    only(step, path, ["key", "name", "role", "check", "needs", "designStage", "column", "optional", "clientVisible", "deadline", "notify"]);
+    only(step, path, ["key", "name", "role", "check", "needs", "designStage", "column", "optional", "auto", "clientVisible", "deadline", "notify"]);
     uniqueKey(step.key, path);
     if (typeof step.name !== "string" || !step.name.trim() || step.name.length > 120) fail(`${path}.name`, "Give the step a name (up to 120 characters)");
     if (typeof step.role !== "string" || !CODE.test(step.role)) fail(`${path}.role`, "Every step has a role");
@@ -132,7 +137,9 @@ export function validateFlowDefinition(input: unknown): { ok: true; definition: 
       if (!DESIGN_STAGES.includes(step.designStage as DesignStage)) fail(`${path}.designStage`, "Choose the design stage");
     } else if (step.designStage !== undefined) fail(`${path}.designStage`, "Only a design stage step names a design stage");
     if (columnIndex(step.column) < 0) fail(`${path}.column`, "Choose one of the flow's columns");
-    for (const flag of ["optional", "clientVisible"] as const) if (step[flag] !== undefined && typeof step[flag] !== "boolean") fail(`${path}.${flag}`, "Yes or no");
+    for (const flag of ["optional", "auto", "clientVisible"] as const) if (step[flag] !== undefined && typeof step[flag] !== "boolean") fail(`${path}.${flag}`, "Yes or no");
+    if (step.auto === true && step.optional === true) fail(`${path}.auto`, "A step is either auto-passed or used if needed, not both");
+    if (step.auto === true && step.check === "payment_proof_attached") fail(`${path}.auto`, "The payment proof is never auto-passed");
     if (step.deadline !== undefined) {
       const deadline = step.deadline;
       if (!isObject(deadline)) fail(`${path}.deadline`, "A deadline has an amount and a unit");
@@ -160,7 +167,7 @@ export function validateFlowDefinition(input: unknown): { ok: true; definition: 
 
   // Won: entered only by the payment proof step, which is required and ends the line.
   const last = main.at(-1);
-  if (last && (last.check !== "payment_proof_attached" || last.column !== WON_COLUMN || last.optional))
+  if (last && (last.check !== "payment_proof_attached" || last.column !== WON_COLUMN || last.optional || last.auto))
     fail(`steps[${main.length - 1}]`, "The flow ends with a required payment proof step that enters Won");
   main.forEach((step, index) => {
     if (step.column === WON_COLUMN && index !== main.length - 1) fail(`steps[${index}].column`, "Only the payment proof step enters Won");
@@ -226,4 +233,62 @@ export function flowChecksum(definition: FlowDefinition) {
 /** Every step of a definition, main line and branch paths. */
 export function allSteps(definition: FlowDefinition): FlowStepDefinition[] {
   return [...definition.steps, ...definition.branches.flatMap((branch) => branch.answers.flatMap((answer) => answer.steps))];
+}
+
+/** PLM-081: the material selection step (a design stage step for the material selection stage). */
+export const isMaterialSelectionStep = (step: Pick<FlowStepDefinition, "check" | "designStage">) =>
+  step.check === "design_stage_done" && step.designStage === "material_selection";
+
+/**
+ * E2-5 / PLM-081: a step a job may mark as not needed, with a reason: one the type marks optional ("used if
+ * needed"), and material selection ("Not required for this order"). Never the payment proof.
+ */
+export const canSkipStep = (step: Pick<FlowStepDefinition, "check" | "designStage" | "optional">) =>
+  step.check !== "payment_proof_attached" && (Boolean(step.optional) || isMaterialSelectionStep(step));
+
+/** A furniture or joinery flow: it asks the furniture sub-path, or a site visit is priced by the QS. */
+export function isFurnitureOrJoineryFlow(definition: FlowDefinition) {
+  const steps = allSteps(definition);
+  return definition.branches.some((branch) => branch.question === "subPath") || steps.some((step) => step.check === "sub_path_chosen")
+    || (steps.some((step) => step.check === "site_visit_recorded") && steps.some((step) => step.check === "qs_approved"));
+}
+
+/** Each path of a definition: the main line plus, at every branch, the steps of one answer. One path when it doesn't branch. */
+export function definitionPaths(definition: FlowDefinition): Array<{ value: string | null; steps: FlowStepDefinition[] }> {
+  const values = [...new Set(definition.branches.flatMap((branch) => branch.answers.map((answer) => answer.value)))];
+  if (!values.length) return [{ value: null, steps: [...definition.steps] }];
+  return values.map((value) => ({
+    value,
+    steps: definition.steps.flatMap((step) => {
+      const branch = definition.branches.find((item) => item.after === step.key);
+      return [step, ...(branch?.answers.find((answer) => answer.value === value)?.steps ?? [])];
+    }),
+  }));
+}
+
+/**
+ * The publisher's product rules on top of the shape (run on publish and on the editor's check; every problem at
+ * once). PLM-081: on a furniture or joinery flow, material selection is a required step on every path; a job
+ * that doesn't need it marks it "Not required for this order" with a reason, so it is never simply left blank.
+ */
+export function flowPolicyProblems(definition: FlowDefinition): FlowValidationError[] {
+  if (!isFurnitureOrJoineryFlow(definition)) return [];
+  const errors: FlowValidationError[] = [];
+  const located = (key: string) => {
+    const main = definition.steps.findIndex((step) => step.key === key);
+    if (main >= 0) return `steps[${main}]`;
+    for (const [branchIndex, branch] of definition.branches.entries())
+      for (const [answerIndex, answer] of branch.answers.entries()) {
+        const index = answer.steps.findIndex((step) => step.key === key);
+        if (index >= 0) return `branches[${branchIndex}].answers[${answerIndex}].steps[${index}]`;
+      }
+    return "steps";
+  };
+  for (const step of allSteps(definition))
+    if (isMaterialSelectionStep(step) && (step.optional || step.auto))
+      errors.push({ path: `${located(step.key)}.optional`, message: "Material selection is required; a job marks it Not required for this order with a reason" });
+  for (const path of definitionPaths(definition))
+    if (!path.steps.some((step) => isMaterialSelectionStep(step) && !step.optional && !step.auto))
+      errors.push({ path: path.value ? `paths.${path.value}` : "steps", message: "Material selection is always a step on furniture and joinery paths" });
+  return errors;
 }

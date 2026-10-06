@@ -14,6 +14,11 @@ import {
   answerRequest, assertDecisionOpen, claimWarranty, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor,
   type DecisionContext,
 } from "./portal-decisions";
+import { designComment, designReply, designResolve } from "./portal-design";
+import { chooseAlternative } from "./portal-alternatives";
+import { decidePortalChange, raiseChange } from "./portal-changes";
+import { recordVisits } from "./portal-feed";
+import { ledgerDecision, presentationChoice } from "./portal-design-decisions";
 import { FilePresence, locateClientAsset, readStored, uploadClientFile } from "./portal-files";
 import { openInvitation } from "./portal-invitations";
 import { reportIssue } from "./portal-issues";
@@ -41,6 +46,9 @@ const COMMANDS: Record<string, [Handler, Section]> = {
   react: [react, "moodboard"], board_comment: [boardComment, "moodboard"], add_inspiration: [addInspiration, "moodboard"], remove_inspiration: [removeInspiration, "moodboard"],
   report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"], site_access: [siteAccess, "progress"],
   progress_react: [reactToDay, "progress"], progress_question: [askAboutDay, "progress"],
+  design_comment: [designComment, "decisions"], design_reply: [designReply, "decisions"], design_resolve: [designResolve, "decisions"],
+  presentation_choice: [presentationChoice, "decisions"], ledger_decision: [ledgerDecision, "decisions"],
+  change_raise: [raiseChange, "decisions"], change_decision: [decidePortalChange, "decisions"], ledger_alternative: [chooseAlternative, "decisions"],
 };
 
 /**
@@ -125,8 +133,12 @@ export class ClientPortalService {
   }
 
   view(slug: string, token: string) {
-    return this.within(slug, async (client, workspaceId, settings) =>
-      readView(client, workspaceId, await openSession(client, workspaceId, token, this.codes.demo), settings, this.definitions, this.presence));
+    return this.within(slug, async (client, workspaceId, settings) => {
+      const contact = await openSession(client, workspaceId, token, this.codes.demo);
+      // AI2: this visit is recorded; "what changed" counts from the contact's previous visit on each project.
+      const visits = await recordVisits(client, workspaceId, contact.grants.map((grant) => grant.id));
+      return readView(client, workspaceId, contact, settings, this.definitions, this.presence, visits);
+    });
   }
 
   logout(slug: string, token: string) {
@@ -249,7 +261,10 @@ export class ClientPortalService {
            FROM pre_project_design_versions version
            JOIN pre_project_designs design ON design.workspace_id = version.workspace_id AND design.id = version.design_id AND design.archived_at IS NULL
            JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.id = version.asset_id
-          WHERE version.workspace_id = $1 AND version.id = $2 AND version.status IN ('client_review', 'approved', 'changes_requested', 'rejected')`, [workspaceId, id])).rows[0];
+          WHERE version.workspace_id = $1 AND version.id = $2 AND (version.status IN ('client_review', 'approved', 'changes_requested', 'rejected')
+             -- An option of a presentation shown to the client (plan §6.7a), whatever its review state.
+             OR EXISTS (SELECT 1 FROM design_presentation_options option JOIN design_presentations presentation ON presentation.workspace_id = option.workspace_id AND presentation.id = option.presentation_id
+                         WHERE option.workspace_id = version.workspace_id AND option.design_id = version.design_id AND presentation.status IN ('presented', 'chosen', 'changes_requested')))`, [workspaceId, id])).rows[0];
       if (!row) return null;
       const sections: Section[] = row.status === "approved" ? ["documents", "decisions"] : ["decisions"];
       return { ...row, sections: row.board ? [...sections, "moodboard" as const] : sections };
@@ -272,6 +287,16 @@ export class ClientPortalService {
            JOIN delivery_projects project ON project.workspace_id = pack.workspace_id AND project.id = pack.project_id
           WHERE document.workspace_id = $1 AND document.id = $2`, [workspaceId, id])).rows[0];
       return row ? { ...row, sections: ["documents" as const, "decisions" as const] } : null;
+    }
+    if (kind === "change") {
+      // A change request the client approved by signature: its signed copy (with the certificate page).
+      const row = (await client.query<Omit<Found, "sections">>(
+        `SELECT change.case_id AS "caseId", version.object_key AS "objectKey", NULL AS "previewKey", version.mime_type AS "mimeType", version.file_name AS name
+           FROM change_requests change
+           JOIN quote_documents document ON document.workspace_id = change.workspace_id AND document.id = change.document_id
+           JOIN quote_document_versions version ON version.workspace_id = document.workspace_id AND version.document_id = document.id AND version.number = document.current_version
+          WHERE change.workspace_id = $1 AND change.id = $2 AND change.status = 'approved' AND change.decision_method = 'signed_link'`, [workspaceId, id])).rows[0];
+      return row ? { ...row, sections: ["documents" as const] } : null;
     }
     if (kind === "agreement") {
       const row = (await client.query<Omit<Found, "sections">>(

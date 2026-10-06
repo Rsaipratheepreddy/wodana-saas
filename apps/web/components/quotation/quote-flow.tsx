@@ -11,6 +11,7 @@ import { StartProjectDialog } from "@/components/project-core/start-project-dial
 import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
 import { SendQuoteDialog, deliveryMessage } from "./send-quote-dialog";
 import { ShareQuote } from "./share-quote";
+import { QsActions, qsBlocks, useQs } from "./quote-qs";
 import { projectApi } from "@/lib/project-core/client";
 import Link from "next/link";
 import { money, plain } from "@/lib/quotation/format";
@@ -37,6 +38,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   const [extending, setExtending] = useState(false);
   const { status } = state.quote;
   const { flow } = state;
+  const qs = useQs(workspaceId, caseId, state.quote.id, state.quote.revision, state.quote.kind);
   const { confirmationDialog } = useConfirmationDialog();
   // What must be fixed first blocks sending (the "to fix" count beside the button says what).
   const blocking = state.checks.filter((check) => check.tone === "danger").length;
@@ -60,10 +62,15 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   };
   const newRevision = <Button size="compact" isLoading={busy === "revise"} onPress={() => void run("revise", [["revise"]])}>{t("New revision")}</Button>;
   let actions: React.ReactNode = null;
-  if (status === "draft" && state.canEdit) {
+  // PLM-082/084: where a QS prices quotations, the QS step comes first and holds sending until it's confirmed.
+  const qsStep = qs.qs && status === "draft" ? <QsActions workspaceId={workspaceId} caseId={caseId} quoteId={state.quote.id} qs={qs.qs} onError={onError}
+    onChanged={async (next) => { qs.setQs(next); await onDone(); }} /> : null;
+  if (status === "draft" && qsBlocks(qs.qs)) {
+    actions = qsStep;
+  } else if (status === "draft" && state.canEdit) {
     const direct = !flow.internalReview && flow.canReview;
-    actions = <Button data-tour="quote-send" size="compact" variant="primary" isLoading={Boolean(busy)} isDisabled={!state.lines.length || blocking > 0}
-      onPress={() => (direct ? confirmSend("send", [["submit"], [flow.reviewAction], ["issue"]]) : void run("send", [["submit"]]))}>{direct ? t("Send to client") : t("Send for review")}</Button>;
+    actions = <>{qsStep}<Button data-tour="quote-send" size="compact" variant="primary" isLoading={Boolean(busy)} isDisabled={!state.lines.length || blocking > 0}
+      onPress={() => (direct ? confirmSend("send", [["submit"], [flow.reviewAction], ["issue"]]) : void run("send", [["submit"]]))}>{direct ? t("Send to client") : t("Send for review")}</Button></>;
   } else if (status === "internal_review") {
     actions = flow.canReview ? <>
       <Button size="compact" isLoading={busy === "return"} onPress={() => setReturning(true)}>{t("Return")}</Button>

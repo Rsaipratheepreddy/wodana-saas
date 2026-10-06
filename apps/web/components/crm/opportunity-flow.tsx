@@ -26,18 +26,20 @@ export function StageBlockedSheet({ stageName, items, onAction, onClose }: { sta
 }
 
 /** PLM-122: the proof of payment (receipt, card slip, transfer, cash sheet or photo). Attaching it wins the deal. */
-export function PaymentProofDialog({ workspaceId, opportunityId, loadVersion, onClose, onWon, onBlocked }: {
+export function PaymentProofDialog({ workspaceId, opportunityId, loadVersion, onClose, onWon, onBlocked, proposal }: {
   workspaceId: string; opportunityId: string; loadVersion: () => Promise<number>; onClose: () => void; onWon: () => Promise<void> | void; onBlocked: (items: MissingRequirement[]) => void;
+  /** PLM-103: the proposal this proof pays; Proposal 2 is a second Won with its own proof and date. */
+  proposal?: "design" | "main";
 }) {
   const t = useT();
   const [kind, setKind] = useState("receipt");
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
-  return <FormDialog title={t("Attach payment proof")} submitLabel={t("Attach and mark Won")} isDirty={Boolean(file || note.trim())} isSubmitDisabled={!file} onClose={onClose}
+  return <FormDialog title={proposal === "main" ? t("Proposal 2 payment proof") : t("Attach payment proof")} submitLabel={t("Attach and mark Won")} isDirty={Boolean(file || note.trim())} isSubmitDisabled={!file} onClose={onClose}
     onSubmit={async () => {
       if (!file) throw new Error(t("Choose the proof file."));
       try {
-        await attachPaymentProof(workspaceId, opportunityId, { version: await loadVersion(), kind, note, file });
+        await attachPaymentProof(workspaceId, opportunityId, { version: await loadVersion(), kind, note, file, proposal });
       } catch (error) {
         const missing = missingFrom(error);
         if (missing.length) { onClose(); onBlocked(missing); return; }

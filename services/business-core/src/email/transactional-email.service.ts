@@ -287,6 +287,41 @@ export class TransactionalEmailService {
     return this.send({ to: input.to, subject: `${input.code} is your ${brand.name} code`, text, html, fromName: brand.name });
   }
 
+  /** R8: a signing link for a proposal (or a change request), in the tenant's brand. */
+  async sendSignatureRequest(input: { workspaceId: string; to: string; signerName: string; documentTitle: string; reference: string; signUrl: string; expiresAt: Date }): Promise<EmailDeliveryResult> {
+    const brand = await this.brand({ workspaceId: input.workspaceId });
+    const expiresOn = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(input.expiresAt);
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: `${brand.name} sent ${input.reference} for your signature.`,
+      heading: `${input.reference} is ready to sign`,
+      paragraphs: [
+        input.signerName.trim() ? `Hello ${input.signerName.trim()},` : "Hello,",
+        `${brand.name} sent you ${input.documentTitle} (${input.reference}). Read it and sign it online; no account is needed.`,
+      ],
+      action: { label: "Review and sign", url: input.signUrl },
+      footnote: `This link is for you alone and works until ${expiresOn}. If you didn't expect it, you can ignore this email.`,
+    });
+    return this.send({ to: input.to, subject: `Please sign ${input.reference} · ${brand.name}`, text, html, fromName: brand.name });
+  }
+
+  /** R8: the signer's copy of what they signed, with its certificate page. */
+  async sendSignedCopy(input: { workspaceId: string; to: string; signerName: string; documentTitle: string; reference: string; copyUrl: string; sha256: string }): Promise<EmailDeliveryResult> {
+    const brand = await this.brand({ workspaceId: input.workspaceId });
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: `You signed ${input.reference}.`,
+      heading: "Thank you for signing",
+      paragraphs: [
+        input.signerName.trim() ? `Hello ${input.signerName.trim()},` : "Hello,",
+        `You signed ${input.documentTitle} (${input.reference}). ${brand.name} has been told.`,
+        `Document fingerprint (SHA-256): ${input.sha256}`,
+      ],
+      action: { label: "Download your signed copy", url: input.copyUrl },
+    });
+    return this.send({ to: input.to, subject: `Signed: ${input.reference} · ${brand.name}`, text, html, fromName: brand.name });
+  }
+
   async send(message: TransactionalMessage): Promise<EmailDeliveryResult> {
     // Local and UAT: nothing leaves for a recipient who isn't on DELIVERY_ALLOWLIST.
     if (!deliveryAllowlist(this.config).allowsEmail(message.to)) {

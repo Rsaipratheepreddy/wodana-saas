@@ -1,3 +1,4 @@
+import type { ClientPresentation } from "@/lib/proposals/client";
 /** The client portal as the business core returns it (services/business-core/src/client-portal). */
 
 export const PORTAL_SECTIONS = ["progress", "moodboard", "decisions", "payments", "documents", "warranty", "messages"] as const;
@@ -30,6 +31,10 @@ export type PortalQuote = {
   rooms: Array<{ id: string; name: string }>; paymentTerms: Array<{ id: string; title: string; percent: number; trigger: string }>; lines: PortalQuoteLine[];
   decision: null | { decision: "accept" | "changes" | "decline"; quoteHash: string; selectedOptionLineIds: string[]; baseTotal: number; optionsTotal: number;
     acceptedTotal: number | null; decidedAt: string; decidedBy: string; note: string };
+  /** The quotation number (from the firm's numbering), once sent. */
+  reference?: string | null;
+  /** R3: how the price is made up, when the firm discloses its markup or works on a fee. */
+  disclosure?: ClientPresentation | null;
 };
 
 export type PortalDesign = { id: string; title: string; type: string; number: number; status: string; dueAt: string | null; room: string | null; item: string | null; mimeType: string;
@@ -75,7 +80,33 @@ export type PortalMilestone = {
   canReport: boolean;
 };
 
-export type PortalDocument = { id: string; kind: "agreement" | "design" | "handover"; title: string; group: string; date: string | null; mimeType: string };
+/** A document card (E5-4): what it is, its version and date, whether it replaced one the client had, and whether a picture can be shown. */
+export type PortalDocument = { id: string; kind: "agreement" | "design" | "handover" | "change"; title: string; group: string; date: string | null; mimeType: string;
+  version?: number; changed?: boolean; hasPreview?: boolean; at?: string | null };
+
+/** A change request (plan §6.20, R11): sent to the client to approve, or asked for by them and with the team until it's assessed. */
+export type PortalChange = {
+  id: string; reference: string; title: string; description: string; status: "with_team" | "waiting" | "approved" | "declined" | "withdrawn";
+  raisedByClient: boolean; mine: boolean; createdAt: string; sharedAt: string | null;
+  currency: string | null; priceImpact: string | null; timeImpactDays: number | null; handoverBefore: string | null; handoverAfter: string | null; designImpact: string;
+  lines: Array<{ id: string; action: "add" | "omit" | "replace" | "draw"; title: string; room: string | null; quantity: string | null; unit: string; unitPrice: string | null; amount: string }>;
+  decidedAt: string | null; decidedBy: string | null; method: "portal" | "signed_link" | null; declineNote: string | null; version: number; signed: boolean; canDecide: boolean;
+};
+
+/** R1: agreed value + approved changes + allowance spend beyond what was included = forecast final (client prices only). */
+export type PortalBudget = {
+  currency: string; agreed: string; changesTotal: string; forecast: string; pendingTotal: string;
+  changes: Array<{ kind: "variation" | "change_request"; id: string; reference: string | null; title: string; amount: string; decidedAt: string | null; method: string }>;
+  allowances: Array<{ lineId: string; title: string; included: string; spent: string; over: string; left: string }>;
+  allowanceIncluded: string; allowanceSpent: string; allowanceOverrun: string;
+  pending: Array<{ id: string; reference: string; title: string; amount: string; status: string }>;
+};
+
+export type PortalFeedKind = "day" | "update" | "design" | "presentation" | "document" | "quote" | "change" | "invoice" | "payment" | "reply" | "handover" | "choice";
+/** One typed card of the home feed, newest first. */
+export type PortalFeedCard = { kind: PortalFeedKind; id: string; at: string; title: string; note: string | null; status: string | null };
+/** AI2: what happened since this contact last looked, by kind (null on a first visit). */
+export type PortalDigest = { since: string; items: Array<{ kind: PortalFeedKind; count: number; titles: string[] }> };
 
 export type PortalRequest = {
   id: string; number: number; title: string; detail: string; status: string; createdAt: string; resolution: string; files: PortalFile[];
@@ -119,7 +150,8 @@ export type PortalDayCard = {
   stage?: { number: number; total: number; name: string | null } | null; percent?: number | null;
 };
 
-export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access"; id: string; title: string; due: string | null };
+export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
+  due: string | null };
 
 /** Someone the client deals with: their project manager, designer or sales contact (one person may be two). */
 export type PortalTeamRole = "manager" | "designer" | "sales";
@@ -168,6 +200,18 @@ export type PortalProject = {
     areas: Array<{ id: string; name: string }>; lines: Array<{ id: string; title: string; areaId: string | null }>; canClaim: boolean;
   };
   messages: null | { requests: PortalRequest[]; unread: number };
+  /** Shared designs with their pinned comment threads, one conversation with the design team (plan §6.7a). */
+  design?: PortalDesignReview | null;
+  /** Concept presentations to choose from and the materials and decisions to confirm (plan §6.7a). */
+  choices?: PortalDesignChoices | null;
+  /** Change requests sent to the client or raised by them (R11). */
+  changes?: PortalChange[] | null;
+  /** The client's budget tracker (R1), when amounts are shown. */
+  budget?: PortalBudget | null;
+  /** The home feed: typed cards, newest first. */
+  feed?: PortalFeedCard[];
+  /** What changed since this contact last looked (AI2). */
+  digest?: PortalDigest | null;
 };
 
 /** A tax invoice as the client prints it. */
@@ -245,3 +289,30 @@ export type StaffThreads = { files: Record<string, PortalFile[]>; clientRead: Re
 
 /** What an invitation link opens: the client's number ready to sign in, or a link that no longer works. */
 export type PortalInvite = { status: "valid"; name: string; phone: string } | { status: "expired" };
+
+export type PortalDesignThread = {
+  id: string; anchor: { x: number; y: number } | null; status: "open" | "resolved"; version: number; fromClient: boolean; mine: boolean; at: string; resolvedAt: string | null; canResolve: boolean;
+  messages: Array<{ id: string; text: string; at: string; fromClient: boolean; mine: boolean; author: string | null }>;
+};
+export type PortalDesignReview = {
+  designs: Array<{ id: string; title: string; type: string; board: boolean; room: string | null; item: string | null; sharedAt: string;
+    versions: Array<{ id: string; number: number; status: string; dueAt: string | null; sharedAt: string; mimeType: string; hasPreview: boolean; latest: boolean; canDecide: boolean; canComment: boolean;
+      threads: PortalDesignThread[] }> }>;
+};
+export type PortalPresentation = {
+  id: string; stage: string; label: string; round: number; status: "presented" | "chosen" | "changes_requested"; version: number; presentedAt: string | null;
+  chosenOptionId: string | null; decidedAt: string | null; decidedByName: string | null; decisionNote: string | null; canDecide: boolean;
+  options: Array<{ id: string; title: string; note: string; linkUrl: string | null; versionId: string | null; versionNumber: number | null; mimeType: string | null; hasPreview: boolean }>;
+};
+export type PortalChoice = {
+  entryId: string; kind: "material" | "design"; room: string | null; versionId: string; number: number; title: string; specification: string; quantity: string | null; unit: string;
+  unitPrice: string | null; currency: string | null; priceImpact: string; timeImpactDays: number; afterLock: boolean; status: "proposed" | "confirmed" | "declined" | "superseded";
+  confirmedAt: string | null; confirmedByName: string | null; changed: boolean; canDecide: boolean;
+  /** When this version was recorded. */
+  recordedAt?: string;
+  /** R2: up to three alternatives offered after the client declined this choice. */
+  alternatives?: PortalAlternative[];
+};
+export type PortalAlternative = { id: string; title: string; unit: string; unitPrice: string | null; currency: string | null; lineTotal: string | null; inStock: boolean; inBudget: boolean;
+  fromPastJobs: boolean; canChoose: boolean };
+export type PortalDesignChoices = { presentations: PortalPresentation[]; choices: PortalChoice[]; locked: boolean; currency: string | null };

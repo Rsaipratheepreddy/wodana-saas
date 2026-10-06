@@ -10,6 +10,11 @@ import { OpportunityDiscoveryService } from "./discovery.service";
 import { flowAsks } from "../flows/flow-interpreter";
 import { loadFlowFacts } from "./flow-facts";
 import { FURNITURE_PATHS, PAYMENT_PROOF_KINDS, type FurniturePath, type PaymentProofKind } from "./flow-gates";
+import { AiGatewayService } from "../../ai-gateway/ai-gateway.service";
+import { permissionHolders } from "../../commercial/commercial-notices";
+import { tell } from "../leads/sales-attention";
+import { loadProposals, markProposalWon, type ProposalKind } from "./opportunity-proposals";
+import { readPaymentProof } from "./payment-proof-reading";
 
 export type UpdateFlowInput = {
   version: number;
@@ -34,6 +39,7 @@ export class OpportunityFlowService {
     private readonly opportunities: CrmOpportunitiesService,
     private readonly storage: BrandAssetStorageService,
     private readonly discovery: OpportunityDiscoveryService,
+    private readonly ai: AiGatewayService,
   ) {}
 
   update(actor: RequestActor, workspaceId: string, opportunityId: string, input: UpdateFlowInput) {
@@ -74,33 +80,74 @@ export class OpportunityFlowService {
    * Won column in the same transaction, through the same gates as any move, so a proof never leaves an
    * opportunity half-won and Won never exists without a proof.
    */
-  attachProof(actor: RequestActor, workspaceId: string, opportunityId: string, input: { version: number; kind: string; note?: string | null }, file?: ReferenceUpload) {
-    return this.access.withPermissions(actor, workspaceId, ["crm.opportunities.manage", "crm.opportunities.transition"], async (client, user) => {
+  async attachProof(actor: RequestActor, workspaceId: string, opportunityId: string, input: { version: number; kind: string; note?: string | null; proposal?: string | null }, file?: ReferenceUpload) {
+    const proposal: ProposalKind | null = input.proposal === "design" || input.proposal === "main" ? input.proposal : null;
+    const attached = await this.access.withPermissions(actor, workspaceId, ["crm.opportunities.manage", "crm.opportunities.transition"], async (client, user) => {
       if (!Number.isInteger(input.version) || input.version < 1) throw new UnprocessableEntityException("Reload the opportunity and try again");
       if (!PAYMENT_PROOF_KINDS.includes(input.kind as PaymentProofKind)) throw new UnprocessableEntityException("Choose what the proof is");
       const note = input.note?.trim() || null;
       if (note && note.length > 1000) throw new UnprocessableEntityException("Keep the note under 1000 characters");
       const before = await this.lock(client, workspaceId, opportunityId);
       if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
-      if (before.status !== "open") throw new UnprocessableEntityException("Only an open opportunity can be won");
+      // PLM-103: Proposal 2 is a second Won on a won opportunity, with its own proof, after Proposal 1 was won.
+      const proposals = await loadProposals(client, workspaceId, opportunityId);
+      const secondWon = before.status === "won" && proposal === "main" && Boolean(proposals.find((item) => item.kind === "design")?.wonAt)
+        && !proposals.find((item) => item.kind === "main")?.wonAt;
+      if (before.status !== "open" && !secondWon) throw new UnprocessableEntityException("Only an open opportunity can be won");
       const prepared = await prepareReferenceUpload(file);
       const key = ["crm-payment-proofs", workspaceId, opportunityId, prepared.digest].join("/");
       await this.storage.put(`${key}/original`, prepared.body, prepared.mimeType);
       if (prepared.preview) await this.storage.put(`${key}/preview.webp`, prepared.preview, "image/webp");
       const proof = (await client.query<Row>(
-        `INSERT INTO crm_opportunity_payment_proofs (workspace_id, opportunity_id, kind, storage_key, file_name, mime_type, byte_size, digest, has_preview, note, recorded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-         RETURNING id, kind, file_name AS "fileName", mime_type AS "mimeType", byte_size AS "byteSize", note, recorded_at AS "recordedAt"`,
-        [workspaceId, opportunityId, input.kind, key, prepared.name, prepared.mimeType, prepared.body.length, prepared.digest, Boolean(prepared.preview), note, user.userId])).rows[0];
+        `INSERT INTO crm_opportunity_payment_proofs (workspace_id, opportunity_id, kind, storage_key, file_name, mime_type, byte_size, digest, has_preview, note, recorded_by, proposal_kind)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         RETURNING id, kind, file_name AS "fileName", mime_type AS "mimeType", byte_size AS "byteSize", note, recorded_at AS "recordedAt", proposal_kind AS proposal`,
+        [workspaceId, opportunityId, input.kind, key, prepared.name, prepared.mimeType, prepared.body.length, prepared.digest, Boolean(prepared.preview), note, user.userId, proposal])).rows[0];
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.opportunity.payment_proof_attached.v1", entityType: "crm_opportunity", entityId: opportunityId, after: proof });
+      if (secondWon) {
+        await markProposalWon(client, { workspaceId, opportunityId, round: "main", actorUserId: user.userId });
+        return { opportunity: await this.opportunities.presentFor(client, workspaceId, opportunityId, user.userId), proof, file: { mimeType: prepared.mimeType, body: prepared.body } };
+      }
       const won = (await client.query<{ id: string }>(
         `SELECT id FROM crm_pipeline_stages WHERE workspace_id = $1 AND pipeline_id = $2 AND code = 'won' AND status = 'active' ORDER BY position LIMIT 1`,
         [workspaceId, before.pipeline_id])).rows[0];
       const opportunity = await this.opportunities.transitionWithin(client, user.userId, workspaceId, opportunityId, {
         version: input.version, stageId: won?.id, status: "won", reason: "Payment proof attached",
       });
-      return { opportunity, proof };
+      // PLM-009: the proof wins the proposal it names (or the first not yet Won), with its own Won date.
+      if (proposal) await markProposalWon(client, { workspaceId, opportunityId, round: proposal, actorUserId: user.userId });
+      return { opportunity, proof, file: { mimeType: prepared.mimeType, body: prepared.body } };
     });
+    // AI proposes, people confirm: the stored proof is read into amount, date and reference; Finance confirms the
+    // value. Without AI, or when the proof can't be read, it is kept as it is.
+    const reading = await this.readProof(actor, workspaceId, opportunityId, String(attached.proof.id), attached.file);
+    return { opportunity: attached.opportunity, proof: { ...attached.proof, reading } };
+  }
+
+  private async readProof(actor: RequestActor, workspaceId: string, opportunityId: string, proofId: string, file: { mimeType: string; body: Buffer }) {
+    try {
+      return await this.access.withPermission(actor, workspaceId, "crm.opportunities.view", async (client, user) => {
+        const facts = (await client.query<{ title: string; reference: string; clientName: string | null; currency: string | null; amount: string | null }>(
+          `SELECT opportunity.title, opportunity.reference, party.display_name AS "clientName", coalesce(opportunity.currency_code, workspace.default_currency) AS currency,
+                  opportunity.amount::text AS amount
+             FROM crm_opportunities opportunity JOIN workspaces workspace ON workspace.id = opportunity.workspace_id
+             LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+            WHERE opportunity.workspace_id = $1 AND opportunity.id = $2`, [workspaceId, opportunityId])).rows[0];
+        if (!facts) return null;
+        const proposals = await loadProposals(client, workspaceId, opportunityId);
+        const expected = proposals.find((item) => item.amount && !item.wonAt)?.amount ?? facts.amount ?? null;
+        const reading = await readPaymentProof(this.ai, client, actor, { workspaceId, opportunityId, proofId, mimeType: file.mimeType, body: file.body, currency: facts.currency, expectedAmount: expected });
+        if (reading?.amount) {
+          const finance = (await permissionHolders(client, workspaceId, "commercial.finance.verify", 20)).filter((userId) => userId !== user.userId).map((userId) => ({ userId }));
+          await tell(client, workspaceId, finance, { code: "opportunity.proof_read", channels: ["in_app"], deepLink: `/workspace/crm/opportunities?record=${opportunityId}`,
+            variables: { title: `${facts.reference} · ${facts.title}`, clientName: facts.clientName ?? facts.title, amount: `${reading.currency ?? facts.currency ?? ""} ${reading.amount}`.trim() },
+            key: `opportunity.proof_read:${proofId}` });
+        }
+        return reading;
+      });
+    } catch {
+      return null;
+    }
   }
 
   proofFile(actor: RequestActor, workspaceId: string, opportunityId: string, proofId: string, preview: boolean) {

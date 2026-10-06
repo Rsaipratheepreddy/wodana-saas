@@ -15,6 +15,7 @@ import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
 import { hasResolvedEnquiryType } from "../leads/lead-options";
 import { thankForDeal } from "../conversations/inbox/client-followups";
+import { markProposalWon } from "./opportunity-proposals";
 import { tellDealOutcome } from "../leads/sales-attention";
 import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
 import {
@@ -416,6 +417,8 @@ export class CrmOpportunitiesService {
     await this.snapshot(client, workspaceId, response, "stage_changed");
     const event = targetStatus === "won" ? "crm.opportunity.won.v1" : targetStatus === "lost" ? "crm.opportunity.lost.v1" : "crm.opportunity.stage_changed.v1";
     await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: event, entityType: "crm_opportunity", entityId: opportunityId, before, after: response });
+    // PLM-009: Won is reported per proposal (design, main); this win marks the first proposal not yet Won.
+    if (targetStatus === "won") await markProposalWon(client, { workspaceId, opportunityId, actorUserId: actorUser.userId });
     // A won deal: the client is thanked on WhatsApp and told what happens next (once per opportunity).
     if (targetStatus === "won") await thankForDeal(client, workspaceId, opportunityId, { actorUserId: actorUser.userId });
     // The Sales admin and the Owners hear a deal closed, with why (S-23).
@@ -666,6 +669,12 @@ export class CrmOpportunitiesService {
   private assertAssociationRole(role: string) {
     const normalized = role?.trim();
     if (!normalized || normalized.length > 80) throw new BadRequestException("A valid role is required");
+  }
+
+  /** The opportunity as this person sees it, inside a transaction another command already holds. */
+  async presentFor(client: PoolClient, workspaceId: string, opportunityId: string, userId: string) {
+    const row = await this.requireOpportunity(client, workspaceId, opportunityId, false);
+    return this.presentOpportunity(row, await this.access.hasPermission(client, workspaceId, userId, "crm.opportunities.sensitive_values"));
   }
 
   private presentOpportunity(opportunity: Row, canViewSensitiveValues: boolean): Row {

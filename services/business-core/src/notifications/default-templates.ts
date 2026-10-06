@@ -29,6 +29,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "approvals.reminder", channel: "email", subject: "Still waiting for you · {{title}}", body: "{{title}} has waited {{hours}} hours for your decision.\n\nOpen it to approve or send it back.", variables: ["title", "hours", "approvers"] },
   { code: "approvals.escalated", channel: "in_app", subject: "Waiting {{hours}} hours · {{title}}", body: "Still with {{approvers}}.", variables: ["title", "hours", "approvers"] },
   { code: "approvals.escalated", channel: "email", subject: "Waiting {{hours}} hours · {{title}}", body: "{{title}} has waited {{hours}} hours. It is still with {{approvers}}.\n\nOpen it to decide it or chase them.", variables: ["title", "hours", "approvers"] },
+  // The E3 approval engine (approvals/approval-engine.ts): the step's approvers, the requester, and an escalation.
+  { code: "approvals.requested", channel: "in_app", subject: "To approve · {{title}}", body: "{{actor}} asks for your approval{{amountText}}.", variables: ["title", "actor", "amountText", "step"] },
+  { code: "approvals.requested", channel: "email", subject: "To approve · {{title}}", body: "{{actor}} asks for your approval{{amountText}}.\n\nStep: {{step}}.", variables: ["title", "actor", "amountText", "step"] },
+  { code: "approvals.decided", channel: "in_app", subject: "{{title}} · {{outcome}}", body: "{{actor}}: {{note}}", variables: ["title", "actor", "outcome", "note"] },
+  { code: "approvals.escalated_step", channel: "in_app", subject: "Escalated to you · {{title}}", body: "It waited {{hours}} hours at {{step}}.", variables: ["title", "hours", "step"] },
+  // AI read a payment proof (crm/opportunities/payment-proof-reading.ts): Finance confirms or corrects it.
+  { code: "opportunity.proof_read", channel: "in_app", subject: "Payment proof read · {{clientName}}", body: "The proof for {{title}} reads {{amount}}. Confirm or correct it.", variables: ["title", "clientName", "amount"] },
   // Offboarding (workspaces/member-offboarding.ts): the successor hears what they took over.
   { code: "workspace.work_handed_over", channel: "in_app", subject: "{{memberName}}'s work is yours", body: "{{note}}", variables: ["memberName", "note"] },
   {
@@ -137,6 +144,31 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "design.client_changes", channel: "in_app", subject: "{{clientName}} wants changes to {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.client_changes", channel: "email", subject: "{{clientName}} wants changes to {{title}}", body: "{{clientName}} asked for changes to {{title}}:\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.mentioned", channel: "in_app", subject: "{{actor}} mentioned you · {{title}}", body: "{{note}}", variables: ["title", "actor", "note"] },
+  // Design flow after Won (plan §6.7a batch 1): showroom booking, revisions, the ledger, design comments and the estimate hand-off.
+  { code: "design.material_selection_unbooked", channel: "in_app", subject: "Book the material selection · {{clientName}}", body: "The showroom appointment is not booked yet. Material selection is due {{due}}.", variables: ["clientName", "due"] },
+  { code: "design.material_selection_booked", channel: "in_app", subject: "Material selection with {{clientName}}", body: "{{when}} · {{place}}. Booked by {{bookedBy}}.", variables: ["clientName", "when", "place", "bookedBy"] },
+  { code: "design.material_selection_booked", channel: "email", subject: "Invitation: material selection with {{clientName}}", body: "Material selection with {{clientName}}\n\nWhen: {{when}}\nWhere: {{place}}\nBooked by: {{bookedBy}}\n\nAttach the material list to the project after the appointment.", variables: ["clientName", "when", "place", "bookedBy"] },
+  { code: "design.extra_revision", channel: "in_app", subject: "Extra revision on {{stage}} · {{clientName}}", body: "Revision {{round}} of {{title}} goes beyond the {{included}} included. It is chargeable.", variables: ["stage", "clientName", "round", "included", "title"] },
+  { code: "design.extra_revision", channel: "email", subject: "Chargeable revision: {{stage}} for {{clientName}}", body: "Revision {{round}} of {{title}} goes beyond the {{included}} included in the package. Agree the extra-revision fee with {{clientName}} before the work starts.", variables: ["stage", "clientName", "round", "included", "title"] },
+  { code: "design.site_measured", channel: "in_app", subject: "Site measured · {{clientName}}", body: "Measurements and photos are in. {{summary}}", variables: ["clientName", "summary"] },
+  { code: "design.site_measured", channel: "email", subject: "Site measured: {{clientName}}", body: "The site visit for {{clientName}} is recorded with its measurements and photos.\n\n{{summary}}\n\nOpen the case to price it.", variables: ["clientName", "summary"] },
+  { code: "design.estimate_overdue", channel: "in_app", subject: "Estimate overdue · {{clientName}}", body: "The design was approved {{approvedOn}}. The estimate was due {{due}}.", variables: ["clientName", "approvedOn", "due"] },
+  { code: "design.estimate_overdue", channel: "email", subject: "Estimate overdue: {{clientName}}", body: "{{clientName}} approved the design on {{approvedOn}}. The estimate was due {{due}} and has not been sent.\n\nOpen the case to send it.", variables: ["clientName", "approvedOn", "due"] },
+  { code: "design.concept_chosen", channel: "in_app", subject: "{{clientName}} chose {{title}}", body: "{{stage}}: {{note}}", variables: ["clientName", "title", "stage", "note"] },
+  { code: "design.approved_estimate", channel: "in_app", subject: "Design approved · {{clientName}}", body: "Approved {{approvedOn}}. Share the estimate by {{due}}.", variables: ["clientName", "approvedOn", "due"] },
+  { code: "design.approved_estimate", channel: "email", subject: "Design approved: {{clientName}}", body: "{{clientName}} approved the final design on {{approvedOn}}.\n\nThe estimate (Proposal 2) is due by {{due}}. Open the case to prepare it.", variables: ["clientName", "approvedOn", "due"] },
+  { code: "design.ledger_confirmed", channel: "in_app", subject: "{{clientName}} confirmed {{title}}", body: "{{note}}", variables: ["clientName", "title", "note"] },
+  { code: "design.ledger_changed", channel: "in_app", subject: "Change after sign-off · {{clientName}}", body: "{{title}}: {{impact}}. Procurement keeps the signed-off version until the change is approved.", variables: ["clientName", "title", "impact"] },
+  { code: "design.ledger_changed", channel: "email", subject: "Change after sign-off: {{clientName}}", body: "{{title}} changed after the material list was signed off.\n\nImpact: {{impact}}\n\nProcurement keeps the signed-off version until the change is approved.", variables: ["clientName", "title", "impact"] },
+  // Product sourcing (plan §6.7a batch 3, E5-6): a failing fit check let through with a reason.
+  { code: "sourcing.fit_override", channel: "in_app", subject: "Fit check overridden · {{item}}", body: "{{actor}} let {{item}} through for {{clientName}}: {{reason}}", variables: ["item", "clientName", "actor", "reason"] },
+  { code: "change_request.raised", channel: "in_app", subject: "Change requested · {{clientName}}", body: "{{reference}} {{title}}: {{note}}", variables: ["clientName", "reference", "title", "note"] },
+  { code: "change_request.raised", channel: "email", subject: "Change requested: {{clientName}}", body: "{{clientName}} asked for a change.\n\n{{reference}} {{title}}\n{{note}}\n\nAssess its impact and send it for approval.", variables: ["clientName", "reference", "title", "note"] },
+  { code: "change_request.decided", channel: "in_app", subject: "{{reference}} {{decision}} · {{clientName}}", body: "{{title}}: {{note}}", variables: ["clientName", "reference", "title", "decision", "note"] },
+  { code: "change_request.decided", channel: "email", subject: "{{reference}} {{decision}}: {{clientName}}", body: "{{clientName}} {{decision}} {{reference}} {{title}}.\n\n{{note}}", variables: ["clientName", "reference", "title", "decision", "note"] },
+  { code: "ledger.alternative_chosen", channel: "in_app", subject: "{{clientName}} chose an alternative", body: "{{title}} instead of {{previous}}.", variables: ["clientName", "title", "previous"] },
+  { code: "design.client_commented", channel: "in_app", subject: "{{actor}} commented on {{item}}", body: "{{clientName}}: {{note}}", variables: ["title", "clientName", "actor", "item", "note"] },
+  { code: "design.client_commented", channel: "email", subject: "New design comment · {{clientName}}", body: "{{actor}} commented on {{item}} ({{title}}):\n\n{{note}}\n\nOpen the design to reply.", variables: ["title", "clientName", "actor", "item", "note"] },
   { code: "gallery.published", channel: "in_app", subject: "Your gallery is live", body: "{{actor}} published the company gallery.", variables: ["actor"] },
   { code: "quotation.mentioned", channel: "in_app", subject: "{{actor}} mentioned you · {{title}}", body: "{{note}}", variables: ["title", "actor", "note"] },
   { code: "quotation.review_requested", channel: "in_app", subject: "Review quote {{title}} · {{clientName}}", body: "{{actor}} sent it for review.", variables: ["title", "clientName", "actor", "note"] },
@@ -144,6 +176,12 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "quotation.returned", channel: "in_app", subject: "Changes needed: {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.qs_approved", channel: "in_app", subject: "{{title}} is ready to send", body: "{{actor}} approved the estimate for {{clientName}}.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.qs_approved", channel: "email", subject: "{{title}} is ready to send · {{clientName}}", body: "{{actor}} approved the estimate for {{title}} ({{clientName}}).\n\nOpen the quote to send it to the client.", variables: ["title", "clientName", "actor", "note"] },
+  // The QS hand-off (proposals/qs-review.service.ts, PLM-082/084).
+  { code: "quotation.with_qs", channel: "in_app", subject: "To price · {{title}}", body: "{{actor}} sent it to you for pricing ({{clientName}}). {{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.with_qs", channel: "email", subject: "Please price {{title}} · {{clientName}}", body: "{{actor}} sent {{title}} for {{clientName}} to you for pricing.\n\n{{note}}\n\nOpen it to price the lines and confirm.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.qs_confirmed", channel: "in_app", subject: "Priced: {{title}}", body: "{{actor}} confirmed the pricing. It can go to {{clientName}}.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.qs_confirmed", channel: "email", subject: "{{title}} is priced · {{clientName}}", body: "{{actor}} confirmed the pricing of {{title}} ({{clientName}}).\n\nOpen it to add it to the proposal and send it to the client.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.qs_returned", channel: "in_app", subject: "QS returned {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   // Client payments on a planning case (commercial/commercial-notices.ts): Finance verifies, the reporter hears back.
   { code: "commercial.receipt_reported", channel: "in_app", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "commercial.receipt_reported", channel: "email", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}} ({{clientName}}).\n\nOpen it to check the receipt and verify it.", variables: ["title", "clientName", "actor", "amount", "note"] },
@@ -569,7 +607,7 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "stock.transfer_sent", "stock.transfer_short", "stock.transfer_rejected",
   "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
   "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",
-  "quotation.review_requested", "design.review_requested",
+  "quotation.review_requested", "design.review_requested", "approvals.requested", "approvals.escalated_step",
   "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
   // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
   "crm.inbox_message", "crm.inbox_mention", "crm.inbox_scheduled_failed", "crm.inbox_filed",

@@ -7,6 +7,7 @@ import { CatalogRequestError, catalogApi } from "@/lib/workspace/catalog-v2";
 import { CatalogPrices, type PriceRow } from "./catalog-prices";
 import { CatalogComponentsEditor, CatalogItemForm } from "./catalog-item-editors";
 import { CatalogItemImages } from "./catalog-item-images";
+import { CatalogItemSource } from "./catalog-item-source";
 import type { CatalogStructure } from "@/lib/workspace/catalog-v2";
 import { Pencil } from "lucide-react";
 import { Button } from "@/design-system";
@@ -101,6 +102,7 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
     </dl> : <dl className={styles.facts}>{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd dir="auto">{value}</dd></div>)}</dl>}
     <Tabs items={[
       { id: "pictures", label: t("Pictures"), panel: <CatalogItemImages workspaceId={workspaceId} itemId={item.id} canManage={canManage} /> },
+      ...(["product", "ready_made", "material"].includes(item.itemType) ? [{ id: "size", label: t("Size and source"), panel: <CatalogItemSource canManage={canManage} itemId={item.id} workspaceId={workspaceId} /> }] : []),
       ...(item.components.length || isAssembly ? [{ id: "components", label: t("Components"), panel: item.components.length ? <ul className={styles.list}>{item.components.map((component) => <li key={component.componentItemId}><strong>{component.name}</strong><code dir="ltr">{component.quantityFormula}</code><small>{component.unitCode}</small></li>)}</ul> : <p className={styles.muted}>{t("No components yet")}</p> }] : []),
       { id: "prices", label: t("Prices"), panel: <CatalogPrices canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={item.id} itemType={item.itemType} locale={locale} onChanged={() => { setAttempt((value) => value + 1); onChanged?.(); }} prices={item.prices} unitCode={item.unitCode} workspaceId={workspaceId} /> },
       ...(item.canViewCosts ? [{ id: "suppliers", label: t("Suppliers"), panel: item.suppliers.length ? <ul className={styles.list}>{item.suppliers.map((supplier) => <li key={supplier.id}><strong>{supplier.vendorName}</strong><small dir="ltr">{supplier.vendorSku ?? ""}</small><span dir="ltr">{money(supplier.cost, supplier.currency)}</span></li>)}</ul> : <p className={styles.muted}>{t("No suppliers linked")}</p> }] : []),

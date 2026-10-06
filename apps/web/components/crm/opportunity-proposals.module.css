@@ -1,0 +1,21 @@
+.body { display: grid; gap: var(--wd-space-3); }
+.value { display: grid; gap: var(--wd-space-1); min-inline-size: 0; inline-size: 100%; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.amount { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.missing { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.by { display: block; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.approval { display: grid; gap: var(--wd-space-1); margin-block-start: var(--wd-space-1); font-size: var(--wd-text-xs); color: var(--wd-color-text); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-block-start: var(--wd-space-1); }
+.reading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin-block-start: var(--wd-space-1); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.reading[data-match="mismatch"] { background: var(--wd-color-warning-subtle); color: var(--wd-color-text); }
+.error { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
+.history { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.history summary { cursor: pointer; font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+.history ol, .fulfilment { display: grid; gap: var(--wd-space-2); margin: var(--wd-space-2) 0 0; padding: 0; list-style: none; }
+.history li, .fulfilment li { display: grid; gap: var(--wd-space-0-5); }
+.history li span, .fulfilment li span { color: var(--wd-color-text); }
+.fulfilment { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.closing { margin: 0; font-size: var(--wd-text-sm); color: var(--wd-color-text); }
+.checks { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.checks li { display: inline-flex; align-items: center; gap: var(--wd-space-1); }
+.checks li[data-done] { color: var(--wd-color-success); }

@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, DataGrid, FormDialog, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Archive, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Badge, Button, DataGrid, FormDialog, IconButton, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { loadDesignSettings, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
+import { loadDesignSettings, questionKey, saveDesignFlow, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignFlow, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
 
 const amount = (value: string) => value.replace(/[^\d.]/g, "");
@@ -21,7 +21,8 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   const [justSaved, setJustSaved] = useState(false);
   const [editing, setEditing] = useState<Partial<DesignPackage> | null>(null);
   const [timings, setTimings] = useState({ inspirationDays: "", siteVisitHours: "" });
-  const load = useCallback(() => loadDesignSettings(workspaceId).then((next) => { setSettings(next); setMinimum(next.minimumDeposit?.amount ? String(Number(next.minimumDeposit.amount)) : ""); setTimings({ inspirationDays: String(next.timings?.inspirationDays ?? 7), siteVisitHours: String(next.timings?.siteVisitHours ?? 72) }); }).catch((error: Error) => setFailure(error.message)), [workspaceId]);
+  const [flow, setFlow] = useState<DesignFlow | null>(null);
+  const load = useCallback(() => loadDesignSettings(workspaceId).then((next) => { setSettings(next); setMinimum(next.minimumDeposit?.amount ? String(Number(next.minimumDeposit.amount)) : ""); setTimings({ inspirationDays: String(next.timings?.inspirationDays ?? 7), siteVisitHours: String(next.timings?.siteVisitHours ?? 72) }); setFlow(next.flow ?? null); }).catch((error: Error) => setFailure(error.message)), [workspaceId]);
   useEffect(() => { void load(); }, [load]);
 
   const money = (value: string, code: string) => { try { return new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 2 }).format(Number(value)); } catch { return `${code} ${value}`; } };
@@ -37,12 +38,20 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   const savedTimings = { inspirationDays: String(settings?.timings?.inspirationDays ?? 7), siteVisitHours: String(settings?.timings?.siteVisitHours ?? 72) };
   const minimumChanged = minimum !== savedMinimum;
   const timingsChanged = timings.inspirationDays !== savedTimings.inspirationDays || timings.siteVisitHours !== savedTimings.siteVisitHours;
+  const flowChanged = Boolean(flow && settings?.flow && JSON.stringify(flow) !== JSON.stringify(settings.flow));
+  const flowValid = !flow || (flow.siteVisitQuestions.every((item) => item.question.trim()) && flow.designClientDays >= flow.designInternalDays
+    && [flow.designInternalDays, flow.designClientDays, flow.materialSelectionDays, flow.estimateDays].every((days) => days >= 1));
+  const setFlowValue = <K extends keyof DesignFlow>(key: K, value: DesignFlow[K]) => { setJustSaved(false); setFlow((current) => current ? { ...current, [key]: value } : current); };
+  const days = (key: "designInternalDays" | "designClientDays" | "materialSelectionDays" | "estimateDays", max: number, label: string) =>
+    <TextInput aria-label={label} isDisabled={!canManage} label={null} inputMode="numeric" suffix={t("days")} value={String(flow?.[key] ?? "")}
+      onChange={(value) => setFlowValue(key, Math.min(max, Number(value.replace(/\D/g, "") || 0)))} />;
   const saveChanges = async () => {
     setSaving(true); setFailure(""); setNotice("");
     try {
       let version = settings?.version ?? 0;
       if (minimumChanged) version = (await saveMinimumDeposit(workspaceId, minimum ? { amount: Number(minimum).toFixed(2), currency: settings?.minimumDeposit?.currency ?? currency } : null, version)).version;
-      if (timingsChanged) await saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, version);
+      if (timingsChanged) version = (await saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, version)).version;
+      if (flowChanged && flow) await saveDesignFlow(workspaceId, { ...flow, siteVisitQuestions: flow.siteVisitQuestions.map((item) => ({ key: item.key, question: item.question.trim() })) }, version);
       await load();
       setJustSaved(true);
     } catch (error) { setFailure(error instanceof Error ? error.message : t("Design settings could not be saved.")); }
@@ -82,8 +91,30 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
         </span>
       </SettingsRow>
     </SettingsSection>
-    {canManage ? <SaveBar isDirty={minimumChanged || timingsChanged} isSaving={saving} saved={justSaved} isDisabled={!timings.inspirationDays || !timings.siteVisitHours}
-      onDiscard={() => { setMinimum(savedMinimum); setTimings(savedTimings); setFailure(""); }} onSave={() => void saveChanges()} /> : null}
+    {flow ? <SettingsSection id="design-flow" title={t("Design flow")}>
+      <SettingsRow hint={t("What the team works to on concepts, space planning and renders.")} label={t("Internal deadline")}>{days("designInternalDays", 365, t("Internal deadline"))}</SettingsRow>
+      <SettingsRow hint={t("What the client is promised; at least the internal deadline.")} label={t("Client deadline")}>{days("designClientDays", 365, t("Client deadline"))}</SettingsRow>
+      <SettingsRow hint={t("From the start of material selection to the confirmed material list.")} label={t("Material selection")}>{days("materialSelectionDays", 90, t("Material selection"))}</SettingsRow>
+      <SettingsRow hint={t("From the design approval to sharing the estimate.")} label={t("Estimate")}>{days("estimateDays", 90, t("Estimate"))}</SettingsRow>
+      <SettingsRow hint={t("Free slots come from this booking page's hours, buffers and the designer's calendar.")} label={t("Showroom appointment")}>
+        <SelectField aria-label={t("Showroom appointment")} isDisabled={!canManage} label={null} items={[{ id: "none", label: t("Pick times by hand") }, ...(settings?.bookingTypes ?? []).map((type) => ({ id: type.id, label: type.name }))]}
+          selectedKey={flow.showroomBookingTypeId ?? "none"} onSelectionChange={(key) => setFlowValue("showroomBookingTypeId", key === "none" ? null : String(key))} />
+      </SettingsRow>
+      <SettingsRow hint={t("Renders go to someone with this role.")} label={t("Visualiser role")}>
+        <TextInput aria-label={t("Visualiser role")} isDisabled={!canManage} label={null} value={flow.visualiserRoleCode} onChange={(value) => setFlowValue("visualiserRoleCode", value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 60))} />
+      </SettingsRow>
+    </SettingsSection> : null}
+    {flow ? <SettingsSection id="site-visit-questions" title={t("Site visit questions")}
+      actions={canManage && flow.siteVisitQuestions.length < 40 ? <Button size="compact" onPress={() => setFlowValue("siteVisitQuestions", [...flow.siteVisitQuestions, { key: "", question: "" }])}><Plus aria-hidden="true" size={14} />{t("Add question")}</Button> : null}>
+      <ol className={styles.questions}>{flow.siteVisitQuestions.map((item, index) => <li key={item.key || `new-${index}`}>
+        <TextInput aria-label={t("Question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} maxLength={500} value={item.question}
+          onChange={(question) => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.map((current, position) => position === index
+            ? { question, key: current.key || questionKey(question, flow.siteVisitQuestions.filter((_, other) => other !== index).map((entry) => entry.key)) } : current))} />
+        {canManage ? <IconButton aria-label={t("Remove question {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.filter((_, position) => position !== index))}><Trash2 aria-hidden="true" size={14} /></IconButton> : null}
+      </li>)}</ol>
+    </SettingsSection> : null}
+    {canManage ? <SaveBar isDirty={minimumChanged || timingsChanged || flowChanged} isSaving={saving} saved={justSaved} isDisabled={!timings.inspirationDays || !timings.siteVisitHours || !flowValid}
+      onDiscard={() => { setMinimum(savedMinimum); setTimings(savedTimings); setFlow(settings?.flow ?? null); setFailure(""); }} onSave={() => void saveChanges()} /> : null}
     <SettingsSection actions={canManage ? <Button size="compact" variant="primary" onPress={() => setEditing({ pricingMethod: "per_area", areaUnit: "sqft", currency, includedRevisions: 2 })}><Plus aria-hidden="true" size={14} />{t("Add package")}</Button> : null} id="design-packages" title={t("Packages")}>
       <div data-sales-grid><DataGrid ariaLabel={t("Design packages")} columns={columns} data={settings?.packages ?? []} emptyDescription={t("Add the design packages you offer and how each is priced.")} emptyTitle={t("No design packages yet")} getRowId={(pkg) => pkg.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
     </SettingsSection>

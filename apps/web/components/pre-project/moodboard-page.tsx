@@ -4,13 +4,16 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, Eye, EyeOff, Heart, ImagePlus, Link2, Maximize2, MessageCircle, StickyNote, ThumbsDown, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Eye, EyeOff, Heart, ImagePlus, LayoutTemplate, Link2, Maximize2, MessageCircle, StickyNote, ThumbsDown, X } from "lucide-react";
 import { PlatformMark } from "@/components/brand/platform-mark";
 import { Avatar, Badge, Button, EmptyState, FormDialog, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { ClientFeedback, FeedbackSignals, feedbackFor, useClientBoard, type ClientBoard } from "@/components/client-activity/client-feedback";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ScopeEntry } from "@/lib/pre-project/content";
 import { linkPlatform, pinKind } from "@/lib/pre-project/moodboard";
+import { AttachDesignLink, isCanvaUrl, useLinkCard } from "@/components/catalog/design-link-card";
+import { linkCardImageUrl } from "@/lib/workspace/product-sourcing";
+import { CaseModal } from "./case-controls";
 import { RoomField } from "./room-manager";
 import styles from "./moodboard.module.css";
 
@@ -35,7 +38,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
   const linkedPin = useSearchParams()?.get("pin") ?? null;
   const [selected, setSelected] = useState<string | null>(() => linkedPin && entries.some((entry) => entry.id === linkedPin) ? linkedPin : null);
   const [viewing, setViewing] = useState<{ entryId: string; index: number } | null>(null);
-  const [adding, setAdding] = useState<"link" | "note" | null>(null);
+  const [adding, setAdding] = useState<"link" | "note" | "canva" | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const upload = useRef<HTMLInputElement>(null);
@@ -131,6 +134,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
       {canEdit ? <div className={styles.addGroup} role="group" aria-label={t("Add to moodboard")}>
         <Button size="compact" isLoading={busy} onPress={() => upload.current?.click()}><ImagePlus aria-hidden="true" size={14} />{t("Photos")}</Button>
         <Button size="compact" onPress={() => setAdding("link")}><Link2 aria-hidden="true" size={14} />{t("Link")}</Button>
+        <Button size="compact" onPress={() => setAdding("canva")}><LayoutTemplate aria-hidden="true" size={14} />{t("Canva")}</Button>
         <Button size="compact" variant="primary" onPress={() => setAdding("note")}><StickyNote aria-hidden="true" size={14} />{t("Note")}</Button>
         <input accept="image/*" aria-hidden="true" className={styles.hiddenInput} multiple onChange={(event) => void uploadPhotos(event.target.files)} ref={upload} tabIndex={-1} type="file" />
       </div> : null}
@@ -140,7 +144,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
     {client.board?.boards.length ? <SharedBoards caseId={caseId} client={client} /> : null}
     {!entries.length ? <div className={styles.empty}><EmptyState illustration="upload" title={t("Start the moodboard")} description={t("Add photos, Instagram or Pinterest links, videos and notes the client loves, or wants to avoid.")} /></div>
       : !visible.length ? <div className={styles.empty}><EmptyState illustration="search" title={t("Nothing matches these filters")} description={t("Try another room, feeling or person.")} action={filtered ? <Button size="compact" onPress={() => { setRoom("all"); setFeeling("all"); setSource("all"); }}>{t("Clear filters")}</Button> : undefined} /></div>
-      : <div className={styles.content} data-panel={selectedEntry ? "open" : undefined}><div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
+      : <div className={styles.content} data-panel={selectedEntry ? "open" : undefined}><div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} workspaceId={workspaceId} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
         assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit}
         signals={<ClientSignals board={client.board} entry={entry} shown={shared(entry)} busy={sharing === entry.id} onToggle={() => void toggleShared(entry)} />} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>
       {selectedEntry ? <PinPanel key={selectedEntry.id} entry={selectedEntry} client={client} shared={shared(selectedEntry)} seenByClient={seenByClient(selectedEntry)} roomContext={{ workspaceId, caseId, rooms: caseRooms, canEdit }} onRoomAdded={(added) => setCaseRooms((current) => [...current, added])} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
@@ -149,8 +153,20 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
       onSave={async (next) => { await saveEntry(next); setSelected(null); }}
       onRemove={async () => { await caseRequest(workspaceId, caseId, `entries/${selectedEntry.id}`, "PATCH", { version: selectedEntry.version, archived: true }); setEntries((current) => current.filter((item) => item.id !== selectedEntry.id)); setSelected(null); }} /> : null}</div>}
     {viewingEntry && images(viewingEntry).length ? <PhotoViewer entry={viewingEntry} start={viewing!.index} assetUrl={assetUrl} onClose={() => setViewing(null)} /> : null}
-    {adding ? <AddPinDialog kind={adding} onClose={() => setAdding(null)} onAdd={async (draft) => { await create(draft); setAdding(null); }} /> : null}
+    {adding === "canva" ? <CaseModal title={t("Add a Canva design")} size="md" onClose={() => setAdding(null)}>
+      <AttachDesignLink workspaceId={workspaceId} onAttach={async (link) => { await create({ referenceUrl: link.url, title: (link.title || t("Canva design")).slice(0, 240) }); setAdding(null); }} />
+    </CaseModal> : adding ? <AddPinDialog kind={adding} onClose={() => setAdding(null)} onAdd={async (draft) => { await create(draft); setAdding(null); }} /> : null}
   </section>;
+}
+
+/** A Canva board's stored thumbnail at the top of its pin (copied into our storage, never hotlinked). */
+function CanvaThumb({ workspaceId, url }: { workspaceId: string; url: string }) {
+  const t = useT();
+  const { card } = useLinkCard(workspaceId, url);
+  if (!card?.hasImage) return null;
+  return <a className={styles.media} href={url} target="_blank" rel="noreferrer" aria-label={t("Open in Canva")}>
+    <Image alt="" className={styles.photo} height={360} src={linkCardImageUrl(workspaceId, card.id)} unoptimized width={480} />
+  </a>;
 }
 
 function PlatformIcon({ id }: { id: string }) {
@@ -165,8 +181,8 @@ function FeelingToggle({ value, canEdit, onChange }: { value: Feeling; canEdit: 
   </span>;
 }
 
-function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, canEdit, signals, onOpen, onView, onFeeling }: {
-  entry: ScopeEntry; room: string | null; addedBy: string; requirementNames: string[]; assetUrl: (asset: CaseAsset) => string; selected: boolean; canEdit: boolean;
+function PinCard({ workspaceId, entry, room, addedBy, requirementNames, assetUrl, selected, canEdit, signals, onOpen, onView, onFeeling }: {
+  workspaceId: string; entry: ScopeEntry; room: string | null; addedBy: string; requirementNames: string[]; assetUrl: (asset: CaseAsset) => string; selected: boolean; canEdit: boolean;
   signals?: ReactNode; onOpen: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void;
 }) {
   const t = useT();
@@ -180,6 +196,7 @@ function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, c
       <span aria-hidden="true" className={styles.expand}><Maximize2 size={14} /></span>
       {photos.length > 1 ? <span className={styles.photoCount}>+{photos.length - 1}</span> : null}
     </button> : null}
+    {kind === "link" && entry.referenceUrl && isCanvaUrl(entry.referenceUrl) ? <CanvaThumb workspaceId={workspaceId} url={entry.referenceUrl} /> : null}
     {kind === "link" && platform ? <a className={styles.link} data-platform={platform.id} href={entry.referenceUrl} target="_blank" rel="noreferrer"><PlatformIcon id={platform.id} /><strong>{platform.label}</strong><small>{platform.host}</small><ExternalLink aria-hidden="true" className={styles.linkOut} size={14} /></a> : null}
     <button type="button" className={styles.body} onClick={onOpen} aria-label={t("Open details for {name}", { name: entry.title })}>
       {kind === "note" ? <span className={styles.noteText}>{entry.note || entry.title}</span> : <strong className={styles.cardTitle}>{entry.title}</strong>}

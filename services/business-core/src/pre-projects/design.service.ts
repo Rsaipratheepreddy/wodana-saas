@@ -6,9 +6,9 @@ import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { BriefService } from "./brief.service";
 import { syncDesignStages } from "../design/design-stage-sync";
 import { tellClients } from "../client-portal/portal-notices";
-import { designQueue, noticeDesignMentions, noticeDesignStep } from "./design-notices";
+import { designQueue, noticeDesignMentions, noticeDesignStep, noticeExtraRevision } from "./design-notices";
 import { STAGE_LABELS, type JourneyStage } from "../design/design-journey.domain";
-import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
+import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto, DesignThreadAudienceDto } from "./design.dto";
 
 export function validateDesignTransition(status:string,action:string,note:string,decisionBy:string) {
  if(action==='comment') { if(!note.trim()) throw new BadRequestException('Enter a comment.'); return; }
@@ -34,7 +34,7 @@ const designSelect=`SELECT d.id,d.title,d.folder_id AS "folderId",d.document_typ
  FROM pre_project_design_versions v JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.case_id=v.case_id AND a.id=v.asset_id JOIN users u ON u.id=v.created_by WHERE v.workspace_id=d.workspace_id AND v.design_id=d.id),'[]'::jsonb) AS versions,
  COALESCE((SELECT count(DISTINCT h.version_id)::int FROM pre_project_design_activity h WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id AND h.action='client_review'),0) AS "clientRoundsUsed",
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',h.id,'versionId',h.version_id,'action',h.action,'note',h.note,'decisionBy',h.decision_by,'reviewerId',h.reviewer_id,'decisionSource',h.decision_source,'decisionAt',h.decision_at,'createdAt',h.created_at,'createdByName',COALESCE(u.display_name,'Client portal')) ORDER BY h.created_at,h.id) FROM pre_project_design_activity h LEFT JOIN users u ON u.id=h.created_by WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id),'[]'::jsonb) AS activity,
- COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'versionId',t.version_id,'title',t.title,'anchor',t.anchor,'mentions',t.mentions,'blocking',t.blocking,'status',t.status,'version',t.version,'createdBy',t.created_by,'createdByName',tu.display_name,'createdAt',t.created_at,'resolvedAt',t.resolved_at,'resolvedByName',ru.display_name,'messages',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',m.id,'body',m.body,'createdBy',m.created_by,'createdByName',mu.display_name,'createdAt',m.created_at) ORDER BY m.created_at,m.id) FROM pre_project_design_messages m JOIN users mu ON mu.id=m.created_by WHERE m.workspace_id=t.workspace_id AND m.thread_id=t.id),'[]'::jsonb)) ORDER BY t.created_at,t.id) FROM pre_project_design_threads t JOIN users tu ON tu.id=t.created_by LEFT JOIN users ru ON ru.id=t.resolved_by WHERE t.workspace_id=d.workspace_id AND t.case_id=d.case_id AND t.design_id=d.id),'[]'::jsonb) AS threads
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'versionId',t.version_id,'title',t.title,'anchor',t.anchor,'mentions',t.mentions,'blocking',t.blocking,'status',t.status,'version',t.version,'createdBy',t.created_by,'createdByName',COALESCE(tu.display_name,tg.name),'clientVisible',t.client_visible,'fromClient',t.client_grant_id IS NOT NULL,'createdAt',t.created_at,'resolvedAt',t.resolved_at,'resolvedByName',COALESCE(ru.display_name,rg.name),'messages',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',m.id,'body',m.body,'createdBy',m.created_by,'createdByName',COALESCE(mu.display_name,mg.name),'fromClient',m.client_grant_id IS NOT NULL,'createdAt',m.created_at) ORDER BY m.created_at,m.id) FROM pre_project_design_messages m LEFT JOIN users mu ON mu.id=m.created_by LEFT JOIN client_portal_grants mg ON mg.workspace_id=m.workspace_id AND mg.id=m.client_grant_id WHERE m.workspace_id=t.workspace_id AND m.thread_id=t.id),'[]'::jsonb)) ORDER BY t.created_at,t.id) FROM pre_project_design_threads t LEFT JOIN users tu ON tu.id=t.created_by LEFT JOIN client_portal_grants tg ON tg.workspace_id=t.workspace_id AND tg.id=t.client_grant_id LEFT JOIN users ru ON ru.id=t.resolved_by LEFT JOIN client_portal_grants rg ON rg.workspace_id=t.workspace_id AND rg.id=t.resolved_by_grant_id WHERE t.workspace_id=d.workspace_id AND t.case_id=d.case_id AND t.design_id=d.id),'[]'::jsonb) AS threads
  FROM pre_project_designs d LEFT JOIN pre_project_rooms r ON r.workspace_id=d.workspace_id AND r.case_id=d.case_id AND r.id=d.room_id LEFT JOIN pre_project_brief_entries e ON e.workspace_id=d.workspace_id AND e.case_id=d.case_id AND e.id=d.scope_entry_id`;
 
 @Injectable()
@@ -141,6 +141,8 @@ export class DesignService {
    await this.event(client,workspaceId,caseId,userId,id,'design_'+input.action,input);
    if(input.action==='approved')await syncDesignStages(client,workspaceId,caseId,userId);
    // Shared for the client's decision: their decision-makers hear it's waiting in the portal (once per revision).
+   // The round beyond the included ones is chargeable: the Account Manager is told (PLM-049/051).
+   if(input.action==='client_review')await noticeExtraRevision(client,{workspaceId,caseId,designId:id,title:design.title,stage:design.stage??null,round:(design.clientRoundsUsed??0)+1,included:latest.includedClientRounds??null,actorUserId:userId,versionId:input.versionId});
    if(input.action==='client_review')await tellClients(client,{workspaceId,caseId,event:'decision_waiting',recordId:`design:${input.versionId}`,title:`${design.title} (V${latest.number})`,due:reviewExpiresAt});
    if(input.action!=='comment')await noticeDesignStep(client,{workspaceId,caseId,designId:id,title:design.title,action:input.action,fromStatus:latest.status,actorUserId:userId,reviewerUserId:input.reviewerId??latest.reviewerId??null,uploaderUserId:latest.createdBy??null,note:input.note,activityId:input.id});
    return this.read(client,workspaceId,caseId,id);
@@ -201,14 +203,16 @@ export class DesignService {
   return this.commentAccess(actor,w,c,id,async(client,userId)=>{
    const design=await this.read(client,w,c,id);if(design.archivedAt)throw new ConflictException('Restore the design before adding discussions.');
    const retry=design.threads.find((t:{id:string})=>t.id===input.id);
-   if(retry){if(retry.versionId!==input.versionId||retry.title!==input.title||retry.blocking!==input.blocking||retry.messages[0]?.body!==input.body||JSON.stringify(retry.anchor??null)!==JSON.stringify(input.anchor??null)||JSON.stringify(retry.mentions??[])!==JSON.stringify(input.mentions??[]))throw new ConflictException('This discussion ID is already in use.');return design;}
+   if(retry){if(retry.versionId!==input.versionId||retry.title!==input.title||retry.blocking!==input.blocking||retry.messages[0]?.body!==input.body||JSON.stringify(retry.anchor??null)!==JSON.stringify(input.anchor??null)||JSON.stringify(retry.mentions??[])!==JSON.stringify(input.mentions??[])||Boolean(retry.clientVisible)!==(input.clientVisible===true))throw new ConflictException('This discussion ID is already in use.');return design;}
    if(!design.versions.some((v:{id:string})=>v.id===input.versionId))throw new BadRequestException('Choose a file revision from this design.');
    if(input.blocking&&design.versions.find((v:{id:string})=>v.id===input.versionId)?.status==='approved')throw new ConflictException('This revision is already approved. Start a new draft revision for blocking changes.');
    if(input.mentions?.length){const members=await client.query(`SELECT DISTINCT user_id FROM workspace_memberships WHERE workspace_id=$1 AND status='active' AND user_id=ANY($2::uuid[])`,[w,input.mentions]);if(members.rows.length!==input.mentions.length)throw new BadRequestException('Choose active workspace members.');}
-   await client.query(`INSERT INTO pre_project_design_threads(id,workspace_id,case_id,design_id,version_id,title,blocking,created_by,anchor,mentions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb)`,[input.id,w,c,id,input.versionId,input.title,input.blocking,userId,input.anchor == null ? null : JSON.stringify(input.anchor),JSON.stringify(input.mentions??[])]);
+   // The audience switch: internal (staff only, the default) or with the client, who then sees it in their portal.
+   await client.query(`INSERT INTO pre_project_design_threads(id,workspace_id,case_id,design_id,version_id,title,blocking,created_by,anchor,mentions,client_visible) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11)`,[input.id,w,c,id,input.versionId,input.title,input.blocking,userId,input.anchor == null ? null : JSON.stringify(input.anchor),JSON.stringify(input.mentions??[]),input.clientVisible===true]);
    await client.query(`INSERT INTO pre_project_design_messages(id,workspace_id,case_id,design_id,thread_id,body,created_by) VALUES($1,$2,$3,$4,$1,$5,$6)`,[input.id,w,c,id,input.body,userId]);
    await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_started',input);
    await noticeDesignMentions(client,{workspaceId:w,caseId:c,designId:id,title:design.title,actorUserId:userId,mentions:input.mentions??[],body:input.body,threadId:input.id});
+   if(input.clientVisible===true)await tellClients(client,{workspaceId:w,caseId:c,event:'team_replied',recordId:`design-thread:${input.id}`,title:design.title});
    return this.read(client,w,c,id);
   });
  }
@@ -220,7 +224,10 @@ export class DesignService {
    if(thread.status==='resolved')throw new ConflictException('Reopen the discussion before replying.');
    await client.query(`INSERT INTO pre_project_design_messages(id,workspace_id,case_id,design_id,thread_id,body,created_by) VALUES($1,$2,$3,$4,$5,$6,$7)`,[input.id,w,c,id,threadId,input.body,userId]);
    await client.query(`UPDATE pre_project_design_threads SET version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND design_id=$3 AND id=$4`,[w,c,id,threadId]);
-   await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_replied',{threadId,...input});return this.read(client,w,c,id);
+   await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_replied',{threadId,...input});
+   // A reply in a thread the client sees reaches them (their portal and a nudge), never an internal one.
+   if(thread.clientVisible)await tellClients(client,{workspaceId:w,caseId:c,event:'team_replied',recordId:`design-reply:${input.id}`,title:design.title});
+   return this.read(client,w,c,id);
   });
  }
  resolveThread(actor:RequestActor,w:string,c:string,id:string,threadId:string,input:ResolveDesignThreadDto){
@@ -228,11 +235,25 @@ export class DesignService {
    const design=await this.read(client,w,c,id);if(design.archivedAt)throw new ConflictException('Restore the design before changing discussions.');
    const thread=design.threads.find((t:{id:string})=>t.id===threadId);if(!thread)throw new NotFoundException('Discussion not found.');this.brief.version(thread.version,input.version);
    const revision=design.versions.find((v:{id:string})=>v.id===thread.versionId);
-   if(thread.createdBy!==userId&&revision?.reviewerId!==userId)throw new ForbiddenException('The discussion author or assigned reviewer can resolve or reopen it.');
+   if(!thread.fromClient&&thread.createdBy!==userId&&revision?.reviewerId!==userId)throw new ForbiddenException('The discussion author or assigned reviewer can resolve or reopen it.');
    if(input.status==='open'&&thread.blocking&&revision?.status==='approved')throw new ConflictException('Start a new draft revision for blocking changes to an approved file.');
    if(thread.status===input.status)throw new ConflictException('This discussion is already in that state.');
    await client.query(`UPDATE pre_project_design_threads SET status=$5::varchar,version=version+1,resolved_by=CASE WHEN $5::varchar='resolved' THEN $6::uuid ELSE NULL END,resolved_at=CASE WHEN $5::varchar='resolved' THEN now() ELSE NULL END WHERE workspace_id=$1 AND case_id=$2 AND design_id=$3 AND id=$4`,[w,c,id,threadId,input.status,userId]);
    await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_'+input.status,{threadId,...input});return this.read(client,w,c,id);
+  });
+ }
+ /** The audience switch on a team thread: share it with the client, or take it back while only the team has written in it. */
+ setThreadAudience(actor:RequestActor,w:string,c:string,id:string,threadId:string,input:DesignThreadAudienceDto){
+  return this.commentAccess(actor,w,c,id,async(client,userId)=>{
+   const design=await this.read(client,w,c,id);if(design.archivedAt)throw new ConflictException('Restore the design before changing discussions.');
+   const thread=design.threads.find((t:{id:string})=>t.id===threadId);if(!thread)throw new NotFoundException('Discussion not found.');this.brief.version(thread.version,input.version);
+   if(thread.fromClient)throw new ConflictException('The client started this discussion; it stays with them.');
+   if(Boolean(thread.clientVisible)===input.clientVisible)return design;
+   if(!input.clientVisible&&thread.messages.some((m:{fromClient?:boolean})=>m.fromClient))throw new ConflictException('The client has replied here; it stays with them.');
+   await client.query(`UPDATE pre_project_design_threads SET client_visible=$5,version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND design_id=$3 AND id=$4`,[w,c,id,threadId,input.clientVisible]);
+   await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,input.clientVisible?'design_thread_shared':'design_thread_internal',{threadId});
+   if(input.clientVisible)await tellClients(client,{workspaceId:w,caseId:c,event:'team_replied',recordId:`design-thread:${threadId}`,title:design.title});
+   return this.read(client,w,c,id);
   });
  }
  private async portalReadiness(client:PoolClient,w:string,c:string){

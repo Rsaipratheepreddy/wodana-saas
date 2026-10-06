@@ -7,13 +7,39 @@ export const DELIVERABLE_STAGES: JourneyStageKey[] = ["space_planning", "concept
 export const isDeliverableStage = (stage: string | null | undefined) => DELIVERABLE_STAGES.includes(stage as JourneyStageKey);
 
 export type JourneyStageView = {
-  stage: JourneyStageKey; label: string; position: number; status: "locked" | "active" | "done"; ownerName: string | null;
-  dueAt: string | null; completedAt: string | null; note: string | null; version: number; overdue: boolean;
-  progress: { total: number; approved: number; pending: number } | null;
+  stage: JourneyStageKey; label: string; position?: number; status: "locked" | "active" | "done"; ownerName: string | null;
+  dueAt: string | null; completedAt: string | null; note?: string | null; version: number; overdue: boolean;
+  progress?: { total: number; approved: number; pending: number } | null;
+  /** PLM-049/051: the client-facing deadline next to the internal `dueAt`. */
+  clientDueAt?: string | null;
+  /** PLM-049/051: revisions shown to the client on this stage against the package's included ones. */
+  revisions?: { used: number; included: number; chargeable: boolean } | null;
+  /** How the stage ended: completed, approved, chosen, skipped, not_required, material_list_confirmed, timer_ended, closed_early, signed_off. */
+  outcome?: string | null; completedByName?: string | null;
+  activityId?: string | null; bookingReminder?: boolean;
+  scheduledAt?: string | null; scheduledEnd?: string | null; scheduledTimezone?: string | null; scheduledLocation?: { address?: string | null } | null;
 };
+export type SiteChecklistItem = { key: string; question: string; answer: string | null; answeredByName: string | null; answeredAt: string | null };
+export type SiteMeasurement = { title: string; status: string; files: number; roomId?: string | null };
 export type JourneyView = {
-  journey: { packageName: string; includedRevisions: number | null; includesSpacePlanning: boolean; includesRenders: boolean } | null;
-  stages: JourneyStageView[]; canStart?: boolean; timezone: string;
+  journey: {
+    packageName: string | null; includedRevisions: number | null; includesSpacePlanning?: boolean; includesRenders?: boolean;
+    /** `design` after Won with a package; `site_and_materials` for a furniture/joinery order (PLM-080/081). */
+    kind?: "design" | "site_and_materials"; version?: number;
+    approvedOn?: string | null; approvalAssetName?: string | null; approvalSigner?: string | null; approvalMethod?: string | null;
+    estimateDueAt?: string | null; estimateQuoteId?: string | null;
+  } | null;
+  /** What the journey will be before it starts: a design package, or a furniture/joinery order's site visit and materials. */
+  startsAs?: "design" | "site_and_materials" | null;
+  stages: JourneyStageView[]; canStart?: boolean; canManage?: boolean; canEdit?: boolean; canReview?: boolean; canRecordClient?: boolean; timezone: string;
+  measurements?: SiteMeasurement[]; siteEvidenceProblem?: string | null;
+  checklist?: SiteChecklistItem[]; siteChecklistProblem?: string | null;
+  /** The materials and decisions ledger in one line (plan §6.7a). */
+  ledger?: { state: "empty" | "open" | "locked" | "changes_pending"; lockProblem: string | null; materials: number; waiting: number; lock: { number: number } | null } | null;
+  /** The firm books the showroom on its booking engine (Settings › Design). */
+  showroomBooking?: boolean;
+  /** After the sign-off: the Proposal 2 estimate it handed off to, or why not yet. */
+  handoff?: { quoteId: string | null; problem: string | null };
 };
 
 /** The document type a new file in a stage starts with; the designer can change it. */
@@ -48,7 +74,7 @@ export function nextStep(design: CaseDesign, options: Pick<DesignOptions, "revie
 
 /** Stage progress wording as a translation key and its values: "2 of 3 approved", "Skipped", "Done". */
 export function stageDetail(stage: JourneyStageView): { key: string; values?: Record<string, number> } {
-  if (stage.status === "done") return { key: stage.progress && stage.progress.total === 0 && isDeliverableStage(stage.stage) ? tKey("Skipped") : tKey("Done") };
+  if (stage.status === "done") return { key: stage.outcome === "not_required" ? tKey("Not required for this order") : stage.outcome === "chosen" ? tKey("Client chose") : stage.outcome === "skipped" ? tKey("Skipped") : tKey("Done") };
   if (stage.status === "locked") return { key: tKey("Not started") };
   if (stage.progress && stage.progress.total) return { key: tKey("{approved} of {total} approved"), values: { approved: stage.progress.approved, total: stage.progress.total } };
   return { key: stage.overdue ? tKey("Overdue") : tKey("In progress") };

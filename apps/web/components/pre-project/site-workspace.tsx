@@ -1,15 +1,20 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarPlus, Camera, DoorOpen, ExternalLink, Eye, FileText, Pencil, PenLine, Plus } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, InspectorSheet, SelectField, Tabs, useDesignSystem, type StatusTone } from "@/design-system";
+import { Badge, Button, Card, EmptyState, IconButton, InlineNotice, InspectorSheet, SelectField, Tabs, useDesignSystem, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ItemDimension, type ScopeEntry } from "@/lib/pre-project/content";
 import { newSiteRecord, siteLabel, sitePayload, type SiteData, type SiteRecord } from "@/lib/pre-project/site";
 import { AssetMarkup } from "./asset-markup";
 import { RoomPicker } from "./room-manager";
 import { measuredDimensions, SiteRecordEditor } from "./site-record-editor";
+import type { JourneyView } from "@/lib/pre-project/design-workspace";
+import { ScheduleVisitDialog } from "./design-journey";
+import { accessMatters, SiteVisitFlow, siteVisitProgress } from "./site-visit-flow";
+import { AccessPointsEditor, FitCheckList } from "@/components/catalog/fit-check-panel";
+import type { LedgerView } from "@/lib/pre-project/design-decisions";
 import styles from "./site-workspace.module.css";
 
 const paths = { visit: "visits", measurement: "measurements", observation: "observations" } as const;
@@ -47,6 +52,26 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
   const upload = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
   const { workspaceId, caseId, canEdit } = data;
+  // PLM-048/128: while the design journey's site visit is open, the visit runs here as one guided flow.
+  const [journey, setJourney] = useState<JourneyView | null>(null);
+  const [visitOpen, setVisitOpen] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const loadJourney = useCallback(() => caseRequest<JourneyView>(workspaceId, caseId, "design-journey").then(setJourney).catch(() => setJourney(null)), [workspaceId, caseId]);
+  useEffect(() => { void loadJourney(); }, [loadJourney]);
+  const visitStage = (journey && Array.isArray(journey.stages) ? journey.stages : []).find((stage) => stage.stage === "site_visit" && stage.status === "active") ?? null;
+  // R5 fit check: the way in (access points) and how the case's chosen catalog items get through it.
+  const [access, setAccess] = useState<{ count: number; unit: string } | null>(null);
+  const [accessRefresh, setAccessRefresh] = useState(0);
+  const [fitRefresh, setFitRefresh] = useState(0);
+  const [fitItems, setFitItems] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    caseRequest<LedgerView>(workspaceId, caseId, "design-ledger").then((ledger) => {
+      if (live) setFitItems([...new Set(ledger.entries.filter((entry) => !entry.archivedAt).map((entry) => entry.current?.catalogItemId).filter((id): id is string => Boolean(id)))]);
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [workspaceId, caseId]);
+  const accessChanged = (fromVisit: boolean) => { if (fromVisit) setAccessRefresh((value) => value + 1); setFitRefresh((value) => value + 1); };
   const assetUrl = (asset: CaseAsset, preview = true) => caseApi(workspaceId, caseId, `assets/${asset.id}${preview && asset.hasPreview ? "?preview=1" : ""}`);
 
   const files = data.entries.filter((entry) => entry.kind === "file" && !entry.archivedAt);
@@ -90,6 +115,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
     else if (added.length) setNotice(t("{count} added.", { count: added.length }));
     setBusy(null);
     if (upload.current) upload.current.value = "";
+    void loadJourney();
   };
   const pickFiles = (area: Area) => { uploadTarget.current = area.id; upload.current?.click(); };
 
@@ -139,6 +165,14 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
     {error ? <InlineNotice message={error} tone="error" /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
 
+    {visitStage && journey ? (() => {
+      const progress = siteVisitProgress(journey);
+      const steps = [progress.visit, progress.measurements, progress.photos, progress.questions].filter(Boolean).length;
+      return <Card title={t("Site visit")} chip={<Badge tone={visitStage.overdue ? "danger" : "info"}>{visitStage.overdue ? t("Overdue") : t("{done} of {total} steps", { done: steps, total: 4 })}</Badge>}
+        action={canEdit ? <Button size="compact" variant="primary" onPress={() => setVisitOpen(true)}>{steps ? t("Continue the visit") : t("Start the visit")}</Button> : undefined}>
+        <p className={styles.none}>{journey.siteEvidenceProblem ?? journey.siteChecklistProblem ?? t("Everything is in. Complete the visit.")}</p>
+      </Card>;
+    })() : null}
     {visits.length ? <section className={styles.visits} aria-label={t("Visits")}>
       {visits.map((visit) => <button type="button" key={visit.id} className={styles.visit} data-status={visit.status} onClick={() => setEditing(visit)}>
         <strong>{visit.title || t("Site visit")}</strong>
@@ -180,6 +214,12 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
 
     {!areas.length ? <EmptyState illustration="upload" title={t("Nothing captured on site yet")} description={t("Add each room as you reach it, then its photos, measurements and issues.")}
       action={canEdit ? <Button size="compact" variant="primary" onPress={() => setPicking(true)}><Plus aria-hidden="true" size={14} />{t("Add room")}</Button> : undefined} /> : null}
+    <Card title={t("Access")}>
+      <AccessPointsEditor workspaceId={workspaceId} caseId={caseId} canEdit={canEdit} refreshKey={accessRefresh} onChanged={() => accessChanged(false)} onLoaded={(points, unit) => setAccess({ count: points.length, unit })} />
+    </Card>
+    {fitItems.length ? <Card title={t("Fit check")}>
+      <FitCheckList workspaceId={workspaceId} caseId={caseId} itemIds={fitItems} unit={access?.unit} canOverride={canEdit} context="approval" refreshKey={fitRefresh} />
+    </Card> : null}
     {detailArea ? <RoomDetail area={detailArea} tab={detail!.tab} onTab={(tab) => setDetail({ areaId: detailArea.id, tab })} onClose={() => setDetail(null)} canEdit={canEdit}
       chip={detailArea.roomId ? measureChip(roomMeasurement(detailArea)) : null} measurement={roomMeasurement(detailArea)} photos={photosIn(detailArea)} issues={issuesIn(detailArea)} assetUrl={assetUrl}
       onMeasure={() => fromDetail(() => measure(detailArea))} onAddPhotos={() => fromDetail(() => pickFiles(detailArea))} onAddIssue={() => fromDetail(() => addIssue(detailArea))}
@@ -188,7 +228,15 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
 
     {marking ? <AssetMarkup workspaceId={workspaceId} caseId={caseId} asset={marking.asset} assetUrl={assetUrl} onClose={nextMarkup} onSaved={(marked) => void markupSaved(marking, marked).catch((failure: Error) => setError(failure.message))} /> : null}
     {editing ? <SiteRecordEditor key={editing.id} initial={editing} data={data} site={site} onClose={() => setEditing(null)} onRoomAdded={(room) => setData((current) => ({ ...current, rooms: [...current.rooms, room] }))}
-      onSave={async (record, version) => { upsertRecord(await caseRequest<SiteRecord>(workspaceId, caseId, `site/${paths[record.kind]}`, "PUT", sitePayload(record, version))); setEditing(null); setNotice(t("Saved.")); }} /> : null}
+      onSave={async (record, version) => { upsertRecord(await caseRequest<SiteRecord>(workspaceId, caseId, `site/${paths[record.kind]}`, "PUT", sitePayload(record, version))); setEditing(null); setNotice(t("Saved.")); void loadJourney(); }} /> : null}
+    {visitOpen && visitStage && journey ? <SiteVisitFlow view={journey} stage={visitStage} onClose={() => setVisitOpen(false)} onBook={() => setBooking(true)}
+      access={{ workspaceId, caseId, canEdit, count: access?.count ?? null, nudge: accessMatters(journey), onChanged: () => accessChanged(true), onLoaded: (count) => setAccess((current) => ({ count, unit: current?.unit ?? "cm" })) }}
+      onMeasure={(roomId) => { setVisitOpen(false); const area = areas.find((item) => item.roomId === roomId); if (area) measure(area); else setPicking(true); }}
+      onAddPhotos={(roomId) => { setVisitOpen(false); const area = areas.find((item) => item.roomId === roomId); if (area) pickFiles(area); }}
+      onSaveAnswers={async (answers) => setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT", { version: journey.stages.find((stage) => stage.stage === "site_visit")!.version, answers }))}
+      onComplete={async (summary) => { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/complete", "POST", { version: journey.stages.find((stage) => stage.stage === "site_visit")!.version, summary })); setVisitOpen(false); setNotice(t("Site visit completed.")); }} /> : null}
+    {booking && visitStage && journey ? <ScheduleVisitDialog title={t("Book site visit")} timezone={journey.timezone} onClose={() => setBooking(false)}
+      onSubmit={async (value) => { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/schedule", "POST", { version: visitStage.version, ...value })); setBooking(false); }} /> : null}
   </section>;
 }
 

@@ -5,7 +5,16 @@ export type QuoteView = "area" | "trade" | "area_trade";
 export type QuotationSettings = {
   defaultView: QuoteView; pricesIncludeTax: boolean; rounding: "line" | "document"; defaultMarkupPercent: string;
   marginFloorPercent: string | null; discountApprovalPercent: string | null; validityDays: number; internalReview: boolean;
-  priceBookId: string | null; decisionReminderDays: number[]; expiryWarningDays: number; defaultPaymentTemplateId: string | null; version: number;
+  priceBookId: string | null; decisionReminderDays: number[]; expiryWarningDays: number; defaultPaymentTemplateId: string | null;
+  /** R3: how markup is shown to the client. */
+  markupDisclosure?: "all_inclusive" | "disclosed_markup" | "fee_based";
+  /** PLM-082: a QS confirms the pricing before a quotation goes to the client. */
+  qsReview?: boolean;
+  /** How many days a signing link stays open (R8). */
+  signingLinkDays?: number;
+  /** PLM-106: the firm's intro deck link. */
+  introDeckUrl?: string | null;
+  version: number;
 };
 
 export type BuildUpRow = {
@@ -60,6 +69,8 @@ export type BuilderState = {
   quote: {
     id: string; number: number; title: string; status: string; kind: string; round: string | null; currency: string; decimals: number; validUntil: string | null; taxRate: string; revision: number;
     paymentTerms: PaymentMilestone[]; approvedBy: string | null;
+    /** The quotation number (from settings, on first sending); null before. */
+    reference?: string | null;
     clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null; evidence?: { id: string; name: string } | null } | null;
   };
   family: Array<{ id: string; number: number; status: string; total: string; createdAt: string | null }>;

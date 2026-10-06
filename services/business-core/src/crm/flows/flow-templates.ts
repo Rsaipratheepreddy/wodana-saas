@@ -63,6 +63,21 @@ const pricedQuote = () => [
   step("payment_proof", "Attach the 50% deposit proof", "sales", "payment_proof_attached", "won", { clientVisible: true, notify: ["finance", "factory_lead"] }),
 ];
 
+/**
+ * PLM-081: material selection is always a step on a furniture or joinery order. A job that doesn't need it marks it
+ * "Not required for this order" with a reason; it is never simply left blank (the publisher enforces it).
+ */
+const materialSelection = () => step("material_selection", "Choose the materials", "sales", "design_stage_done", "proposal", { designStage: "material_selection", clientVisible: true });
+
+/** The furniture starter (sub-paths A–E) with material selection before the quotation; the paths rejoin there. */
+const furnitureWithMaterials = (): FlowDefinition => {
+  const definition = structuredClone(STARTER_FLOWS.furniture.definition);
+  const at = definition.steps.findIndex((item) => item.key === "quotation");
+  definition.steps.splice(at, 0, materialSelection());
+  for (const branch of definition.branches) if (branch.rejoin === "quotation") branch.rejoin = "material_selection";
+  return definition;
+};
+
 // Furniture sales (sub-paths A–E). Negotiation is used only when the client does not decide on the spot.
 const negotiation = () => step("negotiation", "Agree the deal with the client", "sales", "client_approved_on_spot", "negotiation", { optional: true, clientVisible: true });
 const furniturePayment = (name: string, notify: string[] = ["finance"]) =>
@@ -76,7 +91,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     description: "One flow for every furniture sale; the path chosen decides the steps.",
     group: "Furniture",
     suggestedEnquiryTypes: ["Furniture only"],
-    definition: STARTER_FLOWS.furniture.definition,
+    definition: furnitureWithMaterials(),
   },
   {
     key: "furniture_take_home",
@@ -87,6 +102,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     definition: line([
       enquiryType(),
       clientType(),
+      materialSelection(),
       step("quotation", "Pick the items from stock", "sales", "quote_exists", "proposal"),
       step("client_approved", "Mark the client's approval", "sales", "client_approved_on_spot", "proposal", { clientVisible: true }),
       furniturePayment("Attach the payment proof"),
@@ -101,6 +117,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     definition: line([
       enquiryType(),
       clientType(),
+      materialSelection(),
       step("quotation", "Quote with the delivery date and charge", "sales", "quote_exists", "proposal"),
       negotiation(),
       furniturePayment("Attach the payment proof"),
@@ -115,6 +132,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     definition: line([
       enquiryType(),
       clientType(),
+      materialSelection(),
       step("quotation", "Quote with the supplier lead time", "sales", "quote_exists", "proposal"),
       negotiation(),
       furniturePayment("Attach the full payment proof"),
@@ -129,6 +147,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     definition: line([
       enquiryType(),
       clientType(),
+      materialSelection(),
       step("quotation", "Quote the price, materials and lead time", "sales", "quote_exists", "proposal"),
       negotiation(),
       furniturePayment("Attach the full payment proof", ["finance", "factory_lead"]),
@@ -144,6 +163,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
       enquiryType(),
       clientType(),
       step("feasibility", "Confirm feasibility with the factory", "factory_lead", "feasibility_confirmed", "qualification", { notify: ["factory_lead"] }),
+      materialSelection(),
       step("quotation", "Prepare the quotation", "sales", "quote_exists", "proposal"),
       step("qs_price", "Price the quotation", "quantity_surveyor", "qs_approved", "proposal", { notify: ["quantity_surveyor"] }),
       negotiation(),
@@ -191,7 +211,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     description: "Built-in joinery: measure the site, price it with the QS, then take the deposit.",
     group: "Fit-out",
     suggestedEnquiryTypes: ["Joinery only", "Renovation / fit-out"],
-    definition: line([firstContact(), details(), introMeeting(), clientType(), siteVisit(), ...pricedQuote()]),
+    definition: line([firstContact(), details(), introMeeting(), clientType(), siteVisit(), materialSelection(), ...pricedQuote()]),
   },
   {
     key: "full_fit_out",
@@ -203,6 +223,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
       firstContact(), details(), introMeeting(), clientType(), siteVisit(),
       step("discovery", "Complete discovery", "sales", "discovery_complete", "proposal"),
       step("package", "Choose the design package", "sales", "package_chosen", "proposal", { optional: true }),
+      materialSelection(),
       ...pricedQuote(),
     ]),
   },
@@ -215,6 +236,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     definition: line([
       firstContact(), details(), introMeeting(), clientType(), siteVisit(),
       step("discovery", "Complete discovery", "sales", "discovery_complete", "proposal"),
+      materialSelection(),
       ...pricedQuote(),
     ]),
   },
@@ -227,6 +249,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     suggestedEnquiryTypes: ["Furniture only"],
     definition: line([
       enquiryType(),
+      materialSelection(),
       step("quotation", "Prepare the quotation", "sales", "quote_exists", "proposal"),
       step("client_approved", "Mark the client's approval", "sales", "client_approved_on_spot", "proposal", { clientVisible: true }),
       furniturePayment("Attach the payment proof"),

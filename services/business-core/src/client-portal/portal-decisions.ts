@@ -12,6 +12,7 @@ import { notifyUserInApp, queueUserEmail } from "../notifications/default-templa
 import { noticeProject } from "../project-core/project-notices";
 import { recordMaterialDecision } from "../project-core/project-materials";
 import { noticeQuoteStep } from "../quotation/quote-notices";
+import { stageOwners } from "../change-requests/change-request-notices";
 import { decideHandoverPack } from "../site/handover";
 import type { Grant, PortalContact } from "./portal-auth";
 import { attach, ownUploads } from "./portal-files";
@@ -84,7 +85,7 @@ async function code(ctx: DecisionContext, purpose: string, body: Record<string, 
 export async function assertDecisionOpen(ctx: DecisionContext, purpose: string) {
   const [kind, caseId, recordId, decision, ...rest] = purpose.split(":");
   const allowed: Record<string, string[]> = { quote: ["accept", "changes", "decline"], design: ["accept", "changes", "decline"], definition: ["accept", "changes"],
-    materials: ["submit"], handover: ["accept", "refuse"] };
+    materials: ["submit"], handover: ["accept", "refuse"], change: ["accept"] };
   if (rest.length || !allowed[kind]?.includes(decision)) throw new BadRequestException("This decision isn't valid.");
   const { grant, row } = await grantFor(ctx, caseId, "decisions");
   decider(grant);
@@ -95,6 +96,11 @@ export async function assertDecisionOpen(ctx: DecisionContext, purpose: string) 
     actionable(quote);
   } else if (kind === "design") await portalReviewDesign(ctx.db, ctx.workspaceId, row.caseId, recordId);
   else if (kind === "definition") await ctx.definitions.assertPortalDecisionAvailable(ctx.db, ctx.workspaceId, row.caseId, recordId);
+  else if (kind === "change") {
+    // A change request sent to the client (R11): only while it waits for them.
+    const change = (await ctx.db.query<{ status: string }>(`SELECT status FROM change_requests WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [ctx.workspaceId, row.caseId, recordId])).rows[0];
+    if (!change || change.status !== "with_client") throw new ConflictException("This change isn't waiting for your decision any more. Reload to see the latest.");
+  }
   else if (kind === "materials") {
     const revision = row.projectId ? (await ctx.db.query<{ id: string; status: string }>(
       `SELECT id, status FROM project_material_revisions WHERE workspace_id = $1 AND project_id = $2 ORDER BY number DESC LIMIT 1`, [ctx.workspaceId, row.projectId])).rows[0] : undefined;
@@ -383,7 +389,8 @@ export async function noticeClientMessage(db: Db, workspaceId: string, row: { ca
     `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
        JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
       WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND assignment.is_manager`, [workspaceId, row.projectId])).rows.map((member) => member.userId) : [];
-  const people = [...new Set([facts.ownerUserId, facts.engagementOwnerUserId, ...team].filter((id): id is string => Boolean(id)))];
+  // §5b: a client's question goes to the owner of the stage the job is in, as well as its owners and manager.
+  const people = [...new Set([facts.ownerUserId, facts.engagementOwnerUserId, ...team, ...(await stageOwners(db, workspaceId, row.caseId))].filter((id): id is string => Boolean(id)))];
   const title = row.projectId ? `${row.reference} · ${row.projectName}` : row.title;
   const variables = { title, clientName: facts.clientName, actor: input.actor, request: `CR-${String(input.request.number).padStart(3, "0")} · ${input.request.title}`, note: input.note.slice(0, 480) };
   const deepLink = `/workspace/pre-projects/cases/${row.caseId}/variations?request=${encodeURIComponent(input.request.id)}`;

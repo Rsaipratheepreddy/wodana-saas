@@ -19,10 +19,14 @@ import { catalogLine, searchCatalog } from "./quote-catalog";
 import { priceQuote, PricingError, type PricingPolicy, type QuoteDiscountInput } from "./quote-pricing";
 import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
 import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } from "./proposal-kit";
+import { MARKUP_DISCLOSURES, type MarkupDisclosure } from "../proposals/markup-disclosure";
+import { touchesQsFields } from "../proposals/qs-review.domain";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
 const SETTINGS = ["workspace.settings.manage", "finance.settings.manage"];
+/** Who prices a quotation where the firm uses a QS (PLM-082). */
+const QS_PERMISSION = "commercial.estimate";
 export const LINE_KINDS = ["item", "service", "allowance", "client_supplied", "relocate", "dismantle", "remove_store", "dispose"] as const;
 const COMPONENT_KINDS = ["material", "finish", "hardware", "labour", "other"] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -36,11 +40,21 @@ export type QuotationSettings = {
   /** Days before a sent quote's validity ends when Sales and the client hear it; 0 for none (Q-6). */
   expiryWarningDays: number;
   /** The payment template a new quote starts with (Q-34); null for none. */
-  defaultPaymentTemplateId: string | null; version: number;
+  defaultPaymentTemplateId: string | null;
+  /** R3: how markup is shown to the client (quote, PDF and portal alike). */
+  markupDisclosure: MarkupDisclosure;
+  /** PLM-082: a quotation goes to a QS who confirms its pricing before it can be sent. */
+  qsReview: boolean;
+  /** How many days a signing link stays open (R8). */
+  signingLinkDays: number;
+  /** PLM-106: the firm's intro deck, shown on the opportunity. */
+  introDeckUrl: string | null;
+  version: number;
 };
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
-  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null, version: 0,
+  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null,
+  markupDisclosure: "all_inclusive", qsReview: false, signingLinkDays: 14, introDeckUrl: null, version: 0,
 };
 
 type LineRow = {
@@ -121,6 +135,14 @@ export class QuotationBuilderService {
         if (next.defaultPaymentTemplateId && !(await client.query(`SELECT 1 FROM commercial_payment_templates WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, next.defaultPaymentTemplateId])).rowCount)
           throw new BadRequestException("Choose one of your payment plans.");
       }
+      if (input.markupDisclosure !== undefined) next.markupDisclosure = oneOf(input.markupDisclosure, MARKUP_DISCLOSURES, "markup disclosure");
+      if (input.qsReview !== undefined) next.qsReview = bool(input.qsReview);
+      if (input.signingLinkDays !== undefined) {
+        const days = Number(input.signingLinkDays);
+        if (!Number.isInteger(days) || days < 1 || days > 90) throw new BadRequestException("A signing link stays open 1 to 90 days.");
+        next.signingLinkDays = days;
+      }
+      if (input.introDeckUrl !== undefined) next.introDeckUrl = deckLink(input.introDeckUrl);
       if (input.priceBookId !== undefined) {
         next.priceBookId = input.priceBookId === null ? null : uuid(input.priceBookId, "Price book");
         if (next.priceBookId && !(await client.query(`SELECT 1 FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.priceBookId])).rowCount)
@@ -128,16 +150,19 @@ export class QuotationBuilderService {
       }
       await client.query(
         `INSERT INTO workspace_quotation_settings (workspace_id, default_view, prices_include_tax, rounding, default_markup_percent, margin_floor_percent,
-           discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, expiry_warning_days, default_payment_template_id, version, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, $14, 1, $11, now())
+           discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, expiry_warning_days, default_payment_template_id,
+           markup_disclosure, qs_review, signing_link_days, intro_deck_url, version, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, $14, $15, $16, $17, $18, 1, $11, now())
          ON CONFLICT (workspace_id) DO UPDATE SET default_view = excluded.default_view, prices_include_tax = excluded.prices_include_tax,
            rounding = excluded.rounding, default_markup_percent = excluded.default_markup_percent, margin_floor_percent = excluded.margin_floor_percent,
            discount_approval_percent = excluded.discount_approval_percent, validity_days = excluded.validity_days, internal_review = excluded.internal_review,
            price_book_id = excluded.price_book_id, decision_reminder_days = excluded.decision_reminder_days, expiry_warning_days = excluded.expiry_warning_days,
-           default_payment_template_id = excluded.default_payment_template_id,
+           default_payment_template_id = excluded.default_payment_template_id, markup_disclosure = excluded.markup_disclosure, qs_review = excluded.qs_review,
+           signing_link_days = excluded.signing_link_days, intro_deck_url = excluded.intro_deck_url,
            version = workspace_quotation_settings.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
-          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays, next.defaultPaymentTemplateId]);
+          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays, next.defaultPaymentTemplateId,
+          next.markupDisclosure, next.qsReview, next.signingLinkDays, next.introDeckUrl]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -228,10 +253,12 @@ export class QuotationBuilderService {
    */
   apply(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { ops?: unknown }) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       if (!Array.isArray(input.ops) || !input.ops.length || input.ops.length > 200) throw new BadRequestException("Send 1 to 200 changes.");
       const canEditCosts = await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.manage");
       const settings = await readSettings(client, workspaceId);
+      // PLM-082: where the QS prices quotations, the price fields are theirs (a catalog pick still fills them).
+      const qsPrices = settings.qsReview && quote.kind === "quotation" && !(await this.access.hasPermission(client, workspaceId, user.userId, QS_PERMISSION));
       const decimals = currencyDecimals(quote.currency);
       const areas = new Map((await caseAreas(client, workspaceId, caseId)).map((area) => [area.id, area.name]));
       const trades = new Set((await workPackages(client, workspaceId, false)).map((trade) => trade.id));
@@ -298,6 +325,8 @@ export class QuotationBuilderService {
           const fields = object(op.line);
           const id = lineId(fields.id);
           const current = await readLine(client, workspaceId, caseId, quoteId, id, true);
+          if (qsPrices && priceChanged(current, fields))
+            throw new ForbiddenException("The QS sets the prices on this quotation. Change the items and quantities; the QS prices them.");
           if (current && fields.version === undefined) throw new BadRequestException("Send the version of the line you edited.");
           if (current && Number(fields.version) !== current.version) {
             if (Number(fields.version) + 1 === current.version && sameChange(current, fields)) continue; // a replay of the change just saved
@@ -330,7 +359,7 @@ export class QuotationBuilderService {
   /** Sets (or clears, with value 0) a discount on the quote, an area or a trade. */
   setDiscount(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: Record<string, unknown>) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       const scope = oneOf(input.scope, ["quote", "area", "trade"] as const, "discount scope");
       const target = scope === "quote" ? "" : String(input.target ?? "");
       if (scope === "area" && target !== "general" && !(await caseAreas(client, workspaceId, caseId)).some((area) => area.id === target)) throw new BadRequestException("Choose an area of this quote.");
@@ -354,7 +383,7 @@ export class QuotationBuilderService {
   /** The quote-wide tax rate, used when the firm has no tax codes set up. */
   setQuoteTax(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { taxRate?: unknown }) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       const rate = decimal(input.taxRate, "Tax", { max: "100" })!;
       await client.query(`UPDATE commercial_quotes SET tax_rate = $4 WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, quoteId, rate]);
       await this.reprice(client, workspaceId, caseId, { ...quote, taxRate: rate }, await readSettings(client, workspaceId));
@@ -366,7 +395,7 @@ export class QuotationBuilderService {
   /** The quote's payment milestones (percent of the total, what triggers each, which must be paid before the project starts). */
   setPaymentTerms(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { terms?: unknown }) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       let terms;
       try { terms = parsePaymentTerms(input.terms, false); }
       catch (error) { if (error instanceof Error) throw new BadRequestException(error.message); throw error; }
@@ -381,7 +410,7 @@ export class QuotationBuilderService {
   /** The client document's style, texts and sections. Items and money always come from the quote. */
   setDocument(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: Record<string, unknown>) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       const settings = await readSettings(client, workspaceId);
       const current = documentOf(quote, settings);
       const next = parseDocument(input ?? {}, current);
@@ -401,7 +430,7 @@ export class QuotationBuilderService {
    */
   setProposal(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: Record<string, unknown>) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      await this.editable(client, workspaceId, caseId, quoteId);
+      await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       const change: Record<string, unknown> = {};
       if (input.presentation !== undefined) change.presentation = parseQuotePresentation(input.presentation);
       if (input.cover !== undefined) change.cover = parseCover(input.cover);
@@ -508,7 +537,7 @@ export class QuotationBuilderService {
   addToCatalog(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, lineId: string, input: { version?: unknown }) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
       if (!(await this.access.hasPermission(client, workspaceId, user.userId, "catalog.manage"))) throw new ForbiddenException("Only people who manage the catalog can add items to it.");
-      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       const line = await readLine(client, workspaceId, caseId, quoteId, lineId, true);
       if (!line) throw new NotFoundException("Line not found.");
       if (line.catalogItemId) return this.state(client, workspaceId, caseId, quoteId, user.userId);
@@ -562,12 +591,18 @@ export class QuotationBuilderService {
   }
 
   // ---------- internals ----------
-  private async editable(client: Db, workspaceId: string, caseId: string, quoteId: string) {
+  private async editable(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string) {
     const record = (await client.query<{ status: string }>(`SELECT status FROM pre_project_cases WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, caseId])).rows[0];
     if (!record) throw new NotFoundException("Case not found.");
     if (!["active", "released"].includes(record.status)) throw new ConflictException("This case is closed.");
     const quote = await readQuote(client, workspaceId, caseId, quoteId, true);
     if (quote.status !== "draft") throw new ConflictException("This quote has been sent. Start a new revision to change it.");
+    // PLM-084: while a quotation is with the QS, only a QS changes it.
+    const holder = (await client.query<{ name: string | null }>(
+      `SELECT assignee.display_name AS name FROM quote_qs_reviews review LEFT JOIN users assignee ON assignee.id = review.assignee_user_id
+        WHERE review.workspace_id = $1 AND review.case_id = $2 AND review.quote_id = $3 AND review.status = 'with_qs'`, [workspaceId, caseId, quoteId])).rows[0];
+    if (holder && !(await this.access.hasPermission(client, workspaceId, userId, QS_PERMISSION)))
+      throw new ConflictException(`This quotation is with ${holder.name ?? "the QS"} for pricing. It comes back to you when they confirm or return it.`);
     return { quote };
   }
 
@@ -702,6 +737,9 @@ export class QuotationBuilderService {
     const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft", kind: quote.kind });
     return {
       quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision,
+        // The quotation number the family got when first sent (or null before).
+        reference: (await client.query<{ reference: string }>(`SELECT reference FROM quotation_references WHERE workspace_id = $1 AND case_id = $2 AND family_id = $3`,
+          [workspaceId, caseId, quote.familyId ?? quote.id])).rows[0]?.reference ?? null,
         paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
         clientDecision: decision ? { decision: decision.decision, decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, note: decision.note ?? "", method: decision.method ?? null, recordedBy: decision.recordedBy ?? null, evidence: decision.evidence ?? null } : null },
       family,
@@ -772,11 +810,12 @@ export class QuotationBuilderService {
 }
 
 // ---------- reading ----------
-async function readSettings(db: Db, workspaceId: string): Promise<QuotationSettings> {
+export async function readSettings(db: Db, workspaceId: string): Promise<QuotationSettings> {
   const row = (await db.query<QuotationSettings>(
     `SELECT default_view AS "defaultView", prices_include_tax AS "pricesIncludeTax", rounding, default_markup_percent::text AS "defaultMarkupPercent",
             margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", validity_days AS "validityDays",
-            internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", default_payment_template_id AS "defaultPaymentTemplateId", version
+            internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", default_payment_template_id AS "defaultPaymentTemplateId",
+            markup_disclosure AS "markupDisclosure", qs_review AS "qsReview", signing_link_days AS "signingLinkDays", intro_deck_url AS "introDeckUrl", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }
@@ -1188,3 +1227,54 @@ export async function acceptedScope(db: Db, workspaceId: string, caseId: string,
   };
 }
 export type AcceptedScope = Awaited<ReturnType<typeof acceptedScope>>;
+
+/** Whether a line change sets a QS-held price field to something other than what the line has (a new line: anything but zero or empty). */
+function priceChanged(current: LineRow | null, fields: Record<string, unknown>) {
+  const same = (left: unknown, right: unknown) => {
+    const empty = (value: unknown) => value === null || value === undefined || value === "";
+    if (empty(left) || empty(right)) return empty(left) && empty(right);
+    try { return Dec.of(String(left)).cmp(String(right)) === 0; } catch { return String(left) === String(right); }
+  };
+  return touchesQsFields(fields).some((field) => {
+    if (field === "components") return true;
+    if (field === "pricingMode") return (current?.pricingMode ?? "rate") !== fields.pricingMode;
+    const before = current ? (current as Record<string, unknown>)[field] : field === "rate" ? "0" : null;
+    return !same(before, fields[field]) && !(field === "rate" && !current && same("0", fields[field]));
+  });
+}
+
+/** PLM-106: the intro deck is a shared link (https only); empty clears it. */
+function deckLink(value: unknown) {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string") throw new BadRequestException("Paste the deck's link.");
+  const link = value.trim();
+  let url: URL;
+  try { url = new URL(link); } catch { throw new BadRequestException("Paste the deck's full link, starting with https://"); }
+  if (url.protocol !== "https:" || link.length > 1000) throw new BadRequestException("Paste the deck's full link, starting with https://");
+  return url.toString();
+}
+
+/**
+ * One quote priced exactly as the builder prices it, for documents made outside the builder (the proposal
+ * PDF, the portal's disclosure view, the QS pricing check): its lines with their area names, discounts,
+ * the firm's settings and the shared engine's result. Costs are included; callers decide what leaves.
+ */
+export async function quotePricingSnapshot(db: Db, workspaceId: string, caseId: string, quoteId: string) {
+  const quote = await readQuote(db, workspaceId, caseId, quoteId);
+  const settings = await readSettings(db, workspaceId);
+  const decimals = currencyDecimals(quote.currency);
+  const lines = await readLines(db, workspaceId, caseId, quoteId);
+  const components = await readComponents(db, workspaceId, caseId, quoteId, null);
+  const discounts = await readDiscounts(db, workspaceId, caseId, quoteId);
+  const rooms = new Map((await db.query<{ id: string; room: string }>(
+    `SELECT id, room FROM commercial_quote_lines WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3`, [workspaceId, caseId, quoteId])).rows.map((row) => [row.id, row.room]));
+  const areaNames = new Map((await caseAreas(db, workspaceId, caseId)).map((area) => [area.id, area.name]));
+  const policy: PricingPolicy = { currencyDecimals: decimals, pricesIncludeTax: settings.pricesIncludeTax, rounding: settings.rounding };
+  const pricing = priceQuote(lines.map((line) => pricedInput(line, quote.taxRate)), discounts, policy);
+  return {
+    quote, settings, decimals, discounts, pricing,
+    lines: lines.map((line) => ({ ...line, areaName: (line.areaId ? areaNames.get(line.areaId) : null) ?? (rooms.get(line.id) || null),
+      components: components.filter((part) => part.lineId === line.id) })),
+  };
+}
+export type QuotePricingSnapshot = Awaited<ReturnType<typeof quotePricingSnapshot>>;

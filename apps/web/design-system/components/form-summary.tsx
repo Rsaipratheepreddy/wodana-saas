@@ -48,7 +48,11 @@ function problemControl(from: HTMLElement | null, key: string): FormControl | nu
  * PLM-092: every problem a save found, in one box at the top of the form. Each one names what to do and takes the
  * person to its field; the fields themselves are marked by their own `isInvalid`/`errorMessage`.
  */
-export function ProblemSummary({ actions, problems, title }: { problems: Array<SaveProblem & { text?: string }>; title?: string; actions?: ReactNode }) {
+export function ProblemSummary({ actions, onSelect, problems, title }: {
+  problems: Array<SaveProblem & { text?: string }>; title?: string; actions?: ReactNode;
+  /** Where a problem isn't a form field (a table cell, a card): the page takes the person to it. */
+  onSelect?: (key: string) => void;
+}) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   if (!problems.length) return null;
@@ -56,7 +60,7 @@ export function ProblemSummary({ actions, problems, title }: { problems: Array<S
     <CircleAlert aria-hidden="true" size={16} />
     <div>
       <strong>{title ?? (problems.length === 1 ? t("Check 1 field") : t("Check {count} fields", { count: problems.length }))}</strong>
-      <ul data-layout="list">{problems.map((problem) => <li key={problem.key}><button onClick={() => { const control = problemControl(box.current, problem.key); if (control) focusField(control); }} type="button">{problem.text ?? problem.label}</button></li>)}</ul>
+      <ul data-layout="list">{problems.map((problem) => <li key={problem.key}><button onClick={() => { if (onSelect) { onSelect(problem.key); return; } const control = problemControl(box.current, problem.key); if (control) focusField(control); }} type="button">{problem.text ?? problem.label}</button></li>)}</ul>
       {actions}
     </div>
   </div>;

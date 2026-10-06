@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { recordAudit } from "../../audit/record-audit";
-import { flowChecksum, type FlowDefinition } from "./flow-definition";
+import { allSteps, flowChecksum, type FlowDefinition } from "./flow-definition";
 import { STARTER_FLOW_CODES, STARTER_FLOWS, starterFlow } from "./starter-flows";
 
 type Db = Pick<PoolClient, "query">;
@@ -91,8 +91,10 @@ export async function flowVersionById(db: Db, workspaceId: string, versionId: st
 export async function opportunityFlow(db: Db, input: { workspaceId: string; opportunityId: string; code: string | null; pinnedVersionId: string | null; actorUserId?: string | null }): Promise<ResolvedFlow> {
   const { workspaceId, opportunityId, pinnedVersionId } = input;
   const code = input.code || "basic";
+  let previous: ResolvedFlow | null = null;
   if (pinnedVersionId) {
     const pinned = await flowVersionById(db, workspaceId, pinnedVersionId);
+    previous = pinned;
     if (pinned && pinned.code === code) return pinned;
     // The type's flow was split from the one the job pinned (one enquiry type, one flow): the job keeps its version.
     if (pinned?.flowId && await splitFrom(db, workspaceId, code, pinned.flowId)) return pinned;
@@ -107,9 +109,14 @@ export async function opportunityFlow(db: Db, input: { workspaceId: string; oppo
     const pinned = await db.query(
       `UPDATE crm_opportunities SET flow_version_id = $3 WHERE workspace_id = $1 AND id = $2 AND flow_version_id IS DISTINCT FROM $3::uuid`,
       [workspaceId, opportunityId, latest.versionId]);
+    // E2-1: the enquiry type changed after steps started. Facts carry over (they are records); the steps the new
+    // flow doesn't have are kept in the audit, with the reason.
+    const keys = new Set(allSteps(latest.definition).map((step) => step.key));
+    const dropped = previous ? allSteps(previous.definition).filter((step) => !keys.has(step.key)).map(({ key, name }) => ({ key, name })) : [];
     if (pinned.rowCount) await recordAudit(db, {
       workspaceId, actorUserId: input.actorUserId ?? null, source: "internal", action: "crm.opportunity.flow_pinned.v1", entityType: "crm_opportunity", entityId: opportunityId,
-      before: { flowVersionId: pinnedVersionId }, after: { flowVersionId: latest.versionId, flow: latest.code, version: latest.version },
+      before: { flowVersionId: pinnedVersionId, ...(previous ? { flow: previous.code, version: previous.version } : {}) },
+      after: { flowVersionId: latest.versionId, flow: latest.code, version: latest.version, ...(previous ? { dropped, reason: "Enquiry type changed" } : {}) },
     });
   }
   return latest;

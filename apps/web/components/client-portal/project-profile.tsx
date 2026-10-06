@@ -11,7 +11,7 @@ import { usePortalLabels } from "./portal-labels";
 import styles from "./portal.module.css";
 import type { PortalTarget } from "./sections/section-types";
 
-type Go = (view: "overview" | "payments") => void;
+type Go = (section: "overview" | "payments" | "decisions") => void;
 type Open = (target: PortalTarget) => void;
 
 /** What a step asks of the client ("Material list to sign off"), and what it is and by when. */
@@ -20,6 +20,7 @@ export function useStepText(format: PortalFormat) {
   const kinds: Record<PortalStep["kind"], string> = {
     quote: t("Quotation to decide"), design: t("Design to review"), definition: t("Requirements to confirm"), materials: t("Material list to sign off"),
     handover: t("Handover to accept"), request: t("Question to answer"), invoice: t("Invoice to pay"), site_access: t("Confirm site access"),
+    change: t("Change to approve"), presentation: t("Concepts to choose from"), choice: t("Choice to make"),
   };
   // A delivery names its day in the title ("Confirm site access for 3 Oct"); the rest say by when.
   const title = (step: PortalStep) => (step.kind === "site_access" && step.due ? t("Confirm site access for {date}", { date: format.date(step.due) }) : kinds[step.kind]);
@@ -210,7 +211,7 @@ export function ProjectProfile({ project, view, site, format, wide, showNext, on
     </>}
   </div>;
   const next = project.paused || !showNext ? null : project.next[0] ?? null;
-  const act = (item: PortalStep) => (item.kind === "invoice" ? go("payments") : open({ kind: item.kind, id: item.id }));
+  const act = (item: PortalStep) => (item.kind === "invoice" ? go("payments") : item.kind === "presentation" || item.kind === "choice" ? go("decisions") : open({ kind: item.kind, id: item.id }));
   return <div className={styles.profile} data-layout="card">
     <Identity project={project} view={view} onProject={onProject} />
     {project.paused ? null : <StageSummary project={project} />}

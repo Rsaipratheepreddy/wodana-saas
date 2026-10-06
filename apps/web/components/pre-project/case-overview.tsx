@@ -102,7 +102,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
       <EditableField canEdit={manageable} kind="select" label={t("Risk")} value={record.riskLevel} items={(["none", "low", "medium", "high", "critical"] as const).map((value) => ({ id: value, label: t(caseRiskLabel[value]) }))}
         onSave={(riskLevel) => saveProfile({ riskLevel: riskLevel as PreProjectCase["riskLevel"] })} />
     </EditableFieldList>
-    <DesignJourney workspaceId={workspaceId} caseId={record.id} />
+    <DesignJourney workspaceId={workspaceId} caseId={record.id} members={members} />
     <span id="case-controls" />
     <FormDialog isOpen={Boolean(action)} title={action ? t(actionLabel[action]) : t("Case action")} onClose={closeAction} isDirty={Boolean(reason.trim())}
       submitLabel={action ? t(actionLabel[action]) : t("Save")} submitVariant={action === "cancel" ? "danger" : "primary"} isSubmitDisabled={action === "set_phase" && phase === record.phase}

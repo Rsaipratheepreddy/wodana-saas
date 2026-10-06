@@ -1,0 +1,93 @@
+/* The portal home (plan §5b, §6.22): what changed since the last visit, what waits for the client, the budget and the feed. */
+
+.digest { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.digestTitle svg { color: var(--wd-color-action-primary); }
+.digestTitle { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.digestList { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.digestList li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--wd-space-2); align-items: baseline; font-size: var(--wd-text-md); }
+.digestList strong { font-variant-numeric: tabular-nums; }
+.digestNames { overflow-wrap: anywhere; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+
+.feed { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.card {
+  display: grid;
+  grid-template-columns: var(--wd-space-10) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--wd-space-3);
+  inline-size: 100%;
+  padding: var(--wd-space-3);
+  border: 0;
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+button.card { cursor: pointer; }
+button.card:hover { background: var(--wd-color-surface-hover); }
+button.card:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.cardIcon {
+  display: grid;
+  place-items: center;
+  inline-size: var(--wd-space-10);
+  block-size: var(--wd-space-10);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-subtle);
+  overflow: hidden;
+  color: var(--wd-color-action-primary);
+}
+.cardIcon img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.cardText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.cardKind { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.cardTitle { overflow-wrap: anywhere; font-size: var(--wd-text-md); font-weight: var(--wd-weight-medium); }
+.cardNote { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.cardEnd { display: grid; justify-items: end; gap: var(--wd-space-1); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); white-space: nowrap; }
+
+/* R1: the budget, one line per figure, each change linked to its decision. */
+.budget { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.budgetRows { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.budgetRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-3); min-block-size: var(--wd-space-8); }
+.budgetRow[data-total] { padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); font-weight: var(--wd-weight-semibold); }
+.budgetLink { padding: 0; border: 0; background: none; color: var(--wd-color-link); font: inherit; text-align: start; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; overflow-wrap: anywhere; }
+.budgetLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.budgetSub { padding-inline-start: var(--wd-space-4); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.forecast { font-size: var(--wd-text-lg); }
+
+/* Document cards (E5-4): preview, title, type chip, version, date, a changed marker, view and download. */
+.documents { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.document { display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.preview { display: grid; place-items: center; aspect-ratio: 4 / 3; background: var(--wd-color-surface-subtle); color: var(--wd-color-icon-subtle); }
+.preview img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.documentBody { display: grid; align-content: start; gap: var(--wd-space-1-5); padding: var(--wd-space-3); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.documentActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); padding: 0 var(--wd-space-3) var(--wd-space-3); }
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wd-space-1);
+  min-block-size: var(--wd-control-compact);
+  padding-inline: var(--wd-space-3);
+  border: 1px solid var(--wd-color-border-control);
+  border-radius: var(--wd-radius-sm);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-sm);
+  text-decoration: none;
+}
+.action:hover { background: var(--wd-color-surface-hover); }
+.action:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+
+/* A change request to decide: its lines and what it does to price and handover. */
+.lines { display: grid; margin: 0; padding: 0; list-style: none; }
+.line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.line:last-child { border-block-end: 0; }
+.impact { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--wd-space-1) var(--wd-space-4); margin: 0; padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.impact dt { color: var(--wd-color-text-secondary); }
+.impact dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* R2: alternatives offered after the client declined a choice. */
+.alternatives { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr)); gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+/* Inside a choice row (a list item itself): each alternative stacks its name, price, signs and action. */
+.alternatives > .alternative { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--wd-space-1-5); padding: var(--wd-space-3); border: 1px solid var(--wd-color-border);
+  border-radius: var(--wd-radius-md); }
+.alternatives { inline-size: 100%; }

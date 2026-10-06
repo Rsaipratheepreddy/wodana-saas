@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { waitingFor, type ApprovalContext, type ApprovalRow } from "./approval-sources";
+import { escalateWaitingApprovals } from "./approval-engine";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -35,6 +36,8 @@ export async function chaseApprovals(db: Db, workspaceId: string, now = Date.now
     `SELECT status, conditions, channels FROM notification_policies WHERE workspace_id = $1 AND event_type = $2 ORDER BY updated_at DESC LIMIT 1`,
     [workspaceId, APPROVAL_REMINDER_EVENT])).rows[0];
   const settings = chaseSettings(policy);
+  // E3-1: a step that waited past its policy's escalation hours passes to the next approver (the Owner past the last).
+  await escalateWaitingApprovals(db, workspaceId, new Date(now));
   if (!settings.enabled) return { reminded: 0, escalated: 0 };
   const people = (await db.query<{ membershipId: string; userId: string; name: string; permissions: string[] }>(
     `SELECT membership.id AS "membershipId", membership.user_id AS "userId", coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS name,

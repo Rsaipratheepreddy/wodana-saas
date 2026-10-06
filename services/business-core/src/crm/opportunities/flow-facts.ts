@@ -7,6 +7,7 @@ import {
   columnOfStage, columnOptional, flowAsks, flowProgress, legacyStepName, nextColumnPlan, requirementsUpTo, type CheckFacts,
 } from "../flows/flow-interpreter";
 import { opportunityFlow, type ResolvedFlow } from "../flows/flow-store";
+import { loadStepSkips } from "../flows/step-skips";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -131,6 +132,8 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
     dealApproved: row.dealApproved,
     designStagesDone: row.designStagesDone ?? [],
     materialListSignedOff: row.materialListSignedOff,
+    // E2-5 / PLM-081: steps this job marked not needed, with the reason.
+    skippedSteps: await loadStepSkips(db, workspaceId, opportunityId),
     evidence: {
       intro_meeting_completed: { at: row.introAt, by: row.introBy },
       feasibility_confirmed: { at: row.feasibilityAt, by: row.feasibilityBy },

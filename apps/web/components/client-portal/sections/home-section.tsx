@@ -1,37 +1,60 @@
 "use client";
 
-import { ArrowRight, CalendarClock, ChevronRight, FileImage, FileText, MessageCircleReply } from "lucide-react";
+import { ArrowRight, CalendarClock, ChevronRight, MessageCircleReply, PenLine } from "lucide-react";
 import { Button } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { PortalStep } from "@/lib/client-portal/types";
+import type { PortalFeedCard, PortalStep } from "@/lib/client-portal/types";
 import { stageName } from "@/lib/client-portal/stage-names";
 import { ProgressCard } from "../../site/progress-card";
 import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
 import { ProfileDetails, useStepText } from "../project-profile";
+import { BudgetTracker, FeedList, feedTarget, WhatChanged } from "./portal-home";
 import type { SectionProps } from "./section-types";
 
 /**
- * The Overview: what's needed from the client first (as cards to act on), then the team's latest day on site, what's
- * coming up and the newest documents. On a narrow screen the key dates, balance and team follow at the foot.
+ * The portal home (plan §5b): what changed since the client last looked (AI2), everything waiting for them with its
+ * due date, the latest day on site, what's coming up, their budget (R1), then the feed — typed cards, newest first
+ * (the day shown above isn't repeated in it). On a narrow screen the key dates, balance and team follow at the foot.
  */
 export function HomeSection({ project, site, api, format, today, open, go, wide }: SectionProps) {
   const t = useT();
   const step = useStepText(format);
-  const act = (item: PortalStep) => (item.kind === "invoice" ? go("payments") : open({ kind: item.kind, id: item.id }));
+  const act = (item: PortalStep) => {
+    if (item.kind === "invoice") return go("payments");
+    // Concepts and choices are decided where they're listed.
+    if (item.kind === "presentation" || item.kind === "choice") return go("decisions");
+    open({ kind: item.kind, id: item.id });
+  };
   const replies = (project.messages?.requests ?? []).filter((request) => request.unread > 0);
+  const waiting = project.next.length + replies.length;
   const card = project.progress?.cards?.[0] ?? null;
+  const latest = card ? null : project.latestUpdate;
   const stages = project.progress?.stages ?? [];
   const current = stages.findIndex((stage) => stage.state === "current");
   const coming = stages.map((stage, index) => ({ ...stage, index })).filter((stage) => stage.state !== "done").slice(0, current >= 0 ? 4 : 3);
   // The handover date belongs to the last stage: on its row when that stage is listed, else as its own row.
   const handover = project.handoverDate && !project.handedOverOn ? project.handoverDate : null;
   const lastListed = coming.some((stage) => stage.index === stages.length - 1);
-  const documents = [...(project.documents ?? [])].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 3);
-  const waiting = project.next.length + replies.length;
+  // The feed, without what's already shown above it (the latest day or update).
+  const feed = (project.feed ?? []).filter((item) => !(card && item.kind === "day" && item.id === card.id) && !(latest && item.kind === "update" && item.id === latest.id));
+  const openCard = (item: PortalFeedCard) => {
+    const where = feedTarget(item);
+    if (where.target) open(where.target);
+    else if (where.section && project.sections[where.section]) go(where.section);
+  };
+  // A day shows its lead photo, a shared design its picture.
+  const thumb = (item: PortalFeedCard) => {
+    if (item.kind === "day") { const hero = project.progress?.cards?.find((day) => day.id === item.id)?.hero; return hero ? api.file("photo", hero.id, true) : null; }
+    if (item.kind === "design") return project.design?.designs.some((design) => design.versions.some((version) => version.id === item.id && version.hasPreview)) ? api.file("design", item.id, true) : null;
+    return null;
+  };
+  const canAskChange = project.role === "approver" && project.sections.decisions && Boolean(project.changes);
   return <div className={styles.section} data-tour="portal-home">
+    <WhatChanged digest={project.digest} format={format} />
+
     <section className={styles.group} aria-labelledby="portal-next">
-      <h3 className={styles.groupTitle} id="portal-next">{t("Needed from you")}</h3>
+      <h3 className={styles.groupTitle} id="portal-next">{t("Waiting for you")}</h3>
       {waiting ? <ul className={styles.actionCards}>
         {project.next.map((item) => <li key={`${item.kind}-${item.id}`}>
           <button className={styles.actionCard} type="button" onClick={() => act(item)}>
@@ -61,14 +84,14 @@ export function HomeSection({ project, site, api, format, today, open, go, wide 
       </div>
       <ProgressCard card={{ ...card, summary: card.summary || (card.noWork ? t("No work on site this day.") : "") }} photoUrl={(id, preview) => api.file("photo", id, preview)}
         formatDay={format.date} />
-    </section> : project.latestUpdate ? <section className={styles.group} aria-labelledby="portal-latest">
+    </section> : latest ? <section className={styles.group} aria-labelledby="portal-latest">
       <div className={styles.groupHead}>
         <h3 className={styles.groupTitle} id="portal-latest">{t("Latest update")}</h3>
         {project.sections.progress && project.progress ? <Button size="compact" variant="quiet" onPress={() => go("progress")}>{t("See progress")}<ChevronRight aria-hidden="true" size={16} /></Button> : null}
       </div>
       <div className={styles.callout}>
-        <p className={styles.quote} dir="auto">{project.latestUpdate.text}</p>
-        <span className={styles.muted}>{format.date(project.latestUpdate.at)}</span>
+        <p className={styles.quote} dir="auto">{latest.text}</p>
+        <span className={styles.muted}>{format.date(latest.at)}</span>
       </div>
     </section> : null}
 
@@ -91,17 +114,14 @@ export function HomeSection({ project, site, api, format, today, open, go, wide 
       </ol>
     </section> : null}
 
-    {documents.length ? <section className={styles.group} aria-labelledby="portal-documents">
+    {project.budget ? <BudgetTracker budget={project.budget} format={format} onOpen={open} compact /> : null}
+
+    {feed.length || canAskChange ? <section className={styles.group} aria-labelledby="portal-feed">
       <div className={styles.groupHead}>
-        <h3 className={styles.groupTitle} id="portal-documents">{t("Recent documents")}</h3>
-        <Button size="compact" variant="quiet" onPress={() => go("documents")}>{t("See documents")}<ChevronRight aria-hidden="true" size={16} /></Button>
+        <h3 className={styles.groupTitle} id="portal-feed">{t("Latest")}</h3>
+        {canAskChange ? <Button size="compact" variant="quiet" onPress={() => open({ kind: "raise-change" })}><PenLine aria-hidden="true" size={16} />{t("Ask for a change")}</Button> : null}
       </div>
-      <ul className={styles.list}>{documents.map((document) => <li className={styles.item} key={`${document.kind}-${document.id}`}>
-        <a className={styles.itemText} href={api.file(document.kind, document.id)} rel="noreferrer" target="_blank">
-          <span className={styles.fileName}>{document.mimeType.startsWith("image/") ? <FileImage aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />} {document.title}</span>
-          <span className={styles.itemMeta}>{[document.group, format.date(document.date)].filter(Boolean).join(" · ")}</span>
-        </a>
-      </li>)}</ul>
+      {feed.length ? <FeedList cards={feed} format={format} onOpen={openCard} thumb={thumb} /> : null}
     </section> : null}
 
     {wide ? null : <div className={styles.profileFoot}><ProfileDetails project={project} site={site} format={format} today={today} go={go} /></div>}

@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
 import { thankForDeal } from "../crm/conversations/inbox/client-followups";
 import { tellDealOutcome } from "../crm/leads/sales-attention";
+import { markProposalWon } from "../crm/opportunities/opportunity-proposals";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -70,6 +71,8 @@ export async function winOpportunityOnAcceptance(db: Db, input: {
     await recordAudit(db, { workspaceId: input.workspaceId, actorUserId: input.actorUserId, source: input.source, action: "crm.opportunity.won.v1",
       entityType: "crm_opportunity", entityId: opportunity.id, before: opportunity, after: { ...updated, reason, caseId: input.caseId, ...by } });
     won = true;
+    // PLM-009: the accepted round's proposal is Won (design fee or main quotation), each with its own date.
+    await markProposalWon(db, { workspaceId: input.workspaceId, opportunityId: String(opportunity.id), round: input.round ?? null, actorUserId: input.actorUserId });
     // The client is thanked on WhatsApp and told what happens next (once per opportunity).
     await thankForDeal(db, input.workspaceId, String(opportunity.id), { actorUserId: input.actorUserId });
     // The Sales admin and the Owners hear the deal is won (S-23).

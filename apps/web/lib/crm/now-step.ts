@@ -9,7 +9,7 @@ import type { OpportunityFlowView, FlowLineStep } from "./opportunity-flow";
  */
 
 /** Where a requirement is resolved. */
-export type RequirementTarget = "proof" | "furniture" | "intro" | "discovery" | "quote" | "enquiry" | "edit";
+export type RequirementTarget = "proof" | "furniture" | "intro" | "discovery" | "quote" | "enquiry" | "edit" | "siteVisit" | "materials";
 /** What the Now card's one primary button does. */
 export type NowTarget = RequirementTarget | "advance" | "win" | "planning" | "reopen";
 export type PlanningSection = "overview" | "designs" | "quotations" | "approvals";
@@ -54,6 +54,10 @@ const STEPS: Record<string, StepDef> = {
   feasibility: { id: "feasibility", title: tKey("Confirm feasibility with the factory"), short: tKey("Confirm feasibility"), target: "furniture" },
   introMeeting: { id: "introMeeting", title: tKey("Book the intro meeting"), short: tKey("Book intro"), target: "intro" },
   quotation: { id: "quotation", title: tKey("Prepare the quotation"), short: tKey("Prepare quote"), target: "quote" },
+  // PLM-080/044: the joinery site visit, booked for the salesperson and a designer together.
+  siteVisit: { id: "siteVisit", title: tKey("Book the site visit"), short: tKey("Book site visit"), target: "siteVisit" },
+  // PLM-081: material selection, or "Not required for this order" with a reason.
+  "designStage:material_selection": { id: "materials", title: tKey("Choose the materials"), short: tKey("Choose materials"), target: "materials" },
   enquiryType: { id: "enquiryType", title: tKey("Choose the enquiry type"), short: tKey("Choose enquiry type"), target: "enquiry" },
   clientType: { id: "clientType", title: tKey("Set the client type"), short: tKey("Set client type"), target: "enquiry" },
   owner: { id: "owner", title: tKey("Assign a sales owner"), short: tKey("Assign owner"), target: "edit" },
@@ -139,7 +143,7 @@ export function nowPlan(input: { flow: OpportunityFlowView | null; status: strin
 /* ── The next column's checklist ───────────────────────────────────────────────────────────────────── */
 
 /** The groups an opportunity's facts are kept in: each has one card and, where it is edited here, one side sheet. */
-export type FactGroup = "client" | "property" | "package" | "questions" | "intro" | "supply" | "payment" | "planning" | "deal";
+export type FactGroup = "client" | "property" | "package" | "questions" | "intro" | "supply" | "payment" | "planning" | "deal" | "proposals" | "closing";
 
 const GROUP_OF: Record<string, FactGroup> = {
   floorPlan: "property", area: "property", floorPlanOrArea: "property", spaces: "property", propertyLocation: "property", clientEmail: "property", budget: "client",
@@ -168,6 +172,8 @@ function rowAction(key: string): MessageKey {
   const bare = key.replace(/^discovery:/, "");
   const group = groupForRequirement(key);
   if (bare === "floorPlan") return tKey("Upload");
+  if (bare === "siteVisit") return tKey("Book");
+  if (bare === "designStage:material_selection") return tKey("Choose");
   if (group === "questions") return tKey("Answer");
   if (group === "intro") return tKey("Book");
   if (group === "payment") return tKey("Attach");

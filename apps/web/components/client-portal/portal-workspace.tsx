@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalApi } from "@/lib/client-portal/client";
 import { siteBrand } from "@/lib/client-portal/document-quote";
 import { PORTAL_SECTIONS, type PortalProject, type PortalSection, type PortalSite, type PortalView } from "@/lib/client-portal/types";
+import { ChangeSheet } from "./decisions/change-sheet";
 import { DefinitionSheet } from "./decisions/definition-sheet";
 import { DesignSheet } from "./decisions/design-sheet";
 import { HandoverSheet } from "./decisions/handover-sheet";
@@ -13,6 +14,7 @@ import { MaterialsSheet } from "./decisions/materials-sheet";
 import { QuestionSheet } from "./decisions/question-sheet";
 import { QuoteSheet } from "./decisions/quote-sheet";
 import { SiteAccessSheet } from "./decisions/site-access-sheet";
+import { ChangeForm } from "./forms/change-form";
 import { ClaimForm } from "./forms/claim-form";
 import { BoardDetail, IdeaForm, PinDetail } from "./forms/idea-forms";
 import { IssueForm } from "./forms/issue-form";
@@ -39,7 +41,7 @@ const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: 
   warranty: WarrantySection, messages: MessagesSection } as const;
 /** The order the client reads them in: where it stands, what to decide, the ideas, then money, papers, cover and talk. */
 const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "payments", "documents", "warranty", "messages"];
-const DECISION_STEPS = ["quote", "design", "definition", "materials", "handover", "request"];
+const DECISION_STEPS = ["quote", "design", "definition", "materials", "handover", "request", "change", "presentation", "choice"];
 /** The side column opens from a small laptop up; below it the profile is a card above the sections. */
 const WIDE = "(min-width: 64rem)";
 
@@ -124,7 +126,7 @@ export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: 
       <div className={styles.appContent} ref={content}>
         {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
           description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
-          <h2 className={styles.viewTitle} id="portal-view-title">{labels.sections[current]}</h2>
+          <h2 className="wd-visually-hidden" id="portal-view-title">{labels.sections[current]}</h2>
           {notice ? <InlineNotice tone="success" message={notice} /> : null}
           {current === "overview" ? <div className={styles.summary}><ProfileDetails project={project} site={site} format={format} today={view.today} go={go} /></div> : null}
           <section aria-labelledby="portal-view-title" className={styles.view}><Section {...props} /></section>
@@ -142,7 +144,7 @@ export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: 
       {nav}
       {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
         description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
-        <h2 className={styles.viewTitle} id="portal-view-title">{labels.sections[current]}</h2>
+        <h2 className="wd-visually-hidden" id="portal-view-title">{labels.sections[current]}</h2>
         {notice ? <InlineNotice tone="success" message={notice} /> : null}
         <section aria-labelledby="portal-view-title" className={styles.view}><Section {...props} /></section>
       </>}
@@ -166,7 +168,8 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
   }
   if (target.kind === "design") {
     const design = decisions?.designs.find((item) => item.id === target.id);
-    return design ? { title: `${design.title} · V${design.number}`, body: <DesignSheet design={design} onDecided={decided} {...common} /> } : null;
+    const review = project.design?.designs.flatMap((item) => item.versions).find((version) => version.id === design?.id) ?? null;
+    return design ? { title: `${design.title} · V${design.number}`, body: <DesignSheet design={design} onDecided={decided} review={review} onComment={reload} {...common} /> } : null;
   }
   if (target.kind === "definition" && decisions?.definition)
     return { title: t("Your requirements · R{number}", { number: decisions.definition.number }), body: <DefinitionSheet definition={decisions.definition} onDecided={decided} {...common} /> };
@@ -176,6 +179,12 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
     const pack = decisions?.handovers.find((item) => item.id === target.id);
     return pack ? { title: `${pack.title} · R${pack.revision}`, body: <HandoverSheet pack={pack} onDecided={decided} {...common} /> } : null;
   }
+  if (target.kind === "change") {
+    const change = project.changes?.find((item) => item.id === target.id);
+    return change ? { title: `${change.reference} · ${change.title}`, body: <ChangeSheet change={change} onDecided={decided} {...common} /> } : null;
+  }
+  if (target.kind === "raise-change")
+    return { title: t("Ask for a change"), body: <ChangeForm caseId={project.id} api={api} onDone={done(t("Sent. Your project team will work out the price and time and send it back to you."))} /> };
   if (target.kind === "request") {
     const question = decisions?.requests.find((item) => item.id === target.id);
     return question ? { title: question.title, body: <QuestionSheet question={question} caseId={project.id} api={api} format={format} onDecided={decided} /> } : null;

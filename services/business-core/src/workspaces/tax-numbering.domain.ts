@@ -21,21 +21,26 @@ export function validateTaxRates(model: TaxModel, rates: TaxRateInput[]) {
   return normalized;
 }
 
-export type SequenceInput = { prefix: string; padding: number; resetPolicy: "never" | "annual"; nextNumber?: number };
+export type SequenceInput = { prefix: string; suffix?: string; padding: number; resetPolicy: "never" | "annual"; nextNumber?: number };
 
-/** Prefix is short and printable; a yearly reset needs {YYYY} in the prefix so numbers never repeat. */
-export function validateSequence(input: SequenceInput, current: { nextNumber: number; currentPeriod: number | null }) {
+const PRINTABLE = /^[\p{L}\p{N}{}\-_/. ]+$/u;
+
+/** Prefix and suffix are short and printable; a yearly reset needs {YYYY} in the prefix so numbers never repeat. */
+export function validateSequence(input: SequenceInput, current: { nextNumber: number; currentPeriod: number | null; suffix?: string }) {
   const prefix = input.prefix.trim();
-  if (!prefix || prefix.length > 40 || !/^[\p{L}\p{N}{}\-_/. ]+$/u.test(prefix)) throw new UnprocessableEntityException("Use letters, numbers, - _ / . and {YYYY} in the prefix");
+  if (!prefix || prefix.length > 40 || !PRINTABLE.test(prefix)) throw new UnprocessableEntityException("Use letters, numbers, - _ / . and {YYYY} in the prefix");
+  const suffix = input.suffix === undefined ? current.suffix ?? "" : String(input.suffix).trim();
+  if (suffix.length > 40 || (suffix && !PRINTABLE.test(suffix))) throw new UnprocessableEntityException("Use letters, numbers, - _ / . and {YYYY} in the suffix");
   if (!Number.isInteger(input.padding) || input.padding < 1 || input.padding > 12) throw new UnprocessableEntityException("Digits must be between 1 and 12");
   if (input.resetPolicy === "annual" && !prefix.includes("{YYYY}")) throw new UnprocessableEntityException("A yearly reset needs {YYYY} in the prefix so numbers never repeat");
   if (input.nextNumber !== undefined) {
     if (!Number.isInteger(input.nextNumber) || input.nextNumber < 1) throw new UnprocessableEntityException("The next number must be 1 or more");
     if (input.nextNumber < current.nextNumber) throw new UnprocessableEntityException(`Numbers only move forward; the next number is already ${current.nextNumber}`);
   }
-  return { prefix, padding: input.padding, resetPolicy: input.resetPolicy, nextNumber: input.nextNumber ?? current.nextNumber };
+  return { prefix, suffix, padding: input.padding, resetPolicy: input.resetPolicy, nextNumber: input.nextNumber ?? current.nextNumber };
 }
 
-export function previewNumber(prefix: string, padding: number, next: number, year: number) {
-  return prefix.replaceAll("{YYYY}", String(year)) + String(next).padStart(padding, "0");
+/** The number the next document gets, exactly as allocate_document_number() writes it. */
+export function previewNumber(prefix: string, padding: number, next: number, year: number, suffix = "") {
+  return prefix.replaceAll("{YYYY}", String(year)) + String(next).padStart(padding, "0") + suffix.replaceAll("{YYYY}", String(year));
 }

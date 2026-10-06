@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsArray,
+  Matches,
   IsBoolean,
   IsIn,
   IsInt,
@@ -165,6 +166,8 @@ export class UpdateSalesSettingsDto {
   @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
   /** PLM-024: who reads internal notes. */
   @IsOptional() @IsIn(["team", "sales"]) internalNotesVisibility?: "team" | "sales";
+  /** PLM-099: the prefix new opportunity references take, for example O- (existing references keep theirs). */
+  @IsOptional() @IsString() @Matches(/^[A-Z][A-Z0-9]{0,5}-?$/) opportunityReferencePrefix?: string;
 }
 
 export class LogContactDto {

@@ -18,6 +18,7 @@ export class SaveTaxSettingsDto {
 export class SaveNumberingDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) version?: number;
   @ApiProperty() @IsString() @MaxLength(40) prefix!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(40) suffix?: string;
   @ApiProperty() @IsInt() @Min(1) @Max(12) padding!: number;
   @ApiProperty({ enum: ["never", "annual"] }) @IsIn(["never", "annual"]) resetPolicy!: "never" | "annual";
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) nextNumber?: number;

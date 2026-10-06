@@ -5,7 +5,7 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { ArchiveBriefEntryDto, BulkBriefEntriesDto, MoodboardLayoutDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
 import { BRIEF_MAX_BYTES, BriefService } from "./brief.service";
-import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
+import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto, DesignThreadAudienceDto } from "./design.dto";
 import { DesignService } from "./design.service";
 
 import {ItemSpecificationService} from "./item-specification.service";
@@ -42,6 +42,7 @@ export class CaseContentController {
  @Post('designs/upload') uploadDesigns(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:UploadDesignFilesDto) {return this.designs.uploadFiles(a,w,c,b);}
  @Post('designs/:id/threads') thread(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Body() b:CreateDesignThreadDto){return this.designs.createThread(a,w,c,id,b);}
  @Post('designs/:id/threads/:threadId/replies') reply(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Param('threadId',ParseUUIDPipe) threadId:string,@Body() b:ReplyDesignThreadDto){return this.designs.replyThread(a,w,c,id,threadId,b);}
+ @Post('designs/:id/threads/:threadId/audience') threadAudience(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Param('threadId',ParseUUIDPipe) threadId:string,@Body() b:DesignThreadAudienceDto){return this.designs.setThreadAudience(a,w,c,id,threadId,b);}
  @Post('designs/:id/threads/:threadId/status') threadStatus(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Param('threadId',ParseUUIDPipe) threadId:string,@Body() b:ResolveDesignThreadDto){return this.designs.resolveThread(a,w,c,id,threadId,b);}
  @Get('designs') list(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string) {return this.designs.list(a,w,c);}
  @Put('designs') design(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:SaveDesignDto) {return this.designs.save(a,w,c,b);}

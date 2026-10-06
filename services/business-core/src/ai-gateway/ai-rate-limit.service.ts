@@ -12,6 +12,8 @@ export const AI_FEATURE_LIMITS: Record<string, number> = {
   "woddy.agent": 10,
   // Fill with Woddy: a pasted message or a card photo read into a form's fields, reviewed before anything is saved.
   "form.fill": 12,
+  // A payment proof read into amount, date and reference, proposed to Finance (PLM-122).
+  "crm.proof_reading": 10,
 };
 const DEFAULT_LIMIT = 10;
 

@@ -2,7 +2,7 @@ import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib
 import { getServerT } from "@/lib/i18n/server";
 
 const allowed = (path: string[]) =>
-  (path.length === 1 && path[0] === "settings")
+  (path.length === 1 && ["settings", "flow-settings"].includes(path[0]))
   || (path.length === 1 && path[0] === "packages")
   || (path.length === 3 && path[0] === "packages" && UUID.test(path[1]) && ["status", "quote"].includes(path[2]));
 

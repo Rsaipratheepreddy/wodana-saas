@@ -5,6 +5,12 @@ import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { checkDesignPackage, designFee, effectiveMinimumDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
+import { DEFAULT_SITE_VISIT_QUESTIONS, normaliseSiteQuestions, type SiteQuestion } from "./design-journey.domain";
+
+export type DesignFlowSettings = {
+  version: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number;
+  visualiserRoleCode: string; showroomBookingTypeId: string | null; siteVisitQuestions: SiteQuestion[];
+};
 
 type PackageRow = {
   id: string; code: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null;
@@ -45,6 +51,35 @@ export class DesignPackagesService {
         [workspaceId, minimum?.amount ?? null, minimum?.currency ?? null, user.userId, input.timings?.inspirationDays ?? null, input.timings?.siteVisitHours ?? null, keepMinimum]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.minimum_deposit_changed", entityType: "workspace_design_settings", entityId: workspaceId,
         before: before ? { amount: before.amount, currency: before.currency } : null, after: { minimumDeposit: keepMinimum ? undefined : minimum, timings: input.timings } });
+      return this.load(client, workspaceId);
+    });
+  }
+
+  /**
+   * Settings › Design: the design flow's timings, the role that renders, the showroom booking type (the booking
+   * slot engine) and the site-visit question list (PLM-128). Configuration; each journey freezes its copy at start.
+   */
+  saveFlowSettings(actor: RequestActor, workspaceId: string, input: Omit<DesignFlowSettings, "version"> & { version: number }) {
+    const questions = normaliseSiteQuestions(input.siteVisitQuestions);
+    if (questions.length !== input.siteVisitQuestions.length) throw new UnprocessableEntityException("Every question needs a unique key and its text");
+    if (input.designClientDays < input.designInternalDays) throw new UnprocessableEntityException("The client deadline can't be before the internal one");
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
+      const before = (await client.query<{ version: number }>(`SELECT version FROM workspace_design_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId])).rows[0];
+      if ((before?.version ?? 0) !== input.version) throw new ConflictException("Design settings changed in another window. Reload and try again.");
+      if (input.showroomBookingTypeId && !(await client.query(`SELECT 1 FROM booking_types WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.showroomBookingTypeId])).rowCount)
+        throw new UnprocessableEntityException("Choose one of your booking types");
+      await client.query(
+        `INSERT INTO workspace_design_settings (workspace_id, design_internal_days, design_client_days, material_selection_days, estimate_days, visualiser_role_code,
+                                                showroom_booking_type_id, site_visit_questions, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+         ON CONFLICT (workspace_id) DO UPDATE SET design_internal_days = excluded.design_internal_days, design_client_days = excluded.design_client_days,
+           material_selection_days = excluded.material_selection_days, estimate_days = excluded.estimate_days, visualiser_role_code = excluded.visualiser_role_code,
+           showroom_booking_type_id = excluded.showroom_booking_type_id, site_visit_questions = excluded.site_visit_questions,
+           updated_by = excluded.updated_by, updated_at = now(), version = workspace_design_settings.version + 1`,
+        [workspaceId, input.designInternalDays, input.designClientDays, input.materialSelectionDays, input.estimateDays, input.visualiserRoleCode.trim() || "visualiser",
+          input.showroomBookingTypeId ?? null, JSON.stringify(questions), user.userId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.flow_settings_changed.v1", entityType: "workspace_design_settings", entityId: workspaceId,
+        after: { ...input, siteVisitQuestions: questions.map((question) => question.key) } });
       return this.load(client, workspaceId);
     });
   }
@@ -106,8 +141,19 @@ export class DesignPackagesService {
     const settings = (await client.query<{ amount: string | null; currency: string | null; version: number; inspirationDays: number; siteVisitHours: number }>(
       `SELECT minimum_design_deposit::text AS amount, currency, version, inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours" FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const packages = (await client.query<PackageRow>(`SELECT ${PACKAGE_COLUMNS} FROM design_packages WHERE workspace_id = $1 ORDER BY status, position, name`, [workspaceId])).rows;
+    const flow = (await client.query<Omit<DesignFlowSettings, "version" | "siteVisitQuestions"> & { questions: unknown }>(
+      `SELECT design_internal_days AS "designInternalDays", design_client_days AS "designClientDays", material_selection_days AS "materialSelectionDays", estimate_days AS "estimateDays",
+              visualiser_role_code AS "visualiserRoleCode", showroom_booking_type_id AS "showroomBookingTypeId", site_visit_questions AS questions
+         FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+    const bookingTypes = (await client.query<{ id: string; name: string }>(`SELECT id, name FROM booking_types WHERE workspace_id = $1 AND active ORDER BY name`, [workspaceId])).rows;
     return { minimumDeposit: effectiveMinimumDeposit(settings), version: settings?.version ?? 0,
-      timings: { inspirationDays: settings?.inspirationDays ?? 7, siteVisitHours: settings?.siteVisitHours ?? 72 }, packages };
+      timings: { inspirationDays: settings?.inspirationDays ?? 7, siteVisitHours: settings?.siteVisitHours ?? 72 }, packages,
+      flow: {
+        designInternalDays: flow?.designInternalDays ?? 35, designClientDays: flow?.designClientDays ?? 56, materialSelectionDays: flow?.materialSelectionDays ?? 7,
+        estimateDays: flow?.estimateDays ?? 7, visualiserRoleCode: flow?.visualiserRoleCode ?? "visualiser", showroomBookingTypeId: flow?.showroomBookingTypeId ?? null,
+        siteVisitQuestions: flow ? normaliseSiteQuestions(flow.questions) : DEFAULT_SITE_VISIT_QUESTIONS,
+      },
+      bookingTypes };
   }
 
   private async requirePackage(client: PoolClient, workspaceId: string, id: string, lock: boolean) {

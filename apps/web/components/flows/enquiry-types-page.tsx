@@ -14,11 +14,12 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { ColorSwatches, TypeDot } from "./enquiry-type-colors";
 import { NewEnquiryTypeDialog } from "./new-enquiry-type-dialog";
+import { DealClosingDialog, ReferencePrefixDialog } from "./deal-closing-dialog";
 import styles from "./flows.module.css";
 
 export { NewEnquiryTypeDialog } from "./new-enquiry-type-dialog";
 
-type Editing = { type: EnquiryTypeSummary; action: "rename" | "color" | "archive" };
+type Editing = { type: EnquiryTypeSummary; action: "rename" | "color" | "archive" | "closing" };
 
 /** Enquiry types (plan §5a, F3): one card per type with a summary of its own steps, and a way to add a type. */
 export function EnquiryTypesPage({ canManage, loadError = false, types: initial, workspaceId }: { canManage: boolean; loadError?: boolean; types: EnquiryTypeSummary[]; workspaceId: string }) {
@@ -32,6 +33,7 @@ export function EnquiryTypesPage({ canManage, loadError = false, types: initial,
   const [label, setLabel] = useState("");
   const [color, setColor] = useState<TypeColor>(1);
   const [archiving, setArchiving] = useState(false);
+  const [prefixOpen, setPrefixOpen] = useState(false);
 
   if (!canManage) return <NoAccessState area={t("Enquiry types")} />;
 
@@ -80,7 +82,8 @@ export function EnquiryTypesPage({ canManage, loadError = false, types: initial,
               </span> : null}
             </Link>
             <IconMenuButton ariaLabel={t("More actions for {name}", { name: type.label })} onAction={(id) => open(type, id)} items={[
-              { id: "rename", label: t("Rename") }, { id: "color", label: t("Change colour") }, { id: "archive", label: t("Archive"), tone: "danger" },
+              { id: "rename", label: t("Rename") }, { id: "color", label: t("Change colour") },
+              ...(type.flowId ? [{ id: "closing", label: t("Deal closed when") }] : []), { id: "archive", label: t("Archive"), tone: "danger" as const },
             ]} />
           </div>
           <p className={styles.meta}>
@@ -99,6 +102,9 @@ export function EnquiryTypesPage({ canManage, loadError = false, types: initial,
         </li>;
       })}</ul>}
     {loadError ? null : <p className={styles.footnote}>{t("Not sure yet — stays in New Opportunity until a type is chosen.")}</p>}
+    {loadError ? null : <p className={styles.footnote}><Button size="compact" variant="quiet" onPress={() => setPrefixOpen(true)}>{t("Opportunity numbers")}</Button></p>}
+    {editing?.action === "closing" && editing.type.flowId ? <DealClosingDialog workspaceId={workspaceId} flowId={editing.type.flowId} typeName={editing.type.label} onClose={() => setEditing(null)} /> : null}
+    {prefixOpen ? <ReferencePrefixDialog workspaceId={workspaceId} onClose={() => setPrefixOpen(false)} onSaved={(prefix) => toast.push({ tone: "success", title: t("Saved"), message: t("New opportunities start with {prefix}", { prefix }) })} /> : null}
     {editing?.action === "rename" ? <FormDialog isDirty={label !== editing.type.label} onClose={() => setEditing(null)} submitLabel={t("Save")} title={t("Rename {name}", { name: editing.type.label })}
       onSubmit={async () => { await save(editing.type, { label: label.trim() }); setEditing(null); }} isSubmitDisabled={!label.trim()}>
       <TextInput isRequired label={t("Name")} maxLength={160} onChange={setLabel} value={label} />

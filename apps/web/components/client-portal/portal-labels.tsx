@@ -27,6 +27,9 @@ export function usePortalLabels() {
       open: [t("Open"), "info"], under_review: [t("With the team"), "info"], resolved: [t("Done"), "success"],
       covered: [t("Covered"), "success"], not_covered: [t("Not covered"), "neutral"], chargeable: [t("Chargeable"), "warning"],
       done: [t("Done"), "success"], current: [t("Now"), "info"],
+      // Change requests, choices and presentations (P4).
+      waiting: [t("Waiting for you"), "warning"], with_team: [t("With the team"), "info"], changed: [t("Changed"), "warning"], presented: [t("Waiting for you"), "warning"],
+      chosen: [t("Chosen"), "success"], proposed: [t("Waiting for you"), "warning"],
     };
     const projectStates: Record<string, string> = {
       planning: t("Planning"), active: t("In progress"), on_hold: t("On hold"), completed: t("Completed"), cancelled: t("Cancelled"),

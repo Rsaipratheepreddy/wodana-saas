@@ -6,7 +6,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CircleAlert, Play, Redo2, Undo2, X } from "lucide-react";
 import {
-  Avatar, Button, ConfirmationDialog, IconButton, NoAccessState, TooltipBubble, useToast,
+  Avatar, Button, ConfirmationDialog, IconButton, ListTabs, NoAccessState, TooltipBubble, useToast,
 } from "@/design-system";
 import { CrmRequestError, crmRequest } from "@/lib/crm/client";
 import {
@@ -31,6 +31,8 @@ const LIMIT = 100;
 export type FlowBuilderProps = {
   answerOptions: AnswerOptions; canManage: boolean; columnNames: Record<string, string>; flow: FlowDetail | null;
   roles: RoleOption[]; workspaceId: string;
+  /** The same steps as CeCe's table (plan §6.9a); the canvas is the other view of them. */
+  tableHref?: string;
 };
 
 /** Enquiry types › a type (plan §5a, F3): the builder for its steps. The draft stays in the browser until it is published as a new version. */
@@ -40,7 +42,7 @@ export function FlowBuilder(props: FlowBuilderProps) {
   return <ReactFlowProvider><Builder {...props} flow={props.flow} /></ReactFlowProvider>;
 }
 
-function Builder({ answerOptions, columnNames, flow, roles, workspaceId }: FlowBuilderProps & { flow: FlowDetail }) {
+function Builder({ answerOptions, columnNames, flow, roles, tableHref, workspaceId }: FlowBuilderProps & { flow: FlowDetail }) {
   const t = useT();
   const toast = useToast();
   const router = useRouter();
@@ -167,6 +169,8 @@ function Builder({ answerOptions, columnNames, flow, roles, workspaceId }: FlowB
       <div className={styles.title}>
         <h1><TypeDot code={type.code} color={type.color} />{type.label}</h1>
       </div>
+      {tableHref ? <ListTabs label={t("View")} items={[{ id: "table", label: t("Table") }, { id: "canvas", label: t("Canvas") }]} value="canvas"
+        onChange={(id) => { if (id !== "table") return; if (dirty) setLeaving(tableHref); else router.push(tableHref); }} /> : null}
       <span className={styles.spacer} />
       <div className={styles.actions}>
         <span className={styles.versionTag}>{t("Version {version}", { version })}</span>

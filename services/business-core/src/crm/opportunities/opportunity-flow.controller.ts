@@ -22,7 +22,7 @@ export class OpportunityFlowController {
   @Post("payment-proofs")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 4 } }))
   attach(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string, @Body() input: AttachPaymentProofDto, @UploadedFile() file?: ReferenceUpload) {
-    return this.flow.attachProof(actor, workspaceId, opportunityId, { version: Number(input.version), kind: input.kind, note: input.note }, file);
+    return this.flow.attachProof(actor, workspaceId, opportunityId, { version: Number(input.version), kind: input.kind, note: input.note, proposal: input.proposal ?? null }, file);
   }
 
   @Get("payment-proofs/:proofId")

@@ -8,6 +8,7 @@ import { FileStrip } from "../forms/attach-files";
 import { isolate } from "../portal-format";
 import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
+import { BudgetTracker } from "./portal-home";
 import type { SectionProps } from "./section-types";
 
 /**
@@ -30,6 +31,7 @@ export function PaymentsSection({ project, site, format, open, api }: SectionPro
       : t("We couldn't find your payment of {date}: {reason}", { date: format.date(report.paidOn), reason: report.reason });
   };
   return <div className={styles.section}>
+    {project.budget ? <BudgetTracker budget={project.budget} format={format} onOpen={open} /> : null}
     <ul className={styles.list}>{payments.milestones.map((milestone) => <li className={styles.item} key={milestone.id}>
       <span className={styles.itemText}>
         <span className={styles.itemTitle} dir="auto">{milestone.title}</span>

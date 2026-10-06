@@ -3,6 +3,9 @@ import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
+import { dealAmount, dealApprovalView, decideDealStep, openDealApproval } from "./deal-file-approval";
+import { dealInsightFor } from "./deal-file-insight";
+import { markProposalWon } from "../crm/opportunities/opportunity-proposals";
 import { decisionEvidenceFile, decisionRecorder } from "./quote-decision-access";
 import { extendQuoteValidity } from "./quote-expiry";
 import { readDefaultPaymentPlan, startingMilestones } from "./default-payment-plan";
@@ -122,6 +125,7 @@ import { ConfigurationRevisionsService } from "../workspaces/configuration-revis
 import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 import { contactEmailSql } from "../client-portal/contact-email";
+import { beforeQuoteIssued } from "../proposals/quote-issue";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
 export function commercialDataForCostAccess(data: CommercialData, canViewCosts: boolean): CommercialData {
@@ -475,12 +479,15 @@ export class CommercialService {
           "SELECT slug,enabled FROM client_portal_settings WHERE workspace_id=$1",
           [workspaceId],
         );
+        const dealApproval = await dealApprovalView(client, workspaceId, data.ownerReview, user.userId);
         return {
           workspaceId,
           caseId,
           ...record,
           servicePathEnabled,
           data: commercialDataForCostAccess(data, canViewCosts),
+          dealApproval,
+          dealInsight: await dealInsightFor(client, workspaceId, { caseId, opportunityId: record.opportunityId ? String(record.opportunityId) : null, data, canViewCosts }),
           contacts,
           portalSlug: settings.rows[0]?.slug ?? null,
           portalBrand: await effectivePortalBrand(client, workspaceId),
@@ -515,7 +522,9 @@ export class CommercialService {
               workspaceId,
               user.userId,
               "commercial.deal.approve",
-            )) && !dealSeparationBlocks(data, user.userId),
+            )) && !dealSeparationBlocks(data, user.userId)
+            // The engine decides who holds the current step (the Owner above an amount, a delegate, an escalation).
+            && (dealApproval?.status !== "pending" || dealApproval.currentStep === 1 || dealApproval.canDecide),
           canVerifyFinance: await this.access.hasPermission(
             client,
             workspaceId,
@@ -2565,6 +2574,8 @@ export class CommercialService {
               )
                 previous.status = "superseded";
             validateDeduction(data, q);
+            // QS confirmation (PLM-082), the quotation number and the markup disclosure the client sees (R3).
+            await beforeQuoteIssued(client, { workspaceId, caseId, quoteId: q.id, familyId: q.familyId ?? null, kind: q.kind, actorUserId: user.userId });
             q.status = "issued";
             q.issuedAt = now;
             q.approverId = grant.id;
@@ -2661,6 +2672,8 @@ export class CommercialService {
           // The second paid round updates the same Deal File; it must never
           // remove the Project Ref created after the first agreement.
           if (!data.designRound) data.dealFile = null;
+          // E3: the Deal File approval opens at Finance under the workspace's policy for this amount.
+          await openDealApproval(client, { workspaceId, caseId, review: data.ownerReview, quote: accepted, title: `${record.title} · Q-${accepted.number}`, actorUserId: user.userId });
         } else if (action === "review_deal_finance") {
           const review = data.ownerReview;
           if (!review || review.status !== "pending_finance")
@@ -2680,8 +2693,13 @@ export class CommercialService {
             const finalCommissionLines = dealInput(() => confirmCommissionAmounts(review.commissionLines ?? [], b.commissionLines, acceptedQuoteValue(accepted), accepted.currency));
             review.finalCommissionLines = finalCommissionLines;
             review.commission = sumAmounts(finalCommissionLines.map((line) => line.amount), accepted.currency);
+            // E3: Finance's step on the engine (who may verify, and the record of who did).
+            await decideDealStep(client, { workspaceId, caseId, review, quote: accepted, title: `${record.title} · Q-${accepted.number}`, actorUserId: user.userId,
+              step: "finance", decision: "approve", note: financeNote });
             review.status = "pending_approval";
           } else {
+            await decideDealStep(client, { workspaceId, caseId, review, quote: data.quotes.find(quote => quote.id === review.quoteId),
+              title: record.title, actorUserId: user.userId, step: "finance", decision: "return", note: financeNote });
             review.status = "returned";
             review.decisionNote = financeNote;
           }
@@ -2744,6 +2762,13 @@ export class CommercialService {
                 ? `Verify at least ${data.servicePath.designMinimumDeposit.currency} ${data.servicePath.designMinimumDeposit.amount} for the design proposal before the deal is approved.`
                 : "Verify the design proposal payment before the deal is approved.");
             const snapshot = acceptedQuoteTotals(accepted);
+            // E3: the approver's step on the engine. With more approvers after this one (the Owner above an amount),
+            // the Deal File waits for them; it is created only when the request is approved.
+            const approval = await decideDealStep(client, { workspaceId, caseId, review, quote: accepted, title: `${record.title} · Q-${accepted.number}`,
+              actorUserId: user.userId, step: "approver", decision: "approve", note: decisionNote });
+            if (approval && approval.status !== "approved") {
+              review.decisionNote = decisionNote;
+            } else {
             review.status = "approved";
             review.decisionNote = decisionNote;
             review.decidedAt = now;
@@ -2784,7 +2809,13 @@ export class CommercialService {
             // A paid design round opens design work in Planning; the project itself starts from the accepted main quotation.
             if (data.servicePath?.scope.design && accepted.round === "design") await startJourney(client, workspaceId, caseId, user.userId);
             else if (accepted.round !== "design") await releasePhaseOnDealApproval(client, { workspaceId, caseId, actorUserId: user.userId });
+            // PLM-103 / PLM-009: the round's proposal is Won (once) and its value is locked by this Deal File approval.
+            if (record.opportunityId) await markProposalWon(client, { workspaceId, opportunityId: String(record.opportunityId), round: accepted.round === "design" ? "design" : "main",
+              actorUserId: user.userId, quote: { id: accepted.id, number: accepted.number, amount: dealAmount(accepted), currencyCode: accepted.currency }, lockByDealFile: true });
+            }
           } else {
+            await decideDealStep(client, { workspaceId, caseId, review, quote: data.quotes.find((quote) => quote.id === review.quoteId), title: record.title,
+              actorUserId: user.userId, step: "approver", decision: decision === "return" ? "return" : "reject", note: decisionNote });
             review.status = decision === "return" ? "returned" : "rejected";
             review.decisionNote = decisionNote;
             review.decidedAt = now;

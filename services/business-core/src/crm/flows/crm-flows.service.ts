@@ -3,10 +3,11 @@ import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
-import { flowChecksum, validateFlowDefinition } from "./flow-definition";
+import { flowChecksum, flowPolicyProblems, validateFlowDefinition, type FlowDefinition, type FlowValidationError } from "./flow-definition";
 import { ensureStarterFlows } from "./flow-store";
 import { ensureEnquiryTypeFlows, flowCodeFor } from "./enquiry-type-flows";
 import { FLOW_TEMPLATES, flowTemplate } from "./flow-templates";
+import { copyClosingRules, inferClosing, seedClosingRules, TEMPLATE_CLOSING } from "./flow-closing";
 import { STARTER_FLOWS } from "./starter-flows";
 import { UNRESOLVED_ENQUIRY_TYPE } from "../leads/lead-options";
 
@@ -120,6 +121,9 @@ export class CrmFlowsService {
         `INSERT INTO crm_flow_versions (workspace_id, flow_id, version, definition, checksum, source, published_by)
          VALUES ($1, $2, 1, $3::jsonb, $4, 'published', $5) RETURNING id`,
         [workspaceId, flow.id, JSON.stringify(result.definition), checksum, user.userId])).rows[0];
+      // PLM-102: the new flow closes deals the way its template, starter or source flow does.
+      if (input.sourceFlowId) await copyClosingRules(client, workspaceId, input.sourceFlowId, flow.id, user.userId);
+      else await seedClosingRules(client, workspaceId, flow.id, TEMPLATE_CLOSING[input.templateKey ?? input.starter ?? ""] ?? inferClosing(result.definition), user.userId);
       await recordAudit(client, {
         workspaceId, actorUserId: user.userId, action: "crm.flow.created.v1", entityType: "crm_flow", entityId: flow.id,
         after: { code, name, version: 1, versionId: version.id, checksum, from },
@@ -135,10 +139,10 @@ export class CrmFlowsService {
     });
   }
 
-  /** Runs the publisher's validator on a draft without saving it. */
+  /** Runs the publisher's validator and its product rules on a draft without saving it: every problem at once. */
   validate(actor: RequestActor, workspaceId: string, definition: unknown) {
     return this.access.withPermission(actor, workspaceId, PERMISSION, async () => {
-      const result = validateFlowDefinition(definition);
+      const result = publishable(definition);
       return result.ok ? { valid: true, errors: [], checksum: flowChecksum(result.definition) } : { valid: false, errors: result.errors, checksum: null };
     });
   }
@@ -148,7 +152,7 @@ export class CrmFlowsService {
    * editor started from; a replay of the same publish returns the version it created.
    */
   async publish(actor: RequestActor, workspaceId: string, flowId: string, input: { expectedVersion: number; definition: unknown; name?: string }) {
-    const result = validateFlowDefinition(input.definition);
+    const result = publishable(input.definition);
     if (!result.ok) throw new UnprocessableEntityException({ message: "These steps cannot be published", errors: result.errors });
     const checksum = flowChecksum(result.definition);
     return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
@@ -202,6 +206,14 @@ export class CrmFlowsService {
       [workspaceId, versionId])).rows[0];
     return { ...row, created };
   }
+}
+
+/** The shape (validator) and the product rules (PLM-081), reported together. */
+export function publishable(definition: unknown): { ok: true; definition: FlowDefinition } | { ok: false; errors: FlowValidationError[] } {
+  const result = validateFlowDefinition(definition);
+  if (!result.ok) return result;
+  const policy = flowPolicyProblems(result.definition);
+  return policy.length ? { ok: false, errors: policy } : { ok: true, definition: result.definition };
 }
 
 /** A flow with its versions and the definition of one version (the latest when none is named). */

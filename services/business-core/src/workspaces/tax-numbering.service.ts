@@ -57,25 +57,25 @@ export class TaxNumberingService {
     return this.access.withPermission(actor, workspaceId, WRITE, async (client, actorUser) => {
       if (!(DOCUMENT_TYPES as readonly string[]).includes(documentType)) throw new NotFoundException("Unknown document type");
       const entity = await this.entity(client, workspaceId, entityId, true);
-      const found = await client.query<{ id: string; prefix: string; padding: number; resetPolicy: "never" | "annual"; nextNumber: number; currentPeriod: number | null; version: number }>(
-        `SELECT id, prefix, padding, reset_policy AS "resetPolicy", next_number AS "nextNumber", current_period AS "currentPeriod", version
+      const found = await client.query<{ id: string; prefix: string; suffix: string; padding: number; resetPolicy: "never" | "annual"; nextNumber: number; currentPeriod: number | null; version: number }>(
+        `SELECT id, prefix, suffix, padding, reset_policy AS "resetPolicy", next_number AS "nextNumber", current_period AS "currentPeriod", version
          FROM document_sequences WHERE workspace_id = $1 AND legal_entity_id = $2 AND document_type = $3 FOR UPDATE`,
         [workspaceId, entityId, documentType],
       );
       const before = found.rows[0];
       if (before && input.version !== before.version) throw new ConflictException("Numbering changed; reload and try again");
-      const next = validateSequence(input, { nextNumber: before?.nextNumber ?? 1, currentPeriod: before?.currentPeriod ?? null });
+      const next = validateSequence(input, { nextNumber: before?.nextNumber ?? 1, currentPeriod: before?.currentPeriod ?? null, suffix: before?.suffix ?? "" });
       if (before) {
         await client.query(
-          `UPDATE document_sequences SET prefix = $3, padding = $4, reset_policy = $5, next_number = $6, version = version + 1, updated_at = now()
+          `UPDATE document_sequences SET prefix = $3, padding = $4, reset_policy = $5, next_number = $6, suffix = $7, version = version + 1, updated_at = now()
            WHERE workspace_id = $1 AND id = $2`,
-          [workspaceId, before.id, next.prefix, next.padding, next.resetPolicy, next.nextNumber],
+          [workspaceId, before.id, next.prefix, next.padding, next.resetPolicy, next.nextNumber, next.suffix],
         );
       } else {
         await client.query(
-          `INSERT INTO document_sequences (workspace_id, legal_entity_id, document_type, prefix, padding, reset_policy, next_number)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [workspaceId, entity.id, documentType, next.prefix, next.padding, next.resetPolicy, next.nextNumber],
+          `INSERT INTO document_sequences (workspace_id, legal_entity_id, document_type, prefix, padding, reset_policy, next_number, suffix)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [workspaceId, entity.id, documentType, next.prefix, next.padding, next.resetPolicy, next.nextNumber, next.suffix],
         );
       }
       await recordAudit(client, { workspaceId, actorUserId: actorUser.userId, action: "finance.numbering_changed", entityType: "legal_entity", entityId,
@@ -88,8 +88,8 @@ export class TaxNumberingService {
     const entity = await this.entity(client, workspaceId, entityId, false);
     const model = await this.taxModel(client, entity.countryCode);
     const tax = await this.currentTax(client, workspaceId, entityId);
-    const sequences = await client.query<{ documentType: string; prefix: string; padding: number; resetPolicy: "never" | "annual"; nextNumber: number; currentPeriod: number | null; version: number }>(
-      `SELECT document_type AS "documentType", prefix, padding, reset_policy AS "resetPolicy", next_number AS "nextNumber",
+    const sequences = await client.query<{ documentType: string; prefix: string; suffix: string; padding: number; resetPolicy: "never" | "annual"; nextNumber: number; currentPeriod: number | null; version: number }>(
+      `SELECT document_type AS "documentType", prefix, suffix, padding, reset_policy AS "resetPolicy", next_number AS "nextNumber",
               current_period AS "currentPeriod", version FROM document_sequences WHERE workspace_id = $1 AND legal_entity_id = $2`,
       [workspaceId, entityId],
     );
@@ -101,9 +101,9 @@ export class TaxNumberingService {
       tax: tax ? { version: tax.version, pricesIncludeTax: tax.pricesIncludeTax, rates: tax.rates } : null,
       numbering: DOCUMENT_TYPES.map((documentType) => {
         const row = sequences.rows.find((sequence) => sequence.documentType === documentType);
-        const value = row ?? { documentType, prefix: `${entity.code}-${DEFAULT_SHORT[documentType]}-{YYYY}-`, padding: 5, resetPolicy: "annual" as const, nextNumber: 1, currentPeriod: null, version: 0 };
+        const value = row ?? { documentType, prefix: `${entity.code}-${DEFAULT_SHORT[documentType]}-{YYYY}-`, suffix: "", padding: 5, resetPolicy: "annual" as const, nextNumber: 1, currentPeriod: null, version: 0 };
         const next = value.resetPolicy === "annual" && value.currentPeriod !== null && value.currentPeriod !== year ? 1 : value.nextNumber;
-        return { ...value, exists: Boolean(row), preview: previewNumber(value.prefix, value.padding, next, year) };
+        return { ...value, exists: Boolean(row), preview: previewNumber(value.prefix, value.padding, next, year, value.suffix) };
       }),
     };
   }

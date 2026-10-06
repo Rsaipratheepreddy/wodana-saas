@@ -32,6 +32,8 @@ export type FlowStep = {
   designStage?: DesignStage;
   column: string;
   optional?: boolean;
+  /** CeCe's "Auto-passed": on this path the step passes on its own (never the payment proof, never with `optional`). */
+  auto?: boolean;
   clientVisible?: boolean;
   deadline?: { amount: number; unit: DeadlineUnit };
   notify?: string[];
@@ -364,6 +366,7 @@ export function uniqueKey(definition: FlowDefinition, base: string): string {
 export function cleanStep(step: FlowStep): FlowStep {
   const next: FlowStep = { ...step };
   if (!next.optional) delete next.optional;
+  if (!next.auto || next.optional) delete next.auto;
   if (!next.clientVisible) delete next.clientVisible;
   if (!next.notify?.length) delete next.notify;
   if (!next.needs?.length && next.check !== "details_complete") delete next.needs;

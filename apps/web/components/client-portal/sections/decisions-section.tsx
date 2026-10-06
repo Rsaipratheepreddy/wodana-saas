@@ -1,17 +1,18 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, PenLine } from "lucide-react";
 import type { ReactNode } from "react";
-import { EmptyState } from "@/design-system";
+import { Button, EmptyState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
 import type { PortalTarget, SectionProps } from "./section-types";
+import { DesignChoices } from "./design-choices";
 
 type Row = { key: string; target: PortalTarget; title: string; meta: string; state: string; waiting: boolean };
 
 /** Everything the team asked the client to decide, each at the revision they sent: what waits first, then what's decided. */
-export function DecisionsSection({ project, format, open }: SectionProps) {
+export function DecisionsSection({ project, format, open, api, reload }: SectionProps) {
   const t = useT();
   const decisions = project.decisions;
   if (!decisions) return null;
@@ -29,11 +30,20 @@ export function DecisionsSection({ project, format, open }: SectionProps) {
       state: decisions.materials.status, waiting: decisions.materials.canDecide }] : [] },
     { group: t("Handover"), rows: decisions.handovers.map((pack) => ({ key: pack.id, target: { kind: "handover" as const, id: pack.id }, title: `${pack.title} · R${pack.revision}`,
       meta: format.date(pack.issuedAt), state: pack.status, waiting: pack.canDecide })) },
+    // Change requests (R11): sent to the client to approve, or asked for by them (with the team until assessed).
+    { group: t("Changes"), rows: (project.changes ?? []).map((change) => ({ key: change.id, target: { kind: "change" as const, id: change.id }, title: `${change.reference} · ${change.title}`,
+      meta: change.priceImpact !== null && change.currency ? `${change.priceImpact.startsWith("-") ? "" : "+"}${format.money(change.priceImpact, change.currency)}` : "",
+      state: change.status, waiting: change.canDecide })) },
     { group: t("Questions"), rows: decisions.requests.map((question) => ({ key: question.id, target: { kind: "request" as const, id: question.id }, title: question.title,
       meta: question.decision ? question.decision.choiceLabel : question.dueDate ? t("by {date}", { date: format.date(question.dueDate) }) : "",
       state: question.decision ? "resolved" : "awaiting_decision", waiting: question.canDecide })) },
   ].filter((group) => group.rows.length);
-  if (!rows.length) return <EmptyState illustration="done" title={t("Nothing to decide yet")} description={t("When your team sends you something to decide, it will be here.")} />;
+  // Concepts to choose from and materials and design choices to confirm (plan §6.7a) come first.
+  const choices = project.choices && (project.choices.presentations.length || project.choices.choices.length)
+    ? <DesignChoices caseId={project.id} choices={project.choices} api={api} format={format} onChanged={reload} /> : null;
+  const ask = project.role === "approver" && project.changes ? <div className={styles.groupHead}><span />
+    <Button size="compact" variant="quiet" onPress={() => open({ kind: "raise-change" })}><PenLine aria-hidden="true" size={16} />{t("Ask for a change")}</Button></div> : null;
+  if (!rows.length) return <>{ask}{choices ?? <EmptyState illustration="done" title={t("Nothing to decide yet")} description={t("When your team sends you something to decide, it will be here.")} />}</>;
   const waiting = rows.flatMap((group) => group.rows.filter((row) => row.waiting));
   const list = (items: Row[], label: string): ReactNode => <ul aria-label={label} className={styles.list}>{items.map((row) => <li key={row.key}>
     <button className={`${styles.item} ${styles.itemButton}`} data-tour={row.target.kind === "quote" ? "portal-quote" : row.target.kind === "materials" ? "portal-materials" : undefined}
@@ -43,6 +53,8 @@ export function DecisionsSection({ project, format, open }: SectionProps) {
     </button>
   </li>)}</ul>;
   return <div className={styles.section} data-tour="portal-decisions">
+    {ask}
+    {choices}
     {waiting.length ? <section className={styles.group} aria-labelledby="portal-waiting">
       <h2 className={styles.groupTitle} id="portal-waiting">{t("Waiting for you")}</h2>{list(waiting, t("Waiting for you"))}
     </section> : null}

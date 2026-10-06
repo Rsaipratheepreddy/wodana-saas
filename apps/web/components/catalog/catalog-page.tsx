@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileUp, Plus } from "lucide-react";
+import { FileUp, Link2, Plus } from "lucide-react";
 import {
   Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
   type DataGridColumn,
@@ -13,6 +13,7 @@ import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { CatalogImportDialog } from "./catalog-import-dialog";
 import { CatalogItemInspector } from "./catalog-item-inspector";
+import { ProductClipDialog } from "./product-clip-dialog";
 import { catalogImageUrl } from "@/lib/quotation/client";
 import styles from "./catalog-page.module.css";
 
@@ -29,7 +30,15 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [dialog, setDialog] = useState<"import" | "item" | "catalog" | null>(null);
+  const [dialog, setDialog] = useState<"import" | "item" | "catalog" | "clip" | null>(null);
+  // The browser button opens the catalog with ?clip=<supplier page>; the link waits in "Add from link".
+  const [clipUrl, setClipUrl] = useState("");
+  useEffect(() => {
+    const link = new URLSearchParams(window.location.search).get("clip");
+    if (!link || !canManage) return;
+    setClipUrl(link.slice(0, 2000)); setDialog("clip");
+    const url = new URL(window.location.href); url.searchParams.delete("clip"); window.history.replaceState(null, "", url.toString());
+  }, [canManage]);
   const catalog = catalogs.find((entry) => entry.id === catalogId);
 
   const loadItems = useCallback(async () => {
@@ -83,6 +92,7 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   return <div className={styles.page}>
     <PageHeader title={catalog?.name ?? t("Catalog")} actions={canManage ? <>
       <Button onPress={() => setDialog("import")}><FileUp aria-hidden="true" size={15} />{t("Import")}</Button>
+      <Button onPress={() => setDialog("clip")}><Link2 aria-hidden="true" size={15} />{t("Add from link")}</Button>
       <Button onPress={() => setDialog("item")} variant="primary"><Plus aria-hidden="true" size={15} />{t("Add item")}</Button>
     </> : null} />
     <div className={styles.layout}>
@@ -116,6 +126,7 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
       </section>
     </div>
     <CatalogImportDialog catalogId={catalogId} isOpen={dialog === "import"} onClose={() => setDialog(null)} onImported={() => { setDialog(null); void loadItems(); }} workspaceId={workspaceId} />
+    <ProductClipDialog catalogId={catalogId} initialUrl={clipUrl} isOpen={dialog === "clip"} onClose={() => { setDialog(null); setClipUrl(""); }} onSaved={() => { setDialog(null); setClipUrl(""); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
     <NewItemDialog catalogId={catalogId} isOpen={dialog === "item"} onClose={() => setDialog(null)} onCreated={() => { setDialog(null); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
   </div>;
 }

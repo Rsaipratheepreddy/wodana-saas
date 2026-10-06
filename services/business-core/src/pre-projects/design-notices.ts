@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
-import { caseFacts } from "../design/design-journey.store";
+import { caseFacts, salesAdminMembership } from "../design/design-journey.store";
+import { roundChargeable, STAGE_LABELS, type JourneyStage } from "../design/design-journey.domain";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -31,6 +32,25 @@ export async function noticeDesignStep(db: Db, input: {
   else if (input.action === "changes_requested" && input.fromStatus === "internal_review") await tell([input.uploaderUserId], "design.sent_back");
   else if (input.fromStatus === "client_review" && ["approved", "changes_requested", "rejected"].includes(input.action))
     await tell([input.uploaderUserId, managerUserId], input.action === "approved" ? "design.client_approved" : "design.client_changes", true);
+}
+
+/**
+ * PLM-049/051: a client round is a revision after the first; a revision beyond the package's included ones is
+ * chargeable. The Account Manager and the Sales Admin hear it once per revision (in the app and by email) so the
+ * extra-revision fee is agreed before the work.
+ */
+export async function noticeExtraRevision(db: Db, input: { workspaceId: string; caseId: string; designId: string; title: string; stage: string | null; round: number; included: number | null; actorUserId: string; versionId: string }) {
+  if (input.included === null || !roundChargeable(input.round, input.included)) return;
+  const facts = await caseFacts(db, input.workspaceId, input.caseId);
+  const members = [facts?.accountManagerId, await salesAdminMembership(db, input.workspaceId)].filter((id): id is string => Boolean(id));
+  const recipients = (await db.query<{ userId: string }>(`SELECT DISTINCT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`, [input.workspaceId, members])).rows
+    .map((row) => row.userId).filter((userId) => userId !== input.actorUserId);
+  const variables = { stage: STAGE_LABELS[(input.stage ?? "concepts") as JourneyStage] ?? "Design", clientName: facts?.clientName ?? "the client", round: String(input.round - 1), included: String(input.included), title: input.title };
+  for (const recipientUserId of recipients) {
+    const message = { workspaceId: input.workspaceId, recipientUserId, code: "design.extra_revision", eventType: "design.extra_revision", variables, deepLink: `/workspace/pre-projects/cases/${input.caseId}/designs?file=${input.designId}` };
+    await notifyUserInApp(db, { ...message, idempotencyKey: `design.extra_revision:${input.versionId}:${recipientUserId}` });
+    await queueUserEmail(db, { ...message, idempotencyKey: `design.extra_revision:${input.versionId}:${recipientUserId}:email` });
+  }
 }
 
 export async function noticeDesignMentions(db: Db, input: { workspaceId: string; caseId: string; designId: string; title: string; actorUserId: string; mentions: string[]; body: string; threadId: string }) {

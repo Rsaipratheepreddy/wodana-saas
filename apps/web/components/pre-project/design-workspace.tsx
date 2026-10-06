@@ -3,12 +3,16 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, CircleCheck, CircleDashed, Folder, Plus, Upload } from "lucide-react";
-import { Badge, Button, EmptyState, InlineNotice, PillTabs, SegmentedControl, Skeleton, TextAreaField, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { Badge, Button, DateField, EmptyState, FormSection, InlineNotice, PillTabs, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type CaseRoom, type DesignOptions } from "@/lib/pre-project/content";
 import { mergeDesigns } from "@/lib/pre-project/design-workflow";
 import { DESIGN_STATUS_LABEL, designStatusTone, isDeliverableStage, latestOf, nextStep, STAGE_DOCUMENT_TYPE, stageDetail, type JourneyStageKey, type JourneyView } from "@/lib/pre-project/design-workspace";
-import { CaseModal } from "./case-controls";
+import { AssetUpload, CaseModal } from "./case-controls";
+import { DesignLedger } from "./design-ledger";
+import { DesignPresentations } from "./design-presentations";
+import { METHOD_LABEL, revisionDetail } from "@/lib/pre-project/design-decisions";
 import { DesignActions } from "./design-actions";
 import { FileCover } from "./design-file-preview";
 import { DesignViewer } from "./design-viewer";
@@ -36,7 +40,8 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const [review, setReview] = useState(options);
   const [journey, setJourney] = useState<JourneyView | null>(null);
   const [journeyError, setJourneyError] = useState("");
-  const [picked, setPicked] = useState<JourneyStageKey | "other" | null>(null);
+  // A notice or a link can open a stage, the approval or the materials and decisions list (?stage=…).
+  const [picked, setPicked] = useState<JourneyStageKey | "other" | "ledger" | null>(() => (params.get("stage") as JourneyStageKey | "ledger" | null) ?? null);
   const [view, setView] = useState<"folders" | "all">("folders");
   const [folder, setFolder] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -74,9 +79,9 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const stages = (journey?.stages ?? []).filter((stage) => isDeliverableStage(stage.stage) || stage.stage === "approval");
   const activeStage = stages.find((stage) => stage.status === "active")?.stage;
   const unstaged = current.filter((design) => !isDeliverableStage(design.stage));
-  const shown: JourneyStageKey | "other" = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
+  const shown: JourneyStageKey | "other" | "ledger" = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
   const stageView = stages.find((stage) => stage.stage === shown);
-  const inStage = shown === "other" ? unstaged : current.filter((design) => design.stage === shown);
+  const inStage = shown === "other" ? unstaged : shown === "ledger" ? [] : current.filter((design) => design.stage === shown);
   const roomName = (id: string | null) => id ? data.rooms.find((room) => room.id === id)?.name ?? t("Room") : t("General");
   const groups = [...new Set(inStage.map((design) => design.roomId ?? NO_ROOM))]
     .sort((a, b) => a === NO_ROOM ? 1 : b === NO_ROOM ? -1 : roomName(a).localeCompare(roomName(b)))
@@ -96,7 +101,7 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
 
   const stageAction = async (path: string, body: Record<string, unknown>) => {
     setBusy(true); setError("");
-    try { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, path, "POST", body)); return true; }
+    try { const next = await caseRequest<JourneyView>(workspaceId, caseId, path, "POST", body); setJourney((current) => ({ ...next, canStart: current?.canStart, canManage: current?.canManage, canEdit: current?.canEdit, canReview: current?.canReview, canRecordClient: current?.canRecordClient })); return true; }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
     finally { setBusy(false); }
   };
@@ -108,15 +113,20 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
     {!journey.journey ? <div className={styles.notStarted}>
       <EmptyState illustration="calendar" title={t("Design hasn't started")} description={t("It starts when the design fee is paid.")}
         action={journey.canStart ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void stageAction("design-journey/start", {})}>{t("Start design")}</Button> : undefined} />
-    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as JourneyStageKey | "other"); setFolder(null); }}
-      items={[...stages.map((stage) => ({ id: stage.stage, label: t(stage.label as never), done: stage.status === "done" })), ...(unstaged.length ? [{ id: "other", label: t("Other") }] : [])]} />}
+    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as JourneyStageKey | "other" | "ledger"); setFolder(null); }}
+      items={[...stages.map((stage) => ({ id: stage.stage, label: t(stage.label as never), done: stage.status === "done" })), ...(unstaged.length ? [{ id: "other", label: t("Other") }] : []),
+        { id: "ledger", label: t("Materials & decisions") }]} />}
 
     {error ? <InlineNotice tone="error" message={error} /> : null}
 
-    {shown === "approval" ? <SignOff designs={current} journey={journey} canReview={review.canReview} busy={busy}
-      onSignOff={(note) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, note })} /> : <>
+    {shown === "ledger" ? <DesignLedger workspaceId={workspaceId} caseId={caseId} rooms={data.rooms} />
+    : shown === "approval" ? <SignOff data={data} designs={current} journey={journey} canReview={review.canReview} busy={busy}
+      onSignOff={(input) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, ...input })} /> : <>
+      {shown === "concepts" && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage="concepts" designs={current} canEdit={data.canEdit}
+        canRecordClient={review.canRecordClient} onChanged={() => void loadJourney()} /> : null}
       <div className={styles.toolbar}>
         {stageView && shown !== "other" ? <span className={styles.stageNote} data-overdue={stageView.overdue && stageView.status === "active" || undefined}>{(() => { const detail = stageDetail(stageView); return t(detail.key as never, detail.values); })()}</span> : null}
+        {stageView && shown !== "other" && shown !== "concepts" ? (() => { const revision = revisionDetail(stageView.revisions); return revision ? <Badge tone={stageView.revisions?.chargeable ? "warning" : "neutral"}>{t(revision.key, revision.values)}</Badge> : null; })() : null}
         {openGroup ? <nav className={styles.crumbs} aria-label={t("Folders")}><button type="button" onClick={() => setFolder(null)}>{t("All rooms")}</button><ChevronRight aria-hidden="true" size={14} /><span aria-current="page">{openGroup.name}</span></nav>
           : groups.length > 1 ? <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as "folders" | "all")} options={[{ id: "folders", label: t("Rooms") }, { id: "all", label: t("All files") }]} /> : null}
         <span className={styles.spacer} />
@@ -173,26 +183,59 @@ function SkipFooter({ busy, onSkip }: { busy: boolean; onSkip: (note: string) =>
   </div>;
 }
 
-/** Sign-off: a checklist of what must be true, and the reviewer's button. */
-function SignOff({ designs, journey, canReview, busy, onSignOff }: { designs: CaseDesign[]; journey: JourneyView; canReview: boolean; busy: boolean; onSignOff: (note: string) => void }) {
+/**
+ * PLM-053: the design approval — a checklist of what must be true (stages, approvals, blocking comments, every
+ * material and design choice confirmed by the client), then the day the client approved, who signed, how, and the
+ * signed file. It locks the materials and decisions list and hands off to the Proposal 2 estimate.
+ */
+function SignOff({ data, designs, journey, canReview, busy, onSignOff }: { data: CaseContent; designs: CaseDesign[]; journey: JourneyView; canReview: boolean; busy: boolean;
+  onSignOff: (input: { note: string | null; approvedOn: string; signer: string; method: string; assetId: string }) => void }) {
   const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const [note, setNote] = useState("");
+  const [approvedOn, setApprovedOn] = useState(today);
+  const [signer, setSigner] = useState("");
+  const [method, setMethod] = useState("signed_document");
+  const [file, setFile] = useState<CaseAsset | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
   const stage = journey.stages.find((item) => item.stage === "approval");
-  const staged = designs.filter((design) => isDeliverableStage(design.stage));
+  const staged = designs.filter((design) => isDeliverableStage(design.stage) && design.stage !== "concepts");
   const waiting = staged.filter((design) => latestOf(design)?.status !== "approved");
-  const blocking = staged.reduce((sum, design) => sum + (design.threads ?? []).filter((thread) => thread.blocking && thread.status === "open").length, 0);
+  const blocking = designs.filter((design) => isDeliverableStage(design.stage)).reduce((sum, design) => sum + (design.threads ?? []).filter((thread) => thread.blocking && thread.status === "open").length, 0);
   const openStages = journey.stages.filter((item) => item.stage !== "approval" && item.status !== "done");
+  const unconfirmed = journey.ledger?.waiting ?? 0;
   const checks = [
     { ok: !openStages.length, label: openStages.length ? t("Finish {stages}", { stages: openStages.map((item) => t(item.label as never)).join(", ") }) : t("Every design stage is done") },
     { ok: !waiting.length, label: waiting.length ? waiting.length === 1 ? t("1 design waiting for approval") : t("{count} designs waiting for approval", { count: waiting.length }) : t("Every design is approved") },
     { ok: !blocking, label: blocking ? blocking === 1 ? t("1 blocking comment open") : t("{count} blocking comments open", { count: blocking }) : t("No blocking comments") },
+    { ok: !unconfirmed, label: unconfirmed ? t("{count} choices waiting for the client's confirmation", { count: unconfirmed }) : t("Every material and design choice is confirmed") },
   ];
-  if (stage?.status === "done") return <EmptyState illustration="done" title={t("Design signed off")} description={t("It's ready to quote.")} />;
+  const day = (ymd: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${ymd}T00:00:00Z`)); } catch { return ymd; } };
+  const when = (iso: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone, weekday: "short", day: "numeric", month: "short" }).format(new Date(iso)); } catch { return iso; } };
+  if (stage?.status === "done") {
+    const facts = journey.journey;
+    return <div className={styles.signOff}>
+      <EmptyState illustration="done" title={t("Design approved")} description={facts?.approvedOn ? [t("Approved {date}", { date: day(facts.approvedOn) }), facts.approvalSigner, facts.approvalMethod ? t(METHOD_LABEL[facts.approvalMethod] ?? facts.approvalMethod as never) : "", facts.approvalAssetName].filter(Boolean).join(" · ") : undefined} />
+      {facts?.estimateDueAt ? <p className={styles.muted}>{t("Estimate due {date}", { date: when(facts.estimateDueAt) })}</p> : null}
+      {journey.handoff?.problem ? <InlineNotice tone="info" message={journey.handoff.problem} /> : null}
+    </div>;
+  }
   return <div className={styles.signOff}>
     <ul>{checks.map((check) => <li key={check.label} data-ok={check.ok || undefined}>{check.ok ? <CircleCheck aria-hidden="true" size={16} /> : <CircleDashed aria-hidden="true" size={16} />}{check.label}</li>)}</ul>
     {canReview && stage?.status === "active" ? <>
-      <TextAreaField label={t("Note · optional")} value={note} onChange={setNote} />
-      <div className={styles.signOffAction}><Button size="compact" variant="primary" isLoading={busy} isDisabled={checks.some((check) => !check.ok)} onPress={() => onSignOff(note.trim())}>{t("Sign off design")}</Button></div>
+      {error ? <InlineNotice tone="error" message={error} /> : null}
+      <FormSection title={t("Client's approval")}>
+        <DateField isRequired label={t("Approved on")} maxValue={parseDate(today)} value={approvedOn ? parseDate(approvedOn) : null} onChange={(date) => setApprovedOn(date?.toString() ?? "")} />
+        <TextInput isRequired label={t("Signed by")} maxLength={200} value={signer} onChange={setSigner} />
+        <SelectField isRequired label={t("How")} items={["signed_document", "email", "in_person", "message"].map((id) => ({ id, label: t(METHOD_LABEL[id]) }))} selectedKey={method} onSelectionChange={(key) => setMethod(String(key))} />
+        {file ? <p className={styles.muted}>{t("Signed approval: {name}", { name: file.name })}</p>
+          : <AssetUpload workspaceId={data.workspaceId} caseId={data.caseId} multiple={false} label={t("Attach the signed approval")} onBusy={setUploading} onError={setError} onUploaded={setFile} />}
+        <TextAreaField label={t("Note · optional")} value={note} onChange={setNote} />
+      </FormSection>
+      <div className={styles.signOffAction}><Button size="compact" variant="primary" isLoading={busy} isDisabled={checks.some((check) => !check.ok) || !approvedOn || !signer.trim() || !file || uploading}
+        onPress={() => file && onSignOff({ note: note.trim() || null, approvedOn, signer: signer.trim(), method, assetId: file.id })}>{t("Record the approval")}</Button></div>
     </> : null}
   </div>;
 }

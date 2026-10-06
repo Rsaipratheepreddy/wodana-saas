@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
+import { ledgerProcurementProblem } from "../design/design-ledger.store";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -150,7 +151,9 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
       ORDER BY needs."projectReference", needs.sort`, [workspaceId, projectId])).rows;
   // Only materials the client chooses wait for their sign-off; bought scope lines were agreed in the quotation.
   const signed = new Map<string, boolean>();
-  if (requireSignoff) for (const projectId of new Set(rows.filter((row) => row.clientChoice).map((row) => row.projectId))) signed.set(projectId, await clientChoicesSignedOff(db, workspaceId, projectId));
+  // PLM-054: a project whose design kept a materials and decisions ledger also waits for that list's lock (the design sign-off).
+  if (requireSignoff) for (const projectId of new Set(rows.filter((row) => row.clientChoice).map((row) => row.projectId)))
+    signed.set(projectId, await clientChoicesSignedOff(db, workspaceId, projectId) && !(await ledgerProcurementProblem(db, workspaceId, projectId)));
   const fromStock = await givenFromStock(db, workspaceId, rows);
   const orderBy = (neededBy: string | null, days: number) => (neededBy ? new Date(Date.parse(`${neededBy}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10) : null);
   return rows.map((row) => {

@@ -148,18 +148,24 @@ export class CatalogV2Service {
 
   createItem(actor: RequestActor, workspaceId: string, catalogId: string, input: ItemInput) {
     return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => {
-      await this.catalog(client, workspaceId, catalogId);
-      const clean = await this.cleanItem(client, workspaceId, catalogId, input);
-      const created = await this.unique(() => client.query<{ id: string }>(
-        `INSERT INTO catalog_items (workspace_id, catalog_id, category_id, code, name, item_type, unit_code, description, waste_percent, purchase_round_to, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $11) RETURNING id`,
-        [workspaceId, catalogId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, user.userId]),
-        `Code ${clean.code} is already used in this catalog`);
-      const itemId = created.rows[0].id;
-      await this.writeValues(client, workspaceId, itemId, clean.values);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.item_created", entityType: "catalog_item", entityId: itemId, after: clean });
+      const itemId = await this.insertItem(client, workspaceId, catalogId, input, user.userId);
       return this.itemDetail(client, workspaceId, catalogId, itemId, await this.canViewCosts(actor, workspaceId));
     });
+  }
+
+  /** The create-item command inside a caller's transaction (the product clipper saves through it). */
+  async insertItem(client: PoolClient, workspaceId: string, catalogId: string, input: ItemInput, userId: string) {
+    await this.catalog(client, workspaceId, catalogId);
+    const clean = await this.cleanItem(client, workspaceId, catalogId, input);
+    const created = await this.unique(() => client.query<{ id: string }>(
+      `INSERT INTO catalog_items (workspace_id, catalog_id, category_id, code, name, item_type, unit_code, description, waste_percent, purchase_round_to, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $11) RETURNING id`,
+      [workspaceId, catalogId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, userId]),
+      `Code ${clean.code} is already used in this catalog`);
+    const itemId = created.rows[0].id;
+    await this.writeValues(client, workspaceId, itemId, clean.values);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.item_created", entityType: "catalog_item", entityId: itemId, after: clean });
+    return itemId;
   }
 
   updateItem(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string, input: ItemInput) {

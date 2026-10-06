@@ -768,6 +768,10 @@ export type CommercialState = {
   canManageContacts?: boolean;
   /** Who holds each step after the client accepts (a few names each), so people who can't act see who can. */
   stepHolders?: { verifyAgreement: string[]; verifyPayment: string[]; approveDeal: string[]; startProject: string[] };
+  /** The Deal File's approval on the E3 engine: its steps, who decided, and whether the viewer may decide now. */
+  dealApproval?: (import("../approvals/approval-policy").ApprovalStatus & { canDecide: boolean; decideVia: string | null; onBehalfOf: string | null }) | null;
+  /** PLM-066 / PLM-102 / PLM-123: the Deal File's money, closing and contents, read from the records. */
+  dealInsight?: import("./deal-file-insight").DealInsight | null;
   portalSlug: string | null;
   portalBrand?: PortalBrand;
   /** The firm's proposal kit, when the proposal screen has loaded it. */

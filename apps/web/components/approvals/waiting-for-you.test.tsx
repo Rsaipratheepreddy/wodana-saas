@@ -43,3 +43,22 @@ describe("Waiting for you: what a decision says (m25)", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("Waiting for you: E3 rows", () => {
+  it("shows a quotation With QS to its QS (opened on the quotation) and a value change with old → new, decided in the row", async () => {
+    const qs: ApprovalRow = { ...aiRow, kind: "qs_review", group: "quotes", id: "qs-1", title: "Q-7 · Amira", phrase: null, subject: "Sara Sales", amount: "185000.5", currency: "AED",
+      href: "/workspace/pre-projects/cases/c/quotations?quote=q", decide: null };
+    const value: ApprovalRow = { ...aiRow, kind: "approval", group: "deals", id: "r-1", title: "O-0042 · Amira · Proposal 1 · Design fee", phrase: null, subject: "Sara Sales",
+      amount: "52000", currency: "AED", href: "/x", decide: { approve: "approve", other: "return", approveNeedsNote: false }, version: 1, change: { from: "45000", to: "52000" }, cover: { via: "delegate", for: null } };
+    render(<DesignSystemProvider locale="en-US"><WaitingForYouList workspaceId="00000000-0000-4000-8000-000000000001"
+      initial={{ rows: [qs, value], count: 2, counts: { ...waiting.counts, ai: 0, quotes: 1, deals: 1 } }} /></DesignSystemProvider>);
+    const table = screen.getByRole("table", { name: "Waiting for you" });
+    expect(within(table).getByText("QS to confirm")).toBeInTheDocument();
+    expect(within(table).getByText("Q-7 · Amira")).toBeInTheDocument();
+    expect(within(table).getByText("Changed from AED 45,000.00 to AED 52,000.00")).toBeInTheDocument();
+    expect(within(table).getByText("Covering for someone away")).toBeInTheDocument();
+    await userEvent.click(within(table).getAllByRole("button", { name: "Open" })[0]);
+    expect(push).toHaveBeenCalledWith("/workspace/pre-projects/cases/c/quotations?quote=q");
+    expect(within(table).getByRole("button", { name: "Approve" })).toBeInTheDocument();
+  });
+});

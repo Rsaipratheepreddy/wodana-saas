@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, Checkbox, TextAreaField } from "@/design-system";
 import { QuotationDocument } from "@/components/commercial/quotation-document";
+import { ClientPriceBreakdown } from "@/components/quotation/client-price-breakdown";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import { documentQuote } from "@/lib/client-portal/document-quote";
@@ -50,9 +51,14 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
   return <div className={styles.sheet} data-tour="portal-quote-sheet">
     <div className={styles.rowHead}>
       <StateLabel state={quote.expired && quote.status === "issued" ? "expired" : quote.status} canDecide={quote.canDecide} />
+      {quote.reference ? <span className={styles.muted} dir="ltr">{quote.reference}</span> : null}
       <a className={styles.muted} href={print} rel="noreferrer" target="_blank">{t("Print or save as PDF")}</a>
     </div>
     <div className={styles.document}><QuotationDocument quote={documentQuote(quote, brand)} customerName={customer} /></div>
+    {quote.disclosure ? <section aria-label={t("How the price is made up")} className={styles.document}>
+      <ClientPriceBreakdown presentation={quote.disclosure} currency={quote.currency} taxLabel={typeof quote.cover?.taxLabel === "string" && quote.cover.taxLabel ? quote.cover.taxLabel : undefined}
+        decimals={new Intl.NumberFormat("en", { style: "currency", currency: quote.currency }).resolvedOptions().maximumFractionDigits ?? 2} />
+    </section> : null}
     {quote.canDecide ? <>
       {optional.length ? <fieldset className={styles.options}>
         <legend className={styles.groupTitle}>{t("Options you can add")}</legend>

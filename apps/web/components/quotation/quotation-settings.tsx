@@ -9,6 +9,8 @@ import { quotationPath } from "@/lib/quotation/client";
 import { VIEW_LABEL } from "@/lib/quotation/format";
 import type { QuotationSettings as Settings, QuoteView } from "@/lib/quotation/types";
 import { ProposalKitSettings } from "./proposal-kit-settings";
+import { ProposalTemplateSettings } from "./proposal-template-settings";
+import { QuotationNumberingSettings } from "./quotation-numbering-settings";
 import styles from "./quotation-settings.module.css";
 
 type Loaded = { settings: Settings; workPackages: Array<{ id: string; name: string; archived: boolean }>; priceBooks: Array<{ id: string; name: string; currency: string; status: string }>;
@@ -90,6 +92,11 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("Discount needing approval %")} hint={t("Discounts above this need a manager's approval. Leave empty for none.")}>
         <TextInput aria-label={t("Discount needing approval %")} label={null} isReadOnly={readOnly} inputMode="decimal" value={form.discountApprovalPercent ?? ""} onChange={(value) => set("discountApprovalPercent", number(value) || null)} />
       </SettingsRow>
+      <SettingsRow label={t("Markup shown to clients")} hint={t("The same on the quote, the PDF and the client portal. The total never changes.")}>
+        <SelectField aria-label={t("Markup shown to clients")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.markupDisclosure ?? "all_inclusive"}
+          onSelectionChange={(key) => set("markupDisclosure", key as Settings["markupDisclosure"])}
+          items={[{ id: "all_inclusive", label: t("All-inclusive prices") }, { id: "disclosed_markup", label: t("Cost and markup on each line") }, { id: "fee_based", label: t("Items at cost plus our fee") }]} />
+      </SettingsRow>
       {data.priceBooks.length ? <SettingsRow label={t("Price book")} hint={t("Where catalog rates come from. Automatic uses the newest active book in the quote's currency.")}>
         <SelectField aria-label={t("Price book")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.priceBookId ?? ""} onSelectionChange={(key) => set("priceBookId", key ? String(key) : null)}
           items={[{ id: "", label: t("Automatic") }, ...data.priceBooks.map((book) => ({ id: book.id, label: `${book.name} · ${book.currency}` }))]} />
@@ -120,6 +127,20 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("Review before sending")} hint={t("A reviewer approves each quote before it goes to the client.")}>
         <Switch aria-label={t("Review before sending")} isDisabled={readOnly} isSelected={form.internalReview} onChange={(value) => set("internalReview", value)} />
       </SettingsRow>
+      <SettingsRow label={t("QS prices quotations")} hint={t("A QS confirms the pricing before a quotation can go to the client.")}>
+        <Switch aria-label={t("QS prices quotations")} isDisabled={readOnly} isSelected={Boolean(form.qsReview)} onChange={(value) => set("qsReview", value)} />
+      </SettingsRow>
+      <SettingsRow label={t("Signing link open for (days)")}>
+        <TextInput aria-label={t("Signing link open for (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.signingLinkDays ?? 14)}
+          onChange={(value) => set("signingLinkDays", Number(value.replace(/\D/g, "") || 0))} />
+      </SettingsRow>
+    </SettingsSection>
+
+    <SettingsSection id="sales" title={t("Sales")}>
+      <SettingsRow label={t("Intro deck link")} hint={t("Shown on every opportunity, next to the intro meeting.")}>
+        <TextInput aria-label={t("Intro deck link")} label={null} isReadOnly={readOnly} inputType="url" placeholder="https://" value={form.introDeckUrl ?? ""}
+          onChange={(value) => set("introDeckUrl", value.trim() ? value.trim() : null)} />
+      </SettingsRow>
     </SettingsSection>
     {creatingPlan ? <PaymentPlanDialog workspaceId={workspaceId} onClose={() => setCreatingPlan(false)} onCreated={async (templateId) => {
       // The new plan becomes the default straight away (the rest of the form keeps its unsaved edits).
@@ -128,6 +149,10 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       setData(fresh); setForm({ ...form, defaultPaymentTemplateId: templateId, version: next.version }); setCreatingPlan(false);
     }} /> : null}
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} saved={saved} onDiscard={() => { setForm(data.settings); setDays(dayList(data.settings)); setError(""); }} onSave={() => void save()} />}
+
+    <QuotationNumberingSettings workspaceId={workspaceId} />
+
+    <ProposalTemplateSettings workspaceId={workspaceId} />
 
     <ProposalKitSettings workspaceId={workspaceId} />
 

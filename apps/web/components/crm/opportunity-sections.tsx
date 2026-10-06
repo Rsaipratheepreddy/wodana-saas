@@ -15,6 +15,7 @@ import { answered, formatMoney, type Discovery, type DiscoveryGroup } from "./op
 import { OpportunityIntro, type Intro } from "./opportunity-intro";
 import { SideSection } from "./record/record-layout";
 import styles from "./opportunity-sections.module.css";
+import { OpportunityClosing, OpportunityProposals } from "./opportunity-proposals";
 
 /** A group of facts: its title, how complete it is, Edit, and the facts as label and value; folds away. */
 export function FactCard({ id, title, status, tone = "neutral", open, onToggle, action, children }: {
@@ -48,6 +49,8 @@ export type CardsProps = {
   onEdit: (group: DiscoveryGroup) => void; onFurniture: () => void; onSaved: () => Promise<void>;
   onClientApproval: (approved: boolean) => void;
   bookIntro: boolean; onBookingStarted: () => void; onIntroBlocked: () => void;
+  /** PLM-103: the opportunity is Won (Proposal 2 can be a second Won with its own proof). */
+  won?: boolean; onSecondProof?: () => void;
 };
 
 /** The opportunity's facts in groups (the sidebar's Details): Client · Property · Design package · Intro questions · Intro meeting · Supply; each label above its value. */
@@ -114,6 +117,10 @@ export function OpportunityCards(props: CardsProps) {
         </FactRow> : null}
       </EditableFieldList>
     </FactCard> : null}
+    {/* PLM-101 / PLM-103: each proposal's value, verified and locked through approvals; PLM-102: when the deal closes. */}
+    <OpportunityProposals workspaceId={props.workspaceId} opportunityId={props.opportunityId} flow={flow} closed={closed && !props.won} won={Boolean(props.won)}
+      open={isOpen("proposals")} onToggle={() => onToggle("proposals")} onChanged={props.onSaved} onSecondProof={props.onSecondProof} />
+    {props.won ? <OpportunityClosing workspaceId={props.workspaceId} opportunityId={props.opportunityId} won open={isOpen("closing")} onToggle={() => onToggle("closing")} /> : null}
   </div>;
 }
 

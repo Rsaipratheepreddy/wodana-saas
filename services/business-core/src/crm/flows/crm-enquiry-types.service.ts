@@ -8,6 +8,7 @@ import { loadFlowDetail } from "./crm-flows.service";
 import { ensureEnquiryTypeFlows, flowCodeFor, freeFlowCode } from "./enquiry-type-flows";
 import { flowChecksum, validateFlowDefinition } from "./flow-definition";
 import { flowTemplate } from "./flow-templates";
+import { copyClosingRules, inferClosing, seedClosingRules, TEMPLATE_CLOSING } from "./flow-closing";
 import { STARTER_FLOWS } from "./starter-flows";
 
 const PERMISSION = "crm.settings.manage";
@@ -133,6 +134,10 @@ export class CrmEnquiryTypesService {
          VALUES ($1, $2, 1, $3::jsonb, $4, 'published', $5) RETURNING id`,
         [workspaceId, flow.id, JSON.stringify(result.definition), checksum, user.userId])).rows[0];
       await client.query(`UPDATE crm_taxonomy_options SET flow = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, option.id, flowCode]);
+      // PLM-102: the type closes deals the way its template or the type it was copied from does.
+      const sourceFlowId = typeof from.flowId === "string" ? from.flowId : null;
+      if (sourceFlowId) await copyClosingRules(client, workspaceId, sourceFlowId, flow.id, user.userId);
+      else await seedClosingRules(client, workspaceId, flow.id, (input.templateKey ? TEMPLATE_CLOSING[input.templateKey] : undefined) ?? inferClosing(result.definition), user.userId);
       await client.query(`UPDATE crm_taxonomies SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, taxonomy.id]);
       await recordAudit(client, {
         workspaceId, actorUserId: user.userId, action: "crm.enquiry_type.created.v1", entityType: "crm_taxonomy_option", entityId: option.id,

@@ -10,6 +10,8 @@ import { ClientContact, OpportunityActivity, OpportunityCards } from "./opportun
 import { RecordColumns, RecordFrame, RecordHeader, RecordPanel, SideSection } from "./record/record-layout";
 import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
 import { FurniturePathDialog, PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
+import { SiteVisitDialog } from "./site-visit-dialog";
+import { StepNotNeededDialog } from "./step-not-needed-dialog";
 import { FollowUpRow, NextActions, ProgressLine, type StageMove } from "./opportunity-now";
 import type { MissingRequirement } from "@/lib/crm/client";
 import { FURNITURE_PATHS, missingFrom, proofHref, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
@@ -122,8 +124,11 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const saved = async () => { resource.refresh(); activities.refresh(); await onChanged(); };
   // PLM-121/122: the flow's next step, what blocks it, and the payment proof that wins the deal.
   const flow = (live.flow && typeof live.flow === "object" ? live.flow : null) as OpportunityFlowView | null;
-  const [proofOpen, setProofOpen] = useState(false);
+  const [proofOpen, setProofOpen] = useState<false | "won" | "main">(false);
   const [furnitureOpen, setFurnitureOpen] = useState(false);
+  // PLM-080/044 and PLM-081: the joinery site visit, and material selection (or "Not required for this order").
+  const [siteVisitOpen, setSiteVisitOpen] = useState(false);
+  const [materialsOpen, setMaterialsOpen] = useState(false);
   const [blocked, setBlocked] = useState<{ stage: string; items: MissingRequirement[] } | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [flowError, setFlowError] = useState("");
@@ -132,7 +137,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const startWin = () => {
     const others = (flow?.toWon ?? []).filter(item => item.key !== "paymentProof");
     if (others.length) { setBlocked({ stage: String(wonStage?.name ?? t("Won")), items: others }); return; }
-    if (!flow || flow.toWon.some(item => item.key === "paymentProof")) { setProofOpen(true); return; }
+    if (!flow || flow.toWon.some(item => item.key === "paymentProof")) { setProofOpen("won"); return; }
     startOutcome("won");
   };
   const advance = async () => {
@@ -204,8 +209,10 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const unfold = (group: FactGroup | null) => { if (group) setFolded((current) => ({ ...current, [group]: true })); setTab("details"); };
   const openSheet = (group: FactGroup | null, focus?: string) => setSheet({ group: group === "package" || group === "questions" ? group : "property", focus });
   const act = (step: NowStep) => {
-    if (step.target === "proof") setProofOpen(true);
+    if (step.target === "proof") setProofOpen("won");
     else if (step.target === "furniture") setFurnitureOpen(true);
+    else if (step.target === "siteVisit") setSiteVisitOpen(true);
+    else if (step.target === "materials") setMaterialsOpen(true);
     else if (step.target === "intro") { unfold("intro"); setBookIntro(true); }
     else if (step.target === "discovery") openSheet(groupForRequirement(step.keys[0] ?? ""), step.keys[0]);
     else if (step.target === "quote" || step.target === "planning") { if (caseId) router.push(caseLink(step.target === "quote" ? "quotations" : step.section ?? "overview")); else void openCase(); }
@@ -292,7 +299,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
             </SideSection>
           </RecordPanel> },
           { id: "details", label: t("Details"), panel: <OpportunityCards workspaceId={workspaceId} opportunityId={row.id} locale={locale} leadId={leadId ? String(leadId) : null} closed={closed} flow={flow}
-            discovery={discovery} intro={intro} showIntro={showIntro} showPackage={showPackage} isOpen={isOpen}
+            discovery={discovery} intro={intro} showIntro={showIntro} showPackage={showPackage} isOpen={isOpen} won={status === "won"} onSecondProof={() => setProofOpen("main")}
             onToggle={(group) => setFolded((current) => ({ ...current, [group]: !isOpen(group) }))}
             onEdit={(group) => setSheet({ group })} onFurniture={() => setFurnitureOpen(true)} onSaved={async () => { discovery.refresh(); await saved(); }}
             onClientApproval={(next) => { void saveFlow({ clientApproved: next }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}
@@ -302,8 +309,16 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}
     {sheet ? <DiscoverySheet workspaceId={workspaceId} opportunityId={row.id} leadId={leadId ? String(leadId) : null} group={sheet.group} focus={sheet.focus} discovery={discovery} locale={locale} onClose={() => setSheet(null)} onSaved={saved} /> : null}
     {proofOpen ? <PaymentProofDialog workspaceId={workspaceId} opportunityId={row.id} loadVersion={freshVersion} onClose={() => setProofOpen(false)} onWon={saved}
+      proposal={proofOpen === "main" ? "main" : undefined}
       onBlocked={(items) => setBlocked({ stage: String(wonStage?.name ?? t("Won")), items })} /> : null}
     {furnitureOpen && flow?.furniture ? <FurniturePathDialog flow={flow.furniture} onClose={() => setFurnitureOpen(false)} onSave={saveFlow} /> : null}
+    {siteVisitOpen ? <SiteVisitDialog workspaceId={workspaceId} opportunityId={row.id} onClose={() => setSiteVisitOpen(false)} onBooked={() => { setSiteVisitOpen(false); void saved(); }} /> : null}
+    {materialsOpen ? (() => {
+      const materialStep = (Array.isArray(flow?.line) ? flow.line : []).find((step) => step.missing?.some((item) => item.key === "designStage:material_selection"));
+      return <StepNotNeededDialog workspaceId={workspaceId} opportunityId={row.id} stepKey={materialStep?.key ?? "material_selection"} stepName={materialStep?.name ?? t("Choose the materials")} material
+        loadVersion={freshVersion} onClose={() => setMaterialsOpen(false)} onDone={() => { setMaterialsOpen(false); void saved(); }}
+        secondaryAction={caseId ? <Link className="wd-button" data-variant="quiet" href={caseLink("designs")}>{t("Choose the materials")}</Link> : undefined} />;
+    })() : null}
     {blocked ? <StageBlockedSheet stageName={blocked.stage} items={blocked.items} onAction={act} onClose={() => setBlocked(null)} /> : null}
     {historyOpen ? <ControlledModalDialog isOpen size="md" title={t("History")} onOpenChange={setHistoryOpen}>
       {stageHistory.length ? <ol className={screen.history}>{stageHistory.map((entry, index) => <li key={entry.id ?? index}>

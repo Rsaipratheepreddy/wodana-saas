@@ -76,7 +76,7 @@ describe("Enquiry types list", () => {
     const fetcher = stubFetch((_, init) => init.method === "PATCH" ? { body: { ...types[0], label: "Interiors", version: 5 } } : undefined);
     render(wrap(<EnquiryTypesPage canManage types={types} workspaceId={workspaceId} />));
     await userEvent.click(screen.getByRole("button", { name: "More actions for Interior design" }));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Rename", "Change colour", "Archive"]);
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Rename", "Change colour", "Deal closed when", "Archive"]);
     await userEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename Interior design" });
     const name = within(dialog).getByRole("textbox", { name: /Name/ });

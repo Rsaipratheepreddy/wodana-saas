@@ -1,5 +1,5 @@
 import type { FurniturePath } from "../opportunities/flow-gates";
-import { allSteps, WON_COLUMN, type BranchQuestion, type FlowCheck, type FlowDefinition, type FlowField, type FlowStepDefinition } from "./flow-definition";
+import { allSteps, canSkipStep, WON_COLUMN, type BranchQuestion, type FlowCheck, type FlowDefinition, type FlowField, type FlowStepDefinition } from "./flow-definition";
 
 /**
  * Plan §5a, engine rules: the interpreter reads a job's facts (from real records) against its pinned flow
@@ -40,7 +40,14 @@ export type CheckFacts = {
   materialListSignedOff: boolean;
   /** Who completed a check and when, where the records say. */
   evidence?: Partial<Record<FlowCheck, { at: string | Date | null; by: string | null }>>;
+  /** E2-5 / PLM-081: steps this job marked as not needed, by step key, with the reason, who and when. */
+  skippedSteps?: Record<string, StepSkip>;
 };
+
+export type StepSkip = { reason: string; by: string | null; at: string | Date | null };
+
+/** A recorded skip counts only for a step the type lets a job skip (optional, or material selection). */
+const skipOf = (step: FlowStepDefinition, facts: CheckFacts) => canSkipStep(step) ? facts.skippedSteps?.[step.key] ?? null : null;
 
 export type MissingRequirement = { key: string; label: string; column: string; stepKey: string };
 
@@ -118,6 +125,8 @@ function coveredByEarlier(earlier: FlowStepDefinition[], facts: CheckFacts) {
 
 /** What one step still lacks (its own needs and check), given the steps before it on the line. */
 export function stepMissing(step: FlowStepDefinition, facts: CheckFacts, earlier: FlowStepDefinition[]): Array<{ key: string; label: string }> {
+  // Auto-passed on this path, or marked not needed for this job with a reason (E2-5, PLM-081).
+  if (step.auto || skipOf(step, facts)) return [];
   const missing: Array<{ key: string; label: string }> = [];
   for (const field of step.needs ?? []) if (!FIELD[field].present(facts)) missing.push({ key: field, label: FIELD[field].label });
   if (step.check === "details_complete") return missing;
@@ -203,6 +212,12 @@ export type LineStep = {
   state: "done" | "current" | "upcoming" | "skipped";
   doneAt: string | null; doneBy: string | null;
   missing: Array<{ key: string; label: string }>;
+  /** Passed on its own on this path (the type marks it auto-passed). */
+  auto?: boolean;
+  /** Marked not needed for this job (E2-5, PLM-081): why, who and when. */
+  skip?: { reason: string; by: string | null; at: string | null } | null;
+  /** E2-2: done, but an earlier required step is open again (its evidence was removed); flagged, never undone. */
+  afterReopened?: boolean;
 };
 
 /**
@@ -213,16 +228,23 @@ export function flowProgress(definition: FlowDefinition, facts: CheckFacts): { l
   const steps = resolveLine(definition, facts);
   const missing = steps.map((step, index) => stepMissing(step, facts, steps.slice(0, index)));
   const done = missing.map((items) => items.length === 0);
-  const lastDone = done.lastIndexOf(true);
+  // An auto-passed step is done by definition; it says nothing about how far the job got.
+  const lastDone = done.reduce((last, value, index) => value && !steps[index].auto ? index : last, -1);
   const currentIndex = steps.findIndex((step, index) => !done[index] && !(step.optional && index < lastDone));
+  // E2-2: the first required step that is open while a later step is done (its evidence was removed).
+  const reopened = steps.findIndex((step, index) => !done[index] && !step.optional && index < lastDone);
   const line = steps.map((step, index): LineStep => {
-    const evidence = done[index] ? facts.evidence?.[step.check] : undefined;
+    const skip = skipOf(step, facts);
+    const evidence = done[index] && !skip ? facts.evidence?.[step.check] : undefined;
     return {
       key: step.key, name: step.name, role: step.role, check: step.check, column: step.column,
       optional: Boolean(step.optional), clientVisible: Boolean(step.clientVisible), deadline: step.deadline ?? null,
-      state: done[index] ? "done" : index === currentIndex ? "current" : currentIndex >= 0 && index < currentIndex ? "skipped" : "upcoming",
+      state: skip ? "skipped" : done[index] ? "done" : index === currentIndex ? "current" : currentIndex >= 0 && index < currentIndex ? "skipped" : "upcoming",
       doneAt: evidence?.at ? new Date(evidence.at).toISOString() : null, doneBy: evidence?.by ?? null,
       missing: missing[index],
+      ...(step.auto ? { auto: true } : {}),
+      ...(skip ? { skip: { reason: skip.reason, by: skip.by, at: skip.at ? new Date(skip.at).toISOString() : null } } : {}),
+      ...(reopened >= 0 && index > reopened && done[index] && !skip && !step.auto ? { afterReopened: true } : {}),
     };
   });
   return { line, current: currentIndex >= 0 ? line[currentIndex] : null };

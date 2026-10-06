@@ -76,6 +76,9 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
       <span className={styles.whatText}>
         <span className={styles.kind}><TypeChip hue={KIND_HUE[row.kind]}>{t(KIND_LABEL[row.kind])}</TypeChip></span>
         <span>{title(row)}</span>
+        {/* E3: decided as cover for someone away, or after it waited past the escalation time; a changed amount shows old → new. */}
+        {row.cover ? <span className={styles.muted}>{row.cover.via === "delegate" ? t("Covering for someone away") : t("Escalated to you")}</span> : null}
+        {row.change ? <span className={styles.muted}>{t("Changed from {from} to {to}", { from: money({ ...row, amount: row.change.from }), to: money({ ...row, amount: row.change.to }) })}</span> : null}
         {row.preview?.text ? <span className={styles.preview} dir="auto">{row.preview.text}</span> : null}
         {row.preview?.photos ? <span className={styles.muted}>{row.preview.photos === 1 ? t("1 photo") : t("{count} photos", { count: row.preview.photos })}</span> : null}
       </span>
