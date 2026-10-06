@@ -89,7 +89,7 @@ describe("Planning list", () => {
     await userEvent.click(screen.getByRole("button", { name: "Filter" }));
     await userEvent.click(screen.getByRole("button", { name: /Filter by status/ }));
     await userEvent.click(screen.getByRole("option", { name: "On hold" }));
-    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("On hold")).toBeVisible();
     expect(screen.queryByRole("link", { name: "Villa interiors" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Remove filter Status" }));

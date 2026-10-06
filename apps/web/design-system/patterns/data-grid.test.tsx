@@ -59,7 +59,8 @@ describe("DataGrid", () => {
     await user.click(screen.getByRole("button", { name: "Table options" }));
     await user.click(screen.getByRole("button", { name: /Sort by/ }));
     await user.click(screen.getByRole("option", { name: "Name" }));
-    await user.keyboard("{Escape}");
+    // Close the options panel the way people do: click outside it.
+    await user.click(screen.getAllByRole("button", { name: "Dismiss" })[0]);
     const table = screen.getByRole("table", { name: "Sorted records" });
     expect(within(table).getAllByRole("row").slice(1).map(row => row.textContent)).toEqual(['1AlphaNew','2BetaNew']);
     await user.click(screen.getByRole("button", { name: "Next page" }));

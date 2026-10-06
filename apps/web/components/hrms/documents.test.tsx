@@ -91,7 +91,7 @@ describe("Documents", () => {
     await userEvent.click(screen.getByRole("button", { name: "Filter" }));
     await userEvent.click(screen.getByRole("button", { name: /Filter by status/ }));
     await userEvent.click(await screen.findByRole("option", { name: "Expiring" }));
-    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Expiring")).toBeVisible();
     expect(within(await grid("Documents")).getAllByRole("row")).toHaveLength(2);
   });

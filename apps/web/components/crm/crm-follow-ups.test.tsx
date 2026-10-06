@@ -238,7 +238,7 @@ it("has one title, the lists under it and the owner as a removable filter chip",
   await user.click(screen.getByRole("button", { name: "Filter" }));
   await user.click(screen.getByRole("button", { name: /Filter by owner/ }));
   await user.click(screen.getByRole("option", { name: "Owner Two" }));
-  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Done" }));
   expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Owner Two")).toBeVisible();
   expect(screen.getByRole("button", { name: /Other call/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Discuss quotation/ })).not.toBeInTheDocument();
