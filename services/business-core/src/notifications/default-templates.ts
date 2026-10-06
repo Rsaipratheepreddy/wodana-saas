@@ -210,6 +210,12 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "factory.scope_changed", channel: "in_app", subject: "A variation changed {{item}}", body: "{{project}}: {{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "factory.drawing_revised", channel: "in_app", subject: "{{order}} is on hold: the drawing changed", body: "{{actor}}: {{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "factory.ready", channel: "in_app", subject: "{{item}} is ready", body: "{{order}} for {{project}} is made and checked.", variables: ["order", "item", "project", "actor", "note"] },
+  // A work order ready (factory/factory-ready.ts): Finance and the account manager, with the ready date and the payment stage's reminder.
+  { code: "factory.order_ready", channel: "in_app", subject: "{{item}} is ready · {{project}}", body: "{{order}} was ready on {{date}}. {{payment}}", variables: ["order", "item", "project", "date", "actor", "payment"] },
+  { code: "factory.order_ready", channel: "email", subject: "{{item}} is ready: {{project}}", body: "{{order}} {{item}} for {{project}} was ready on {{date}}.\n\n{{payment}}", variables: ["order", "item", "project", "date", "actor", "payment"] },
+  // Everything the factory makes for a project is ready: the project manager and the delivery and installation team.
+  { code: "factory.project_ready", channel: "in_app", subject: "Everything for {{project}} is made", body: "All factory items passed their checks. Schedule delivery and installation.", variables: ["order", "item", "project", "date", "actor", "payment"] },
+  { code: "factory.project_ready", channel: "email", subject: "Everything for {{project}} is made", body: "Every factory item for {{project}} passed its checks on {{date}}.\n\nSchedule delivery and installation.", variables: ["order", "item", "project", "date", "actor", "payment"] },
   { code: "site.report_waiting", channel: "in_app", subject: "Site report to approve · {{title}}", body: "{{actor}} reported {{note}}.", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.report_returned", channel: "in_app", subject: "Your site report came back · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.incident", channel: "in_app", subject: "Incident on site · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
@@ -352,6 +358,9 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "purchasing.shipment_late", channel: "in_app", subject: "{{order}} arrives later", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.blocking_work", channel: "in_app", subject: "{{order}} is holding up work", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.over_ordered", channel: "in_app", subject: "{{variation}} leaves orders past what {{project}} needs", body: "{{note}}", variables: ["variation", "project", "note"] },
+  // Everything a project buys is in (purchasing/materials-ready.ts): its manager and production lead, once per set of lines.
+  { code: "purchasing.materials_ready", channel: "in_app", subject: "Materials are in for {{project}}", body: "All {{lines}} lines are received.", variables: ["project", "lines"] },
+  { code: "purchasing.materials_ready", channel: "email", subject: "Materials are in for {{project}}", body: "Everything {{project}} buys is received: {{lines}} lines.\n\nPlan production and site work.", variables: ["project", "lines"] },
   { code: "purchasing.hold_override", channel: "in_app", subject: "{{order}} goes ahead while its project is on hold", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "factory.rework", channel: "in_app", subject: "{{order}} goes back into production", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "factory.drawing_stale", channel: "in_app", subject: "{{order}}: its drawing has a newer revision", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
@@ -603,7 +612,7 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "site.report_waiting", "site.report_late", "site.material_requested", "site.client_question",
   "work.assigned", "work.overdue", "work.snag_reopened",
   "factory.released", "factory.check_failed", "factory.material_short", "factory.rework",
-  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work",
+  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work", "purchasing.materials_ready",
   "stock.transfer_sent", "stock.transfer_short", "stock.transfer_rejected",
   "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
   "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",

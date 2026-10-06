@@ -27,7 +27,11 @@ export function WorkOrderHistory({ state }: { state: WorkOrderState }) {
         Number(detail.scrap) ? t("{quantity} scrapped: {reason}", { quantity: unit(detail.scrap), reason: value("scrapReason") }) : ""].filter(Boolean).join(", ") || t("reported output");
       case "decide_report": return detail.decision === "approved" ? t("approved a report") : t("refused a report: {note}", { note: value("note") });
       case "check": return [Number(detail.passed) ? t("passed {quantity}", { quantity: unit(detail.passed) }) : "",
-        Number(detail.failed) ? t("failed {quantity}: {reason}", { quantity: unit(detail.failed), reason: value("failReason") }) : ""].filter(Boolean).join(", ");
+        Number(detail.failed) ? t("failed {quantity}: {reason}", { quantity: unit(detail.failed), reason: value("failReason") }) : "", value("note")].filter(Boolean).join(", ");
+      case "check_photo": return t("added a photo of the check");
+      case "set_ready_date": return t("set the ready date to {date}", { date: value("to") ? format.day(value("to")) : "" });
+      case "link_payment": return value("paymentId") ? t("tied it to the payment stage {stage}", { stage: state.payments?.find((payment) => payment.id === value("paymentId"))?.title ?? value("paymentId") })
+        : t("untied it from its payment stage");
       case "hold": return t("put it on hold: {reason}", { reason: value("reason") });
       case "resume": return t("let it go on");
       case "cancel": return t("cancelled it: {reason}", { reason: value("reason") });

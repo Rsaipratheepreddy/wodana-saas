@@ -5,6 +5,7 @@ import { parseDate } from "@internationalized/date";
 import { DateField, FormDialog, FormRow, MoneyField, SelectField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkOrderState } from "@/lib/factory/types";
+import { PhotoPicker } from "../purchasing/delivery-photos";
 import { quantityText } from "../purchasing/order-labels";
 
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
@@ -87,20 +88,27 @@ export function ReportDialog({ unit, left, onClose, onSave }: { unit: string; le
   </FormDialog>;
 }
 
-/** A quality check of approved output: what passed goes into stock; what failed says why and is made again. */
-export function CheckDialog({ unit, waiting, onClose, onSave }: { unit: string; waiting: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
+/**
+ * A quality check of approved output: what passed goes into stock; what failed says why and is made again.
+ * A note and one photo go with it.
+ */
+export function CheckDialog({ unit, waiting, onClose, onSave }: { unit: string; waiting: string; onClose: () => void; onSave: (input: Record<string, unknown>, photo: File | null) => Promise<void> }) {
   const t = useT();
   const [passed, setPassed] = useState(quantityText(waiting));
   const [failed, setFailed] = useState("");
   const [failReason, setFailReason] = useState("");
+  const [note, setNote] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
   const over = Number(passed || 0) + Number(failed || 0) > Number(waiting);
   const valid = Number(passed || 0) + Number(failed || 0) > 0 && !over && (!Number(failed) || failReason.trim());
-  return <FormDialog size="md" title={t("Check quality")} description={t("{quantity} waiting to be checked.", { quantity: `${quantityText(waiting)} ${unit}`.trim() })} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { await onSave({ passed: passed || "0", failed: failed || "0", failReason: failReason.trim() });
+  return <FormDialog size="md" title={t("Check quality")} description={t("{quantity} waiting to be checked.", { quantity: `${quantityText(waiting)} ${unit}`.trim() })} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { await onSave({ passed: passed || "0", failed: failed || "0", failReason: failReason.trim(), note: note.trim() }, photos[0] ?? null);
       }}>
       <TextInput label={t("Passed")} inputMode="decimal" suffix={unit || undefined} value={passed} onChange={(value) => setPassed(numeric(value))} isInvalid={over}
         errorMessage={over ? t("Only {quantity} is waiting.", { quantity: `${quantityText(waiting)} ${unit}`.trim() }) : undefined} />
       <TextInput label={t("Failed")} inputMode="decimal" suffix={unit || undefined} value={failed} onChange={(value) => setFailed(numeric(value))} />
       {Number(failed) ? <TextInput label={t("Why it failed")} isRequired value={failReason} onChange={setFailReason} /> : null}
+      <TextAreaField label={t("Note")} value={note} onChange={setNote} />
+      <PhotoPicker files={photos} label={photos.length ? t("Change photo") : t("Add a photo")} onChange={(files) => setPhotos(files.slice(-1))} />
   </FormDialog>;
 }
 

@@ -14,6 +14,7 @@ import { ProjectWorkService } from "../project-core/project-work.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { OrdersService } from "./orders.service";
 import { tellOverOrdered } from "./purchasing-changes";
+import { tellMaterialsReady } from "./materials-ready";
 import { closeSettledBlockers, raiseLateBlockers, readLineBlockers } from "./purchasing-blockers";
 import { ReceivingService } from "./receiving.service";
 import { SuppliersService } from "./suppliers.service";
@@ -477,6 +478,59 @@ integration("operations v2 (plan §6.14–6.16, D-8, D-11, D-20, D-26, D-38, D-4
       expect(await tellOverOrdered(w.client, w.workspaceId, projectId, w.manager, { id: randomUUID(), label: "VO-1" })).toBe(1);
       expect((await told(w, "purchasing.over_ordered")).map((row) => [row.recipient, row.subject, row.body]))
         .toEqual([[w.designer, "VO-1 leaves orders past what PRJ-0001 · Villa 12 needs", "Ordered past what's needed now: Oak veneer +6 sheets."]]);
+    });
+  });
+
+  it("shows each line's status from its records, and tells the manager and the factory lead once when everything is in (PLM-072, PLM-074)", async () => {
+    await world(async (w) => {
+      const { projectId, vendor, buyer } = await started(w);
+      const lead = randomUUID(), leadMembership = randomUUID();
+      await w.client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Faisal Factory')", [lead, `${lead.slice(0, 8)}@example.com`]);
+      await w.client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [leadMembership, w.workspaceId, lead]);
+      await w.client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active,role_keys) VALUES($1,$2,$3,false,true,ARRAY['factory_lead'])", [w.workspaceId, projectId, leadMembership]);
+      const cabinets = (await w.core.scope(actor, w.workspaceId, projectId)).lines.find((line) => line.title === "Kitchen cabinets")!;
+      const detail = await w.core.get(actor, w.workspaceId, projectId);
+      await w.core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, boqLineIds: [cabinets.id], version: detail.project.version });
+      const mine = async () => (await buyer.orders.needs(actor, w.workspaceId)).needs.filter((need) => need.projectId === projectId);
+      const statuses = async () => Object.fromEntries((await mine()).map((need) => [need.title, need.status]));
+      let needs = await mine();
+      expect(needs.length).toBeGreaterThan(0);
+      expect(new Set(Object.values(await statuses()))).toEqual(new Set(["required"]));
+
+      // Everything goes on one placed order: each line is ordered.
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, needs.map((need) => need.source === "material"
+        ? { source: "material", materialItemId: need.sourceId, quantity: need.required, unitPrice: "90" } : { source: "line", boqLineId: need.sourceId, quantity: need.required, unitPrice: "100" }));
+      expect(new Set(Object.values(await statuses()))).toEqual(new Set(["ordered"]));
+      const oakLine = order.lines.find((line) => line.description === "Oak veneer")!;
+
+      // Part of the veneer arrives: still ordered, and nobody is told.
+      await buyer.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: `site:${projectId}`, receivedOn: "2026-09-28", lines: [{ orderLineId: oakLine.id, received: "12" }] });
+      expect((await statuses())["Oak veneer"]).toBe("ordered");
+      expect(await told(w, "purchasing.materials_ready")).toEqual([]);
+
+      // The rest arrives: every line is received, and the manager and the factory lead hear, in the app and by email.
+      await buyer.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: `site:${projectId}`, receivedOn: "2026-09-29",
+        lines: order.lines.map((line) => ({ orderLineId: line.id, received: line.id === oakLine.id ? "8" : line.quantity })) });
+      needs = await mine();
+      expect(new Set(needs.map((need) => need.status))).toEqual(new Set(["received"]));
+      const ready = await told(w, "purchasing.materials_ready");
+      expect(ready.map((row) => row.recipient).sort()).toEqual([w.manager, lead].sort());
+      expect(ready[0]).toMatchObject({ subject: "Materials are in for PRJ-0001 · Villa 12", body: `All ${needs.length} lines are received.` });
+      const emails = async () => (await w.client.query("SELECT 1 FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.materials_ready' AND channel = 'email'", [w.workspaceId])).rowCount;
+      expect(await emails()).toBe(2);
+
+      // Exactly once: checking again (a retry, another delivery, a daily run) tells nobody again.
+      expect(await tellMaterialsReady(w.client, w.workspaceId, [projectId], null)).toBe(0);
+      expect((await told(w, "purchasing.materials_ready")).length).toBe(2);
+      expect(await emails()).toBe(2);
+      expect((await w.client.query("SELECT lines FROM project_materials_ready WHERE workspace_id = $1 AND project_id = $2", [w.workspaceId, projectId])).rows).toEqual([{ lines: needs.length }]);
+
+      // An approved site report installs all the cabinets: the veneer bought for them is installed.
+      const report = randomUUID();
+      await w.client.query(`INSERT INTO site_reports(id,workspace_id,project_id,report_date,author_id,status,submitted_at,decided_by,decided_at)
+        VALUES($1,$2,$3,'2026-10-02',$4,'approved',now(),$5,now())`, [report, w.workspaceId, projectId, w.manager, w.designer]);
+      await w.client.query("INSERT INTO site_report_lines(id,workspace_id,report_id,boq_line_id,installed) VALUES($1,$2,$3,$4,$5)", [randomUUID(), w.workspaceId, report, cabinets.id, cabinets.quantity]);
+      expect((await statuses())["Oak veneer"]).toBe("installed");
     });
   });
 });

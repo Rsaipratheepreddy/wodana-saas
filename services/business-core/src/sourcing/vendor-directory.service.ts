@@ -14,6 +14,7 @@ import {
   VendorLifecycleDto,
   VendorSiteLifecycleDto,
 } from "./vendor.dto";
+import { checkTaxNumber, normaliseTaxNumber, readTaxNumberRule } from "../purchasing/tax-registration";
 
 type VendorRow = {
   id: string;
@@ -199,6 +200,8 @@ export class VendorDirectoryService {
         if (!matches) throw new ConflictException("This vendor identifier is already in use.");
         return this.aggregate(client, workspaceId, input.id);
       }
+      // The tax number follows the workspace country's format (PLM-111).
+      if (normalized.taxRegistrationNumber) normalized.taxRegistrationNumber = checkTaxNumber(normalized.taxRegistrationNumber, await readTaxNumberRule(client, workspaceId));
       const code = input.code ?? await this.nextCode(client, workspaceId, input.displayName);
       try {
         await client.query(
@@ -255,6 +258,9 @@ export class VendorDirectoryService {
         website: input.website === undefined ? before.website : patch.website,
         notes: patch.notes ?? before.notes,
       };
+      // A new or changed tax number follows the workspace country's format (PLM-111).
+      if (next.taxRegistrationNumber && normaliseTaxNumber(next.taxRegistrationNumber) !== normaliseTaxNumber(before.taxRegistrationNumber ?? ""))
+        next.taxRegistrationNumber = checkTaxNumber(next.taxRegistrationNumber, await readTaxNumberRule(client, workspaceId));
       if (before.status === "active" && !next.capabilities.length)
         throw new BadRequestException("An active vendor needs at least one capability.");
       const comparable = ({ displayName, legalName, capabilities, registrationNumber, taxRegistrationNumber, defaultCurrency, website, notes }: typeof next) =>

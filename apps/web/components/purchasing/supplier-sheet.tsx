@@ -7,7 +7,7 @@ import { Badge,
 import { useT } from "@/lib/i18n/i18n-provider";
 import { joinPhone, phoneCountry, splitPhone } from "@/lib/phone";
 import type { PurchasingApi } from "@/lib/purchasing/client";
-import type { Approval, Deal, PaymentTerms, Supplier, SupplierState } from "@/lib/purchasing/types";
+import type { Approval, Deal, PaymentTerms, Supplier, SupplierState, TaxNumberRule } from "@/lib/purchasing/types";
 import { SupplierControls } from "./supplier-controls";
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
@@ -16,6 +16,18 @@ import styles from "./purchasing.module.css";
 
 const TERMS: PaymentTerms[] = ["upfront", "split", "on_delivery", "credit", "statement"];
 const DEALS: Deal[] = ["none", "discount", "commission", "on_request"];
+
+/**
+ * The workspace country's tax number check (PLM-111): spaces, dots, dashes and slashes between groups
+ * don't count; a country without one fixed format takes any number.
+ */
+export function taxNumberProblem(value: string, rule: TaxNumberRule | undefined, saved = ""): { example: string } | null {
+  const plain = (text: string) => text.replace(/[\s.\-/]+/g, "").toUpperCase();
+  const number = plain(value);
+  // A number saved before the check stays as it was until someone changes it.
+  if (!number || !rule?.pattern || number === plain(saved)) return null;
+  try { return new RegExp(rule.pattern).test(number) ? null : { example: rule.example ?? "" }; } catch { return null; }
+}
 
 type SheetProps = { api: PurchasingApi; state: SupplierState; supplier: Supplier | null; onState: (state: SupplierState) => void; onClose: () => void };
 
@@ -58,6 +70,7 @@ function SupplierRecord({ api, state, supplier, onState, onClose }: SheetProps &
   const quietly = (patch: Record<string, unknown>) => { void save(patch).catch((cause) => setNotice(cause instanceof Error ? cause.message : t("Could not save."))); };
   const reload = () => void api.suppliers().then(onState).catch(() => undefined);
   const email = (value: string) => value && !/^\S+@\S+\.\S+$/.test(value) ? t("Enter an email like name@company.com.") : null;
+  const taxNumber = (value: string) => { const problem = taxNumberProblem(value, state.taxNumber, supplier.taxRegistrationNumber ?? ""); return problem ? t("Use the format {example}.", problem) : null; };
 
   return <InspectorSheet isOpen size="md" title={supplier.name} hideTitle={edit} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={edit ? <div className="wd-form-footer"><div className="wd-form-footer-start"><Button variant="quiet" onPress={() => setDialog("archive")}>{t("Archive")}</Button></div></div>
@@ -90,7 +103,8 @@ function SupplierRecord({ api, state, supplier, onState, onClose }: SheetProps &
         <EditableField canEdit={edit} kind="email" label={t("Email")} maxLength={320} onReload={reload} onSave={(value) => save({ email: value })} placeholder={t("Not set")} validate={email} value={supplier.email ?? ""} />
         <EditableField canEdit={edit} label={t("Location")} maxLength={160} onReload={reload} onSave={(locality) => save({ locality })} placeholder={t("Not set")} value={supplier.locality ?? ""} />
         <EditableField canEdit={edit} label={t("Legal name")} maxLength={240} onReload={reload} onSave={(legalName) => save({ legalName })} placeholder={t("Not set")} value={supplier.legalName ?? ""} />
-        <EditableField canEdit={edit} label={t("Tax number")} maxLength={120} onReload={reload} onSave={(taxRegistrationNumber) => save({ taxRegistrationNumber })} placeholder={t("Not set")} value={supplier.taxRegistrationNumber ?? ""} />
+        <EditableField canEdit={edit} label={state.taxNumber?.label ?? t("Tax number")} maxLength={120} onReload={reload} onSave={(taxRegistrationNumber) => save({ taxRegistrationNumber })} placeholder={t("Not set")}
+          validate={taxNumber} value={supplier.taxRegistrationNumber ?? ""} />
         <EditableField canEdit={edit} kind="multiline" label={t("Notes")} maxLength={10000} onReload={reload} onSave={(notes) => save({ notes })} placeholder={t("Not set")} value={supplier.notes} />
       </EditableFieldList>
       <section className={styles.part} aria-label={t("Documents, bank details and performance")}>
@@ -200,7 +214,8 @@ function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
       <TextInput label={t("Email")} inputType="email" maxLength={320} value={form.email} onChange={set("email")} />
       <TextInput label={t("Location")} maxLength={160} value={form.locality} onChange={set("locality")} />
       <TextInput label={t("Legal name")} maxLength={240} value={form.legalName} onChange={set("legalName")} />
-      <TextInput label={t("Tax number")} maxLength={120} value={form.taxRegistrationNumber} onChange={set("taxRegistrationNumber")} />
+      <TextInput label={state.taxNumber?.label ?? t("Tax number")} maxLength={120} value={form.taxRegistrationNumber} onChange={set("taxRegistrationNumber")}
+        validate={(value) => { const problem = taxNumberProblem(value, state.taxNumber); return problem ? t("Use the format {example}.", problem) : null; }} />
       {state.entities.length > 1 ? <MultiSelectField label={t("Companies that buy from it")} selectedKeys={new Set(form.entityIds)}
         onSelectionChange={(keys) => set("entityIds")([...keys].map(String))} items={state.entities.map((entity) => ({ id: entity.id, label: entity.name }))} /> : null}
       <TextInput label={t("Terms note")} maxLength={500} value={form.termsNote} onChange={set("termsNote")} />

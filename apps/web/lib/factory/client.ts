@@ -4,6 +4,15 @@ export class FactoryRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
+async function upload<T>(url: string, file: File): Promise<T> {
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch(url, { method: "POST", body, cache: "no-store" });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new FactoryRequestError(typeof data?.message === "string" ? data.message : "The photo could not be uploaded.", response.status);
+  return data as T;
+}
+
 async function request<T>(url: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store" });
   const data = await response.json().catch(() => null);
@@ -25,6 +34,9 @@ export function factoryApi(workspaceId: string) {
     schedule: (from?: string, days = 28) => request<ScheduleState>(at("schedule", { ...(from ? { from } : {}), days: String(days) })),
     /** Creates a batch from work orders, or adds, removes, starts or closes one (version-checked). */
     saveBatch: (input: Record<string, unknown>) => request<{ batches: Batch[]; orders: WorkOrderRow[] }>(at("batches"), "POST", input),
+    /** The photo of a quality check (one per check; the same photo id twice changes nothing). */
+    uploadCheckPhoto: (orderId: string, checkId: string, photoId: string, file: File) => upload<WorkOrderState>(at(`orders/${orderId}/checks/${checkId}/photos/${photoId}`), file),
+    photoUrl: (photoId: string, preview = true) => at(`photos/${photoId}`, preview ? { preview: "1" } : {}),
     settings: () => request<FactorySettingsState>(at("settings")),
     saveSettings: (input: Record<string, unknown>) => request<FactorySettingsState>(at("settings"), "PUT", input),
     saveWorkcenter: (input: Record<string, unknown>) => request<FactorySettingsState>(at("workcenters"), "POST", input),

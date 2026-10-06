@@ -42,7 +42,9 @@ const mount = (respond: (url: string, body: Record<string, unknown> | undefined)
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 };
-const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method && init.method !== "GET").map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
+const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method && init.method !== "GET" && typeof init.body === "string")
+  .map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
+const uploads = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.body instanceof FormData).map(([url, init]) => ({ url: String(url), file: (init!.body as FormData).get("file") }));
 const page = (section: FactorySection = "to-make") => render(<DesignSystemProvider><FactoryPage workspaceId="w" section={section} /></DesignSystemProvider>);
 
 describe("factory", () => {
@@ -181,8 +183,42 @@ describe("factory", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Failed" }), "0.5");
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it failed/ }), "Veneer lifting");
+    // A note and one photo go with the check; the photo follows the saved check, by its id.
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Note" }), "Two doors to redo");
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:photo", revokeObjectURL: () => undefined }));
+    await userEvent.upload(within(dialog).getByLabelText("Add a photo"), new File(["x"], "check.jpg", { type: "image/jpeg" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "check", passed: "1.5", failed: "0.5", failReason: "Veneer lifting" }));
+    await waitFor(() => expect(uploads(fetcher)).toHaveLength(1));
+    const check = posts(fetcher).at(-1)!.body;
+    expect(check).toMatchObject({ action: "check", passed: "1.5", failed: "0.5", failReason: "Veneer lifting", note: "Two doors to redo" });
+    expect(uploads(fetcher)[0]).toMatchObject({ url: expect.stringContaining(`/api/factory/orders/w1/checks/${check.id}/photos/`), file: expect.objectContaining({ name: "check.jpg" }) });
+  });
+
+  it("ties a work order to the payment stage due when it's ready, shows the ready date and the reminder it sent (PLM-064, PLM-067)", async () => {
+    nav.query = "order=w1";
+    const payments: WorkOrderState["payments"] = [{ id: "p1", title: "Advance", status: "verified" }, { id: "p2", title: "Joinery balance", status: "pending" }];
+    const ready = { status: "ready" as const, releasedAt: "2026-09-27T09:00:00Z", made: "3.0000", passed: "3.0000", left: "0", readyAt: "2026-10-06T08:00:00Z", readyOn: "2026-10-06" };
+    let current = order(ready, { payments, checks: [{ id: "c1", passed: "3.0000", failed: "0.0000", failReason: "", note: "Doors aligned", checkedByName: "Quinn", checkedAt: "2026-10-06T08:00:00Z", photoId: "f1" }] });
+    const fetcher = mount((url, body) => {
+      if (url.includes("/orders/w1")) {
+        if (body?.action === "link_payment") current = { ...current, order: { ...current.order, readyPaymentId: String(body.paymentId), version: 3 },
+          readyReminder: { readyOn: "2026-10-06", outcome: "sent", channel: "email", at: "2026-10-06T08:00:00Z", on: "2026-10-06" } };
+        if (body?.action === "set_ready_date") current = { ...current, order: { ...current.order, readyOn: String(body.readyOn), version: 4 } };
+        return current;
+      }
+      return factory();
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Edit Payment due when ready" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Joinery balance" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "link_payment", paymentId: "p2", version: 2 }));
+    expect(await within(sheet).findByText(/Sent to the client on/)).toBeInTheDocument();
+    // The check's note and photo, and the ready date, on the output.
+    await userEvent.click(within(sheet).getByRole("tab", { name: /Output/ }));
+    expect(await within(sheet).findByText(/Doors aligned/)).toBeInTheDocument();
+    expect(within(sheet).getByRole("img", { name: "Check photo" })).toHaveAttribute("src", expect.stringContaining("/api/factory/photos/f1?"));
+    expect(within(sheet).getByRole("button", { name: "Edit Ready on" })).toBeInTheDocument();
   });
 
   it("issues a material to the work order and asks why when it's more than it needs; a swap waits for someone else", async () => {

@@ -7,6 +7,7 @@ import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { move, readTransfers, stockFromReceipt } from "../inventory/stock";
 import { closeSettledBlockers } from "./purchasing-blockers";
+import { tellMaterialsReady } from "./materials-ready";
 import { readSiteAccess } from "../site/site-access";
 import { event as boqEvent } from "../project-core/project-scope";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
@@ -84,6 +85,12 @@ export class ReceivingService {
       const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
       return { orders: rows.map((order) => ({ ...order, access: access.get(order.id) ?? null })), moves, canReceive, canReceiveMoves: canReceive || (await has("stock.manage")), canArrange, today };
     });
+  }
+
+  /** The projects an order's lines are for. */
+  private async orderProjects(client: Db, workspaceId: string, orderId: string) {
+    return (await client.query<{ projectId: string }>(
+      `SELECT DISTINCT project_id AS "projectId" FROM purchase_order_lines WHERE workspace_id = $1 AND order_id = $2 AND project_id IS NOT NULL`, [workspaceId, orderId])).rows.map((row) => row.projectId);
   }
 
   /** The active managers of the projects an order is for. */
@@ -212,6 +219,8 @@ export class ReceivingService {
     if (missing.length) await this.tell(client, workspaceId, order, id, "purchasing.missing", [order.createdBy, order.submittedBy], receiverId, missing.join("; ").slice(0, 480));
     await recordAudit(client, { workspaceId, actorUserId: receiverId, action: "goods_receipt.received", entityType: "goods_receipt", entityId: id,
       after: { number, orderId, location: location.id, receivedOn, lines } });
+    // Everything a project buys is in: its manager and production lead hear once (PLM-074).
+    if (!pending) await tellMaterialsReady(client, workspaceId, await this.orderProjects(client, workspaceId, orderId), receiverId);
     return number;
   }
 
@@ -260,6 +269,7 @@ export class ReceivingService {
         receipt.locationName, pass);
       await this.rejectedNotice(client, workspaceId, order, receiptId, settled, user.userId, [receipt.receivedBy], pass);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "goods_receipt.inspected", entityType: "goods_receipt", entityId: receiptId, after: { lines: settled } });
+      await tellMaterialsReady(client, workspaceId, await this.orderProjects(client, workspaceId, order.id), user.userId);
       return this.detail(client, workspaceId, receiptId, user.userId);
     });
   }

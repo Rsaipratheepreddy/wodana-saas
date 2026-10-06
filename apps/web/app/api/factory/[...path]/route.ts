@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { applyRotatedSession, authenticatedBackendFetch } from "@/lib/auth/backend-session";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 
@@ -8,6 +9,8 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "batches") return method === "POST";
   if (path.length === 1 && path[0] === "orders") return method === "POST";
   if (path.length === 2 && path[0] === "orders" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
+  if (path.length === 6 && path[0] === "orders" && UUID.test(path[1]) && path[2] === "checks" && UUID.test(path[3]) && path[4] === "photos" && UUID.test(path[5])) return method === "POST";
+  if (path.length === 2 && path[0] === "photos" && UUID.test(path[1])) return method === "GET";
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "workcenters") return method === "POST";
   return false;
@@ -19,7 +22,25 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid factory resource.") }, { status: 400 });
+  // A quality check's photo streams back as a file.
+  if (path[0] === "photos") {
+    const preview = url.searchParams.get("preview") === "1";
+    const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/factory/photos/${path[1]}${preview ? "?preview=1" : ""}`, { cache: "no-store" });
+    if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: t("The photo could not be loaded.") }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
+    const response = new NextResponse(result.upstream.body, { status: 200, headers: { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream",
+      "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" } });
+    applyRotatedSession(response, result.rotatedSession);
+    return response;
+  }
   if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: t("Use your workspace to make this change.") }, { status: 403 });
+  if (path[4] === "photos") {
+    if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ message: t("Choose a file up to 20 MB.") }, { status: 400 });
+    const input = await request.formData().catch(() => null);
+    const file = input?.get("file");
+    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !file.type.startsWith("image/")) return NextResponse.json({ message: t("Choose a photo up to 20 MB.") }, { status: 400 });
+    const form = new FormData(); form.set("file", file);
+    return workspaceJsonResponse(`/workspaces/${workspaceId}/factory/${path.join("/")}`, { method: "POST", body: form }, t("The photo could not be uploaded."));
+  }
   const body = request.method === "GET" ? undefined : await request.text();
   if (body && body.length > 1_000_000) return NextResponse.json({ message: t("The request is too large.") }, { status: 413 });
   // The schedule's window: a date and a number of days.

@@ -32,6 +32,30 @@ export function orderTotals(lines: Array<ReturnType<typeof priceLine>>, decimals
   return { subtotal: sum("gross"), discountTotal: sum("discount"), net: sum("net"), taxTotal: sum("tax"), total: sum("total") };
 }
 
+/**
+ * Where a material or bought scope line has got to (PLM-072), from the records, never typed in:
+ * required until all of it is on placed orders (or given from stock), ordered until all of it is in,
+ * received once it's all in, installed once approved site reports installed all the scope it's for.
+ */
+export const LINE_STATUSES = ["required", "ordered", "received", "installed"] as const;
+export type LineStatus = (typeof LINE_STATUSES)[number];
+
+/**
+ * A line's one status from its quantities. With no quantity yet (to confirm), any placed order counts as
+ * ordered and anything in as received. Installation needs the goods to have arrived when nothing on site
+ * says so line by line (`siteFinished`: a material used nowhere in particular, and site work is finished).
+ */
+export function lineStatus(input: { required: string | null; placed: string; received: string; fromStock: string; scopeInstalled: boolean; siteFinished: boolean }): LineStatus {
+  const stock = Dec.of(input.fromStock);
+  const have = Dec.of(input.received).add(stock);
+  const covered = Dec.of(input.placed).add(stock);
+  const all = (value: Dec) => input.required === null ? value.cmp(0) > 0 : value.cmp(input.required) >= 0;
+  if (input.scopeInstalled) return "installed";
+  if (all(have)) return input.siteFinished ? "installed" : "received";
+  if (all(covered)) return "ordered";
+  return "required";
+}
+
 export type Need = {
   key: string; source: "material" | "line"; sourceId: string; projectId: string; projectReference: string; projectName: string;
   title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
@@ -56,6 +80,8 @@ export type Need = {
   projectStatus: "active" | "on_hold";
   /** The latest variation that reduced or removed what it's for (VO-2), when there was one. */
   changedBy: string | null;
+  /** Required → Ordered → Received → Installed, from orders, receipts, stock and approved site reports. */
+  status: LineStatus;
 };
 
 /** When each order line's goods are needed on its project, from the plan (lines with no date are left out). */
@@ -77,9 +103,9 @@ export async function linesNeededBy(db: Db, workspaceId: string, lines: Array<{ 
  * each, how much is needed, how much is on placed orders and in draft, and what's left.
  */
 export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boolean, projectId: string | null = null): Promise<Need[]> {
-  const rows = (await db.query<Omit<Need, "blocked" | "remaining" | "orderBy" | "fromStock"> & { remaining: string | null }>(
+  const rows = (await db.query<Omit<Need, "blocked" | "remaining" | "orderBy" | "fromStock" | "status"> & { remaining: string | null; scopeInstalled: boolean; siteFinished: boolean }>(
     `WITH projects AS (
-       SELECT project.id, project.reference, project.name, project.status FROM delivery_projects project
+       SELECT project.id, project.reference, project.name, project.status, project.site_finished_on FROM delivery_projects project
         WHERE project.workspace_id = $1 AND project.started_at IS NOT NULL AND project.status IN ('active', 'on_hold') AND ($2::uuid IS NULL OR project.id = $2)
      ), accepted AS (
        -- What each order line has: accepted (less what went back after acceptance) and what the supplier credited instead of sending.
@@ -109,6 +135,13 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
          FROM work_items work JOIN projects ON projects.id = work.project_id
         WHERE work.workspace_id = $1 AND work.needs_materials AND work.status NOT IN ('done', 'cancelled') AND coalesce(work.start_date, work.due_date) IS NOT NULL
         GROUP BY GROUPING SETS ((work.project_id, work.package_id), (work.project_id))
+     ), installed AS (
+       -- What approved site reports installed against each scope line (corrections included).
+       SELECT entry.boq_line_id, sum(entry.installed) AS installed
+         FROM site_report_lines entry JOIN site_reports report ON report.workspace_id = entry.workspace_id AND report.id = entry.report_id
+         JOIN projects ON projects.id = report.project_id
+        WHERE entry.workspace_id = $1 AND report.status = 'approved'
+        GROUP BY entry.boq_line_id
      ), needs AS (
        SELECT 'material:' || item.id AS key, 'material' AS source, item.id AS "sourceId", projects.id AS "projectId", projects.reference AS "projectReference", projects.name AS "projectName",
               item.name AS title, concat_ws(' · ', nullif(item.code, ''), nullif(item.specification, '')) AS detail, item.unit, item.quantity AS required,
@@ -119,13 +152,15 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
               coalesce((SELECT min(needed.needed_by) FROM project_boq_lines line JOIN needed ON NOT needed.whole AND needed.package_id = line.package_id
                          WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids)),
                        (SELECT needed.needed_by FROM needed WHERE needed.project_id = item.project_id AND needed.whole
-                           AND NOT EXISTS (SELECT 1 FROM project_boq_lines line WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids) AND line.package_id IS NOT NULL))) AS "neededBy"
+                           AND NOT EXISTS (SELECT 1 FROM project_boq_lines line WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids) AND line.package_id IS NOT NULL))) AS "neededBy",
+              item.boq_line_ids AS scope_line_ids
          FROM project_material_items item JOIN projects ON projects.id = item.project_id
         WHERE item.workspace_id = $1
        UNION ALL
        SELECT 'line:' || line.id, 'line', line.id, projects.id, projects.reference, projects.name, line.title, line.description, line.unit, line.quantity,
               line.catalog_item_id, '', package.name, package.supply, 100000 + line.position, false, ARRAY[package.id], ARRAY[]::text[],
-              (SELECT needed.needed_by FROM needed WHERE NOT needed.whole AND needed.package_id = package.id)
+              (SELECT needed.needed_by FROM needed WHERE NOT needed.whole AND needed.package_id = package.id),
+              ARRAY[line.id]
          FROM project_boq_lines line JOIN projects ON projects.id = line.project_id
          JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id
         WHERE line.workspace_id = $1 AND line.status = 'active' AND package.supply IN ('buy', 'ready_made', 'subcontract')
@@ -143,6 +178,12 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
                 AND (change.line_id = needs."sourceId" OR (needs.source = 'material' AND change.line_id = ANY(
                      SELECT unnest(item.boq_line_ids) FROM project_material_items item WHERE item.workspace_id = $1 AND item.id = needs."sourceId")))
               ORDER BY change.at DESC LIMIT 1) AS "changedBy",
+            -- Installed: every active scope line it's for is fully installed by approved site reports.
+            coalesce((SELECT count(*) > 0 AND bool_and(coalesce(installed.installed, 0) >= line.quantity)
+                        FROM project_boq_lines line LEFT JOIN installed ON installed.boq_line_id = line.id
+                       WHERE line.workspace_id = $1 AND line.id = ANY(needs.scope_line_ids) AND line.status = 'active'), false) AS "scopeInstalled",
+            -- A material used nowhere in particular counts as installed once the project's site work is finished.
+            (cardinality(needs.scope_line_ids) = 0 AND (SELECT site_finished_on IS NOT NULL FROM projects WHERE projects.id = needs."projectId")) AS "siteFinished",
             -- The supplier's lead time when the catalog knows it (the preferred supplier's, else the longest), else the workspace's.
             coalesce((SELECT link.lead_time_days FROM catalog_supplier_links link WHERE link.workspace_id = $1 AND link.item_id = needs."catalogItemId" AND link.lead_time_days IS NOT NULL
                        ORDER BY link.preferred DESC, link.lead_time_days DESC LIMIT 1),
@@ -156,10 +197,11 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
     signed.set(projectId, await clientChoicesSignedOff(db, workspaceId, projectId) && !(await ledgerProcurementProblem(db, workspaceId, projectId)));
   const fromStock = await givenFromStock(db, workspaceId, rows);
   const orderBy = (neededBy: string | null, days: number) => (neededBy ? new Date(Date.parse(`${neededBy}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10) : null);
-  return rows.map((row) => {
+  return rows.map(({ scopeInstalled, siteFinished, ...row }) => {
     const stock = fromStock.get(row.key) ?? Dec.ZERO;
     return { ...row, fromStock: stock.toString(), remaining: row.remaining === null ? null : Dec.of(row.remaining).sub(stock).toFixed(4), orderBy: orderBy(row.neededBy, row.leadDays),
-      blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const : null };
+      blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const : null,
+      status: lineStatus({ required: row.required, placed: row.placed, received: row.received, fromStock: stock.toString(), scopeInstalled, siteFinished }) };
   });
 }
 

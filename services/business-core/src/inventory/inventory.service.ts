@@ -6,6 +6,7 @@ import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { readLocations, type StockLocation } from "../purchasing/receiving";
+import { tellMaterialsReady } from "../purchasing/materials-ready";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { raiseSnag } from "../project-core/project-work";
 import { reworkFromSite } from "../factory/factory-rework";
@@ -149,6 +150,9 @@ export class InventoryService {
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `stock.${action}`, entityType: "stock_item", entityId: itemId, after: { batchId, location: location.id, ...audit } });
       // Free stock taken below its reorder point tells the people who keep and buy it straight away.
       await processStockLevels(client, workspaceId, [itemId]);
+      // Stock given to a project counts as in: it may complete what the project buys (PLM-074).
+      const givenTo = action === "issue" ? audit.forProjectId : action === "allocate" ? audit.project : null;
+      if (typeof givenTo === "string") await tellMaterialsReady(client, workspaceId, [givenTo], user.userId);
       return this.state(client, workspaceId, user.userId);
     });
   }

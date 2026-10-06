@@ -13044,5 +13044,22 @@
   "1 still needed": "1 still needed",
   "Ready to finish": "Ready to finish",
   "1 day past its plan": "1 day past its plan",
-  "{count} days past its plan": "{count} days past its plan"
+  "{count} days past its plan": "{count} days past its plan",
+  "Use the format {example}.": "Use the format {example}.",
+  "added a photo of the check": "added a photo of the check",
+  "set the ready date to {date}": "set the ready date to {date}",
+  "tied it to the payment stage {stage}": "tied it to the payment stage {stage}",
+  "untied it from its payment stage": "untied it from its payment stage",
+  "payment reminders are off": "payment reminders are off",
+  "nothing is owed on it": "nothing is owed on it",
+  "it's paid or waiting for verification": "it's paid or waiting for verification",
+  "the client was already reminded that day": "the client was already reminded that day",
+  "the client can't be reached": "the client can't be reached",
+  "Payment due when ready": "Payment due when ready",
+  "{title} (paid)": "{title} (paid)",
+  "Sent to the client on {date}": "Sent to the client on {date}",
+  "Not sent: {reason}": "Not sent: {reason}",
+  "Ready on": "Ready on",
+  "Choose the day it was ready.": "Choose the day it was ready.",
+  "Check photo": "Check photo"
 }

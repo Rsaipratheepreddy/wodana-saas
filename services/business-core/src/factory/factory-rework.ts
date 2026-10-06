@@ -23,7 +23,7 @@ export async function reworkFromSite(db: Db, workspaceId: string, input: {
   await db.query(`INSERT INTO work_order_reworks (id, workspace_id, work_order_id, quantity, reason, source, dispatch_id, return_id, created_by) VALUES ($1, $2, $3, $4, $5, 'site', $6, $7, $8)`,
     [id, workspaceId, order.id, input.quantity, input.reason.slice(0, 500), input.dispatchId, input.returnId, input.actorId]);
   if (order.status === "ready")
-    await db.query(`UPDATE work_orders SET status = 'in_production', ready_at = NULL, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
+    await db.query(`UPDATE work_orders SET status = 'in_production', ready_at = NULL, ready_on = NULL, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
   else await db.query(`UPDATE work_orders SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
   await db.query(`INSERT INTO work_order_events (id, workspace_id, work_order_id, kind, detail, actor_id) VALUES ($1, $2, $3, 'reworked', $4::jsonb, $5)`,
     [randomUUID(), workspaceId, order.id, JSON.stringify({ quantity: input.quantity, reason: input.reason, source: "site", dispatchId: input.dispatchId, returnId: input.returnId }), input.actorId]);

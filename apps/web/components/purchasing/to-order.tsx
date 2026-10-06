@@ -13,7 +13,7 @@ import { Cell, DueText, ProjectFilterChip, projectHref } from "../operations/ops
 import { useProjectFormat } from "../project-core/format";
 import { AskPricesDialog } from "./ask-prices-dialog";
 import { CreateOrderDialog } from "./create-order-dialog";
-import { quantityText } from "./order-labels";
+import { LineStatusLabel, quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
 export type ToOrderView = "order" | "late" | "signoff" | "hold" | "over" | "restock" | "all";
@@ -71,6 +71,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const shown = view === "restock" ? [] : scoped.filter(queues[view]);
   const restockShown = restock.filter((point) => !needle || `${point.itemName} ${point.itemCode} ${point.locationName ?? ""}`.toLocaleLowerCase().includes(needle));
   const canBuy = Boolean(state?.canBuy);
+  const showStatus = view === "all";
 
   const openOrder = (needs: Need[]) => setOrdering({ needs, restock: [] });
   const next = (need: Need) => {
@@ -95,9 +96,11 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
         : need.remaining === null ? <span className={styles.muted}>{t("Quantity to confirm")}</span>
         : Number(need.remaining) > 0 ? <strong className={styles.money}>{unit(need.remaining, need.unit)}</strong>
         : Number(need.remaining) < 0 ? <span className={styles.lateText}>{t("Ordered {quantity} more than needed", { quantity: unit(need.remaining.replace("-", ""), need.unit) })}</span>
-        : <span className={styles.done}>{t("Ordered")}</span>;
+        : showStatus ? <span className={styles.muted}>—</span> : <span className={styles.done}>{t("Ordered")}</span>;
       return <span className={styles.nameCell}>{main}{parts ? <small>{parts}</small> : null}</span>;
     } },
+    // Every line of the project with where it has got to (PLM-072): required, ordered, received or installed.
+    ...(showStatus ? [{ id: "status", label: t("Status"), width: "8rem", render: (need: Need) => need.status ? <LineStatusLabel status={need.status} /> : null }] : []),
     ...(canBuy ? [{ id: "action", label: "", width: "8.5rem", align: "end" as const, render: (need: Need) => next(need) }] : []),
   ];
   const sections: GroupedTableSection<Need>[] = [...new Set(shown.map((need) => need.projectId))].map((id) => {

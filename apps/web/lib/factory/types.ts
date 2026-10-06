@@ -53,7 +53,8 @@ export type OutputReport = {
   /** The hours it took, when reported: costed at the workcenter's hourly rate once approved. */
   hours: string | null;
 };
-export type QualityCheck = { id: string; passed: string; failed: string; failReason: string; checkedByName: string; checkedAt: string };
+/** A quality check: what passed and failed (and why), who checked it, its note and its photo. */
+export type QualityCheck = { id: string; passed: string; failed: string; failReason: string; checkedByName: string; checkedAt: string; note?: string; photoId?: string | null };
 export type WorkOrderEvent = { id: string; kind: string; detail: Record<string, unknown>; byName: string; at: string };
 
 export type FactoryRights = { canManage: boolean; canReport: boolean; canApprove: boolean; canIssue: boolean };
@@ -69,7 +70,9 @@ export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrd
 export type WorkOrderRework = { id: string; quantity: string; reason: string; source: "site" | "factory"; at: string; byName: string };
 export type WorkOrderState = FactoryRights & {
   order: WorkOrderRow & { drawingRef: string; drawingApprovedAt: string | null; drawingApprovedByName: string | null; holdReason: string | null; closeReason: string | null;
-    closedAt: string | null; releasedAt: string | null; readyAt: string | null };
+    closedAt: string | null; releasedAt: string | null; readyAt: string | null;
+    /** The order-ready date, and the client's payment stage that falls due when it's ready. */
+    readyOn?: string | null; readyPaymentId?: string | null };
   reports: OutputReport[]; checks: QualityCheck[]; events: WorkOrderEvent[]; settings: FactorySettings; releaseChecks: ReleaseCheck[]; workcenters: Workcenter[]; me: string;
   materials: WorkOrderMaterial[]; materialCost: string; currency: string; projectMaterials: Array<{ id: string; name: string; unit: string }>; canSuggest: boolean; places: StockLocation[];
   /** Steps done by suppliers on its goods: out while their service order still waits for something. */
@@ -84,6 +87,10 @@ export type WorkOrderState = FactoryRights & {
   /** The project's designs with an approved revision (the latest of each), to make it to. */
   designs?: Array<{ designId: string; versionId: string; title: string; number: number; documentType: string }>;
   projectStatus?: string;
+  /** The project's payment stages it can be tied to, and the reminder its ready date triggered for the tied stage. */
+  payments?: Array<{ id: string; title: string; status: "pending" | "proof_submitted" | "verified" }>;
+  /** `on` is the day it was decided, in the workspace's time zone. */
+  readyReminder?: { readyOn: string; outcome: string; channel: "whatsapp" | "email" | null; at: string; on: string } | null;
 };
 /** Settings → Factory; hourly rates (oldest first) only for people who set them or see costs. */
 export type FactorySettingsState = {

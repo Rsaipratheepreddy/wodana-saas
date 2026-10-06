@@ -5,6 +5,7 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { tellSupplierOnHold } from "./supplier-controls.service";
+import { checkTaxNumber, normaliseTaxNumber, readTaxNumberRule } from "./tax-registration";
 import {
   APPROVALS, DEALS, PAYMENT_TERMS, cleanCategories, normalName, percent, readApproval, readDeal, readSupplier, readSuppliers, readTerms, retentionPercent, supplierCode,
   type Approval, type Deal, type PaymentTerms, type Supplier,
@@ -39,8 +40,13 @@ export class SuppliersService {
       if (!name) throw new BadRequestException("Name the supplier.");
       if ((await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id <> $2 AND status <> 'archived' AND lower(btrim(display_name)) = lower($3)`, [workspaceId, id, name])).rowCount)
         throw new ConflictException("Another supplier has this name.");
-      const tax = text(body.taxRegistrationNumber, 120, "Tax number") || null;
-      if (tax && (await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id <> $2 AND lower(btrim(tax_registration_number)) = lower($3)`, [workspaceId, id, tax])).rowCount)
+      const typed = text(body.taxRegistrationNumber, 120, "Tax number");
+      // A new or changed number is checked against the country's format (PLM-111); one kept as it was stays as it was.
+      const kept = Boolean(typed) && normaliseTaxNumber(typed) === normaliseTaxNumber(current?.taxRegistrationNumber ?? "");
+      const tax = (kept ? current!.taxRegistrationNumber : checkTaxNumber(typed, await readTaxNumberRule(client, workspaceId))) || null;
+      // The same number written with other spacing or dashes is still the same supplier.
+      if (tax && (await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id <> $2
+            AND upper(regexp_replace(tax_registration_number, '[[:space:]./-]+', '', 'g')) = $3`, [workspaceId, id, normaliseTaxNumber(tax)])).rowCount)
         throw new ConflictException("Another supplier has this tax number.");
       const categories = cleanCategories(body.categories, await this.knownCategories(client, workspaceId));
       const terms = this.terms(body);
@@ -193,6 +199,8 @@ export class SuppliersService {
       entities: await this.entitiesOf(client, workspaceId),
       canManage: await this.access.hasPermission(client, workspaceId, userId, "vendors.manage"),
       canApprove: await this.access.hasPermission(client, workspaceId, userId, "vendors.approve"),
+      /** How the country writes a tax registration number (name, format and an example), from its region pack. */
+      taxNumber: await readTaxNumberRule(client, workspaceId),
     };
   }
 

@@ -97,6 +97,25 @@ describe("suppliers", () => {
     expect(await screen.findByText("Old Glass Co")).toBeInTheDocument();
   });
 
+  it("names the tax number as the workspace's country does and checks a new one against its format (PLM-111)", async () => {
+    const fetcher = mount(withControls(() => state({ taxNumber: { label: "TRN", pattern: "^[0-9]{15}$", example: "100123456700003" } })));
+    page();
+    await userEvent.click(await screen.findByRole("button", { name: "Add supplier" }));
+    const sheet = await screen.findByRole("dialog", { name: "New supplier" });
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Name" }), "Casabella");
+    await userEvent.click(within(sheet).getByRole("button", { name: "More details" }));
+    const trn = within(sheet).getByRole("textbox", { name: "TRN" });
+    await userEvent.type(trn, "10012345");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Add supplier" }));
+    expect(await within(sheet).findByText("Use the format 100123456700003.")).toBeInTheDocument();
+    expect(posts(fetcher)).toHaveLength(0);
+    await userEvent.clear(trn);
+    await userEvent.type(trn, "100-1234-5670-0003");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Add supplier" }));
+    await waitFor(() => expect(posts(fetcher)).toHaveLength(1));
+    expect(posts(fetcher)[0].body).toMatchObject({ name: "Casabella", taxRegistrationNumber: "100-1234-5670-0003" });
+  });
+
   it("adds a supplier with its terms, deal, companies and full phone number", async () => {
     const fetcher = mount(withControls(() => state()));
     page();
@@ -424,6 +443,24 @@ describe("ordering", () => {
     const table = await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
     expect(table).toHaveTextContent("Calacatta slab");
     expect(table).not.toHaveTextContent("Brass handles");
+  });
+
+  it("shows every line's status, from its records, in Everything (PLM-072)", async () => {
+    mount((url) => (url.includes("/needs") ? { ...needs, needs: [
+      need({ status: "required" }),
+      need({ key: "material:m2", sourceId: "m2", title: "Brass handles", placed: "12.0000", remaining: "0.0000", status: "ordered" }),
+      need({ key: "material:m3", sourceId: "m3", title: "Oak veneer", placed: "12.0000", received: "12.0000", remaining: "0.0000", status: "received" }),
+      need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", placed: "1.0000", received: "1.0000", remaining: "0.0000", status: "installed" }),
+    ] } : ordersList));
+    page("to-order");
+    const table = async () => screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
+    // The queue to order has one status only, so it doesn't repeat it.
+    expect(await table()).not.toHaveTextContent("Installed");
+    await userEvent.click(screen.getByRole("button", { name: /^Everything/ }));
+    const all = await table();
+    await waitFor(() => expect(all).toHaveTextContent("Installed"));
+    const status = (title: string) => within(within(all).getByText(title).closest("[role='row'], tr")! as HTMLElement).getByText(/^(Required|Ordered|Received|Installed)$/).textContent;
+    expect([status("Calacatta slab"), status("Brass handles"), status("Oak veneer"), status("Under-cabinet lights")]).toEqual(["Required", "Ordered", "Received", "Installed"]);
   });
 
   it("counts free stock given to the project before what's left to order", async () => {

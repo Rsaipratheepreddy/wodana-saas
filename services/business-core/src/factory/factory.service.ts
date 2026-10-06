@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -14,9 +14,13 @@ import { outstanding, readLocations, resolvePlace } from "../purchasing/receivin
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { readWorkcenterRates } from "../project-core/labour-rates";
 import { readCalendar } from "../project-core/work-calendar";
+import { readMilestones } from "../receivables/receivables";
+import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
+import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import {
   capacity, defaultHours, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, workOrderNext, type WorkOrderRow,
 } from "./factory";
+import { orderReady, readReadyReminder, remindForReady } from "./factory-ready";
 import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
 
 type Db = PoolClient;
@@ -35,7 +39,8 @@ const MATERIAL_ACTIONS = ["add_material", "set_material", "remove_material", "su
  */
 @Injectable()
 export class FactoryService {
-  constructor(private readonly access: WorkspaceAccessService, private readonly orders: OrdersService, private readonly inventory: InventoryService) {}
+  constructor(private readonly access: WorkspaceAccessService, private readonly orders: OrdersService, private readonly inventory: InventoryService,
+    @Optional() private readonly storage?: BrandAssetStorageService) {}
 
   state(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client, user) => {
@@ -170,6 +175,9 @@ export class FactoryService {
         [id, workspaceId, number, line.projectId, line.packageId, lineId, line.title, line.specification.slice(0, 2000), quantity, line.unit, schedule.workcenterId, schedule.plannedStart,
           schedule.plannedEnd, text(body.notes, 2000), user.userId]);
       if (schedule.plannedHours) await client.query(`UPDATE work_orders SET planned_hours = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, schedule.plannedHours]);
+      // The payment stage due when it's ready: the one the project's last work order is tied to, so it's chosen once per project.
+      await client.query(`UPDATE work_orders SET ready_payment_id = (SELECT other.ready_payment_id FROM work_orders other WHERE other.workspace_id = $1 AND other.project_id = $3 AND other.id <> $2
+          AND other.ready_payment_id IS NOT NULL ORDER BY other.number DESC LIMIT 1) WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, line.projectId]);
       await this.event(client, workspaceId, id, "planned", { quantity, line: line.title }, user.userId);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "work_order.planned", entityType: "work_order", entityId: id, after: { lineId, quantity } });
       return this.detail(client, workspaceId, id, user.userId);
@@ -309,12 +317,39 @@ export class FactoryService {
         const passed = amount(body.passed ?? "0", "Passed");
         const failed = amount(body.failed ?? "0", "Failed");
         const failReason = text(body.failReason, 500);
+        const note = text(body.note, 1000);
         if (Dec.of(passed).add(failed).cmp(0) <= 0) throw new BadRequestException("Enter what passed or failed.");
         if (Dec.of(failed).cmp(0) > 0 && !failReason) throw new BadRequestException("Say why it failed.");
         if (Dec.of(passed).add(failed).cmp(order.toCheck) > 0)
           throw new ConflictException(Dec.of(order.toCheck).cmp(0) > 0 ? `Only ${plain(order.toCheck)} ${order.unit} is waiting to be checked.`.replace("  ", " ") : "Nothing is waiting to be checked.");
-        await this.pass(client, workspaceId, order, recordId!, passed, failed, failReason, user.userId, notices);
-        audit = { checkId: recordId, passed, failed, failReason };
+        await this.pass(client, workspaceId, order, recordId!, passed, failed, failReason, user.userId, notices, note);
+        audit = { checkId: recordId, passed, failed, failReason, note };
+      } else if (action === "set_ready_date") {
+        // The day it was ready, when it was checked later than that (recorded on the day it became ready).
+        if (!(await has("factory.manage")) && !(await has("factory.approve"))) throw new ForbiddenException("You can't change the ready date.");
+        status("ready");
+        const readyOn = optionalDate(body.readyOn, "Ready date");
+        if (!readyOn) throw new BadRequestException("Choose the day it was ready.");
+        const day = await workspaceDay(client, workspaceId);
+        if (readyOn > day.today) throw new BadRequestException("The ready date can't be in the future.");
+        const released = (await client.query<{ on: string | null }>(`SELECT (released_at AT TIME ZONE coalesce(nullif((SELECT default_timezone FROM workspaces WHERE id = $1), ''), 'UTC'))::date::text AS on
+          FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId])).rows[0]?.on;
+        if (released && readyOn < released) throw new BadRequestException("The ready date can't be before it was released.");
+        const before = (await client.query<{ on: string | null }>(`SELECT ready_on::text AS on FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId])).rows[0]?.on ?? null;
+        await set(`ready_on = $3`, [readyOn]);
+        audit = { from: before, to: readyOn };
+      } else if (action === "link_payment") {
+        // The client's payment stage due when it's ready (a joinery balance before installation, say), or none.
+        await need("factory.manage", "You can't change work orders.");
+        status("planned", "released", "in_production", "on_hold", "ready");
+        const paymentId = body.paymentId === null || body.paymentId === "" ? null : typeof body.paymentId === "string" && body.paymentId.length <= 200 ? body.paymentId : undefined;
+        if (paymentId === undefined) throw new BadRequestException("Choose a payment stage.");
+        if (paymentId && !(await readMilestones(client, workspaceId, { projectId: order.projectId, paymentId })).length)
+          throw new BadRequestException("Choose a payment stage of this project.");
+        await set(`ready_payment_id = $3`, [paymentId]);
+        audit = { paymentId };
+        // Tied once everything on the stage is already ready: its reminder goes now (still once per stage).
+        if (paymentId && order.status === "ready") audit.reminder = (await remindForReady(client, workspaceId, order, user.userId))?.outcome ?? null;
       } else if (action === "hold") {
         await need("factory.manage", "You can't hold work orders.");
         status("planned", "released", "in_production");
@@ -443,6 +478,48 @@ export class FactoryService {
     });
   }
 
+  /** Adds the photo of a quality check (one per check). The same photo id twice changes nothing. */
+  async uploadCheckPhoto(actor: RequestActor, workspaceId: string, orderId: string, checkId: string, photoId: string, file?: ReferenceUpload) {
+    const prepared = await prepareReferenceUpload(file);
+    if (!prepared.mimeType.startsWith("image/")) throw new BadRequestException("Choose a photo (JPG, PNG, WebP or HEIC).");
+    const storage = this.storage;
+    if (!storage) throw new ConflictException("Photos can't be stored here yet.");
+    return this.access.withPermission(actor, workspaceId, "factory.approve", async (client, user) => {
+      const id = uuid(photoId, "Photo");
+      const check = (await client.query<{ id: string }>(`SELECT id FROM work_order_checks WHERE workspace_id = $1 AND work_order_id = $2 AND id = $3 FOR UPDATE`,
+        [workspaceId, uuid(orderId, "Work order"), uuid(checkId, "Check")])).rows[0];
+      if (!check) throw new NotFoundException("Check not found.");
+      const existing = (await client.query<{ id: string; sha256: string }>(`SELECT id, sha256 FROM work_order_check_photos WHERE workspace_id = $1 AND check_id = $2`, [workspaceId, checkId])).rows[0];
+      if (existing && (existing.id !== id || existing.sha256 !== prepared.digest)) throw new ConflictException("This check already has its photo.");
+      if (!existing) {
+        const key = `factory/checks/${workspaceId}/${id}`;
+        await storage.put(`${key}/original`, prepared.body, prepared.mimeType);
+        if (prepared.preview) await storage.put(`${key}/preview.webp`, prepared.preview, "image/webp");
+        await client.query(
+          `INSERT INTO work_order_check_photos (id, workspace_id, check_id, work_order_id, original_name, mime_type, byte_size, object_key, preview_key, sha256, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [id, workspaceId, checkId, orderId, prepared.name, prepared.mimeType, prepared.body.length, `${key}/original`, prepared.preview ? `${key}/preview.webp` : null, prepared.digest, user.userId]);
+        await this.event(client, workspaceId, orderId, "check_photo", { checkId, photoId: id }, user.userId);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "work_order.check_photo_added", entityType: "work_order", entityId: orderId, after: { checkId, photoId: id } });
+      }
+      return this.detail(client, workspaceId, orderId, user.userId);
+    });
+  }
+
+  /** A quality check's photo (or its preview) for someone who can see the factory. */
+  checkPhoto(actor: RequestActor, workspaceId: string, photoId: string, preview: boolean) {
+    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client) => {
+      const row = (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string }>(
+        `SELECT object_key AS "objectKey", preview_key AS "previewKey", mime_type AS "mimeType" FROM work_order_check_photos WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, uuid(photoId, "Photo")])).rows[0];
+      if (!row || !this.storage) throw new NotFoundException("Photo not found.");
+      const key = preview && row.previewKey ? row.previewKey : row.objectKey;
+      const stored = await this.storage.read(key).catch(() => null);
+      if (!stored) throw new NotFoundException("Photo not found.");
+      return { body: stored.body, contentType: key === row.previewKey ? "image/webp" : row.mimeType };
+    });
+  }
+
   // ---------- helpers ----------
   /** Settings → Factory; the hourly rates only for people who set them or see costs. */
   private async settingsView(client: Db, workspaceId: string, userId: string) {
@@ -489,10 +566,11 @@ export class FactoryService {
    * Records a quality check: what passed goes into stock at the factory, owned by the project; what failed
    * is made again. When everything has passed the work order is ready.
    */
-  private async pass(client: Db, workspaceId: string, order: WorkOrderRow, checkId: string, passed: string, failed: string, failReason: string, userId: string, notices: Notice[]) {
+  private async pass(client: Db, workspaceId: string, order: WorkOrderRow, checkId: string, passed: string, failed: string, failReason: string, userId: string, notices: Notice[],
+    note = "") {
     await client.query(`INSERT INTO factory_commands (workspace_id, command_id, entity_id, action, actor_id) VALUES ($1, $2, $3, 'check', $4)`, [workspaceId, checkId, order.id, userId]);
-    await client.query(`INSERT INTO work_order_checks (id, workspace_id, work_order_id, passed, failed, fail_reason, checked_by) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [checkId, workspaceId, order.id, passed, failed, failReason, userId]);
+    await client.query(`INSERT INTO work_order_checks (id, workspace_id, work_order_id, passed, failed, fail_reason, checked_by, note) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [checkId, workspaceId, order.id, passed, failed, failReason, userId, note]);
     if (Dec.of(passed).cmp(0) > 0) {
       const line = (await client.query<{ catalogItemId: string | null }>(`SELECT catalog_item_id AS "catalogItemId" FROM project_boq_lines WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, order.boqLineId])).rows[0];
@@ -506,10 +584,13 @@ export class FactoryService {
       notices.push({ code: "factory.check_failed", users: await this.team(client, workspaceId, order.projectId, ["factory_lead"], true), note: `${plain(failed)} ${order.unit} failed: ${failReason}`.replace("  ", " "), key: `failed:${checkId}` });
     const total = Dec.of(order.passed).add(passed);
     if (total.cmp(order.quantity) >= 0) {
-      await client.query(`UPDATE work_orders SET status = 'ready', ready_at = now(), hold_reason = NULL, held_from = NULL, hold_kind = NULL, version = version + 1, updated_at = now()
+      // Ready: the order-ready date is the workspace's day (corrected later when it was ready earlier).
+      const readyOn = (await workspaceDay(client, workspaceId)).today;
+      await client.query(`UPDATE work_orders SET status = 'ready', ready_at = now(), ready_on = $3, hold_reason = NULL, held_from = NULL, hold_kind = NULL, version = version + 1, updated_at = now()
         WHERE workspace_id = $1 AND id = $2`,
-        [workspaceId, order.id]);
+        [workspaceId, order.id, readyOn]);
       notices.push({ code: "factory.ready", users: await this.team(client, workspaceId, order.projectId, ["installation_lead"], true), note: "", key: `ready:${order.id}` });
+      await orderReady(client, workspaceId, order, { checkId, readyOn, actorId: userId });
     } else {
       await client.query(`UPDATE work_orders SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
     }
@@ -709,9 +790,10 @@ export class FactoryService {
     if (!order) throw new NotFoundException("Work order not found.");
     const settings = await ensureFactorySettings(client, workspaceId);
     const extra = (await client.query<{ drawingRef: string; drawingApprovedAt: string | null; drawingApprovedByName: string | null; holdReason: string | null; closeReason: string | null;
-      closedAt: string | null; releasedAt: string | null; readyAt: string | null }>(
+      closedAt: string | null; releasedAt: string | null; readyAt: string | null; readyOn: string | null; readyPaymentId: string | null }>(
       `SELECT wo.drawing_ref AS "drawingRef", wo.drawing_approved_at AS "drawingApprovedAt", approver.display_name AS "drawingApprovedByName", wo.hold_reason AS "holdReason",
-              wo.close_reason AS "closeReason", wo.closed_at AS "closedAt", wo.released_at AS "releasedAt", wo.ready_at AS "readyAt"
+              wo.close_reason AS "closeReason", wo.closed_at AS "closedAt", wo.released_at AS "releasedAt", wo.ready_at AS "readyAt", wo.ready_on::text AS "readyOn",
+              wo.ready_payment_id AS "readyPaymentId"
          FROM work_orders wo LEFT JOIN users approver ON approver.id = wo.drawing_approved_by WHERE wo.workspace_id = $1 AND wo.id = $2`, [workspaceId, orderId])).rows[0];
     const reports = (await client.query<{ id: string; good: string; scrap: string; scrapReason: string; note: string; hours: string | null; status: string; reportedBy: string;
       reportedByName: string; reportedAt: string; decidedByName: string | null; decisionNote: string }>(
@@ -720,10 +802,19 @@ export class FactoryService {
               report.decision_note AS "decisionNote"
          FROM work_order_reports report JOIN users reporter ON reporter.id = report.reported_by LEFT JOIN users decider ON decider.id = report.decided_by
         WHERE report.workspace_id = $1 AND report.work_order_id = $2 ORDER BY report.reported_at`, [workspaceId, orderId])).rows;
-    const checks = (await client.query<{ id: string; passed: string; failed: string; failReason: string; checkedByName: string; checkedAt: string }>(
-      `SELECT checked.id, checked.passed::text AS passed, checked.failed::text AS failed, checked.fail_reason AS "failReason", person.display_name AS "checkedByName", checked.checked_at AS "checkedAt"
-         FROM work_order_checks checked JOIN users person ON person.id = checked.checked_by WHERE checked.workspace_id = $1 AND checked.work_order_id = $2 ORDER BY checked.checked_at`,
+    const checks = (await client.query<{ id: string; passed: string; failed: string; failReason: string; note: string; checkedByName: string; checkedAt: string; photoId: string | null }>(
+      `SELECT checked.id, checked.passed::text AS passed, checked.failed::text AS failed, checked.fail_reason AS "failReason", checked.note, person.display_name AS "checkedByName",
+              checked.checked_at AS "checkedAt", photo.id AS "photoId"
+         FROM work_order_checks checked JOIN users person ON person.id = checked.checked_by
+         LEFT JOIN work_order_check_photos photo ON photo.workspace_id = checked.workspace_id AND photo.check_id = checked.id
+        WHERE checked.workspace_id = $1 AND checked.work_order_id = $2 ORDER BY checked.checked_at`,
       [workspaceId, orderId])).rows;
+    // The client's payment stages it can be tied to (title and whether it's still owed), and the reminder its ready date triggered.
+    const caseId = (await client.query<{ caseId: string }>(`SELECT case_id AS "caseId" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.projectId])).rows[0].caseId;
+    const statuses = new Map((await client.query<{ id: string; status: string }>(`SELECT id, status FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows
+      .map((row) => [row.id, row.status]));
+    const payments = (await readMilestones(client, workspaceId, { projectId: order.projectId }))
+      .map((milestone) => ({ id: milestone.paymentId, title: milestone.title, status: statuses.get(milestone.paymentId) ?? "pending" }));
     const events = (await client.query<{ id: string; kind: string; detail: Record<string, unknown>; byName: string; at: string }>(
       `SELECT event.id, event.kind, event.detail, person.display_name AS "byName", event.at FROM work_order_events event JOIN users person ON person.id = event.actor_id
         WHERE event.workspace_id = $1 AND event.work_order_id = $2 ORDER BY event.at`, [workspaceId, orderId])).rows;
@@ -759,6 +850,7 @@ export class FactoryService {
       canReport: rights.canReport, canApprove: rights.canApprove, canSend: rights.canManage || rights.canIssue });
     return {
       order: { ...order, ...extra }, reports, checks, events, settings, materials, dispatches, atFactory, reworks, next: next.step,
+      payments, readyReminder: await readReadyReminder(client, workspaceId, caseId, extra.readyPaymentId),
       // The project's approved designs, to pick the drawing from.
       designs: await this.approvedDesigns(client, workspaceId, order.projectId),
       projectStatus: (await client.query<{ status: string }>(`SELECT status FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.projectId])).rows[0]?.status ?? "active",

@@ -18,7 +18,11 @@ export type BuyingCompany = { id: string; code: string; name: string };
 export type SupplierState = {
   suppliers: Supplier[]; categories: string[]; entities: BuyingCompany[]; canManage: boolean; canApprove: boolean;
   supplierId?: string; imported?: { created: number; merged: number };
+  /** How the workspace's country writes a tax registration number: its name, and its format with an example where it has one. */
+  taxNumber?: TaxNumberRule;
 };
+
+export type TaxNumberRule = { label: string | null; pattern: string | null; example: string | null };
 
 /** One row of a supplier list someone already keeps, as the import sends it. */
 export type SupplierImportRow = {
@@ -55,7 +59,12 @@ export type Need = {
   projectStatus?: "active" | "on_hold";
   /** The latest variation that reduced or removed what it's for ("VO-2"). */
   changedBy?: string | null;
+  /** Where it has got to, from orders, deliveries, stock and approved site reports. */
+  status?: LineStatus;
 };
+
+/** A material or bought scope line: required → ordered → received → installed. */
+export type LineStatus = "required" | "ordered" | "received" | "installed";
 export type NeedsState = { needs: Need[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean };
 
 export type ShipmentStatus = "booked" | "in_transit" | "delayed" | "arrived" | "cancelled";

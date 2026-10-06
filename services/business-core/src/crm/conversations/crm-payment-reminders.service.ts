@@ -16,7 +16,7 @@ const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Db = Pick<PoolClient, "query">;
 export const DEFAULT_REMINDER_OFFSETS = [-3, 0, 3, 7];
 
-type DueItem = { caseId: string; paymentId: string; invoiceId: string | null; title: string; dueDate: string | null; amount: string; currency: string; status: string; clientName: string };
+export type DueItem = { caseId: string; paymentId: string; invoiceId: string | null; title: string; dueDate: string | null; amount: string; currency: string; status: string; clientName: string };
 
 /** Whole days from `from` to `to` (YYYY-MM-DD). */
 export function daysBetween(from: string, to: string) {
@@ -110,40 +110,12 @@ export class CrmPaymentRemindersService {
     });
   }
 
-  private async send(client: Db, workspaceId: string, item: DueItem, today: string, offset: number | null, userId: string | null) {
-    const result = await tellClients(client, {
-      workspaceId, caseId: item.caseId, event: "payment_due", recordId: `${item.paymentId}:${today}`, title: item.title, due: item.dueDate,
-      record: { paymentId: item.paymentId, invoiceId: item.invoiceId, amountDue: { amount: item.amount, currency: item.currency } },
-    });
-    if (!result.queued) return { channel: null, reason: result.reason ?? "no_contact" };
-    const channel = "channel" in result && result.channel === "whatsapp" ? "whatsapp" : "email";
-    const messageId = "messageId" in result ? result.messageId ?? null : null;
-    await client.query(
-      `INSERT INTO crm_payment_reminders (workspace_id, case_id, payment_id, invoice_id, sent_on, offset_days, channel, message_id, sent_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workspace_id, payment_id, sent_on) DO NOTHING`,
-      [workspaceId, item.caseId, item.paymentId, item.invoiceId, today, offset, channel, messageId, userId]);
-    await recordAudit(client, { workspaceId, actorUserId: userId, source: userId ? "user" : "internal", action: "receivables.payment_reminder.sent.v1", entityType: "commercial_payment", entityId: item.caseId,
-      after: { paymentId: item.paymentId, invoiceId: item.invoiceId, channel, offset, amount: item.amount, currency: item.currency } });
-    return { channel, reason: null };
+  private send(client: Db, workspaceId: string, item: DueItem, today: string, offset: number | null, userId: string | null) {
+    return sendPaymentReminder(client, workspaceId, item, today, offset, userId);
   }
 
-  /** What is still owed on a payment: its invoice's balance when it has one, else the milestone less what's paid. */
-  private async dueItem(client: Db, workspaceId: string, caseId: string, paymentId: string): Promise<DueItem | null> {
-    const milestone = (await readMilestones(client, workspaceId, { caseId, paymentId }))[0];
-    if (!milestone) return null;
-    const status = (await client.query<{ status: string }>(`SELECT status FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, paymentId])).rows[0]?.status ?? "pending";
-    const today = await this.today(client, workspaceId);
-    if (milestone.invoiceId) {
-      const invoice = (await withBalances(client, workspaceId, await readInvoices(client, workspaceId, { id: milestone.invoiceId }), today))[0];
-      if (invoice && invoice.status === "issued") {
-        if (Dec.of(invoice.balance).cmp(0) <= 0) return null;
-        return { caseId, paymentId, invoiceId: invoice.id, title: invoice.number, dueDate: invoice.dueDate, amount: invoice.balance, currency: invoice.currency, status, clientName: milestone.clientName };
-      }
-    }
-    const paid = (await readMilestonePaid(client, workspaceId, [{ caseId, paymentId }])).get(`${caseId}|${paymentId}`) ?? Dec.ZERO;
-    const owed = Dec.of(milestone.amount).sub(paid);
-    if (owed.cmp(0) <= 0 || !milestone.currency) return null;
-    return { caseId, paymentId, invoiceId: null, title: milestone.title, dueDate: milestone.dueDate, amount: owed.toFixed(4), currency: milestone.currency, status, clientName: milestone.clientName };
+  private async dueItem(client: Db, workspaceId: string, caseId: string, paymentId: string) {
+    return paymentDueItem(client, workspaceId, caseId, paymentId, await this.today(client, workspaceId));
   }
 
   private async tellFinance(client: Db, workspaceId: string, item: DueItem) {
@@ -178,4 +150,43 @@ export class CrmPaymentRemindersService {
   private async today(client: Db, workspaceId: string) {
     return (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
   }
+}
+
+/**
+ * Sends one payment reminder to the client (WhatsApp with the payment_due template, else email) and logs it on the
+ * payment. Used by the schedule, "Send reminder" and events that make a payment due (a factory order ready).
+ */
+export async function sendPaymentReminder(client: Db, workspaceId: string, item: DueItem, today: string, offset: number | null, userId: string | null) {
+  const result = await tellClients(client, {
+    workspaceId, caseId: item.caseId, event: "payment_due", recordId: `${item.paymentId}:${today}`, title: item.title, due: item.dueDate,
+    record: { paymentId: item.paymentId, invoiceId: item.invoiceId, amountDue: { amount: item.amount, currency: item.currency } },
+  });
+  if (!result.queued) return { channel: null, reason: result.reason ?? "no_contact" };
+  const channel = "channel" in result && result.channel === "whatsapp" ? "whatsapp" : "email";
+  const messageId = "messageId" in result ? result.messageId ?? null : null;
+  await client.query(
+    `INSERT INTO crm_payment_reminders (workspace_id, case_id, payment_id, invoice_id, sent_on, offset_days, channel, message_id, sent_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workspace_id, payment_id, sent_on) DO NOTHING`,
+    [workspaceId, item.caseId, item.paymentId, item.invoiceId, today, offset, channel, messageId, userId]);
+  await recordAudit(client, { workspaceId, actorUserId: userId, source: userId ? "user" : "internal", action: "receivables.payment_reminder.sent.v1", entityType: "commercial_payment", entityId: item.caseId,
+    after: { paymentId: item.paymentId, invoiceId: item.invoiceId, channel, offset, amount: item.amount, currency: item.currency } });
+  return { channel, reason: null };
+}
+
+/** What is still owed on a payment: its invoice's balance when it has one, else the milestone less what's paid. */
+export async function paymentDueItem(client: Db, workspaceId: string, caseId: string, paymentId: string, today: string): Promise<DueItem | null> {
+  const milestone = (await readMilestones(client, workspaceId, { caseId, paymentId }))[0];
+  if (!milestone) return null;
+  const status = (await client.query<{ status: string }>(`SELECT status FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, paymentId])).rows[0]?.status ?? "pending";
+  if (milestone.invoiceId) {
+    const invoice = (await withBalances(client, workspaceId, await readInvoices(client, workspaceId, { id: milestone.invoiceId }), today))[0];
+    if (invoice && invoice.status === "issued") {
+      if (Dec.of(invoice.balance).cmp(0) <= 0) return null;
+      return { caseId, paymentId, invoiceId: invoice.id, title: invoice.number, dueDate: invoice.dueDate, amount: invoice.balance, currency: invoice.currency, status, clientName: milestone.clientName };
+    }
+  }
+  const paid = (await readMilestonePaid(client, workspaceId, [{ caseId, paymentId }])).get(`${caseId}|${paymentId}`) ?? Dec.ZERO;
+  const owed = Dec.of(milestone.amount).sub(paid);
+  if (owed.cmp(0) <= 0 || !milestone.currency) return null;
+  return { caseId, paymentId, invoiceId: null, title: milestone.title, dueDate: milestone.dueDate, amount: owed.toFixed(4), currency: milestone.currency, status, clientName: milestone.clientName };
 }

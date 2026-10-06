@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Badge } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { DeliverTo, OrderStatus, RejectKind, ShipmentStatus } from "@/lib/purchasing/types";
+import type { DeliverTo, LineStatus, OrderStatus, RejectKind, ShipmentStatus } from "@/lib/purchasing/types";
 
 /** "12.0000" → "12": a stored quantity as people write it. */
 export const quantityText = (value: string | null) => (value === null ? "" : value.includes(".") ? value.replace(/\.?0+$/, "") : value);
@@ -17,6 +17,7 @@ export function useOrderLabels() {
     deliverTo: { site: t("Project site"), factory: t("Our factory"), warehouse: t("Our warehouse"), pickup: t("We collect"), other: t("Another address") } satisfies Record<DeliverTo, string>,
     rejectKind: { damaged: t("Damaged"), defective: t("Defective"), wrong_item: t("Wrong item"), wrong_spec: t("Not to spec (colour, finish, size)"), other: t("Other") } satisfies Record<RejectKind, string>,
     shipment: { booked: t("Booked"), in_transit: t("In transit"), delayed: t("Delayed"), arrived: t("Arrived"), cancelled: t("Cancelled") } satisfies Record<ShipmentStatus, string>,
+    line: { required: t("Required"), ordered: t("Ordered"), received: t("Received"), installed: t("Installed") } satisfies Record<LineStatus, string>,
   }), [t]);
 }
 
@@ -29,4 +30,13 @@ export const ORDER_TONE: Record<OrderStatus, "neutral" | "info" | "warning" | "s
 export function OrderStatusLabel({ status }: { status: OrderStatus }) {
   const labels = useOrderLabels();
   return <Badge tone={ORDER_TONE[status]}>{labels.status[status]}</Badge>;
+}
+
+/** A material line's status reads waiting (required), moving (ordered), in (received) and done (installed). */
+export const LINE_TONE: Record<LineStatus, "neutral" | "info" | "warning" | "success" | "danger"> = { required: "warning", ordered: "info", received: "success", installed: "neutral" };
+
+/** A material line's status as a word in its tone. */
+export function LineStatusLabel({ status }: { status: LineStatus }) {
+  const labels = useOrderLabels();
+  return <Badge tone={LINE_TONE[status]}>{labels.line[status]}</Badge>;
 }

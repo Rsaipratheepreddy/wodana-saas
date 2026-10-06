@@ -1086,6 +1086,20 @@
       "when": 1801740002300,
       "tag": "0261_property_coordinates",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1801740002400,
+      "tag": "0262_factory_order_ready",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1801740002500,
+      "tag": "0263_purchasing_line_status",
+      "breakpoints": true
     }
   ]
 }

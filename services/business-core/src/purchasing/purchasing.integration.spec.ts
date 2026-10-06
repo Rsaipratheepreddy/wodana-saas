@@ -84,6 +84,30 @@ integration("purchasing (plan §6.13–6.14)", () => {
     });
   });
 
+  it("checks a new or changed tax number against the workspace country's format and finds the same number however it's spaced (PLM-111)", async () => {
+    await world(async (w) => {
+      const buyer = w.as(w.buyer).suppliers;
+      // No country: any number is kept as typed.
+      let state = await buyer.save(actor, w.workspaceId, { id: randomUUID(), version: 0, name: "Free Format Co", taxRegistrationNumber: "ST-12/34" });
+      expect(state.taxNumber).toEqual({ label: null, pattern: null, example: null });
+      expect(state.suppliers[0].taxRegistrationNumber).toBe("ST-12/34");
+      // A UAE workspace: its region pack says a TRN is 15 digits.
+      await w.client.query("UPDATE workspaces SET default_locale = 'en-AE' WHERE id = $1", [w.workspaceId]);
+      const id = randomUUID();
+      await expect(buyer.save(actor, w.workspaceId, { id, version: 0, name: "Nile Timber", taxRegistrationNumber: "10012345670000" })).rejects.toThrow("TRN should look like 100123456700003.");
+      state = await buyer.save(actor, w.workspaceId, { id, version: 0, name: "Nile Timber", taxRegistrationNumber: "100-1234-5670-0003" });
+      expect(state.taxNumber).toEqual({ label: "TRN", pattern: "^[0-9]{15}$", example: "100123456700003" });
+      const nile = state.suppliers.find((item) => item.id === id)!;
+      expect(nile.taxRegistrationNumber).toBe("100123456700003");
+      await expect(buyer.save(actor, w.workspaceId, { id: randomUUID(), version: 0, name: "Nile Copy", taxRegistrationNumber: "100 123 456 700 003" })).rejects.toThrow(/Another supplier has this tax number/);
+      // A number saved before the check stays as it was until someone changes it.
+      const free = state.suppliers.find((item) => item.name === "Free Format Co")!;
+      state = await buyer.save(actor, w.workspaceId, { id: free.id, version: free.version, name: "Free Format Co", notes: "Kept", taxRegistrationNumber: "ST-12/34" });
+      expect(state.suppliers.find((item) => item.id === free.id)!.taxRegistrationNumber).toBe("ST-12/34");
+      await expect(buyer.save(actor, w.workspaceId, { id: free.id, version: free.version + 1, name: "Free Format Co", taxRegistrationNumber: "ST-12/35" })).rejects.toThrow(/TRN should look like/);
+    });
+  });
+
   it("imports a supplier list kept per company: one supplier per name, approvals only for an approver, safe to run again", async () => {
     await world(async (w) => {
       const rows = [

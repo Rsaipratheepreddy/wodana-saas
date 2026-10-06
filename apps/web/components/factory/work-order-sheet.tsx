@@ -8,6 +8,7 @@ import type { FactoryApi } from "@/lib/factory/client";
 import type { ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
 import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
+import { SavedPhotos } from "../purchasing/delivery-photos";
 import { quantityText } from "../purchasing/order-labels";
 import { WorkOrderStatusLabel, orderNumber, useFactoryLabels } from "./factory-labels";
 import { CheckDialog, DispatchDialog, DrawingDialog, QuantityDialog, ReportDialog, ScheduleDialog, SendOutDialog, TextDialog } from "./work-order-dialogs";
@@ -15,6 +16,8 @@ import { WorkOrderHistory } from "./work-order-history";
 import { WorkOrderMaterials } from "./work-order-materials";
 import styles from "./factory.module.css";
 
+/** The "no payment stage" choice of the payment field. */
+const NO_PAYMENT = "none";
 type Dialog = "schedule" | "drawing" | "revise" | "quantity" | "report" | "check" | "hold" | "cancel" | "short_close" | "send_out" | "dispatch" | { refuse: string } | null;
 /** An action a list asks the opened work order to start with (its row's Next button). */
 export type WorkOrderIntent = "report" | "check" | "dispatch" | "drawing" | null;
@@ -58,14 +61,20 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
       return false;
     } finally { setBusy(false); }
   };
-  /** One in-place edit of where and when: the new work order comes back, or the reason goes to the field. */
-  const update = async (input: Record<string, unknown>) => {
+  /** One in-place edit (where and when, the ready date, the payment stage): the new work order comes back, or the reason goes to the field. */
+  const save = async (action: string, input: Record<string, unknown>) => {
     if (!state) return;
-    try { setState(await api.command(orderId, "update", { version: state.order.version, ...input })); onChanged(); }
+    try { setState(await api.command(orderId, action, { version: state.order.version, ...input })); onChanged(); }
     catch (cause) {
       if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
       throw cause;
     }
+  };
+  const update = (input: Record<string, unknown>) => save("update", input);
+  /** The check is saved; its photo follows (once, by its own id). */
+  const addCheckPhoto = async (checkId: string, photo: File) => {
+    try { setState(await api.uploadCheckPhoto(orderId, checkId, crypto.randomUUID(), photo)); }
+    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("The photo could not be uploaded.")); }
   };
   const order = state?.order;
   const schedulable = Boolean(state?.canManage && order && ["planned", "released", "on_hold"].includes(order.status));
@@ -169,6 +178,13 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
   </>;
   const step = nextStep();
   const reworks = state?.reworks ?? [];
+  const payments = state?.payments ?? [];
+  const reminder = state?.readyReminder ?? null;
+  /** Why the client wasn't reminded when the order was ready. */
+  const reminderReason = (outcome: string) => ({
+    reminders_off: t("payment reminders are off"), nothing_owed: t("nothing is owed on it"), not_pending: t("it's paid or waiting for verification"),
+    already_today: t("the client was already reminded that day"),
+  } as Record<string, string>)[outcome] ?? t("the client can't be reached");
   const outputCount = pendingReports.length + (canCheck ? 1 : 0);
 
   const workPanel = !state || !order ? null : <div className={styles.sheet}>
@@ -189,6 +205,12 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         onSave={(plannedEnd) => update({ plannedEnd: plannedEnd || null })} validate={(end) => end && order.plannedStart && end < order.plannedStart ? t("The finish can't be before the start.") : null} value={order.plannedEnd ?? ""} />
       <EditableField canEdit={schedulable} display={order.plannedHours ? t("{hours} h", { hours: Number(order.plannedHours) }) : undefined} label={t("Hours it takes")} onReload={() => void load()}
         onSave={(hours) => update({ plannedHours: hours || null })} validate={(hours) => hours && (!/^\d+(\.\d{1,2})?$/.test(hours) || Number(hours) <= 0) ? t("Enter the hours as a number, like 6 or 7.5.") : null} value={order.plannedHours ? quantityText(order.plannedHours) : ""} />
+      {payments.length ? <EditableField canEdit={Boolean(state.canManage && !["cancelled", "short_closed"].includes(order.status))} kind="select" label={t("Payment due when ready")}
+        display={payments.find((payment) => payment.id === order.readyPaymentId)?.title} items={[{ id: NO_PAYMENT, label: t("None") }, ...payments.map((payment) => ({ id: payment.id,
+          label: payment.status === "pending" ? payment.title : t("{title} (paid)", { title: payment.title }) }))]} onReload={() => void load()}
+        onSave={(paymentId) => save("link_payment", { paymentId: paymentId === NO_PAYMENT ? null : paymentId })} value={order.readyPaymentId ?? ""} /> : null}
+      {reminder ? <div><dt>{t("Payment reminder")}</dt><dd>{reminder.outcome === "sent"
+        ? t("Sent to the client on {date}", { date: format.day(reminder.on) }) : t("Not sent: {reason}", { reason: reminderReason(reminder.outcome) })}</dd></div> : null}
       {order.batchName ? <div><dt>{t("Batch")}</dt><dd>{t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName })}</dd></div> : null}
       <div><dt>{t("Drawing")}</dt><dd>
         <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })
@@ -218,6 +240,8 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         {Number(order.scrapped) ? <span className={styles.muted}>{t("{quantity} scrapped", { quantity: unit(order.scrapped) })}</span> : null}
         {Number(order.left) && order.status !== "planned" ? <span className={styles.muted}>{t("{quantity} still to make", { quantity: unit(order.left) })}</span> : null}
       </dd></div>
+      {order.status === "ready" ? <EditableField canEdit={Boolean(state.canManage || state.canApprove)} kind="date" label={t("Ready on")} display={order.readyOn ? format.day(order.readyOn) : undefined}
+        onReload={() => void load()} onSave={(readyOn) => save("set_ready_date", { readyOn })} validate={(value) => value ? null : t("Choose the day it was ready.")} value={order.readyOn ?? ""} /> : null}
     </dl>
     <Section title={t("Reports")}>
       {state.reports.length ? <ul className={ops.list}>{state.reports.map((report) => <li key={report.id}>
@@ -237,7 +261,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
       <ul className={ops.list}>{state.checks.map((check) => <li key={check.id}>
         <Cell title={[Number(check.passed) ? t("{quantity} passed", { quantity: unit(check.passed) }) : "",
           Number(check.failed) ? t("{quantity} failed: {reason}", { quantity: unit(check.failed), reason: check.failReason }) : ""].filter(Boolean).join(" · ")}
-          meta={[check.checkedByName, format.when(check.checkedAt)].join(" · ")} tone={Number(check.failed) ? "danger" : undefined} />
+          meta={[check.checkedByName, format.when(check.checkedAt), check.note].filter(Boolean).join(" · ")} tone={Number(check.failed) ? "danger" : undefined}>
+          {check.photoId ? <SavedPhotos photos={[{ id: check.photoId, name: t("Check photo"), byName: check.checkedByName, at: check.checkedAt }]} url={api.photoUrl} /> : null}
+        </Cell>
       </li>)}</ul>
     </Section> : null}
     {reworks.length ? <Section title={t("Made again")}>
@@ -305,7 +331,7 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
     {state && order && dialog === "report" ? <ReportDialog unit={order.unit} left={order.left} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("report", { id: crypto.randomUUID(), ...input })) { setDialog(null); setTab("output"); } }} /> : null}
     {state && order && dialog === "check" ? <CheckDialog unit={order.unit} waiting={order.toCheck} onClose={() => setDialog(null)}
-      onSave={async (input) => { if (await run("check", { id: crypto.randomUUID(), ...input })) { setDialog(null); setTab("output"); } }} /> : null}
+      onSave={async (input, photo) => { const checkId = crypto.randomUUID(); if (await run("check", { id: checkId, ...input })) { if (photo) await addCheckPhoto(checkId, photo); setDialog(null); setTab("output"); } }} /> : null}
     {state && order && dialog === "quantity" ? <QuantityDialog unit={order.unit} current={order.quantity}
       floor={String(Number(order.passed) + Number(order.toCheck) + Number(order.pending))} onClose={() => setDialog(null)}
       onSave={async (quantity) => { if (await run("set_quantity", { quantity })) setDialog(null); }} /> : null}
