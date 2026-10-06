@@ -179,6 +179,27 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
       - Deliveries record the vehicle as well as the driver.
     - **Dashboards (PLM-104/105):** wanted from the start, at medium priority, built right after the flow from the management sheet in the tracker.
     - **Suppliers and entities:** two supplier-list sheets, plus PLM's TRN and docs, are in the "Wodana x PLM" shared folder.
+13. **Palm answers, 6 Oct (second round):**
+    - **Refunds:** a refund-method dropdown, each method with its own timeline, editable in Settings. Methods: bank transfer / card, Stripe, Tabby (TBC); Finance sends the final list.
+    - **Payables:** Finance is the first approver; a second approver above an amount is optional. Both are settings, values to follow.
+    - **Factory steps:** Scheduled → In Production → Quality Check → Ready → Permit Collection → Delivery, kept editable. The Factory Manager and Project Director confirm.
+    - **Vehicles:**
+      - Peugeot Partner Z18436
+      - HiAce Van S/79121
+      - Peugeot Boxer CC98435
+      - Jetour T2 CC96859
+      - Defender BB85164
+      - Chevrolet N 97453
+      - New Bus DD70969
+      - Ashok Partner (Pick up) 69912 Private G
+      - Ford Ranger Raptor EE55362
+    - **Permits:** needed for every delivery and installation except customer pick-up/collection. Alert 3 working days ahead when missing. Validity differs per permit, so each permit records when it was obtained and when it expires, and alerts follow it.
+    - **Technical drawings:** skipped for standard furniture (in stock, supplier, Core Collection as-is) when the item already has drawings attached on the sheet; otherwise they can be chosen. They are always needed for bespoke and all joinery.
+    - **Balance reminder:** when all items for that payment are ready, ideally 1 week before the latest ready date.
+    - **Renders:** up to 8 weeks for the client (internal 0–5 weeks), 2 revisions included.
+    - **Client update:** weekly call by default from design approval. The client can decline or change the frequency, or choose portal update reminders instead of calls.
+    - **Sales:** quote validity 7 days. QS review only for joinery, bespoke furniture and main proposals that include joinery; standard furniture and Design Fee proposals skip QS. Lead response: 1 working hour, Mon–Fri 9:00–18:00, so a lead at 18:05 Friday is due Monday 10:00.
+    - **Dashboards:** Lost = lost opportunities only ("Not interested" enquiries shown separately). Won excludes cancelled deals, which stay recorded and are reported separately (cancellations/refunds line, net revenue). Targets to follow.
 12. Locked name/phone after Qualified (E1-6): should an edit request go to an admin for approval, or is "ask a Sales admin" enough?
 
 ### 0.6 Handover
