@@ -137,6 +137,8 @@ export type DocumentSection = "cover" | "intro" | "summary" | "items" | "payment
 export type QuoteDocument = {
   style: DocumentStyleId; accent: string | null; sections: Record<DocumentSection, boolean>;
   title: string; subtitle: string; intro: string; terms: string; exclusions: string;
+  /** PLM-045: what changed in this revision and why; older documents have none. */
+  changeNote?: string;
   itemsView: QuoteView; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean; showImages: boolean; coverAssetId: string | null;
 };
 

@@ -11,6 +11,8 @@ export type QuoteDocument = {
   accent: string | null;
   sections: Record<(typeof SECTIONS)[number], boolean>;
   title: string; subtitle: string; intro: string; terms: string; exclusions: string;
+  /** PLM-045: on a revision, what changed and why (value engineering); for the team, shown beside the changes since the previous revision. */
+  changeNote: string;
   itemsView: "area" | "trade" | "area_trade"; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean; showImages: boolean;
   coverAssetId: string | null;
 };
@@ -19,7 +21,7 @@ export function defaultDocument(input: { terms?: string; exclusions?: string; vi
   return {
     style: "atelier", accent: null,
     sections: { cover: true, intro: true, summary: true, items: true, payments: true, terms: true, acceptance: true },
-    title: "", subtitle: "", intro: "", terms: input.terms ?? "", exclusions: input.exclusions ?? "",
+    title: "", subtitle: "", intro: "", terms: input.terms ?? "", exclusions: input.exclusions ?? "", changeNote: "",
     itemsView: input.view ?? "area", itemsDetail: "lines", showRates: true, showDescriptions: true, showImages: false, coverAssetId: null,
   };
 }
@@ -29,7 +31,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 /** Validates a document change against the current one; unknown keys are ignored. */
 export function parseDocument(input: Record<string, unknown>, current: QuoteDocument): QuoteDocument {
   const next: QuoteDocument = { ...current, sections: { ...current.sections } };
-  const text = (key: "title" | "subtitle" | "intro" | "terms" | "exclusions", max: number) => {
+  const text = (key: "title" | "subtitle" | "intro" | "terms" | "exclusions" | "changeNote", max: number) => {
     if (input[key] === undefined) return;
     if (typeof input[key] !== "string") throw new BadRequestException(`${key} must be text.`);
     const value = (input[key] as string).trim();
@@ -51,7 +53,7 @@ export function parseDocument(input: Record<string, unknown>, current: QuoteDocu
       if (value !== undefined) { if (typeof value !== "boolean") throw new BadRequestException("Choose which sections show."); next.sections[key] = value; }
     }
   }
-  text("title", 200); text("subtitle", 300); text("intro", 6000); text("terms", 30000); text("exclusions", 12000);
+  text("title", 200); text("subtitle", 300); text("intro", 6000); text("terms", 30000); text("exclusions", 12000); text("changeNote", 2000);
   if (input.itemsView !== undefined) { if (!["area", "trade", "area_trade"].includes(String(input.itemsView))) throw new BadRequestException("Choose how items are grouped."); next.itemsView = input.itemsView as QuoteDocument["itemsView"]; }
   if (input.itemsDetail !== undefined) { if (!["lines", "totals"].includes(String(input.itemsDetail))) throw new BadRequestException("Choose lines or totals."); next.itemsDetail = input.itemsDetail as QuoteDocument["itemsDetail"]; }
   for (const key of ["showRates", "showDescriptions", "showImages"] as const)

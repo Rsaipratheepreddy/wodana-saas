@@ -419,7 +419,8 @@ export class QuotationBuilderService {
         throw new BadRequestException("Choose a cover image from this project.");
       await client.query(`UPDATE commercial_quotes SET detail = detail || jsonb_build_object('document', $4::jsonb) WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, quoteId, JSON.stringify(next)]);
       await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.document_changed.v1", entityType: "commercial_case", entityId: caseId, after: { quoteId, style: next.style } });
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.document_changed.v1", entityType: "commercial_case", entityId: caseId,
+        after: { quoteId, style: next.style, ...(next.changeNote !== current.changeNote ? { changeNote: next.changeNote } : {}) } });
       return this.state(client, workspaceId, caseId, quoteId, user.userId);
     });
   }

@@ -267,6 +267,8 @@
 .changes ul { display: flex; flex-direction: column; gap: var(--wd-space-1); margin: 0; padding: 0 var(--wd-space-3) var(--wd-space-3); list-style: none; font-size: var(--wd-text-sm); }
 .changes li[data-kind="added"] { color: var(--wd-color-success); }
 .changes li[data-kind="removed"] { color: var(--wd-color-danger); }
+.changeNote { margin: 0; padding: 0 var(--wd-space-3) var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); white-space: pre-line; }
+.changeNoteEditor { display: grid; gap: var(--wd-space-2); padding: 0 var(--wd-space-3) var(--wd-space-3); }
 
 .checks { display: flex; flex-direction: column; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
 .checks h3 { display: flex; align-items: baseline; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }

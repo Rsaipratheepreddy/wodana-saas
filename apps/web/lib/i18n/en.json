@@ -13061,5 +13061,7 @@
   "Not sent: {reason}": "Not sent: {reason}",
   "Ready on": "Ready on",
   "Choose the day it was ready.": "Choose the day it was ready.",
-  "Check photo": "Check photo"
+  "Check photo": "Check photo",
+  "Saving {amount}": "Saving {amount}",
+  "What changed and why": "What changed and why"
 }

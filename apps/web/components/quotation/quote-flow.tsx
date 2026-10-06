@@ -282,7 +282,10 @@ export function QuotePayments({ state, api, onState, onError }: { state: Builder
   </section>;
 }
 
-/** What changed since the previous revision: lines added, removed and changed, and the total's move. */
+/**
+ * What changed since the previous revision: lines added, removed and changed, and the total's move (a lower total reads
+ * as the saving). PLM-045: the team writes what changed and why (value engineering) while the revision is a draft.
+ */
 export function RevisionChanges({ state, api }: { state: BuilderState; api: Api }) {
   const t = useT();
   const { locale } = useDesignSystem();
@@ -290,6 +293,11 @@ export function RevisionChanges({ state, api }: { state: BuilderState; api: Api 
   const previous = index > 0 ? { ...state.family[index - 1], number: index } : null;
   const [other, setOther] = useState<BuilderState | null>(null);
   const [open, setOpen] = useState(false);
+  const [note, setNote] = useState(state.document.changeNote ?? "");
+  const [savedNote, setSavedNote] = useState(state.document.changeNote ?? "");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState("");
+  const canNote = state.canEdit && state.quote.status === "draft";
   useEffect(() => {
     if (!previous) return;
     let alive = true;
@@ -304,14 +312,27 @@ export function RevisionChanges({ state, api }: { state: BuilderState; api: Api 
   const differs = (a: BuilderLine, b: BuilderLine) => a.title !== b.title || Number(a.quantity) !== Number(b.quantity) || Number(a.rate) !== Number(b.rate) || a.areaId !== b.areaId || Boolean(a.optional) !== Boolean(b.optional);
   const changed = state.lines.filter((line) => before.has(line.id) && differs(line, before.get(line.id)!));
   const delta = Number(state.pricing.total) - Number(other.pricing.total);
-  if (!added.length && !removed.length && !changed.length && !delta) return null;
+  if (!added.length && !removed.length && !changed.length && !delta && !savedNote && !canNote) return null;
+  const saveNote = async () => {
+    setSavingNote(true); setNoteError("");
+    try { await api.document({ changeNote: note.trim() }); setSavedNote(note.trim()); }
+    catch (cause) { setNoteError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { setSavingNote(false); }
+  };
   const m = (value: number) => money(Math.abs(value), state.quote.currency, state.quote.decimals, locale);
   return <section className={styles.changes} aria-label={t("Changes since R{number}", { number: previous.number })}>
     <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
       <strong>{t("Changes since R{number}", { number: previous.number })}</strong>
       <span>{[added.length ? t("{count} added", { count: added.length }) : "", removed.length ? t("{count} removed", { count: removed.length }) : "", changed.length ? t("{count} changed", { count: changed.length }) : ""].filter(Boolean).join(" · ")}</span>
-      <span className={styles.delta} data-direction={delta > 0 ? "up" : delta < 0 ? "down" : undefined}>{delta ? `${delta > 0 ? "+" : "−"}${m(delta)}` : ""}</span>
+      <span className={styles.delta} data-direction={delta > 0 ? "up" : delta < 0 ? "down" : undefined}>{delta < 0 ? t("Saving {amount}", { amount: m(delta) }) : delta > 0 ? `+${m(delta)}` : ""}</span>
     </button>
+    {savedNote && !(open && canNote) ? <p className={styles.changeNote} dir="auto">{savedNote}</p> : null}
+    {open && canNote ? <div className={styles.changeNoteEditor}>
+      <TextAreaField label={t("What changed and why")} value={note} onChange={setNote} maxLength={2000} />
+      {noteError ? <InlineNotice tone="error" message={noteError} /> : null}
+      <div className={styles.formActions}><span className={styles.spacer} />
+        <Button size="compact" variant="primary" isLoading={savingNote} isDisabled={note.trim() === savedNote} onPress={() => void saveNote()}>{t("Save")}</Button></div>
+    </div> : null}
     {open ? <ul>
       {added.map((line) => <li key={`a-${line.id}`} data-kind="added">{t("Added")} · {line.title}</li>)}
       {removed.map((line) => <li key={`r-${line.id}`} data-kind="removed">{t("Removed")} · {line.title}</li>)}

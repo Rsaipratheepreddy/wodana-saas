@@ -401,4 +401,19 @@ describe("requirement trace", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posted(fetcher).at(-1)).toEqual({ ops: [{ op: "upsert", line: expect.objectContaining({ id: "a", scopeId: "11111111-1111-4111-8111-111111111112" }) }] }));
   });
+
+  it("PLM-045: a revision shows the saving against the previous one and keeps the team's note on what changed", async () => {
+    const draft = { ...state([line({})]), family: [{ id: "q0", number: 1, status: "sent", total: "520.00", createdAt: null }, { id: "q1", number: 2, status: "draft", total: "420.00", createdAt: null }] };
+    const previous = { ...state([line({ rate: "125" })]), quote: { ...draft.quote, id: "q0", status: "sent" } };
+    previous.pricing = { ...previous.pricing, total: "520.00" };
+    const fetcher = mount(draft, (url) => (url.includes("/quotes/q0?") ? previous : draft));
+    const user = userEvent.setup();
+    const changes = await screen.findByRole("region", { name: "Changes since R1" });
+    expect(within(changes).getByText(/^Saving /)).toHaveTextContent("100.00");
+    await user.click(within(changes).getByRole("button", { name: /Changes since R1/ }));
+    await user.type(within(changes).getByRole("textbox", { name: "What changed and why" }), "Porcelain instead of marble");
+    await user.click(within(changes).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes("/quotes/q1/document") && init?.method === "PUT"
+      && JSON.parse(String(init.body)).changeNote === "Porcelain instead of marble")).toBe(true));
+  });
 });
