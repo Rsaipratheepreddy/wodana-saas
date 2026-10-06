@@ -119,9 +119,16 @@ export class LinkedImportsService {
     return this.access.withPermission(actor, workspaceId, permission, async (client, user) => {
       const { steps, missing, print, skippedTabs } = await this.plan(client, workspaceId, user.userId, draft, sheets);
       const count = (outcome: string) => steps.filter((step) => step.outcome === outcome).length;
+      const bySheet: Record<string, { added: number; changed: number; unchanged: number; errors: number }> = {};
+      for (const step of steps) {
+        const tab = (bySheet[step.sheet] ??= { added: 0, changed: 0, unchanged: 0, errors: 0 });
+        if (step.outcome === "error") tab.errors += 1; else tab[step.outcome] += 1;
+      }
       return {
         fingerprint: print, skippedTabs,
         summary: { added: count("added"), changed: count("changed"), unchanged: count("unchanged"), errors: count("error"), missing: missing.length },
+        /** The same counts for each tab. */
+        bySheet,
         rows: [...steps.filter((step) => step.outcome !== "unchanged" || step.message), ...missing].sort(byConcern).slice(0, SHOWN_ROWS).map(shown),
       };
     });

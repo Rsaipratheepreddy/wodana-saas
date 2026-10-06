@@ -59,6 +59,8 @@ export class IdentityService {
     if (actor.viewAs) return { ...actor, userId: actor.viewAs.effectiveUserId };
     // An AI app's token names its person directly; it is not a sign-in, so no "last sign-in" is recorded.
     if (actor.mcp) return { ...actor, userId: actor.mcp.userId };
+    // The operator CLI names its member directly (src/ops); not a sign-in either.
+    if (actor.operator) return { ...actor, userId: actor.operator.userId };
     const query = <Row extends QueryResultRow = QueryResultRow>(
       text: string,
       values: unknown[] = [],

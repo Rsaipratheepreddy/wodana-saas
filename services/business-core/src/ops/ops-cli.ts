@@ -1,0 +1,79 @@
+import "reflect-metadata";
+import { readFile } from "node:fs/promises";
+import { HttpException, type INestApplicationContext } from "@nestjs/common";
+import { runWithCommandOrigin } from "../database/command-origin";
+import { parseArgs, USAGE, UsageError, type OpsArgs } from "./ops-args";
+import { runConfigure } from "./ops-configure";
+import { openContext, OpsError, Report } from "./ops-context";
+import { runImport } from "./ops-import";
+import { ProfileError, validateProfile } from "./ops-profile";
+
+/**
+ * The operator CLI (run in the business-core container: `node dist/ops/ops-cli.js …`). A platform operator with shell
+ * access runs a workspace's go-live import and configuration without a sign-in, through the app's own services, as a
+ * named active member of the workspace: the same validation, tenant isolation, version checks and permissions apply,
+ * and every audit row it writes names that member and carries via = 'operator_cli'. Dry run unless --apply.
+ */
+
+export type OpsOutput = { out: (line: string) => void; err: (line: string) => void };
+
+/** Runs one command on a booted application context; the exit code. */
+export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs, { command: "help" }>, output: OpsOutput): Promise<number> {
+  const report = new Report(output.out, args.json);
+  try {
+    // Everything this run writes is audited as the member, marked as the operator CLI (audit_events.via).
+    // A dry run's transactions are all rolled back, so it writes nothing, not even defaults a read would make.
+    return await runWithCommandOrigin({ via: "operator_cli", dryRun: !args.apply }, async () => {
+      const profile = args.command === "configure" ? await readProfile(args.profile) : null;
+      const ctx = await openContext(app, args.workspace, args.as, args.apply);
+      report.note(`${args.command} in ${ctx.workspace.slug} as ${args.as}: ${args.apply ? "APPLY" : "dry run"}`);
+      if (args.command === "import") await runImport(ctx, args, report);
+      else await runConfigure(ctx, profile!, report);
+      report.finish({ command: args.command, workspace: ctx.workspace.slug, mode: args.apply ? "apply" : "dry-run" });
+      return report.failed ? 1 : 0;
+    });
+  } catch (error) {
+    if (error instanceof UsageError) { output.err(error.message); return 2; }
+    const message = error instanceof OpsError || error instanceof ProfileError ? error.message
+      : error instanceof HttpException ? `${error.getStatus()} ${error.message}` : `Unexpected error: ${(error as Error).message}`;
+    if (args.json) output.out(JSON.stringify({ command: args.command, workspace: args.workspace, mode: args.apply ? "apply" : "dry-run", error: message, lines: report.lines }, null, 2));
+    else output.err(message);
+    return 1;
+  }
+}
+
+async function readProfile(path: string) {
+  let text: string;
+  try { text = await readFile(path, "utf8"); } catch { throw new OpsError(`No profile at ${path}.`); }
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { throw new OpsError(`${path} is not valid JSON.`); }
+  return validateProfile(raw);
+}
+
+/** Boots the application context without an HTTP listener and without the background publishers. */
+export async function bootContext(): Promise<INestApplicationContext> {
+  // The outbox stays in PostgreSQL for the API's own publisher; the storage cleanup worker is the API's to run.
+  process.env.REDIS_URL = "";
+  process.env.WORKSPACE_OBJECT_CLEANUP_ENABLED = "false";
+  const { NestFactory } = await import("@nestjs/core");
+  const { AppModule } = await import("../app.module");
+  return NestFactory.createApplicationContext(AppModule, { logger: ["error"], abortOnError: false });
+}
+
+async function main() {
+  const output: OpsOutput = { out: (line) => process.stdout.write(`${line}\n`), err: (line) => process.stderr.write(`${line}\n`) };
+  let args: OpsArgs;
+  try { args = parseArgs(process.argv.slice(2)); }
+  catch (error) {
+    if (error instanceof UsageError) { output.err(`${error.message}\n\n${USAGE}`); process.exit(2); }
+    throw error;
+  }
+  if (args.command === "help") { output.out(USAGE); process.exit(0); }
+  const app = await bootContext();
+  let code = 1;
+  try { code = await runOps(app, args, output); }
+  finally { await app.close().catch(() => undefined); }
+  process.exit(code);
+}
+
+if (require.main === module) void main();

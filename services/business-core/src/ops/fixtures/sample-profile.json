@@ -1,0 +1,46 @@
+{
+  "description": "A sample workspace profile for ops-cli.integration.spec.ts: every section, generic values.",
+  "enquiryTypes": { "archive": ["early_ideas", "no_such_type"] },
+  "vehicles": [
+    { "name": "Delivery van", "plate": "VAN 100", "type": "Van" },
+    { "name": "Pick-up truck", "plate": "PU 200" }
+  ],
+  "routes": [
+    {
+      "default": true,
+      "addStages": [
+        { "name": "Site survey", "key": "survey", "ownerRole": "site_supervisor", "after": "Kickoff", "checks": [{ "kind": "confirm", "label": "Site measured" }] },
+        { "name": "Permit collection", "before": "Delivery and installation", "checks": ["permit_collected"] }
+      ],
+      "addChecks": [
+        { "stage": "Technical drawings", "checks": ["drawings_uploaded", "factory_slot_booked"] }
+      ]
+    }
+  ],
+  "factory": {
+    "productionSteps": ["Scheduled", { "kind": "in_production", "label": "On the bench" }, "Ready"],
+    "clientPaymentReminderDays": 5,
+    "permits": { "requiredForDeliveriesAndInstallations": true, "furnitureDeliveriesNeedOne": true, "missingAlertWorkingDays": 4, "expiryReminderDays": 10 }
+  },
+  "quotations": { "validityDays": 14, "qsReview": true, "qsPrices": "rules", "qsItemTypes": ["assembly"], "qsWorkPackages": ["Joinery", "Missing package"] },
+  "firstResponse": { "minutes": 90, "workingCalendar": { "days": ["mon", "tue", "wed", "thu"], "start": "08:00", "end": "17:00" } },
+  "financeRequests": {
+    "inbox": "finance@example.test",
+    "autoStageInvoiceRequests": true,
+    "paymentMethods": [
+      { "name": "Bank transfer", "refundDays": 10, "guidance": "Refund to the paying account.", "needsBankDetails": true },
+      { "name": "Card", "refundDays": null }
+    ]
+  },
+  "approvals": { "payableRequest": { "firstApproverRole": "finance_team", "secondApproverRole": "Operations", "thresholdAmount": "50000" } },
+  "rolePermissions": [
+    { "roles": ["finance_team"], "permissions": ["reports.management.view"] },
+    { "roles": ["administrator"], "permissions": ["reports.management.view"] }
+  ],
+  "design": { "renderInternalDays": 20, "renderClientDays": 30, "revisionsIncluded": 3 },
+  "orderPaths": [
+    { "enquiryType": "furniture", "path": "take_home_now", "takeFrom": "Showroom", "leadDays": { "min": 0, "max": 1 } },
+    { "enquiryType": "furniture", "path": "bespoke", "boqRequired": true }
+  ],
+  "clientUpdates": { "mode": "portal", "frequency": "weekly" }
+}
