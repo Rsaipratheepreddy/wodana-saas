@@ -4,6 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Checkbox } from "../components/forms";
+import { useTableViewportRef } from "./table-viewport";
 
 export type GroupedTableColumn<T> = {
   id: string;
@@ -62,6 +63,7 @@ export function GroupedTable<T>({
 }) {
   const t = useT();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const viewportRef = useTableViewportRef<HTMLDivElement>();
   selectedIds ??= new Set();
   const setRowSelected = (id: string, selected: boolean) => {
     const next = new Set(selectedIds);
@@ -78,7 +80,7 @@ export function GroupedTable<T>({
   const allSelected = allIds.filter((id) => selectedIds.has(id)).length;
   const span = columns.length + (selectable ? 1 : 0);
 
-  return <div className="wd-grouped-table-scroll" data-selectable={selectable} tabIndex={0}><table aria-label={ariaLabel} className="wd-grouped-table wd-record-table"><colgroup>{selectable ? <col className="wd-grouped-select-column" /> : null}{columns.map((column) => <col data-mobile-hidden={column.mobileHidden || undefined} key={column.id} style={{ "--wd-grouped-column-width": column.width ?? "auto", "--wd-grouped-column-mobile-width": column.mobileWidth ?? "auto" } as CSSProperties} />)}</colgroup>
+  return <div className="wd-grouped-table-scroll" data-selectable={selectable} ref={viewportRef} tabIndex={0}><table aria-label={ariaLabel} className="wd-grouped-table wd-record-table"><colgroup>{selectable ? <col className="wd-grouped-select-column" /> : null}{columns.map((column) => <col data-mobile-hidden={column.mobileHidden || undefined} key={column.id} style={{ "--wd-grouped-column-width": column.width ?? "auto", "--wd-grouped-column-mobile-width": column.mobileWidth ?? "auto" } as CSSProperties} />)}</colgroup>
     <thead><tr>
       {selectable ? <th className="wd-grouped-select-cell" scope="col"><Checkbox aria-label={t("Select all")} isIndeterminate={allSelected > 0 && allSelected < allIds.length} isSelected={Boolean(allIds.length) && allSelected === allIds.length} onChange={(selected) => selectMany(allIds, selected)} /></th> : null}
       {columns.map((column) => <th scope="col" data-align={column.align} data-mobile-hidden={column.mobileHidden || undefined} key={column.id}>{column.label}</th>)}
@@ -108,7 +110,7 @@ export function GroupedTable<T>({
             {selectable ? <td className="wd-grouped-select-cell"><Checkbox aria-label={t("Select {name}", { name: getRowLabel?.(row) ?? id })} isSelected={selectedIds.has(id)} onChange={(selected) => setRowSelected(id, selected)} /></td> : null}
             {columns.map((column) => <td data-align={column.align} data-mobile-hidden={column.mobileHidden || undefined} key={column.id}>{column.render(row)}</td>)}
           </tr>;
-        }) : <tr className="wd-grouped-table-empty"><td colSpan={span}>{section.emptyMessage}</td></tr>}
+        }) : <tr className="wd-grouped-table-empty wd-table-viewport-row"><td className="wd-table-viewport-cell" colSpan={span}><div className="wd-table-viewport-state">{section.emptyMessage}</div></td></tr>}
       </tbody>;
     })}</table></div>;
 }

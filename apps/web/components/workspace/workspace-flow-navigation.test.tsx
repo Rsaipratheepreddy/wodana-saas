@@ -54,7 +54,10 @@ it("keeps Reports selected and preserves Sales settings destinations", () => {
   query="section=assignment";
   rerender(<WorkspaceFlowNavigation module={workspaceModules[1]} pathname="/workspace/crm/leads"/>);
   expect(screen.getByRole("link",{name:"Settings"})).toHaveAttribute("aria-current","page");
-  expect(screen.getByRole("link",{name:"Assignment"})).toHaveAttribute("href","/workspace/crm/leads?section=assignment");
+  expect(screen.getByRole("link",{name:"Settings"})).toHaveAttribute("href","/workspace/crm/leads?section=assignment");
+  // Settings' sections are the page's own tab row under its title, not a second bar here.
+  expect(screen.queryByRole("navigation",{name:"Sales settings"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("link",{name:"Assignment"})).not.toBeInTheDocument();
 });
 
 it("marks Agreement, not Overview, on the Deal File (M4)",()=>{

@@ -10,6 +10,7 @@ import { ensureJobForSource } from "../jobs/job-identity.store";
 import { ensureSiteLocation } from "../crm/opportunities/site-location";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { transitionEngagement, type EngagementLifecycleState } from "./engagement-lifecycle";
+import { casePlan, casePlans } from "./case-plan";
 import { ListPreProjectsDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
 
 const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
@@ -86,6 +87,9 @@ export class PreProjectsService {
       const where = ` WHERE ($2 = '' OR strpos(lower(title || ' ' || "customerName"), lower($2)) > 0) AND ($3 = 'all' OR status = $3) AND (NOT $4 OR "projectId" IS NULL)`;
       const total = await client.query(`${records} SELECT count(*)::int AS total FROM records${where}`, values);
       const items = await client.query(`${records} SELECT * FROM records${where} ORDER BY "updatedAt" DESC, id DESC LIMIT 24 OFFSET $5`, [...values, ((query.page ?? 1) - 1) * 24]);
+      // The phases each case goes through on its path (PLM-121/126), so the list names the stage the case shows.
+      const plans = await casePlans(client, workspaceId, items.rows.filter((row) => !row.qualifiedLead).map((row) => String(row.id)));
+      for (const row of items.rows) if (plans.has(String(row.id))) row.plan = plans.get(String(row.id));
       const canCreate = await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.create")
         && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.view");
       const canStartLead = canCreate && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.manage")
@@ -176,6 +180,8 @@ export class PreProjectsService {
   get(actor: RequestActor, workspaceId: string, id: string) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => ({
       ...await this.read(client, workspaceId, id),
+      // PLM-121/126/098: the stages, tabs and next step the case's enquiry type and path call for.
+      plan: await casePlan(client, workspaceId, id),
       // PLM-100: the case's team by role (a person or "not applicable"), as tagged on the enquiry and the opportunity.
       team: await readCaseTeam(client, workspaceId, id),
       canManageLifecycle: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.manage_lifecycle"),

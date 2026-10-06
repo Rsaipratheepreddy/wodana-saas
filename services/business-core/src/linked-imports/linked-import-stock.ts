@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { recordAudit } from "../audit/record-audit";
+import { categoryTitle } from "../catalog-core/category-names";
 import { Dec } from "../catalog-core/decimal";
 import type { InventoryService } from "../inventory/inventory.service";
 import { normalKey, stockItemFor } from "../inventory/stock";
@@ -12,7 +13,7 @@ import { sameNumber, sheetNumber, SourceError, type SourceRow } from "./linked-i
 /** Every stock change a linked sheet makes carries this reason in the ledger. */
 export const IMPORT_REASON = "Linked sheet import";
 
-type Item = { id: string; name: string; unit: string; code: string; catalogItemId: string | null };
+type Item = { id: string; name: string; unit: string; code: string; catalogItemId: string | null; category: string };
 const lower = (text: string) => text.trim().toLocaleLowerCase();
 const quantityText = (value: string) => Dec.of(value).toString();
 
@@ -28,7 +29,7 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
     async plan(context, rows) {
       const { client, workspaceId, link } = context;
       const items = (await client.query<Item>(
-        `SELECT id, name, unit, code, catalog_item_id AS "catalogItemId" FROM stock_items WHERE workspace_id = $1`, [workspaceId])).rows;
+        `SELECT id, name, unit, code, catalog_item_id AS "catalogItemId", category FROM stock_items WHERE workspace_id = $1`, [workspaceId])).rows;
       const byId = new Map(items.map((item) => [item.id, item]));
       const byCode = new Map<string, Item[]>();
       for (const item of items) if (item.code.trim()) byCode.set(lower(item.code), [...(byCode.get(lower(item.code)) ?? []), item]);
@@ -56,6 +57,8 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
         const written = (row.values.name ?? "").trim();
         const name = written && variant ? `${written} (${variant})` : written;
         const unit = (row.values.unit ?? "").trim();
+        // The item's category: the sheet's category column, block title or tab (several tabs), never in capitals.
+        const category = categoryTitle(row.values.category ?? "").slice(0, 160);
         const base = { sheet: row.sheet, line: row.line, key, name: name || key, changes: [] as string[], message: "", recordKey: null as string | null, locationId: null as string | null };
         const fail = (message: string): Step => ({ ...base, outcome: "error", message });
         try {
@@ -101,6 +104,8 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
           if (rename) base.changes.push(`Name ${target!.name} → ${name}`);
           if (reunit) base.changes.push(`Unit ${target!.unit || "—"} → ${unit || "—"}`);
           if (adopt && code && lower(adopt.code) !== lower(code)) base.changes.push(`Code → ${code}`);
+          const recategorize = Boolean(target && category && category !== target.category);
+          if (recategorize) base.changes.push(`Category → ${category}`);
 
           // The quantity: only when the sheet's number moved since the last import and Wodana holds something else.
           let count: string | null = null;
@@ -120,6 +125,7 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
               const earlier = made.get(lower(code || key));
               const itemId = earlier ?? await stockItemFor(client, workspaceId, { catalogItemId: null, name, unit, code });
               await client.query(`UPDATE stock_items SET code = $3 WHERE workspace_id = $1 AND id = $2 AND code = ''`, [workspaceId, itemId, code]);
+              if (category) await client.query(`UPDATE stock_items SET category = $3 WHERE workspace_id = $1 AND id = $2 AND category = ''`, [workspaceId, itemId, category]);
               if (count !== null) await countTo(itemId, place, count, cost);
               // Kept only once the row is saved: a failed row is rolled back with the item it made.
               if (!earlier) made.set(lower(code || key), itemId);
@@ -135,6 +141,11 @@ export function stockAdapter(inventory: InventoryService): TargetAdapter {
                 [workspaceId, target.id, nextName, nextUnit, normalKey(nextName, nextUnit), Boolean(adopt && code), code]);
               await recordAudit(client, { workspaceId, actorUserId: context.userId, action: "stock.item_changed", entityType: "stock_item", entityId: target.id,
                 before: { name: target.name, unit: target.unit, code: target.code }, after: { name: nextName, unit: nextUnit, code: adopt && code ? code : target.code, reason: IMPORT_REASON } });
+            }
+            if (recategorize) {
+              await client.query(`UPDATE stock_items SET category = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, target.id, category]);
+              await recordAudit(client, { workspaceId, actorUserId: context.userId, action: "stock.item_changed", entityType: "stock_item", entityId: target.id,
+                before: { category: target.category }, after: { category, reason: IMPORT_REASON } });
             }
             if (count !== null) await countTo(target.id, place, count, cost);
             return { recordId: target.id, locationId: place.id, quantity: keepQuantity };

@@ -7,6 +7,7 @@ import type { HomeFocusItem, HomeMetrics, HomeSummary } from "@wodana/contracts"
 import { CalendarPlus, ClipboardPlus, Factory, FileText, HardHat, PackageCheck, Plus, Receipt, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
 import { Button, Callout, DesignSystemProvider, MenuButton, PageHeader, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { shortcutBlocked } from "@/lib/keyboard/typing-target";
 import { projectApi } from "@/lib/project-core/client";
 import type { WorkBoard } from "@/lib/project-core/types";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -84,8 +85,7 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions, 
   // "/" puts the cursor in search from anywhere on Home (unless the person is typing).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey || target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey || shortcutBlocked(event)) return;
       event.preventDefault();
       searchInput.current?.focus();
     };

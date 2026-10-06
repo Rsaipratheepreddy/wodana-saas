@@ -4,10 +4,10 @@ import type { CatalogItemRow, CatalogStructure, CatalogSummary, ImportPlan, Impo
 const catalog: CatalogSummary = { id: "7a1c0000-0000-4000-8000-000000000001", code: "materials", name: "Materials", purpose: "buy", itemCount: 4, version: 1 };
 const structure: CatalogStructure = {
   categories: [
-    { id: "7a1c0000-0000-4000-8000-0000000000c1", parentId: null, code: "timber", name: "Timber & boards" },
-    { id: "7a1c0000-0000-4000-8000-0000000000c2", parentId: null, code: "hardware", name: "Channels & hinges" },
-    { id: "7a1c0000-0000-4000-8000-0000000000c3", parentId: null, code: "electrical", name: "Switches & sockets" },
-    { id: "7a1c0000-0000-4000-8000-0000000000c4", parentId: null, code: "joinery", name: "Joinery" },
+    { id: "7a1c0000-0000-4000-8000-0000000000c1", parentId: null, code: "timber", version: 1, itemCount: 1, name: "Timber & boards" },
+    { id: "7a1c0000-0000-4000-8000-0000000000c2", parentId: null, code: "hardware", version: 1, itemCount: 1, name: "Channels & hinges" },
+    { id: "7a1c0000-0000-4000-8000-0000000000c3", parentId: null, code: "electrical", version: 1, itemCount: 1, name: "Switches & sockets" },
+    { id: "7a1c0000-0000-4000-8000-0000000000c4", parentId: null, code: "joinery", version: 1, itemCount: 1, name: "Joinery" },
   ],
   attributes: [
     { id: "a1", code: "size", label: "Size", valueType: "text", required: false, choices: [], unitCode: null, categoryId: null },

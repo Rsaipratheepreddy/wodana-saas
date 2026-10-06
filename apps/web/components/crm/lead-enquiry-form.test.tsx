@@ -338,3 +338,16 @@ it("leaves the internal notes out for someone who can't read them (PLM-024)", as
   await userEvent.setup().click(screen.getByRole("button", { name: /More details/ }));
   expect(screen.queryByRole("textbox", { name: "Internal notes" })).not.toBeInTheDocument();
 });
+
+it("names each dropdown's own choice and takes the client type problem to the client type field (L8, L10)", async () => {
+  const { user } = setup(undefined, (data) => { data.leadOptions!.customerTypes = [{ id: "individual", label: "Individual" }, { id: "company_client", label: "Company" }]; });
+  const clientType = screen.getByRole("button", { name: /Client type/ });
+  expect(clientType).toHaveTextContent("Choose client type");
+  expect(screen.getByRole("button", { name: /Emirate/ })).toHaveTextContent("Choose emirate");
+  expect(screen.getByRole("button", { name: /Owner/ })).not.toHaveTextContent("Select an option");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  const box = await screen.findByRole("alert");
+  await user.click(within(box).getByRole("button", { name: "Choose the client type." }));
+  expect(clientType).toHaveFocus();
+  expect(screen.getByRole("button", { name: /^Choose source|^Source/ })).not.toHaveFocus();
+});

@@ -5,6 +5,7 @@ import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { Check, Download, Maximize2, MessageSquarePlus, Minimize2, Minus, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Send, X } from "lucide-react";
 import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, PillTabs, SegmentedControl, useDesignSystem, usePortalThemeAttributes } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import { caseApi, caseRequest, type CaseContent, type CaseDesign, type DesignOptions, type DesignThread } from "@/lib/pre-project/content";
 import { DESIGN_STATUS_LABEL, designStatusTone } from "@/lib/pre-project/design-workspace";
 import { ClientFeedback, feedbackFor, useClientBoard } from "@/components/client-activity/client-feedback";
@@ -84,7 +85,7 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
 
   // Keys: C starts a comment, + and − zoom, 0 fits, Escape closes the open comment first, then the viewer.
   const onKeyDown = (event: ReactKeyboardEvent) => {
-    const typing = event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName));
+    const typing = isTypingTarget(event.target);
     if (event.key === "Escape") {
       event.preventDefault();
       if (draft || openThread || commenting) { if (!dirty) { setDraft(null); setOpenThread(null); setCommenting(false); } return; }
@@ -195,7 +196,7 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
             </aside> : null}
           </div>
         </div>
-        <ConfirmationDialog isOpen={confirmClose} onOpenChange={setConfirmClose} title={t("Discard your comment?")} body={t("It hasn't been posted.")} confirmLabel={t("Discard")}
+        <ConfirmationDialog isOpen={confirmClose} onOpenChange={setConfirmClose} title={t("Discard your comment?")} body={t("It hasn't been posted.")} confirmLabel={t("Discard")} cancelLabel={t("Keep editing")}
           onConfirm={() => { setConfirmClose(false); setDirty(false); onClose(); }} />
       </Dialog>
     </Modal>

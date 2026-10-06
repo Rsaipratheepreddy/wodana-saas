@@ -181,10 +181,33 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
     });
   });
 
+  it("keeps a materials list without quantities: every item listed at nothing on hand, with its tab as the category", async () => {
+    await world(async (w) => {
+      const service = w.as(w.owner);
+      const sheets: SourceSheet[] = [
+        { name: "HARDWARE", rows: [["Code", "Item", "Unit"], ["HW-1", "Hinge", "pcs"], ["HW-2", "Drawer runner", "pair"]] },
+        { name: "Paint", rows: [["Code", "Item", "Unit"], ["PT-1", "Primer", "l"]] },
+      ];
+      const draft = { target: "stock", source: "upload", name: "Materials", locationId: w.warehouse, mapping: { columns: { Code: "code", Item: "name", Unit: "unit" } }, sheets };
+      const preview = await service.preview(actor, w.workspaceId, draft);
+      await service.apply(actor, w.workspaceId, { ...draft, runId: randomUUID(), expectedFingerprint: preview.fingerprint });
+      const state = await w.inventory.stock(actor, w.workspaceId) as { rows: unknown[]; items: Array<{ itemCode: string; category: string }> };
+      expect(state.rows).toEqual([]);
+      expect(state.items.map((item) => [item.itemCode, item.category])).toEqual([["HW-2", "Hardware"], ["HW-1", "Hardware"], ["PT-1", "Paint"]]);
+      // A tab renamed in the sheet moves its items on the next refresh.
+      const link = (await w.client.query<{ id: string }>(`SELECT id FROM import_links WHERE workspace_id = $1`, [w.workspaceId])).rows[0].id;
+      const moved = await service.refresh(actor, w.workspaceId, link, { runId: randomUUID(), sheets: [{ ...sheets[0], name: "Fittings" }, sheets[1]] });
+      expect(moved.runs[0]).toMatchObject({ changed: 2, unchanged: 1 });
+      expect((await w.client.query(`SELECT category FROM stock_items WHERE workspace_id = $1 AND code = 'HW-1'`, [w.workspaceId])).rows[0].category).toBe("Fittings");
+    });
+  });
+
   it("imports a collection sheet of category blocks without codes: names as keys, drawings from cell links, sizes from plain cells", async () => {
     await world(async (w) => {
       const service = w.as(w.owner);
       const { id: catalogId } = await w.catalogs.createCatalog(actor, w.workspaceId, { name: "Collection" });
+      // The catalog's own category, which the sheet's "ARMCHAIRS" block names in capitals and the plural.
+      await w.catalogs.createCategory(actor, w.workspaceId, catalogId, { name: "Armchair" });
       const heading = ["REMARKS", "ITEM", "DESCRIPTION", "IMAGE", "HEIGHT (CM)", "LENGTH (CM)", "DEPTH (CM)", "PRICE (AED)", "Technical Drawing", "Materials Needed", "Hours Needed"];
       const sheet = (width: string): SourceSheet[] => [{ name: "Living", rows: [
         ["", "", "", "", "", "", "", "", "", "Add more sofas"],
@@ -218,10 +241,12 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
            LEFT JOIN catalog_item_dimensions size ON size.item_id = item.id LEFT JOIN price_entries entry ON entry.item_id = item.id AND entry.status <> 'expired'
           WHERE item.workspace_id = $1 ORDER BY item.code`, [w.workspaceId])).rows;
       expect(items).toEqual([
-        { code: "ARIA-SOFA-3-SEATER", name: "Aria Sofa - 3 seater", category: "SOFA", drawing: "https://drive.example/file/aria-3.pdf", width: "300.00", depth: "120.00", height: null, unit: "cm", source: "import", price: "23500.000000" },
-        { code: "ARIA-SOFA-4-SEATER", name: "Aria Sofa - 4 seater", category: "SOFA", drawing: null, width: "400.00", depth: "120.00", height: null, unit: "cm", source: "import", price: "28500.000000" },
-        { code: "LUNA-CHAIR", name: "Luna Chair", category: "ARMCHAIRS", drawing: null, width: "70.00", depth: "75.00", height: "80.00", unit: "cm", source: "import", price: null },
+        { code: "ARIA-SOFA-3-SEATER", name: "Aria Sofa - 3 seater", category: "Sofa", drawing: "https://drive.example/file/aria-3.pdf", width: "300.00", depth: "120.00", height: null, unit: "cm", source: "import", price: "23500.000000" },
+        { code: "ARIA-SOFA-4-SEATER", name: "Aria Sofa - 4 seater", category: "Sofa", drawing: null, width: "400.00", depth: "120.00", height: null, unit: "cm", source: "import", price: "28500.000000" },
+        { code: "LUNA-CHAIR", name: "Luna Chair", category: "Armchair", drawing: null, width: "70.00", depth: "75.00", height: "80.00", unit: "cm", source: "import", price: null },
       ]);
+      // A new category is named in Title Case; one the catalog has is matched however the sheet writes it.
+      expect((await w.client.query(`SELECT name FROM catalog_categories WHERE workspace_id = $1 ORDER BY name`, [w.workspaceId])).rows.map((row) => row.name)).toEqual(["Armchair", "Sofa"]);
       const kept = (await w.client.query(`SELECT attribute.label, value.value FROM catalog_item_values value JOIN catalog_attributes attribute ON attribute.id = value.attribute_id
         JOIN catalog_items item ON item.id = value.item_id WHERE item.code = 'ARIA-SOFA-3-SEATER' AND item.workspace_id = $1 ORDER BY attribute.label`, [w.workspaceId])).rows;
       expect(kept).toEqual([{ label: "HEIGHT (CM)", value: "Total H 108 cm - seat H 53 cm" }, { label: "Hours Needed", value: "Carpentry 12 hours" }, { label: "ITEM", value: "SOFA" },

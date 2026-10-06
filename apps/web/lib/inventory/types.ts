@@ -4,7 +4,10 @@ export type { LocationKind, StockLocation };
 
 /** One item at one place, for a project or free. */
 export type StockRow = {
-  itemId: string; itemName: string; itemCode: string; unit: string; catalogItemId: string | null; locationId: string; locationName: string; locationKind: LocationKind;
+  itemId: string; itemName: string; itemCode: string; unit: string; catalogItemId: string | null;
+  /** The item's category (a materials list's tab or category column); empty when it has none. */
+  category?: string;
+  locationId: string; locationName: string; locationKind: LocationKind;
   projectId: string | null; projectReference: string | null; projectName: string | null; onHand: string; updatedAt: string;
   value: string; averageCost: string | null; currency: string;
 };
@@ -19,8 +22,12 @@ export type ReorderPoint = {
   reorderAt: string; reorderQuantity: string | null; vendorId: string | null; vendorName: string | null;
   free: string; onOrder: string; low: boolean; short: boolean; lowSince: string | null; version: number;
 };
+/** A stock item kept, whether or not any is on hand. */
+export type StockItemSummary = { itemId: string; itemName: string; itemCode: string; unit: string; catalogItemId: string | null; category: string };
 export type StockState = {
-  rows: StockRow[]; locations: StockLocation[]; projects: ProjectOption[]; inTransit: number; canManage: boolean; canAdjust: boolean; canReceive: boolean;
+  rows: StockRow[];
+  /** Every active stock item (a materials list imported without quantities shows at nothing on hand). */
+  items?: StockItemSummary[]; locations: StockLocation[]; projects: ProjectOption[]; inTransit: number; canManage: boolean; canAdjust: boolean; canReceive: boolean;
   pendingAdjustments: PendingAdjustment[]; me: string; currency: string; reorderPoints?: ReorderPoint[];
 };
 

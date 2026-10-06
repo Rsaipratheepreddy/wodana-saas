@@ -97,7 +97,7 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
       requestConfirmation({
         title: t("Discard unsaved form changes?"),
         body: t("Your saved form stays unchanged. Unsaved questions and settings will be discarded."),
-        confirmLabel: t("Discard changes"),
+        confirmLabel: t("Discard changes"), cancelLabel: t("Keep editing"),
         onConfirm: () => window.location.assign(anchor.href),
       });
     };
@@ -191,7 +191,7 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
     requestConfirmation({
       title: t("Discard unsaved form changes?"),
       body: t("Your saved form stays unchanged. Unsaved questions and settings will be discarded."),
-      confirmLabel: t("Discard changes"),
+      confirmLabel: t("Discard changes"), cancelLabel: t("Keep editing"),
       onConfirm: closeForm,
     });
   };

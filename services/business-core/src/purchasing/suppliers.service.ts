@@ -111,26 +111,39 @@ export class SuppliersService {
   /** Approve, refuse or hold a supplier, and name the categories it's the preferred supplier for. */
   approve(actor: RequestActor, workspaceId: string, supplierId: string, body: Record<string, unknown>) {
     return this.access.withPermission(actor, workspaceId, "vendors.approve", async (client, user) => {
-      const current = await readSupplier(client, workspaceId, supplierId, true);
-      if (!current) throw new NotFoundException("Supplier not found.");
-      if (body.version !== current.version) throw new ConflictException("Someone else changed this supplier. Reload to see their changes.");
-      const approval = oneOf(body.approval, APPROVALS, "Approval");
-      const note = text(body.note, 500, "Note");
-      if ((approval === "not_approved" || approval === "on_hold") && !note) throw new BadRequestException("Say why.");
-      const preferred = approval === "approved" ? cleanCategories(body.preferredFor, current.categories) : [];
-      const outside = preferred.find((item) => !current.categories.includes(item));
-      if (outside) throw new BadRequestException(`${outside} isn't one of this supplier's categories.`);
-      await client.query(
-        `UPDATE workspace_vendors SET approval = $3::varchar, preferred_for = $4, approval_note = $5, approval_at = CASE WHEN $3::varchar = 'pending' THEN NULL ELSE now() END,
-                approval_by = CASE WHEN $3::varchar = 'pending' THEN NULL ELSE $6::uuid END, updated_by = $6::uuid, updated_at = now(), version = version + 1
-          WHERE workspace_id = $1 AND id = $2`, [workspaceId, supplierId, approval, preferred, note, user.userId]);
-      // Going on hold (or refused) with orders still open: their buyers and the approvers hear, and those orders wait.
-      if ((approval === "on_hold" || approval === "not_approved") && current.approval !== approval)
-        await tellSupplierOnHold(client, workspaceId, supplierId, current.name, note, user.userId, `approval:${supplierId}:${current.version}`);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "supplier.approval_changed", entityType: "supplier", entityId: supplierId,
-        before: { approval: current.approval, preferredFor: current.preferredFor }, after: { approval, preferredFor: preferred, note } });
+      await this.approveWith(client, workspaceId, user.userId, supplierId, body);
       return this.state(client, workspaceId, user.userId);
     });
+  }
+
+  /** Whether this person may approve suppliers (a linked supplier sheet's approval column needs it). */
+  canApprove(client: Db, workspaceId: string, userId: string) {
+    return this.access.hasPermission(client, workspaceId, userId, "vendors.approve");
+  }
+
+  /**
+   * The approval command inside the caller's transaction, for someone the caller has checked may approve
+   * (`canApprove`): the same checks, notifications and audit as `approve`.
+   */
+  async approveWith(client: Db, workspaceId: string, userId: string, supplierId: string, body: Record<string, unknown>) {
+    const current = await readSupplier(client, workspaceId, supplierId, true);
+    if (!current) throw new NotFoundException("Supplier not found.");
+    if (body.version !== current.version) throw new ConflictException("Someone else changed this supplier. Reload to see their changes.");
+    const approval = oneOf(body.approval, APPROVALS, "Approval");
+    const note = text(body.note, 500, "Note");
+    if ((approval === "not_approved" || approval === "on_hold") && !note) throw new BadRequestException("Say why.");
+    const preferred = approval === "approved" ? cleanCategories(body.preferredFor, current.categories) : [];
+    const outside = preferred.find((item) => !current.categories.includes(item));
+    if (outside) throw new BadRequestException(`${outside} isn't one of this supplier's categories.`);
+    await client.query(
+      `UPDATE workspace_vendors SET approval = $3::varchar, preferred_for = $4, approval_note = $5, approval_at = CASE WHEN $3::varchar = 'pending' THEN NULL ELSE now() END,
+              approval_by = CASE WHEN $3::varchar = 'pending' THEN NULL ELSE $6::uuid END, updated_by = $6::uuid, updated_at = now(), version = version + 1
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, supplierId, approval, preferred, note, userId]);
+    // Going on hold (or refused) with orders still open: their buyers and the approvers hear, and those orders wait.
+    if ((approval === "on_hold" || approval === "not_approved") && current.approval !== approval)
+      await tellSupplierOnHold(client, workspaceId, supplierId, current.name, note, userId, `approval:${supplierId}:${current.version}`);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier.approval_changed", entityType: "supplier", entityId: supplierId,
+      before: { approval: current.approval, preferredFor: current.preferredFor }, after: { approval, preferredFor: preferred, note } });
   }
 
   /** Stop using a supplier (with the reason), or bring it back. Its history stays. */

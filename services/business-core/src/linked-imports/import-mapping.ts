@@ -23,6 +23,8 @@ const ALIASES: Record<string, string[]> = {
   taxNumber: ["trn", "trn no", "trn number", "tax number", "tax no", "tax registration number", "tax id", "vat number", "vat no", "vat registration number", "gstin", "gst number", "gst no"],
   paymentTerms: ["payment terms", "terms", "payment", "credit terms", "payment term"],
   categories: ["categories", "category", "supplier type", "vendor type", "type of supplier", "supplies", "what they supply", "products", "materials", "trade", "scope", "specialty", "speciality"],
+  approval: ["approval", "approved", "approval status", "approved not approved", "approved or not", "directors approved", "directors approval", "director approved", "director approval",
+    "directors approved not approved", "director approved not approved", "management approval", "supplier approval", "vendor approval", "approved supplier", "approved vendor"],
   notes: ["notes", "remarks", "comments"],
   unit: ["unit", "uom", "units", "unit of measure"],
   quantity: ["qty", "quantity", "stock", "on hand", "in stock", "balance", "available", "stock qty", "current stock"],

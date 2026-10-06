@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { ApprovalPoliciesService } from "../approvals/approval-policies.service";
+import { CatalogV2Service } from "../catalog-core/catalog-v2.service";
+import { categoryKey } from "../catalog-core/category-names";
 import { OWNER_ROLE } from "../approvals/approval-policy";
 import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
 import { CrmEnquiryTypesService } from "../crm/flows/crm-enquiry-types.service";
@@ -548,10 +550,115 @@ const clientUpdates: Section = async (_ctx, profile, step) => {
   else step.manual("client updates", `no workspace default; ${wanted.frequency} by ${wanted.mode} is set per case (Pre-project › Client updates)`);
 };
 
+// ---------- catalogue categories ----------
+
+type Category = { id: string; name: string; parentId: string | null; version: number; itemCount: number };
+type Working = Category & { direct: number; gone: boolean };
+
+/**
+ * One catalogue's category clean-up through the catalogue's own category commands. A dry run plays each step on a
+ * copy of the tree, so later steps see what earlier ones would do (a renamed category is found by its new name).
+ */
+const catalogCategories: Section = async (ctx, profile, step) => {
+  const service = ctx.get(CatalogV2Service);
+  const catalogs = await service.listCatalogs(ctx.actor, ctx.workspace.id) as Array<{ id: string; name: string }>;
+  for (const wanted of profile.catalogCategories!) {
+    const catalog = catalogs.find((entry) => lower(entry.name) === lower(wanted.catalog));
+    if (!catalog) { step.missing(`catalogue ${wanted.catalog}`, "no active catalogue with this name"); continue; }
+    const read = async () => (await service.structure(ctx.actor, ctx.workspace.id, catalog.id) as { categories: Category[] }).categories;
+    const version = async (id: string) => (await read()).find((entry) => entry.id === id)?.version ?? 0;
+    const initial = await read();
+    // Items directly in each category (the structure counts each with everything below it).
+    const tree: Working[] = initial.map((entry) => ({ ...entry, gone: false,
+      direct: entry.itemCount - initial.filter((child) => child.parentId === entry.id).reduce((sum, child) => sum + child.itemCount, 0) }));
+    const live = () => tree.filter((entry) => !entry.gone);
+    const children = (id: string) => live().filter((entry) => entry.parentId === id);
+    const total = (entry: Working): number => entry.direct + children(entry.id).reduce((sum, child) => sum + total(child), 0);
+    const below = (id: string): string[] => children(id).flatMap((child) => [child.id, ...below(child.id)]);
+    // A category by its exact name, else ignoring case, else however it's written; two equally close are ambiguous.
+    const find = (name: string): Working | "ambiguous" | null => {
+      for (const same of [(entry: Working) => entry.name === name.trim(), (entry: Working) => lower(entry.name) === lower(name), (entry: Working) => categoryKey(entry.name) === categoryKey(name)]) {
+        const found = live().filter(same);
+        if (found.length > 1) return "ambiguous";
+        if (found.length === 1) return found[0];
+      }
+      return null;
+    };
+    const label = (text: string) => `${catalog.name} › ${text}`;
+    const resolve = (name: string, what: string) => {
+      const found = find(name);
+      if (found === "ambiguous") { step.missing(label(`${what} ${name}`), "several categories have this name"); return null; }
+      return found;
+    };
+
+    for (const pair of wanted.merge) {
+      const into = resolve(pair.into, "merge into");
+      if (into === null) { if (find(pair.into) === null) step.missing(label(`merge ${pair.from}`), `no category ${pair.into} to merge into`); continue; }
+      const from = resolve(pair.from, "merge");
+      if (from === null && find(pair.from) === "ambiguous") continue;
+      if (!from || from.id === into.id) { step.same(label(`merge ${pair.from}`), `one category: ${into.name}`); continue; }
+      if (below(from.id).includes(into.id)) { step.missing(label(`merge ${pair.from}`), `${into.name} is inside ${from.name}; move it out first`); continue; }
+      await step.change([{ label: label(`merge ${from.name}`), detail: `${from.name} (${total(from)} items) → ${into.name}` }], async () =>
+        service.mergeCategory(ctx.actor, ctx.workspace.id, catalog.id, from.id, { version: await version(from.id), intoId: into.id }));
+      into.direct += from.direct;
+      for (const child of children(from.id)) child.parentId = into.id;
+      from.gone = true;
+    }
+
+    const remove = async (entry: Working, detail: string) => {
+      await step.change([{ label: label(`delete ${entry.name}`), detail }], async () => service.deleteCategory(ctx.actor, ctx.workspace.id, catalog.id, entry.id, await version(entry.id)));
+      entry.gone = true;
+    };
+    for (const name of wanted.deleteEmpty) {
+      const entry = resolve(name, "delete");
+      if (entry === null) { if (find(name) === null) step.same(label(`delete ${name}`), "no such category"); continue; }
+      if (total(entry) || children(entry.id).length) { step.info(label(`delete ${entry.name}`), `kept: it has ${total(entry)} items and ${children(entry.id).length} sub-categories`); continue; }
+      await remove(entry, "empty");
+    }
+    if (wanted.deleteEmptyDuplicates) {
+      let removed = 0;
+      for (const entry of live()) {
+        if (total(entry) || children(entry.id).length) continue;
+        const populated = live().find((other) => other.id !== entry.id && categoryKey(other.name) === categoryKey(entry.name) && total(other) > 0);
+        if (!populated) continue;
+        await remove(entry, `empty; ${populated.name} has the items`);
+        removed++;
+      }
+      if (!removed) step.same(label("empty duplicate categories"), "none");
+    }
+
+    for (const pair of wanted.rename) {
+      const entry = resolve(pair.from, "rename");
+      if (entry === null) { if (find(pair.from) === null) step.missing(label(`rename ${pair.from}`), "no such category"); continue; }
+      if (entry.name === pair.to) { step.same(label(`rename ${pair.from}`), pair.to); continue; }
+      const clash = live().find((other) => other.id !== entry.id && other.parentId === entry.parentId && categoryKey(other.name) === categoryKey(pair.to));
+      if (clash) { step.info(label(`rename ${entry.name}`), `kept: ${clash.name} is already beside it; merge the two instead`); continue; }
+      await step.change([diff(label(`rename ${entry.name}`), entry.name, pair.to)], async () =>
+        service.updateCategory(ctx.actor, ctx.workspace.id, catalog.id, entry.id, { version: await version(entry.id), name: pair.to }));
+      entry.name = pair.to;
+    }
+
+    for (const pair of wanted.parent) {
+      const entry = resolve(pair.category, "parent of");
+      if (entry === null) { if (find(pair.category) === null) step.missing(label(`parent of ${pair.category}`), "no such category"); continue; }
+      const above = pair.parent === null ? null : resolve(pair.parent, "parent");
+      if (pair.parent !== null && above === null) { if (find(pair.parent) === null) step.missing(label(`parent of ${entry.name}`), `no category ${pair.parent}`); continue; }
+      const parentId = above?.id ?? null;
+      const now = tree.find((other) => other.id === entry.parentId)?.name ?? "(top level)";
+      if (entry.parentId === parentId) { step.same(label(`parent of ${entry.name}`), now); continue; }
+      if (parentId && (parentId === entry.id || below(entry.id).includes(parentId))) { step.missing(label(`parent of ${entry.name}`), `${above!.name} is inside ${entry.name}`); continue; }
+      await step.change([diff(label(`parent of ${entry.name}`), now, above?.name ?? "(top level)")], async () =>
+        service.updateCategory(ctx.actor, ctx.workspace.id, catalog.id, entry.id, { version: await version(entry.id), parentId }));
+      entry.parentId = parentId;
+    }
+  }
+};
+
 /** The sections in the order they run (routes before factory, so the permit check sees the route). */
 export const SECTIONS: Array<[ProfileSection, Section]> = [
   ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["factory", factory], ["quotations", quotations], ["firstResponse", firstResponse],
   ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
+  ["catalogCategories", catalogCategories],
 ];
 
 export async function runConfigure(ctx: OpsContext, profile: Profile, report: Report) {

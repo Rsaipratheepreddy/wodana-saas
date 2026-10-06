@@ -7,6 +7,7 @@ import { readReorderPoints } from "../inventory/stock-levels";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { cancelDealOnFullRefund } from "./deal-cancel";
 import { boqRequiredForCase } from "./fulfilment-rules";
+import { casePlan, casePlans, FULL_PLAN } from "../pre-projects/case-plan";
 import { FulfilmentService } from "./fulfilment.service";
 import { releaseForDeal, reserveForAcceptedQuote, reserveForProduction, takeForDeal, useForProduction } from "./stock-reservations";
 
@@ -99,6 +100,25 @@ integration("Furniture Only fulfilment and stock by path (PLM-083, PLM-125, PLM-
       rule.furniturePath === path ? { ...rule, takeFromLocationId: w.showroom } : rule);
     await w.service.saveRules(actor, w.workspaceId, w.furnitureFlow, { rules: next, versions: flow.rules.map((rule: { furniturePath: string | null; version: number }) => `${rule.furniturePath ?? ""}:${rule.version}`) });
   };
+
+  it("L12: the planning case follows its path — stock goes straight to the quotation and fulfilment, bespoke keeps the full journey", async () => {
+    await world("in_stock_delivery", async (w) => {
+      // No rules saved yet: the furniture flow's product defaults apply (read only, nothing is written).
+      expect(await casePlan(w.client, w.workspaceId, w.caseId)).toEqual({ source: "path", phases: ["price", "agree", "release"], siteVisit: false, design: false, release: "fulfilment" });
+      expect((await w.client.query(`SELECT 1 FROM crm_flow_fulfilment_rules WHERE workspace_id = $1`, [w.workspaceId])).rowCount).toBe(0);
+      // A job pinned to its flow version reads the same plan; a started site visit still shows.
+      const version = (await w.client.query<{ id: string }>(`SELECT id FROM crm_flow_versions WHERE workspace_id = $1 AND flow_id = $2 ORDER BY version DESC LIMIT 1`, [w.workspaceId, w.furnitureFlow])).rows[0].id;
+      await w.client.query(`UPDATE crm_opportunities SET flow_version_id = $2 WHERE id = $1`, [w.opportunityId, version]);
+      await w.client.query(`INSERT INTO design_journeys (workspace_id, case_id, site_visit_questions, started_by) VALUES ($1, $2, '[]', $3)`, [w.workspaceId, w.caseId, w.owner]);
+      expect(await casePlan(w.client, w.workspaceId, w.caseId)).toMatchObject({ phases: ["design", "price", "agree", "release"], siteVisit: true, design: false });
+      await w.client.query(`UPDATE crm_opportunities SET furniture_path = 'bespoke' WHERE id = $1`, [w.opportunityId]);
+      await w.client.query(`DELETE FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [w.workspaceId, w.caseId]);
+      expect(await casePlan(w.client, w.workspaceId, w.caseId)).toEqual(FULL_PLAN);
+      // A case that doesn't exist reads the full journey.
+      const other = randomUUID();
+      expect((await casePlans(w.client, w.workspaceId, [w.caseId, other])).get(other)).toEqual(FULL_PLAN);
+    });
+  });
 
   it("A: the accepted quotation holds the sofa at the showroom, Won takes it out, a cancellation puts it back — each once", async () => {
     await world("take_home_now", async (w) => {

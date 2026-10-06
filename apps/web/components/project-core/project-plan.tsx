@@ -9,6 +9,7 @@ import {
   SelectField, Skeleton, Switch, TextInput, type GroupedTableSection,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { shortcutBlocked } from "@/lib/keyboard/typing-target";
 import { projectApi } from "@/lib/project-core/client";
 import type { PackagePlan, WorkBoard, WorkItem, WorkStatus, WorkType } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
@@ -63,8 +64,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || !root.current) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']")) return;
+      if (shortcutBlocked(event)) return;
       if (event.key === "/") {
         const search = root.current.querySelector<HTMLInputElement>("input");
         if (search) { event.preventDefault(); search.focus(); }

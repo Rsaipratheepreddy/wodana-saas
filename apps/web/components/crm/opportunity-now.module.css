@@ -17,6 +17,10 @@
 
 .nowBlock { display: grid; gap: var(--wd-space-2); }
 .assignee { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+/* The owner chip on the card's title row: avatar and name; it opens Reassign where the job can be handed on. */
+.ownerChip { gap: var(--wd-space-1-5); max-inline-size: 100%; padding-inline: var(--wd-space-1) var(--wd-space-2); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-regular); }
+.ownerName { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ownerName[data-empty] { color: var(--wd-color-text-tertiary); }
 .primary { margin-inline-start: auto; }
 
 /* The next column's checklist: ✓ done with its value, ○ missing with its action; the first missing one is now. */
@@ -40,7 +44,7 @@
 .followUp[data-empty] { background: none; }
 .followUp[data-empty] .rowLabel { color: var(--wd-color-text-secondary); }
 .followUp .rowText { flex: 1 1 14rem; align-items: center; }
-.followUpActions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; }
+.followUpActions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); margin-inline-start: auto; }
 
 .then { margin: 0; padding-inline: var(--wd-space-4); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 
@@ -56,8 +60,9 @@
 .mark { display: grid; place-items: center; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); border: 1.5px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-round); background: var(--wd-color-surface); color: var(--wd-color-text-inverse); }
 .line li[data-state="done"] .mark { border-color: var(--wd-color-success); background: var(--wd-color-success); }
 .line li[data-state="current"] .mark { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary); box-shadow: inset 0 0 0 3px var(--wd-color-surface); }
-.dotLabel { display: grid; color: inherit; font-size: var(--wd-text-2xs); line-height: var(--wd-leading-tight); text-align: center; overflow-wrap: anywhere; }
-.dotLabel small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
+.dotLabel { display: block; color: inherit; font-size: var(--wd-text-2xs); line-height: var(--wd-leading-tight); text-align: center; overflow-wrap: break-word; hyphens: auto; }
+/* An optional step: a hollow, dashed dot instead of a second "optional" line under its name. */
+.line li[data-optional][data-state="upcoming"] .mark { border-style: dashed; background: transparent; }
 .line li[data-state="current"] .dotLabel { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
 .line li[data-state="done"] .dotLabel { color: var(--wd-color-text); }
 

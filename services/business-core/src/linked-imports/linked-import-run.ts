@@ -9,6 +9,8 @@ export type LinkSettings = {
   legalEntityId: string | null;
   /** How the sheet's columns map (the chosen tabs, and for suppliers each tab's company). */
   mapping?: ColumnMapping;
+  /** Catalog: the sheet's prices are approved list prices (live at once when the run's member may approve prices). */
+  approvedPrices?: boolean;
 };
 
 /** Which Wodana record a key became (and, for stock, at which place and the quantity last taken from the sheet). */
@@ -17,6 +19,10 @@ export const recordKey = (key: string, locationId: string | null) => `${key.trim
 
 export type ImportContext = {
   client: PoolClient; workspaceId: string; userId: string; link: LinkSettings; records: Map<string, LinkRecord>;
+  /** Catalog: this run puts the sheet's prices live (the link says so and the member may approve prices). */
+  approvedPrices?: boolean;
+  /** The run applying the plan (none for a preview), for the audit. */
+  runId?: string | null;
 };
 
 /** What applying one row left: the record its key now names, and the quantity taken from the sheet. */

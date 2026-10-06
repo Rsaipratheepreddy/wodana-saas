@@ -20,9 +20,9 @@ type Result = { code: number; output: string };
 
 integration("operator CLI: import and configure through the app's services (real Postgres)", () => {
   let pool: Pool;
-  const workspaceId = randomUUID(), owner = randomUUID(), outsider = randomUUID();
+  const workspaceId = randomUUID(), owner = randomUUID(), outsider = randomUUID(), clerk = randomUUID();
   const slug = `ops-${workspaceId.slice(0, 8)}`;
-  const ownerEmail = `owner-${owner.slice(0, 8)}@example.test`, outsiderEmail = `outsider-${outsider.slice(0, 8)}@example.test`;
+  const ownerEmail = `owner-${owner.slice(0, 8)}@example.test`, outsiderEmail = `outsider-${outsider.slice(0, 8)}@example.test`, clerkEmail = `clerk-${clerk.slice(0, 8)}@example.test`;
   const results: Result[] = [];
   let started: Date;
 
@@ -43,7 +43,7 @@ integration("operator CLI: import and configure through the app's services (real
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Olive Owner'),($3,$4,'Otto Outsider')", [owner, ownerEmail, outsider, outsiderEmail]);
+      await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Olive Owner'),($3,$4,'Otto Outsider'),($5,$6,'Cleo Clerk')", [owner, ownerEmail, outsider, outsiderEmail, clerk, clerkEmail]);
       await client.query("SET LOCAL session_replication_role = replica"); // fixtures only
       await client.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
       await client.query("INSERT INTO workspaces(id,name,slug,default_currency,default_locale,default_timezone,created_by) VALUES($1,'Ops Studio',$2,'USD','en-US','UTC',$3)", [workspaceId, slug, owner]);
@@ -53,10 +53,21 @@ integration("operator CLI: import and configure through the app's services (real
         ($3,$4,'operations','Operations',false)`, [admin, finance, operations, workspaceId]);
       await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions", [workspaceId, admin]);
       await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [workspaceId, membership, admin]);
+      // A catalogue clerk: manages the catalogue but doesn't review prices.
+      const clerkMembership = randomUUID(), catalogClerk = randomUUID();
+      await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [clerkMembership, workspaceId, clerk]);
+      await client.query("INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$2,'catalog_clerk','Catalogue clerk',false)", [catalogClerk, workspaceId]);
+      await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code IN ('catalog.view', 'catalog.manage')", [workspaceId, catalogClerk]);
+      await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [workspaceId, clerkMembership, catalogClerk]);
       await client.query("SET LOCAL session_replication_role = origin");
       await client.query("INSERT INTO stock_locations(id,workspace_id,kind,name,is_default) VALUES($1,$2,'warehouse','Main warehouse',true),($3,$2,'other','Showroom',false)",
         [randomUUID(), workspaceId, randomUUID()]);
-      await client.query("INSERT INTO catalogs(workspace_id,code,name) VALUES($1,'main','Main catalogue')", [workspaceId]);
+      const catalogId = randomUUID(), lamp = randomUUID();
+      await client.query("INSERT INTO catalogs(id,workspace_id,code,name) VALUES($1,$2,'main','Main catalogue')", [catalogId, workspaceId]);
+      // The catalogue's own categories, an empty one to delete and an empty duplicate of a used one.
+      await client.query(`INSERT INTO catalog_categories(id,workspace_id,catalog_id,code,name,sort_order) VALUES($3,$1,$2,'lamp','Lamp',1),(DEFAULT,$1,$2,'lamps','LAMPS',2),
+        (DEFAULT,$1,$2,'living','Living',3),(DEFAULT,$1,$2,'dining','Dining',4),(DEFAULT,$1,$2,'old-stuff','Old stuff',5)`, [workspaceId, catalogId, lamp]);
+      await client.query("INSERT INTO catalog_items(workspace_id,catalog_id,category_id,code,name,item_type,unit_code) VALUES($1,$2,$3,'LAMP1','Arc lamp','product','pcs')", [workspaceId, catalogId, lamp]);
       await client.query(`INSERT INTO legal_entities(workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone)
         VALUES($1,'OPS','Ops Studio','Ops Studio LLC','US','USD','en-US','UTC')`, [workspaceId]);
       await client.query("INSERT INTO workspace_work_packages(id,workspace_id,name,position) VALUES($1,$2,'Joinery',0)", [randomUUID(), workspaceId]);
@@ -80,6 +91,10 @@ integration("operator CLI: import and configure through the app's services (real
       ["import", ...common, "--target", "stock", "--file", resolve(fixtures, "stock.xlsx"), "--apply"],
       ["import", ...common, "--target", "catalog", "--file", resolve(fixtures, "catalog.xlsx"), "--mapping", "{\"ITEM\":\"description\",\"DESCRIPTION\":\"name\"}"],
       ["import", ...common, "--target", "catalog", "--file", resolve(fixtures, "catalog.xlsx"), "--mapping", "{\"ITEM\":\"description\",\"DESCRIPTION\":\"name\"}", "--apply"],
+      // The drafted prices approved as list prices by a re-run: dry run, apply, and again (nothing left to approve).
+      ["import", ...common, "--target", "catalog", "--file", resolve(fixtures, "catalog.xlsx"), "--mapping", "{\"ITEM\":\"description\",\"DESCRIPTION\":\"name\"}", "--approved-prices"],
+      ["import", ...common, "--target", "catalog", "--file", resolve(fixtures, "catalog.xlsx"), "--mapping", "{\"ITEM\":\"description\",\"DESCRIPTION\":\"name\"}", "--approved-prices", "--apply"],
+      ["import", ...common, "--target", "catalog", "--file", resolve(fixtures, "catalog.xlsx"), "--mapping", "{\"ITEM\":\"description\",\"DESCRIPTION\":\"name\"}", "--approved-prices", "--apply"],
       ["import", ...common, "--target", "suppliers", "--file", resolve(fixtures, "suppliers.csv"), "--legal-entity", "OPS"],
       ["import", ...common, "--target", "suppliers", "--file", resolve(fixtures, "suppliers.csv"), "--legal-entity", "OPS", "--apply"],
       ["import", ...common, "--target", "stock", "--file", resolve(fixtures, "stock.xlsx"), "--apply"],
@@ -88,6 +103,7 @@ integration("operator CLI: import and configure through the app's services (real
       ["configure", ...common, "--profile", resolve(fixtures, "sample-profile.json"), "--json"],
       ["import", "--workspace", slug, "--as", outsiderEmail, "--target", "stock", "--file", resolve(fixtures, "stock.xlsx"), "--apply"],
       ["configure", "--workspace", slug, "--as", outsiderEmail, "--profile", resolve(fixtures, "sample-profile.json"), "--apply"],
+      ["import", "--workspace", slug, "--as", clerkEmail, "--target", "catalog", "--file", resolve(fixtures, "catalog.xlsx"), "--mapping", "{\"ITEM\":\"description\",\"DESCRIPTION\":\"name\"}", "--approved-prices"],
     ]));
   }, 300_000);
   afterAll(() => pool?.end());
@@ -95,7 +111,7 @@ integration("operator CLI: import and configure through the app's services (real
   const count = async (sql: string, values: unknown[] = []) => Number((await pool.query<{ count: string }>(sql, values)).rows[0].count);
 
   it("previews an import without changing anything, then applies it through a link the app shows", async () => {
-    const [stockDry, stockApply, catalogDry, catalogApply, suppliersDry, suppliersApply, stockAgain] = results;
+    const [stockDry, stockApply, catalogDry, catalogApply, , , , suppliersDry, suppliersApply, stockAgain] = results;
     expect(stockDry.code).toBe(0);
     expect(stockDry.output).toContain("HARDWARE INVENTORY: 2 added, 0 changed, 0 unchanged, 1 errors");
     expect(stockDry.output).toContain("PAINT INVENTORY: 1 added");
@@ -111,25 +127,64 @@ integration("operator CLI: import and configure through the app's services (real
     // One link per import, made like the app's (an upload, refreshable there); two runs for the stock list.
     expect(await count(`SELECT count(*) FROM import_links WHERE workspace_id = $1 AND source = 'upload' AND status = 'active'`, [workspaceId])).toBe(3);
     expect(await count(`SELECT count(*) FROM import_runs run JOIN import_links link ON link.id = run.link_id WHERE run.workspace_id = $1 AND link.target = 'stock'`, [workspaceId])).toBe(2);
-    expect(await count(`SELECT count(*) FROM catalog_items WHERE workspace_id = $1`, [workspaceId])).toBe(4);
+    expect(await count(`SELECT count(*) FROM catalog_items WHERE workspace_id = $1 AND code <> 'LAMP1'`, [workspaceId])).toBe(4);
     expect(await count(`SELECT count(*) FROM catalog_items WHERE workspace_id = $1 AND name = 'Aria Sofa - 3 seater'`, [workspaceId])).toBe(1);
   });
 
+  it("approves the drafted prices of a catalogue import with --approved-prices, once; a member who can't approve prices is refused", async () => {
+    const [approveDry, approveApply, approveAgain] = results.slice(4, 7);
+    const refused = results[15];
+    for (const result of [approveDry, approveApply, approveAgain]) expect(result.code, result.output).toBe(0);
+    expect(approveDry.output).toContain("approved list prices: live in the catalogue's default price book");
+    expect(approveDry.output).toContain("Preview: 0 added, 3 changed, 1 unchanged");
+    expect(approveApply.output).toContain("import applied: 0 added, 3 changed, 1 unchanged");
+    expect(approveAgain.output).toContain("import applied: 0 added, 0 changed, 4 unchanged");
+    const prices = (await pool.query<{ status: string; count: string }>(
+      `SELECT entry.status, count(*) FROM price_entries entry WHERE entry.workspace_id = $1 GROUP BY entry.status`, [workspaceId])).rows;
+    // The three drafts went live as they were: no new entries.
+    expect(prices).toEqual([{ status: "active", count: "3" }]);
+    expect(await count(`SELECT count(*) FROM price_books WHERE workspace_id = $1 AND status = 'active'`, [workspaceId])).toBe(1);
+    expect(await count(`SELECT count(*) FROM import_links WHERE workspace_id = $1 AND target = 'catalog' AND approved_prices`, [workspaceId])).toBe(1);
+    expect(refused.code).toBe(1);
+    expect(refused.output).toContain("can't approve prices");
+  });
+
   it("configures every section, and a second run changes nothing", async () => {
-    const [dry, apply, again] = results.slice(7, 10);
+    const [dry, apply, again] = results.slice(10, 13);
     expect(dry.code).toBe(0);
     expect(dry.output).toContain("would change");
     const applied = JSON.parse(apply.output) as { counts: Record<string, number>; lines: Array<{ section: string; status: string; label: string }> };
     expect(apply.code).toBe(0);
     expect(applied.counts.failed ?? 0).toBe(0);
     const sections = new Set(applied.lines.filter((line) => line.status === "changed").map((line) => line.section));
-    expect([...sections].sort()).toEqual(["approvals", "design", "enquiryTypes", "factory", "financeRequests", "firstResponse", "orderPaths", "quotations", "rolePermissions", "routes", "vehicles"]);
+    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "design", "enquiryTypes", "factory", "financeRequests", "firstResponse", "orderPaths", "quotations", "rolePermissions",
+      "routes", "vehicles"]);
     expect(applied.lines).toEqual(expect.arrayContaining([
       expect.objectContaining({ section: "enquiryTypes", status: "not found", label: "enquiry type no_such_type" }),
       expect.objectContaining({ section: "quotations", status: "not found", label: "work package Missing package" }),
       expect.objectContaining({ section: "clientUpdates", status: "manual" }),
       expect.objectContaining({ section: "rolePermissions", status: "unchanged", label: "role administrator" }),
+      expect.objectContaining({ section: "catalogCategories", status: "not found", label: "catalogue No such catalogue" }),
+      expect.objectContaining({ section: "catalogCategories", status: "unchanged", label: "Main catalogue › delete Never there" }),
     ]));
+    // The dry run played the steps in order: the renamed category is found by its new name for its parent.
+    const dryLines = dry.output.split("\n").filter((line) => line.includes("[catalogCategories]")).map((line) => line.replace(/\s+/g, " ").trim());
+    expect(dryLines).toEqual([
+      "[catalogCategories] would change Main catalogue › merge Table: Table (2 items) → Dining",
+      "[catalogCategories] would change Main catalogue › delete Old stuff: empty",
+      "[catalogCategories] unchanged Main catalogue › delete Never there: no such category",
+      "[catalogCategories] would change Main catalogue › delete LAMPS: empty; Lamp has the items",
+      "[catalogCategories] would change Main catalogue › rename Sofa: Sofa → Sofas",
+      "[catalogCategories] would change Main catalogue › parent of Sofas: (top level) → Living",
+      "[catalogCategories] would change Main catalogue › parent of Dining: (top level) → Living",
+      "[catalogCategories] not found catalogue No such catalogue: no active catalogue with this name",
+    ]);
+    const categories = (await pool.query<{ name: string; parent: string | null; items: string }>(
+      `SELECT category.name, parent.name AS parent, (SELECT count(*) FROM catalog_items item WHERE item.category_id = category.id) AS items
+         FROM catalog_categories category LEFT JOIN catalog_categories parent ON parent.id = category.parent_id WHERE category.workspace_id = $1 ORDER BY category.name`, [workspaceId])).rows;
+    expect(categories).toEqual([
+      { name: "Dining", parent: "Living", items: "2" }, { name: "Lamp", parent: null, items: "1" }, { name: "Living", parent: null, items: "0" }, { name: "Sofas", parent: "Living", items: "2" },
+    ]);
     const second = JSON.parse(again.output) as { counts: Record<string, number> };
     expect(again.code).toBe(0);
     expect(second.counts["would change"] ?? 0).toBe(0);
@@ -145,10 +200,12 @@ integration("operator CLI: import and configure through the app's services (real
     expect(rows.some((row) => row.actor === outsider)).toBe(false);
     expect(await count(`SELECT count(*) FROM audit_events WHERE workspace_id = $1 AND via = 'operator_cli' AND action IN ('linked_import.linked', 'logistics.vehicle_added.v1', 'project.route_changed')`,
       [workspaceId])).toBeGreaterThanOrEqual(6);
+    expect(await count(`SELECT count(*) FROM audit_events WHERE workspace_id = $1 AND via = 'operator_cli' AND action IN ('catalog.category_merged', 'catalog.category_deleted', 'catalog.category_changed')`,
+      [workspaceId])).toBe(6);
   });
 
   it("refuses a person who isn't an active member of the workspace, and writes nothing for them", async () => {
-    const [importAsOutsider, configureAsOutsider] = results.slice(10);
+    const [importAsOutsider, configureAsOutsider] = results.slice(13);
     expect(importAsOutsider.code).toBe(1);
     expect(importAsOutsider.output).toContain("is not an active member");
     expect(configureAsOutsider.code).toBe(1);

@@ -44,6 +44,7 @@ export function paletteDestinations(modules: WorkspaceModuleDefinition[]) {
 
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const subscribe = () => () => {};
+import { inOverlay, isTypingTarget } from "@/lib/keyboard/typing-target";
 
 /**
  * ⌘K (Ctrl K elsewhere) from anywhere in the workspace: find a record, jump to a page, start something new, or
@@ -55,7 +56,10 @@ export function CommandPalette({ workspaceId, modules, access }: { workspaceId: 
   const mac = useSyncExternalStore(subscribe, isMac, () => true);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") { event.preventDefault(); setOpen((value) => !value); }
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "k") return;
+      // A page's own ⌘K (the quote builder's assistant) wins, and typing in a dialog or side panel field is left alone.
+      if (event.defaultPrevented || (isTypingTarget(event.target) && inOverlay(event.target))) return;
+      event.preventDefault(); setOpen((value) => !value);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

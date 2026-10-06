@@ -21,13 +21,16 @@ type Draft = {
   file: File | null;
   /** Suppliers: the company the list is for, when it's one company's list. */
   legalEntityId: string | null;
+  /** Catalog: the sheet's prices are approved list prices. */
+  approvedPrices: boolean;
 };
 const ITEM_TYPES = ["product", "ready_made", "material", "assembly", "service", "package"] as const;
 const outcomeTone: Record<string, "success" | "info" | "danger" | "warning" | "neutral"> = { added: "success", changed: "info", error: "danger", missing: "warning", unchanged: "neutral" };
 
 /** An existing link's settings, kept when its sheet is mapped or uploaded again. */
 const fromLink = (link: ImportLink): Partial<Draft> => ({ linkId: link.id, version: link.version, mapping: link.mapping, sheetName: link.sheetName, name: link.name,
-  setsStock: link.setsStock, locationId: link.locationId, itemType: link.itemType ?? "product", schedule: link.schedule, legalEntityId: link.legalEntityId ?? null });
+  setsStock: link.setsStock, locationId: link.locationId, itemType: link.itemType ?? "product", schedule: link.schedule, legalEntityId: link.legalEntityId ?? null,
+  approvedPrices: link.approvedPrices === true });
 
 function outcomeLabel(t: T, outcome: string) {
   return ({ added: t("New"), changed: t("Changed"), unchanged: t("Unchanged"), error: t("Needs a fix"), missing: t("Not in sheet") } as Record<string, string>)[outcome] ?? outcome;
@@ -103,7 +106,7 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
       linkId: null, version: null, source, connectionId: null, spreadsheetId: null, sheets, sheetName: null, name: name.slice(0, 200), file: null,
       mapping: { ...suggestMapping(target, headingsOf(shown).map((entry) => entry.heading)), ...(tabs?.length ? { tabs } : {}) },
       locationId: overview?.locations.find((place) => place.isDefault)?.id ?? overview?.locations[0]?.id ?? null,
-      setsStock: true, itemType: "product", schedule: source === "google_sheet" ? "hourly" : "off", legalEntityId: null, ...link,
+      setsStock: true, itemType: "product", schedule: source === "google_sheet" ? "hourly" : "off", legalEntityId: null, approvedPrices: false, ...link,
     };
   };
   const chooseFile = (file: File | undefined, link?: ImportLink) => file && run(async () => {
@@ -136,7 +139,8 @@ export function LinkedImportDialog({ workspaceId, target, catalogId, isOpen, onC
   const body = (next: Draft) => ({
     ...(next.linkId ? { linkId: next.linkId, version: next.version } : { target, source: next.source, catalogId, connectionId: next.connectionId, spreadsheetId: next.spreadsheetId }),
     name: next.name.trim(), mapping: next.mapping, sheetName: next.sheetName, schedule: next.schedule,
-    ...(target === "stock" ? { locationId: next.locationId, setsStock: next.setsStock } : target === "suppliers" ? { legalEntityId: next.legalEntityId } : { itemType: next.itemType }),
+    ...(target === "stock" ? { locationId: next.locationId, setsStock: next.setsStock } : target === "suppliers" ? { legalEntityId: next.legalEntityId }
+      : { itemType: next.itemType, approvedPrices: next.approvedPrices }),
     // An uploaded file is sent trimmed to its chosen tabs and mapped columns (pictures stay in the browser); a linked sheet is read by Wodana.
     ...(next.source === "upload" ? { sheets: mappedColumns(next.sheetName ? next.sheets.filter((sheet) => sheet.name === next.sheetName) : next.sheets, next.mapping) } : {}),
   });
@@ -273,6 +277,10 @@ function MapStep({ draft, overview, set, t, target }: { draft: Draft; overview: 
       {draft.source === "google_sheet" ? <SelectField items={(["hourly", "daily", "off"] as ImportSchedule[]).map((id) => ({ id, label: scheduleLabel(t, id) }))} label={t("Refresh")}
         onSelectionChange={(key) => set({ schedule: String(key) as ImportSchedule })} selectedKey={draft.schedule} /> : null}
       {target === "stock" ? <Switch isSelected={draft.setsStock} onChange={(setsStock) => set({ setsStock })}>{t("Sheet sets stock quantities")}</Switch> : null}
+      {target === "catalog" ? <div className={styles.option}>
+        <Checkbox isDisabled={!overview.canApprovePrices} isSelected={draft.approvedPrices} onChange={(approvedPrices) => set({ approvedPrices })}>{t("Prices are approved list prices")}</Checkbox>
+        {overview.canApprovePrices ? null : <small className={styles.muted}>{t("Only someone who approves prices can turn this on.")}</small>}
+      </div> : null}
       {target === "suppliers" ? <Switch isSelected={draft.mapping.fillOnly === true} onChange={(fillOnly) => set({ mapping: { ...draft.mapping, fillOnly } })}>
         {t("Only fill in what known suppliers are missing")}</Switch> : null}
     </div>
@@ -308,6 +316,7 @@ function PreviewStep({ preview, t }: { preview: ImportPreview; t: T }) {
       <span data-tone={summary.errors ? "danger" : undefined}><strong>{summary.errors}</strong> {t("need a fix")}</span>
       <span><strong>{summary.missing}</strong> {t("not in sheet")}</span>
     </div>
+    {preview.prices?.refused ? <Callout tone="warning" title={t("You can't approve prices")}>{t("This import drafts them for review.")}</Callout> : null}
     {preview.skippedTabs.length ? <small className={styles.muted}>{t("Tabs without the mapped columns are skipped: {tabs}", { tabs: preview.skippedTabs.join(", ") })}</small> : null}
     <Rows rows={preview.rows} t={t} empty={t("Nothing changes.")} />
   </>;

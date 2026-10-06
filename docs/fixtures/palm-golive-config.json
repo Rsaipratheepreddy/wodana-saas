@@ -216,5 +216,23 @@
       "path": "bespoke",
       "boqRequired": true
     }
+  ],
+  "catalogCategories": [
+    {
+      "_note": "Core Collection import (5 Oct) made its block titles categories in capitals beside the catalogue's own. Merge runs first, then empty duplicates go, then renames and parents.",
+      "catalog": "Palm Living Core Collection",
+      "merge": [
+        { "from": "BED & MATTRESS", "into": "Beds & Mattress" }
+      ],
+      "deleteEmptyDuplicates": true,
+      "rename": [
+        { "from": "DINING CHAIRS", "to": "Dining Chairs" },
+        { "from": "LOUNGE CHAIRS", "to": "Lounge Chairs" }
+      ],
+      "parent": [
+        { "category": "Dining Chairs", "parent": "Chairs" },
+        { "category": "Lounge Chairs", "parent": "Chairs" }
+      ]
+    }
   ]
 }

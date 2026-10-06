@@ -5,6 +5,7 @@ import type { WoddyPose } from "@wodana/contracts/brand";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import { cursorOffset, placeBubble, pointerTip, restingTip, spotlightHole, viewport, watchTarget, type TargetView } from "@/lib/tours/position";
 import { Button, IconButton } from "../components/actions";
 import { Woddy } from "../components/woddy";
@@ -125,7 +126,7 @@ export function TourOverlay(props: TourOverlayProps) {
       if (!event.isTrusted) return;
       const handlers = keys.current;
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); handlers.onExit(); return; }
-      const typing = (event.target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']");
+      const typing = isTypingTarget(event.target);
       if (typing || event.altKey || event.metaKey || event.ctrlKey) return;
       if (event.key === (handlers.rtl ? "ArrowLeft" : "ArrowRight")) { event.preventDefault(); handlers.onNext(); }
       else if (event.key === (handlers.rtl ? "ArrowRight" : "ArrowLeft")) { event.preventDefault(); handlers.onBack(); }

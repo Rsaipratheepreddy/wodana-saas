@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -7,6 +7,7 @@ import { likePattern, searchTerms } from "../search/search-terms";
 import { AiGatewayService } from "../ai-gateway/ai-gateway.service";
 import { CLEAN_SYSTEM, COMPONENTS_SYSTEM, cleanPrompt, componentsPrompt, validateClean, validateComponents, type CleanSuggestion } from "./catalog-ai";
 import { PACK_UNITS, planCatalogImport, type ImportRow } from "./catalog-import";
+import { categoryKey, categoryTitle } from "./category-names";
 import { AttributeValueError, normalizeAttributeValues, type AttributeDefinition, type AttributeType } from "./attributes";
 import { assertNoCycle, BomError, checkFormulas, explode, type BomComponent } from "./bom";
 import { Dec } from "./decimal";
@@ -17,10 +18,19 @@ import { convert, STANDARD_UNITS, UnitError, type Unit } from "./units";
 const VIEW = "catalog.view";
 const MANAGE = "catalog.manage";
 const COST_PERMISSIONS = ["commercial.costs.view", "supplier_offers.view"];
+/**
+ * Approving a list price outright (a supplier's or the firm's official price list) skips the QS review, so it takes
+ * both halves of that path: reviewing prices (QS) and making them live (catalog).
+ */
+export const APPROVE_PRICE_PERMISSIONS = ["commercial.estimate", MANAGE] as const;
+/** Where an approved price came from, for the audit (e.g. a linked import's link and run). */
+export type PriceApproval = { source: Record<string, unknown> };
 const ITEM_TYPES = ["product", "material", "assembly", "service", "package", "ready_made"] as const;
 const slug = (text: string) => text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60);
 
 type Actor = { userId: string };
+/** A category's new name and/or parent (null: top level); a field left out stays as it is. */
+export type CategoryChange = { version: number; name?: string; parentId?: string | null };
 export type ItemInput = {
   version?: number; code: string; name: string; itemType: (typeof ITEM_TYPES)[number]; unitCode: string; categoryId?: string | null;
   description?: string | null; wastePercent?: string | null; purchaseRoundTo?: string | null; values?: Record<string, unknown>;
@@ -65,9 +75,17 @@ export class CatalogV2Service {
   structure(actor: RequestActor, workspaceId: string, catalogId: string) {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
       await this.catalog(client, workspaceId, catalogId);
+      // Each category's item count is what opening it lists: its items and those of every category below it.
       const categories = await client.query(
-        `SELECT id, parent_id AS "parentId", code, name, sort_order AS "sortOrder" FROM catalog_categories
-         WHERE workspace_id = $1 AND catalog_id = $2 AND status = 'active' ORDER BY sort_order, name`, [workspaceId, catalogId]);
+        `WITH RECURSIVE tree AS (
+           SELECT id AS root, id FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND status = 'active'
+           UNION ALL SELECT tree.root, child.id FROM catalog_categories child JOIN tree ON child.parent_id = tree.id WHERE child.workspace_id = $1),
+         counts AS (SELECT tree.root, count(item.id)::int AS total FROM tree
+           LEFT JOIN catalog_items item ON item.workspace_id = $1 AND item.category_id = tree.id AND item.status <> 'archived' GROUP BY tree.root)
+         SELECT category.id, category.parent_id AS "parentId", category.code, category.name, category.sort_order AS "sortOrder", category.version,
+                coalesce(counts.total, 0) AS "itemCount"
+         FROM catalog_categories category LEFT JOIN counts ON counts.root = category.id
+         WHERE category.workspace_id = $1 AND category.catalog_id = $2 AND category.status = 'active' ORDER BY category.sort_order, category.name`, [workspaceId, catalogId]);
       const attributes = await this.attributes(client, workspaceId, catalogId, null, true);
       return { categories: categories.rows, attributes, units: await this.units(client, workspaceId) };
     });
@@ -82,12 +100,115 @@ export class CatalogV2Service {
     await this.catalog(client, workspaceId, catalogId);
     if (!input.name?.trim()) throw new UnprocessableEntityException("Give the category a name");
     if (input.parentId) await this.category(client, workspaceId, catalogId, input.parentId);
+    await this.uniqueSibling(client, workspaceId, catalogId, null, input.parentId ?? null, input.name.trim());
     const created = await this.unique(() => client.query<{ id: string }>(
       `INSERT INTO catalog_categories (workspace_id, catalog_id, parent_id, code, name,
          sort_order) VALUES ($1, $2, $3, $4, $5, (SELECT coalesce(max(sort_order), 0) + 1 FROM catalog_categories WHERE catalog_id = $2)) RETURNING id`,
       [workspaceId, catalogId, input.parentId ?? null, slug(input.name).replace(/_/g, "-") || "category", input.name.trim()]), "A category with this name already exists");
     await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.category_created", entityType: "catalog", entityId: catalogId, after: input });
     return { id: created.rows[0].id };
+  }
+
+  /** Renames a category or moves it under another (null: to the top); version-checked, never into itself or below itself. */
+  updateCategory(actor: RequestActor, workspaceId: string, catalogId: string, categoryId: string, input: CategoryChange) {
+    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.reviseCategory(client, workspaceId, catalogId, categoryId, input, user.userId));
+  }
+
+  async reviseCategory(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string, input: CategoryChange, userId: string) {
+    await this.catalog(client, workspaceId, catalogId);
+    const before = await this.lockCategory(client, workspaceId, catalogId, categoryId);
+    const name = input.name === undefined ? before.name : input.name.replace(/\s+/g, " ").trim();
+    if (!name) throw new UnprocessableEntityException("Give the category a name");
+    if (name.length > 160) throw new UnprocessableEntityException("The category name is longer than 160 characters");
+    const parentId = input.parentId === undefined ? before.parentId : input.parentId;
+    // The same change again (a retried request) is done already, whatever the version now.
+    if (name === before.name && parentId === before.parentId) return { id: categoryId, version: before.version };
+    if (input.version !== before.version) throw new ConflictException("This category changed; reload and try again");
+    if (parentId) {
+      if (parentId === categoryId) throw new UnprocessableEntityException("A category can't sit under itself");
+      await this.category(client, workspaceId, catalogId, parentId);
+      if ((await this.descendants(client, workspaceId, categoryId)).includes(parentId)) throw new UnprocessableEntityException("A category can't sit under one of its own sub-categories");
+    }
+    await this.uniqueSibling(client, workspaceId, catalogId, categoryId, parentId, name);
+    const updated = await client.query<{ version: number }>(
+      `UPDATE catalog_categories SET name = $3, parent_id = $4, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2 RETURNING version`,
+      [workspaceId, categoryId, name, parentId]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.category_changed", entityType: "catalog_category", entityId: categoryId,
+      before: { name: before.name, parentId: before.parentId }, after: { catalogId, name, parentId } });
+    return { id: categoryId, version: updated.rows[0].version };
+  }
+
+  /**
+   * Merges a category into another: its items, sub-categories and attributes move there and it is removed. Version-checked
+   * on the category merged away; a retried merge that already happened answers as done.
+   */
+  mergeCategory(actor: RequestActor, workspaceId: string, catalogId: string, categoryId: string, input: { version: number; intoId: string }) {
+    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.mergeCategoryInto(client, workspaceId, catalogId, categoryId, input, user.userId));
+  }
+
+  async mergeCategoryInto(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string, input: { version: number; intoId: string }, userId: string) {
+    await this.catalog(client, workspaceId, catalogId);
+    if (input.intoId === categoryId) throw new UnprocessableEntityException("Choose another category to merge into");
+    const done = await this.priorCategoryCommand(client, workspaceId, categoryId, "catalog.category_merged");
+    if (done && (done.after as { intoId?: string } | null)?.intoId === input.intoId) return { id: input.intoId, ...(done.after as { items: number; subcategories: number }), merged: true };
+    // Both locked in one order, so two merges at once can't deadlock.
+    const [first, second] = [categoryId, input.intoId].sort();
+    const locked = new Map([[first, await this.lockCategory(client, workspaceId, catalogId, first)], [second, await this.lockCategory(client, workspaceId, catalogId, second)]]);
+    const source = locked.get(categoryId)!;
+    if (input.version !== source.version) throw new ConflictException("This category changed; reload and try again");
+    if ((await this.descendants(client, workspaceId, categoryId)).includes(input.intoId)) throw new UnprocessableEntityException("Merge into a category outside this one");
+
+    // Attributes: one the target also has (same code) has its values moved over; any other moves with the category.
+    const attributes = await client.query<{ id: string; code: string; valueType: string; targetId: string | null; targetType: string | null }>(
+      `SELECT attribute.id, attribute.code, attribute.value_type AS "valueType", target.id AS "targetId", target.value_type AS "targetType"
+         FROM catalog_attributes attribute
+         LEFT JOIN catalog_attributes target ON target.workspace_id = attribute.workspace_id AND target.catalog_id = attribute.catalog_id
+          AND target.category_id = $3 AND target.code = attribute.code
+        WHERE attribute.workspace_id = $1 AND attribute.category_id = $2`, [workspaceId, categoryId, input.intoId]);
+    const clash = attributes.rows.find((attribute) => attribute.targetId && attribute.targetType !== attribute.valueType);
+    if (clash) throw new ConflictException(`Both categories have the attribute ${clash.code} with different kinds of value. Rename one first.`);
+    for (const attribute of attributes.rows) {
+      if (!attribute.targetId) {
+        await client.query(`UPDATE catalog_attributes SET category_id = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, attribute.id, input.intoId]);
+        continue;
+      }
+      await client.query(`UPDATE catalog_item_values value SET attribute_id = $3 WHERE value.workspace_id = $1 AND value.attribute_id = $2
+        AND NOT EXISTS (SELECT 1 FROM catalog_item_values other WHERE other.item_id = value.item_id AND other.attribute_id = $3)`, [workspaceId, attribute.id, attribute.targetId]);
+      await client.query(`UPDATE catalog_variant_values value SET attribute_id = $3 WHERE value.workspace_id = $1 AND value.attribute_id = $2
+        AND NOT EXISTS (SELECT 1 FROM catalog_variant_values other WHERE other.variant_id = value.variant_id AND other.attribute_id = $3)`, [workspaceId, attribute.id, attribute.targetId]);
+      await client.query(`UPDATE price_entry_surcharges SET attribute_id = $3 WHERE workspace_id = $1 AND attribute_id = $2`, [workspaceId, attribute.id, attribute.targetId]);
+      await client.query(`DELETE FROM catalog_attributes WHERE workspace_id = $1 AND id = $2`, [workspaceId, attribute.id]);
+    }
+    const items = await client.query(`UPDATE catalog_items SET category_id = $3, version = version + 1, updated_by = $4, updated_at = now()
+      WHERE workspace_id = $1 AND category_id = $2`, [workspaceId, categoryId, input.intoId, userId]);
+    const subcategories = await client.query(`UPDATE catalog_categories SET parent_id = $3, version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND parent_id = $2`, [workspaceId, categoryId, input.intoId]);
+    await client.query(`DELETE FROM catalog_categories WHERE workspace_id = $1 AND id = $2`, [workspaceId, categoryId]);
+    await client.query(`UPDATE catalog_categories SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.intoId]);
+    const moved = { items: items.rowCount ?? 0, subcategories: subcategories.rowCount ?? 0 };
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.category_merged", entityType: "catalog_category", entityId: categoryId,
+      before: { name: source.name, parentId: source.parentId }, after: { catalogId, intoId: input.intoId, intoName: locked.get(input.intoId)!.name, ...moved } });
+    return { id: input.intoId, ...moved, merged: true };
+  }
+
+  /** Deletes a category with no items and no sub-categories; version-checked; a retried delete answers as done. */
+  deleteCategory(actor: RequestActor, workspaceId: string, catalogId: string, categoryId: string, version: number) {
+    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.removeCategory(client, workspaceId, catalogId, categoryId, version, user.userId));
+  }
+
+  async removeCategory(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string, version: number, userId: string) {
+    await this.catalog(client, workspaceId, catalogId);
+    if (await this.priorCategoryCommand(client, workspaceId, categoryId, "catalog.category_deleted")) return { id: categoryId, deleted: true };
+    const before = await this.lockCategory(client, workspaceId, catalogId, categoryId);
+    if (version !== before.version) throw new ConflictException("This category changed; reload and try again");
+    const children = await client.query(`SELECT 1 FROM catalog_categories WHERE workspace_id = $1 AND parent_id = $2 LIMIT 1`, [workspaceId, categoryId]);
+    if (children.rowCount) throw new ConflictException("Move or delete its sub-categories first");
+    const items = await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM catalog_items WHERE workspace_id = $1 AND category_id = $2 AND status <> 'archived'`, [workspaceId, categoryId]);
+    if (items.rows[0].count) throw new ConflictException(`${items.rows[0].count} items are in this category. Move them or merge the category instead.`);
+    await client.query(`DELETE FROM catalog_categories WHERE workspace_id = $1 AND id = $2`, [workspaceId, categoryId]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.category_deleted", entityType: "catalog_category", entityId: categoryId,
+      before: { catalogId, name: before.name, parentId: before.parentId } });
+    return { id: categoryId, deleted: true };
   }
 
   createAttribute(actor: RequestActor, workspaceId: string, catalogId: string, input: { label: string; code?: string; categoryId?: string | null; valueType: AttributeType; unitCode?: string | null; required?: boolean; choices?: string[] }) {
@@ -362,8 +483,13 @@ export class CatalogV2Service {
     return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.draftPrice(client, workspaceId, bookId, itemId, input, user.userId));
   }
 
-  /** The save-price command inside a caller's transaction: the price goes back to draft until reviewed. */
-  async draftPrice(client: PoolClient, workspaceId: string, bookId: string, itemId: string, input: PriceEntryInput, userId: string) {
+  /**
+   * The save-price command inside a caller's transaction: the price goes back to draft until reviewed. With an
+   * approval (an approved list price, by a member who may approve prices) it goes live at once instead; either way
+   * the entry it replaces is kept as history.
+   */
+  async draftPrice(client: PoolClient, workspaceId: string, bookId: string, itemId: string, input: PriceEntryInput, userId: string, approval?: PriceApproval) {
+    if (approval && !(await this.canApprovePrices(client, workspaceId, userId))) throw new ForbiddenException("Only someone who reviews and approves prices can approve a list price");
     const book = await client.query<{ catalogId: string; status: string }>(`SELECT catalog_id AS "catalogId", status FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, bookId]);
     if (!book.rowCount) throw new NotFoundException("Price book not found");
     if (book.rows[0].status === "expired") throw new UnprocessableEntityException("This price book has expired");
@@ -383,9 +509,12 @@ export class CatalogV2Service {
     let entryId: string;
     try {
       const created = await client.query<{ id: string }>(
-        `INSERT INTO price_entries (workspace_id, price_book_id, item_id, variant_id, method, price, cost, markup_percent, rate, minimum_charge, labour, margin_percent, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10::numeric, $11::numeric, $12::numeric, $13, $13) RETURNING id`,
-        [workspaceId, bookId, itemId, input.variantId ?? null, input.method, numbers.price, numbers.cost, numbers.markupPercent, numbers.rate, numbers.minimumCharge, numbers.labour, numbers.marginPercent, userId]);
+        `INSERT INTO price_entries (workspace_id, price_book_id, item_id, variant_id, method, price, cost, markup_percent, rate, minimum_charge, labour, margin_percent, created_by, updated_by,
+                                    status, reviewed_by, reviewed_at)
+         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10::numeric, $11::numeric, $12::numeric, $13, $13,
+                 CASE WHEN $14::boolean THEN 'active' ELSE 'draft' END, CASE WHEN $14::boolean THEN $13::uuid END, CASE WHEN $14::boolean THEN now() END) RETURNING id`,
+        [workspaceId, bookId, itemId, input.variantId ?? null, input.method, numbers.price, numbers.cost, numbers.markupPercent, numbers.rate, numbers.minimumCharge, numbers.labour, numbers.marginPercent, userId,
+          Boolean(approval)]);
       entryId = created.rows[0].id;
     } catch (error) {
       if ((error as { code?: string }).code === "23514") throw new UnprocessableEntityException("Fill in the values this price method needs");
@@ -399,8 +528,50 @@ export class CatalogV2Service {
       await client.query(`INSERT INTO price_entry_surcharges (workspace_id, price_entry_id, attribute_id, value, percent, amount, label) VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7)`,
         [workspaceId, entryId, surcharge.attributeId, surcharge.value, surcharge.percent, surcharge.amount, surcharge.label]);
     }
+    if (approval) {
+      await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.price_approved_list", entityType: "catalog_item", entityId: itemId,
+        after: { bookId, entryId, ...input, source: approval.source } });
+      return { id: entryId, status: "active" as const };
+    }
     await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.price_drafted", entityType: "catalog_item", entityId: itemId, after: { bookId, ...input } });
     return { id: entryId, status: "draft" as const };
+  }
+
+  /** Whether a member may approve a list price outright (both the QS review and making prices live). */
+  async canApprovePrices(client: PoolClient, workspaceId: string, userId: string) {
+    for (const code of APPROVE_PRICE_PERMISSIONS) if (!(await this.access.hasPermission(client, workspaceId, userId, code))) return false;
+    return true;
+  }
+
+  /**
+   * A draft (or reviewed) price approved as it is, as a list price: it goes live without a new entry. A price that's
+   * already live is left as it is (false). Version-checked against the status the caller planned on.
+   */
+  async approveDraftPrice(client: PoolClient, workspaceId: string, entryId: string, userId: string, expected: { status: string }, approval: PriceApproval) {
+    if (!(await this.canApprovePrices(client, workspaceId, userId))) throw new ForbiddenException("Only someone who reviews and approves prices can approve a list price");
+    const entry = (await client.query<{ status: string; itemId: string; bookId: string }>(
+      `SELECT status, item_id AS "itemId", price_book_id AS "bookId" FROM price_entries WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, entryId])).rows[0];
+    if (!entry) throw new NotFoundException("Price not found");
+    if (entry.status === "active") return false;
+    if (entry.status !== expected.status) throw new ConflictException("This price changed since the preview. Review it again.");
+    await client.query(
+      `UPDATE price_entries SET status = 'active', reviewed_by = coalesce(reviewed_by, $3), reviewed_at = coalesce(reviewed_at, now()), updated_by = $3, version = version + 1, updated_at = now()
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, entryId, userId]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.price_approved_list", entityType: "catalog_item", entityId: entry.itemId,
+      before: { status: entry.status }, after: { bookId: entry.bookId, entryId, status: "active", source: approval.source } });
+    return true;
+  }
+
+  /** A draft price book put in use (so its live prices are quoted), by a member who may approve prices. False when it already is. */
+  async activatePriceBook(client: PoolClient, workspaceId: string, bookId: string, userId: string, approval: PriceApproval) {
+    if (!(await this.canApprovePrices(client, workspaceId, userId))) throw new ForbiddenException("Only someone who reviews and approves prices can put a price book in use");
+    const book = (await client.query<{ status: string }>(`SELECT status FROM price_books WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, bookId])).rows[0];
+    if (!book) throw new NotFoundException("Price book not found");
+    if (book.status === "active") return false;
+    if (book.status === "expired") throw new UnprocessableEntityException("This price book has expired");
+    await client.query(`UPDATE price_books SET status = 'active', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, bookId]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.price_book_active", entityType: "price_book", entityId: bookId, before: { status: book.status }, after: { status: "active", source: approval.source } });
+    return true;
   }
 
   /** QS review then activation; the person who drafted a price cannot review it. */
@@ -521,11 +692,17 @@ export class CatalogV2Service {
         await client.query(`INSERT INTO catalog_units (workspace_id, code, label, kind, to_base) VALUES ($1, $2, $3, 'count', 1) ON CONFLICT DO NOTHING`, [workspaceId, unit, PACK_UNITS[unit]]);
       }
       const categoryIds = new Map<string, string>();
+      // A file's category is the catalog's of the same name however it's written; a new one is named in Title Case.
+      const existing = (await client.query<{ id: string; name: string }>(
+        `SELECT id, name FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND status = 'active' ORDER BY parent_id NULLS FIRST, sort_order`, [workspaceId, catalogId])).rows;
+      const byKey = new Map([...existing].reverse().map((row) => [categoryKey(row.name), row.id]));
       for (const name of plan.summary.newCategories) {
-        const found = await client.query<{ id: string }>(`SELECT id FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND parent_id IS NULL AND lower(name) = lower($3) AND status = 'active'`, [workspaceId, catalogId, name]);
-        categoryIds.set(name, found.rows[0]?.id ?? (await client.query<{ id: string }>(
+        const title = categoryTitle(name);
+        const id = byKey.get(categoryKey(name)) ?? (await client.query<{ id: string }>(
           `INSERT INTO catalog_categories (workspace_id, catalog_id, code, name, sort_order) VALUES ($1, $2, $3, $4, (SELECT coalesce(max(sort_order), 0) + 1 FROM catalog_categories WHERE catalog_id = $2))
-           ON CONFLICT (catalog_id, code) DO UPDATE SET status = 'active' RETURNING id`, [workspaceId, catalogId, slug(name).replace(/_/g, "-") || "category", name])).rows[0].id);
+           ON CONFLICT (catalog_id, code) DO UPDATE SET status = 'active' RETURNING id`, [workspaceId, catalogId, slug(title).replace(/_/g, "-") || "category", title])).rows[0].id;
+        byKey.set(categoryKey(name), id);
+        categoryIds.set(name, id);
       }
       const attributeIds = new Map<string, string>();
       for (const label of plan.summary.newAttributes) {
@@ -705,6 +882,40 @@ export class CatalogV2Service {
   private async category(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string) {
     const found = await client.query(`SELECT 1 FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND id = $3 AND status = 'active'`, [workspaceId, catalogId, categoryId]);
     if (!found.rowCount) throw new NotFoundException("Category not found");
+  }
+
+  private async lockCategory(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string) {
+    const found = await client.query<{ id: string; name: string; parentId: string | null; version: number }>(
+      `SELECT id, name, parent_id AS "parentId", version FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND id = $3 AND status = 'active' FOR UPDATE`,
+      [workspaceId, catalogId, categoryId]);
+    if (!found.rowCount) throw new NotFoundException("Category not found");
+    return found.rows[0];
+  }
+
+  /** Every category below this one. */
+  private async descendants(client: PoolClient, workspaceId: string, categoryId: string) {
+    return (await client.query<{ id: string }>(
+      `WITH RECURSIVE tree AS (SELECT id FROM catalog_categories WHERE workspace_id = $1 AND parent_id = $2
+         UNION SELECT child.id FROM catalog_categories child JOIN tree ON child.parent_id = tree.id WHERE child.workspace_id = $1) SELECT id FROM tree`,
+      [workspaceId, categoryId])).rows.map((row) => row.id);
+  }
+
+  /** Two categories side by side never share a name, however it's written ("Chairs" and "CHAIR"). */
+  private async uniqueSibling(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string | null, parentId: string | null, name: string) {
+    const siblings = await client.query<{ name: string }>(
+      `SELECT name FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND id IS DISTINCT FROM $3::uuid AND parent_id IS NOT DISTINCT FROM $4::uuid AND status = 'active'`,
+      [workspaceId, catalogId, categoryId, parentId]);
+    const same = siblings.rows.find((row) => categoryKey(row.name) === categoryKey(name));
+    if (same) throw new ConflictException(`${same.name} is already here. Merge the two instead.`);
+  }
+
+  /** A category command already done (the category is gone): its audit event. */
+  private async priorCategoryCommand(client: PoolClient, workspaceId: string, categoryId: string, action: string) {
+    const exists = await client.query(`SELECT 1 FROM catalog_categories WHERE workspace_id = $1 AND id = $2`, [workspaceId, categoryId]);
+    if (exists.rowCount) return null;
+    return (await client.query<{ after: unknown }>(
+      `SELECT after FROM audit_events WHERE workspace_id = $1 AND entity_type = 'catalog_category' AND entity_id = $2 AND action = $3 ORDER BY occurred_at DESC LIMIT 1`,
+      [workspaceId, categoryId, action])).rows[0] ?? null;
   }
 
   private async lockItem(client: PoolClient, workspaceId: string, catalogId: string, itemId: string) {

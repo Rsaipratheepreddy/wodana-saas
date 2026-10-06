@@ -135,4 +135,56 @@ describe("linked import", () => {
       mapping: { columns: { "Company Name": "name", "Contact Number": "phone", TRN: "taxNumber" } } });
     expect(await within(dialog).findByText("SIOM Marble")).toBeInTheDocument();
   });
+
+  it("imports a price list as approved list prices for someone who may approve prices", async () => {
+    const fetcher = mount((url) => {
+      if (url.includes("/picker")) return { configured: false, apiKey: "", appId: "" };
+      if (url.includes("/preview")) return { fingerprint: "f".repeat(64), skippedTabs: [], prices: { approved: true, refused: false }, summary: { added: 1, changed: 0, unchanged: 0, errors: 0, missing: 0 },
+        rows: [{ sheet: "core.csv", line: 2, key: "SOF-1", name: "Aria sofa", outcome: "added", message: "", changes: ["Price — → 9800"] }] };
+      return overview({ locations: [], canApprovePrices: true });
+    });
+    open({ target: "catalog", catalogId: "33333333-3333-4333-8333-333333333333" });
+    const dialog = await screen.findByRole("dialog", { name: "Import" });
+    const csv = "Code,Name,Price\nSOF-1,Aria sofa,9800\n";
+    await userEvent.upload(within(dialog).getByLabelText("Upload a spreadsheet"), Object.defineProperty(new File([csv], "core.csv", { type: "text/csv" }), "text", { value: async () => csv }));
+    const approved = await within(dialog).findByRole("checkbox", { name: "Prices are approved list prices" });
+    expect(approved).toBeEnabled();
+    expect(approved).not.toBeChecked();
+    expect(within(dialog).queryByText("Only someone who approves prices can turn this on.")).not.toBeInTheDocument();
+    await userEvent.click(approved);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.url).toContain("/api/linked-imports/preview"));
+    expect(posts(fetcher).at(-1)!.body).toMatchObject({ target: "catalog", catalogId: "33333333-3333-4333-8333-333333333333", approvedPrices: true });
+    expect(await within(dialog).findByText("Price — → 9800")).toBeInTheDocument();
+    expect(within(dialog).queryByText("You can't approve prices")).not.toBeInTheDocument();
+  });
+
+  it("keeps approved list prices off for someone who can't approve prices, and says the preview drafts them", async () => {
+    const fetcher = mount((url) => {
+      if (url.includes("/picker")) return { configured: false, apiKey: "", appId: "" };
+      if (url.includes("/preview")) return { fingerprint: "f".repeat(64), skippedTabs: [], prices: { approved: false, refused: true }, summary: { added: 1, changed: 0, unchanged: 0, errors: 0, missing: 0 }, rows: [] };
+      return overview({ locations: [], canApprovePrices: false });
+    });
+    open({ target: "catalog", catalogId: "33333333-3333-4333-8333-333333333333" });
+    const dialog = await screen.findByRole("dialog", { name: "Import" });
+    const csv = "Code,Name,Price\nSOF-1,Aria sofa,9800\n";
+    await userEvent.upload(within(dialog).getByLabelText("Upload a spreadsheet"), Object.defineProperty(new File([csv], "core.csv", { type: "text/csv" }), "text", { value: async () => csv }));
+    expect(await within(dialog).findByRole("checkbox", { name: "Prices are approved list prices" })).toBeDisabled();
+    expect(within(dialog).getByText("Only someone who approves prices can turn this on.")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.url).toContain("/api/linked-imports/preview"));
+    expect(posts(fetcher).at(-1)!.body).toMatchObject({ approvedPrices: false });
+    expect(await within(dialog).findByText("You can't approve prices")).toBeInTheDocument();
+    expect(within(dialog).getByText("This import drafts them for review.")).toBeInTheDocument();
+  });
+
+  it("doesn't offer approved list prices for a stock list", async () => {
+    mount((url) => (url.includes("/picker") ? { configured: false, apiKey: "", appId: "" } : overview()));
+    open();
+    const dialog = await screen.findByRole("dialog", { name: "Import" });
+    const csv = "Code,Qty\nMAT-001,4\n";
+    await userEvent.upload(within(dialog).getByLabelText("Upload a spreadsheet"), Object.defineProperty(new File([csv], "stock.csv", { type: "text/csv" }), "text", { value: async () => csv }));
+    await within(dialog).findByRole("list", { name: "Columns" });
+    expect(within(dialog).queryByRole("checkbox", { name: "Prices are approved list prices" })).not.toBeInTheDocument();
+  });
 });

@@ -14,7 +14,7 @@ import type { DefinitionPageData } from "@/lib/pre-project/definition";
 import type { JourneyView } from "@/lib/pre-project/design-workspace";
 import { caseHref, type PreProjectCase } from "@/lib/pre-project/types";
 import {
-  CASE_PHASE_TEXT, effectivePhase, caseActivity, caseFiles, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline,
+  casePhases, casePhaseText, effectivePhase, caseActivity, caseFiles, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline,
   type CaseCommand, type CaseNextStep, type Message,
 } from "@/lib/pre-project/case-record";
 import type { CommercialState } from "@/lib/commercial/types";
@@ -158,7 +158,7 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
     <FormDialog isOpen={Boolean(action)} title={action ? t(actionLabel[action]) : t("Case action")} onClose={closeAction} isDirty={Boolean(reason.trim())}
       submitLabel={action ? t(actionLabel[action]) : t("Save")} submitVariant={action === "cancel" ? "danger" : "primary"} isSubmitDisabled={action === "set_phase" && phase === record.phase}
       onSubmit={transition}>
-      {action === "set_phase" ? <SelectField label={t("Stage")} isRequired items={phases.map((value) => ({ id: value, label: t(CASE_PHASE_TEXT[value].stage) }))} selectedKey={phase} onSelectionChange={(key) => setPhase(String(key) as PreProjectCase["phase"])} /> : null}
+      {action === "set_phase" ? <SelectField label={t("Stage")} isRequired items={casePhases(record.plan).map((value) => ({ id: value, label: t(casePhaseText(value, record.plan).stage) }))} selectedKey={phase} onSelectionChange={(key) => setPhase(String(key) as PreProjectCase["phase"])} /> : null}
       {action === "hold" || action === "cancel" || action === "reopen" || action === "set_phase" ? <TextAreaField label={t("Reason")} value={reason} onChange={setReason} isRequired={reasonRequired} maxLength={500} /> : null}
     </FormDialog>
   </>;
@@ -194,7 +194,7 @@ export function CaseRecordView({ record, commercial, journey, project, members, 
   const currency = money?.currency ?? record.currencyCode ?? commercial?.currency ?? "";
   const stageText = record.projectId && project
     ? project.project.status === "completed" ? t("Project completed") : currentStage ? t("{stage} · {position} of {count}", { stage: t(currentStage.name as MessageKey), position: currentStage.position + 1, count: project.stages.length }) : t("Released")
-    : t("{stage} · {position} of {count}", { stage: t(CASE_PHASE_TEXT[effectivePhase(record, commercial)].stage), ...position });
+    : t("{stage} · {position} of {count}", { stage: t(casePhaseText(effectivePhase(record, commercial), record.plan).stage), ...position });
   const site = record.siteAddress || record.siteLatitude != null ? record : null;
   const quote = commercial?.data.quotes.find((item) => item.status === "issued");
   const dates = [

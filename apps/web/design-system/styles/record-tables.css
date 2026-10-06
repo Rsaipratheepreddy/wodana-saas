@@ -88,7 +88,7 @@
   table:is(.wd-table, .wd-record-table, [data-record-table]) :is(th, td)[data-align="center"] { text-align: center; }
 
   /* Hover and selection. */
-  table:is(.wd-table, .wd-record-table, [data-record-table]) > tbody > tr:not(.wd-grouped-table-heading, .wd-grouped-table-empty, .wd-subtable-row):hover > :is(td, th) { background-color: var(--wd-color-surface-hover); }
+  table:is(.wd-table, .wd-record-table, [data-record-table]) > tbody > tr:not(.wd-grouped-table-heading, .wd-grouped-table-empty, .wd-subtable-row, .wd-table-viewport-row):hover > :is(td, th) { background-color: var(--wd-color-surface-hover); }
   table:is(.wd-table, .wd-record-table, [data-record-table]) > tbody > tr[data-selected="true"] > :is(td, th) { background-color: var(--wd-color-surface-selected); }
   table:is(.wd-table, .wd-record-table, [data-record-table]) > tbody > tr:is([data-actionable], [tabindex]) { cursor: pointer; }
   table:is(.wd-table, .wd-record-table, [data-record-table]) > tbody > tr:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
@@ -139,6 +139,12 @@
     font-weight: var(--wd-weight-semibold);
   }
   table.wd-grouped-table > tbody > tr.wd-grouped-table-empty > td { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+  /* An empty or no-results message spans a wide table but shows in the visible frame: it sticks to the
+     inline start at the frame's visible width (set by useTableViewportRef), so scrolling or a narrow
+     window never cuts its text or action off. */
+  table:is(.wd-table, .wd-record-table, [data-record-table]) > tbody > tr.wd-table-viewport-row > td.wd-table-viewport-cell { padding: 0; }
+  .wd-table-viewport-state { position: sticky; inset-inline-start: 0; box-sizing: border-box; inline-size: var(--wd-table-visible-inline-size, 100%); max-inline-size: 100%; }
+  tr.wd-grouped-table-empty .wd-table-viewport-state { padding: var(--wd-space-2) var(--wd-table-cell-padding); }
   .wd-grouped-table .wd-grouped-select-column { inline-size: 2.75rem; }
   table.wd-grouped-table > :is(thead, tbody) > tr > :is(th, td):first-child { padding-inline: var(--wd-table-cell-padding); }
   table.wd-grouped-table > :is(thead, tbody) > tr > :is(th, td).wd-grouped-select-cell { padding-inline: var(--wd-space-2); text-align: center; }

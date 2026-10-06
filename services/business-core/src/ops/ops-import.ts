@@ -12,6 +12,7 @@ import { OpsError, type OpsContext, type Report } from "./ops-context";
 const tidy = (name: string) => name.replace(/\s+/g, " ").trim();
 type Counts = { added: number; changed: number; unchanged: number; errors: number };
 type Preview = { fingerprint: string; skippedTabs: string[]; summary: Counts & { missing: number }; bySheet?: Record<string, Counts>;
+  prices?: { approved: boolean; refused: boolean };
   rows: Array<{ sheet: string; line: number | null; outcome: string; message: string }> };
 type Detail = { link: { id: string; name: string; version: number }; runs: Array<Counts & { id: string; status: string; missing: number; message: string }>;
   records?: Array<{ sheet: string; line: number; recordId: string; images: number }> };
@@ -121,7 +122,8 @@ export async function runImport(ctx: OpsContext, args: ImportArgs, report: Repor
   const body: Record<string, unknown> = {
     ...(existing ? { linkId: existing.id, version: existing.version } : { target: args.target, source: "upload", ...(catalogId ? { catalogId } : {}) }),
     name, mapping, sheetName: null, schedule: "off",
-    ...(args.target === "stock" ? { locationId, setsStock: args.setsStock } : args.target === "suppliers" ? { legalEntityId } : { itemType: args.itemType ?? "product" }),
+    ...(args.target === "stock" ? { locationId, setsStock: args.setsStock } : args.target === "suppliers" ? { legalEntityId }
+      : { itemType: args.itemType ?? "product", ...(args.approvedPrices ? { approvedPrices: true } : {}) }),
     // The file goes as the browser sends it: trimmed to the chosen tabs and the mapped columns.
     sheets: mappedColumns(sheets, mapping),
   };
@@ -131,6 +133,14 @@ export async function runImport(ctx: OpsContext, args: ImportArgs, report: Repor
   for (const [heading, field] of Object.entries(mapping.columns)) report.add("mapping", "info", heading, field);
 
   const preview = await imports.preview(ctx.actor, ctx.workspace.id, body) as Preview;
+  if (args.target === "catalog" && preview.prices) {
+    report.facts.prices = preview.prices;
+    // Asked for on the command line, a refusal stops the import rather than drafting prices the operator meant to approve.
+    if (args.approvedPrices && preview.prices.refused)
+      throw new OpsError(`${args.as} can't approve prices (needs commercial.estimate and catalog.manage); nothing was imported. Run as a member who can.`);
+    report.add("prices", "info", preview.prices.approved ? "approved list prices" : "prices drafted for review",
+      preview.prices.approved ? "live in the catalogue's default price book" : preview.prices.refused ? "the link has approved prices, but this member can't approve them" : undefined);
+  }
   for (const tab of preview.skippedTabs) report.add("tabs", "info", tidy(tab), "skipped: no heading row with the mapped columns");
   for (const sheet of chosen) {
     const counts = preview.bySheet?.[tidy(sheet.name)];

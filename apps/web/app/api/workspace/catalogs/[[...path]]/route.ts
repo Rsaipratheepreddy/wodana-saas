@@ -26,3 +26,4 @@ export const GET = (request: Request, context: Context) => proxy(request, contex
 export const POST = (request: Request, context: Context) => proxy(request, context.params, "POST");
 export const PUT = (request: Request, context: Context) => proxy(request, context.params, "PUT");
 export const PATCH = (request: Request, context: Context) => proxy(request, context.params, "PATCH");
+export const DELETE = (request: Request, context: Context) => proxy(request, context.params, "DELETE");

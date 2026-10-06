@@ -80,6 +80,10 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "global-finance": [FINANCE_VIEW],
 };
 
+/** Sales settings' sections (`?section=`), in their tab order. */
+export const SALES_SETTINGS_SECTIONS = ["assignment", "sla", "options", "automations"] as const;
+export type SalesSettingsSection = (typeof SALES_SETTINGS_SECTIONS)[number];
+
 /** Sales › Enquiries sections (`?section=`) → the navigation entry that names them. */
 export const SALES_SECTION_ACCESS: Record<string, string> = {
   forms: "crm-campaigns",

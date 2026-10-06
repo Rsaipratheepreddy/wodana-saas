@@ -107,7 +107,7 @@ describe("the next column's checklist", () => {
     const onReassign = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     act({}, { onReassign });
-    await user.click(screen.getByRole("button", { name: "Reassign" }));
+    await user.click(screen.getByRole("button", { name: /· Reassign$/ }));
     const list = await screen.findByRole("dialog", { name: "Reassign" });
     await user.click(within(list).getByRole("button", { name: /Omar Saleh/ }));
     expect(onReassign).toHaveBeenCalledWith("m2");
@@ -176,4 +176,15 @@ describe("a refused move (F1)", () => {
     expect(missingFrom(new CrmRequestError("Stage requirements are not met", 422, [{ key: "paymentProof", label: "Payment proof attached" }]))).toHaveLength(1);
     expect(missingFrom(new Error("x"))).toEqual([]);
   });
+});
+
+it("marks an optional step with a hollow dot and keeps every step's name on its own single label (L19)", () => {
+  render(<DesignSystemProvider><ProgressLine flow={flow()} status="open" history={[]} /></DesignSystemProvider>);
+  const items = within(screen.getByRole("list", { name: "Progress" })).getAllByRole("listitem");
+  const negotiation = items.find((item) => item.textContent?.startsWith("Negotiation"))!;
+  expect(negotiation).toHaveAttribute("data-optional", "true");
+  expect(items.filter((item) => item.hasAttribute("data-optional"))).toHaveLength(1);
+  // "optional" is said to screen readers, not shown as a second line under the name.
+  expect(within(negotiation).getByRole("button", { name: /^Negotiation\s*· optional$/ })).toBeInTheDocument();
+  expect(negotiation.querySelector("small")).toBeNull();
 });

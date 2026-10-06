@@ -13,6 +13,15 @@ export class CreateCategoryDto {
   @ApiProperty() @IsString() @MaxLength(160) name!: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() parentId?: string;
 }
+export class UpdateCategoryDto {
+  @ApiProperty() @IsInt() @Min(1) version!: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(160) name?: string;
+  @ApiPropertyOptional({ nullable: true, description: "The parent category; null puts it at the top level" }) @IsOptional() @IsUUID() parentId?: string | null;
+}
+export class MergeCategoryDto {
+  @ApiProperty() @IsInt() @Min(1) version!: number;
+  @ApiProperty({ description: "The category the items move to" }) @IsUUID() intoId!: string;
+}
 export class CreateAttributeDto {
   @ApiProperty() @IsString() @MaxLength(120) label!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(60) code?: string;

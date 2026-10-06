@@ -14,7 +14,9 @@ export type ImportRun = {
 };
 export type ImportLink = {
   id: string; target: ImportTarget; name: string; source: ImportSource; catalogId: string | null; locationId: string | null; locationName: string | null;
-  itemType: string | null; setsStock: boolean; legalEntityId?: string | null; legalEntityName?: string | null; connectionId: string | null; spreadsheetId: string | null; sheetName: string | null; mapping: ColumnMapping;
+  itemType: string | null; setsStock: boolean; legalEntityId?: string | null;
+  /** Catalog: the sheet's prices are approved list prices (live at once, not drafted for review). */
+  approvedPrices?: boolean; legalEntityName?: string | null; connectionId: string | null; spreadsheetId: string | null; sheetName: string | null; mapping: ColumnMapping;
   schedule: ImportSchedule; nextRunAt: string | null; ownerId: string; ownerName: string; status: string; version: number; lastRun?: ImportRun | null;
 };
 export type GoogleConnection = { id: string; name: string; account: string | null; driveFile: boolean };
@@ -22,11 +24,15 @@ export type ImportOverview = {
   links: ImportLink[]; canManage: boolean; connections: GoogleConnection[]; locations: Array<{ id: string; name: string; isDefault: boolean }>; currency: string;
   /** Suppliers: the companies a supplier list can be for. */
   entities?: Array<{ id: string; name: string }>;
+  /** Catalog: whether the member may import prices as approved list prices. */
+  canApprovePrices?: boolean;
 };
 export type RowOutcome = "added" | "changed" | "unchanged" | "error" | "missing";
 export type PlanRow = { sheet: string; line: number | null; key: string; name: string; outcome: RowOutcome; changes?: string[]; message: string };
 export type ImportPreview = {
   fingerprint: string; skippedTabs: string[];
+  /** Catalog: prices go live as approved list prices, or were asked to but stay drafts (the member can't approve prices). */
+  prices?: { approved: boolean; refused: boolean };
   summary: { added: number; changed: number; unchanged: number; errors: number; missing: number };
   rows: PlanRow[];
 };

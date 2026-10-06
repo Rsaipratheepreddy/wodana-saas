@@ -42,5 +42,16 @@
     { "enquiryType": "furniture", "path": "take_home_now", "takeFrom": "Showroom", "leadDays": { "min": 0, "max": 1 } },
     { "enquiryType": "furniture", "path": "bespoke", "boqRequired": true }
   ],
-  "clientUpdates": { "mode": "portal", "frequency": "weekly" }
+  "clientUpdates": { "mode": "portal", "frequency": "weekly" },
+  "catalogCategories": [
+    {
+      "catalog": "Main catalogue",
+      "merge": [{ "from": "TABLE", "into": "Dining" }],
+      "deleteEmpty": ["Old stuff", "Never there"],
+      "deleteEmptyDuplicates": true,
+      "rename": [{ "from": "SOFA", "to": "Sofas" }],
+      "parent": [{ "category": "Sofas", "parent": "Living" }, { "category": "Dining", "parent": "Living" }]
+    },
+    { "catalog": "No such catalogue", "deleteEmptyDuplicates": true }
+  ]
 }

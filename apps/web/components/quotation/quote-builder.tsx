@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Bookmark, CircleAlert, Columns3, Image as ImageIcon, Layers, MapPin, MessageCircle, Plus, Sparkles, Store, Type, X } from "lucide-react";
 import { Badge, Button, EmptyState, ErrorState, IconButton, IconMenuButton, InlineNotice, MenuButton, SegmentedControl, Skeleton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { inOverlay, isTypingTarget } from "@/lib/keyboard/typing-target";
 import { catalogImageUrl, quoteApi, quoteColumnsApi, QuotationRequestError } from "@/lib/quotation/client";
 import { caseApi, caseRequest, saveCaseRoom, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
 import { groupLines, money, QUOTE_STATUS, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
@@ -254,6 +255,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      // Typing in the side panel (the catalog search, the assistant) or a dialog keeps its keys.
+      if (isTypingTarget(event.target) && inOverlay(event.target)) return;
       const key = event.key.toLowerCase();
       if (key === "k" && latest.current?.canEdit) { event.preventDefault(); askAbout(focus.current.lineId); }
       else if (key === "j") { event.preventDefault(); showSide(!showPanel); }
@@ -571,7 +574,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         </>}
       </main>
 
-      <aside className={styles.panel} aria-label={t("Side panel")} hidden={!panelShown}>
+      <aside className={styles.panel} aria-label={t("Side panel")} hidden={!panelShown} data-side-panel>
         <div className={styles.panelHead}>
           <SegmentedControl label={t("Side panel")} value={activePanel} onChange={(id) => setPanel(id as Panel)} options={views} />
           <span className={styles.spacer} />
@@ -582,7 +585,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             onFocusLine={(id) => highlight([id])} inputRef={chatInput} commandsRef={assistantRef} />
         </div> : null}
         {state.canEdit ? <div className={styles.panelBody} hidden={activePanel !== "catalog"}>
-          <QuoteCatalog search={search} thumb={catalogThumb} currency={currency} decimals={decimals} areas={state.areas} areaId={catalogArea} onAreaChange={setCatalogArea} onAdd={addFromCatalog} canEdit={state.canEdit} />
+          <QuoteCatalog active={panelShown && activePanel === "catalog"} search={search} thumb={catalogThumb} currency={currency} decimals={decimals} areas={state.areas} areaId={catalogArea} onAreaChange={setCatalogArea} onAdd={addFromCatalog} canEdit={state.canEdit} />
         </div> : null}
         <div className={styles.panelBody} data-scroll hidden={activePanel !== "comments"}>
           {commentAt ? <CommentPanel key={`${commentAt.anchor.kind}:${commentAt.anchor.key}`} anchor={commentAt.anchor} title={commentAt.title} threads={threads} members={members} api={api} meId={state.me}

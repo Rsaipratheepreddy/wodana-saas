@@ -4,7 +4,7 @@ import type { ColumnMapping, ImportTarget, SourceSheet } from "./client";
 /** The Wodana fields a column can fill, per target, in the order they're offered. Labels are the English i18n keys. */
 export const IMPORT_FIELDS: Record<ImportTarget, Array<{ id: string; label: MessageKey }>> = {
   stock: [
-    { id: "code", label: "Item code" }, { id: "name", label: "Name" }, { id: "unit", label: "Unit" }, { id: "quantity", label: "Quantity" },
+    { id: "code", label: "Item code" }, { id: "name", label: "Name" }, { id: "category", label: "Category" }, { id: "unit", label: "Unit" }, { id: "quantity", label: "Quantity" },
     { id: "usedQuantity", label: "Used quantity" }, { id: "size", label: "Size" }, { id: "colour", label: "Colour" },
     { id: "location", label: "Place" }, { id: "cost", label: "Cost" },
   ],
@@ -17,7 +17,7 @@ export const IMPORT_FIELDS: Record<ImportTarget, Array<{ id: string; label: Mess
   suppliers: [
     { id: "code", label: "Supplier code" }, { id: "name", label: "Name" }, { id: "legalName", label: "Legal name" }, { id: "contactName", label: "Contact person" },
     { id: "phone", label: "Phone" }, { id: "contact", label: "Contact person and number" }, { id: "email", label: "Email" }, { id: "address", label: "Location" }, { id: "taxNumber", label: "Tax registration number" },
-    { id: "paymentTerms", label: "Payment terms" }, { id: "categories", label: "What they supply" }, { id: "notes", label: "Notes" }, { id: "attribute", label: "Keep as attribute" },
+    { id: "paymentTerms", label: "Payment terms" }, { id: "categories", label: "What they supply" }, { id: "approval", label: "Approval" }, { id: "notes", label: "Notes" }, { id: "attribute", label: "Keep as attribute" },
   ],
 };
 
@@ -38,6 +38,8 @@ const ALIASES: Record<string, string[]> = {
   taxNumber: ["trn", "trn no", "trn number", "tax number", "tax no", "tax registration number", "tax id", "vat number", "vat no", "vat registration number", "gstin", "gst number", "gst no"],
   paymentTerms: ["payment terms", "terms", "payment", "credit terms", "payment term"],
   categories: ["categories", "category", "supplier type", "vendor type", "type of supplier", "supplies", "what they supply", "products", "materials", "trade", "scope", "specialty", "speciality"],
+  approval: ["approval", "approved", "approval status", "approved not approved", "approved or not", "directors approved", "directors approval", "director approved", "director approval",
+    "directors approved not approved", "director approved not approved", "management approval", "supplier approval", "vendor approval", "approved supplier", "approved vendor"],
   notes: ["notes", "remarks", "comments"],
   unit: ["unit", "uom", "units", "unit of measure"],
   quantity: ["qty", "quantity", "stock", "on hand", "in stock", "balance", "available", "stock qty", "current stock"],

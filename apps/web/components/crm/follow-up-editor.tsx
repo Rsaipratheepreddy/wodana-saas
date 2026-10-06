@@ -84,7 +84,7 @@ export function FollowUpSheet({ workspaceId, recordId, summary, onClose, onSaved
   const editingChanged = useCallback((dirty: boolean, busy: boolean) => setEditing({ dirty, busy }), []);
   const close = () => {
     if (editing.busy) return;
-    if (editing.dirty) { requestConfirmation({ title: t("Discard unsaved follow-up changes?"), body: t("Your saved follow-up remains unchanged. Notes and reminder edits will be lost."), confirmLabel: t("Discard changes"), onConfirm: onClose }); return; }
+    if (editing.dirty) { requestConfirmation({ title: t("Discard unsaved follow-up changes?"), body: t("Your saved follow-up remains unchanged. Notes and reminder edits will be lost."), confirmLabel: t("Discard changes"), cancelLabel: t("Keep editing"), onConfirm: onClose }); return; }
     onClose();
   };
   const data = sample ? summary : resource.data;
@@ -227,7 +227,7 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
     window.addEventListener("beforeunload", preventLoss);
     return () => window.removeEventListener("beforeunload", preventLoss);
   }, [dirty]);
-  const close = () => { if (busy) return; if (created) { onClose(); return; } if (dirty) { requestConfirmation({ title: t("Discard this unsaved follow-up?"), body: t("The reminder has not been saved and will be lost."), confirmLabel: t("Discard follow-up"), onConfirm: onClose }); return; } onClose(); };
+  const close = () => { if (busy) return; if (created) { onClose(); return; } if (dirty) { requestConfirmation({ title: t("Discard this unsaved follow-up?"), body: t("The reminder has not been saved and will be lost."), confirmLabel: t("Discard follow-up"), cancelLabel: t("Keep editing"), onConfirm: onClose }); return; } onClose(); };
   const change = (value: Partial<Draft>) => setDraft((old) => ({ ...old, ...value }));
   /** Creates the reminder; throws the reason (the dialog keeps it open with it). */
   const create = async () => {

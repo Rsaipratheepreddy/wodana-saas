@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkMapping, readRows } from "./linked-import-source";
-import { sheetPhone, splitContact, supplierCodeOf, type PhoneRule } from "./linked-import-suppliers";
+import { suggestMapping } from "./import-mapping";
+import { sheetApproval, sheetPhone, splitContact, supplierCodeOf, type PhoneRule } from "./linked-import-suppliers";
 
 const UAE: PhoneRule = { country: "AE", callingCode: "971", lengths: [9, 9] };
 
@@ -55,5 +56,16 @@ describe("supplier lists as a linked import (PLM-111)", () => {
     expect(supplierCodeOf("sup 001")).toBe("SUP-001");
     expect(supplierCodeOf("V_12")).toBe("V_12");
     expect(supplierCodeOf("—")).toBeNull();
+  });
+
+  it("reads a directors' approval column as the supplier's approval; N/A or blank decides nothing (L6)", () => {
+    expect(sheetApproval("APPROVED MARBLE SUPPLIER")).toEqual({ approval: "approved", preferred: false });
+    expect(sheetApproval("NOMINATED PAINT SUPPLIER")).toEqual({ approval: "approved", preferred: true });
+    expect(sheetApproval("Preferred joinery")).toEqual({ approval: "approved", preferred: true });
+    expect(sheetApproval("NOT APPROVED")).toEqual({ approval: "not_approved", preferred: false });
+    expect(sheetApproval("not-approved (quality)")).toEqual({ approval: "not_approved", preferred: false });
+    for (const undecided of ["N/A", "", "  ", "TBC", "Pending review"]) expect(sheetApproval(undecided)).toBeNull();
+    for (const heading of ["DIRECTORS APPROVED/NOT APPROVED", "DIRECTORS APPROVED", "Approval status", "Approved?"])
+      expect(suggestMapping("suppliers", ["Company Name", heading]).columns).toEqual({ "Company Name": "name", [heading]: "approval" });
   });
 });

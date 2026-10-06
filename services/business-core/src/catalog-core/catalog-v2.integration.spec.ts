@@ -139,4 +139,55 @@ integration("catalog v2 on PostgreSQL", () => {
       expect(listed.items[0]).toMatchObject({ code: "W00129", name: "Birch plywood 12mm", values: { size: "4' X 8' X 12MM" } });
     });
   });
+
+  it("renames, nests, merges and deletes categories, and counts each one's items with everything below it", async () => {
+    await scenario(async ({ as, workspaceId, refused }) => {
+      const author = as("author");
+      const { id: catalogId } = await author.createCatalog(actor, workspaceId, { name: "Core collection" });
+      const { id: chairs } = await author.createCategory(actor, workspaceId, catalogId, { name: "Chairs" });
+      const { id: beds } = await author.createCategory(actor, workspaceId, catalogId, { name: "Beds & Mattress" });
+      // The sheet's capitals: matched to nothing, so the import made these.
+      const { id: dining } = await author.createCategory(actor, workspaceId, catalogId, { name: "DINING CHAIRS" });
+      const { id: bedCaps } = await author.createCategory(actor, workspaceId, catalogId, { name: "MATTRESSES" });
+      await refused(() => author.createCategory(actor, workspaceId, catalogId, { name: "BED & MATTRESS" }), /Beds & Mattress is already here/);
+      await author.createAttribute(actor, workspaceId, catalogId, { label: "Fabric", valueType: "text", categoryId: bedCaps });
+      for (let index = 0; index < 3; index++) await author.createItem(actor, workspaceId, catalogId, { code: `DC${index}`, name: `Dining chair ${index}`, itemType: "product", unitCode: "pcs", categoryId: dining });
+      for (let index = 0; index < 2; index++) await author.createItem(actor, workspaceId, catalogId, { code: `BM${index}`, name: `Bed ${index}`, itemType: "product", unitCode: "pcs", categoryId: bedCaps, values: { fabric: "Linen" } });
+      const archived = await author.createItem(actor, workspaceId, catalogId, { code: "OLD", name: "Old bed", itemType: "product", unitCode: "pcs", categoryId: beds });
+      await author.archiveItem(actor, workspaceId, catalogId, archived.id, archived.version);
+      const version = async (id: string) => (await author.structure(actor, workspaceId, catalogId)).categories.find((c: { id: string }) => c.id === id).version as number;
+
+      const renamed = await author.updateCategory(actor, workspaceId, catalogId, dining, { version: await version(dining), name: "Dining Chairs", parentId: chairs });
+      // The same request again is done already; a stale different change is refused.
+      expect(await author.updateCategory(actor, workspaceId, catalogId, dining, { version: 1, name: "Dining Chairs", parentId: chairs })).toEqual(renamed);
+      await refused(() => author.updateCategory(actor, workspaceId, catalogId, dining, { version: 1, name: "Chairs for dining" }), /changed; reload/);
+      await refused(async () => author.updateCategory(actor, workspaceId, catalogId, chairs, { version: await version(chairs), parentId: dining }), /own sub-categories/);
+      await refused(async () => author.updateCategory(actor, workspaceId, catalogId, chairs, { version: await version(chairs), parentId: chairs }), /under itself/);
+      await refused(async () => author.updateCategory(actor, workspaceId, catalogId, bedCaps, { version: await version(bedCaps), name: "beds and mattresses" }), /Beds & Mattress is already here/);
+
+      let structure = await author.structure(actor, workspaceId, catalogId);
+      const count = (id: string) => structure.categories.find((c: { id: string }) => c.id === id)?.itemCount;
+      expect(count(chairs)).toBe(3);
+      expect(count(dining)).toBe(3);
+      expect((await author.listItems(actor, workspaceId, catalogId, { categoryId: chairs })).items).toHaveLength(3);
+
+      await refused(async () => author.deleteCategory(actor, workspaceId, catalogId, chairs, await version(chairs)), /sub-categories first/);
+      await refused(async () => author.deleteCategory(actor, workspaceId, catalogId, bedCaps, await version(bedCaps)), /2 items are in this category/);
+      await refused(async () => author.mergeCategory(actor, workspaceId, catalogId, chairs, { version: await version(chairs), intoId: dining }), /outside this one/);
+      const sourceVersion = await version(bedCaps);
+      const merged = await author.mergeCategory(actor, workspaceId, catalogId, bedCaps, { version: sourceVersion, intoId: beds });
+      expect(merged).toMatchObject({ id: beds, items: 2, subcategories: 0 });
+      expect(await author.mergeCategory(actor, workspaceId, catalogId, bedCaps, { version: sourceVersion, intoId: beds })).toMatchObject({ id: beds, items: 2 });
+      const bed = (await author.listItems(actor, workspaceId, catalogId, { categoryId: beds })).items.find((item: { code: string }) => item.code === "BM0");
+      expect(bed).toMatchObject({ categoryName: "Beds & Mattress", values: { fabric: "Linen" } });
+
+      structure = await author.structure(actor, workspaceId, catalogId);
+      expect(structure.categories.map((c: { name: string }) => c.name).sort()).toEqual(["Beds & Mattress", "Chairs", "Dining Chairs"]);
+      expect(count(beds)).toBe(2);
+      const { id: empty } = await author.createCategory(actor, workspaceId, catalogId, { name: "Lamps" });
+      const emptyVersion = await version(empty);
+      expect(await author.deleteCategory(actor, workspaceId, catalogId, empty, emptyVersion)).toEqual({ id: empty, deleted: true });
+      expect(await author.deleteCategory(actor, workspaceId, catalogId, empty, emptyVersion)).toEqual({ id: empty, deleted: true });
+    });
+  });
 });

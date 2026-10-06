@@ -24,6 +24,19 @@ export type PreProjectCase = {
   reference?: string | null; salesMembershipId?: string | null; enquiryTypeName?: string | null;
   /** PLM-100: the case's team by role (a person or "not applicable"), as tagged on the enquiry and the opportunity. */
   team?: CaseTeamRole[];
+  /** PLM-121/126/098: the phases, site visit, design and release the job's enquiry type and path call for. */
+  plan?: CasePlan;
+};
+/**
+ * What a case goes through, from its job's configuration (never its enquiry type's name). `default` is the full
+ * planning journey; `path` is a path's own shape (e.g. stock goods: quotation, agreement, then fulfilment).
+ */
+export type CasePlan = {
+  source: "default" | "path";
+  phases: PreProjectCase["phase"][];
+  siteVisit: boolean;
+  design: boolean;
+  release: "production" | "fulfilment";
 };
 /** One of the workspace's roles on the case: the person holding it, or "not applicable" for this job. */
 export type CaseTeamRole = { role: string; label: string; member: { membershipId: string; name: string; email: string | null } | null; notApplicable: boolean };
@@ -32,6 +45,7 @@ export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "descript
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
   projectId?: string | null;
   servicePathEnabled?: boolean;
+  plan?: CasePlan;
 };
 export type PreProjectList = { items: PreProjectListItem[]; canStartLead?: boolean; total: number; canCreate: boolean; workspaceId: string; error?: string };
 export type PreProjectCandidate = { id: string; title: string; customerName: string; status: string; caseId: string | null };

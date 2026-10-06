@@ -100,8 +100,21 @@ describe("CRM opportunity workbench", () => {
     expect(shown()[1]).toMatch(/^Site visit/);
     await user.click(within(timeline).getByRole("button", { name: "Show all" }));
     expect(shown()).toHaveLength(8);
+    // The row's actions are buttons with their icons at the row's end: Reschedule (quiet), then Complete, its clear action.
+    const reschedule = within(next).getByRole("button", { name: "Reschedule" });
+    const done = within(next).getByRole("button", { name: "Complete" });
+    expect(reschedule).toHaveAttribute("data-variant", "quiet");
+    expect(reschedule.querySelector("svg")).not.toBeNull();
+    expect(done).toHaveAttribute("data-variant", "secondary");
+    expect(reschedule.parentElement).toBe(done.parentElement);
+    expect(reschedule.compareDocumentPosition(done) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Key facts: label and value on one row; a missing value reads muted, the owner as a person chip.
+    const facts = within(side).getByRole("region", { name: "Key facts" }).querySelector("dl")!;
+    expect(facts).not.toHaveAttribute("data-layout", "stacked");
+    expect(within(facts).getByText("Amal Staff")).toBeInTheDocument();
+    expect(within(facts).getAllByText("Not set").every((item) => item.classList.contains("wd-editable-empty"))).toBe(true);
     // Complete in the card opens the same dialog as the timeline's.
-    await user.click(within(next).getByRole("button", { name: "Complete" }));
+    await user.click(done);
     expect(await screen.findByRole("dialog", { name: "Complete activity" })).toBeInTheDocument();
   });
 
@@ -177,7 +190,8 @@ describe("CRM opportunity workbench", () => {
     await user.clear(value);
     await user.type(value, "275000{Enter}");
     await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", `opportunities/${record.id}`, "PATCH", { version: 7, amount: 275000, currencyCode: "AED" }));
-    await user.click(await screen.findByRole("button", { name: "Reassign" }));
+    // The owner is a chip on the card's title row; it opens Reassign.
+    await user.click(await screen.findByRole("button", { name: /^Dana\s*· Reassign$/ }));
     await user.click(within(await screen.findByRole("dialog", { name: "Reassign" })).getByRole("button", { name: /Omar/ }));
     // The next change carries the version the last save returned.
     await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", `opportunities/${record.id}`, "PATCH", { version: 8, ownerMembershipId: "m2" }));

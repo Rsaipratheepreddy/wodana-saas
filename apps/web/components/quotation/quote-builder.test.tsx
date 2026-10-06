@@ -5,7 +5,8 @@ import { DesignSystemProvider } from "@/design-system";
 import type { BuilderLine, BuilderState } from "@/lib/quotation/types";
 import { QuoteBuilder } from "./quote-builder";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 
 const KITCHEN = "11111111-1111-4111-8111-111111111111", JOINERY = "44444444-4444-4444-8444-444444444444";
 const line = (fields: Partial<BuilderLine>): BuilderLine => ({
@@ -105,6 +106,21 @@ describe("quotation builder", () => {
     await userEvent.click(screen.getByRole("button", { name: "Catalog" }));
     await userEvent.click(await screen.findByRole("button", { name: "Add Wardrobe" }));
     await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "catalog", itemId: "i1", line: expect.objectContaining({ areaId: null, workPackageId: null }) }] }]));
+  });
+
+  it("L18: the catalog search takes focus when the panel opens and keeps every key typed into it", async () => {
+    const initial = state([line({})]);
+    mount(initial, (url) => url.includes("/catalog") ? { items: [] } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Catalog" }));
+    const search = screen.getByRole("searchbox", { name: "Search the catalog" });
+    await waitFor(() => expect(search).toHaveFocus());
+    await userEvent.keyboard("Harriet");
+    expect(search).toHaveValue("Harriet");
+    // ⌘K and ⌘J typed in the panel's search neither switch to the assistant nor close the panel.
+    await userEvent.keyboard("{Control>}k{/Control}{Control>}j{/Control}");
+    expect(search).toBeVisible();
+    expect(search).toHaveFocus();
+    expect(navigation.push).not.toHaveBeenCalled();
   });
 
   it("drops a new line left empty instead of saving it", async () => {

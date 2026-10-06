@@ -6,7 +6,7 @@ import { DesignSystemProvider } from "../foundations/provider";
 import { Button } from "./actions";
 import { Checkbox, TextInput } from "./forms";
 import { AppShell } from "./navigation";
-import { SideSheet, ControlledModalDialog, InspectorSheet } from "./overlays";
+import { SideSheet, ConfirmationDialog, ControlledModalDialog, InspectorSheet } from "./overlays";
 
 describe("universal components", () => {
   it("applies locale, direction, density, and theme", () => {
@@ -54,6 +54,14 @@ describe("universal components", () => {
     expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(screen.getByRole("dialog", { name: "Edit project" })).toBeInTheDocument();
+  });
+  it("dismisses a confirmation with Cancel unless it is about unsaved edits (L11)", () => {
+    const view = render(<DesignSystemProvider><ConfirmationDialog isOpen onOpenChange={() => {}} onConfirm={() => {}} title="Convert Dana to an opportunity?" body="It can't be changed back." confirmLabel="Convert" confirmVariant="primary" /></DesignSystemProvider>);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Keep editing" })).not.toBeInTheDocument();
+    view.unmount();
+    render(<DesignSystemProvider><ConfirmationDialog isOpen onOpenChange={() => {}} onConfirm={() => {}} title="Discard unsaved changes?" body="Your edits will be lost." confirmLabel="Discard changes" cancelLabel="Keep editing" /></DesignSystemProvider>);
+    expect(screen.getByRole("button", { name: "Keep editing" })).toBeInTheDocument();
   });
   it.each(['modal','sheet'])('preserves RTL in the portaled %s',kind=>{
     render(<DesignSystemProvider direction="rtl" locale="ar-AE">{kind==='modal'?<ControlledModalDialog isOpen onOpenChange={()=>{}} title="Review"><TextInput label="Name" /></ControlledModalDialog>:<InspectorSheet isOpen onOpenChange={()=>{}} title="Review"><TextInput label="Name" /></InspectorSheet>}</DesignSystemProvider>);

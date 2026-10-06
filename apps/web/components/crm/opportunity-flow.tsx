@@ -66,7 +66,7 @@ export function FurniturePathDialog({ flow, onClose, onSave }: { flow: NonNullab
     <div className={styles.pathPicker}>
       <RadioSet aria-label={t("Furniture sub-path")} label={null} value={path ?? ""} onChange={(value) => setPath(value as FurniturePath)} items={FURNITURE_PATHS.map((item) => ({
         id: item.id,
-        label: <span className={styles.pathTitle}><b className={styles.pathLetter}>{item.letter}</b>{t(item.label)}<small className={styles.pathLead}>{t(item.lead)}</small></span>,
+        label: <span className={styles.pathTitle}><b className={styles.pathLetter}>{item.letter}</b><span>{t(item.label)}</span><small className={styles.pathLead}>{t(item.lead)}</small></span>,
         description: t(item.description),
       }))} />
     </div>

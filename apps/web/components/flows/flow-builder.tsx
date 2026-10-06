@@ -15,6 +15,7 @@ import {
   type FlowValidationError, type RoleOption,
 } from "@/lib/flows/flow-model";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import { translateKnown } from "@/lib/i18n/keys";
 import { FlowCanvas } from "./flow-canvas";
 import { TypeDot } from "./enquiry-type-colors";
@@ -82,8 +83,7 @@ function Builder({ answerOptions, columnNames, flow, roles, tableHref, workspace
   // selection, and with nothing selected (and no dialog or menu open) returns to Enquiry types.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [contenteditable='true'], [role='combobox']")) return;
+      if (isTypingTarget(event.target)) return;
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === "z") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); }
       else if (mod && event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
@@ -210,7 +210,7 @@ function Builder({ answerOptions, columnNames, flow, roles, tableHref, workspace
       </aside>
     </div>
     <FlowStepsList answerOptions={answerOptions} definition={definition} roles={roles} />
-    {leaving ? <ConfirmationDialog body={t("Your changes are not published. Leave and lose them?")} confirmLabel={t("Leave")} isOpen
+    {leaving ? <ConfirmationDialog body={t("Your changes are not published. Leave and lose them?")} confirmLabel={t("Leave")} cancelLabel={t("Keep editing")} isOpen
       onConfirm={() => { const to = leaving; setLeaving(null); setBaseline(history.present); router.push(to); }} onOpenChange={(open) => { if (!open) setLeaving(null); }}
       title={t("Leave without publishing?")} /> : null}
   </div>;

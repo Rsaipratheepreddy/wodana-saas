@@ -16,20 +16,24 @@ const NEW_ITEM = "new";
  * One change to stock: issue it to a project, reserve free stock for one or release it, take unused
  * stock back from a project, count it, or add stock that isn't in the system yet (opening stock).
  */
-export function StockChangeDialog({ api, state, mode, row, onClose, onDone }: {
+export function StockChangeDialog({ api, state, mode, row, itemId: initialItemId, onClose, onDone }: {
   api: InventoryApi; state: StockState; mode: ChangeMode; row: StockRow | null; onClose: () => void; onDone: (next: StockState) => void;
+  /** Adding stock of an item kept without any on hand: that item. */
+  itemId?: string;
 }) {
   const t = useT();
   const [id] = useState(() => crypto.randomUUID());
   const [quantity, setQuantity] = useState(mode === "count" && row ? quantityText(row.onHand) : "");
   const [projectId, setProjectId] = useState<string | null>(row?.projectId ?? null);
   const [reason, setReason] = useState("");
-  const [itemId, setItemId] = useState<string>(row?.itemId ?? NEW_ITEM);
+  const [itemId, setItemId] = useState<string>(row?.itemId ?? initialItemId ?? NEW_ITEM);
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
   const [locationId, setLocationId] = useState<string | null>(row?.locationId ?? state.locations.find((location) => location.kind === "warehouse")?.id ?? state.locations[0]?.id ?? null);
   const [cost, setCost] = useState("");
-  const items = useMemo(() => [...new Map(state.rows.map((item) => [item.itemId, item])).values()].sort((a, b) => a.itemName.localeCompare(b.itemName)), [state.rows]);
+  // Every item kept, also those with nothing on hand yet, so adding stock never makes a second one.
+  const items = useMemo(() => [...new Map([...(state.items ?? []), ...state.rows].map((item) => [item.itemId, item])).values()].sort((a, b) => a.itemName.localeCompare(b.itemName)),
+    [state.items, state.rows]);
   const projectItems = state.projects.map((project) => ({ id: project.id, label: `${project.reference} · ${project.name}` }));
   const unitOf = row?.unit ?? items.find((item) => item.itemId === itemId)?.unit ?? unit;
   const title = { issue: t("Issue to a project"), allocate: t("Reserve for a project"), release: t("Release to free stock"), count: t("Count"),

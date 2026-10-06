@@ -81,7 +81,7 @@ export function RequirementNotesWorkspace({ notes, renderContext, newLabel: newL
   useEffect(() => {
     if (!modified) return;
     const unload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    const navigate = (event: MouseEvent) => { const anchor = (event.target as Element)?.closest?.('a[href]') as HTMLAnchorElement | null; if (anchor && !anchor.target && anchor.href !== window.location.href) { event.preventDefault(); event.stopImmediatePropagation(); requestConfirmation({ title: t('Leave with unsaved notes?'), body: t(modified === 1 ? '{count} unsaved note will be discarded.' : '{count} unsaved notes will be discarded.', { count: modified }), confirmLabel: t('Discard and leave'), onConfirm: () => window.location.assign(anchor.href) }); } };
+    const navigate = (event: MouseEvent) => { const anchor = (event.target as Element)?.closest?.('a[href]') as HTMLAnchorElement | null; if (anchor && !anchor.target && anchor.href !== window.location.href) { event.preventDefault(); event.stopImmediatePropagation(); requestConfirmation({ title: t('Leave with unsaved notes?'), body: t(modified === 1 ? '{count} unsaved note will be discarded.' : '{count} unsaved notes will be discarded.', { count: modified }), confirmLabel: t('Discard and leave'), cancelLabel: t('Keep editing'), onConfirm: () => window.location.assign(anchor.href) }); } };
     window.addEventListener('beforeunload', unload); document.addEventListener('click', navigate, true);
     return () => { window.removeEventListener('beforeunload', unload); document.removeEventListener('click', navigate, true); };
   }, [modified, requestConfirmation, t]);

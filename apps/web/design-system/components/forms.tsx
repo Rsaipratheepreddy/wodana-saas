@@ -50,6 +50,7 @@ import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAler
 import type { DateValue } from "@internationalized/date";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 import { useReadOnlyReason } from "../foundations/read-only";
+import { revealAnchor, useCloseOnAnchorScroll } from "./anchored-popover";
 import { DateQuickPicks } from "./date-picks";
 import { FormFieldContext, useFormFieldContext, type FormFieldMarkers } from "./form-context";
 import { useErrorSummary } from "./form-summary";
@@ -137,6 +138,8 @@ export function RadioSet({ description, errorMessage, items, label, ...props }: 
 export type SelectItem = { id: string; label: string; description?: string; icon?: ReactNode };
 /** Lists longer than this become type-to-filter: one dropdown, with search only where it helps. */
 const LONG_LIST = 10;
+/** The gap a dropdown list keeps from the viewport edges (px, as React Aria measures). */
+const POPOVER_VIEWPORT_PADDING = 12;
 
 export function SelectField({ accent = "brand", description, errorMessage, items, label, prefix, placeholder, ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
   if (items.length > LONG_LIST) {
@@ -153,7 +156,18 @@ function SelectList({ accent = "brand", description, errorMessage, items, label,
   const placeholder = placeholderProp ?? t("Select an option");
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
-  return <Select {...props} className="wd-field" data-accent={accent} placeholder={placeholder}><FieldLabel label={label} required={props.isRequired} /><AriaButton className="wd-select-button wd-focus-frame">{prefix ? <span className="wd-select-prefix" aria-hidden="true">{prefix}</span> : null}<SelectValue className="wd-select-value">{({ isPlaceholder, selectedText }) => isPlaceholder ? placeholder : selectedText}</SelectValue><span aria-hidden="true" className="wd-select-indicator"><ChevronDown size={15} /></span></AriaButton><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" data-accent={accent} dir={direction}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}><span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></Select>;
+  // The list opens against a trigger the person can see: the trigger is scrolled into view first, the list flips
+  // above when there is no room below, and it closes if a scroll moves the trigger away from it.
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [ownOpen, setOwnOpen] = useState(props.defaultOpen ?? false);
+  const isOpen = props.isOpen ?? ownOpen;
+  const openChange = (next: boolean) => {
+    if (next) revealAnchor(trigger.current);
+    if (props.isOpen === undefined) setOwnOpen(next);
+    props.onOpenChange?.(next);
+  };
+  useCloseOnAnchorScroll(trigger, isOpen, () => openChange(false));
+  return <Select {...props} isOpen={isOpen} onOpenChange={openChange} className="wd-field" data-accent={accent} placeholder={placeholder}><FieldLabel label={label} required={props.isRequired} /><AriaButton className="wd-select-button wd-focus-frame" ref={trigger}>{prefix ? <span className="wd-select-prefix" aria-hidden="true">{prefix}</span> : null}<SelectValue className="wd-select-value">{({ isPlaceholder, selectedText }) => isPlaceholder ? placeholder : selectedText}</SelectValue><span aria-hidden="true" className="wd-select-indicator"><ChevronDown size={15} /></span></AriaButton><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" containerPadding={POPOVER_VIEWPORT_PADDING} data-accent={accent} dir={direction} shouldFlip><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}><span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></Select>;
 }
 
 const CREATE_OPTION = "__wd_create__";

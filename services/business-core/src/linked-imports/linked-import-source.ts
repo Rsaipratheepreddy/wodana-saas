@@ -12,9 +12,9 @@ export type ImportTarget = "stock" | "catalog" | "suppliers";
 
 /** The Wodana fields a column can fill; "attribute" keeps the column as an attribute (of the catalog item, or the supplier) named by its heading. */
 export const TARGET_FIELDS = {
-  stock: ["code", "name", "unit", "quantity", "usedQuantity", "size", "colour", "location", "cost"],
+  stock: ["code", "name", "category", "unit", "quantity", "usedQuantity", "size", "colour", "location", "cost"],
   catalog: ["code", "name", "category", "unit", "type", "description", "cost", "price", "productionDays", "technicalDrawing", "height", "width", "depth", "attribute"],
-  suppliers: ["code", "name", "legalName", "contactName", "phone", "contact", "email", "address", "taxNumber", "paymentTerms", "categories", "notes", "attribute"],
+  suppliers: ["code", "name", "legalName", "contactName", "phone", "contact", "email", "address", "taxNumber", "paymentTerms", "categories", "approval", "notes", "attribute"],
 } as const satisfies Record<ImportTarget, readonly string[]>;
 export type ImportField = (typeof TARGET_FIELDS)[ImportTarget][number];
 type ValueField = Exclude<ImportField, "attribute">;
@@ -168,8 +168,8 @@ export function sheetBlocks(sheet: SourceSheet, mapping: ColumnMapping) {
 /**
  * The rows of every chosen tab that has a heading row, read through the mapping (see sheetBlocks). Blank rows,
  * title rows and notes or sub-headings (one filled mapped cell, outside the code and name columns) are skipped.
- * A catalog row's category is the mapped column's; without one, its block's title, or (several tabs) the tab's
- * name. Rows match by their code; a row without one by its name: a catalog row's name within its category (with
+ * A catalog or stock row's category is the mapped column's; without one, its block's title (a stock list's only
+ * when the tab has several blocks), or (several tabs) the tab's name. Rows match by their code; a row without one by its name: a catalog row's name within its category (with
  * its size, when two rows share both), a stock row's name with its size and colour.
  */
 export function readRows(target: ImportTarget, sheets: SourceSheet[], mapping: ColumnMapping): { rows: SourceRow[]; skippedTabs: string[] } {
@@ -203,8 +203,9 @@ export function readRows(target: ImportTarget, sheets: SourceSheet[], mapping: C
           const link = sheet.links?.[`${index}:${column}`];
           if (link && !row.links![name]) row.links![name] = link;
         }
-        if (target === "catalog" && !categoryMapped) {
-          const category = title || (chosen.length > 1 ? sheet.name : "");
+        if ((target === "catalog" || target === "stock") && !categoryMapped) {
+          // A stock list's one title is the sheet's own ("Materials stock list"), not a category.
+          const category = (target === "catalog" || headers.length > 1 ? title : "") || (chosen.length > 1 ? sheet.name : "");
           if (category) row.values.category = category;
         }
         if (!Object.keys(row.links!).length) delete row.links;

@@ -4,10 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { Badge, Button, EmptyState, FormDialog, InlineNotice, RadioSet, RecordTable, useDesignSystem, TypeChip } from "@/design-system";
+import { Badge, Button, EmptyState, FormDialog, InlineNotice, PageShell, RadioSet, RecordTable, useDesignSystem, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
-import { SERVICE_PATHS } from "@/lib/commercial/service-paths";
+import { defaultServicePath, SERVICE_PATHS } from "@/lib/commercial/service-paths";
+import type { CasePlan } from "@/lib/pre-project/types";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import { money, QUOTE_STATUS } from "@/lib/quotation/format";
 import styles from "./quote-list.module.css";
@@ -18,9 +19,10 @@ const OPEN = ["draft", "internal_review", "internal_approved", "issued", "change
 
 /**
  * Every quote on the enquiry in one list — the design fee, the fit-out and later variations — each
- * opening the same editor. "New quote" starts one; revisions are made from inside a quote.
+ * opening the same editor. "New quote" starts one; revisions are made from inside a quote. One title, one primary
+ * action at the top-end; the empty state adds no second one.
  */
-export function QuoteList({ initial, baseHref }: { initial: CommercialState; baseHref: string }) {
+export function QuoteList({ initial, baseHref, plan }: { initial: CommercialState; baseHref: string; /** The case's path plan: what the client is buying, when the path already says. */ plan?: CasePlan | null }) {
   const t = useT();
   const hrefOf = (quoteId: string) => `${baseHref}?${new URLSearchParams({ quote: quoteId })}`;
   const { locale } = useDesignSystem();
@@ -28,7 +30,8 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [choosing, setChoosing] = useState(false);
-  const [path, setPath] = useState(0);
+  // The service starts from what the deal's enquiry type and path already imply (PLM-121/126).
+  const [path, setPath] = useState(() => defaultServicePath(plan));
   const [showReplaced, setShowReplaced] = useState(false);
   const { data } = initial;
   const quotes = [...data.quotes].sort((a, b) => b.number - a.number);
@@ -56,15 +59,14 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
   const kind = (quote: Quote) => quote.kind === "variation" ? t("Variation") : quote.round === "design" ? t("Design fee") : t("Fit-out");
   const date = (value: string) => value ? new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00Z`)) : "—";
 
-  return <div className={styles.page}>
-    {replaced.length || action ? <div className={styles.toolbar}>
-      {replaced.length ? <Button size="compact" variant="quiet" onPress={() => setShowReplaced((value) => !value)}>
-        {showReplaced ? t("Hide earlier versions") : t("Earlier versions · {count}", { count: replaced.length })}</Button> : null}
-      <span className={styles.spacer} />
-      {action}
-    </div> : null}
+  const toolbar = replaced.length ? <div className={styles.toolbar}>
+    <Button size="compact" variant="quiet" onPress={() => setShowReplaced((value) => !value)}>
+      {showReplaced ? t("Hide earlier versions") : t("Earlier versions · {count}", { count: replaced.length })}</Button>
+  </div> : undefined;
+
+  return <PageShell kind="list" title={t("Quotes")} action={action} toolbar={toolbar}>
     {error && !choosing ? <InlineNotice tone="error" message={error} /> : null}
-    {!quotes.length ? <EmptyState title={t("No quotes yet")} action={action ?? undefined} /> : <RecordTable
+    {!quotes.length ? <EmptyState title={t("No quotes yet")} /> : <RecordTable
       ariaLabel={t("Quotes")} data={shown} getRowId={(quote) => quote.id} showToolbar={false} showFooter={false} rowNumbers={false} selectable={false} wrapText
       onRowAction={(quote) => router.push(hrefOf(quote.id))}
       columns={[
@@ -82,5 +84,5 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
       <RadioSet isRequired label={t("Service")} value={String(path)} onChange={(value) => setPath(Number(value))}
         items={SERVICE_PATHS.map((item, index) => ({ id: String(index), label: t(item.label as never) }))} />
     </FormDialog> : null}
-  </div>;
+  </PageShell>;
 }

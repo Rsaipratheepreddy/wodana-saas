@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { AllowWhenReadOnly } from "../auth/tenant-write-block.guard";
 import { CatalogV2Service } from "./catalog-v2.service";
-import { AiCleanDto, ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto } from "./catalog-v2.dto";
+import { AiCleanDto, ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, MergeCategoryDto, UpdateCategoryDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto } from "./catalog-v2.dto";
 
 @ApiTags("catalogs")
 @ApiBearerAuth()
@@ -16,6 +16,12 @@ export class CatalogV2Controller {
   @Post() create(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Body() body: CreateCatalogDto) { return this.catalogs.createCatalog(a, w, body); }
   @Get(":catalogId/structure") structure(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string) { return this.catalogs.structure(a, w, c); }
   @Post(":catalogId/categories") category(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: CreateCategoryDto) { return this.catalogs.createCategory(a, w, c, body); }
+  @Patch(":catalogId/categories/:categoryId") updateCategory(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string,
+    @Param("categoryId", ParseUUIDPipe) id: string, @Body() body: UpdateCategoryDto) { return this.catalogs.updateCategory(a, w, c, id, body); }
+  @Post(":catalogId/categories/:categoryId/merge") mergeCategory(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string,
+    @Param("categoryId", ParseUUIDPipe) id: string, @Body() body: MergeCategoryDto) { return this.catalogs.mergeCategory(a, w, c, id, body); }
+  @Delete(":catalogId/categories/:categoryId") deleteCategory(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string,
+    @Param("categoryId", ParseUUIDPipe) id: string, @Query("version", ParseIntPipe) version: number) { return this.catalogs.deleteCategory(a, w, c, id, version); }
   @Post(":catalogId/attributes") attribute(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: CreateAttributeDto) { return this.catalogs.createAttribute(a, w, c, body); }
   @Get(":catalogId/items") items(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string,
     @Query("categoryId") categoryId?: string, @Query("search") search?: string, @Query("itemType") itemType?: string, @Query("cursor") cursor?: string, @Query("limit") limit?: string) {

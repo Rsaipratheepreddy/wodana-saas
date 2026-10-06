@@ -1,14 +1,27 @@
 "use client";
 
-import { createContext, useContext, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 
 /**
  * The end of the tabs row, where the page's list puts its toolbar (search, Filter, ⋯) so the tabs and the tools
  * share one row instead of an almost empty toolbar row above the list. The first list on the page claims it.
  */
-type ToolbarSlot = { element: HTMLElement | null; owner: MutableRefObject<string | null> };
+type ToolbarSlot = {
+  element: HTMLElement | null; owner: MutableRefObject<string | null>;
+  /** Claims the slot for a component (true when it holds it); release gives it back. */
+  claim: (id: string) => boolean; release: (id: string) => void;
+};
 const ToolbarSlotContext = createContext<ToolbarSlot | null>(null);
 export function usePageToolbarSlot() { return useContext(ToolbarSlotContext); }
+
+/** The tabs row's tool slot for this component, when it is the first on the page to claim it (else null: render in place). */
+export function usePageToolbarElement() {
+  const slot = useContext(ToolbarSlotContext);
+  const id = useId();
+  const mine = slot ? slot.claim(id) : false;
+  useEffect(() => () => slot?.release(id), [slot, id]);
+  return mine ? slot!.element : null;
+}
 
 /** How a page spaces its sections: one gap scale per page type (§5c D6). */
 export type PageKind = "list" | "record" | "form" | "dashboard";
@@ -31,6 +44,8 @@ export function PageShell({ action, "aria-label": ariaLabel, children, kind = "l
 }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const owner = useRef<string | null>(null);
+  const claim = useCallback((id: string) => { if (owner.current === null || owner.current === id) owner.current = id; return owner.current === id; }, []);
+  const release = useCallback((id: string) => { if (owner.current === id) owner.current = null; }, []);
   return <section aria-label={ariaLabel} className="wd-page-shell" data-kind={kind}>
     <header className="wd-page-shell-header">
       <div className="wd-page-shell-bar">
@@ -43,7 +58,7 @@ export function PageShell({ action, "aria-label": ariaLabel, children, kind = "l
       </div> : null}
     </header>
     {toolbar && !tabs ? <div className="wd-page-shell-toolbar">{toolbar}</div> : null}
-    <ToolbarSlotContext.Provider value={tabs ? { element: slot, owner } : null}>
+    <ToolbarSlotContext.Provider value={tabs ? { element: slot, owner, claim, release } : null}>
       <div className="wd-page-shell-body">{children}</div>
     </ToolbarSlotContext.Provider>
   </section>;

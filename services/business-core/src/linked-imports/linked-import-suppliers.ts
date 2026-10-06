@@ -81,6 +81,20 @@ export function splitContact(text: string): { name: string; phone: string } {
   return { name: clean.slice(0, at).replace(/[\s\-–—:,/|(]+$/, "").trim(), phone: clean.slice(at).trim() };
 }
 
+/**
+ * A supplier list's approval cell ("APPROVED MARBLE SUPPLIER", "NOMINATED PAINT SUPPLIER", "NOT APPROVED", "N/A"):
+ * approved (nominated or preferred: also the preferred supplier for what the row supplies), not approved, or null
+ * when the cell doesn't decide (blank, N/A, or words that say neither), so the supplier's approval stays as it is.
+ */
+export function sheetApproval(text: string): { approval: "approved" | "not_approved"; preferred: boolean } | null {
+  const lower = text.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  if (!lower) return null;
+  if (/\bnot[\s-]+approved\b|\bunapproved\b|\brejected\b|\bblack[\s-]?listed\b/.test(lower)) return { approval: "not_approved", preferred: false };
+  if (/\bnominated\b|\bpreferred\b/.test(lower)) return { approval: "approved", preferred: true };
+  if (/\bapproved\b|^yes$/.test(lower)) return { approval: "approved", preferred: false };
+  return null;
+}
+
 type Attributes = Map<string, { name: string; value: string }>;
 
 async function readAttributes(db: Db, workspaceId: string) {
@@ -115,6 +129,8 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
       const attributes = await readAttributes(client, workspaceId);
       const taxRule = await readTaxNumberRule(client, workspaceId);
       const phoneRule = await readPhoneRule(client, workspaceId);
+      // An approval column is applied only for someone who may approve suppliers, as on the supplier page.
+      const canApprove = await suppliers.canApprove(client as PoolClient, workspaceId, userId);
       // The company each tab's suppliers sell to: the tab's own, else the link's.
       const tabEntities = link.mapping?.entities ?? {};
       const entityIds = [...new Set([link.legalEntityId, ...Object.values(tabEntities)].filter((id): id is string => Boolean(id)))];
@@ -223,6 +239,20 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
           const categories = cleanCategories([...(match?.categories ?? []), ...written], match?.categories ?? []);
           const entityIds = [...new Set([...(match?.entityIds ?? []), ...companies.map((company) => company.id)])];
 
+          // The approval column (PLM L6): approved, nominated (approved and preferred for what the row supplies) or not
+          // approved. Blank or N/A leaves the approval as it is; the cell's own words stay as an attribute too.
+          const approvalText = cell("approval");
+          if (approvalText && row.attributes[row.headings?.approval ?? "Approval"] === undefined) row.attributes[row.headings?.approval ?? "Approval"] = approvalText;
+          const decided = approvalText ? sheetApproval(approvalText) : null;
+          const inCategories = (items: string[]) => [...new Set(items.map((item) => categories.find((category) => category.toLocaleLowerCase() === item.toLocaleLowerCase()))
+            .filter((item): item is string => Boolean(item)))];
+          let approval: { approval: "approved" | "not_approved"; preferredFor: string[]; note: string } | null = decided && !(keep && match && match.approval !== "pending") ? {
+            approval: decided.approval, note: approvalText.slice(0, 500),
+            preferredFor: decided.approval !== "approved" ? [] : inCategories(decided.preferred ? [...(match?.preferredFor ?? []), ...written] : match?.preferredFor ?? []),
+          } : null;
+          if (approval && match && approval.approval === match.approval && [...approval.preferredFor].sort().join("\n") === [...match.preferredFor].sort().join("\n")) approval = null;
+          if (approval && !canApprove) { messages.push("The approval wasn't imported: approving suppliers needs the approve permission."); approval = null; }
+
           const haveAttributes = match ? attributes.get(match.id) ?? new Map() : new Map() as Attributes;
           const nextAttributes = Object.entries(row.attributes).map(([heading, value]) => ({ name: heading.trim().slice(0, 120), value: value.slice(0, 1000) }))
             .filter((attribute) => attribute.name && haveAttributes.get(lower(attribute.name))?.value !== attribute.value && !(keep && haveAttributes.get(lower(attribute.name))?.value));
@@ -243,6 +273,7 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
             for (const company of companies) if (!match.entityIds.includes(company.id)) base.changes.push(`Buys for ${company.name}`);
           }
           const detailsChange = !match || base.changes.length > 0;
+          if (approval) base.changes.push(`Approval → ${approval.approval === "approved" ? approval.preferredFor.length ? `Preferred for ${approval.preferredFor.join(", ")}` : "Approved" : "Not approved"}`);
           base.changes.push(...nextAttributes.map((attribute) => attribute.name));
           base.message = messages.join(" ");
           if (match) claimed.suppliers.add(match.id); else claimed.names.add(normalName(finalName));
@@ -270,6 +301,10 @@ export function suppliersAdapter(suppliers: SuppliersService): TargetAdapter {
               await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier.attributes_changed", entityType: "supplier", entityId: id,
                 before: Object.fromEntries(nextAttributes.map((attribute) => [attribute.name, haveAttributes.get(lower(attribute.name))?.value ?? null])),
                 after: Object.fromEntries(nextAttributes.map((attribute) => [attribute.name, attribute.value])) });
+            }
+            if (approval) {
+              const saved = await readSupplier(client, workspaceId, id);
+              await suppliers.approveWith(client as PoolClient, workspaceId, userId, id, { version: saved?.version, ...approval });
             }
             return { recordId: id, locationId: null, quantity: null };
           } });

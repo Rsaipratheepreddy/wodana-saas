@@ -21,6 +21,20 @@ export type OrderPathChange = {
   enquiryType: string; path: (typeof FURNITURE_PATHS)[number] | null;
   boqRequired?: boolean | null; reserveOn?: string; deductOn?: string; takeFrom?: string | null; leadDays?: { min: number; max: number } | null; leadFrom?: string;
 };
+/**
+ * A catalogue's category clean-up, by category name (however it's written: "BED & MATTRESS" finds "Beds & Mattress"
+ * when no category is called exactly that). Runs in this order: merge, delete empty, rename, parent.
+ */
+export type CategoryCleanup = {
+  catalog: string;
+  merge: Array<{ from: string; into: string }>;
+  deleteEmpty: string[];
+  /** Deletes every empty category (no items, no sub-categories) named like one that has items. */
+  deleteEmptyDuplicates: boolean;
+  rename: Array<{ from: string; to: string }>;
+  /** A category under another; null puts it at the top level. */
+  parent: Array<{ category: string; parent: string | null }>;
+};
 export type Profile = {
   enquiryTypes?: { archive: string[] };
   vehicles?: Array<{ name: string; plate?: string; type?: string }>;
@@ -40,10 +54,11 @@ export type Profile = {
   design?: { renderInternalDays?: number | null; renderClientDays?: number | null; revisionsIncluded?: number; packages?: string[] };
   orderPaths?: OrderPathChange[];
   clientUpdates?: { mode: "call" | "portal"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
+  catalogCategories?: CategoryCleanup[];
 };
 
 export const PROFILE_SECTIONS = ["enquiryTypes", "vehicles", "factory", "quotations", "firstResponse", "financeRequests", "approvals", "routes", "rolePermissions",
-  "design", "orderPaths", "clientUpdates"] as const;
+  "design", "orderPaths", "clientUpdates", "catalogCategories"] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 export const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -376,6 +391,38 @@ export function validateProfile(raw: unknown): Profile {
       const frequency = at("clientUpdates.frequency").oneOf(section.frequency, ["weekly", "fortnightly", "monthly", "off"] as const);
       if (mode && frequency) profile.clientUpdates = { mode, frequency };
     }
+  }
+
+  if (raw.catalogCategories !== undefined) {
+    profile.catalogCategories = at("catalogCategories").list(raw.catalogCategories, 20).flatMap((entry, index): CategoryCleanup[] => {
+      const path = `catalogCategories[${index}]`;
+      const object = at(path).object(entry, ["catalog", "merge", "deleteEmpty", "deleteEmptyDuplicates", "rename", "parent"]);
+      if (!object) return [];
+      const catalog = at(`${path}.catalog`).text(object.catalog, 160) ?? "";
+      const pairs = <K extends string>(key: string, keys: [K, K]) => object[key] === undefined ? [] : at(`${path}.${key}`).list(object[key]).flatMap((pair, pairIndex) => {
+        const pairPath = `${path}.${key}[${pairIndex}]`;
+        const fields = at(pairPath).object(pair, keys);
+        if (!fields) return [];
+        const [first, second] = keys.map((name) => at(`${pairPath}.${name}`).text(fields[name], 160));
+        return first && second ? [{ [keys[0]]: first, [keys[1]]: second } as Record<K, string>] : [];
+      });
+      const merge = pairs("merge", ["from", "into"]);
+      const rename = pairs("rename", ["from", "to"]);
+      const parent = object.parent === undefined ? [] : at(`${path}.parent`).list(object.parent).flatMap((pair, pairIndex) => {
+        const pairPath = `${path}.parent[${pairIndex}]`;
+        const fields = at(pairPath).object(pair, ["category", "parent"]);
+        if (!fields) return [];
+        const category = at(`${pairPath}.category`).text(fields.category, 160);
+        const above = fields.parent === null ? null : at(`${pairPath}.parent`).text(fields.parent, 160);
+        if (above !== undefined && above !== null && category && above.toLowerCase() === category.toLowerCase()) problems.push(`${pairPath}: a category can't sit under itself.`);
+        return category && above !== undefined ? [{ category, parent: above }] : [];
+      });
+      for (const pair of merge) if (pair.from.toLowerCase() === pair.into.toLowerCase()) problems.push(`${path}.merge: ${pair.from} merges into another category.`);
+      const deleteEmpty = object.deleteEmpty === undefined ? [] : at(`${path}.deleteEmpty`).texts(object.deleteEmpty, 160);
+      const deleteEmptyDuplicates = object.deleteEmptyDuplicates === undefined ? false : at(`${path}.deleteEmptyDuplicates`).bool(object.deleteEmptyDuplicates) ?? false;
+      if (!merge.length && !rename.length && !parent.length && !deleteEmpty.length && !deleteEmptyDuplicates) problems.push(`${path} has nothing to do (merge, deleteEmpty, deleteEmptyDuplicates, rename or parent).`);
+      return catalog ? [{ catalog, merge, deleteEmpty, deleteEmptyDuplicates, rename, parent }] : [];
+    });
   }
 
   if (problems.length) throw new ProfileError(problems);

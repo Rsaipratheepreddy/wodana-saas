@@ -9,6 +9,7 @@ import { PlatformMark } from "@/components/brand/platform-mark";
 import { Avatar, Badge, Button, EmptyState, FormDialog, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { ClientFeedback, FeedbackSignals, feedbackFor, useClientBoard, type ClientBoard } from "@/components/client-activity/client-feedback";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ScopeEntry } from "@/lib/pre-project/content";
 import { linkPlatform, pinKind } from "@/lib/pre-project/moodboard";
 import { AttachDesignLink, isCanvaUrl, useLinkCard } from "@/components/catalog/design-link-card";
@@ -330,6 +331,7 @@ function PhotoViewer({ entry, start, assetUrl, onClose }: { entry: ScopeEntry; s
   useEffect(() => {
     close.current?.focus();
     const key = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
       if (event.key === "Escape") onClose();
       if (event.key === "ArrowRight") step(document.dir === "rtl" ? -1 : 1);
       if (event.key === "ArrowLeft") step(document.dir === "rtl" ? 1 : -1);

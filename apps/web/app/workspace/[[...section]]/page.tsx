@@ -22,7 +22,7 @@ import { getBillingPageData } from "@/lib/workspace/billing.server";
 import { notFound, redirect, unstable_rethrow } from "next/navigation";
 import styles from "./workspace-screen.module.css";
 import { NoAccessState } from "@/design-system";
-import { canOpen, SALES_SECTION_ACCESS } from "@/lib/workspace/access";
+import { canOpen, SALES_SECTION_ACCESS, SALES_SETTINGS_SECTIONS } from "@/lib/workspace/access";
 import { getServerT, serverTranslator } from "@/lib/i18n/server";
 import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
 
@@ -172,7 +172,9 @@ export default async function WorkspaceScreen({
     const integrationsDenied = enquirySection === "sources" && checkAccess && !canOpen("integrations", access);
     const [leadsData, integrationsData, companyData] = await Promise.all([getLeadsPageData(), enquirySection === "sources" && !sectionDenied && !integrationsDenied ? getIntegrationsPageData().catch((error: unknown) => { unstable_rethrow(error); return undefined; }) : Promise.resolve(undefined), enquirySection === "forms" && !sectionDenied ? getCompanyProfilePageData().catch((error: unknown) => { unstable_rethrow(error); return undefined; }) : Promise.resolve(undefined)]);
     const formBranding = companyData ? { ...companyData.profile.branding, workspaceName: companyData.profile.workspace.name, canManage: companyData.canManage } : undefined;
-    return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} initialCreate={query.create === "true"} initialData={leadsData} integrationsData={integrationsData} integrationsDenied={integrationsDenied} formBranding={formBranding} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} sectionDenied={sectionDenied} />;
+    // Settings' sections this person may open: the page's tabs under the Sales settings title.
+    const settingsSections = SALES_SETTINGS_SECTIONS.filter((section) => !checkAccess || canOpen(SALES_SECTION_ACCESS[section], access));
+    return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} settingsSections={settingsSections} initialCreate={query.create === "true"} initialData={leadsData} integrationsData={integrationsData} integrationsDenied={integrationsDenied} formBranding={formBranding} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} sectionDenied={sectionDenied} />;
   }
 
   // Sales opens on Enquiries; one address per view keeps the breadcrumb and tabs truthful.

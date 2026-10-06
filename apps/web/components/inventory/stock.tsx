@@ -17,6 +17,8 @@ import { StockChangeDialog, type ChangeMode } from "./stock-change-dialog";
 import styles from "./inventory.module.css";
 
 export type StockView = "all" | "low" | "free" | "projects";
+/** A row of the list: stock at a place, or (All) an item kept with nothing on hand anywhere. */
+type ListRow = StockRow & { empty?: boolean };
 const unit = (value: string, of: string) => `${quantityText(value)} ${of}`.trim();
 
 /**
@@ -38,7 +40,8 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
   const [refusing, setRefusing] = useState<PendingAdjustment | null>(null);
   const [notice, setNotice] = useState("");
   const [place, setPlace] = useState<string | null>(null);
-  const [change, setChange] = useState<{ mode: ChangeMode; row: StockRow | null } | null>(null);
+  const [change, setChange] = useState<{ mode: ChangeMode; row: StockRow | null; itemId?: string } | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
   const [moving, setMoving] = useState<{ row: StockRow | null } | null>(null);
   const [reorder, setReorder] = useState<{ item: { itemId: string; itemName: string; unit: string; locationId: string | null }; point: ReorderPoint | null } | null>(null);
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }> | null>(null);
@@ -60,24 +63,46 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
   const low = points.filter((point) => point.low);
   const pointFor = (row: StockRow) => points.find((point) => point.itemId === row.itemId && (point.locationId === row.locationId || point.locationId === null));
   const needle = search.trim().toLocaleLowerCase();
-  const scoped = useMemo(() => (state?.rows ?? []).filter((row) => Number(row.onHand) !== 0 && (!place || row.locationId === place) && (!projectId || row.projectId === projectId)
-    && (!needle || `${row.itemName} ${row.itemCode} ${row.projectReference ?? ""} ${row.projectName ?? ""}`.toLocaleLowerCase().includes(needle))), [state, place, projectId, needle]);
-  const rows = scoped.filter((row) => view === "free" ? !row.projectId : view === "projects" ? Boolean(row.projectId) : true);
-  const columns = useMemo<DataGridColumn<StockRow>[]>(() => [
+  // An item's category, from the item list (stock rows from an older server don't carry it).
+  const categoryOf = useMemo(() => new Map((state?.items ?? []).map((item) => [item.itemId, item.category])), [state]);
+  const categoryFor = (row: StockRow) => row.category || categoryOf.get(row.itemId) || "";
+  const categories = useMemo(() => [...new Set([...(state?.items ?? []).map((item) => item.category), ...(state?.rows ?? []).map((row) => row.category ?? "")].filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b)), [state]);
+  const matches = (row: StockRow) => (!category || categoryFor(row) === category)
+    && (!needle || `${row.itemName} ${row.itemCode} ${categoryFor(row)} ${row.projectReference ?? ""} ${row.projectName ?? ""}`.toLocaleLowerCase().includes(needle));
+  const held = useMemo(() => (state?.rows ?? []).filter((row) => Number(row.onHand) !== 0), [state]);
+  const scoped = held.filter((row) => (!place || row.locationId === place) && (!projectId || row.projectId === projectId) && matches(row));
+  // All lists every item kept: one with nothing on hand anywhere shows at 0 (a materials list imported without quantities).
+  const unheld: ListRow[] = view === "all" && !place && !projectId ? (state?.items ?? []).filter((item) => !held.some((row) => row.itemId === item.itemId))
+    .map((item) => ({ ...item, locationId: "", locationName: "", locationKind: "warehouse", projectId: null, projectReference: null, projectName: null, onHand: "0", updatedAt: "",
+      value: "0", averageCost: null, currency: state?.currency ?? "", empty: true } satisfies ListRow)).filter(matches) : [];
+  const rows: ListRow[] = [...scoped.filter((row) => view === "free" ? !row.projectId : view === "projects" ? Boolean(row.projectId) : true), ...unheld]
+    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+  const noQuantities = Boolean(state?.items?.length) && !held.length;
+  const columns = useMemo<DataGridColumn<ListRow>[]>(() => [
     { id: "item", header: t("Item"), accessorFn: (row) => row.itemName, size: 260, meta: { primary: true, renderCell: (row) => {
-      const point = !row.projectId ? pointFor(row) : undefined;
+      const point = !row.projectId && !row.empty ? pointFor(row) : undefined;
       return <span className={styles.nameCell}><span>{row.itemName}</span>
         {row.itemCode || point ? <small>{[row.itemCode, point ? t("Low at {quantity}", { quantity: unit(point.reorderAt, row.unit) }) : ""].filter(Boolean).join(" · ")}</small> : null}
         {point?.low ? <span><Badge tone="warning">{t("Low")}</Badge></span> : null}</span>;
     } } },
-    { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 180, enableColumnFilter: false },
-    { id: "for", header: t("For"), accessorFn: (row) => row.projectReference ?? "", size: 170, meta: { renderCell: (row) => row.projectId && row.projectReference
-      ? <ProjectLinks projects={[{ id: row.projectId, reference: row.projectReference, name: row.projectName }]} /> : <span className={styles.muted}>{t("Free stock")}</span> } },
+    ...(categories.length ? [{ id: "category", header: t("Category"), accessorFn: (row: ListRow) => categoryFor(row), size: 160, enableColumnFilter: false,
+      meta: { mobileHidden: true } } satisfies DataGridColumn<ListRow>] : []),
+    { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 180, enableColumnFilter: false, meta: { renderCell: (row) => row.empty
+      ? <span className={styles.muted}>—</span> : row.locationName } },
+    { id: "for", header: t("For"), accessorFn: (row) => row.projectReference ?? "", size: 170, meta: { renderCell: (row) => row.empty ? <span className={styles.muted}>—</span>
+      : row.projectId && row.projectReference ? <ProjectLinks projects={[{ id: row.projectId, reference: row.projectReference, name: row.projectName }]} />
+      : <span className={styles.muted}>{t("Free stock")}</span> } },
     { id: "onHand", header: t("On hand"), accessorFn: (row) => Number(row.onHand), size: 130, meta: { align: "end", renderCell: (row) => <span className={styles.number}>{unit(row.onHand, row.unit)}</span> } },
-    { id: "value", header: t("Value"), accessorFn: (row) => Number(row.value), size: 150, meta: { align: "end", mobileHidden: true, renderCell: (row) => <span className={styles.nameCell}>
+    { id: "value", header: t("Value"), accessorFn: (row) => Number(row.value), size: 150, meta: { align: "end", mobileHidden: true, renderCell: (row) => row.empty ? <span className={styles.muted}>—</span> : <span className={styles.nameCell}>
       <span className={styles.number}>{format.money(row.value, row.currency)}</span>
       {row.averageCost ? <small>{t("{price} each", { price: format.money(row.averageCost, row.currency) })}</small> : null}</span> } },
-    { id: "actions", header: "", accessorFn: () => "", size: 120, meta: { align: "end", renderCell: (row) => state && (state.canManage || state.canAdjust) ? <MenuButton size="compact" label={t("Actions")}
+    { id: "actions", header: "", accessorFn: () => "", size: 120, meta: { align: "end", renderCell: (row) => row.empty ? (state && (state.canManage || state.canAdjust) ? <MenuButton size="compact" label={t("Actions")}
+      onAction={(id) => (id === "history" ? onHistory(row.itemId) : id === "reorder" ? setReorder({ item: { itemId: row.itemId, itemName: row.itemName, unit: row.unit, locationId: null }, point: pointFor(row) ?? null })
+        : setChange({ mode: "add", row: null, itemId: row.itemId }))}
+      items={[...(state.canAdjust ? [{ id: "add", label: t("Add stock") }] : []), { id: "reorder", label: pointFor(row) ? t("Change reorder point") : t("Set reorder point") },
+        { id: "history", label: t("History") }]} /> : null)
+      : state && (state.canManage || state.canAdjust) ? <MenuButton size="compact" label={t("Actions")}
       onAction={(id) => (id === "history" ? onHistory(row.itemId) : id === "move" ? setMoving({ row }) : id === "reorder"
         ? setReorder({ item: { itemId: row.itemId, itemName: row.itemName, unit: row.unit, locationId: row.locationId }, point: pointFor(row) ?? null }) : setChange({ mode: id as ChangeMode, row }))}
       items={[
@@ -88,7 +113,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
         { id: "history", label: t("History") },
       ]} /> : null } },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [t, state, onHistory, format, points]);
+  ], [t, state, onHistory, format, points, categories, categoryOf]);
   const lowColumns = useMemo<DataGridColumn<ReorderPoint>[]>(() => [
     { id: "item", header: t("Item"), accessorFn: (point) => point.itemName, size: 240, meta: { primary: true, renderCell: (point) => <Cell title={point.itemName}
       meta={[point.itemCode, point.locationName ?? t("Every place together")].filter(Boolean).join(" · ")} /> } },
@@ -107,6 +132,8 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   const placeFilter: ToolbarFilter[] = view !== "low" && state?.locations.length ? [{ id: "place", label: t("Place"), value: place ?? undefined, onChange: (value) => setPlace(value ?? null),
     options: state.locations.map((location) => ({ id: location.id, label: location.name })) }] : [];
+  const stockFilters: ToolbarFilter[] = [...placeFilter, ...(view !== "low" && categories.length ? [{ id: "category", label: t("Category"), value: category ?? undefined,
+    onChange: (value: string | undefined) => setCategory(value ?? null), options: categories.map((name) => ({ id: name, label: name })) } satisfies ToolbarFilter] : [])];
   const project = projectId ? state?.rows.find((row) => row.projectId === projectId) : undefined;
   const toolbar = <div className={styles.filters}>
     <ListTabs label={t("Stock")} value={view} onChange={setView} items={[
@@ -136,13 +163,14 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No reorder points yet")}
         description={t("Set one from an item's actions to be told when free stock runs low.")} />} />
-    : <DataGrid<StockRow> gridKey="inventory.stock" ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
+    : <>{noQuantities ? <InlineNotice message={t("No quantities recorded yet — count stock or import quantities.")} /> : null}
+    <DataGrid<ListRow> gridKey="inventory.stock" ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={stockFilters}
       toolbarActions={state?.canAdjust ? <Button size="compact" onPress={() => setChange({ mode: "add", row: null })}>{t("Add stock")}</Button> : null}
       menuActions={state?.canAdjust ? [{ id: "import", label: t("Import") }] : undefined} onMenuAction={(id) => { if (id === "import") setImporting(true); }}
-      emptyContent={needle || place || view !== "all" || projectId ? <NoResultsState onClear={() => { setSearch(""); setPlace(null); setView("all"); onProject(null); }} />
-        : <EmptyState title={t("Nothing in stock")} description={t("Deliveries add stock where they arrive.")} />} />}
-    {change && state ? <StockChangeDialog api={api} state={state} mode={change.mode} row={change.row} onClose={() => setChange(null)} onDone={(next) => { setChange(null); onChanged(next); }} /> : null}
+      emptyContent={needle || place || category || view !== "all" || projectId ? <NoResultsState onClear={() => { setSearch(""); setPlace(null); setCategory(null); setView("all"); onProject(null); }} />
+        : <EmptyState title={t("Nothing in stock")} description={t("Deliveries add stock where they arrive.")} />} /></>}
+    {change && state ? <StockChangeDialog api={api} state={state} mode={change.mode} row={change.row} itemId={change.itemId} onClose={() => setChange(null)} onDone={(next) => { setChange(null); onChanged(next); }} /> : null}
     <LinkedImportDialog isOpen={importing} onClose={() => setImporting(false)} onImported={onReload} openLinkId={importLinkId} target="stock" workspaceId={workspaceId} />
     {refusing ? <RefuseDialog onClose={() => setRefusing(null)} onSave={async (note) => { if (await decide(refusing, "reject", note)) setRefusing(null); }} /> : null}
     {moving && state ? <MoveDialog api={api} state={state} row={moving.row} onClose={() => setMoving(null)} onSent={(next) => { setMoving(null); onMoved(next); }} /> : null}

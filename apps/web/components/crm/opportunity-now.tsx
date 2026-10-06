@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, Heading } from "react-aria-components";
-import { CalendarClock, CalendarPlus, Check, Circle, CircleCheck } from "lucide-react";
+import { CalendarClock, CalendarPlus, Check, ChevronDown, Circle, CircleCheck } from "lucide-react";
 import { Avatar, Badge, Button, PopoverSurface, TooltipBubble, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { groupRequirements, type Checklist, type ChecklistRow, type NowPlan, type NowStep } from "@/lib/crm/now-step";
@@ -53,15 +53,27 @@ export function FollowUpRow({ title, due, onComplete, onReschedule, onBook }: {
   return <div className={styles.followUp}>
     <span className={styles.check} aria-hidden="true"><CalendarClock size={16} /></span>
     <span className={styles.rowText}><span className={styles.rowLabel}>{title}</span><DueChip at={due} /></span>
+    {/* Both actions are buttons with their icon at the row's inline end; Complete is the row's own action. */}
     <span className={styles.followUpActions}>
-      {onReschedule ? <Button size="compact" variant="quiet" onPress={onReschedule}>{t("Reschedule")}</Button> : null}
+      {onReschedule ? <Button size="compact" variant="quiet" onPress={onReschedule}><CalendarClock aria-hidden="true" size={14} />{t("Reschedule")}</Button> : null}
       {onComplete ? <Button size="compact" variant="secondary" onPress={onComplete}><Check aria-hidden="true" size={14} />{t("Complete")}</Button> : null}
     </span>
   </div>;
 }
 
+/** Who does the step: an owner chip; where the job can be handed on, the chip opens the teammates to reassign it to. */
+export function OwnerChip({ owner, people, onReassign }: { owner: Teammate | null; people: Teammate[]; onReassign?: (membershipId: string) => Promise<void> }) {
+  const t = useT();
+  const face = owner ? <><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span><span className={styles.ownerName}>{owner.label}</span></>
+    : <span className={styles.ownerName} data-empty="">{t("Unassigned")}</span>;
+  if (!onReassign || !people.length) return <span className={styles.assignee}>{face}</span>;
+  return <ReassignPopover owner={owner} people={people} onReassign={onReassign} trigger={<Button className={styles.ownerChip} size="compact" variant="quiet">
+    {face}<span className="wd-visually-hidden"> · {t("Reassign")}</span><ChevronDown aria-hidden="true" size={14} />
+  </Button>} />;
+}
+
 /** The owner and a popover to hand the job to a teammate. */
-export function ReassignPopover({ owner, people, onReassign }: { owner: Teammate | null; people: Teammate[]; onReassign: (membershipId: string) => Promise<void> }) {
+export function ReassignPopover({ owner, people, onReassign, trigger }: { owner: Teammate | null; people: Teammate[]; onReassign: (membershipId: string) => Promise<void>; trigger?: ReactNode }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
@@ -72,7 +84,7 @@ export function ReassignPopover({ owner, people, onReassign }: { owner: Teammate
     try { await onReassign(id); setOpen(false); } catch (error) { setFailure(error instanceof Error ? error.message : t("Could not save.")); } finally { setSaving(null); }
   };
   return <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-    <Button size="compact" variant="quiet">{t("Reassign")}</Button>
+    {trigger ?? <Button size="compact" variant="quiet">{t("Reassign")}</Button>}
     <PopoverSurface>
       <Dialog aria-label={t("Reassign")} className={styles.people}>
         <ul>{people.map((person) => <li key={person.id}>
@@ -116,9 +128,7 @@ export function NextActions({ plan, checklist, owner, people, followUp, busy, on
     ?? (row.state === "done" ? [row.doneBy, shortDate(row.doneAt, locale, timeZone)].filter(Boolean).join(" · ") || null : null);
   return <div className={styles.nowBlock}>
     <NextStepCard title={title} why={why ? t(why.key, why.values) : null} status={plan.status} meta={<>
-      {owner ? <span className={styles.assignee}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span><span>{owner.label}</span></span>
-        : <span className={styles.assignee}>{t("Unassigned")}</span>}
-      {onReassign && people.length ? <ReassignPopover owner={owner} people={people} onReassign={onReassign} /> : null}
+      <OwnerChip owner={owner} people={people} onReassign={onReassign} />
       {ready && now ? <span className={styles.primary}><Button size="compact" variant="primary" isLoading={busy} onPress={() => onAct(now)}>{text(now, "short")}</Button></span> : null}
     </>}>
       {followUp}
@@ -171,17 +181,18 @@ export function ProgressLine({ flow, status, history }: { flow: OpportunityFlowV
       const dot = <DialogTrigger>
         <AriaButton className={styles.dot} aria-current={step.state === "current" ? "step" : undefined}>
           <span className={styles.mark} aria-hidden="true">{step.state === "done" ? <Check size={10} strokeWidth={3} /> : null}</span>
-          <span className={styles.dotLabel}>{step.name}{step.optional ? <small>{t("optional")}</small> : null}</span>
+          {/* An optional step has a hollow (dashed) dot; its name stays on the one line every step has. */}
+          <span className={styles.dotLabel}>{step.name}{step.optional ? <span className="wd-visually-hidden"> · {t("optional")}</span> : null}</span>
         </AriaButton>
         <PopoverSurface>
           <Dialog aria-label={detail.heading} className={styles.dotPanel}>
             <Heading slot="title" className={styles.dotHeading}>{detail.heading}</Heading>
             {detail.by ? <span className={styles.assignee}><span aria-hidden="true"><Avatar name={detail.by} seed={detail.by} size="sm" /></span><span>{detail.by}</span></span> : null}
-            <ul>{detail.lines.map((line) => <li key={line}>{line}</li>)}</ul>
+            <ul>{(step.optional ? [...detail.lines, t("Optional")] : detail.lines).map((line) => <li key={line}>{line}</li>)}</ul>
           </Dialog>
         </PopoverSurface>
       </DialogTrigger>;
-      return <li key={step.stageId} data-state={step.state}>
+      return <li key={step.stageId} data-state={step.state} data-optional={step.optional || undefined}>
         {step.state === "done" ? <TooltipBubble content={<span className={styles.tip}>{detail.by ? <Avatar name={detail.by} seed={detail.by} size="sm" /> : null}{[detail.by, ...detail.lines].filter(Boolean).join(" · ")}</span>}>{dot}</TooltipBubble> : dot}
       </li>;
     })}

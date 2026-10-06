@@ -15,6 +15,7 @@ import { lockLedger, readLedger } from "./design-ledger.store";
 import { startClientCalls } from "../client-calls/client-calls.store";
 import { presentedRounds } from "./design-presentations.store";
 import { isDeliverableStage, stageProgress, syncDesignStages } from "./design-stage-sync";
+import { casePlan } from "../pre-projects/case-plan";
 
 export type ScheduleInput = { startsAt: string; endsAt?: string | null; timezone: string; address?: string | null; version: number };
 type AppointmentStage = "site_visit" | "material_selection";
@@ -44,15 +45,19 @@ export class DesignJourneyService {
   constructor(private readonly access: WorkspaceAccessService, @Optional() @Inject(DESIGN_COMMERCIAL_API) private readonly commercial?: DesignCommercialApi) {}
 
   get(actor: RequestActor, workspaceId: string, caseId: string) {
-    return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => ({
-      ...await this.view(client, workspaceId, caseId),
-      ...await this.rights(client, workspaceId, user.userId),
-    }));
+    return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => {
+      const view = await this.view(client, workspaceId, caseId);
+      const rights = await this.rights(client, workspaceId, user.userId);
+      // A case whose path has no site visit and no design (stock or supplier goods, PLM-121/126) has nothing to start.
+      return { ...view, ...rights, canStart: rights.canStart && Boolean(view.journey || view.startsAs) };
+    });
   }
 
   start(actor: RequestActor, workspaceId: string, caseId: string) {
     return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.manage_lifecycle"], async (client, user) => {
       await this.lockCase(client, workspaceId, caseId);
+      const plan = await casePlan(client, workspaceId, caseId);
+      if (!plan.siteVisit && !plan.design) throw new UnprocessableEntityException("This order goes straight to the quotation: its path has no site visit or design stages");
       if (!(await startJourney(client, workspaceId, caseId, user.userId))) throw new ConflictException("The design stages have already started");
       return this.view(client, workspaceId, caseId);
     });
@@ -426,7 +431,8 @@ export class DesignJourneyService {
     const { questions: _questions, ...journeyView } = journey ?? { questions: null };
     void _questions;
     // Before the journey starts: what it will be, so the button says "Start design" or "Start site visit".
-    const startsAs = journey ? null : (await client.query<{ packaged: boolean }>(
+    const plan = journey ? null : await casePlan(client, workspaceId, caseId);
+    const startsAs = journey || !(plan!.siteVisit || plan!.design) ? null : (await client.query<{ packaged: boolean }>(
       `SELECT discovery.design_package_id IS NOT NULL AS packaged FROM pre_project_cases pre_case
          LEFT JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = pre_case.workspace_id AND discovery.opportunity_id = pre_case.opportunity_id
         WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0]?.packaged ? "design" : "site_and_materials";

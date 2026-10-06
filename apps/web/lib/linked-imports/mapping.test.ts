@@ -24,11 +24,11 @@ describe("linked import mapping", () => {
     const headings = ["Company Name", "Contact Person", "Contact Number", "Email ID", "TRN No", "Payment Terms", "Supplier Type", "Directors Approved"];
     const mapping = suggestMapping("suppliers", headings);
     expect(mapping.columns).toEqual({ "Company Name": "name", "Contact Person": "contactName", "Contact Number": "phone", "Email ID": "email", "TRN No": "taxNumber",
-      "Payment Terms": "paymentTerms", "Supplier Type": "categories" });
+      "Payment Terms": "paymentTerms", "Supplier Type": "categories", "Directors Approved": "approval" });
     expect(hasKey(mapping)).toBe(true);
     expect(hasKey({ columns: { Qty: "quantity" } })).toBe(false);
     const sheets = mappedColumns([{ name: "List", rows: [["Suppliers"], headings, ["SIOM Marble", "Ramiz", "052 846 6806", "", "", "", "Marble", "Yes"]] }], mapping);
-    expect(sheets[0].rows[1]).toEqual(["Company Name", "Contact Person", "Contact Number", "Email ID", "TRN No", "Payment Terms", "Supplier Type"]);
+    expect(sheets[0].rows[1]).toEqual(headings);
   });
 
   it("suggests a collection sheet's drawing, size and price columns, never the pictures", () => {

@@ -111,6 +111,9 @@
 [data-layout="stacked"] > .wd-editable, .wd-editable-list[data-layout="stacked"] .wd-editable { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-1); }
 /* Typography yields to the host's fact list (:where has no weight); layout does not. */
 :where(.wd-editable > .wd-editable-label) { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+:where(.wd-editable > .wd-editable-cell) { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+/* Label and value on one row line up on their text, whether the value is read-only or opens an editor. */
+.wd-editable-list:not([data-layout="stacked"]) > .wd-editable:not([data-state="editing"]) { align-items: baseline; }
 .wd-editable > dt.wd-editable-label { padding-block: var(--wd-space-1-5); overflow-wrap: anywhere; }
 [data-layout="stacked"] > .wd-editable > dt.wd-editable-label { padding-block: 0; }
 .wd-editable > dd.wd-editable-cell { display: flex; flex-wrap: wrap; align-items: center; justify-items: start; gap: var(--wd-space-1); min-inline-size: 0; margin: 0; }

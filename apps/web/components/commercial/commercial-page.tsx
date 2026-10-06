@@ -155,7 +155,7 @@ export function CommercialPage({
       )
         return;
       event.preventDefault(); event.stopPropagation();
-      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", onConfirm: () => window.location.assign(anchor.href) });
+      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", cancelLabel: t("Keep editing"), onConfirm: () => window.location.assign(anchor.href) });
     };
     document.addEventListener("click", leave, true);
     window.addEventListener("beforeunload", warn);
@@ -247,7 +247,7 @@ export function CommercialPage({
       setDraft(state.data.quotes.find((q) => q.id === id) ?? null);
     };
     if (dirty) {
-      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", onConfirm: applyChoice });
+      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", cancelLabel: t("Keep editing"), onConfirm: applyChoice });
       return;
     }
     applyChoice();

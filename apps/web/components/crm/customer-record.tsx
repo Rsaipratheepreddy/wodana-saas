@@ -113,7 +113,7 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
       tabs={[
         { id: "overview", label: t("Overview"), panel: <RecordPanel>
           <SideSection title={t("Key facts")}>
-            <EditableFieldList layout="stacked">
+            <EditableFieldList>
               {party.type === "person" ? <>
                 <EditableField canEdit={editable} label={t("Given name")} maxLength={120} onReload={resource.refresh} onSave={(givenName) => updateParty({ givenName: givenName || null })} value={text(party.givenName)} />
                 <EditableField canEdit={editable} label={t("Family name")} maxLength={120} onReload={resource.refresh} onSave={(familyName) => updateParty({ familyName: familyName || null })} value={text(party.familyName)} />

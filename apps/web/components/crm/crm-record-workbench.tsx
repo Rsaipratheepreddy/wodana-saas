@@ -18,6 +18,7 @@ import { FURNITURE_PATHS, missingFrom, proofHref, type OpportunityFlowView } fro
 import { firstName, groupForRequirement, isGenericFollowUp, nextChecklist, nowPlan, pendingFollowUp, type ChecklistRow, type FactGroup, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
 import { tKey } from "@/lib/i18n/keys";
 import { RecordAttachments } from "./record-attachments";
+import { PersonChip } from "@/components/record/record-parts";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
 import { Avatar, Badge, Button, Callout, ControlledModalDialog, EditableField, EditableFieldList, EmptyState, FactRow, FillWithWoddy, IconMenuButton, personDisplayName, useDesignSystem } from "@/design-system";
@@ -281,8 +282,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       tabs={[
           { id: "overview", label: t("Overview"), panel: <RecordPanel>
             <SideSection title={t("Key facts")}>
-              <EditableFieldList layout="stacked" className={screen.facts}>
-                {live.valueHidden ? null : live.amount === undefined || !resource.data ? <FactRow label={t("Value")}>{value}</FactRow>
+              <EditableFieldList>
+                {live.valueHidden ? null : live.amount === undefined || !resource.data ? <FactRow label={t("Value")}>{hasValue ? value : <span className="wd-editable-empty">{value}</span>}</FactRow>
                   : <EditableField currency={valueCurrency} display={hasValue ? value : undefined} kind="money" label={t("Value")} onReload={resource.refresh}
                     onSave={(next) => patch(next ? { amount: Number(next), currencyCode: valueCurrency } : { amount: null, currencyCode: null })} placeholder={t("Not set")}
                     value={live.amount === null || live.amount === undefined ? "" : String(live.amount)} />}
@@ -291,7 +292,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
                 {flow?.enquiryType ? <FactRow label={t("Enquiry type")}>{flow.enquiryType}</FactRow> : null}
                 {discovery.view?.facts.propertyLocation || discovery.view?.facts.latitude != null ? <FactRow label={t("Property location")}>
                   <SiteLocation address={discovery.view.facts.propertyLocation} latitude={discovery.view.facts.latitude} longitude={discovery.view.facts.longitude} /></FactRow> : null}
-                <FactRow label={t("Sales owner")}>{owner ? <span className={screen.person}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span>{owner.label}</span> : t("Unassigned")}</FactRow>
+                <FactRow label={t("Sales owner")}>{owner ? <PersonChip id={owner.id} name={owner.label} /> : <span className="wd-editable-empty">{t("Unassigned")}</span>}</FactRow>
                 {proof ? <FactRow label={t("Payment proof")}><a className={screen.factLink} href={proofHref(workspaceId, row.id, proof.id)} target="_blank" rel="noopener noreferrer">{t("Attached · {date}", { date: shortDay(proof.recordedAt) })}</a></FactRow> : null}
               </EditableFieldList>
             </SideSection>

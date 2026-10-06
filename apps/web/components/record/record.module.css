@@ -1,6 +1,7 @@
 /* A record (§5c D.7): header, status strip, then the main column (next step, activity) beside the sidebar's tabs. */
 .record { container-type: inline-size; block-size: 100%; }
-.frame { gap: var(--wd-space-4); }
+/* Section rhythm on the golden ratio: header, stepper, next step, then the tabs and their content. */
+.record > .frame { display: grid; align-content: start; gap: var(--wd-phi-3); }
 
 /* The header: one title, one muted line, the actions at the end. */
 .header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3) var(--wd-space-6); padding-inline-end: var(--wd-space-8); }
@@ -40,12 +41,12 @@
 .sideSection h4 { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 
 /* The columns. Narrow: the next step, the sidebar, then the activity. */
-.layout { display: grid; gap: var(--wd-space-6); align-items: start; }
+.layout { display: grid; gap: var(--wd-phi-3); align-items: start; }
 .main { display: contents; }
-.next { display: grid; align-content: start; gap: var(--wd-space-4); min-inline-size: 0; order: 1; }
+.next { display: grid; align-content: start; gap: var(--wd-phi-2); min-inline-size: 0; order: 1; }
 .side { min-inline-size: 0; order: 2; }
-.activity { display: grid; align-content: start; gap: var(--wd-space-5); min-inline-size: 0; order: 3; }
-.panel { display: grid; gap: var(--wd-space-5); }
+.activity { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; order: 3; }
+.panel { display: grid; gap: var(--wd-phi-3); }
 .side :global(.wd-tab-scroll) { position: sticky; z-index: 1; inset-block-start: 0; background: var(--wd-color-surface); }
 .side :global(.wd-tab-list) { gap: var(--wd-space-4); }
 
@@ -54,7 +55,7 @@
 @container (min-width: 52rem) {
   .record > .frame { display: flex; flex-direction: column; block-size: 100%; }
   .layout { flex: 1 1 auto; min-block-size: 0; grid-template-columns: minmax(0, 1fr) 25rem; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
-  .main { display: grid; align-content: start; gap: var(--wd-space-6); min-inline-size: 0; }
+  .main { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
   .main, .side { min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; }
   .main { padding-block-end: var(--wd-space-4); }
   .next, .side, .activity { order: 0; }

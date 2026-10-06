@@ -1,5 +1,9 @@
 export type CatalogSummary = { id: string; code: string; name: string; purpose: "sell" | "buy" | "reference"; itemCount: number; version: number };
-export type CatalogCategory = { id: string; parentId: string | null; code: string; name: string };
+export type CatalogCategory = {
+  id: string; parentId: string | null; code: string; name: string; version?: number;
+  /** Items in the category and every category below it (what opening it lists), counted on the server. */
+  itemCount?: number;
+};
 export type CatalogAttribute = { id: string; code: string; label: string; valueType: string; required: boolean; choices: Array<{ value: string; label: string }>; unitCode: string | null; categoryId: string | null };
 export type CatalogUnit = { code: string; label: string; kind: string };
 export type CatalogStructure = { categories: CatalogCategory[]; attributes: CatalogAttribute[]; units: CatalogUnit[] };

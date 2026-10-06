@@ -112,18 +112,24 @@ export function ControlledModalDialog({ children, className, description, footer
     {isDirty || confirming ? <ConfirmationDialog isOpen={confirming} onOpenChange={setConfirming}
       title={keepsDraft ? t("Close this form?") : t("Discard unsaved changes?")}
       body={keepsDraft ? t("Your changes stay here as a draft until you save or discard them.") : t("Your saved records will stay as they are. Unsaved changes will be discarded.")}
-      confirmLabel={keepsDraft ? t("Close") : t("Discard changes")} confirmVariant={keepsDraft ? "primary" : "danger"}
+      confirmLabel={keepsDraft ? t("Close") : t("Discard changes")} confirmVariant={keepsDraft ? "primary" : "danger"} cancelLabel={t("Keep editing")}
       onConfirm={() => { setConfirming(false); onOpenChange(false); }} /> : null}
   </DialogCloseContext.Provider>;
 }
 
-export function ConfirmationDialog({ body, confirmLabel, confirmVariant = "danger", isConfirming = false, isOpen, onConfirm, onOpenChange, title }: { body: ReactNode; confirmLabel: string; confirmVariant?: "primary" | "danger"; isConfirming?: boolean; isOpen: boolean; onConfirm: () => void; onOpenChange: (open: boolean) => void; title: string }) {
+/**
+ * Asks before an action. The dismiss button says "Cancel"; a confirmation about unsaved edits passes
+ * `cancelLabel={t("Keep editing")}`, since there dismissing means going back to the edits.
+ */
+export function ConfirmationDialog({ body, cancelLabel, confirmLabel, confirmVariant = "danger", isConfirming = false, isOpen, onConfirm, onOpenChange, title }: { body: ReactNode; cancelLabel?: string; confirmLabel: string; confirmVariant?: "primary" | "danger"; isConfirming?: boolean; isOpen: boolean; onConfirm: () => void; onOpenChange: (open: boolean) => void; title: string }) {
   const t = useT();
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isConfirming} onPress={() => onOpenChange(false)}>{t("Keep editing")}</Button><Button isLoading={isConfirming} onPress={onConfirm} variant={confirmVariant}>{confirmLabel}</Button></div>} isOpen={isOpen} onOpenChange={onOpenChange} title={title}>{body}</ControlledModalDialog>;
+  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isConfirming} onPress={() => onOpenChange(false)}>{cancelLabel ?? t("Cancel")}</Button><Button isLoading={isConfirming} onPress={onConfirm} variant={confirmVariant}>{confirmLabel}</Button></div>} isOpen={isOpen} onOpenChange={onOpenChange} title={title}>{body}</ControlledModalDialog>;
 }
 
 type ConfirmationRequest = {
   body: ReactNode;
+  /** The dismiss button; "Cancel" unless the request is the default discard of unsaved edits ("Keep editing"). */
+  cancelLabel?: string;
   confirmLabel?: string;
   confirmVariant?: "primary" | "danger";
   onConfirm: () => void;
@@ -139,6 +145,7 @@ export function useConfirmationDialog() {
     <ConfirmationDialog
       body={request?.body ?? ""}
       confirmLabel={request?.confirmLabel ?? t("Discard changes")}
+      cancelLabel={request?.cancelLabel ?? (request?.confirmLabel ? undefined : t("Keep editing"))}
       confirmVariant={request?.confirmVariant}
       isOpen={Boolean(request)}
       onConfirm={() => {
@@ -207,5 +214,5 @@ export function InspectorSheet({ children, description, footer, hideTitle = fals
     if (isDirty) {setDiscardOpen(true);return;}
     onOpenChange(false);
   };
-  return <DialogCloseContext.Provider value={requestClose}><ModalOverlay {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header data-minimal={hideTitle || undefined}><div className={hideTitle ? "wd-visually-hidden" : undefined}><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} body={t("Your saved records will stay as they are. Unsaved changes will be discarded.")} confirmLabel={t("Discard changes")} onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></DialogCloseContext.Provider>;
+  return <DialogCloseContext.Provider value={requestClose}><ModalOverlay {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header data-minimal={hideTitle || undefined}><div className={hideTitle ? "wd-visually-hidden" : undefined}><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} body={t("Your saved records will stay as they are. Unsaved changes will be discarded.")} confirmLabel={t("Discard changes")} cancelLabel={t("Keep editing")} onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></DialogCloseContext.Provider>;
 }

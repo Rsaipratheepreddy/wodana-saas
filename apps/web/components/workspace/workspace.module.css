@@ -1717,6 +1717,12 @@
 .shell :global(.wd-dialog[aria-label="Enquiry details"]) > :global(.wd-dialog-body) { padding-block-start: var(--wd-space-4); }
 
 .commercialTabs { display:flex; align-items:center; gap:var(--wd-space-1); padding-block:var(--wd-space-1-5); overflow-x:auto; }
+/* One tab row: the areas at the start, the open area's views as a segmented switch at the end. */
+.flowTabRow { display:flex; align-items:center; gap:var(--wd-space-4); min-inline-size:0; }
+.flowTabRow > .flowTabs { flex:1 1 auto; }
+.flowViews { flex:none; max-inline-size:100%; overflow-x:auto; scrollbar-width:none; }
+.flowViews::-webkit-scrollbar { display:none; }
+@media(max-width:600px) { .flowTabRow { flex-wrap:wrap; gap:0 var(--wd-space-2); } .flowViews { margin-block-end:var(--wd-space-1-5); } }
 .commercialTabs > .commercialSegment { flex:0 0 auto; }
 .commercialSegments { display:inline-flex; align-items:center; gap:var(--wd-space-0-5); padding:var(--wd-space-0-5); border-radius:999px; background:var(--wd-color-surface); }
 .commercialSegment { display:flex; align-items:center; justify-content:center; min-height:28px; padding:var(--wd-space-1) var(--wd-space-3); border-radius:999px; color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); font-weight:500; text-decoration:none; white-space:nowrap; transition:background 140ms ease,color 140ms ease; }

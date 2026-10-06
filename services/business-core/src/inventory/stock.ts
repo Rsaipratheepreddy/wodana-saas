@@ -141,7 +141,7 @@ export async function onHand(db: Db, workspaceId: string, itemId: string, locati
 }
 
 export type StockRow = {
-  itemId: string; itemName: string; itemCode: string; unit: string; catalogItemId: string | null; locationId: string; locationName: string; locationKind: string;
+  itemId: string; itemName: string; itemCode: string; unit: string; catalogItemId: string | null; category: string; locationId: string; locationName: string; locationKind: string;
   projectId: string | null; projectReference: string | null; projectName: string | null; onHand: string; updatedAt: string;
   /** Value at moving average cost, and that average, in the workspace's currency. */
   value: string; averageCost: string | null; currency: string;
@@ -152,7 +152,7 @@ export async function readStock(db: Db, workspaceId: string, filter: { projectId
   const where = ["balance.workspace_id = $1", "balance.on_hand > 0"];
   if (filter.projectId) { values.push(filter.projectId); where.push(`balance.project_id = $${values.length}`); }
   return (await db.query<StockRow>(
-    `SELECT item.id AS "itemId", item.name AS "itemName", item.code AS "itemCode", item.unit, item.catalog_item_id AS "catalogItemId",
+    `SELECT item.id AS "itemId", item.name AS "itemName", item.code AS "itemCode", item.unit, item.catalog_item_id AS "catalogItemId", item.category,
             location.id AS "locationId", location.name AS "locationName", location.kind AS "locationKind",
             project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName", balance.on_hand::text AS "onHand", balance.updated_at AS "updatedAt",
             balance.value::text AS value, CASE WHEN balance.on_hand > 0 THEN round(balance.value / balance.on_hand, 4)::text END AS "averageCost", workspace.default_currency AS currency
@@ -163,6 +163,15 @@ export async function readStock(db: Db, workspaceId: string, filter: { projectId
        LEFT JOIN delivery_projects project ON project.workspace_id = balance.workspace_id AND project.id = balance.project_id
       WHERE ${where.join(" AND ")}
       ORDER BY item.name, location.name, project.reference NULLS FIRST LIMIT 5000`, values)).rows;
+}
+
+/** A stock item the workspace keeps, whether or not any is on hand (a materials list imported without quantities). */
+export type StockItemSummary = { itemId: string; itemName: string; itemCode: string; unit: string; catalogItemId: string | null; category: string };
+
+export async function readStockItems(db: Db, workspaceId: string): Promise<StockItemSummary[]> {
+  return (await db.query<StockItemSummary>(
+    `SELECT id AS "itemId", name AS "itemName", code AS "itemCode", unit, catalog_item_id AS "catalogItemId", category
+       FROM stock_items WHERE workspace_id = $1 AND active ORDER BY name, unit LIMIT 5000`, [workspaceId])).rows;
 }
 
 export type MovementRow = {

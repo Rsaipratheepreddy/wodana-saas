@@ -1198,6 +1198,20 @@
       "when": 1801740003900,
       "tag": "0277_permit_reminders_drawing_needs",
       "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1801740004000,
+      "tag": "0278_stock_item_category",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1801740004100,
+      "tag": "0279_import_link_approved_prices",
+      "breakpoints": true
     }
   ]
 }

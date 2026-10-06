@@ -12,6 +12,12 @@ describe("operator CLI arguments", () => {
     expect(parseArgs(["import", ...base, "--target", "stock", "--file", "a.csv", "--apply", "--tabs", "A,B,A"])).toMatchObject({ apply: true, tabs: ["A", "B"] });
   });
 
+  it("parses --approved-prices for a catalogue import only", () => {
+    expect(parseArgs(["import", ...base, "--target", "catalog", "--file", "core.xlsx", "--approved-prices"])).toMatchObject({ target: "catalog", approvedPrices: true, apply: false });
+    expect(parseArgs(["import", ...base, "--target", "catalog", "--file", "core.xlsx"])).toMatchObject({ approvedPrices: false });
+    expect(() => parseArgs(["import", ...base, "--target", "stock", "--file", "a.xlsx", "--approved-prices"])).toThrow("--approved-prices does not apply to --target stock");
+  });
+
   it("parses configure", () => {
     expect(parseArgs(["configure", ...base, "--profile", "p.json", "--json"])).toEqual({ command: "configure", workspace: "palm-living", as: "owner@example.test", apply: false, json: true, profile: "p.json" });
   });

@@ -243,7 +243,7 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
     {areasOpen ? <WonAreasDialog workspaceId={workspaceId} flowId={flow.id} typeName={type.label} onClose={() => { setAreasOpen(false); loadAreas(); }} /> : null}
     {closingOpen ? <DealClosingDialog workspaceId={workspaceId} flowId={flow.id} typeName={type.label} onClose={() => { setClosingOpen(false); loadClosing(); }} /> : null}
     {migrating ? <FlowMigrationDialog workspaceId={workspaceId} flowId={flow.id} typeName={type.label} onClose={() => setMigrating(false)} onMoved={() => { setMigrating(false); loadOlder(); }} /> : null}
-    {leaving ? <ConfirmationDialog body={t("Your changes are not published. Leave and lose them?")} confirmLabel={t("Leave")} isOpen
+    {leaving ? <ConfirmationDialog body={t("Your changes are not published. Leave and lose them?")} confirmLabel={t("Leave")} cancelLabel={t("Keep editing")} isOpen
       onConfirm={() => { const to = leaving; setLeaving(null); setBaseline(table); router.push(to); }} onOpenChange={(open) => { if (!open) setLeaving(null); }}
       title={t("Leave without publishing?")} /> : null}
   </PageShell>;

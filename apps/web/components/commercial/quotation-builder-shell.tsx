@@ -210,7 +210,7 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
         return;
     } if (dirty) {
         event.preventDefault();
-        requestConfirmation({ title: t('Leave without saving?'), body: t('Your unsaved quotation changes will be discarded.'), confirmLabel: t('Leave quotation'), onConfirm: () => router.push(backHref) });
+        requestConfirmation({ title: t('Leave without saving?'), body: t('Your unsaved quotation changes will be discarded.'), confirmLabel: t('Leave quotation'), cancelLabel: t('Keep editing'), onConfirm: () => router.push(backHref) });
     } }}><ArrowLeft size={15}/>{t("Back to quotations")}</Link>}
 
    <div className={styles.actions}>

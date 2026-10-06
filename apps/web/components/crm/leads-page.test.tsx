@@ -106,6 +106,35 @@ describe("LeadsPage", () => {
     expect(screen.queryByRole("button", { name: /List$/ })).not.toBeInTheDocument();
   });
 
+  it("shows Sales settings as one title with one row of tabs, and Assignment's views in that row", async () => {
+    const data = structuredClone(leadsPageFixture);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => String(url).includes("assignment-policies") ? data.assignmentPolicies : data.queues })));
+    const user = userEvent.setup();
+    render(<LeadsPage initialData={data} initialSection="assignment" />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Sales settings"]);
+    const sections = screen.getByRole("group", { name: "Sales settings" });
+    expect(within(sections).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Assignment", "Response targets", "Fields", "Automations"]);
+    expect(within(sections).getByRole("button", { name: "Assignment" })).toHaveAttribute("aria-pressed", "true");
+    // No third row of tabs: the views switch in the tabs row, one at a time.
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    const views = await screen.findByRole("radiogroup", { name: "Assignment settings" });
+    expect(views.closest(".wd-page-shell-tabs")).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Sales owners" })).toBeInTheDocument();
+    await user.click(within(views).getByRole("radio", { name: "Routing rules" }));
+    expect(screen.getByRole("button", { name: "Add rule" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Sales owners" })).not.toBeInTheDocument();
+    await user.click(within(sections).getByRole("button", { name: "Response targets" }));
+    expect(router.push).toHaveBeenCalledWith("/workspace/crm/leads?section=sla");
+    router.push.mockClear();
+  });
+
+  it("titles a settings section by itself when it's the only one a person may open", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ rules: [] }) })));
+    render(<LeadsPage initialData={structuredClone(leadsPageFixture)} initialSection="automations" settingsSections={["automations"]} />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Automations"]);
+    expect(screen.queryByRole("group", { name: "Sales settings" })).not.toBeInTheDocument();
+  });
+
   it("puts each enquiry in the list for its status with counts", async () => {
     const user = userEvent.setup();
     const data = structuredClone(leadsPageFixture);

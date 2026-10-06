@@ -12,6 +12,7 @@ import { catalogApi, type CatalogItemRow, type CatalogStructure, type CatalogSum
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { LinkedImportDialog } from "../linked-imports/linked-import-dialog";
+import { CatalogCategoryTree } from "./catalog-category-tree";
 import { CatalogItemInspector } from "./catalog-item-inspector";
 import { ProductClipDialog } from "./product-clip-dialog";
 import { catalogImageUrl } from "@/lib/quotation/client";
@@ -82,12 +83,6 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
       : <span className={styles.muted}>{t("Price unavailable")}</span> } },
   ], [attributeColumns, money, t]);
 
-  const counts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const item of items) if (item.categoryId) map.set(item.categoryId, (map.get(item.categoryId) ?? 0) + 1);
-    return map;
-  }, [items]);
-
   if (!catalogs.length) {
     return <div className={styles.page}>
       <PageHeader title={t("Catalog")} />
@@ -105,10 +100,8 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
     <div className={styles.layout}>
       <nav aria-label={t("Categories")} className={styles.tree}>
         {catalogs.length > 1 ? <SelectField aria-label={t("Catalog")} items={catalogs.map((entry) => ({ id: entry.id, label: entry.name }))} label={t("Catalog")} onSelectionChange={(key) => { setCatalogId(String(key)); setCategoryId(null); }} selectedKey={catalogId} /> : null}
-        <button aria-current={categoryId === null ? "true" : undefined} className={styles.treeItem} onClick={() => setCategoryId(null)} type="button"><span>{t("All items")}</span></button>
-        {(structure?.categories ?? []).filter((category) => !category.parentId).map((category) => <button aria-current={categoryId === category.id ? "true" : undefined} className={styles.treeItem} key={category.id} onClick={() => setCategoryId(category.id)} type="button">
-          <span>{category.name}</span>{!categoryId && counts.get(category.id) ? <small>{counts.get(category.id)}</small> : null}
-        </button>)}
+        <CatalogCategoryTree canManage={canManage} catalogId={catalogId} categories={structure?.categories ?? []} onChanged={() => void loadItems()} onSelect={setCategoryId}
+          selectedId={categoryId} workspaceId={workspaceId} />
       </nav>
       <section className={styles.content} aria-label={t("Items")}>
         {error ? <ErrorState onRetry={() => void loadItems()} description={error} />

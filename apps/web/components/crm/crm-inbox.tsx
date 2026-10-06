@@ -5,6 +5,7 @@ import { Filter, FolderInput, Mail, MessageCircle, Plus, X } from "lucide-react"
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, MenuButton, SelectField, Skeleton, TextAreaField, TextInput, SearchInput, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { chipQuery, chipsFor, ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, type ConversationJob, type InboxChip, type InboxLabel, type InboxOwner, type InboxSummary } from "@/lib/crm/inbox";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
@@ -19,7 +20,7 @@ import styles from "./crm-inbox.module.css";
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
 const LIST_SCOPES = ["conversations"] as const;
 const timeout = () => AbortSignal.timeout(20_000);
-const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+const typing = (target: EventTarget | null) => isTypingTarget(target);
 
 /**
  * The front door (plan §5b): one title, the chips Unassigned · Mine · Team · Closed with their counts (only the

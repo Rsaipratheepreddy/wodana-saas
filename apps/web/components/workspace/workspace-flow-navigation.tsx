@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { caseRoute, caseHref } from "@/lib/pre-project/types";
-import { planningAreas, planningArea } from "@/lib/pre-project/sections";
+import { planningArea, planningAreasFor } from "@/lib/pre-project/sections";
+import { usePreProject } from "@/components/pre-project/pre-project-context";
 import { useState } from "react";
 import { Button as AriaButton, Tooltip, TooltipTrigger } from "react-aria-components";
 import { useSearchParams } from "next/navigation";
@@ -28,6 +29,7 @@ const crmTabHelp: Record<string, string> = {
 export function WorkspaceFlowNavigation({ module, pathname }: { module: WorkspaceModuleDefinition; pathname: string }) {
   const searchParams = useSearchParams();
   const t = useT();
+  const { selected } = usePreProject();
   const section = searchParams.get("section");
   if (pathname === "/workspace/tasks" || pathname === "/workspace/approvals") return null;
   if (pathname.startsWith("/workspace/integrations/") || pathname === "/workspace/integrations") return null;
@@ -54,13 +56,18 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
       contracts: t("Agreement"), "payment-plan": t("Payments"), approvals: t("Approvals"), variations: t("Change requests"),
     };
     const views = area.id === "overview" ? [] : area.sections;
+    // The areas the case's path uses (PLM-121/126): no Site, Moodboard or Design for an order that has none. The open area always shows.
+    const areas = planningAreasFor(selected?.record.id === recordRoute.id ? selected.record.plan : undefined, area.id);
+    // One tab row: the areas at the start, the open area's views as a segmented switch at its end.
     return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">
-      <nav aria-label={t("Planning sections")} className={styles.flowTabs}>
-        <div className={styles.flowTabScroll}>{planningAreas.map(item => <Link key={item.id} href={href(item.section)} className={styles.salesTab} data-tour={`case-tab-${item.id}`} aria-current={item === area ? "page" : undefined}><span>{areaLabels[item.id]}</span></Link>)}</div>
-      </nav>
-      {views.length > 1 && <nav aria-label={t("{area} views", { area: areaLabels[area.id] })} className={styles.commercialTabs}>
-        {views.map(tab => <Link key={tab.id} href={href(tab.id)} className={styles.commercialSegment} aria-current={tab.id === activeSection ? "page" : undefined}>{viewLabels[tab.id] ?? t(tab.label as never)}</Link>)}
-      </nav>}
+      <div className={styles.flowTabRow}>
+        <nav aria-label={t("Planning sections")} className={styles.flowTabs}>
+          <div className={styles.flowTabScroll}>{areas.map(item => <Link key={item.id} href={href(item.section)} className={styles.salesTab} data-tour={`case-tab-${item.id}`} aria-current={item === area ? "page" : undefined}><span>{areaLabels[item.id]}</span></Link>)}</div>
+        </nav>
+        {views.length > 1 && <nav aria-label={t("{area} views", { area: areaLabels[area.id] })} className={`${styles.commercialSegments} ${styles.flowViews}`}>
+          {views.map(tab => <Link key={tab.id} href={href(tab.id)} className={styles.commercialSegment} aria-current={tab.id === activeSection ? "page" : undefined}>{viewLabels[tab.id] ?? t(tab.label as never)}</Link>)}
+        </nav>}
+      </div>
     </div>;
   }
 
@@ -77,14 +84,9 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
       // Settings holds the routing, response and field rules; for someone who can use only Automations, it opens there.
       { id: allowed.has("crm-settings") ? "crm-settings" : "automations", icon: "settings", label: tKey("Settings"), href: allowed.has("crm-settings") ? "/workspace/crm/leads?section=assignment" : "/workspace/crm/leads?section=automations", active: settings },
     ].filter(tab => allowed.has(tab.id));
-    const settingsTabs = [
-      ...(allowed.has("crm-settings") ? [{ key: "assignment", label: t("Assignment") }, { key: "sla", label: t("Response targets") }, { key: "options", label: t("Fields") }] : []),
-      ...(allowed.has("automations") ? [{ key: "automations", label: t("Automations") }] : []),
-    ];
-    // A single tab says nothing the page doesn't: each bar shows only when there is a choice.
-    const showSettingsTabs = settings && settingsTabs.length > 1;
-    if (tabs.length < 2 && !showSettingsTabs) return null;
-    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">{tabs.length > 1 ? <nav aria-label={t("Sales sections")} className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} data-tour={`sales-tab-${tab.id}`} aria-current={tab.active ? "page" : undefined}><span>{t(tab.label as never)}</span></Link>)}</div></nav> : null}{showSettingsTabs && <nav aria-label={t("Sales settings")} className={styles.commercialTabs}>{settingsTabs.map(tab => <Link key={tab.key} href={"href" in tab && tab.href ? tab.href : `/workspace/crm/leads?section=${tab.key}`} className={styles.commercialSegment} aria-current={("href" in tab && tab.href ? pathname === tab.href : section === tab.key) ? "page" : undefined}>{tab.label}</Link>)}</nav>}</div>;
+    // Settings' own sections (Assignment, Response targets, Fields, Automations) are the page's one tab row under its title.
+    if (tabs.length < 2) return null;
+    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips"><nav aria-label={t("Sales sections")} className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} data-tour={`sales-tab-${tab.id}`} aria-current={tab.active ? "page" : undefined}><span>{t(tab.label as never)}</span></Link>)}</div></nav></div>;
   }
   const items = module.navigation.flatMap((section) => section.items).filter((item) => item.showInSidebar !== false && item.id !== "integrations" && item.id !== "crm-attachments" && (String(module.id) !== "crm" || ["crm-overview", "leads", "opportunities", "follow-ups", "automations", "crm-attachments"].includes(item.id)));
   if (String(module.id) === "crm") items.push(

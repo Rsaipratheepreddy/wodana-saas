@@ -19,14 +19,38 @@ export const fieldName = (control: Control) => {
   return (label ?? "").replace(/\s*\*\s*$/, "").replace(/\s*·\s*optional$/i, "").trim();
 };
 
-/** Takes the person to a control: the visible part of its field (a dropdown's button, not its hidden select). */
-export function focusField(control: Control) {
+const VISIBLE_CONTROL = "input:not([type=hidden]), textarea, select, button, [tabindex]:not([tabindex='-1'])";
+
+/**
+ * The part of a field a person sees and uses, given any control inside it: a dropdown's button, not its hidden
+ * native select (which sits inside an aria-hidden twin). It always has an id, so a summary can point at it.
+ */
+export function visibleControl(control: HTMLElement): HTMLElement {
+  const usable = (element: HTMLElement) => !element.closest("[aria-hidden=true]") && element.tabIndex !== -1 && !element.hasAttribute("disabled")
+    && !(element instanceof HTMLInputElement && element.type === "hidden");
   const field = control.closest(".wd-field");
-  // The visible control: a select's hidden native twin (inside aria-hidden) must not take focus.
-  const candidates = field ? [...field.querySelectorAll<HTMLElement>("input:not([type=hidden]), textarea, button, [tabindex]:not([tabindex='-1'])")] : [];
-  const focusable = candidates.find((element) => !element.closest("[aria-hidden=true]") && element.tabIndex !== -1) ?? control;
-  focusable.scrollIntoView?.({ block: "center", behavior: "smooth" });
-  focusable.focus?.({ preventScroll: true });
+  const candidates = field ? [...field.querySelectorAll<HTMLElement>(VISIBLE_CONTROL)] : [];
+  const visible = usable(control) ? control : candidates.find(usable) ?? control;
+  if (!visible.id) visible.id = `wd-field-${Math.random().toString(36).slice(2, 10)}`;
+  return visible;
+}
+
+/**
+ * Takes the person to the element with this id: focuses it, then scrolls every scrolling parent (a dialog's
+ * body, the page) so it sits in the middle. The scroll is immediate: a smooth one is cancelled by the focus
+ * change in some browsers and never runs in a background tab.
+ */
+export function revealById(id: string) {
+  const target = document.getElementById(id);
+  if (!target) return false;
+  target.focus?.({ preventScroll: true });
+  target.scrollIntoView?.({ block: "center", inline: "nearest" });
+  return true;
+}
+
+/** Takes the person to a control: the visible part of its field (a dropdown's button, not its hidden select). */
+export function focusField(control: Control | HTMLElement) {
+  revealById(visibleControl(control).id);
 }
 
 /** Controls in document order. */

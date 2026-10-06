@@ -379,7 +379,7 @@ export function CompanyProfile({
             <SelectField items={[{ id: "0", label: t("Sunday") }, { id: "1", label: t("Monday") }, { id: "6", label: t("Saturday") }]} label={t("Week starts on")} onSelectionChange={(key) => key && updateField("weekStartsOn", String(key))} selectedKey={form.weekStartsOn} />
           </FormSection>
 </FormDialog> : null}
-      <ConfirmationDialog body={t("Your edits have not been saved. Discard them and close the editor?")} confirmLabel={t("Discard changes")} isOpen={discardOpen} onConfirm={discardChanges} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} />
+      <ConfirmationDialog body={t("Your edits have not been saved. Discard them and close the editor?")} confirmLabel={t("Discard changes")} cancelLabel={t("Keep editing")} isOpen={discardOpen} onConfirm={discardChanges} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} />
       <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isRemovingLogo} onPress={() => setRemoveLogoOpen(false)}>{t("Keep logo")}</Button><Button isLoading={isRemovingLogo} onPress={removeLogo} variant="danger">{t("Remove logo")}</Button></div>} isOpen={removeLogoOpen} onOpenChange={setRemoveLogoOpen} title={t("Remove company logo?")}>{t("The initials fallback will replace the logo on the workspace and tenant sign-in screen.")}</ControlledModalDialog>
     </DesignSystemProvider>
   );

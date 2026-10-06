@@ -1,7 +1,8 @@
 import { tKey } from "@/lib/i18n/keys";
+import type { CasePlan } from "./types";
 
 /**
- * User-facing planning areas: five quiet tabs, each area's views as a second row. Existing record
+ * User-facing planning areas: quiet tabs, each area's views as a segmented switch at the end of the same row. Existing record
  * URLs (section ids) stay the same, so links elsewhere keep working.
  */
 export const planningAreas = [
@@ -16,4 +17,14 @@ export const planningAreas = [
 export type PlanningArea = (typeof planningAreas)[number];
 export function planningArea(section: string): PlanningArea {
   return planningAreas.find(area => area.sections.some(item => item.id === section)) ?? planningAreas[0];
+}
+
+/**
+ * The areas a case shows: every area, less the ones its path doesn't use (PLM-121/126) — Site without a site visit,
+ * Moodboard and Design without design work. The open area always shows, so a link to it never strands the person.
+ */
+export function planningAreasFor(plan: CasePlan | null | undefined, open?: PlanningArea["id"]): PlanningArea[] {
+  if (!plan) return [...planningAreas];
+  const unused = new Set<string>([...(plan.siteVisit ? [] : ["site"]), ...(plan.design ? [] : ["moodboard", "design"])]);
+  return planningAreas.filter((area) => area.id === open || !unused.has(area.id));
 }

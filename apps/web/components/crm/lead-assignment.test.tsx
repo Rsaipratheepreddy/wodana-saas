@@ -47,7 +47,7 @@ describe("Auto-assignment settings", () => {
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadRouting initialData={data} />);
-    await user.click(await screen.findByRole("tab", { name: "Routing order" }));
+    await user.click(await screen.findByRole("radio", { name: "Routing order" }));
     await user.click(await screen.findByRole("button", { name: `Edit ${policy.name}` }));
     const dialog = await screen.findByRole("dialog", { name: "Edit auto-assignment" });
     const order = within(dialog).getByRole("textbox", { name: /Order/ });

@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Avatar, Badge, Button, DataGrid, InspectorSheet, SelectField, Tabs, type DataGridColumn } from "@/design-system";
+import { Avatar, Badge, Button, DataGrid, InspectorSheet, SegmentedControl, SelectField, usePageToolbarElement, type DataGridColumn } from "@/design-system";
 import type { CrmAssignmentPolicy, CrmQueueMember, LeadsPageData } from "@/lib/crm/leads";
 import { crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { ActionDialog, ResourceState, choice, useCrmResource, type ActionSpec, type FieldSpec } from "./crm-workbench";
@@ -21,6 +22,9 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
   const [addingDefaults, setAddingDefaults] = useState(false);
   const [notice, setNotice] = useState("");
   const [salesSettings, setSalesSettings] = useState(initialData.salesSettings);
+  // Sales owners, routing order and rules: one at a time, switched in the page's tabs row (never a third row of tabs).
+  const [view, setView] = useState<"managers" | "order" | "rules">("managers");
+  const slotElement = usePageToolbarElement();
   const queue = queues.find((item) => item.id === queueId) ?? queues[0];
   const queueOptions = queues.map((item) => ({ id: item.id, label: item.name }));
   const refresh = async () => {
@@ -111,8 +115,11 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
     { id: "queue", accessorFn: ({ rule }) => queues.find((item) => item.id === rule.queueId)?.name ?? t("Unavailable queue"), header: t("Queue"), size: 160 },
     { id: "action", header: t("Action"), size: 100, enableSorting: false, cell: ({ row }) => <Button size="compact" variant="quiet" aria-label={t("Edit {name}", { name: row.original.rule.name })} onPress={() => editRule(row.original.policy, row.original.rule)}>{t("Edit")}</Button> },
   ];
+  const switcher = <SegmentedControl label={t("Assignment settings")} value={view} onChange={(next) => setView(next as typeof view)}
+    options={[{ id: "managers", label: t("Sales owners") }, { id: "order", label: t("Routing order") }, { id: "rules", label: t("Routing rules") }]} />;
   return <section aria-label={t("Auto-assignment configuration")} className={assignmentStyles.page}>
-    <Tabs defaultSelectedKey="managers" items={[{ id: "managers", label: t("Sales owners"), panel: <section aria-label={t("Sales owners")}>
+    {slotElement ? createPortal(switcher, slotElement) : <div className={assignmentStyles.switcher}>{switcher}</div>}
+    {view === "managers" ? <section aria-label={t("Sales owners")}>
       <header className={assignmentStyles.toolbar}>
         <p className={assignmentStyles.hint}>{queue?.takeoverAfterMinutes ? t("Unanswered enquiries move to the next person after {minutes} working minutes.", { minutes: queue.takeoverAfterMinutes }) : null}</p>
         <div className={assignmentStyles.actions}>
@@ -144,10 +151,12 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
       </header>
       {notice ? <p role="status">{notice}</p> : null}
       <DataGrid ariaLabel={t("Assignment sales owners")} columns={ownerColumns} data={queue?.members ?? []} getRowId={(member) => member.membershipId} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No sales owners in this queue")} emptyDescription={t("Add a sales owner before enabling auto-assignment.")} />
-    </section> }, { id: "order", label: t("Routing order"), panel: <section aria-label={t("Routing order")}>
+    </section> : null}
+    {view === "order" ? <section aria-label={t("Routing order")}>
       <header className={assignmentStyles.toolbar} data-actions-only><span /><Button size="compact" isDisabled={!queues.length} onPress={() => editPolicy()}>{t("Add auto-assignment")}</Button></header>
       <DataGrid ariaLabel={t("Auto-assignment routing order")} columns={policyColumns} data={[...policies].sort((a, b) => a.priority - b.priority)} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No auto-assignment configured")} emptyDescription={t("Add one to route incoming enquiries.")} />
-    </section> }, { id: "rules", label: t("Routing rules"), panel: <section aria-label={t("Routing rules")}>
+    </section> : null}
+    {view === "rules" ? <section aria-label={t("Routing rules")}>
       <div className={assignmentStyles.toolbar}><span>{t("Match enquiries to a specific queue.")}</span><Button size="compact" isDisabled={!policies.some((policy) => policy.status === "active") || !queues.length} onPress={() => setAction({
         title: t("Add routing rule"), path: (values) => `assignment-policies/${values.policyId}`, method: "PATCH",
         initial: { policyId: policies.find((policy) => policy.status === "active")?.id, priority: 10 },
@@ -158,7 +167,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
         },
       })}>{t("Add rule")}</Button></div>
       <DataGrid ariaLabel={t("Routing rules")} columns={ruleColumns} data={activeRules} getRowId={({ rule }) => rule.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No routing rules")} emptyDescription={t("Rules can direct matching enquiries to a specific queue.")} />
-    </section> }]} />
+    </section> : null}
     {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={async (result) => { if (action.path === "sales-settings") { setSalesSettings(result as unknown as typeof salesSettings); return; } await refresh(); }} /> : null}
   </section>;
 }

@@ -117,3 +117,35 @@ describe("the case's strip, money and timeline", () => {
     expect(caseActivity(commercial({ audit })).map((entry) => [entry.id, entry.text.key])).toEqual([["b", "{who} verified a payment"], ["a", "{who} issued the quotation"]]);
   });
 });
+
+describe("a case on its path's own line (PLM-121/126)", () => {
+  // An in-stock delivery: the job's configuration says quotation, agreement and payment, then fulfilment.
+  const stock = { ...record, plan: { source: "path" as const, phases: ["price", "agree", "release"] as PreProjectCase["phase"][], siteVisit: false, design: false, release: "fulfilment" as const } };
+  const unstarted: JourneyView = { journey: null, stages: [], canStart: true, startsAs: "site_and_materials", timezone: "UTC" };
+
+  it("goes straight to the quotation: no site visit, no design, no requirements stage", () => {
+    expect(effectivePhase(stock)).toBe("price");
+    expect(casePosition(stock)).toEqual({ position: 1, count: 3 });
+    const next = caseNextStep({ record: stock, journey: unstarted, today });
+    expect(next).toMatchObject({ title: { key: "Send the quotation" }, action: { label: { key: "Open quotations" }, href: "/workspace/pre-projects/cases/c1/quotations" } });
+    expect(JSON.stringify(next)).not.toMatch(/site visit|measuring/i);
+  });
+
+  it("names its stages from the path and releases to fulfilment", () => {
+    expect(caseTimeline({ record: stock, today }).map((step) => step.label.key)).toEqual(["Quotation", "Agreement", "Ready for fulfilment"]);
+    const accepted = [quote({ status: "accepted", decidedAt: "2026-09-29T18:01:28Z" })];
+    expect(caseNextStep({ record: stock, commercial: commercial({ quotes: accepted, agreement: executed, payments: [payment({ status: "verified" })] }), today }).title.key).toBe("Release to fulfilment");
+    expect(effectivePhase(stock, commercial({ quotes: accepted, agreement: executed }))).toBe("release");
+  });
+
+  it("calls the design phase the site visit when the path asks for a visit but no design", () => {
+    const measured = { ...stock, plan: { ...stock.plan, phases: ["design", "price", "agree", "release"] as PreProjectCase["phase"][], siteVisit: true, release: "production" as const } };
+    expect(caseTimeline({ record: measured, today }).map((step) => step.label.key)).toEqual(["Site visit", "Quotation", "Agreement", "Ready for production"]);
+    expect(caseNextStep({ record: measured, journey: unstarted, today })).toMatchObject({ title: { key: "Start the site visit" }, action: { command: "start_journey" } });
+  });
+
+  it("keeps every phase for a case without a path plan", () => {
+    expect(caseTimeline({ record, today })).toHaveLength(6);
+    expect(casePosition(record)).toEqual({ position: 1, count: 6 });
+  });
+});

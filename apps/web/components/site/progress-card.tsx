@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, ChevronRight, CircleDot, Info, Maximize2 } from "lucide-react";
 import { ControlledModalDialog, IconButton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import type { CardPhoto } from "@/lib/site/types";
 import styles from "./progress-card.module.css";
 
@@ -104,7 +105,7 @@ export function PhotoLightbox({ photos, start, photoUrl, title, onClose }: {
   useEffect(() => {
     // Arrow keys follow reading order: in right-to-left pages, left is next.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if ((event.key !== "ArrowLeft" && event.key !== "ArrowRight") || isTypingTarget(event.target)) return;
       const rtl = document.documentElement.dir === "rtl";
       const by = (event.key === "ArrowRight") !== rtl ? 1 : -1;
       setAt((current) => (current + by + count) % count);

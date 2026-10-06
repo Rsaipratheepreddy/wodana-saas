@@ -214,7 +214,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
           {enquiry?.summary || canEdit ? <EditableFieldList layout="stacked"><EditableField canEdit={canEdit} kind="multiline" label={t("Project description")} maxLength={10000} onReload={resource.refresh}
             onSave={(summary) => saveDetails({ summary })} placeholder={t("What would the customer like to do?")} value={text(enquiry?.summary)} /></EditableFieldList> : null}
           <SideSection title={t("Key facts")}>
-            <EditableFieldList layout="stacked">
+            <EditableFieldList>
               <EditableField canEdit={canEdit} display={leadOptionLabel(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} items={withCurrent(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} kind="select" label={t("Enquiry type")}
                 onReload={resource.refresh} onSave={(serviceType) => saveDetails({ serviceType })} value={text(enquiry?.serviceType ?? lead.serviceType)} />
               {teamRoles.map((role) => {

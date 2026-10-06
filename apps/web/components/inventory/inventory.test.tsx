@@ -69,6 +69,41 @@ describe("inventory", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "allocate", itemId: "i1", locationId: "w1", projectId: null, forProjectId: "p1", quantity: "5" }));
   });
 
+  it("lists a materials list imported without quantities at nothing on hand, with its category", async () => {
+    const items = [
+      { itemId: "m1", itemName: "Hinge", itemCode: "HW-1", unit: "pcs", catalogItemId: null, category: "Hardware" },
+      { itemId: "m2", itemName: "Primer", itemCode: "PT-1", unit: "l", catalogItemId: null, category: "Paint" },
+      { itemId: "m3", itemName: "Drawer runner", itemCode: "HW-2", unit: "pair", catalogItemId: null, category: "Hardware" },
+    ];
+    const fetcher = mount((url) => (url.includes("/transfers") ? { transfers: [], locations: [], canManage: true, canAdjust: true, canReceive: true } : stock({ rows: [], items })));
+    page();
+    const hinge = await rowOf("Hinge");
+    expect(hinge).toHaveTextContent("0 pcs");
+    expect(hinge).toHaveTextContent("Hardware");
+    expect(screen.queryByText("Nothing in stock")).not.toBeInTheDocument();
+    expect(screen.getByText("No quantities recorded yet — count stock or import quantities.")).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "Stock" })).getAllByRole("row")).toHaveLength(4);
+    // Free stock keeps its filter: nothing is free yet.
+    await userEvent.click(screen.getByRole("button", { name: "Free stock" }));
+    expect(screen.queryByText("Hinge")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "All" }));
+    // Adding stock of a listed item uses that item, never a new one.
+    await userEvent.click(within(await rowOf("Primer")).getByRole("button", { name: "Actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Add stock" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add stock" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Quantity" }), "12");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Where it comes from/ }), "Opening count");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add stock" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "add", itemId: "m2", quantity: "12" }));
+  });
+
+  it("shows the empty state only when no stock item is kept at all", async () => {
+    mount((url) => (url.includes("/transfers") ? { transfers: [], locations: [], canManage: true, canAdjust: true, canReceive: true } : stock({ rows: [], items: [] })));
+    page();
+    expect(await screen.findByText("Nothing in stock")).toBeInTheDocument();
+    expect(screen.queryByText("No quantities recorded yet — count stock or import quantities.")).not.toBeInTheDocument();
+  });
+
   it("counts stock and asks why when the count is different", async () => {
     const fetcher = mount(() => stock());
     page();

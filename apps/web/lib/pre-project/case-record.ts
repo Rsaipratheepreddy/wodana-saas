@@ -3,7 +3,7 @@ import { fromMinor, minorUnits, toMinor } from "@/lib/money-exact";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import type { JourneyStageKey, JourneyStageView, JourneyView } from "./design-workspace";
-import { caseHref, type PreProjectCase } from "./types";
+import { caseHref, type CasePlan, type PreProjectCase } from "./types";
 
 /**
  * A planning case read as a record (§5c D.7): where it stands, the one next step computed from its real state
@@ -46,6 +46,31 @@ export const CASE_PHASE_TEXT: Record<PreProjectCase["phase"], { stage: MessageKe
   release: { stage: tKey("Ready for production"), next: tKey("Release to production"), section: "execution-release", open: tKey("Open release") },
 };
 
+type PhaseText = (typeof CASE_PHASE_TEXT)[PreProjectCase["phase"]];
+
+/** The phases a case goes through: its path's own (PLM-121/126), else every planning phase. */
+export function casePhases(plan?: CasePlan | null): readonly PreProjectCase["phase"][] {
+  return plan?.phases?.length ? plan.phases : CASE_PHASES;
+}
+
+/**
+ * A phase in the case's words: a path without design work calls its design phase the site visit, and an order of
+ * stock or supplier goods is released to fulfilment, not production.
+ */
+export function casePhaseText(phase: PreProjectCase["phase"], plan?: CasePlan | null): PhaseText {
+  if (phase === "design" && plan && plan.siteVisit && !plan.design) return { stage: tKey("Site visit"), next: tKey("Record the site visit"), section: "site", open: tKey("Open the site") };
+  if (phase === "release" && plan?.release === "fulfilment") return { stage: tKey("Ready for fulfilment"), next: tKey("Release to fulfilment"), section: "execution-release", open: tKey("Open release") };
+  return CASE_PHASE_TEXT[phase] ?? CASE_PHASE_TEXT.discover;
+}
+
+/** A recorded phase on the case's own line: a phase its path skips moves on to the next one it uses. */
+export function plannedPhase(phase: PreProjectCase["phase"], plan?: CasePlan | null): PreProjectCase["phase"] {
+  const phases = casePhases(plan);
+  if (phases.includes(phase)) return phase;
+  const at = CASE_PHASES.indexOf(phase);
+  return phases.find((item) => CASE_PHASES.indexOf(item) > at) ?? phases.at(-1) ?? phase;
+}
+
 export const JOURNEY_STAGE_LABEL: Record<JourneyStageKey, MessageKey> = {
   inspiration: tKey("Inspiration"), site_visit: tKey("Site visit"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"),
   material_selection: tKey("Material selection"), renders: tKey("3D renders"), approval: tKey("Design approval"),
@@ -73,18 +98,19 @@ export function activeJourneyStage(journey?: JourneyView | null): JourneyStageVi
  * Where the case really is: its recorded phase, moved on by what the commercial records already show (a quotation
  * in review or with the client is pricing; an accepted one is the agreement; a signed agreement is the release).
  */
-export function effectivePhase(record: Pick<PreProjectCase, "phase">, commercial?: CommercialState | null): PreProjectCase["phase"] {
+export function effectivePhase(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CommercialState | null): PreProjectCase["phase"] {
   const quote = currentQuote(commercial);
   const implied = commercial?.data.agreement?.status === "executed" ? "release"
     : quote?.status === "accepted" ? "agree"
     : quote && quote.status !== "draft" ? "price" : null;
   const recorded = Math.max(0, CASE_PHASES.indexOf(record.phase));
-  return implied && CASE_PHASES.indexOf(implied) > recorded ? implied : CASE_PHASES[recorded];
+  return plannedPhase(implied && CASE_PHASES.indexOf(implied) > recorded ? implied : CASE_PHASES[recorded], record.plan);
 }
 
 /** The case's position in its phases (1-based) and how many there are. */
-export function casePosition(record: Pick<PreProjectCase, "phase">, commercial?: CommercialState | null) {
-  return { position: CASE_PHASES.indexOf(effectivePhase(record, commercial)) + 1, count: CASE_PHASES.length };
+export function casePosition(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CommercialState | null) {
+  const phases = casePhases(record.plan);
+  return { position: phases.indexOf(effectivePhase(record, commercial)) + 1, count: phases.length };
 }
 
 /** The one next step, from the case's real state, in the order the work happens. */
@@ -121,7 +147,7 @@ export function caseNextStep({ record, commercial, journey, project, today }: Ca
     owner: stage.ownerName ?? owner, due: stage.dueAt, overdue: stage.overdue, status: stage.overdue ? "attention" : undefined,
     action: DELIVERABLE.includes(stage.stage) ? { label: { key: tKey("Open design") }, href: href(record, "designs", { stage: stage.stage }) } : null,
   };
-  if (journey && !journey.journey && journey.canStart) {
+  if (journey && !journey.journey && journey.canStart && (!record.plan || record.plan.siteVisit || record.plan.design)) {
     const site = journey.startsAs === "site_and_materials";
     return { title: { key: site ? tKey("Start the site visit") : tKey("Start the design") }, why: { key: site ? tKey("The order needs measuring before materials are chosen.") : tKey("The design deposit is in; the design stages can start.") }, owner,
       action: { label: { key: site ? tKey("Start site visit") : tKey("Start design") }, command: "start_journey" } };
@@ -156,10 +182,10 @@ export function caseNextStep({ record, commercial, journey, project, today }: Ca
     }
     const review = commercial.data.ownerReview;
     if (!commercial.data.dealFile && review && ["submitted", "pending_finance", "pending_approval"].includes(review.status)) return { title: { key: tKey("Approve the deal") }, why: { key: tKey("Waiting for the owner's review") }, action: { label: { key: tKey("Open approvals") }, href: href(record, "approvals") } };
-    return { title: { key: tKey("Release to production") }, why: { key: tKey("Agreed and paid") }, owner, action: { label: { key: tKey("Open release") }, href: href(record, "execution-release") } };
+    return { title: { key: casePhaseText("release", record.plan).next }, why: { key: tKey("Agreed and paid") }, owner, action: { label: { key: tKey("Open release") }, href: href(record, "execution-release") } };
   }
 
-  const phase = CASE_PHASE_TEXT[effectivePhase(record, commercial)] ?? CASE_PHASE_TEXT.discover;
+  const phase = casePhaseText(effectivePhase(record, commercial), record.plan);
   return { title: { key: phase.next }, owner, due: record.targetDate, overdue: Boolean(record.targetDate && record.targetDate < today), action: { label: { key: phase.open }, href: href(record, phase.section) } };
 }
 
@@ -210,7 +236,8 @@ export type CaseStep = {
 /** The case's phases as steps (✓ done · ● now · ○ next), with who and when where the records say; then its project. */
 export function caseTimeline({ record, commercial, journey, project }: CaseRecordInput): CaseStep[] {
   const released = record.status === "released" || Boolean(record.projectId);
-  const current = CASE_PHASES.indexOf(effectivePhase(record, commercial));
+  const phases = casePhases(record.plan);
+  const current = phases.indexOf(effectivePhase(record, commercial));
   const accepted = commercial?.data.quotes.find((quote) => quote.status === "accepted" && quote.round !== "design");
   const agreement = commercial?.data.agreement?.status === "executed" ? commercial.data.agreement : null;
   const designers = [...new Map((journey?.journey ? journey.stages : []).filter((stage) => stage.ownerName).map((stage) => [stage.ownerName!, { id: `designer-${stage.ownerName}`, name: stage.ownerName! }])).values()];
@@ -218,11 +245,11 @@ export function caseTimeline({ record, commercial, journey, project }: CaseRecor
   const doneAt: Partial<Record<PreProjectCase["phase"], string | null>> = {
     design: journey?.journey?.approvedOn ?? null, price: accepted?.decidedAt ?? null, agree: agreement?.executedAt ?? null, release: record.releasedAt,
   };
-  const steps: CaseStep[] = CASE_PHASES.map((phase, index) => {
+  const steps: CaseStep[] = phases.map((phase, index) => {
     const state: CaseStep["state"] = released || index < current ? "done" : index === current ? (record.status === "on_hold" || record.status === "cancelled" ? "blocked" : "current") : "upcoming";
     const done = journey?.journey ? journey.stages.filter((stage) => stage.status === "done").length : 0;
     return {
-      id: phase, label: { key: CASE_PHASE_TEXT[phase].stage }, state, doneAt: state === "done" ? doneAt[phase] ?? null : null,
+      id: phase, label: { key: casePhaseText(phase, record.plan).stage }, state, doneAt: state === "done" ? doneAt[phase] ?? null : null,
       people: phase === "design" && designers.length ? designers : state === "current" ? ownerPerson : [],
       detail: phase === "design" && journey?.journey && state !== "done" ? { key: tKey("{done} of {total} stages done"), values: { done, total: journey.stages.length } } : null,
     };

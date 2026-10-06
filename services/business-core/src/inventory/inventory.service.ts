@@ -11,7 +11,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { likePattern, searchTerms } from "../search/search-terms";
 import { raiseSnag } from "../project-core/project-work";
 import { reworkFromSite } from "../factory/factory-rework";
-import { averageCost, move, onHand, readMovements, readStock, readTransfer, readTransfers, stockItemFor } from "./stock";
+import { averageCost, move, onHand, readMovements, readStock, readStockItems, readTransfer, readTransfers, stockItemFor } from "./stock";
 import { processStockLevels, readReorderPoints } from "./stock-levels";
 
 type Db = PoolClient;
@@ -521,6 +521,8 @@ export class InventoryService {
   private async state(client: Db, workspaceId: string, userId: string) {
     return {
       rows: await readStock(client, workspaceId),
+      // Every item kept, so a list imported without quantities shows (at nothing on hand).
+      items: await readStockItems(client, workspaceId),
       locations: await readLocations(client, workspaceId),
       projects: (await client.query<{ id: string; reference: string; name: string }>(
         `SELECT id, reference, name FROM delivery_projects WHERE workspace_id = $1 AND status IN ('active', 'on_hold') ORDER BY reference`, [workspaceId])).rows,

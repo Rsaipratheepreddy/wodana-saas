@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { fieldName, focusField, inDocumentOrder, type FormControl } from "../foundations/blocked-save-alert";
+import { fieldName, focusField, inDocumentOrder, revealById, visibleControl, type FormControl } from "../foundations/blocked-save-alert";
 
 type Problem = { control: FormControl; name: string };
 
@@ -34,14 +34,23 @@ export function readSaveProblems(body: unknown): SaveProblem[] {
     && typeof (item as SaveProblem).key === "string" && typeof (item as SaveProblem).label === "string") : [];
 }
 
-/** The control a problem belongs to: the field named `key` in the same form, else one marked `data-problem-key`. */
-function problemControl(from: HTMLElement | null, key: string): FormControl | null {
+/**
+ * The id of the visible control a problem belongs to: the field named `key` in the same form (its own control, a
+ * dropdown's button), else the field or control marked `data-problem-key`.
+ */
+export function problemFieldId(from: HTMLElement | null, key: string): string | null {
   const form = from?.closest("form");
   const named = form?.elements.namedItem(key);
   const control = named instanceof RadioNodeList ? named[0] : named;
-  if (control && "validity" in control) return control as FormControl;
+  if (control instanceof HTMLElement && "validity" in control) return visibleControl(control).id;
   const marked = (form ?? document).querySelector<HTMLElement>(`[data-problem-key="${CSS.escape(key)}"]`);
-  return (marked?.matches("input, select, textarea") ? marked : marked?.querySelector("input:not([type=hidden]), select, textarea")) as FormControl | null;
+  if (!marked) return null;
+  // A focusable section (a list of choices) is reached as itself; a wrapper around a field, through its control.
+  const inner = marked.hasAttribute("tabindex") ? null : marked.matches("input, select, textarea") ? marked : marked.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea");
+  if (inner) return visibleControl(inner).id;
+  // A problem that isn't a form field (a card, a section) is reached as itself.
+  if (!marked.id) marked.id = `wd-problem-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  return marked.id;
 }
 
 /**
@@ -60,7 +69,7 @@ export function ProblemSummary({ actions, onSelect, problems, title }: {
     <CircleAlert aria-hidden="true" size={16} />
     <div>
       <strong>{title ?? (problems.length === 1 ? t("Check 1 field") : t("Check {count} fields", { count: problems.length }))}</strong>
-      <ul data-layout="list">{problems.map((problem) => <li key={problem.key}><button onClick={() => { if (onSelect) { onSelect(problem.key); return; } const control = problemControl(box.current, problem.key); if (control) focusField(control); }} type="button">{problem.text ?? problem.label}</button></li>)}</ul>
+      <ul data-layout="list">{problems.map((problem) => <li key={problem.key}><button data-problem-target={problem.key} onClick={() => { if (onSelect) { onSelect(problem.key); return; } const id = problemFieldId(box.current, problem.key); if (id) revealById(id); }} type="button">{problem.text ?? problem.label}</button></li>)}</ul>
       {actions}
     </div>
   </div>;

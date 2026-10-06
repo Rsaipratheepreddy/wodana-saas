@@ -24,6 +24,9 @@ describe("configuration profile", () => {
     expect(palm.approvals?.payableRequest).toEqual({ firstApproverRole: "finance", secondApproverRole: null, thresholdAmount: null });
     expect(palm.design).toEqual({ renderInternalDays: 35, renderClientDays: 56, revisionsIncluded: 2 });
     expect(palm.clientUpdates).toEqual({ mode: "call", frequency: "weekly" });
+    expect(palm.catalogCategories).toEqual([{ catalog: "Palm Living Core Collection", merge: [{ from: "BED & MATTRESS", into: "Beds & Mattress" }], deleteEmpty: [],
+      deleteEmptyDuplicates: true, rename: [{ from: "DINING CHAIRS", to: "Dining Chairs" }, { from: "LOUNGE CHAIRS", to: "Lounge Chairs" }],
+      parent: [{ category: "Dining Chairs", parent: "Chairs" }, { category: "Lounge Chairs", parent: "Chairs" }] }]);
     expect(validateProfile(json("fixtures/sample-profile.json")).orderPaths).toHaveLength(2);
   });
 
@@ -48,6 +51,7 @@ describe("configuration profile", () => {
       routes: [{ addStages: [{ name: "Permit", checks: ["confirm", "unknown_kind"] }] }],
       orderPaths: [{ enquiryType: "Furniture", path: "teleport", leadDays: { min: 5, max: 2 } }],
       clientUpdates: { mode: "letter", frequency: "weekly" },
+      catalogCategories: [{ catalog: "Core", merge: [{ from: "Beds", into: "beds" }], parent: [{ category: "Chairs", parent: "chairs" }], rename: [{ from: "X" }] }, { catalog: "Empty" }],
     })).toEqual(expect.arrayContaining([
       expect.stringContaining("Unknown section \"vehicle\""),
       expect.stringContaining("factory.productionSteps: 2 to 4 steps"),
@@ -67,6 +71,10 @@ describe("configuration profile", () => {
       expect.stringContaining("orderPaths[0].path is one of"),
       expect.stringContaining("orderPaths[0].leadDays.min is at most max"),
       expect.stringContaining("clientUpdates.mode is one of call, portal"),
+      expect.stringContaining("catalogCategories[0].merge: Beds merges into another category"),
+      expect.stringContaining("catalogCategories[0].parent[0]: a category can't sit under itself"),
+      expect.stringContaining("catalogCategories[0].rename[0].to is non-empty text"),
+      expect.stringContaining("catalogCategories[1] has nothing to do"),
     ]));
     expect(problems([])).toEqual(["The profile is a JSON object of sections."]);
   });

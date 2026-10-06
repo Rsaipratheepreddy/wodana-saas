@@ -1,5 +1,6 @@
 "use client";
 
+import { SALES_SETTINGS_SECTIONS, type SalesSettingsSection } from "@/lib/workspace/access";
 import { useRouter } from "next/navigation";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -124,7 +125,13 @@ const SECTION_AREA: Record<EnquirySection, "Enquiries" | "Campaigns" | "Reports"
   leads: "Enquiries", forms: "Campaigns", sources: "Campaigns", reports: "Reports", assignment: "Sales settings", sla: "Sales settings", options: "Sales settings", automations: "Automations",
 };
 
-export function LeadsPage({ initialData: serverData, integrationsData, integrationsDenied = false, formBranding, initialLeadId, initialCreate = false, initialSection = "leads", sectionDenied = false }: { initialData: LeadsPageData; integrationsData?: IntegrationsPageData; integrationsDenied?: boolean; formBranding?: LeadFormBranding; initialLeadId?: string; initialCreate?: boolean; initialSection?: EnquirySection; sectionDenied?: boolean }) {
+const SETTINGS_SECTIONS = SALES_SETTINGS_SECTIONS;
+type SettingsSection = SalesSettingsSection;
+const SETTINGS_LABELS: Record<SettingsSection, "Assignment" | "Response targets" | "Fields" | "Automations"> = { assignment: "Assignment", sla: "Response targets", options: "Fields", automations: "Automations" };
+
+export function LeadsPage({ initialData: serverData, integrationsData, integrationsDenied = false, formBranding, initialLeadId, initialCreate = false, initialSection = "leads", sectionDenied = false, settingsSections = SETTINGS_SECTIONS }: { initialData: LeadsPageData; integrationsData?: IntegrationsPageData; integrationsDenied?: boolean; formBranding?: LeadFormBranding; initialLeadId?: string; initialCreate?: boolean; initialSection?: EnquirySection; sectionDenied?: boolean;
+  /** The settings sections this person may open (each a tab under the Sales settings title). */
+  settingsSections?: readonly SettingsSection[] }) {
   const router = useRouter();
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
@@ -184,7 +191,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     if (section === activeSection) return;
     const navigate = () => router.push(section === "leads" ? "/workspace/crm/leads" : `/workspace/crm/leads?section=${section}`);
     if (formDirty) {
-      requestConfirmation({ title: t("Discard unsaved changes?"), body: t("Your current enquiry configuration has not been saved."), confirmLabel: t("Discard changes"), onConfirm: navigate });
+      requestConfirmation({ title: t("Discard unsaved changes?"), body: t("Your current enquiry configuration has not been saved."), confirmLabel: t("Discard changes"), cancelLabel: t("Keep editing"), onConfirm: navigate });
       return;
     }
     navigate();
@@ -444,13 +451,18 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const checkFilters: ToolbarFilter[] = checkOptions.length || check ? [{ id: "check", label: t("To check"), options: checkOptions, value: check,
     // A duplicate is in no working list, so checking one shows All.
     onChange: (value) => { setCheck(value as typeof check); if (value) setLeadView("all"); } }] : [];
+  const inSettings = (SETTINGS_SECTIONS as readonly string[]).includes(activeSection);
+  // Settings: one title and its sections as the one row of tabs under it (a single section is just its own title).
+  const settingsTabs = settingsSections.map((id) => ({ id: id as EnquirySection, label: t(SETTINGS_LABELS[id]) }));
+  const pageTitle = inSettings && settingsTabs.length > 1 ? t("Sales settings") : t(SECTION_AREA[activeSection]);
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
   return <DesignSystemProvider className={`${styles.provider} ${theme.theme}`} portalContainer={portalContainer} ref={setPortalContainer}>
     {/* One title per section, with New enquiry top-end on the list (S-20); the lists sit under the title. */}
-    <PageShell aria-label={t("Enquiries workspace")} title={t(SECTION_AREA[activeSection])}
+    <PageShell aria-label={t("Enquiries workspace")} title={pageTitle}
       action={activeSection === "leads" && initialData.canView ? <Button variant="primary" onPress={add}><Plus size={15} aria-hidden="true"/>{t("New enquiry")}</Button> : undefined}
       tabs={activeSection === "leads" && initialData.canView && !sectionDenied ? <ListTabs label={t("Enquiry lists")} value={leadView} onChange={setLeadView} items={leadTabs} />
-        : workspaceArea === "capture" && !sectionDenied && !(activeSection === "forms" && formEditing) ? <ListTabs label={t("Capture settings")} value={activeSection} onChange={openSection} items={[{ id: "forms", label: t("Forms") }, { id: "sources", label: t("Lead sources") }]} /> : undefined}>
+        : workspaceArea === "capture" && !sectionDenied && !(activeSection === "forms" && formEditing) ? <ListTabs label={t("Capture settings")} value={activeSection} onChange={openSection} items={[{ id: "forms", label: t("Forms") }, { id: "sources", label: t("Lead sources") }]} />
+        : inSettings && settingsTabs.length > 1 ? <ListTabs label={t("Sales settings")} value={activeSection} onChange={openSection} items={settingsTabs} /> : undefined}>
 
       {!initialData.canView ? <NoAccessState area={t("Enquiries")} /> : sectionDenied ? <NoAccessState area={t(SECTION_AREA[activeSection])} /> : <>
         {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="xl" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} onOpenRecord={openRecord} /></InspectorSheet> : null}

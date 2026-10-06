@@ -24,6 +24,25 @@ describe("⌘K (NV-2)", () => {
   beforeEach(() => { push.mockReset(); ask.mockReset(); });
   afterEach(() => vi.unstubAllGlobals());
 
+  it("L18: never opens from a field in a side panel or dialog, and leaves a page's own ⌘K to the page", async () => {
+    stubFetch({ aiEnabled: false });
+    const user = userEvent.setup();
+    render(<><CommandPalette workspaceId={workspaceId} modules={workspaceModules} access={sales} />
+      <aside data-side-panel><input aria-label="Search the catalog" type="search" /></aside><input aria-label="Page field" /></>);
+    await user.click(screen.getByRole("searchbox", { name: "Search the catalog" }));
+    await user.keyboard("Harriet{Control>}k{/Control}");
+    expect(screen.queryByRole("dialog", { name: "Search and act" })).not.toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search the catalog" })).toHaveValue("Harriet");
+    const own = (event: KeyboardEvent) => { if (event.key === "k") event.preventDefault(); };
+    document.addEventListener("keydown", own);
+    try {
+      await user.click(screen.getByRole("textbox", { name: "Page field" }));
+      await user.keyboard("{Control>}k{/Control}");
+      expect(screen.queryByRole("dialog", { name: "Search and act" })).not.toBeInTheDocument();
+    } finally { document.removeEventListener("keydown", own); }
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("opens from anywhere with the keyboard and creates what the person may create", async () => {
     stubFetch({ aiEnabled: false });
     const user = userEvent.setup();

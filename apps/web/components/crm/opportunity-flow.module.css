@@ -11,6 +11,9 @@
 .pathPicker :global(.wd-choice-list) { grid-template-columns: repeat(auto-fill, minmax(calc(var(--wd-space-24) * 2), 1fr)); gap: var(--wd-space-2); }
 .pathPicker :global(.wd-radio) { padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
 .pathPicker :global(.wd-radio[data-selected]) { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); }
-.pathTitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1-5); }
+/* Each card fills its cell; the lead time sits top-end on the title's first line in every card, however the name wraps. */
+.pathPicker :global(.wd-radio) { display: flex; }
+.pathPicker :global(.wd-radio) > span:last-child { flex: 1 1 auto; }
+.pathTitle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; column-gap: var(--wd-space-1-5); }
 .pathLetter { color: var(--wd-color-action-primary); font-weight: var(--wd-weight-semibold); }
-.pathLead { margin-inline-start: auto; }
+.pathLead { justify-self: end; white-space: nowrap; }

@@ -8,6 +8,8 @@ export type ImportArgs = Common & {
   command: "import"; target: ImportTargetArg; file: string; tabs: string[] | null; excludeTabs: string[]; mapping: string | null;
   legalEntity: string | null; fillOnly: boolean; catalog: string | null; location: string | null; name: string | null; itemType: string | null;
   setsStock: boolean; pictures: boolean;
+  /** Catalog: the file's prices are approved list prices (live at once); left out, the link keeps its setting. */
+  approvedPrices: boolean;
 };
 export type ConfigureArgs = Common & { command: "configure"; profile: string };
 export type OpsArgs = ImportArgs | ConfigureArgs | { command: "help" };
@@ -19,7 +21,7 @@ Usage:
   node dist/ops/ops-cli.js import --workspace <slug> --as <member email> --target stock|catalog|suppliers --file <path.xlsx|csv>
       [--tabs "A,B"] [--exclude-tabs "A,B"] [--mapping <json or file>] [--legal-entity <code>] [--fill-only]
       [--catalog <code|name>] [--location <place name>] [--name <import name>] [--item-type <kind>] [--no-sets-stock]
-      [--pictures] [--apply] [--json]
+      [--pictures] [--approved-prices] [--apply] [--json]
   node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> --profile <profile.json> [--apply] [--json]
   node dist/ops/ops-cli.js --help
 
@@ -42,6 +44,10 @@ import
   --item-type         catalog: what new items are (product, material, assembly, service, package, ready_made)
   --no-sets-stock     stock: the sheet doesn't set quantities
   --pictures          catalog, with --apply: add each row's picture to its item when the item has none
+  --approved-prices   catalog: the file's prices are approved list prices: they go live in the catalogue's default price
+                      book (put in use if needed) instead of waiting in draft, and drafts of prices the file repeats are
+                      approved. The member needs commercial.estimate and catalog.manage. The link keeps the setting for
+                      later refreshes; without the flag a re-run keeps what the link has.
 
 configure
   Applies a workspace configuration profile (JSON) through the settings commands. Sections the profile leaves out are
@@ -49,7 +55,7 @@ configure
 
 Output is counts and messages only. Exit code 0 when everything succeeded, 1 when anything failed, 2 for usage errors.`;
 
-const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--help", "-h"]);
+const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
   "--item-type", "--profile"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -103,7 +109,7 @@ export function parseArgs(argv: string[]): OpsArgs {
   if (target !== "stock" && target !== "catalog" && target !== "suppliers") throw new UsageError("--target is stock, catalog or suppliers.");
   const perTarget: Record<ImportTargetArg, string[]> = {
     stock: ["--location", "--no-sets-stock"],
-    catalog: ["--catalog", "--item-type", "--pictures"],
+    catalog: ["--catalog", "--item-type", "--pictures", "--approved-prices"],
     suppliers: ["--legal-entity", "--fill-only"],
   };
   only(["--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--name", ...perTarget[target]], `--target ${target}`);
@@ -120,7 +126,7 @@ export function parseArgs(argv: string[]): OpsArgs {
     command, ...common, target, file, tabs, excludeTabs: values.has("--exclude-tabs") ? listOf(values.get("--exclude-tabs")!) : [],
     mapping: values.get("--mapping") ?? null, legalEntity: values.get("--legal-entity")?.trim() || null, fillOnly: flags.has("--fill-only"),
     catalog: values.get("--catalog")?.trim() || null, location: values.get("--location")?.trim() || null, name, itemType,
-    setsStock: !flags.has("--no-sets-stock"), pictures: flags.has("--pictures"),
+    setsStock: !flags.has("--no-sets-stock"), pictures: flags.has("--pictures"), approvedPrices: flags.has("--approved-prices"),
   };
 }
 

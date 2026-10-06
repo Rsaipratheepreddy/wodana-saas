@@ -39,13 +39,15 @@ type LinkRow = LinkSettings & {
   id: string; source: "upload" | "google_sheet"; connectionId: string | null; spreadsheetId: string | null; sheetName: string | null; mapping: ColumnMapping;
   schedule: Schedule; nextRunAt: string | null; ownerId: string; ownerName: string; locationName: string | null; legalEntityName: string | null; status: string; version: number;
 };
-type Draft = Omit<LinkRow, "id" | "nextRunAt" | "ownerId" | "ownerName" | "locationName" | "legalEntityName" | "status" | "version"> & { id: string | null };
+type Draft = Omit<LinkRow, "id" | "nextRunAt" | "ownerId" | "ownerName" | "locationName" | "legalEntityName" | "status" | "version"> & { id: string | null;
+  /** Catalog: approved list prices were asked for (or the link has them) but the member can't approve prices, so prices stay drafts. */
+  approvedPricesRefused?: boolean };
 type Outcome = { status: "applied" | "partial" | "failed"; added: number; changed: number; unchanged: number; errors: number; missing: number; message: string;
   /** The record each row of the sheet now names (catalog pictures are added to them after the run). */
   placed?: Array<{ sheet: string; line: number; recordId: string }> };
 
 const LINK_SELECT = `SELECT link.id, link.target, link.name, link.catalog_id AS "catalogId", link.location_id AS "locationId", place.name AS "locationName", link.item_type AS "itemType",
-    link.legal_entity_id AS "legalEntityId", entity.display_name AS "legalEntityName", link.sets_stock AS "setsStock", link.source, link.connection_id AS "connectionId", link.spreadsheet_id AS "spreadsheetId", link.sheet_name AS "sheetName", link.mapping,
+    link.legal_entity_id AS "legalEntityId", entity.display_name AS "legalEntityName", link.sets_stock AS "setsStock", link.approved_prices AS "approvedPrices", link.source, link.connection_id AS "connectionId", link.spreadsheet_id AS "spreadsheetId", link.sheet_name AS "sheetName", link.mapping,
     link.schedule, link.next_run_at AS "nextRunAt", link.owner_id AS "ownerId", owner.display_name AS "ownerName", link.status, link.version
   FROM import_links link
   JOIN users owner ON owner.id = link.owner_id
@@ -82,6 +84,8 @@ export class LinkedImportsService {
     return this.access.withAnyPermission(actor, workspaceId, PERMISSIONS[target].view, async (client, user) => ({
       links: await this.links(client, workspaceId, target, catalogId),
       canManage: await this.access.hasPermission(client, workspaceId, user.userId, PERMISSIONS[target].manage),
+      // Catalog: whether the member may import prices as approved list prices.
+      ...(target === "catalog" ? { canApprovePrices: await this.catalogs.canApprovePrices(client, workspaceId, user.userId) } : {}),
       connections: (await client.query<{ id: string; name: string; account: string | null; driveFile: boolean }>(
         `SELECT id, display_name AS name, configuration->>'accountEmail' AS account, granted_scopes ? $2 AS "driveFile" FROM integration_connections
           WHERE workspace_id = $1 AND provider = 'google_workspace' AND status::text IN ('connected', 'degraded') ORDER BY display_name`, [workspaceId, DRIVE_FILE])).rows,
@@ -114,10 +118,10 @@ export class LinkedImportsService {
   async preview(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     const target = await this.targetFor(actor, workspaceId, body);
     const permission = PERMISSIONS[target].manage;
-    const draft = await this.access.withPermission(actor, workspaceId, permission, async (client) => this.draft(client, workspaceId, body, target));
+    const draft = await this.access.withPermission(actor, workspaceId, permission, async (client, user) => this.draft(client, workspaceId, body, target, user.userId));
     const sheets = await this.source(workspaceId, draft, body.sheets);
     return this.access.withPermission(actor, workspaceId, permission, async (client, user) => {
-      const { steps, missing, print, skippedTabs } = await this.plan(client, workspaceId, user.userId, draft, sheets);
+      const { steps, missing, print, skippedTabs, context } = await this.plan(client, workspaceId, user.userId, draft, sheets);
       const count = (outcome: string) => steps.filter((step) => step.outcome === outcome).length;
       const bySheet: Record<string, { added: number; changed: number; unchanged: number; errors: number }> = {};
       for (const step of steps) {
@@ -126,6 +130,8 @@ export class LinkedImportsService {
       }
       return {
         fingerprint: print, skippedTabs,
+        // Catalog: whether prices go live as approved list prices, or were asked to but stay drafts (the member can't approve prices).
+        ...(target === "catalog" ? { prices: { approved: context.approvedPrices === true, refused: draft.approvedPricesRefused === true } } : {}),
         summary: { added: count("added"), changed: count("changed"), unchanged: count("unchanged"), errors: count("error"), missing: missing.length },
         /** The same counts for each tab. */
         bySheet,
@@ -142,16 +148,16 @@ export class LinkedImportsService {
     const runId = uuid(body.runId, "Import");
     const target = await this.targetFor(actor, workspaceId, body);
     const permission = PERMISSIONS[target].manage;
-    const replay = await this.access.withPermission(actor, workspaceId, permission, async (client) => {
+    const replay = await this.access.withPermission(actor, workspaceId, permission, async (client, user) => {
       const done = await this.runLink(client, workspaceId, runId);
-      return done ? { done } : { draft: await this.draft(client, workspaceId, body, target) };
+      return done ? { done } : { draft: await this.draft(client, workspaceId, body, target, user.userId) };
     });
     if (replay.done) return this.access.withPermission(actor, workspaceId, permission, async (client, user) => this.linkDetail(client, workspaceId, replay.done!, user.userId));
     const sheets = await this.source(workspaceId, replay.draft!, body.sheets);
     return this.access.withPermission(actor, workspaceId, permission, async (client, user) => {
       const done = await this.runLink(client, workspaceId, runId);
       if (done) return this.linkDetail(client, workspaceId, done, user.userId);
-      const linkId = await this.saveLink(client, workspaceId, user.userId, await this.draft(client, workspaceId, body, target), body.version);
+      const linkId = await this.saveLink(client, workspaceId, user.userId, await this.draft(client, workspaceId, body, target, user.userId), body.version);
       const link = await this.lockedLink(client, workspaceId, linkId);
       const outcome = await this.execute(client, workspaceId, user.userId, link, { sheets }, runId, "manual", typeof body.expectedFingerprint === "string" ? body.expectedFingerprint : null);
       return this.linkDetail(client, workspaceId, linkId, user.userId, outcome.placed);
@@ -255,12 +261,14 @@ export class LinkedImportsService {
   }
 
   /** Reads the source through the mapping and plans every row, plus the known keys no longer in it. */
-  private async plan(client: Db, workspaceId: string, userId: string, link: Draft | LinkRow, sheets: SourceSheet[]) {
+  private async plan(client: Db, workspaceId: string, userId: string, link: Draft | LinkRow, sheets: SourceSheet[], runId: string | null = null) {
     const { rows, skippedTabs } = readRows(link.target, sheets, link.mapping);
     const keyHeadings = Object.entries(link.mapping.columns).filter(([, field]) => field === "code" || field === "name").map(([heading]) => heading);
     if (!rows.length && skippedTabs.length) throw new SourceError(`No tab has the column ${keyHeadings.join(" or ")}.`);
     const records = link.id ? await this.records(client, workspaceId, link.id) : new Map<string, LinkRecord>();
-    const context: ImportContext = { client, workspaceId, userId, link, records };
+    // Approved list prices go live only when the member running it may approve prices; otherwise they're drafted for review.
+    const approvedPrices = link.target === "catalog" && link.approvedPrices === true && await this.catalogs.canApprovePrices(client, workspaceId, userId);
+    const context: ImportContext = { client, workspaceId, userId, link, records, approvedPrices, runId };
     const adapter = this.adapter(link.target);
     const steps = await adapter.plan(context, rows);
     const inSheet = new Set(steps.map((step) => step.recordKey).filter(Boolean));
@@ -268,7 +276,7 @@ export class LinkedImportsService {
     const names = await adapter.names(context, gone.map((record) => record.recordId));
     const missing: Step[] = gone.filter((record) => names.has(record.recordId)).map((record) => ({ sheet: "", line: 0, key: record.key, name: names.get(record.recordId)!, outcome: "error",
       changes: [], message: "", recordKey: null, locationId: record.locationId, missing: true } as Step & { missing: true }));
-    return { steps, missing, gone, context, adapter, print: fingerprint(link.target, link.mapping, rows, { setsStock: link.setsStock, locationId: link.locationId, itemType: link.itemType, legalEntityId: link.legalEntityId }), skippedTabs };
+    return { steps, missing, gone, context, adapter, print: fingerprint(link.target, link.mapping, rows, { setsStock: link.setsStock, locationId: link.locationId, itemType: link.itemType, legalEntityId: link.legalEntityId, approvedPrices }), skippedTabs };
   }
 
   /** One run: applies every row that changes something (each on its own, so a bad row leaves the others), records it and tells the owner. */
@@ -282,7 +290,7 @@ export class LinkedImportsService {
     let planned: Awaited<ReturnType<LinkedImportsService["plan"]>> | null = null;
     if (!failure) {
       try {
-        planned = await this.plan(client, workspaceId, userId, link, "sheets" in source ? source.sheets : []);
+        planned = await this.plan(client, workspaceId, userId, link, "sheets" in source ? source.sheets : [], runId);
         if (expected && planned.print !== expected) throw new ConflictException("The sheet changed since the preview. Review it again.");
       } catch (error) {
         if (error instanceof SourceError || (error instanceof HttpException && trigger === "schedule")) failure = error.message;
@@ -392,7 +400,7 @@ export class LinkedImportsService {
   // ---------- links ----------
 
   /** The settings a request describes, checked: a new link's whole definition, or an existing link's with the changes it may take. */
-  private async draft(client: Db, workspaceId: string, body: Record<string, unknown>, target: ImportTarget): Promise<Draft> {
+  private async draft(client: Db, workspaceId: string, body: Record<string, unknown>, target: ImportTarget, userId: string): Promise<Draft> {
     const existing = body.linkId ? await this.readLink(client, workspaceId, uuid(body.linkId, "Import")) : null;
     if (body.linkId && (!existing || existing.status !== "active")) throw new NotFoundException("This import isn't linked any more.");
     const source = existing?.source ?? (body.source === "google_sheet" ? "google_sheet" : body.source === "upload" ? "upload" : null);
@@ -404,7 +412,7 @@ export class LinkedImportsService {
       id: existing?.id ?? null, target, source, mapping,
       name: body.name === undefined && existing ? existing.name : required(body.name, 200, "Name the import."),
       catalogId: existing?.catalogId ?? null, locationId: existing?.locationId ?? null, itemType: existing?.itemType ?? null, legalEntityId: existing?.legalEntityId ?? null,
-      setsStock: target === "stock" ? (body.setsStock === undefined ? existing?.setsStock ?? true : body.setsStock === true) : true,
+      setsStock: target === "stock" ? (body.setsStock === undefined ? existing?.setsStock ?? true : body.setsStock === true) : true, approvedPrices: false,
       connectionId: existing?.connectionId ?? null, spreadsheetId: existing?.spreadsheetId ?? null,
       sheetName: body.sheetName === undefined ? existing?.sheetName ?? null : optionalText(body.sheetName, 200, "Tab"),
       schedule: body.schedule === undefined ? existing?.schedule ?? (source === "google_sheet" ? "hourly" : "off") : scheduleOf(body.schedule, source),
@@ -416,6 +424,12 @@ export class LinkedImportsService {
       draft.locationId = locationId;
     }
     if (target === "catalog") {
+      if (body.approvedPrices !== undefined && typeof body.approvedPrices !== "boolean") throw new BadRequestException("Say whether the sheet's prices are approved list prices.");
+      const requested = body.approvedPrices === undefined ? existing?.approvedPrices === true : body.approvedPrices;
+      const canApprove = requested || existing?.approvedPrices ? await this.catalogs.canApprovePrices(client, workspaceId, userId) : false;
+      const setting = approvedPricesSetting({ requested, stored: existing ? existing.approvedPrices === true : null, canApprove });
+      draft.approvedPrices = setting.value;
+      draft.approvedPricesRefused = setting.refused;
       if (!existing) {
         const catalogId = uuid(body.catalogId, "Catalog");
         if (!(await client.query(`SELECT 1 FROM catalogs WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, catalogId])).rowCount) throw new NotFoundException("Catalog not found.");
@@ -451,25 +465,26 @@ export class LinkedImportsService {
       const before = await this.lockedLink(client, workspaceId, draft.id);
       if (version !== before.version) throw new ConflictException("Someone else changed this import. Reload to see their change.");
       await client.query(
-        `UPDATE import_links SET name = $3, mapping = $4::jsonb, sets_stock = $5, schedule = $6, sheet_name = $7, location_id = $8, item_type = $9, legal_entity_id = $10, version = version + 1,
-           updated_at = now(), next_run_at = CASE WHEN $6::varchar = 'off' THEN NULL ELSE next_run_at END WHERE workspace_id = $1 AND id = $2`,
-        [workspaceId, draft.id, draft.name, JSON.stringify(draft.mapping), draft.setsStock, draft.schedule, draft.sheetName, draft.locationId, draft.itemType, draft.legalEntityId]);
+        `UPDATE import_links SET name = $3, mapping = $4::jsonb, sets_stock = $5, schedule = $6, sheet_name = $7, location_id = $8, item_type = $9, legal_entity_id = $10, approved_prices = $11,
+           version = version + 1, updated_at = now(), next_run_at = CASE WHEN $6::varchar = 'off' THEN NULL ELSE next_run_at END WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, draft.id, draft.name, JSON.stringify(draft.mapping), draft.setsStock, draft.schedule, draft.sheetName, draft.locationId, draft.itemType, draft.legalEntityId, draft.approvedPrices === true]);
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "linked_import.changed", entityType: "import_link", entityId: draft.id,
         before: { name: before.name, mapping: before.mapping, setsStock: before.setsStock, schedule: before.schedule, sheetName: before.sheetName, locationId: before.locationId, itemType: before.itemType,
-          legalEntityId: before.legalEntityId },
+          legalEntityId: before.legalEntityId, approvedPrices: before.approvedPrices === true },
         after: { name: draft.name, mapping: draft.mapping, setsStock: draft.setsStock, schedule: draft.schedule, sheetName: draft.sheetName, locationId: draft.locationId, itemType: draft.itemType,
-          legalEntityId: draft.legalEntityId } });
+          legalEntityId: draft.legalEntityId, approvedPrices: draft.approvedPrices === true } });
       return draft.id;
     }
     const id = randomUUID();
     await client.query(
-      `INSERT INTO import_links (id, workspace_id, target, catalog_id, location_id, item_type, source, name, connection_id, spreadsheet_id, sheet_name, mapping, sets_stock, schedule, owner_id, legal_entity_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16)`,
+      `INSERT INTO import_links (id, workspace_id, target, catalog_id, location_id, item_type, source, name, connection_id, spreadsheet_id, sheet_name, mapping, sets_stock, schedule, owner_id, legal_entity_id,
+         approved_prices)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17)`,
       [id, workspaceId, draft.target, draft.catalogId, draft.locationId, draft.itemType, draft.source, draft.name, draft.connectionId, draft.spreadsheetId, draft.sheetName,
-        JSON.stringify(draft.mapping), draft.setsStock, draft.schedule, userId, draft.legalEntityId]);
+        JSON.stringify(draft.mapping), draft.setsStock, draft.schedule, userId, draft.legalEntityId, draft.approvedPrices === true]);
     await recordAudit(client, { workspaceId, actorUserId: userId, action: "linked_import.linked", entityType: "import_link", entityId: id,
       after: { target: draft.target, source: draft.source, name: draft.name, catalogId: draft.catalogId, locationId: draft.locationId, legalEntityId: draft.legalEntityId, spreadsheetId: draft.spreadsheetId, sheetName: draft.sheetName,
-        mapping: draft.mapping, setsStock: draft.setsStock, schedule: draft.schedule } });
+        mapping: draft.mapping, setsStock: draft.setsStock, schedule: draft.schedule, approvedPrices: draft.approvedPrices === true } });
     return id;
   }
 
@@ -554,6 +569,16 @@ export class LinkedImportsService {
       throw error;
     }
   }
+}
+
+/**
+ * A catalog link's "prices are approved list prices": only a member who may approve prices changes it (anyone
+ * else's request leaves the link as it was, and is refused: their run drafts prices for review).
+ */
+export function approvedPricesSetting(input: { requested: boolean; stored: boolean | null; canApprove: boolean }) {
+  const kept = input.stored ?? false;
+  const value = input.canApprove || input.requested === kept ? input.requested : kept;
+  return { value, refused: (input.requested || value) && !input.canApprove };
 }
 
 function sheetsFrom(value: unknown) {

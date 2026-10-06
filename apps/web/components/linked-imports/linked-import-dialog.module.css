@@ -11,6 +11,8 @@
 /* Map the columns: the import's settings, then each column heading with a sample and its field. */
 .map { display: grid; gap: var(--wd-space-4); }
 .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: var(--wd-space-3) var(--wd-space-4); }
+/* Catalog: the prices are approved list prices (only for someone who approves prices). */
+.option { display: grid; gap: var(--wd-space-1); align-content: start; }
 .columns { display: grid; max-block-size: 22rem; overflow: auto; margin: 0; padding: 0; list-style: none; }
 .columns li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 14rem); align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .heading { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }

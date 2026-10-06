@@ -16,6 +16,7 @@ import { projectDisplayName } from "@/lib/projects/format";
 import type { PortfolioRow } from "@/components/projects/project-portfolio";
 import { useProjectFormat } from "@/components/project-core/format";
 import { StartQualifiedLead } from "./start-qualified-lead";
+import { casePhaseText, plannedPhase } from "@/lib/pre-project/case-record";
 import styles from "./planning-list.module.css";
 
 export type PlanningGroup = "ready" | "before_deal" | "in_design";
@@ -28,16 +29,6 @@ export type PlanningRow = {
   href?: string; caseId?: string; projectId?: string; source?: PreProjectListItem;
 };
 
-/** A case's planning phase as the person reads it, and what it needs next. */
-const CASE_PHASES = {
-  discover: { stage: tKey("Requirements"), next: tKey("Capture the requirements") },
-  define: { stage: tKey("Scope confirmation"), next: tKey("Confirm the scope") },
-  design: { stage: tKey("Design"), next: tKey("Present the design") },
-  price: { stage: tKey("Quotation"), next: tKey("Send the quotation") },
-  agree: { stage: tKey("Agreement"), next: tKey("Sign the agreement") },
-  release: { stage: tKey("Ready for production"), next: tKey("Release to production") },
-} as const;
-
 /**
  * What Planning lists: the cases being briefed, designed and priced (not yet a project), and projects whose current
  * workflow stage is still a planning stage (a deal-first route opens the project at the paid deal). Whether a
@@ -47,7 +38,8 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
   const linked = new Set(projects.map((project) => project.caseId));
   const cases = new Map(planning.map((item) => [item.id, item]));
   const caseRows: PlanningRow[] = planning.filter((item) => !linked.has(item.id) && item.status !== "cancelled").map((item) => {
-    const phase = CASE_PHASES[item.phase ?? "discover"] ?? CASE_PHASES.discover;
+    // A case's planning phase as the person reads it on its path's own line (PLM-121/126), and what it needs next.
+    const phase = casePhaseText(plannedPhase(item.phase ?? "discover", item.plan), item.plan);
     const ready = Boolean(item.qualifiedLead) || item.status === "qualified";
     return {
       id: `case-${item.id}`, title: item.title, description: item.description?.trim() || undefined, customer: item.customerName, group: ready ? "ready" : "before_deal",

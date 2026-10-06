@@ -1,5 +1,6 @@
 .page { display: grid; gap: var(--wd-space-6); min-inline-size: 0; padding-block: var(--wd-space-4); color: var(--wd-color-text); font-size: var(--wd-text-xs); }
 .page > section { min-inline-size: 0; }
+.switcher { display: flex; justify-content: flex-start; }
 .toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--wd-space-3); padding-block-end: var(--wd-space-3); }
 .toolbar h2 { margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
 .toolbar h2 small { display: block; margin-block-start: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); font-weight: 400; }
