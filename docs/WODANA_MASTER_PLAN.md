@@ -170,6 +170,15 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
 9. Calendar choice: Wodana calendars or Google shared calendars.
 10. Required fields per enquiry type before converting (email, area, address, budget, designer): now configuration in Sales › Fields; Palm to confirm per type (PLM-096).
 11. Remove "Concepts / Early Ideas" from Palm's enquiry types and move its records to Full ID (PLM-127). **Confirmed 6 Oct:** Concept is a package under Full ID. No live enquiry used the type, so it is archived on Enquiry types with nothing to move.
+12. **Palm answers, 6 Oct:**
+    - **Finance:** requests go to accounts@palmlivingae.com. Refund days and approvers (PLM-109) and payable approvers and limits (PLM-110) will follow from Palm's finance team.
+    - **Factory and installation (PLM-063/069):** managed by the Factory Manager and the Project Director.
+      - People are booked by name, because crews and installers are not all Wodana users (HRMS crews/workers).
+      - The Factory & logistics calendar is their main booking screen.
+      - A mandatory Permit Collection stage comes before delivery, because buildings can't be accessed without permits.
+      - Deliveries record the vehicle as well as the driver.
+    - **Dashboards (PLM-104/105):** wanted from the start, at medium priority, built right after the flow from the management sheet in the tracker.
+    - **Suppliers and entities:** two supplier-list sheets, plus PLM's TRN and docs, are in the "Wodana x PLM" shared folder.
 12. Locked name/phone after Qualified (E1-6): should an edit request go to an admin for approval, or is "ask a Sales admin" enough?
 
 ### 0.6 Handover
