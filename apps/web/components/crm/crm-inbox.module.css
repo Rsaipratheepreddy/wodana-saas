@@ -299,3 +299,40 @@ a.jobChip:hover { text-decoration: underline; text-underline-offset: 2px; }
 .suggestedReplies button:hover { border-color: var(--chat-accent); color: var(--chat-accent); }
 .suggestedReplies button:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 2px; }
 @media (max-width: 48rem) { .woddyLine, .suggestedReplies { margin-inline: var(--wd-space-2); } }
+
+/* ── Full-height chat surface (WhatsApp Web anatomy): list | conversation, no page header block ─────────
+   The list column holds views, search, filter, ⋯ and New; the conversation is a compact header, messages that
+   take every pixel left, and the composer pinned to the bottom. No floating cards or margins around the thread. */
+.inbox { flex: 1; block-size: 100%; grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.threadList { min-block-size: 0; overflow: hidden; }
+.listHeader { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3) var(--wd-space-3) var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.listHeaderTop { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-inline-size: 0; }
+.listHeaderTop :global(.wd-list-tabs) { min-inline-size: 0; overflow-x: auto; scrollbar-width: none; border: 0; }
+.inbox .newChat { flex: none; }
+.listSearch { display: flex; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; }
+.listSearch :global(.wd-search-field) { flex: 1; min-inline-size: 0; min-block-size: var(--wd-button-height-compact); block-size: var(--wd-button-height-compact); }
+.teamLoad { padding: var(--wd-space-2) var(--wd-space-3) 0; }
+.threadItems { padding: var(--wd-space-1) var(--wd-space-1) var(--wd-space-2); }
+.threadItem { min-block-size: 0; padding: var(--wd-space-2-5) var(--wd-space-3); margin-block-end: 0; border-radius: var(--wd-radius-sm); background: transparent; }
+.threadItem:hover { background: var(--wd-color-surface-hover); }
+.threadCopy { gap: var(--wd-space-1); }
+.thread, .conversation { block-size: 100%; min-block-size: 0; }
+.threadHeading { flex-wrap: nowrap; min-block-size: 0; padding: var(--wd-space-2) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.threadHeading .headingIdentity { flex: 1 1 auto; min-inline-size: 0; }
+.headingIdentity h2 { margin: 0; font-size: var(--wd-text-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.messages { flex: 1; min-block-size: 0; margin: 0; border-radius: 0; padding: var(--wd-space-4) var(--wd-space-6); }
+.composer { margin: 0; padding: var(--wd-space-2) var(--wd-space-4) var(--wd-space-2); border-radius: 0; border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
+@media (max-width: 48rem) {
+  .inbox { grid-template-columns: minmax(0, 1fr); }
+  .threadHeading { flex-wrap: wrap; padding: var(--wd-space-2); }
+  .messages { padding: var(--wd-space-3) var(--wd-space-2); }
+}
+/* The contact header is two lines: the name, then channel · job · labels on one line. */
+.threadHeading .headingIdentity { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--wd-space-2); row-gap: 0; }
+.threadHeading .headingIdentity h2 { flex-basis: 100%; }
+.threadHeading .headingLabels { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); margin: 0; }
+/* Four views fit the list column: tighter tab padding here only. */
+.listHeaderTop :global(.wd-list-tab) { padding-inline: var(--wd-space-1-5); }
+.listHeaderTop :global(.wd-list-tabs) { gap: var(--wd-space-0-5); }
+.threadHeading .headingLabels .jobChip { max-inline-size: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 48rem) { .threadHeading .headingLabels :global(.wd-label-chip) { display: none; } }

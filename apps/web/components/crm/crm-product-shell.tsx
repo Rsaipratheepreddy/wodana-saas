@@ -11,18 +11,23 @@ import workspaceColors from "./crm-workspace-colors.module.css";
  * A Sales page on the shared anatomy (§5c D): PageShell with one title, at most one primary action top-end, tabs
  * under the title and an optional toolbar, then the page. `compact` fills the viewport (the board and the Inbox).
  */
-export function CrmProductShell({ title, canView, actions, tabs, toolbar, children, compact = false, kind = "list", useWorkspaceColors = false }: {
+export function CrmProductShell({ title, canView, actions, tabs, toolbar, children, compact = false, bare = false, kind = "list", useWorkspaceColors = false }: {
   title: string; /** Ignored: a title carries no description (§5c D1). */ description?: string; canView: boolean; actions?: ReactNode; tabs?: ReactNode; toolbar?: ReactNode;
   children: ReactNode; compact?: boolean; kind?: PageKind; useWorkspaceColors?: boolean;
+  /** A full-height work surface (the Inbox): no page header block; the page carries its own controls and the title stays for screen readers. */
+  bare?: boolean;
 }) {
   const t = useT();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
-    <div className={compact ? styles.focusedPage : undefined}>
+    {bare ? <section aria-label={t("{title} workspace", { title })} className={styles.barePage}>
+      <h1 className="wd-visually-hidden">{title}</h1>
+      {canView ? children : <NoAccessState area={t(title as never)} />}
+    </section> : <div className={compact ? styles.focusedPage : undefined}>
       <PageShell aria-label={t("{title} workspace", { title })} kind={kind} title={title} action={canView ? actions : undefined} tabs={canView ? tabs : undefined} toolbar={canView ? toolbar : undefined}>
         {canView ? children : <NoAccessState area={t(title as never)} />}
       </PageShell>
-    </div>
+    </div>}
   </DesignSystemProvider>;
 }
 

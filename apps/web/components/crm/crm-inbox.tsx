@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Filter, FolderInput, MessageCircle, Plus, X } from "lucide-react";
 import { MessagingMark } from "@/components/brand/messaging-mark";
-import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, MenuButton, SelectField, Skeleton, TextAreaField, TextInput, ToggleButton, ToolbarSearch, useDesignSystem } from "@/design-system";
+import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, MenuButton, SelectField, Skeleton, TextAreaField, TextInput, SearchInput, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { chipQuery, chipsFor, ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, type ConversationJob, type InboxChip, type InboxLabel, type InboxOwner, type InboxSummary } from "@/lib/crm/inbox";
@@ -189,21 +189,25 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     else if (key === "simulate") setSimulating(true);
     else if (key === "settings") window.location.assign("/workspace/settings/inbox");
   };
-  const toolbar = <div className={styles.toolbar}>
-    {filterChips.length ? <div aria-label={t("Filters in use")} className="wd-filter-chips" role="group">{filterChips.map((item) => <span className="wd-filter-chip" key={item.id}>
-      <span>{item.label}</span><IconButton aria-label={t("Remove filter {name}", { name: item.label })} onPress={item.clear} size="compact"><X size={12} /></IconButton></span>)}</div> : null}
-    <div className={styles.toolbarActions}>
-      <ToolbarSearch label={t("Search inbox")} value={search} onChange={setSearch} />
+  // The list column carries the Inbox's controls (views, search, filter, ⋯, New), so the conversation gets the full height.
+  const listHeader = <header className={styles.listHeader}>
+    <div className={styles.listHeaderTop}>
+      <ListTabs label={t("Inbox views")} items={chipItems} value={chip} onChange={chooseChip} />
+    </div>
+    <div className={styles.listSearch}>
+      <SearchInput label={t("Search inbox")} placeholder={t("Search chats")} value={search} onChange={setSearch} />
       {filterItems.length ? <IconMenuButton ariaLabel={t("Filter")} icon={<Filter aria-hidden="true" size={15} />} items={filterItems} onAction={addFilter} /> : null}
       <IconMenuButton ariaLabel={t("Inbox options")} items={options} onAction={onOption} />
+      {canSend ? <IconButton aria-label={t("New conversation")} className={styles.newChat} onPress={() => setCreating(true)} variant="primary"><Plus aria-hidden="true" size={16} /></IconButton> : null}
     </div>
-  </div>;
+    {filterChips.length ? <div aria-label={t("Filters in use")} className="wd-filter-chips" role="group">{filterChips.map((item) => <span className="wd-filter-chip" key={item.id}>
+      <span>{item.label}</span><IconButton aria-label={t("Remove filter {name}", { name: item.label })} onPress={item.clear} size="compact"><X size={12} /></IconButton></span>)}</div> : null}
+  </header>;
 
-  return <CrmProductShell title={t("Inbox")} canView={initialData.canView} compact useWorkspaceColors toolbar={toolbar}
-    tabs={<ListTabs label={t("Inbox views")} items={chipItems} value={chip} onChange={chooseChip} />}
-    actions={canSend ? <Button variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={15} />{t("New conversation")}</Button> : undefined}>
+  return <CrmProductShell title={t("Inbox")} canView={initialData.canView} bare useWorkspaceColors>
     <div className={styles.inbox} data-selected={Boolean(selected)} onKeyDown={onKeyDown}>
       <section aria-label={t("Customer conversations")} className={styles.threadList}>
+        {listHeader}
         {chip === "team" && team.length ? <div className={styles.teamLoad} role="group" aria-label={t("Open chats per person")}>
           {team.map((person) => <button key={person.id} type="button" aria-pressed={ownerFilter === person.id} onClick={() => setOwnerFilter((current) => current === person.id ? "" : person.id)}>
             <Avatar name={person.displayName} size="sm" /><span>{person.displayName}</span><span className="wd-count-chip">{person.openChats}</span>{person.away ? <small>{t("Away")}</small> : null}

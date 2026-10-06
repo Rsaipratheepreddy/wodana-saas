@@ -149,3 +149,6 @@
 .focusedPage { display: flex; flex-direction: column; block-size: calc(100dvh - 3.5rem); min-block-size: 0; inline-size: 100%; }
 .focusedPage > :global(.wd-page-shell) { display: flex; flex: 1; flex-direction: column; min-block-size: 0; }
 .focusedPage > :global(.wd-page-shell) > :global(.wd-page-shell-body) { display: flex; flex: 1; flex-direction: column; min-block-size: 0; }
+
+/* A full-height work surface under the app bar (the Inbox): no page header block, the surface fills the screen. */
+.barePage { display: flex; flex-direction: column; block-size: calc(100dvh - 3.5rem); min-block-size: 0; inline-size: 100%; }
