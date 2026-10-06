@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { plainToInstance, type ClassConstructor } from "class-transformer";
 import { validate } from "class-validator";
+import type { CatalogV2Service } from "../catalog-core/catalog-v2.service";
 import type { CrmActivitiesService } from "../crm/activities/crm-activities.service";
 import type { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
 import type { CrmInboxService } from "../crm/conversations/crm-inbox.service";
@@ -9,7 +10,9 @@ import type { CrmIntakeService } from "../crm/intake/crm-intake.service";
 import type { CrmLeadsService } from "../crm/leads/crm-leads.service";
 import type { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import type { CrmPartiesService } from "../crm/parties/crm-parties.service";
+import type { InventoryService } from "../inventory/inventory.service";
 import type { ProjectWorkService } from "../project-core/project-work.service";
+import type { SuppliersService } from "../purchasing/suppliers.service";
 import type { QuotationCollabService } from "../quotation/quotation-collab.service";
 import type { WorkspaceSearchService } from "../search/workspace-search.service";
 import type { WorkspaceAccessService } from "../workspaces/workspace-access.service";
@@ -28,6 +31,9 @@ export type ToolServices = {
   scheduled: CrmScheduledMessagesService;
   work: ProjectWorkService;
   quoteComments: QuotationCollabService;
+  catalog: CatalogV2Service;
+  inventory: InventoryService;
+  suppliers: SuppliersService;
 };
 
 /**

@@ -3,11 +3,12 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
+import { likePattern, searchTerms } from "../search/search-terms";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { tellSupplierOnHold } from "./supplier-controls.service";
 import { checkTaxNumber, normaliseTaxNumber, readTaxNumberRule } from "./tax-registration";
 import {
-  APPROVALS, DEALS, PAYMENT_TERMS, cleanCategories, normalName, percent, readApproval, readDeal, readSupplier, readSuppliers, readTerms, retentionPercent, supplierCode,
+  APPROVALS, DEALS, PAYMENT_TERMS, cleanCategories, findSuppliers, normalName, percent, readApproval, readDeal, readSupplier, readSuppliers, readTerms, retentionPercent, supplierCode,
   type Approval, type Deal, type PaymentTerms, type Supplier,
 } from "./suppliers";
 
@@ -29,6 +30,20 @@ export class SuppliersService {
 
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "vendors.view", async (client, user) => this.state(client, workspaceId, user.userId));
+  }
+
+  /**
+   * Suppliers in use matching every word searched (name, what they supply, notes, extra columns), with the names of
+   * the firm's companies that buy from each. Woddy's supplier questions.
+   */
+  find(actor: RequestActor, workspaceId: string, query: { search: string; limit?: number }) {
+    return this.access.withPermission(actor, workspaceId, "vendors.view", async (client) => {
+      const terms = searchTerms(query.search);
+      if (!terms.length) throw new BadRequestException("Say what to look for.");
+      const suppliers = await findSuppliers(client, workspaceId, { terms, phrase: likePattern(query.search.trim()), limit: Math.min(Math.max(query.limit ?? 8, 1), 20) });
+      const entities = new Map((await this.entitiesOf(client, workspaceId)).map((entity) => [entity.id, entity.name]));
+      return { suppliers: suppliers.map((supplier) => ({ ...supplier, companies: supplier.entityIds.map((id) => entities.get(id)).filter((name): name is string => Boolean(name)) })) };
+    });
   }
 
   save(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {

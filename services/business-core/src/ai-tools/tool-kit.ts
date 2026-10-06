@@ -144,6 +144,9 @@ export function recordHref(type: string, id: string, parent?: { projectId?: stri
     case "project": return `/workspace/projects/${id}/overview`;
     case "work_item": return parent?.projectId ? `/workspace/projects/${parent.projectId}/plan?item=${id}` : null;
     case "quotation": return parent?.caseId ? `/workspace/pre-projects/cases/${parent.caseId}/quotations` : null;
+    case "catalog_item": return "/workspace/catalogs";
+    case "stock_item": return `/workspace/inventory?item=${id}`;
+    case "supplier": return `/workspace/purchasing/suppliers?supplier=${id}`;
     default: return null;
   }
 }

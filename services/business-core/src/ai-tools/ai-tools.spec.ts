@@ -104,6 +104,10 @@ function world(granted: string[] = ALL) {
     },
     work: { item: vi.fn(), command: vi.fn() },
     quoteComments: { comment: vi.fn() },
+    catalog: { findItems: vi.fn(async () => ({ canViewCosts: false, items: [{ id: LEAD, catalogId: "c-1", catalogName: "Core", code: "LYL", name: "Lyla dining table", itemType: "product", unitCode: "pcs",
+      categoryName: "Tables", description: null, technicalDrawingUrl: null, productionDays: null, size: null, attributes: [], price: { status: "draft" } }] })) },
+    inventory: { lookup: vi.fn(async () => ({ items: [] })) },
+    suppliers: { find: vi.fn(async () => ({ suppliers: [] })) },
   };
   // Priya can own chats and enquiries.
   const baseQuery = client.query.getMockImplementation()!;
@@ -248,6 +252,25 @@ describe("the agent loop", () => {
     expect(followUp.response).toEqual({ error: "You can schedule work for yourself. Giving it to someone else needs the lead assignment permission." });
     expect(setup.services.conversations.updateConversation).not.toHaveBeenCalled();
     expect(setup.state.calls.size).toBe(0);
+  });
+
+  it("answers a product question from the catalogue for a person who may see it, and offers nothing to someone who may not", async () => {
+    const setup = world([...ALL, "catalog.view"]);
+    const model = scriptedModel([{ calls: [{ id: "t1", name: "search_catalog", args: { text: "Lyla dining table" } }] }, { text: "The Lyla dining table [S1] is price on request: its price is still a draft." }]);
+    const answer = await agentFor(setup, model.gateway).ask(actor, WS, { message: "What does the Lyla dining table cost?", surface: "panel" });
+    expect(setup.services.catalog.findItems).toHaveBeenCalledWith(actor, WS, { search: "Lyla dining table", limit: 6 });
+    const [result] = responsesOf(model, 1);
+    expect(String(result.response.result)).toMatch(/^<record-data tool="search_catalog">/);
+    expect(String(result.response.result)).toContain("\"sellingPrice\":null");
+    expect(answer).toMatchObject({ cited: ["S1"], sources: [{ key: "S1", type: "catalog_item", label: "Lyla dining table" }] });
+
+    const outsider = world(ALL);
+    const refused = scriptedModel([{ calls: [{ id: "t1", name: "search_catalog", args: { text: "Lyla" } }] }, { text: "You don't have access to the catalogue." }]);
+    await agentFor(outsider, refused.gateway).ask(actor, WS, { message: "What does the Lyla dining table cost?", surface: "panel" });
+    const declared = (refused.turn.mock.calls[0] as unknown as [unknown, unknown, { request: { tools: Array<{ functionDeclarations: Array<{ name: string }> }> } }])[2].request.tools[0].functionDeclarations.map((tool) => tool.name);
+    expect(declared).not.toContain("search_catalog");
+    expect(responsesOf(refused, 1)[0].response).toEqual({ error: "There is no tool called search_catalog for this person." });
+    expect(outsider.services.catalog.findItems).not.toHaveBeenCalled();
   });
 
   it("stops at the round cap and at the token budget", async () => {

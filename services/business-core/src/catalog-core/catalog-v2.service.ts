@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { likePattern, searchTerms } from "../search/search-terms";
 import { AiGatewayService } from "../ai-gateway/ai-gateway.service";
 import { CLEAN_SYSTEM, COMPONENTS_SYSTEM, cleanPrompt, componentsPrompt, validateClean, validateComponents, type CleanSuggestion } from "./catalog-ai";
 import { PACK_UNITS, planCatalogImport, type ImportRow } from "./catalog-import";
@@ -153,6 +154,68 @@ export class CatalogV2Service {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
       const canViewCosts = await this.canViewCosts(actor, workspaceId);
       return this.itemDetail(client, workspaceId, catalogId, itemId, canViewCosts);
+    });
+  }
+
+  /**
+   * Items in every active catalog whose name, code, description, category or attribute values hold every word
+   * searched (Woddy's product questions). Each with its size, drawing link and attributes, and its selling price
+   * only when a price is live (otherwise whether one waits in draft or review). Cost only for cost viewers.
+   */
+  findItems(actor: RequestActor, workspaceId: string, query: { search: string; limit?: number }) {
+    return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => {
+      const terms = searchTerms(query.search);
+      if (!terms.length) throw new UnprocessableEntityException("Say what to look for");
+      const canViewCosts = (await Promise.all(COST_PERMISSIONS.map((code) => this.access.hasPermission(client, workspaceId, user.userId, code)))).some(Boolean);
+      const values: unknown[] = [workspaceId, likePattern(query.search.trim())];
+      const where = terms.map((term) => {
+        values.push(term);
+        const at = `$${values.length}`;
+        return `(item.name ILIKE ${at} OR item.code ILIKE ${at} OR coalesce(item.description, '') ILIKE ${at} OR coalesce(category.name, '') ILIKE ${at}
+          OR EXISTS (SELECT 1 FROM catalog_item_values value WHERE value.workspace_id = item.workspace_id AND value.item_id = item.id AND value.value ILIKE ${at}))`;
+      });
+      values.push(Math.min(Math.max(query.limit ?? 8, 1), 20));
+      const rows = (await client.query<FoundItem & { live: LivePrice | null; pending: "draft" | "reviewed" | "not_live" | null; supplierCost: { cost: string; currency: string | null; supplier: string } | null }>(
+        `SELECT item.id, item.catalog_id AS "catalogId", catalog.name AS "catalogName", item.code, item.name, item.item_type AS "itemType", item.unit_code AS "unitCode",
+                category.name AS "categoryName", item.description, item.technical_drawing_url AS "technicalDrawingUrl", item.production_days AS "productionDays",
+                (SELECT jsonb_build_object('width', size.width::text, 'depth', size.depth::text, 'height', size.height::text, 'unit', size.unit)
+                   FROM catalog_item_dimensions size WHERE size.workspace_id = item.workspace_id AND size.item_id = item.id) AS size,
+                coalesce((SELECT jsonb_agg(jsonb_build_object('label', attribute.label, 'value', value.value) ORDER BY attribute.sort_order, attribute.label)
+                   FROM catalog_item_values value JOIN catalog_attributes attribute ON attribute.workspace_id = value.workspace_id AND attribute.id = value.attribute_id
+                  WHERE value.workspace_id = item.workspace_id AND value.item_id = item.id), '[]'::jsonb) AS attributes,
+                (SELECT jsonb_build_object('id', entry.id, 'method', entry.method, 'price', entry.price::text, 'rate', entry.rate::text, 'minimumCharge', entry.minimum_charge::text,
+                                           'cost', entry.cost::text, 'markupPercent', entry.markup_percent::text, 'currency', book.currency)
+                   FROM price_entries entry JOIN price_books book ON book.workspace_id = entry.workspace_id AND book.id = entry.price_book_id
+                  WHERE entry.workspace_id = item.workspace_id AND entry.item_id = item.id AND entry.variant_id IS NULL AND entry.status = 'active' AND book.status = 'active'
+                  ORDER BY book.effective_from DESC LIMIT 1) AS live,
+                -- Without a live price: the newest one waiting (a draft, a reviewed one, or an approved one whose price book isn't in use).
+                (SELECT CASE WHEN entry.status = 'active' THEN 'not_live' ELSE entry.status END FROM price_entries entry
+                  WHERE entry.workspace_id = item.workspace_id AND entry.item_id = item.id AND entry.status IN ('draft', 'reviewed', 'active') ORDER BY entry.updated_at DESC LIMIT 1) AS pending,
+                (SELECT jsonb_build_object('cost', link.cost::text, 'currency', link.currency, 'supplier', vendor.display_name)
+                   FROM catalog_supplier_links link JOIN workspace_vendors vendor ON vendor.workspace_id = link.workspace_id AND vendor.id = link.vendor_id
+                  WHERE link.workspace_id = item.workspace_id AND link.item_id = item.id AND link.cost IS NOT NULL ORDER BY link.preferred DESC, link.created_at LIMIT 1) AS "supplierCost"
+           FROM catalog_items item
+           JOIN catalogs catalog ON catalog.workspace_id = item.workspace_id AND catalog.id = item.catalog_id AND catalog.status = 'active'
+           LEFT JOIN catalog_categories category ON category.workspace_id = item.workspace_id AND category.id = item.category_id
+          WHERE item.workspace_id = $1 AND item.status <> 'archived' AND ${where.join(" AND ")}
+          ORDER BY (item.name ILIKE $2) DESC, item.name, item.code LIMIT $${values.length}`, values)).rows;
+      const tiers = new Map<string, Array<{ fromQuantity: string; price: string }>>();
+      const tiered = rows.filter((row) => row.live?.method === "tiered").map((row) => row.live!.id);
+      if (tiered.length) {
+        const found = await client.query<{ entryId: string; fromQuantity: string; price: string }>(
+          `SELECT price_entry_id AS "entryId", from_quantity::text AS "fromQuantity", price::text AS price FROM price_entry_tiers
+            WHERE workspace_id = $1 AND price_entry_id = ANY($2::uuid[]) ORDER BY from_quantity`, [workspaceId, tiered]);
+        for (const tier of found.rows) tiers.set(tier.entryId, [...(tiers.get(tier.entryId) ?? []), { fromQuantity: tier.fromQuantity, price: tier.price }]);
+      }
+      return {
+        canViewCosts,
+        items: rows.map(({ live, pending, supplierCost, ...item }): FoundItem => ({
+          ...item,
+          price: live ? livePrice(live, item.unitCode, tiers.get(live.id) ?? []) : { status: pending ?? "none" },
+          ...(canViewCosts ? { cost: live?.cost ? { amount: moneyText(live.cost, live.currency), currency: live.currency, supplier: null }
+            : supplierCost ? { amount: moneyText(supplierCost.cost, supplierCost.currency), currency: supplierCost.currency, supplier: supplierCost.supplier } : null } : {}),
+        })),
+      };
     });
   }
 
@@ -695,4 +758,42 @@ export function currencyDecimals(currency: string) {
   if (["KWD", "BHD", "OMR", "JOD", "TND", "LYD", "IQD"].includes(currency)) return 3;
   if (["JPY", "KRW", "VND", "CLP", "ISK", "UGX", "XAF", "XOF"].includes(currency)) return 0;
   return 2;
+}
+
+/** A live price as found: the entry's numbers in its book's currency. */
+type LivePrice = { id: string; method: string; price: string | null; rate: string | null; minimumCharge: string | null; cost: string | null; markupPercent: string | null; currency: string };
+export type ItemPrice =
+  | { status: "active"; method: string; amount: string | null; currency: string; per: string; minimumCharge?: string; tiers?: Array<{ fromQuantity: string; price: string }>; note?: string }
+  | { status: "draft" | "reviewed" | "not_live" | "none" };
+export type FoundItem = {
+  id: string; catalogId: string; catalogName: string; code: string; name: string; itemType: string; unitCode: string; categoryName: string | null; description: string | null;
+  technicalDrawingUrl: string | null; productionDays: number | null;
+  size: { width: string | null; depth: string | null; height: string | null; unit: string } | null;
+  attributes: Array<{ label: string; value: string }>;
+  price: ItemPrice;
+  /** Only for people who may see costs. */
+  cost?: { amount: string; currency: string | null; supplier: string | null } | null;
+};
+
+/** What one unit sells for under a live price, as the customer sees it (never how cost and margin build it). */
+export function livePrice(entry: LivePrice, unitCode: string, tiers: Array<{ fromQuantity: string; price: string }>): ItemPrice {
+  const money = (value: string | null) => (value === null ? null : moneyText(value, entry.currency));
+  const base = { status: "active" as const, method: entry.method, currency: entry.currency, per: unitCode };
+  switch (entry.method) {
+    case "fixed": return { ...base, amount: money(entry.price) };
+    case "attribute_surcharge": return { ...base, amount: money(entry.price), note: "Base price; some options cost more" };
+    case "per_measure": return { ...base, amount: money(entry.rate), ...(entry.minimumCharge ? { minimumCharge: money(entry.minimumCharge)! } : {}) };
+    case "tiered": {
+      const steps = tiers.map((tier) => ({ fromQuantity: Dec.of(tier.fromQuantity).toString(), price: money(tier.price)! }));
+      return { ...base, amount: steps[0]?.price ?? null, tiers: steps, note: "The price per unit depends on the quantity" };
+    }
+    case "cost_plus":
+      return { ...base, amount: entry.cost && entry.markupPercent ? money(Dec.of(entry.cost).mul(Dec.ONE.add(Dec.of(entry.markupPercent).div(100))).toString()) : null };
+    default: return { ...base, amount: null, note: "Worked out from its parts in a quotation" };
+  }
+}
+
+/** An amount at its currency's precision ("4200.00", "135.000" in KWD). */
+export function moneyText(value: string, currency: string | null) {
+  return Dec.of(value).toFixed(currencyDecimals(currency ?? ""));
 }

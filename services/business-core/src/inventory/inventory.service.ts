@@ -8,6 +8,7 @@ import { notifyUserInApp } from "../notifications/default-templates";
 import { readLocations, type StockLocation } from "../purchasing/receiving";
 import { tellMaterialsReady } from "../purchasing/materials-ready";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { likePattern, searchTerms } from "../search/search-terms";
 import { raiseSnag } from "../project-core/project-work";
 import { reworkFromSite } from "../factory/factory-rework";
 import { averageCost, move, onHand, readMovements, readStock, readTransfer, readTransfers, stockItemFor } from "./stock";
@@ -32,6 +33,66 @@ export class InventoryService {
 
   stock(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client, user) => this.state(client, workspaceId, user.userId));
+  }
+
+  /**
+   * Stock of the items whose name or code (or their catalog item's) holds every word searched (Woddy's stock
+   * questions): per place, what's on hand as free stock, what deals hold of it, what's free, and what projects own;
+   * with the reorder point's low flag. Items with nothing on hand are listed too.
+   */
+  lookup(actor: RequestActor, workspaceId: string, query: { search: string; limit?: number }) {
+    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client) => {
+      const terms = searchTerms(query.search);
+      if (!terms.length) throw new BadRequestException("Say which item.");
+      const values: unknown[] = [workspaceId, likePattern(query.search.trim())];
+      const where = terms.map((term) => {
+        values.push(term);
+        const at = `$${values.length}`;
+        return `(item.name ILIKE ${at} OR item.code ILIKE ${at} OR coalesce(product.name, '') ILIKE ${at} OR coalesce(product.code, '') ILIKE ${at})`;
+      });
+      values.push(Math.min(Math.max(query.limit ?? 8, 1), 20));
+      const items = (await client.query<{ id: string; code: string; name: string; unit: string; catalogItemId: string | null }>(
+        `SELECT item.id, item.code, item.name, item.unit, item.catalog_item_id AS "catalogItemId"
+           FROM stock_items item
+           LEFT JOIN catalog_items product ON product.workspace_id = item.workspace_id AND product.id = item.catalog_item_id
+          WHERE item.workspace_id = $1 AND item.active AND ${where.join(" AND ")}
+          ORDER BY (item.name ILIKE $2) DESC, item.name, item.code LIMIT $${values.length}`, values)).rows;
+      if (!items.length) return { items: [] };
+      const ids = items.map((item) => item.id);
+      const places = (await client.query<{ itemId: string; locationId: string | null; locationName: string | null; onHand: string; held: string; forProjects: string }>(
+        `WITH free AS (SELECT item_id, location_id, sum(on_hand) AS on_hand FROM stock_balances WHERE workspace_id = $1 AND item_id = ANY($2::uuid[]) AND project_id IS NULL GROUP BY 1, 2),
+              owned AS (SELECT item_id, location_id, sum(on_hand) AS on_hand FROM stock_balances WHERE workspace_id = $1 AND item_id = ANY($2::uuid[]) AND project_id IS NOT NULL GROUP BY 1, 2),
+              held AS (SELECT item_id, location_id, sum(quantity) AS quantity FROM stock_reservations
+                        WHERE workspace_id = $1 AND item_id = ANY($2::uuid[]) AND status = 'reserved' AND project_id IS NULL GROUP BY 1, 2),
+              keys AS (SELECT item_id, location_id FROM free UNION SELECT item_id, location_id FROM owned UNION SELECT item_id, location_id FROM held)
+         SELECT keys.item_id AS "itemId", keys.location_id AS "locationId", location.name AS "locationName",
+                coalesce(free.on_hand, 0)::numeric(18, 4)::text AS "onHand", coalesce(held.quantity, 0)::numeric(18, 4)::text AS held,
+                coalesce(owned.on_hand, 0)::numeric(18, 4)::text AS "forProjects"
+           FROM keys
+           LEFT JOIN free ON free.item_id = keys.item_id AND free.location_id IS NOT DISTINCT FROM keys.location_id
+           LEFT JOIN owned ON owned.item_id = keys.item_id AND owned.location_id IS NOT DISTINCT FROM keys.location_id
+           LEFT JOIN held ON held.item_id = keys.item_id AND held.location_id IS NOT DISTINCT FROM keys.location_id
+           LEFT JOIN stock_locations location ON location.workspace_id = $1 AND location.id = keys.location_id
+          ORDER BY location.name NULLS LAST`, [workspaceId, ids])).rows;
+      const points = await readReorderPoints(client, workspaceId, ids);
+      return {
+        items: items.map((item) => {
+          const rows = places.filter((place) => place.itemId === item.id);
+          const sum = (pick: (row: (typeof rows)[number]) => string) => rows.reduce((total, row) => total.add(pick(row)), Dec.ZERO);
+          const onHand = sum((row) => row.onHand), held = sum((row) => row.held);
+          const reorder = points.filter((point) => point.itemId === item.id);
+          return {
+            ...item,
+            onHand: onHand.toString(), held: held.toString(), free: onHand.sub(held).toString(), forProjects: sum((row) => row.forProjects).toString(),
+            places: rows.filter((row) => !Dec.of(row.onHand).isZero() || !Dec.of(row.held).isZero() || !Dec.of(row.forProjects).isZero()).map((row) => ({
+              place: row.locationName, onHand: Dec.of(row.onHand).toString(), held: Dec.of(row.held).toString(), free: Dec.of(row.onHand).sub(row.held).toString(), forProjects: Dec.of(row.forProjects).toString(),
+            })),
+            reorderPoints: reorder.map((point) => ({ place: point.locationName, reorderAt: Dec.of(point.reorderAt).toString(), onOrder: Dec.of(point.onOrder).toString(), low: point.low, short: point.short })),
+            low: reorder.length ? reorder.some((point) => point.low) : null,
+          };
+        }),
+      };
+    });
   }
 
   movements(actor: RequestActor, workspaceId: string, query: Record<string, unknown>) {

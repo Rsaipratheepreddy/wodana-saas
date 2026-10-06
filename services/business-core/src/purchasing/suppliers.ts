@@ -49,6 +49,25 @@ export async function readSupplier(db: Db, workspaceId: string, id: string, lock
   return (await db.query<Supplier>(`${SELECT} WHERE vendor.workspace_id = $1 AND vendor.id = $2`, [workspaceId, id])).rows[0];
 }
 
+/**
+ * Suppliers in use (not archived) whose name, code, legal name, categories, notes or extra columns hold every
+ * search term (ILIKE patterns); those named like the phrase first.
+ */
+export async function findSuppliers(db: Db, workspaceId: string, input: { terms: string[]; phrase: string; limit: number }): Promise<Supplier[]> {
+  const values: unknown[] = [workspaceId, input.phrase];
+  const where = input.terms.map((term) => {
+    values.push(term);
+    const at = `$${values.length}`;
+    return `(vendor.display_name ILIKE ${at} OR vendor.code ILIKE ${at} OR coalesce(vendor.legal_name, '') ILIKE ${at} OR coalesce(vendor.notes, '') ILIKE ${at}
+      OR EXISTS (SELECT 1 FROM unnest(vendor.categories) category WHERE category ILIKE ${at})
+      OR EXISTS (SELECT 1 FROM supplier_attributes attribute WHERE attribute.workspace_id = vendor.workspace_id AND attribute.vendor_id = vendor.id
+                   AND (attribute.value ILIKE ${at} OR attribute.name ILIKE ${at})))`;
+  });
+  values.push(input.limit);
+  return (await db.query<Supplier>(`${SELECT} WHERE vendor.workspace_id = $1 AND vendor.status <> 'archived' AND ${where.join(" AND ")}
+    ORDER BY (vendor.display_name ILIKE $2) DESC, lower(vendor.display_name) LIMIT $${values.length}`, values)).rows;
+}
+
 /** Trimmed, de-duplicated (ignoring case) categories, keeping the spelling the workspace already uses. */
 export function cleanCategories(value: unknown, known: string[] = []): string[] {
   if (value === undefined || value === null) return [];

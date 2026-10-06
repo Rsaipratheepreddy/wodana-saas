@@ -2,6 +2,7 @@ import type { ToolDeclaration } from "../ai-gateway/ai-provider";
 import type { AiTool } from "./ai-tool";
 import type { ToolServices } from "./tool-services";
 import { crmWriteTools } from "./tools/crm-write-tools";
+import { COST_PERMISSIONS, productTools } from "./tools/product-tools";
 import { readTools } from "./tools/read-tools";
 import { workTools } from "./tools/work-tools";
 
@@ -32,7 +33,7 @@ export class AiToolRegistry {
 
   /** The first-release catalogue (W-1), over the module services. */
   static catalogue(services: ToolServices) {
-    return new AiToolRegistry([...readTools(services), ...crmWriteTools(services), ...workTools(services)]);
+    return new AiToolRegistry([...readTools(services), ...productTools(services), ...crmWriteTools(services), ...workTools(services)]);
   }
 
   get tools(): AiTool[] { return [...this.byName.values()]; }
@@ -40,7 +41,7 @@ export class AiToolRegistry {
 
   /** Every permission the catalogue checks, to read the person's in one query. */
   get permissionCodes(): string[] {
-    const codes = new Set(["crm.leads.assign", "crm.leads.view", "crm.opportunities.view", "crm.parties.view", "crm.communications.view", "crm.activities.view", "pre_projects.view", "projects.view", "projects.manage"]);
+    const codes = new Set(["crm.leads.assign", "crm.leads.view", "crm.opportunities.view", "crm.parties.view", "crm.communications.view", "crm.activities.view", "pre_projects.view", "projects.view", "projects.manage", ...COST_PERMISSIONS]);
     for (const tool of this.tools) for (const code of [...tool.permissions, ...(tool.anyPermissions ?? [])]) codes.add(code);
     return [...codes].sort();
   }
