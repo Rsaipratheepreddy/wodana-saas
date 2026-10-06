@@ -161,7 +161,7 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
 ### 0.5 Decisions needed from Palm
 1. PLM-009: how Won is reported for Proposal 2.
 2. PLM-024: who can see internal notes.
-3. PLM-029: Digital Marketing lead format.
+3. PLM-029: Digital Marketing lead format. **Answered 6 Oct:** not needed now (no ongoing digital-marketing source). Keep it as an option; CSV import stays available.
 4. The ODG / Architecture path.
 5. Interior Design flow mapping (Enquiry Types Flow tab).
 6. Finance approvers and amount thresholds.
@@ -169,7 +169,7 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
 8. List of entities, licences and TRNs.
 9. Calendar choice: Wodana calendars or Google shared calendars.
 10. Required fields per enquiry type before converting (email, area, address, budget, designer): now configuration in Sales › Fields; Palm to confirm per type (PLM-096).
-11. Remove "Concepts / Early Ideas" from Palm's enquiry types and move its records to Full ID (PLM-127): a configuration change Palm must confirm.
+11. Remove "Concepts / Early Ideas" from Palm's enquiry types and move its records to Full ID (PLM-127). **Confirmed 6 Oct:** Concept is a package under Full ID. No live enquiry used the type, so it is archived on Enquiry types with nothing to move.
 12. Locked name/phone after Qualified (E1-6): should an edit request go to an admin for approval, or is "ask a Sales admin" enough?
 
 ### 0.6 Handover
@@ -810,7 +810,7 @@ The current catalog (generic `workspace_catalog_records` + links) is too weak fo
 | PLM-127 Concepts / Early Ideas | **Configure** | Removed from the default template and from Palm's enquiry types; existing records keep their history. |
 | PLM-025 WhatsApp & email intake | **Build + external** | Inbox = sales-admin front door: File into job, or New enquiry prefilled from the chat. Email inbound via Mailgun routes per workspace address. WhatsApp goes live when Meta approves (demo mode until then). |
 | PLM-026 socials | **Better** | A per-channel form link and QR (built), plus a "paste a DM" action that reads the message into the enquiry form (AI fill, person confirms). DM connectors are declined for now: each platform needs its own app review; we revisit once WhatsApp is approved. |
-| PLM-029 digital marketing | **Waiting on Palm** | CSV import (built) and a webhook with a field map per agency. The format is needed from Palm (§0.5). |
+| PLM-029 digital marketing | **Deferred by Palm** | CSV import (built). A webhook with a field map per agency follows when Palm has an agency source (§0.5 #3). |
 | PLM-024 internal notes | **Configure** | A "who sees internal notes" setting (enquiry team only / everyone with Sales access). The default is the team; never the portal. |
 | PLM-033/035–037/093/114/115/118/120 | **Re-verify** | Each gets a live retest script in the P2 click-through; anything failing is fixed in P2. |
 
