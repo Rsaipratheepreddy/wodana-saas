@@ -1,0 +1,17 @@
+/* Bill capture: the original bill beside the draft Woddy read, and a bill line's tax treatment and account. */
+.original { display: grid; gap: var(--wd-space-2); align-content: start; margin-block-end: var(--wd-space-3); }
+.page { position: relative; display: block; overflow: hidden; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); text-decoration: none; }
+.page:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.photo { display: block; inline-size: 100%; max-block-size: 70vh; object-fit: contain; }
+.pdf { display: block; inline-size: 100%; block-size: 60vh; pointer-events: none; }
+.open { position: absolute; inset-block-end: var(--wd-space-2); inset-inline-end: var(--wd-space-2); display: inline-flex; align-items: center; gap: var(--wd-space-1);
+  padding-block: var(--wd-space-1); padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); font-size: var(--wd-text-xs); }
+.read { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.coding { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-block-start: var(--wd-space-1); }
+.coding > * { flex: 1 1 10rem; min-inline-size: 0; }
+
+/* On a wide dialog the original sits at the end, beside the fields; the form's sections flow next to it. */
+@media (min-width: 960px) {
+  .original { float: inline-end; inline-size: 38%; margin-inline-start: var(--wd-space-4); }
+}

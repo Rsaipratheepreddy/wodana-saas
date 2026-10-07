@@ -10,7 +10,7 @@ import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/refe
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { currencyDecimals, ensurePurchasingSettings, firstTime } from "./orders";
 import {
-  lockSuppliers, matchBill, priceBillLine, readBillLines, readBills, readDebitNotes, readInvoiceable, readPayments, readRetentions, readSupplierBalances, retentionByProject, type BillRow,
+  billLineCodingProblem, lockSuppliers, matchBill, priceBillLine, readBillLines, readBills, readDebitNotes, readInvoiceable, readPayments, readRetentions, readSupplierBalances, retentionByProject, type BillRow,
 } from "./payables";
 import { readRuns } from "./payment-runs";
 
@@ -19,6 +19,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
 const CURRENCY = /^[A-Z]{3}$/;
+const TAX_CODE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$/;
 export const PAYMENT_METHODS = ["bank", "cheque", "cash", "card", "other"] as const;
 const ACTIONS = ["save", "submit", "approve", "cancel", "release", "pay", "allocate", "reverse"] as const;
 /** Orders a supplier can invoice: placed ones (approved and on), including closed and cancelled ones that received goods. */
@@ -111,6 +112,24 @@ export class PayablesService {
     });
   }
 
+  /**
+   * A captured bill's file (Ledger bill capture) becomes the invoice's document once a person confirms the draft,
+   * in the caller's transaction: the same rule as an upload — not on a cancelled invoice, nor replacing the
+   * document of an approved one.
+   */
+  async linkCapturedFile(client: Db, workspaceId: string, userId: string, billId: string, file: { name: string; mimeType: string; key: string; sha256: string }) {
+    const bill = (await client.query<{ status: string; fileSha: string | null }>(
+      `SELECT status, file_sha256 AS "fileSha" FROM supplier_invoices WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, uuid(billId, "Invoice")])).rows[0];
+    if (!bill) throw new NotFoundException("Invoice not found.");
+    if (bill.fileSha === file.sha256) return false;
+    if (bill.status === "cancelled" || (bill.status === "approved" && bill.fileSha)) throw new ConflictException("The document of an approved or cancelled invoice doesn't change.");
+    await client.query(`UPDATE supplier_invoices SET file_name = $3, file_type = $4, file_key = $5, file_sha256 = $6, version = version + 1 WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, billId, file.name.slice(0, 255), file.mimeType, file.key, file.sha256]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier_invoice.document", entityType: "supplier_invoice", entityId: billId,
+      after: { name: file.name, sha256: file.sha256, captured: true } });
+    return true;
+  }
+
   file(actor: RequestActor, workspaceId: string, billId: string) {
     return this.access.withPermission(actor, workspaceId, "payables.view", async (client) => {
       const row = (await client.query<{ key: string | null; type: string | null }>(`SELECT file_key AS key, file_type AS type FROM supplier_invoices WHERE workspace_id = $1 AND id = $2`,
@@ -182,7 +201,8 @@ export class PayablesService {
           if (!(await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rowCount) throw new NotFoundException("Project not found.");
         }
       }
-      lines.push({ orderLineId, projectId, description, quantity, unitPrice, taxRate, ...priceBillLine({ quantity, unitPrice, taxRate }, currency) });
+      const coding = await this.lineCoding(client, workspaceId, legalEntityId, invoiceDate, { description, taxRate, taxCode: raw.taxCode, booksAccountId: raw.booksAccountId });
+      lines.push({ orderLineId, projectId, description, quantity, unitPrice, taxRate, ...coding, ...priceBillLine({ quantity, unitPrice, taxRate }, currency) });
     }
     const net = lines.reduce((sum, line) => sum.add(line.net), Dec.ZERO), tax = lines.reduce((sum, line) => sum.add(line.tax), Dec.ZERO);
     const values = [workspaceId, id, vendorId, legalEntityId, number, invoiceDate, dueDate, currency, net.toFixed(4), tax.toFixed(4), net.add(tax).toFixed(4), statedTotal];
@@ -198,11 +218,34 @@ export class PayablesService {
     }
     for (const [position, line] of lines.entries())
       await client.query(
-        `INSERT INTO supplier_invoice_lines (id, workspace_id, invoice_id, position, order_line_id, project_id, description, quantity, unit_price, tax_rate, net, tax, total)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [randomUUID(), workspaceId, id, position, line.orderLineId, line.projectId, line.description, line.quantity, line.unitPrice, line.taxRate, line.net, line.tax, line.total]);
+        `INSERT INTO supplier_invoice_lines (id, workspace_id, invoice_id, position, order_line_id, project_id, description, quantity, unit_price, tax_rate, net, tax, total, tax_code, books_account_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [randomUUID(), workspaceId, id, position, line.orderLineId, line.projectId, line.description, line.quantity, line.unitPrice, line.taxRate, line.net, line.tax, line.total,
+          line.taxCode, line.booksAccountId]);
     await recordAudit(client, { workspaceId, actorUserId: userId, action: existing ? "supplier_invoice.changed" : "supplier_invoice.entered", entityType: "supplier_invoice", entityId: id,
       after: { number, vendorId, legalEntityId, currency, invoiceDate, dueDate, statedTotal, total: net.add(tax).toFixed(4), lines: lines.length } });
+  }
+
+  /**
+   * A line's Ledger tax code (for purchases, in force on the invoice date) and account (the company's, open, an
+   * expense or asset that isn't a control account), checked against the company's books. Both are optional.
+   */
+  private async lineCoding(client: Db, workspaceId: string, legalEntityId: string, invoiceDate: string,
+    raw: { description: string; taxRate: string; taxCode: unknown; booksAccountId: unknown }) {
+    const given = raw.taxCode === undefined || raw.taxCode === null || raw.taxCode === "" ? null : raw.taxCode;
+    if (given !== null && (typeof given !== "string" || !TAX_CODE.test(given.trim()))) throw new BadRequestException("Tax code is not valid.");
+    const booksAccountId = raw.booksAccountId === undefined || raw.booksAccountId === null || raw.booksAccountId === "" ? null : uuid(raw.booksAccountId, "Account");
+    const taxCode = given === null ? null : (await client.query<{ code: string; rate: string; treatment: string }>(
+      `SELECT code, rate::text AS rate, treatment FROM books_tax_codes
+        WHERE workspace_id = $1 AND legal_entity_id = $2 AND upper(code) = upper($3) AND direction = 'purchases' AND archived_at IS NULL
+          AND effective_from <= $4::date AND (effective_to IS NULL OR effective_to >= $4::date)
+        ORDER BY effective_from DESC LIMIT 1`, [workspaceId, legalEntityId, given.trim(), invoiceDate])).rows[0] ?? null;
+    const account = booksAccountId === null ? null : (await client.query<{ code: string; type: string; isControl: boolean; archived: boolean }>(
+      `SELECT code, type, is_control AS "isControl", archived_at IS NOT NULL AS archived FROM books_accounts WHERE workspace_id = $1 AND legal_entity_id = $2 AND id = $3`,
+      [workspaceId, legalEntityId, booksAccountId])).rows[0] ?? null;
+    const problem = billLineCodingProblem({ description: raw.description, taxRate: raw.taxRate, taxCode: given === null ? null : given.trim(), booksAccountId }, { taxCode, account });
+    if (problem) throw new BadRequestException(problem);
+    return { taxCode: taxCode?.code ?? null, booksAccountId };
   }
 
   /**
