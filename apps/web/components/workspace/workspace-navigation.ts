@@ -132,6 +132,8 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery"), showInSidebar: false },
           // Management dashboards (PLM-134): their own sidebar entry under Business, not a Settings page.
           { href: "/workspace/reports", icon: "reports", id: "management-reports", label: tKey("Reports"), showInSidebar: false },
+          // The Ledger (engine books): its own sidebar entry under Business, not a Settings page.
+          { href: "/workspace/ledger", icon: "billing", id: "ledger", label: tKey("Ledger"), showInSidebar: false },
         ],
       },
       {
@@ -147,6 +149,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: tKey("Factory") },
           { href: "/workspace/settings/fulfilment", icon: "procurement", id: "fulfilment-settings", label: tKey("Orders by path") },
           { href: "/workspace/settings/accounting", icon: "integrations", id: "accounting-settings", label: tKey("Accounting") },
+          { href: "/workspace/settings/ledger", icon: "billing", id: "ledger-settings", label: tKey("Ledger") },
           { href: "/workspace/settings/attendance", icon: "calendar", id: "attendance-settings", label: tKey("Attendance & leave") },
           { href: "/workspace/settings/inbox", icon: "conversations", id: "inbox-settings", label: tKey("Inbox") },
           { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: tKey("Reminders") },
@@ -390,6 +393,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("pre-projects") ? [{ id: "planning", label: tKey("Planning"), href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),
       ...(allowed.has("projects-overview") ? [{ id: "projects", label: tKey("Projects"), href: "/workspace/projects", icon: "projects" as const }] : []),
       ...(allowed.has("global-finance") ? [{ id: "finance", label: tKey("Finance"), href: "/workspace/finance", icon: "commercial" as const }] : []),
+      ...(reachable.has("ledger") ? [{ id: "ledger", label: tKey("Ledger"), href: "/workspace/ledger", icon: "billing" as const }] : []),
       ...(reachable.has("management-reports") ? [{ id: "reports", label: tKey("Reports"), href: "/workspace/reports", icon: "reports" as const }] : []),
     ] },
     { id: "operations", label: tKey("Operations"), items: [
