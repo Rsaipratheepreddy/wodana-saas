@@ -1247,6 +1247,13 @@
       "when": 1801740004600,
       "tag": "0284_books_posting",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1801740004800,
+      "tag": "0286_books_bill_capture",
+      "breakpoints": true
     }
   ]
 }

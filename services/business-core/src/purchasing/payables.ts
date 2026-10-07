@@ -24,6 +24,8 @@ export type BillLine = {
   description: string; unit: string | null; quantity: string; unitPrice: string; taxRate: string; net: string; tax: string; total: string;
   /** Its order's retention when the invoice was approved (0 before, and for charges not on an order). */
   retentionPercent: string;
+  /** The Ledger's tax code (purchases) and account for the line, when the company keeps its books in Wodana. */
+  taxCode: string | null; booksAccountId: string | null;
 };
 
 /** Today in the workspace's own time zone. */
@@ -78,7 +80,8 @@ export async function readBillLines(db: Db, workspaceId: string, billId: string)
   return (await db.query<BillLine>(
     `SELECT line.id, line.position, line.order_line_id AS "orderLineId", ordered.order_id AS "orderId", purchase.number AS "orderNumber", line.project_id AS "projectId",
             project.reference AS "projectReference", line.description, ordered.unit, line.quantity::text AS quantity, line.unit_price::text AS "unitPrice", line.tax_rate::text AS "taxRate",
-            line.net::text AS net, line.tax::text AS tax, line.total::text AS total, line.retention_percent::text AS "retentionPercent"
+            line.net::text AS net, line.tax::text AS tax, line.total::text AS total, line.retention_percent::text AS "retentionPercent",
+            line.tax_code AS "taxCode", line.books_account_id AS "booksAccountId"
        FROM supplier_invoice_lines line
        LEFT JOIN purchase_order_lines ordered ON ordered.workspace_id = line.workspace_id AND ordered.id = line.order_line_id
        LEFT JOIN purchase_orders purchase ON purchase.workspace_id = ordered.workspace_id AND purchase.id = ordered.order_id
@@ -196,6 +199,36 @@ export async function matchBill(db: Db, workspaceId: string, bill: { id: string;
     reasons.push(`Invoice total ${Dec.of(bill.statedTotal).toFixed(places)}, lines add up to ${Dec.of(bill.total).toFixed(places)}`);
   }
   return reasons;
+}
+
+/** A Ledger tax code for purchases, as a bill line uses it. */
+export type BillTaxCode = { code: string; rate: string; treatment: string };
+/** A Ledger account, as a bill line may be charged to it. */
+export type BillAccount = { code: string; type: string; isControl: boolean; archived: boolean };
+
+/**
+ * Why a bill line's tax code or account doesn't fit, or null when it does. The code must be the company's, for
+ * purchases, in force on the invoice date (looked up by the caller: null when it isn't); a standard-rated code
+ * takes the rate the supplier charged, while zero, exempt and out-of-scope lines and reverse-charged ones carry
+ * no supplier tax. The account must be the company's, open, not a control account, and an expense or an asset.
+ */
+export function billLineCodingProblem(line: { description: string; taxRate: string; taxCode: string | null; booksAccountId: string | null },
+  found: { taxCode: BillTaxCode | null; account: BillAccount | null }) {
+  const what = line.description || "A line";
+  if (line.taxCode) {
+    const code = found.taxCode;
+    if (!code) return `${what}: tax code ${line.taxCode} isn't set up for this company's purchases on the invoice date.`;
+    if (code.treatment === "standard" && Dec.of(line.taxRate).cmp(code.rate) !== 0)
+      return `${what}: tax ${Dec.of(line.taxRate).toString()}% doesn't match ${code.code} (${Dec.of(code.rate).toString()}%).`;
+    if (code.treatment !== "standard" && !Dec.of(line.taxRate).isZero()) return `${what}: ${code.code} lines carry no supplier tax; set the tax to 0%.`;
+  }
+  if (line.booksAccountId) {
+    const account = found.account;
+    if (!account || account.archived) return `${what}: choose an open account of this company.`;
+    if (account.isControl) return `${what}: ${account.code} is a control account; choose an expense or asset account.`;
+    if (!["expense", "asset"].includes(account.type)) return `${what}: ${account.code} isn't an expense or asset account.`;
+  }
+  return null;
 }
 
 /** A line's amounts on a supplier's invoice (no discount; the invoice's own net price). */

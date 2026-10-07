@@ -17,6 +17,7 @@ export function payablesApi(workspaceId: string) {
   /** One change, with its own command id so a retry never runs it twice. */
   const command = <T>(action: string, input: Record<string, unknown>) => request<T>(at("state"), "POST", { ...input, action, commandId: crypto.randomUUID() });
   return {
+    workspaceId,
     state: () => request<PayablesState>(at("state")),
     bill: (id: string) => request<BillState>(at(`bills/${id}`)),
     supplier: (vendorId: string) => request<SupplierState>(at(`suppliers/${vendorId}`)),

@@ -12,6 +12,8 @@ export type Bill = {
 export type BillLine = {
   id: string; position: number; orderLineId: string | null; orderId: string | null; orderNumber: string | null; projectId: string | null; projectReference: string | null;
   description: string; unit: string | null; quantity: string; unitPrice: string; taxRate: string; net: string; tax: string; total: string; retentionPercent: string;
+  /** The Ledger's purchase tax code and account for the line, when the company keeps its books in Wodana. */
+  taxCode?: string | null; booksAccountId?: string | null;
 };
 
 export type PaymentMethod = "bank" | "cheque" | "cash" | "card" | "other";
