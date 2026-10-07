@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeFromName, headingUnit, priceAction, sizeCell } from "./linked-import-catalog";
+import { codeFromName, headingUnit, priceAction, readSizes, sizeCell, staleSizeAttributes } from "./linked-import-catalog";
 import { approvedPricesSetting } from "./linked-imports.service";
 
 describe("catalog rows from a linked sheet", () => {
@@ -28,6 +28,30 @@ describe("catalog rows from a linked sheet", () => {
     expect(headingUnit("HEIGHT (CM)")).toBe("cm");
     expect(headingUnit("Width mm")).toBe("mm");
     expect(headingUnit("Height")).toBeNull();
+  });
+
+  it("keeps size text with figures in one size note and treats text without any as no size", () => {
+    const headings = { depth: "DEPTH (CM)", height: "HEIGHT (CM)", width: "LENGTH (CM)" };
+    const placeholder = "Sizes are currently not listed on our website";
+    expect(readSizes({ depth: placeholder, height: placeholder, width: placeholder }, headings, "cm"))
+      .toEqual({ sizes: {}, notes: null, text: [], none: ["width", "depth", "height"], filled: true });
+    for (const cell of ["N/A", "TBC", "-"]) expect(readSizes({ height: cell }, headings, "cm")).toMatchObject({ sizes: {}, notes: null, none: ["height"] });
+    expect(readSizes({ width: "400 / Ottoman L 120 x D120 x H47", depth: "120", height: "75 cm - seating H 40cm" }, headings, "cm")).toEqual({
+      sizes: { depth: { value: "120", unit: "cm" } }, notes: "Width: 400 / Ottoman L 120 x D120 x H47; Height: 75 cm - seating H 40cm",
+      text: ["width", "height"], none: [], filled: true });
+    expect(readSizes({}, headings, "cm")).toEqual({ sizes: {}, notes: null, text: [], none: [], filled: false });
+  });
+
+  it("clears the text attributes an earlier import made from size headings, never the size note or other kinds", () => {
+    const definitions = [
+      { code: "depth_cm", label: "DEPTH (CM)", valueType: "text" as const },
+      { code: "height_cm", label: "HEIGHT (CM)", valueType: "text" as const },
+      { code: "width", label: "Width", valueType: "dimension" as const },
+      { code: "size_notes", label: "Size notes", valueType: "text" as const },
+      { code: "finish", label: "Finish", valueType: "text" as const },
+    ];
+    expect([...staleSizeAttributes(definitions, ["DEPTH (CM)", "HEIGHT (CM)", "LENGTH (CM)", "Width", "Size notes"])].sort())
+      .toEqual(["depth_cm", "height_cm", "length_cm"]);
   });
 
   it("drafts a changed price for review, or puts it live as an approved list price", () => {

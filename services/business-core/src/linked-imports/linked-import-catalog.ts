@@ -80,6 +80,47 @@ export function sizeCell(text: string, heading: string, fallback: SizeUnit): { v
 }
 const inUnit = (value: string, from: SizeUnit, to: SizeUnit) => (from === to ? Dec.of(value) : Dec.of(value).mul(MM_PER[from]).div(MM_PER[to])).round(2).toString();
 const SIZE_LABEL: Record<SizeField, string> = { height: "Height", width: "Width", depth: "Depth" };
+const SIZE_FIELDS: SizeField[] = ["width", "depth", "height"];
+/** The one attribute that keeps size cells written as text ("Depth: 75 cm - seating 40 cm; Height: …"). */
+export const SIZE_NOTES = "Size notes";
+
+/**
+ * A row's size cells. One number fills that size; text with figures ("400 / Ottoman L 120 x D120") is kept in one
+ * size note, labelled by the size it describes; text without any figure ("TBC", "Not listed") is no size at all.
+ */
+export function readSizes(cells: Partial<Record<SizeField, string>>, headings: Partial<Record<SizeField, string>>, fallback: SizeUnit) {
+  const sizes: Partial<Record<SizeField, { value: string; unit: SizeUnit }>> = {};
+  const notes: string[] = [];
+  const text: SizeField[] = [];
+  const none: SizeField[] = [];
+  let filled = false;
+  for (const field of SIZE_FIELDS) {
+    const cell = (cells[field] ?? "").trim();
+    if (!cell) continue;
+    filled = true;
+    if (!/\d/.test(cell)) { none.push(field); continue; }
+    const read = sizeCell(cell, headings[field] ?? SIZE_LABEL[field], fallback);
+    if (read) sizes[field] = read;
+    else { text.push(field); notes.push(`${SIZE_LABEL[field]}: ${cell}`); }
+  }
+  return { sizes, notes: notes.length ? notes.join("; ").slice(0, 500) : null, text, none, filled };
+}
+
+/**
+ * The codes of text attributes an earlier import made from size columns (one per heading, "DEPTH (CM)"): their text
+ * now lives in the size or the size note, so a re-import clears them.
+ */
+export function staleSizeAttributes(definitions: Pick<AttributeDefinition, "code" | "label" | "valueType">[], headings: Iterable<string>) {
+  const codes = new Set<string>();
+  for (const heading of headings) {
+    const code = attributeCode(heading);
+    if (code === attributeCode(SIZE_NOTES)) continue;
+    const matching = definitions.filter((definition) => lower(definition.label) === lower(heading) || definition.code === code);
+    for (const definition of matching) if (definition.valueType === "text") codes.add(definition.code);
+    if (!matching.length) codes.add(code);
+  }
+  return codes;
+}
 function itemType(written: string): ItemType | null {
   const key = written.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if ((ITEM_TYPES as readonly string[]).includes(key)) return key as ItemType;
@@ -145,6 +186,9 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
         if (!ancestors.has(categoryId)) ancestors.set(categoryId, await catalogs.attributes(client, workspaceId, catalogId, categoryId, false));
         return ancestors.get(categoryId)!;
       };
+      // The headings the link reads sizes from, whatever a row's own.
+      const mappedSizeHeadings = Object.entries(link.mapping?.columns ?? {}).filter(([, field]) => (SIZE_FIELDS as string[]).includes(field)).map(([heading]) => heading);
+      const sizeHeadings = (row: (typeof rows)[number]) => new Set([...mappedSizeHeadings, ...SIZE_FIELDS.flatMap((field) => row.headings?.[field] ?? [])]);
       const seen = new Set<string>();
       const claimed = new Set<string>();
       const steps: Step[] = [];
@@ -217,17 +261,12 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
             else if (drawingText) messages.push(`No link to a technical drawing in ${drawingText}.`);
           }
 
-          // The size: a cell with one number fills it; any other text is kept as an attribute under its heading.
-          const sheetSizes: Partial<Record<SizeField, { value: string; unit: SizeUnit }>> = {};
-          const sizeTexts: Record<string, string> = {};
-          for (const field of ["height", "width", "depth"] as SizeField[]) {
-            const text = (row.values[field] ?? "").trim();
-            if (!text) continue;
-            const heading = row.headings?.[field] ?? SIZE_LABEL[field];
-            const read = sizeCell(text, heading, defaultUnit);
-            if (read) sheetSizes[field] = read;
-            else { sizeTexts[heading] = text; messages.push(`${heading} isn't one number, so it's kept as text.`); }
-          }
+          // The size: a cell with one number fills it; other text with figures goes to the size note; text without any is no size.
+          const read = readSizes({ width: row.values.width, depth: row.values.depth, height: row.values.height }, row.headings ?? {}, defaultUnit);
+          const sheetSizes = read.sizes;
+          if (read.none.length) messages.push(read.text.length || Object.keys(sheetSizes).length
+            ? `No ${read.none.map((field) => SIZE_LABEL[field].toLowerCase()).join(", ")} given.` : "No size given.");
+          if (read.text.length) messages.push(`${read.text.map((field) => SIZE_LABEL[field]).join(", ")} ${read.text.length === 1 ? "isn't" : "aren't"} one number, so ${read.text.length === 1 ? "it's" : "they're"} kept in ${SIZE_NOTES}.`);
           const currentSize = item?.size ?? null;
           const sizeFields = Object.keys(sheetSizes) as SizeField[];
           let nextSize: Omit<Size, "version"> | null = null;
@@ -247,8 +286,16 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
 
           // Attributes: the sheet's extra columns over what the item already has; a new heading becomes a text attribute.
           const values: Record<string, string> = { ...(item?.values ?? {}) };
+          // Text an earlier import kept under a size column's heading is cleared: it's in the size or the size note now.
+          for (const code of staleSizeAttributes(definitions, sizeHeadings(row))) delete values[code];
+          // The size note follows the sheet's size cells; cells left empty leave it as it is.
+          const sizeNotes: Record<string, string> = read.notes ? { [SIZE_NOTES]: read.notes } : {};
+          if (read.filled && !read.notes) {
+            const definition = definitions.find((entry) => lower(entry.label) === lower(SIZE_NOTES) || entry.code === attributeCode(SIZE_NOTES));
+            delete values[definition?.code ?? attributeCode(SIZE_NOTES)];
+          }
           const newAttributes: string[] = [];
-          for (const [heading, raw] of Object.entries({ ...row.attributes, ...sizeTexts })) {
+          for (const [heading, raw] of Object.entries({ ...row.attributes, ...sizeNotes })) {
             const definition = definitions.find((entry) => lower(entry.label) === lower(heading) || entry.code === attributeCode(heading));
             if (!definition) { newAttributes.push(heading); values[attributeCode(heading)] = raw.slice(0, 500); continue; }
             const choice = definition.choices.find((option) => lower(option.label) === lower(raw) || lower(option.value) === lower(raw));
@@ -286,7 +333,10 @@ export function catalogAdapter(catalogs: CatalogV2Service): TargetAdapter {
             if (input.productionDays !== undefined && input.productionDays !== item.productionDays) base.changes.push(`Production time ${item.productionDays ?? "—"} → ${input.productionDays} days`);
             const before = item.values;
             const changedValues = Object.keys(values).filter((code) => (before[code] ?? "") !== values[code]);
-            if (changedValues.length) base.changes.push(...changedValues.map((code) => definitions.find((definition) => definition.code === code)?.label ?? newAttributes.find((heading) => attributeCode(heading) === code) ?? code));
+            const labelOf = (code: string) => definitions.find((definition) => definition.code === code)?.label ?? newAttributes.find((heading) => attributeCode(heading) === code) ?? code;
+            if (changedValues.length) base.changes.push(...changedValues.map(labelOf));
+            const cleared = Object.keys(before).filter((code) => values[code] === undefined && before[code] !== "");
+            if (cleared.length) base.changes.push(...cleared.map((code) => `${labelOf(code)} cleared`));
             if (drawing !== undefined && drawing !== item.technicalDrawingUrl) base.changes.push("Technical drawing");
           }
           const detailsChange = !item || base.changes.length > 0;

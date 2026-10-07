@@ -121,6 +121,10 @@
 }
 /* Number columns: the header sits over its figures (end-aligned). */
 .wd-data-grid th[data-align="end"] :is(.wd-column-head-content, .wd-sort-button, .wd-column-header) { justify-content: flex-end; text-align: end; }
+/* Its sort arrow sits before the label, so the label ends where the figures end. */
+.wd-data-grid th[data-align="end"] .wd-sort-button > svg:last-child { order: -1; margin-inline-start: 0; }
+.wd-data-grid th[data-align="center"] :is(.wd-column-head-content, .wd-sort-button, .wd-column-header) { justify-content: center; text-align: center; }
+.wd-data-grid th[data-align="center"] .wd-sort-button > svg:last-child { margin-inline-start: 0; }
 .wd-record-menu-actions { display: grid; gap: var(--wd-space-0-5); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .wd-record-menu-actions .wd-button { justify-content: flex-start; }
 /* Phone numbers read left to right in every language (+971 50 123 4567), aligned with the other fields. */

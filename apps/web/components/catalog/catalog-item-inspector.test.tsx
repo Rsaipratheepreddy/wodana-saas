@@ -55,6 +55,37 @@ describe("catalog item details", () => {
     await waitFor(() => expect(gets).toBe(2));
   });
 
+  it("opens on Details, with one tab each for photos, size and prices", async () => {
+    mount(() => ({ status: 200, body: item }));
+    inspector();
+    expect(await screen.findByRole("tab", { name: "Details", selected: true })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Details", "Photos", "Size", "Prices"]);
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("leaves attributes without a value to the edit form", async () => {
+    mount(() => ({ status: 200, body: item }));
+    const withColour = { ...structure, attributes: [...structure.attributes, { id: "a2", code: "colour", label: "Colour", valueType: "text" as const, required: false, choices: [], unitCode: null, categoryId: null }] };
+    render(<DesignSystemProvider><CatalogItemInspector canManage catalogId="k1" currency="AED" itemId="i1" structure={withColour} workspaceId="w" /></DesignSystemProvider>);
+    expect(await screen.findByRole("button", { name: "Edit Finish" })).toBeInTheDocument();
+    expect(screen.queryByText("Colour")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("textbox", { name: "Colour" })).toBeInTheDocument();
+  });
+
+  it("shows size text from a sheet under Size, not with the details", async () => {
+    const noted = { ...item, itemType: "ready_made", values: { finish: "Oak", size_notes: "Height: 75 cm - seating H 40cm" } };
+    const withNotes = { ...structure, attributes: [...structure.attributes, { id: "a3", code: "size_notes", label: "Size notes", valueType: "text" as const, required: false, choices: [], unitCode: null, categoryId: null }] };
+    mount((_, url) => url?.includes("items/i1/source") ? { status: 200, body: { size: { width: "300", depth: "120", height: null, diagonalDepth: null, unit: "cm", version: 1 }, defaultUnit: "cm", source: null } } : { status: 200, body: noted });
+    render(<DesignSystemProvider><CatalogItemInspector canManage={false} catalogId="k1" currency="AED" itemId="i1" structure={withNotes} workspaceId="w" /></DesignSystemProvider>);
+    expect(await screen.findByText("PLY-18")).toBeInTheDocument();
+    expect(screen.queryByText("Height: 75 cm - seating H 40cm")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Size" }));
+    expect(await screen.findByText("Height: 75 cm - seating H 40cm")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Width" })).toHaveValue("300");
+    expect(screen.queryByRole("tab", { name: "Source" })).not.toBeInTheDocument();
+  });
+
   it("shows plain facts to people who can't manage the catalog", async () => {
     mount(() => ({ status: 200, body: item }));
     inspector(false);

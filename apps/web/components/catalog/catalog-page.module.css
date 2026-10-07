@@ -24,8 +24,14 @@ button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outl
 .treeItem:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
 .treeItem small { color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; }
 .content { min-inline-size: 0; }
-.itemCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.itemCell { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 0; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .itemCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+/* One compact row per item: the name on at most two lines, the code and kind on one (in full in its title and the item panel).
+   Three classes, so the table's "text wraps" rule for cell text doesn't undo it. */
+.content .itemCell .itemName { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; white-space: normal; }
+.content .itemCell .itemCode { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A price reads on one line in tabular figures (the class doubled to outrank the same rule). */
+.content .price.price, .content .price.price span { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .muted { color: var(--wd-color-text-tertiary); }
 .form { display: grid; gap: var(--wd-space-4); }
 .inspector { display: grid; gap: var(--wd-space-5); }
@@ -84,5 +90,5 @@ button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outl
 .images li :global(.wd-icon-button) { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); background: var(--wd-color-surface); }
 
 /* The item's picture in the list, medium and square; an empty tile when it has none. */
-.thumb { display: block; inline-size: var(--wd-space-16); block-size: var(--wd-space-16); border-radius: var(--wd-radius-sm); object-fit: cover; background: var(--wd-color-surface-muted); border: 1px solid var(--wd-color-border); }
+.thumb { display: block; inline-size: var(--wd-space-12); block-size: var(--wd-space-12); border-radius: var(--wd-radius-sm); object-fit: cover; background: var(--wd-color-surface-muted); border: 1px solid var(--wd-color-border); }
 .thumb[data-empty] { opacity: 0.6; }

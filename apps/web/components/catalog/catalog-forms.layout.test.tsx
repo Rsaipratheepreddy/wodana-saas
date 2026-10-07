@@ -70,3 +70,34 @@ describe("Catalog form dialogs", () => {
     }
   });
 });
+
+describe("Catalog grid", () => {
+  const sized: CatalogStructure = { ...structure, attributes: [...structure.attributes,
+    { id: "a2", code: "depth_cm", label: "DEPTH (CM)", valueType: "text", required: false, choices: [], unitCode: null, categoryId: null },
+    { id: "a3", code: "height_cm", label: "HEIGHT (CM)", valueType: "text", required: false, choices: [], unitCode: null, categoryId: null }] };
+  const row = { id: "i1", code: "ACE-BURGUNDY-MARBLE-SIDE-TABLE", name: "Ace side table", itemType: "product", unitCode: "pcs", status: "active", version: 1, categoryId: "c1", categoryName: "Boards",
+    values: { finish: "Marble" }, sellPrice: { method: "fixed", price: "4800", rate: null, currency: "AED", status: "active" }, image: null };
+
+  it("shows only attribute columns the items fill, and the price as one end-aligned line", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => url.includes("/structure") ? sized : { items: [row] } })));
+    render(<DesignSystemProvider><CatalogPage workspaceId="w" canManage currency="AED" initialCatalogs={[catalog]} locale="en" /></DesignSystemProvider>);
+    await screen.findByText("Ace side table");
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent?.trim())).toEqual(["Photo", "Item", "Category", "Finish", "Price"]);
+    const price = screen.getAllByRole("columnheader").at(-1)!;
+    expect(price).toHaveAttribute("data-align", "end");
+    const cell = screen.getByText(/4,800\.00/).closest("td")!;
+    expect(cell).toHaveAttribute("data-align", "end");
+    expect(cell.textContent).toMatch(/4,800\.00 \/ pcs$/);
+    expect(screen.getByTitle("ACE-BURGUNDY-MARBLE-SIDE-TABLE · Product")).toBeInTheDocument();
+  });
+
+  it("keeps figures on one line, puts end-aligned headers over them, and keeps item rows compact", () => {
+    const read = (file: string) => readFileSync(join(__dirname, file), "utf8").replace(/\s+/g, " ");
+    const tables = read("../../design-system/styles/record-tables.css");
+    expect(tables).toMatch(/td\[data-align="end"\] :is\(span, strong, small, b, div, p, a, time\) \{ font-variant-numeric: tabular-nums; white-space: nowrap; \}/);
+    expect(read("../../design-system/styles/page.css")).toContain('.wd-data-grid th[data-align="end"] .wd-sort-button > svg:last-child { order: -1; margin-inline-start: 0; }');
+    const page = read("catalog-page.module.css");
+    expect(page).toContain(".content .itemCell .itemCode { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }");
+    expect(page).toMatch(/\.content \.itemCell \.itemName \{[^}]*-webkit-line-clamp: 2;/);
+  });
+});

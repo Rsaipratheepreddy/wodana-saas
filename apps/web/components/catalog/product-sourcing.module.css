@@ -16,6 +16,8 @@
 .fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-3); }
 .wide { grid-column: 1 / -1; }
 .sizeRow { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 6rem); gap: var(--wd-space-2); align-items: start; }
+/* The item panel's size: width, depth and height on one line, then the diagonal and the unit; it fits a narrow panel and a phone. */
+.sizeGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-2); align-items: start; }
 .field { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
 .provenance { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: start; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
 .provenance[data-source="ai"] { color: var(--wd-color-info); }

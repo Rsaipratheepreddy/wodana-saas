@@ -209,13 +209,13 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
       // The catalog's own category, which the sheet's "ARMCHAIRS" block names in capitals and the plural.
       await w.catalogs.createCategory(actor, w.workspaceId, catalogId, { name: "Armchair" });
       const heading = ["REMARKS", "ITEM", "DESCRIPTION", "IMAGE", "HEIGHT (CM)", "LENGTH (CM)", "DEPTH (CM)", "PRICE (AED)", "Technical Drawing", "Materials Needed", "Hours Needed"];
-      const sheet = (width: string): SourceSheet[] => [{ name: "Living", rows: [
+      const sheet = (width: string, depth = "120 cm"): SourceSheet[] => [{ name: "Living", rows: [
         ["", "", "", "", "", "", "", "", "", "Add more sofas"],
         ["", "SOFA"],
         heading,
         ["", "SOFA", "Aria Sofa - 3 seater", "", "Total H 108 cm - seat H 53 cm", width, "120 cm", "AED23,500.00", "Aria Sofa-3 Seater", "Wood, fabric, foam", "Carpentry 12 hours"],
         ["Add to the brochure", "", "", "", "", "", "", "", "", "", ""],
-        ["", "SOFA", "Aria Sofa - 4 seater", "", "", "400 cm", "120 cm", "28500", "no cad file", "", ""],
+        ["", "SOFA", "Aria Sofa - 4 seater", "", "", "400 cm", depth, "28500", "no cad file", "", ""],
         [],
         ["", "ARMCHAIRS"],
         heading,
@@ -227,7 +227,7 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
       const preview = await service.preview(actor, w.workspaceId, draft);
       expect(preview.summary).toEqual({ added: 3, changed: 0, unchanged: 0, errors: 0, missing: 0 });
       expect(preview.rows.map((row) => [row.key, row.message])).toEqual([
-        ["SOFA / Aria Sofa - 3 seater", "No unit: set to pieces. HEIGHT (CM) isn't one number, so it's kept as text."],
+        ["SOFA / Aria Sofa - 3 seater", "No unit: set to pieces. Height isn't one number, so it's kept in Size notes."],
         ["SOFA / Aria Sofa - 4 seater", "No unit: set to pieces. No link to a technical drawing in no cad file."],
         ["ARMCHAIRS / Luna Chair", "No unit: set to pieces. No selling price: ENQUIRE NOW."],
       ]);
@@ -249,20 +249,34 @@ integration("linked spreadsheet imports (PLM-073, PLM-124, PLM-111)", () => {
       expect((await w.client.query(`SELECT name FROM catalog_categories WHERE workspace_id = $1 ORDER BY name`, [w.workspaceId])).rows.map((row) => row.name)).toEqual(["Armchair", "Sofa"]);
       const kept = (await w.client.query(`SELECT attribute.label, value.value FROM catalog_item_values value JOIN catalog_attributes attribute ON attribute.id = value.attribute_id
         JOIN catalog_items item ON item.id = value.item_id WHERE item.code = 'ARIA-SOFA-3-SEATER' AND item.workspace_id = $1 ORDER BY attribute.label`, [w.workspaceId])).rows;
-      expect(kept).toEqual([{ label: "HEIGHT (CM)", value: "Total H 108 cm - seat H 53 cm" }, { label: "Hours Needed", value: "Carpentry 12 hours" }, { label: "ITEM", value: "SOFA" },
-        { label: "Materials Needed", value: "Wood, fabric, foam" }]);
+      expect(kept).toEqual([{ label: "Hours Needed", value: "Carpentry 12 hours" }, { label: "ITEM", value: "SOFA" },
+        { label: "Materials Needed", value: "Wood, fabric, foam" }, { label: "Size notes", value: "Height: Total H 108 cm - seat H 53 cm" }]);
 
       // The same sheet again changes nothing; a new length is a size change.
       const linkId = linked.link.id;
       expect((await service.refresh(actor, w.workspaceId, linkId, { runId: randomUUID(), sheets: sheet("300 cm") })).runs[0]).toMatchObject({ status: "applied", added: 0, changed: 0, unchanged: 3 });
       const resized = await service.refresh(actor, w.workspaceId, linkId, { runId: randomUUID(), sheets: sheet("3,100 mm") });
       expect(resized.rows.find((row: { key: string }) => row.key === "SOFA / Aria Sofa - 3 seater")).toMatchObject({ outcome: "changed",
-        message: "HEIGHT (CM) isn't one number, so it's kept as text. Width 300 → 310 cm" });
+        message: "Height isn't one number, so it's kept in Size notes. Width 300 → 310 cm" });
       expect((await w.client.query(`SELECT size.width::text AS width, size.version FROM catalog_item_dimensions size JOIN catalog_items item ON item.id = size.item_id
         WHERE item.code = 'ARIA-SOFA-3-SEATER' AND item.workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ width: "310.00", version: 2 }]);
       // A second link over the same catalog finds the items by name in their category.
       const again = await service.preview(actor, w.workspaceId, { ...draft, name: "Collection copy", sheets: sheet("310 cm") });
       expect(again.summary).toMatchObject({ added: 0, errors: 0, unchanged: 3 });
+
+      // Text an earlier import kept under a size heading is cleared on the next run; a size cell with no figure is no size.
+      const legacy = await w.catalogs.insertAttribute(w.client, w.workspaceId, catalogId, { label: "DEPTH (CM)", valueType: "text" }, w.owner);
+      await w.client.query(`INSERT INTO catalog_item_values (workspace_id, item_id, attribute_id, value) SELECT $1, item.id, $2, 'Sizes are currently not listed on our website'
+        FROM catalog_items item WHERE item.workspace_id = $1 AND item.code = 'ARIA-SOFA-4-SEATER'`, [w.workspaceId, legacy.id]);
+      const cleaned = await service.refresh(actor, w.workspaceId, linkId, { runId: randomUUID(), sheets: sheet("3,100 mm", "Sizes are currently not listed on our website") });
+      expect(cleaned.runs[0]).toMatchObject({ status: "applied", changed: 1, unchanged: 2 });
+      expect(cleaned.rows.find((row: { key: string }) => row.key === "SOFA / Aria Sofa - 4 seater")).toMatchObject({ outcome: "changed",
+        message: "No link to a technical drawing in no cad file. No depth given. DEPTH (CM) cleared" });
+      expect((await w.client.query(`SELECT count(*)::int AS count FROM catalog_item_values WHERE workspace_id = $1 AND attribute_id = $2`, [w.workspaceId, legacy.id])).rows[0].count).toBe(0);
+      expect((await w.client.query(`SELECT size.depth::text AS depth FROM catalog_item_dimensions size JOIN catalog_items item ON item.id = size.item_id
+        WHERE item.code = 'ARIA-SOFA-4-SEATER' AND item.workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ depth: "120.00" }]);
+      expect((await service.refresh(actor, w.workspaceId, linkId, { runId: randomUUID(), sheets: sheet("3,100 mm", "Sizes are currently not listed on our website") })).runs[0])
+        .toMatchObject({ status: "applied", changed: 0, unchanged: 3 });
     });
   });
 

@@ -248,6 +248,13 @@
     text-overflow: clip;
     white-space: normal;
   }
+  /* Figures (end-aligned columns: money, quantities) stay on one line in tabular numbers, even when text wraps;
+     the column is sized for them and the frame scrolls sideways when the table is wider than the page. */
+  .wd-data-grid table.wd-table.wd-record-table.wd-record-table > tbody > tr > td[data-align="end"],
+  .wd-data-grid table.wd-table.wd-record-table.wd-record-table > tbody > tr > td[data-align="end"] :is(span, strong, small, b, div, p, a, time) {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
 }
 
 /* Column header icons (reference: quiet icon before each label). */

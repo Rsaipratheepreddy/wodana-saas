@@ -68,20 +68,32 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   const money = useMemo(() => (value: string, currency: string) => {
     try { return new Intl.NumberFormat(locale, { style: "currency", currency }).format(Number(value)); } catch { return `${currency} ${value}`; }
   }, [locale]);
-  // Catalog-wide attributes become columns (the first four), so each catalog shows what matters to it.
-  const attributeColumns = (structure?.attributes ?? []).filter((attribute) => !attribute.categoryId).slice(0, 3);
+  // Catalog-wide attributes that the shown items fill become columns (at most three), so each catalog shows what matters to it.
+  const attributeColumns = useMemo(() => (structure?.attributes ?? [])
+    .filter((attribute) => !attribute.categoryId && items.some((row) => (row.values?.[attribute.code] ?? "").trim() !== ""))
+    .slice(0, 3), [items, structure?.attributes]);
+  const priceText = useCallback((row: CatalogItemRow) => {
+    const amount = row.sellPrice?.price ?? row.sellPrice?.rate;
+    return row.sellPrice && amount ? `${money(amount, row.sellPrice.currency)} / ${row.unitCode}` : t("Price unavailable");
+  }, [money, t]);
+  // The price stays on one line: its column is as wide as the longest price shown (the grid scrolls sideways when it must).
+  const priceWidth = useMemo(() => Math.min(280, Math.max(140, ...items.map((row) => priceText(row).length * 8 + 40))), [items, priceText]);
   const columns = useMemo<DataGridColumn<CatalogItemRow>[]>(() => [
-    { id: "image", header: t("Photo"), accessorFn: (row) => (row.image ? 1 : 0), size: 84, enableSorting: false, meta: { renderCell: (row) => row.image
+    { id: "image", header: t("Photo"), accessorFn: (row) => (row.image ? 1 : 0), size: 72, enableSorting: false, meta: { renderCell: (row) => row.image
       // eslint-disable-next-line @next/next/no-img-element -- the item's picture, streamed through the signed-in catalog route
       ? <img className={styles.thumb} src={catalogImageUrl(workspaceId, row.image.id, row.image.hasPreview)} alt="" loading="lazy" />
       : <span className={styles.thumb} data-empty="" aria-hidden="true" /> } },
-    { id: "name", header: t("Item"), accessorFn: (row) => `${row.name} ${row.code}`, size: 260, meta: { primary: true, renderCell: (row) => <span className={styles.itemCell}><strong>{row.name}</strong><small><bdi dir="ltr">{row.code}</bdi> · {typeLabels(t)[row.itemType] ?? row.itemType}</small></span> } },
+    // Width the hidden attribute columns leave goes to the item.
+    { id: "name", header: t("Item"), accessorFn: (row) => `${row.name} ${row.code}`, size: 280 + 40 * (3 - attributeColumns.length), meta: { primary: true, renderCell: (row) => {
+      const kind = typeLabels(t)[row.itemType] ?? row.itemType;
+      return <span className={styles.itemCell}><strong className={styles.itemName} title={row.name}>{row.name}</strong><small className={styles.itemCode} title={`${row.code} · ${kind}`}><bdi dir="ltr">{row.code}</bdi> · {kind}</small></span>;
+    } } },
     { id: "category", header: t("Category"), accessorFn: (row) => row.categoryName ?? "", size: 150, cell: ({ row }) => <TypeChip>{row.original.categoryName}</TypeChip> },
     ...attributeColumns.map((attribute): DataGridColumn<CatalogItemRow> => ({ id: `attr-${attribute.code}`, header: attribute.label, accessorFn: (row) => row.values[attribute.code] ?? "", size: 120, meta: { mobileHidden: true } })),
-    { id: "price", header: t("Price"), accessorFn: (row) => row.sellPrice?.price ?? row.sellPrice?.rate ?? "", size: 140, meta: { align: "end", renderCell: (row) => row.sellPrice && (row.sellPrice.price ?? row.sellPrice.rate)
-      ? <span dir="ltr">{money(row.sellPrice.price ?? row.sellPrice.rate ?? "0", row.sellPrice.currency)}<span className={styles.muted}> / {row.unitCode}</span></span>
-      : <span className={styles.muted}>{t("Price unavailable")}</span> } },
-  ], [attributeColumns, money, t]);
+    { id: "price", header: t("Price"), accessorFn: (row) => row.sellPrice?.price ?? row.sellPrice?.rate ?? "", size: priceWidth, meta: { align: "end", renderCell: (row) => row.sellPrice && (row.sellPrice.price ?? row.sellPrice.rate)
+      ? <span className={styles.price} dir="ltr">{money(row.sellPrice.price ?? row.sellPrice.rate ?? "0", row.sellPrice.currency)}<span className={styles.muted}> / {row.unitCode}</span></span>
+      : <span className={`${styles.price} ${styles.muted}`}>{t("Price unavailable")}</span> } },
+  ], [attributeColumns, money, priceWidth, t, workspaceId]);
 
   if (!catalogs.length) {
     return <div className={styles.page}>
