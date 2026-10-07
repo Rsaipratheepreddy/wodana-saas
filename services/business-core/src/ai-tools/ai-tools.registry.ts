@@ -1,6 +1,7 @@
 import type { ToolDeclaration } from "../ai-gateway/ai-provider";
 import type { AiTool } from "./ai-tool";
 import type { ToolServices } from "./tool-services";
+import { booksTools } from "./tools/books-tools";
 import { crmWriteTools } from "./tools/crm-write-tools";
 import { COST_PERMISSIONS, productTools } from "./tools/product-tools";
 import { readTools } from "./tools/read-tools";
@@ -33,7 +34,7 @@ export class AiToolRegistry {
 
   /** The first-release catalogue (W-1), over the module services. */
   static catalogue(services: ToolServices) {
-    return new AiToolRegistry([...readTools(services), ...productTools(services), ...crmWriteTools(services), ...workTools(services)]);
+    return new AiToolRegistry([...readTools(services), ...productTools(services), ...crmWriteTools(services), ...workTools(services), ...booksTools(services)]);
   }
 
   get tools(): AiTool[] { return [...this.byName.values()]; }

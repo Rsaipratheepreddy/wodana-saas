@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, DataGrid, EmptyState, ErrorState, FormDialog, InlineNotice, MenuButton, MoneyField, NoResultsState, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey } from "@/lib/i18n/keys";
 import { projectApi } from "@/lib/project-core/client";
 import type { CostEntry, CostSource, PackageMoney, ProjectMoney as Money } from "@/lib/project-core/types";
 import { subtractExact } from "@/lib/purchasing/amounts";
+import { usePercent, useProjectPnl } from "../books/projects-profit";
 import { ProjectHours } from "../hrms/project-hours";
 import { RaiseFinanceRequest, useCanRaiseFinanceRequest } from "../finance-requests/raise-request";
 import { useProjectFormat } from "./format";
@@ -30,6 +33,9 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
   const [editing, setEditing] = useState<PackageMoney | null>(null);
   const [askingFinance, setAskingFinance] = useState(false);
   const canAskFinance = useCanRaiseFinanceRequest(workspaceId);
+  // With the Ledger on for the project's company: the profit the books show so far.
+  const profit = useProjectPnl(workspaceId, projectId);
+  const { percent, points } = usePercent();
   const load = useCallback(async () => {
     try { setState(await api.money(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Money didn't load.")); }
   }, [api, projectId, t]);
@@ -79,6 +85,11 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
       {state.margin !== null ? <div><dt>{t("Margin")}</dt><dd className={Number(state.margin) < 0 ? styles.over : undefined}>{money(state.margin)}
         {Number(income.agreedNet) > 0 ? <small>{t("{percent}% of {amount} before tax", { percent: (Math.round(Number(state.margin) / Number(income.agreedNet) * 1000) / 10).toString(),
           amount: money(income.agreedNet, income.currency) })}</small> : null}</dd></div> : null}
+      {profit && profit.profit !== null ? <div><dt>{t(tKey("Profit so far"))}</dt><dd className={profit.profit.startsWith("-") ? styles.over : undefined}>{money(profit.profit, profit.currency)}
+        <small>{profit.marginPercent === null ? t(tKey("Nothing invoiced yet"))
+          : profit.marginVsQuote === null ? t(tKey("{percent} margin"), { percent: percent(profit.marginPercent) })
+          : t(tKey("{percent} margin, {points} pts against the quote"), { percent: percent(profit.marginPercent), points: points(profit.marginVsQuote) })}</small>
+        <small><Link className={styles.ledgerLink} href={profit.links.journals}>{t(tKey("Ledger journals"))}</Link></small></dd></div> : null}
       {state.available !== null ? <div><dt>{t("Cash in hand")}</dt><dd className={Number(state.available) < 0 ? styles.over : undefined}>{money(state.available)}
         <small>{t("Received less spent and committed")}</small></dd></div> : null}
     </dl>

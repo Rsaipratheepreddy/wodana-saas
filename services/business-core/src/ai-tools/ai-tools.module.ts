@@ -1,4 +1,6 @@
 import { Module } from "@nestjs/common";
+import { BooksProjectModule } from "../books/project/project.module";
+import { ProjectProfitService } from "../books/project/project-profit.service";
 import { CatalogModule } from "../catalog/catalog.module";
 import { CatalogV2Service } from "../catalog-core/catalog-v2.service";
 import { CrmActivitiesModule } from "../crm/activities/crm-activities.module";
@@ -34,16 +36,16 @@ import { AiToolRegistry } from "./ai-tools.registry";
 
 /** Woddy's tools (W-1): the registry, the agent loop and the confirmation of proposed actions. */
 @Module({
-  imports: [WorkspacesModule, CrmLeadsModule, CrmIntakeModule, CrmOpportunitiesModule, CrmActivitiesModule, CrmPartiesModule, CrmConversationsModule, WorkspaceSearchModule, ProjectCoreModule, QuotationModule, CatalogModule, InventoryModule, PurchasingModule],
+  imports: [WorkspacesModule, CrmLeadsModule, CrmIntakeModule, CrmOpportunitiesModule, CrmActivitiesModule, CrmPartiesModule, CrmConversationsModule, WorkspaceSearchModule, ProjectCoreModule, QuotationModule, CatalogModule, InventoryModule, PurchasingModule, BooksProjectModule],
   controllers: [AiToolsController],
   providers: [
     {
       provide: AiToolRegistry,
-      inject: [WorkspaceAccessService, WorkspaceSearchService, CrmLeadsService, CrmIntakeService, CrmOpportunitiesService, CrmActivitiesService, CrmPartiesService, CrmConversationsService, CrmInboxService, CrmScheduledMessagesService, ProjectWorkService, QuotationCollabService, CatalogV2Service, InventoryService, SuppliersService],
+      inject: [WorkspaceAccessService, WorkspaceSearchService, CrmLeadsService, CrmIntakeService, CrmOpportunitiesService, CrmActivitiesService, CrmPartiesService, CrmConversationsService, CrmInboxService, CrmScheduledMessagesService, ProjectWorkService, QuotationCollabService, CatalogV2Service, InventoryService, SuppliersService, ProjectProfitService],
       useFactory: (access: WorkspaceAccessService, search: WorkspaceSearchService, leads: CrmLeadsService, intake: CrmIntakeService, opportunities: CrmOpportunitiesService, activities: CrmActivitiesService,
         parties: CrmPartiesService, conversations: CrmConversationsService, inbox: CrmInboxService, scheduled: CrmScheduledMessagesService, work: ProjectWorkService, quoteComments: QuotationCollabService,
-        catalog: CatalogV2Service, inventory: InventoryService, suppliers: SuppliersService) =>
-        AiToolRegistry.catalogue({ access, search, leads, intake, opportunities, activities, parties, conversations, inbox, scheduled, work, quoteComments, catalog, inventory, suppliers }),
+        catalog: CatalogV2Service, inventory: InventoryService, suppliers: SuppliersService, books: ProjectProfitService) =>
+        AiToolRegistry.catalogue({ access, search, leads, intake, opportunities, activities, parties, conversations, inbox, scheduled, work, quoteComments, catalog, inventory, suppliers, books }),
     },
     AiToolCallsService,
     AiAgentService,

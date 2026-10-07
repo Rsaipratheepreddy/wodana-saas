@@ -15,3 +15,6 @@
 .linkButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
 .dialogBody { display: grid; gap: var(--wd-space-4); }
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.ledgerLink { color: inherit; text-decoration: none; }
+.ledgerLink:hover { text-decoration: underline; }
+.ledgerLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
