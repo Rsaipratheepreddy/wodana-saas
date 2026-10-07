@@ -58,8 +58,8 @@ function routeTable() {
   const settingsModule = workspaceModules.find((module) => module.id === "workspace");
   const settingsEntries: WorkspaceRouteEntry[] = (settingsModule?.navigation ?? [])
     .flatMap((group) => group.items)
-    // Gallery sits in the Company section of the sidebar and Reports under Business, not in Settings; People, Teams and Roles live in People.
-    .filter((item) => !["gallery", "management-reports", ...PEOPLE_PAGES].includes(item.id))
+    // Gallery sits in the Company section of the sidebar and Reports and Ledger under Business, not in Settings; People, Teams and Roles live in People.
+    .filter((item) => !["gallery", "management-reports", "ledger", ...PEOPLE_PAGES].includes(item.id))
     .map((item) => ({ id: `settings:${item.id}`, label: item.label, href: item.href, parent: "settings", paths: [item.href], ...SETTINGS_NAV_OVERRIDES[item.id] }));
   const hrmsModule = workspaceModules.find((module) => module.id === "hrms");
   const hrmsEntries: WorkspaceRouteEntry[] = (hrmsModule?.navigation ?? [])
@@ -108,6 +108,8 @@ function routeTable() {
     { id: "project", label: "Project", href: "/workspace/projects", parent: "projects", record: true, pattern: new RegExp(`^/workspace/projects/${UUID}(/|$)`, "i") },
     { id: "finance", label: "Finance", href: "/workspace/finance", nav: "finance", paths: ["/workspace/finance"] },
     { id: "reports", label: "Reports", href: "/workspace/reports", nav: "reports", paths: ["/workspace/reports"] },
+    // The Ledger: its reports, journals and accounts are tabs of one page (/workspace/ledger/<tab>/<record>).
+    { id: "ledger", label: "Ledger", href: "/workspace/ledger", nav: "ledger", paths: ["/workspace/ledger"] },
 
     // Operations
     { id: "purchasing", label: "Purchasing", href: "/workspace/purchasing", nav: "purchasing", paths: ["/workspace/purchasing"] },

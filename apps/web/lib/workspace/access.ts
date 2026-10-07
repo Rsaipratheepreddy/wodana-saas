@@ -18,6 +18,8 @@ export const STOCK_VIEW = ["stock.view", "stock.manage", "stock.adjust", "stock.
 export const FACTORY_VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve"];
 // Whoever asks Finance for something (finance_requests.raise) opens Finance for its Requests tab only.
 export const FINANCE_VIEW = ["payables.view", "receivables.view", "accounting.manage", "finance_requests.raise", "finance_requests.manage"];
+// The Ledger (engine books): reading journals, accounts and reports.
+export const LEDGER_VIEW = ["books.view"];
 
 /** Navigation item id → what its page needs (see `workspaceModules`). Items not listed are open to every member. */
 export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
@@ -34,6 +36,8 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "fulfilment-settings": [["crm.settings.manage"]],
   "factory-settings": [[...FACTORY_VIEW, "workspace.settings.manage"]],
   "accounting-settings": [["accounting.manage"]],
+  // Settings › Ledger: the chart, roles, tax codes, start and lock dates (read with books.view, changed with books.manage).
+  "ledger-settings": [["books.view", "books.manage"]],
   "attendance-settings": [["hrms.manage"]],
   members: [MEMBERS_READ],
   teams: [ORGANIZATION_READ, ["module.teams.read", "legal_entities.view"], MEMBERS_READ],
@@ -78,6 +82,7 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "global-inventory": [STOCK_VIEW],
   "global-factory": [FACTORY_VIEW],
   "global-finance": [FINANCE_VIEW],
+  ledger: [LEDGER_VIEW],
 };
 
 /** Sales settings' sections (`?section=`), in their tab order. */
@@ -107,9 +112,19 @@ export const FINANCE_TAB_ACCESS: Record<string, AccessRule> = {
   accounting: [["accounting.manage"]],
 };
 
+/** Ledger tabs → what each tab's data needs (all of them read the books). */
+export const LEDGER_TAB_ACCESS: Record<string, AccessRule> = {
+  overview: [LEDGER_VIEW],
+  reports: [LEDGER_VIEW],
+  journals: [LEDGER_VIEW],
+  accounts: [LEDGER_VIEW],
+  attention: [LEDGER_VIEW],
+};
+
 /** Workspace areas reached by address (not only from navigation) → what opening them needs. */
 const PATH_ACCESS: Array<[string, AccessRule]> = [
   ["/workspace/finance", [FINANCE_VIEW]],
+  ["/workspace/ledger", [LEDGER_VIEW]],
   ["/workspace/reports", [["reports.management.view"]]],
   ["/workspace/purchasing", [PURCHASING_VIEW]],
   ["/workspace/inventory", [STOCK_VIEW]],
