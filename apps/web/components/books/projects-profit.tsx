@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ledgerHref, type Money, type ProjectPnl } from "@wodana/contracts";
+import type { Money, ProjectPnl } from "@wodana/contracts";
+import { ledgerPaths } from "@/lib/books/reports-client";
 import { DataGrid, EmptyState, ErrorState, MenuButton, NoResultsState, RecordName, Skeleton, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
@@ -129,7 +130,7 @@ export function ProjectsProfit({ workspaceId, entity, from, to, toolbarLeading }
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!state) return <Skeleton lines={8} shape="rows" />;
   if (!state.enabled)
-    return <EmptyState title={t(tKey("The Ledger isn't on yet"))} action={<Link className={styles.open} href={ledgerHref.settings()}>{t(tKey("Set up the Ledger"))}</Link>} />;
+    return <EmptyState title={t(tKey("The Ledger isn't on yet"))} action={<Link className={styles.open} href={ledgerPaths.settings()}>{t(tKey("Set up the Ledger"))}</Link>} />;
   const needle = search.trim().toLocaleLowerCase();
   const rows = state.rows.filter((row) => !needle || `${row.name} ${row.reference} ${row.clientName}`.toLocaleLowerCase().includes(needle));
   const picker = !entity && state.companies.length > 1
