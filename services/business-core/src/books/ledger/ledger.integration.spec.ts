@@ -393,5 +393,5 @@ integration("Ledger core on real Postgres (templates, posting, numbering, immuta
     const guards = (await pool.query<{ enabled: string }>(
       "SELECT tgenabled AS enabled FROM pg_trigger WHERE tgname IN ('books_journals_immutable', 'books_journal_lines_immutable')")).rows;
     expect(guards.map((row) => row.enabled)).toEqual(["O", "O"]);
-  });
+  }, 30_000);
 });
