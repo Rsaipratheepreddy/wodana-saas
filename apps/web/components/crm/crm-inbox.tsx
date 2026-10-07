@@ -288,13 +288,12 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 250); return () => { clearTimeout(timer); controller.abort(); };
   }, [workspaceId, search]);
-  return <ControlledModalDialog title={t("New conversation")} description={t("Choose the customer and channel. An enquiry is not required.")} isOpen isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
+  return <ControlledModalDialog title={t("New conversation")} isOpen isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <div className={styles.newChat}>
       <SelectField label={t("Channel")} items={[{ id: "whatsapp", label: "WhatsApp" }, { id: "email", label: t("Email") }]} selectedKey={channel} onSelectionChange={(key) => key && setChannel(String(key) as "email" | "whatsapp")} />
       <TextInput label={t("Search customers")} value={search} onChange={setSearch} placeholder={channel === "whatsapp" ? t("Name or phone number") : t("Name or email")} />
       {failure ? <Callout title={t("Could not open conversation")} tone="warning">{failure}</Callout> : null}
-      {loading ? <Skeleton lines={6} /> : !contacts.length ? <p>{t("No matching customers.")}</p> : <div className={styles.contacts}>{contacts.map((contact) => <Button className={styles.contactItem} key={contact.id} variant="quiet" isDisabled={busy} onPress={async () => { if (saving.current) return; saving.current = true; setBusy(true); setFailure(""); try { const result = await crmRequest(workspaceId, "conversations", "POST", { channel, partyId: contact.id }, timeout()); onOpened(result.id); } catch (error) { setFailure((error as Error).message); saving.current = false; setBusy(false); } }}><Avatar name={String(contact.displayName)} size="sm" /><span>{String(contact.displayName)}</span><MessageCircle size={16} /></Button>)}</div>}
-      <small>{t("Only connected channels can deliver outbound messages. Incoming provider messages appear automatically.")}</small>
+      {loading ? <Skeleton lines={6} /> : !contacts.length ? <p>{t("No matching customers.")}</p> : <div className={styles.contacts}>{contacts.map((contact) => <Button className={styles.contactItem} key={contact.id} variant="quiet" isDisabled={busy} onPress={async () => { if (saving.current) return; saving.current = true; setBusy(true); setFailure(""); try { const result = await crmRequest(workspaceId, "conversations", "POST", { channel, partyId: contact.id }, timeout()); onOpened(result.id); } catch (error) { setFailure((error as Error).message); saving.current = false; setBusy(false); } }}><Avatar name={String(contact.displayName)} size="sm" /><span className={styles.contactName}>{String(contact.displayName)}</span><MessageCircle size={16} /></Button>)}</div>}
     </div>
   </ControlledModalDialog>;
 }

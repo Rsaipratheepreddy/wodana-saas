@@ -2835,7 +2835,7 @@ integration("projects core (plan §6.10)", () => {
       expect([step.name, step.supplierName, step.orderStatus, step.back, step.out]).toEqual(["Polishing", "Nile Marble", "draft", "0.0000", true]);
       await expect(checker.command(actor, w.workspaceId, wo, { action: "check", id: randomUUID(), passed: "3" })).rejects.toThrow(`Polishing isn't back from Nile Marble yet (${step.orderNumber}).`);
       let purchase = await buyer.orders.get(actor, w.workspaceId, step.orderId);
-      expect(purchase.lines.map((line) => [line.description, line.quantity, line.projectId])).toEqual([["Polishing — WO-0001 Kitchen cabinets", "3.0000", projectId]]);
+      expect(purchase.lines.map((line) => [line.description, line.quantity, line.projectId])).toEqual([["Polishing (WO-0001 Kitchen cabinets)", "3.0000", projectId]]);
       purchase = await buyer.orders.command(actor, w.workspaceId, step.orderId, { action: "submit", version: purchase.order.version });
       purchase = await buyer.orders.command(actor, w.workspaceId, step.orderId, { action: "send", version: purchase.order.version });
       await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: step.orderId, place: "factory", receivedOn: "2026-09-26", lines: [{ orderLineId: purchase.lines[0].id, received: "3" }] });

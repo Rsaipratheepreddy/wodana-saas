@@ -74,7 +74,7 @@ class ProviderService:
         app = await self.credentials.current()
         if not app.configured(provider):
             raise IntegrationFlowError(
-                "provider_not_configured", "Not available yet — Wodana is setting this up", 503
+                "provider_not_configured", "Not available yet. Wodana is setting this up.", 503
             )
         connected = await self.core.request_connection(
             str(request.workspace_id), str(request.connection_id), request.version, headers

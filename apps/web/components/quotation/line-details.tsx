@@ -126,7 +126,7 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
       </section>
 
       <section className={styles.detailSection}>
-        <Switch isSelected={form.optional} isDisabled={readOnly} onChange={(value) => set("optional", value)}>{t("Optional — the client can add it")}</Switch>
+        <Switch isSelected={form.optional} isDisabled={readOnly} onChange={(value) => set("optional", value)}>{t("Optional: the client can add it")}</Switch>
         {form.optional ? <TextInput label={t("Choose-one group")} description={t("Options with the same group are alternatives; the client picks one.")} isReadOnly={readOnly} value={form.optionGroup} onChange={(value) => set("optionGroup", value)} /> : null}
         <TextAreaField label={t("Internal note")} isReadOnly={readOnly} value={form.note} onChange={(value) => set("note", value)} />
       </section>

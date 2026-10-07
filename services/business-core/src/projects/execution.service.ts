@@ -358,7 +358,7 @@ export class ExecutionService {
           )).rows.map((visit) => ({
             ...visit,
             allDay: false,
-            title: [visit.dealReference, visit.clientName, visit.title].filter(Boolean).join(" — "),
+            title: [visit.dealReference, visit.clientName, visit.title].filter(Boolean).join(" · "),
           }));
           items.push(...visits);
         }

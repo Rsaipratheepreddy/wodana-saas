@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { groupNational, phoneProblem, splitPhone } from "./phone";
 
 const text = {
-  tooShort: (c: string, code: string, n: number) => `Too short — ${c} numbers are ${n} digits after ${code}`,
-  tooLong: (c: string, code: string, n: number) => `Too long — ${c} numbers are ${n} digits after ${code}`,
+  tooShort: (c: string, code: string, n: number) => `Too short: ${c} numbers are ${n} digits after ${code}`,
+  tooLong: (c: string, code: string, n: number) => `Too long: ${c} numbers are ${n} digits after ${code}`,
   invalid: (c: string) => `Not a valid ${c} number`,
   notMobile: (c: string) => `Not a ${c} mobile number`,
   chooseCountry: "Choose the country code",
@@ -30,7 +30,7 @@ describe("splitPhone", () => {
 
 describe("phoneProblem", () => {
   it("explains length problems per country (PLM-021)", () => {
-    expect(phoneProblem("5012345678", "AE", text, { mobile: true })).toMatch(/^Too long — United Arab Emirates numbers are 9 digits after \+971/);
+    expect(phoneProblem("5012345678", "AE", text, { mobile: true })).toMatch(/^Too long: United Arab Emirates numbers are 9 digits after \+971/);
     expect(phoneProblem("50123", "AE", text, { mobile: true })).toMatch(/^Too short/);
   });
   it("accepts valid mobiles and rejects a landline in a mobile field", () => {

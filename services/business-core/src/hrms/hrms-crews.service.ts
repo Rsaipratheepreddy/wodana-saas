@@ -350,7 +350,7 @@ export class HrmsCrewsService {
         code: "hrms.crew_day_submitted",
         users: await this.approvers(ctx, day.project_id),
         variables: { person: row.crewName, days: `${row.present} ${row.present === 1 ? "person" : "people"}`, place: row.projectName ?? "the workshop",
-          dates: formatDates(row.workDate, row.workDate, await this.access.locale(ctx)), note: issues.length ? `${issues.join("; ")} — ${reason}` : "" },
+          dates: formatDates(row.workDate, row.workDate, await this.access.locale(ctx)), note: issues.length ? `${issues.join("; ")}: ${reason}` : "" },
         deepLink: day.project_id ? `/workspace/projects/${day.project_id}/site?crewDay=${id}` : `/workspace/hrms/crews?crewDay=${id}`,
         key: `hrms.crew_day_submitted:${id}:${row.version}`,
       }]);

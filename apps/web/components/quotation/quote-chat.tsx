@@ -101,7 +101,7 @@ export function QuoteChat({ state, api, workspaceId, onApply, contextLine, onCle
 
   const starters = [
     { id: "draft", icon: Sparkles, label: t("Draft from Planning"), run: () => void ask(t("Draft the quote from Planning"), "draft"), primary: !state.lines.length },
-    { id: "services", icon: Wrench, label: t("Add the site services"), run: () => void ask(t("Add the site services this work needs — protection, demolition, debris disposal and final cleaning — in the areas where they apply."), "edit") },
+    { id: "services", icon: Wrench, label: t("Add the site services"), run: () => void ask(t("Add the site services this work needs (protection, demolition, debris disposal and final cleaning) in the areas where they apply."), "edit") },
     { id: "measure", icon: Ruler, label: t("Fill quantities from the measurements"), run: () => void ask(t("Use the site measurements to set quantities or formulas on the lines that have none."), "edit") },
     { id: "missing", icon: ListChecks, label: t("What's missing?"), run: () => void ask(t("Compare the quote with the requirements and approved designs, and add what's missing."), "edit") },
   ];
@@ -125,7 +125,7 @@ export function QuoteChat({ state, api, workspaceId, onApply, contextLine, onCle
         <button type="button" aria-label={t("Stop pointing at this line")} onClick={onClearContext}><X aria-hidden="true" size={12} /></button>
       </span> : null}
       <textarea ref={inputRef} aria-label={t("Ask the assistant")} rows={2} maxLength={1000} value={text} disabled={busy}
-        placeholder={contextLine ? t("Change this line — e.g. “make it 3.2 m” or “use walnut veneer”") : t("e.g. “Kitchen: base cabinets 4.5 m, quartz worktop, 6 LED spots”")}
+        placeholder={contextLine ? t("Change this line, e.g. “make it 3.2 m” or “use walnut veneer”") : t("e.g. “Kitchen: base cabinets 4.5 m, quartz worktop, 6 LED spots”")}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} />
       <div className={styles.composerFoot}>

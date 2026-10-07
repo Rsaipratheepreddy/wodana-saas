@@ -81,7 +81,7 @@ describe("inventory", () => {
     expect(hinge).toHaveTextContent("0 pcs");
     expect(hinge).toHaveTextContent("Hardware");
     expect(screen.queryByText("Nothing in stock")).not.toBeInTheDocument();
-    expect(screen.getByText("No quantities recorded yet — count stock or import quantities.")).toBeInTheDocument();
+    expect(screen.getByText("No quantities recorded yet. Count stock or import quantities.")).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "Stock" })).getAllByRole("row")).toHaveLength(4);
     // Free stock keeps its filter: nothing is free yet.
     await userEvent.click(screen.getByRole("button", { name: "Free stock" }));
@@ -101,7 +101,7 @@ describe("inventory", () => {
     mount((url) => (url.includes("/transfers") ? { transfers: [], locations: [], canManage: true, canAdjust: true, canReceive: true } : stock({ rows: [], items: [] })));
     page();
     expect(await screen.findByText("Nothing in stock")).toBeInTheDocument();
-    expect(screen.queryByText("No quantities recorded yet — count stock or import quantities.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No quantities recorded yet. Count stock or import quantities.")).not.toBeInTheDocument();
   });
 
   it("counts stock and asks why when the count is different", async () => {
@@ -163,7 +163,7 @@ describe("inventory", () => {
     page();
     expect(await rowOf("Calacatta slab")).toHaveTextContent(/3,500/);
     const waiting = screen.getByRole("region", { name: "Corrections waiting for approval" });
-    expect(within(waiting).getByText(/Counted 6 m² \(-4\), worth .*1,400(\.00)?: Two slabs broken — Sam Store/)).toBeInTheDocument();
+    expect(within(waiting).getByText(/Counted 6 m² \(-4\), worth .*1,400(\.00)?: Two slabs broken \(Sam Store\)/)).toBeInTheDocument();
     await userEvent.click(within(waiting).getByRole("button", { name: "Refuse" }));
     const dialog = await screen.findByRole("dialog", { name: "Refuse the correction" });
     expect(within(dialog).getByRole("button", { name: "Refuse" })).toBeDisabled();

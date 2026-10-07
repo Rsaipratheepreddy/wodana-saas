@@ -85,7 +85,7 @@ class GoogleIntegrationService:
     ) -> OAuthStartResponse:
         if not await self._google.configured():
             raise IntegrationFlowError(
-                "google_not_configured", "Not available yet — Wodana is setting this up", 503
+                "google_not_configured", "Not available yet. Wodana is setting this up.", 503
             )
 
         public = await self._business_core.validate_connection(

@@ -95,7 +95,7 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
           <Badge tone={settings.whatsapp.health === "blocked" ? "danger" : settings.whatsapp.health === "limited" ? "warning" : "success"}>{settings.whatsapp.health === "blocked" ? t("Blocked by Meta") : settings.whatsapp.health === "limited" ? t("Limited by Meta") : t("Can send")}</Badge>
         </SettingsRow> : null}
         <WhatsappPreflight workspaceId={workspaceId} canManage={canManage} />
-        <SettingsRow label={t("Signature")} hint={t("Adds “— first name” under each reply.")}>
+        <SettingsRow label={t("Signature")} hint={t("Adds your first name under each reply.")}>
           <Switch isDisabled={!canManage || !draft} isSelected={Boolean(draft?.signatureEnabled)} onChange={(value) => setDraft((current) => current && { ...current, signatureEnabled: value })}>{t("Sign replies")}</Switch>
         </SettingsRow>
       </SettingsSection>

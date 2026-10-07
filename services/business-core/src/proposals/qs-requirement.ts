@@ -88,3 +88,12 @@ export async function qsRequirement(db: Db, workspaceId: string, caseId: string,
   }
   return decideQsRequirement({ ...rules, quote, boqRequired, workPackages, itemTypes });
 }
+
+/**
+ * Whether a deal quotation needs the QS estimate before it is approved. A firm that switched QS review on decides it
+ * by its rules (standard catalogue items need none); without that switch every deal quotation keeps the QS estimate.
+ */
+export async function qsEstimateRequired(db: Db, workspaceId: string, caseId: string, quoteId: string): Promise<boolean> {
+  if (!(await readQsRules(db, workspaceId)).qsReview) return true;
+  return (await qsRequirement(db, workspaceId, caseId, quoteId)).required;
+}

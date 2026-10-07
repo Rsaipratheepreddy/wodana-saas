@@ -155,6 +155,8 @@
 .wd-type-chip[data-hue="6"] { background: var(--wd-color-viz-6-soft); color: var(--wd-color-viz-6); }
 .wd-tag .wd-icon-button { inline-size: 1.25rem; min-block-size: 1.25rem; margin-inline-end: calc(var(--wd-space-1) * -1); }
 .wd-avatar { inline-size: 2rem; block-size: 2rem; border: 0; border-radius: 50%; display: inline-grid; flex: 0 0 auto; place-items: center; overflow: hidden; background: var(--wd-identity-base); color: var(--wd-identity-ink); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0; }
+/* An avatar is always a circle of its own size, whatever row it sits in (outweighs page rules such as `.row span { flex: 1 }`). */
+.wd-avatar[data-size] { flex: 0 0 auto; aspect-ratio: 1; }
 .wd-avatar[data-size="sm"] { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--wd-text-2xs); }
 .wd-avatar[data-size="lg"] { inline-size: 2.5rem; block-size: 2.5rem; font-size: var(--wd-text-xs); }
 .wd-avatar[data-size="xl"] { inline-size: 4rem; block-size: 4rem; font-size: var(--wd-text-md); }
@@ -426,6 +428,9 @@
 .wd-input-affix { min-inline-size: var(--wd-control-lg); display: inline-flex; align-items: center; justify-content: center; padding-inline: var(--wd-space-3); border-inline-end: 1px solid var(--wd-line); background: transparent; color: var(--wd-muted); font-size: var(--wd-text-sm); font-weight: 500; }
 .wd-input-affix[data-side="end"] { border-inline-start: 1px solid var(--wd-line); border-inline-end: 0; }
 .wd-input-affix:has(.wd-input-action) { min-inline-size: auto; border-inline-start: 0; padding: var(--wd-space-1); }
+/* A number with a unit (%, cm, AED) always shows at least five characters; the short unit box gives way first. */
+.wd-input-group:has(.wd-input-affix) .wd-input { min-inline-size: 5ch; font-variant-numeric: tabular-nums; }
+.wd-input-affix[data-side="end"]:not(:has(.wd-input-action)) { min-inline-size: auto; padding-inline: var(--wd-space-2); }
 .wd-input-action { min-block-size: var(--wd-control-lg); display: inline-flex; align-items: center; justify-content: center; gap: var(--wd-space-2); border: 1px solid var(--wd-line); border-radius: var(--wd-radius-md); padding-inline: var(--wd-space-3); background: var(--wd-surface); color: var(--wd-ink); cursor: pointer; font-size: var(--wd-text-sm); font-weight: 600; transition: background var(--wd-duration-fast), border-color var(--wd-duration-fast), transform var(--wd-duration-fast); }
 .wd-input-action[data-hovered] { border-color: var(--wd-line-strong); background: var(--wd-surface-soft); }
 .wd-input-action[data-pressed] { transform: translateY(1px); }

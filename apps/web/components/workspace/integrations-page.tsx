@@ -291,7 +291,7 @@ export function IntegrationsPage({
             </div>
             <div className={styles.cardFooter}>
               {(!connection || connection.status === "draft") && !platformReady(item.provider)
-                ? <small className={styles.unavailable}>{t("Not available yet — Wodana is setting this up")}</small>
+                ? <small className={styles.unavailable}>{t("Not available yet. Wodana is setting this up.")}</small>
                 : !connection
                   ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="primary">{t("Connect")}</Button>
                   : connection.status === "draft"

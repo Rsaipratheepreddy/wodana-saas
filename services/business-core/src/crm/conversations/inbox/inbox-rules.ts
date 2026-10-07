@@ -119,12 +119,13 @@ export function firstName(displayName: string | null | undefined): string | null
   return name.split(/\s+/)[0] || null;
 }
 
-/** "— Sara" under a free-text reply when the firm turned the signature on; the client sees one business number. */
+/** "Sara" on its own line under a free-text reply when the firm turned the signature on; the client sees one business number. */
 export function withSignature(body: string, senderName: string | null | undefined, enabled: boolean) {
   const name = firstName(senderName);
   if (!enabled || !name) return body;
-  const signature = `— ${name}`;
-  return body.trimEnd().endsWith(signature) ? body : `${body.trimEnd()}\n${signature}`;
+  const text = body.trimEnd();
+  // Signed already: the name on its own last line (or the older "— Name").
+  return text.endsWith(`\n${name}`) || text.endsWith(`— ${name}`) ? body : `${text}\n${name}`;
 }
 
 /** A snooze must end in the future and within the limit. */

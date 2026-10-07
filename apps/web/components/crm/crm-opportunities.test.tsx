@@ -89,7 +89,7 @@ describe("CrmOpportunities", () => {
     data.items[0].stageName = "Won";
     render(<CrmOpportunities initialData={data} />);
 
-    expect(within(screen.getByRole("region", { name: "Won" })).getByText("Status is open — review outcome")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Won" })).getByText("Status is open. Review the outcome.")).toBeInTheDocument();
   });
 
   it("loads additional backend cursor pages", async () => {

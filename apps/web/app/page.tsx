@@ -8,7 +8,7 @@ import { loadPublicSalesForm } from "@/lib/sales/contact-form";
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getServerT();
   return {
-    title: t("Wodana — every job, from enquiry to handover"),
+    title: t("Wodana: every job, from enquiry to handover"),
     description: t("Wodana runs sales, projects, purchasing and site work for interior and fit-out firms."),
   };
 }

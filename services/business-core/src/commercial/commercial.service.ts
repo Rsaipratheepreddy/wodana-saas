@@ -127,6 +127,7 @@ import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 import { contactEmailSql } from "../client-portal/contact-email";
 import { beforeQuoteIssued, quotationEntityId, quotingEntity } from "../proposals/quote-issue";
+import { qsEstimateRequired } from "../proposals/qs-requirement";
 import { readLetterhead } from "../workspaces/entity-letterhead";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
@@ -2104,7 +2105,7 @@ export class CommercialService {
                 actor: user.displayName,
                 action: "manual_quotation_line_authorized",
                 quoteId: q.id,
-                note: `${line.title} — ${line.manualReason}`,
+                note: `${line.title}: ${line.manualReason}`,
               });
           }
           const quoteCurrency = currency(v.currency),
@@ -2222,7 +2223,7 @@ export class CommercialService {
                 actor: user.displayName,
                 action: "catalog_price_override",
                 quoteId: q.id,
-                note: `${line.title}: ${quoteCurrency} ${line.rate} — ${priceRequest.reason}`,
+                note: `${line.title}: ${quoteCurrency} ${line.rate} (${priceRequest.reason})`,
               });
             } else {
               line.catalogPrice = resolution.snapshot;
@@ -2465,7 +2466,8 @@ export class CommercialService {
                 sellingTotal: estimate.total, reviewedAt: now,
                 reviewedById: user.userId, reviewedBy: user.displayName,
               };
-            } else if (data.servicePath && q.kind === "quotation") {
+            } else if (data.servicePath && q.kind === "quotation" && await qsEstimateRequired(client, workspaceId, caseId, q.id)) {
+              // The firm's QS rules decide (standard catalogue items at approved list prices need no QS estimate).
               throw new ConflictException("A Quantity Surveyor must review this quotation before it is issued.");
             }
             q.status = "internal_approved";

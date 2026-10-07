@@ -9,10 +9,10 @@ import styles from "./report-targets-settings.module.css";
 
 /** The KPIs that take a target, as the dashboards name them (PLM-134 targets table). */
 const TARGET_LABELS: Record<string, MessageKey> = {
-  sales_won_value: tKey("Sales Won – value"), sales_won_count: tKey("Sales Won – count"), revenue_collected: tKey("Revenue collected"),
+  sales_won_value: tKey("Sales Won (value)"), sales_won_count: tKey("Sales Won (count)"), revenue_collected: tKey("Revenue collected"),
   net_revenue: tKey("Net revenue"), deals_closed: tKey("Deals Closed / Completed"), profit_margin: tKey("Profit margin (%)"), new_leads: tKey("New leads"),
-  lead_to_won_rate: tKey("Conversion lead → Won (%)"), response_rate: tKey("Response rate (%)"), first_response_hours: tKey("Average first response (hours) – lower is better"),
-  design_to_proposal2_rate: tKey("Design approval → Proposal 2 Won (%)"), design_to_proposal2_days: tKey("Design approval → Proposal 2 (days) – lower is better"),
+  lead_to_won_rate: tKey("Conversion lead → Won (%)"), response_rate: tKey("Response rate (%)"), first_response_hours: tKey("Average first response (hours), lower is better"),
+  design_to_proposal2_rate: tKey("Design approval → Proposal 2 Won (%)"), design_to_proposal2_days: tKey("Design approval → Proposal 2 (days), lower is better"),
 };
 
 const COMPANY = "company";

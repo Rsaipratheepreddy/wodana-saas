@@ -98,7 +98,7 @@ describe("report targets settings", () => {
     const fetcher = mount();
     render(<ToastProvider><ReportTargetsSettings workspaceId={WS} /></ToastProvider>);
     const grid = await screen.findByRole("table", { name: "Report targets" });
-    const row = within(grid).getByText("Sales Won – value").closest("tr") as HTMLElement;
+    const row = within(grid).getByText("Sales Won (value)").closest("tr") as HTMLElement;
     await user.dblClick(within(row).getByText("60000"));
     const input = within(row).getByRole("textbox");
     await user.clear(input);

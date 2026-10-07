@@ -30,7 +30,8 @@ describe("inbox rules", () => {
   });
 
   it("signs a reply only when the firm turned the signature on, and only once", () => {
-    expect(withSignature("We will call you at 4.", "Sara Khan", true)).toBe("We will call you at 4.\n— Sara");
+    expect(withSignature("We will call you at 4.", "Sara Khan", true)).toBe("We will call you at 4.\nSara");
+    expect(withSignature("We will call you at 4.\nSara", "Sara Khan", true)).toBe("We will call you at 4.\nSara");
     expect(withSignature("We will call you at 4.\n— Sara", "Sara Khan", true)).toBe("We will call you at 4.\n— Sara");
     expect(withSignature("We will call you at 4.", "Sara Khan", false)).toBe("We will call you at 4.");
     expect(withSignature("Hello", null, true)).toBe("Hello");

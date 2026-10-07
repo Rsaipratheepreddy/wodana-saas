@@ -204,7 +204,7 @@ const joineryMaterials = [
 const SCENARIOS: Scenario[] = [
   {
     key: "villa-12", ns: "", reference: "SHOWCASE-VILLA-12", client: DEMO_CLIENT, owner: "sales",
-    title: "Demo Client — Villa 12", area: "Dubai Hills", emirate: "dubai", daysAgo: 56, amount: 118_000,
+    title: "Demo Client (Villa 12)", area: "Dubai Hills", emirate: "dubai", daysAgo: 56, amount: 118_000,
     summary: "Demonstration enquiry: a four-bedroom villa; living room, dining room and master bedroom with a fitted media wall made in the factory. All records are a demonstration, not a real client.",
     pick: { source: 0, channel: 0, type: /interior|fit.?out|full/i },
     rooms: ["Living room", "Dining room", "Master bedroom"],

@@ -242,7 +242,7 @@ export function QuotePayments({ state, api, onState, onError }: { state: Builder
   const columns: DataGridColumn<Milestone>[] = [
     { id: "title", header: t("Milestone"), size: 220, accessorFn: (row) => row.title, meta: { renderCell: (row) =>
       <TextInput label={<VisuallyHidden>{t("Milestone {number}", { number: number(row.id) })}</VisuallyHidden>} maxLength={160} placeholder={t("Advance")} value={row.title} onChange={(title) => update(row.id, { title })} /> } },
-    { id: "percent", header: t("Share"), size: 110, accessorFn: (row) => Number(row.text), meta: { align: "end", renderCell: (row) =>
+    { id: "percent", header: t("Share"), size: 140, accessorFn: (row) => Number(row.text), meta: { align: "end", renderCell: (row) =>
       <PercentageInput label={<VisuallyHidden>{t("Share of milestone {number}", { number: number(row.id) })}</VisuallyHidden>} formatOptions={{ maximumFractionDigits: 2 }}
         value={row.text === "" ? Number.NaN : Number(row.text)} onChange={(value) => update(row.id, { text: Number.isFinite(value) ? String(value) : "" })} /> } },
     { id: "amount", header: t("Amount"), size: 140, accessorFn: (row) => Number(row.text), meta: { align: "end", renderCell: (row) => amount(row.text) } },

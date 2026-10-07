@@ -35,17 +35,17 @@ names("finish","Matt|Gloss|High gloss|Satin|Textured|Woodgrain|Metallic|Polished
 
 const source = (title: string,url: string) => ({ title,url,checkedOn:"2026-09-07" });
 const sources = {
-  ply: source("Greenply — plywood size guide","https://www.greenply.com/blogs/plywood-size-charts-explained-everything-you-need-for-your-next-build"),
-  mdf: source("Greenpanel — Exterior MDF","https://www.greenpanel.com/products/mdf/exterior-mdf.aspx"),
-  laminate: source("Greenlam — collection specifications","https://www.greenlam.co.in/media/pdf/Greenlam%20Edition%202023-2025.pdf"),
-  tile: source("Kajaria — Gres catalogue","https://www.kajariaceramics.com/catalogo/catalogue/gres-60x120.pdf"),
-  gypsum: source("Gyproc — Gypboard Plain","https://www.gyproc.in/products-plasterboards/gypsum-plain-board"),
-  quartz: source("Caesarstone — design and specification","https://www.caesarstoneus.com/design-and-specification/"),
-  paint: source("Asian Paints — Royale Luxury Matt technical sheet","https://static.asianpaints.com/content/dam/professionals/products/pdfs/tds/TDS_Royale_Luxury_Matt.pdf"),
-  runner: source("Blum — MOVENTO 2024/2025 technical catalogue","https://publications.blum.com/2024/catalogue/id/510/"),
-  flooring: source("EGGER — EL2835 NatureSense","https://www.egger.com/en/flooring/decors/1784252?country=PF"),
-  pipe: source("Astral — CPVC Pro technical catalogue","https://www.astralpipes.com/wp-content/uploads/2022/12/CPVC-Pro_PC_MAY-2024.pdf"),
-  glass: source("Saint-Gobain — DECORGLASS","https://www.saint-gobain-glass.com/DECORGLASS"),
+  ply: source("Greenply: plywood size guide","https://www.greenply.com/blogs/plywood-size-charts-explained-everything-you-need-for-your-next-build"),
+  mdf: source("Greenpanel: Exterior MDF","https://www.greenpanel.com/products/mdf/exterior-mdf.aspx"),
+  laminate: source("Greenlam: collection specifications","https://www.greenlam.co.in/media/pdf/Greenlam%20Edition%202023-2025.pdf"),
+  tile: source("Kajaria: Gres catalogue","https://www.kajariaceramics.com/catalogo/catalogue/gres-60x120.pdf"),
+  gypsum: source("Gyproc: Gypboard Plain","https://www.gyproc.in/products-plasterboards/gypsum-plain-board"),
+  quartz: source("Caesarstone: design and specification","https://www.caesarstoneus.com/design-and-specification/"),
+  paint: source("Asian Paints: Royale Luxury Matt technical sheet","https://static.asianpaints.com/content/dam/professionals/products/pdfs/tds/TDS_Royale_Luxury_Matt.pdf"),
+  runner: source("Blum: MOVENTO 2024/2025 technical catalogue","https://publications.blum.com/2024/catalogue/id/510/"),
+  flooring: source("EGGER: EL2835 NatureSense","https://www.egger.com/en/flooring/decors/1784252?country=PF"),
+  pipe: source("Astral: CPVC Pro technical catalogue","https://www.astralpipes.com/wp-content/uploads/2022/12/CPVC-Pro_PC_MAY-2024.pdf"),
+  glass: source("Saint-Gobain: DECORGLASS","https://www.saint-gobain-glass.com/DECORGLASS"),
 };
 for (const [name, src] of [["Greenply",sources.ply],["Greenpanel",sources.mdf],["Greenlam",sources.laminate],["Kajaria",sources.tile],["Gyproc",sources.gypsum],["Caesarstone",sources.quartz],["Asian Paints",sources.paint],["Blum",sources.runner],["EGGER",sources.flooring],["Astral",sources.pipe],["Saint-Gobain",sources.glass]] as const) add("brand",name,{sources:[src],specificationStatus:"reference",description:"Manufacturer reference. Add the exact product line, SKU and local supplier specification to materials."});
 
@@ -92,20 +92,20 @@ for (const [name,unit] of [["PVC edge band","Metre"],["ABS edge band","Metre"],[
 function referenced(name: string, category: string, unit: string, brand: string, src: typeof sources.ply, sizes: CatalogSizeDto[], note: string, market = "IN") {
   material(category,name,unit,"exact product/decor and local availability before procurement",{market,specificationStatus:"reference",sources:[src],sizes:sizes.map(s=>({...s,sourceUrl:src.url})),description:note,links:[link("category",category),link("unit",unit),link("brand",brand)]});
 }
-referenced("Greenply plywood — reference thicknesses","Boards & substrates","Sheet","Greenply",sources.ply,[4,6,9,12,16,19,25].map(thicknessMm=>({label:`${thicknessMm} mm thickness`,thicknessMm})),"Manufacturer guide thickness examples. Sheet size and grade must be selected from the exact product; these are not guaranteed combinations.");
-referenced("Greenpanel Exterior MDF — reference sheets","Boards & substrates","Sheet","Greenpanel",sources.mdf,[
+referenced("Greenply plywood: reference thicknesses","Boards & substrates","Sheet","Greenply",sources.ply,[4,6,9,12,16,19,25].map(thicknessMm=>({label:`${thicknessMm} mm thickness`,thicknessMm})),"Manufacturer guide thickness examples. Sheet size and grade must be selected from the exact product; these are not guaranteed combinations.");
+referenced("Greenpanel Exterior MDF: reference sheets","Boards & substrates","Sheet","Greenpanel",sources.mdf,[
   {label:"2440 × 1220 mm",lengthMm:2440,widthMm:1220},{label:"2440 × 1830 mm",lengthMm:2440,widthMm:1830},
   ...[2.7,3.3,5.5,7.3,11,17,18,25].map(thicknessMm=>({label:`${thicknessMm} mm thickness`,thicknessMm}))
 ],"Published sheet formats and thicknesses are separate choices. Confirm the chosen combination, grade and finish with the manufacturer.");
-referenced("Greenlam Super Gloss — 1 mm","Laminates & veneers","Sheet","Greenlam",sources.laminate,[2440,3050].map(lengthMm=>({label:`${lengthMm} × 1220 × 1 mm`,lengthMm,widthMm:1220,thicknessMm:1})),"Super Gloss collection. The larger format is limited to marked decors; confirm the exact decor code.");
-referenced("Kajaria Gres — reference tile formats","Tiles","Square metre","Kajaria",sources.tile,[[800,1600],[600,1200],[195,1200],[600,600]].map(([widthMm,lengthMm])=>({label:`${widthMm} × ${lengthMm} mm`,lengthMm,widthMm})),"Collection format examples. Thickness, finish, pieces per box and slip rating remain product-specific.");
-referenced("Gyproc Gypboard Plain — board formats","Ceilings & partitions","Sheet","Gyproc",sources.gypsum,[[1829,9.5],[1829,12.5],[2438,12.5],[1829,15],[2438,15]].map(([lengthMm,thicknessMm])=>({label:`${lengthMm} × 1219 × ${thicknessMm} mm`,lengthMm,widthMm:1219,thicknessMm})),"Dimensions retained exactly as published. A board is a component; fire and acoustic ratings belong to tested assemblies.");
-referenced("Caesarstone quartz — reference slabs","Stone & countertops","Square metre","Caesarstone",sources.quartz,[{label:"Standard 3050 × 1440 mm",lengthMm:3050,widthMm:1440},{label:"Jumbo 3270 × 1640 mm",lengthMm:3270,widthMm:1640,note:"±1.5%; availability depends on design"},{label:"20 mm thickness",thicknessMm:20},{label:"30 mm thickness",thicknessMm:30}],"US reference dimensions. Format and thickness availability depend on color; local supply and usable slab dimensions must be confirmed.","GLOBAL");
-referenced("Asian Paints Royale Luxury Matt — pack sizes","Paints & coatings","Litre","Asian Paints",sources.paint,[1,3.6,16.5,18].map(packQuantity=>({label:`${packQuantity} L`,packQuantity,packUnit:"L"})),"Packs from the current linked Royale Luxury Matt technical sheet; other Royale variants have different packs. Coverage depends on coats and substrate.");
-referenced("Blum MOVENTO TIP-ON 760H — nominal lengths","Hardware","Pair","Blum",sources.runner,[250,270,300,320,350,380,400,420,450,480,500,520,550,600].map(lengthMm=>({label:`${lengthMm} mm nominal length`,lengthMm})),"760H TIP-ON, 40 kg reference series. Nominal length is not cabinet depth. Check the current model, locking devices and required clearances.","GLOBAL");
-referenced("EGGER EL2835 NatureSense — plank","Flooring","Square metre","EGGER",sources.flooring,[{label:"1292 × 193 × 8 mm",lengthMm:1292,widthMm:193,thicknessMm:8}],"Specific decor EL2835. Confirm local collection, pack contents, underlay and installation conditions.","GLOBAL");
-referenced("Saint-Gobain DECORGLASS — patterned glass","Glass & mirrors","Square metre","Saint-Gobain",sources.glass,[],"Published thickness range 3–8 mm; actual sizes and thickness depend on pattern. Specify an exact pattern and fabricated glass build-up.","GLOBAL");
-referenced("Astral CPVC Pro — plumbing system","Plumbing","Metre","Astral",sources.pipe,[],"Use the technical catalogue for CTS/IPS, SDR/schedule, actual OD and wall thickness. A nominal trade size is not the measured outside diameter.");
+referenced("Greenlam Super Gloss: 1 mm","Laminates & veneers","Sheet","Greenlam",sources.laminate,[2440,3050].map(lengthMm=>({label:`${lengthMm} × 1220 × 1 mm`,lengthMm,widthMm:1220,thicknessMm:1})),"Super Gloss collection. The larger format is limited to marked decors; confirm the exact decor code.");
+referenced("Kajaria Gres: reference tile formats","Tiles","Square metre","Kajaria",sources.tile,[[800,1600],[600,1200],[195,1200],[600,600]].map(([widthMm,lengthMm])=>({label:`${widthMm} × ${lengthMm} mm`,lengthMm,widthMm})),"Collection format examples. Thickness, finish, pieces per box and slip rating remain product-specific.");
+referenced("Gyproc Gypboard Plain: board formats","Ceilings & partitions","Sheet","Gyproc",sources.gypsum,[[1829,9.5],[1829,12.5],[2438,12.5],[1829,15],[2438,15]].map(([lengthMm,thicknessMm])=>({label:`${lengthMm} × 1219 × ${thicknessMm} mm`,lengthMm,widthMm:1219,thicknessMm})),"Dimensions retained exactly as published. A board is a component; fire and acoustic ratings belong to tested assemblies.");
+referenced("Caesarstone quartz: reference slabs","Stone & countertops","Square metre","Caesarstone",sources.quartz,[{label:"Standard 3050 × 1440 mm",lengthMm:3050,widthMm:1440},{label:"Jumbo 3270 × 1640 mm",lengthMm:3270,widthMm:1640,note:"±1.5%; availability depends on design"},{label:"20 mm thickness",thicknessMm:20},{label:"30 mm thickness",thicknessMm:30}],"US reference dimensions. Format and thickness availability depend on color; local supply and usable slab dimensions must be confirmed.","GLOBAL");
+referenced("Asian Paints Royale Luxury Matt: pack sizes","Paints & coatings","Litre","Asian Paints",sources.paint,[1,3.6,16.5,18].map(packQuantity=>({label:`${packQuantity} L`,packQuantity,packUnit:"L"})),"Packs from the current linked Royale Luxury Matt technical sheet; other Royale variants have different packs. Coverage depends on coats and substrate.");
+referenced("Blum MOVENTO TIP-ON 760H: nominal lengths","Hardware","Pair","Blum",sources.runner,[250,270,300,320,350,380,400,420,450,480,500,520,550,600].map(lengthMm=>({label:`${lengthMm} mm nominal length`,lengthMm})),"760H TIP-ON, 40 kg reference series. Nominal length is not cabinet depth. Check the current model, locking devices and required clearances.","GLOBAL");
+referenced("EGGER EL2835 NatureSense: plank","Flooring","Square metre","EGGER",sources.flooring,[{label:"1292 × 193 × 8 mm",lengthMm:1292,widthMm:193,thicknessMm:8}],"Specific decor EL2835. Confirm local collection, pack contents, underlay and installation conditions.","GLOBAL");
+referenced("Saint-Gobain DECORGLASS: patterned glass","Glass & mirrors","Square metre","Saint-Gobain",sources.glass,[],"Published thickness range 3–8 mm; actual sizes and thickness depend on pattern. Specify an exact pattern and fabricated glass build-up.","GLOBAL");
+referenced("Astral CPVC Pro: plumbing system","Plumbing","Metre","Astral",sources.pipe,[],"Use the technical catalogue for CTS/IPS, SDR/schedule, actual OD and wall thickness. A nominal trade size is not the measured outside diameter.");
 
 const workGroups: [string,string,string[]][] = [
   ["Shoe cabinet|Foyer console","Square metre",["Foyer"]],

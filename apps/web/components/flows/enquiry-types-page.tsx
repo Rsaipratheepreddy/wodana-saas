@@ -101,7 +101,7 @@ export function EnquiryTypesPage({ canManage, loadError = false, types: initial,
           </div>
         </li>;
       })}</ul>}
-    {loadError ? null : <p className={styles.footnote}>{t("Not sure yet — stays in New Opportunity until a type is chosen.")}</p>}
+    {loadError ? null : <p className={styles.footnote}>{t("Not sure yet: stays in New Opportunity until a type is chosen.")}</p>}
     {loadError ? null : <p className={styles.footnote}><Button size="compact" variant="quiet" onPress={() => setPrefixOpen(true)}>{t("Opportunity numbers")}</Button></p>}
     {editing?.action === "closing" && editing.type.flowId ? <DealClosingDialog workspaceId={workspaceId} flowId={editing.type.flowId} typeName={editing.type.label} onClose={() => setEditing(null)} /> : null}
     {prefixOpen ? <ReferencePrefixDialog workspaceId={workspaceId} onClose={() => setPrefixOpen(false)} onSaved={(prefix) => toast.push({ tone: "success", title: t("Saved"), message: t("New opportunities start with {prefix}", { prefix }) })} /> : null}

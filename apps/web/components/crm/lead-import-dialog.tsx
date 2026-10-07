@@ -88,7 +88,7 @@ export function LeadImportDialog({ initialData, onClose, onImported }: { initial
         const result = await response.json();
         if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(". ") : result.message ?? t("The row could not be imported."));
         next[index] = result.status === "duplicate_candidate"
-          ? { status: "review", message: t("Possible duplicate — review in Intake review.") }
+          ? { status: "review", message: t("Possible duplicate. Review it in Intake review.") }
           : { status: "created", message: String(result.reference ?? t("Enquiry created")) };
         imported = true;
       } catch (error) { next[index] = { status: "error", message: error instanceof Error ? error.message : t("The row could not be imported.") }; }

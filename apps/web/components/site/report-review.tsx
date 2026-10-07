@@ -145,7 +145,7 @@ export function ReportReview({ api, state, reportId, onState, onClose, onReject 
               {report.status === "approved" && state.canApprove && Number(line.installed) > 0
                 ? <Button size="compact" variant="quiet" onPress={() => onReject(report, line.id, line.title)}>{t("Not accepted")}</Button> : null}</span>)}</FactRow> : null}
             {report.safety !== "none" ? <FactRow label={t("Safety")}>{`${report.safety === "incident" ? t("Incident") : t("Safety observation")}: ${report.safetyNote}`}</FactRow> : null}
-            {report.forecast !== "none" ? <FactRow label={t("Outlook")}>{t("{state}: {impact} — {owner} by {date}", { state: report.forecast === "blocked" ? t("Blocked") : t("At risk"),
+            {report.forecast !== "none" ? <FactRow label={t("Outlook")}>{t("{state}: {impact} ({owner} by {date})", { state: report.forecast === "blocked" ? t("Blocked") : t("At risk"),
               impact: report.impact, owner: report.recoveryOwnerName ?? "", date: format.day(report.recoveryOn) })}</FactRow> : null}
             {report.weather ? <FactRow label={t("Weather")}>{report.weather}</FactRow> : null}
             {report.notes ? <FactRow label={t("Notes for the team")}>{report.notes}</FactRow> : null}

@@ -57,6 +57,6 @@ describe("CRM phone country picker", () => {
     const input = screen.getByRole("textbox", { name: /Mobile/ });
     await user.type(input, "5012345678");
     await user.tab();
-    expect(await screen.findByText(/Too long — United Arab Emirates mobile numbers are 9 digits after \+971/)).toBeInTheDocument();
+    expect(await screen.findByText(/Too long: United Arab Emirates mobile numbers are 9 digits after \+971/)).toBeInTheDocument();
   });
 });

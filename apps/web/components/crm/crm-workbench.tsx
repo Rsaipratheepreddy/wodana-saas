@@ -97,7 +97,7 @@ export function ActionDialog({ action, workspaceId, onClose, onSaved }: { action
     try { await onSaved(result); onClose(); }
     catch { setFailure(t("Your change was saved, but the screen could not refresh. Close this dialog and refresh the page. Do not submit it again.")); }
   };
-  return <FormDialog cancelLabel={saved ? t("Close") : undefined} description={action.description} error={failure || undefined} errorTitle={t("Saved — refresh needed")}
+  return <FormDialog cancelLabel={saved ? t("Close") : undefined} description={action.description} error={failure || undefined} errorTitle={t("Saved. Refresh needed.")}
     hideSubmit={saved} isDirty={!saved && JSON.stringify(values) !== JSON.stringify(initialValues)} isSubmitDisabled={Boolean(action.blockedReason)}
     lead={<>{action.blockedReason ? <p role="status">{action.blockedReason}</p> : null}{action.lead?.(values, set)}</>}
     onClose={onClose} onSubmit={submit} submitLabel={action.submit ?? t("Save")} submitVariant={action.submitVariant} title={action.title}>

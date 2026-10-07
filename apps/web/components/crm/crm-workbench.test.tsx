@@ -10,7 +10,7 @@ describe("CRM safe mutation dialog", () => {
     render(<ActionDialog workspaceId="workspace" action={{ title: "Create item", path: "leads", fields: [{ key: "title", label: "Title", required: true }] }} onClose={vi.fn()} onSaved={async () => { throw new Error("refresh failed"); }} />);
     await user.type(screen.getByRole("textbox", { name: /Title/ }), "Design enquiry");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.getByText("Saved — refresh needed")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Saved. Refresh needed.")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(crmRequest).toHaveBeenCalledTimes(1);
   });

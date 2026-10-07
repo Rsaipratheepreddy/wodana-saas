@@ -436,7 +436,7 @@ export class HrmsAttendanceService {
                 employee.calendar.timezone,
                 await this.access.locale(ctx),
               ),
-              note: `${issues.join("; ")} — ${input.exceptionReason.trim()}`,
+              note: `${issues.join("; ")}: ${input.exceptionReason.trim()}`,
             },
             deepLink: `/workspace/hrms/team?review=${review.rows[0].id}`,
             key: `hrms.attendance_to_review:${review.rows[0].id}`,

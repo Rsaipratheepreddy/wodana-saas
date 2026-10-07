@@ -528,7 +528,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           name: state.quote.clientDecision.decidedBy,
           date: new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(state.quote.clientDecision.decidedAt)),
           how: state.quote.clientDecision.recordedBy ? t(" · recorded by {name}", { name: state.quote.clientDecision.recordedBy }) : "",
-        }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
+        }) + (state.quote.clientDecision.note ? `: ${state.quote.clientDecision.note}` : "")} /> : null}
         <RevisionChanges key={state.quote.id} state={state} api={api} />
         {["accepted", "declined"].includes(state.quote.status) && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round, status: state.quote.status }} projectStarted={Boolean(state.project)} /> : null}
         {error ? <InlineNotice tone="error" message={error} /> : null}

@@ -200,7 +200,7 @@ async function drawQuotation(document: PDFDocument, data: QuotationPage) {
     text("Payment schedule", MARGIN, y, 10, "bold");
     y -= 15;
     for (const term of data.paymentTerms) {
-      text(`${term.percent}% · ${term.title}${term.trigger ? ` — ${term.trigger}` : ""}`, MARGIN, y, 9, "regular", MUTED);
+      text(`${term.percent}% · ${term.title}${term.trigger ? ` (${term.trigger})` : ""}`, MARGIN, y, 9, "regular", MUTED);
       y -= 13;
     }
   }

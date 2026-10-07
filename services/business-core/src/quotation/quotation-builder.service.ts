@@ -21,7 +21,7 @@ import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
 import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } from "./proposal-kit";
 import { MARKUP_DISCLOSURES, type MarkupDisclosure } from "../proposals/markup-disclosure";
 import { touchesQsFields } from "../proposals/qs-review.domain";
-import { QS_ITEM_TYPES, QS_SCOPES, qsRequirement, type QsItemType, type QsScope } from "../proposals/qs-requirement";
+import { QS_ITEM_TYPES, QS_SCOPES, qsEstimateRequired, qsRequirement, type QsItemType, type QsScope } from "../proposals/qs-requirement";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -752,6 +752,8 @@ export class QuotationBuilderService {
     const can = async (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
     const decision = quote.detail.clientDecision as { decision: string; decidedBy: string; decidedAt: string; note?: string; method?: string; recordedBy?: string; evidence?: { id: string; name: string } } | undefined;
     const hideCost = <T extends { unitCost: string | null }>(row: T) => (canViewCosts ? row : { ...row, unitCost: null });
+    // The QS estimate step only where the firm's QS rules require it for this quotation.
+    const qsReview = Boolean(commercial?.servicePath && quote.kind === "quotation" && await qsEstimateRequired(client, workspaceId, caseId, quoteId));
     const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft", kind: quote.kind });
     return {
       quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision,
@@ -761,8 +763,8 @@ export class QuotationBuilderService {
         paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
         clientDecision: decision ? { decision: decision.decision, decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, note: decision.note ?? "", method: decision.method ?? null, recordedBy: decision.recordedBy ?? null, evidence: decision.evidence ?? null } : null },
       family,
-      flow: { internalReview: settings.internalReview, reviewAction: commercial?.servicePath && quote.kind === "quotation" ? "qs_approve" : "approve",
-        canReview: await can(commercial?.servicePath && quote.kind === "quotation" ? "commercial.estimate" : "commercial.approve"),
+      flow: { internalReview: settings.internalReview, reviewAction: qsReview ? "qs_approve" : "approve",
+        canReview: await can(qsReview ? "commercial.estimate" : "commercial.approve"),
         ...await (async () => { const recorder = await decisionRecorder(client, can, { workspaceId, caseId, userId }); return { canRecordDecision: Boolean(recorder), decisionEvidenceRequired: recorder === "sales" }; })() },
       paymentTemplates: (await client.query<{ id: string; name: string; milestones: unknown }>(`SELECT id, name, milestones FROM commercial_payment_templates WHERE workspace_id = $1 AND status = 'active' ORDER BY name`, [workspaceId])).rows,
       settings,

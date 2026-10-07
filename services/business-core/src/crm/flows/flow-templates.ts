@@ -87,7 +87,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
   // Furniture
   {
     key: "furniture_all_paths",
-    name: "Furniture – all paths",
+    name: "Furniture (all paths)",
     description: "One flow for every furniture sale; the path chosen decides the steps.",
     group: "Furniture",
     suggestedEnquiryTypes: ["Furniture only"],
@@ -110,7 +110,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
   },
   {
     key: "furniture_in_stock_delivery",
-    name: "In stock – delivery",
+    name: "In stock (delivery)",
     description: "Stock pieces delivered to the client after payment.",
     group: "Furniture",
     suggestedEnquiryTypes: ["Furniture only"],
@@ -140,7 +140,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
   },
   {
     key: "furniture_core_collection",
-    name: "Core collection – made in the factory",
+    name: "Core collection (made in the factory)",
     description: "Collection pieces made from the approved drawing; a change of materials needs the creative director's approval.",
     group: "Furniture",
     suggestedEnquiryTypes: ["Furniture only"],

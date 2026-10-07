@@ -223,7 +223,7 @@ function DesignSystemShowcaseContent() {
           <section className={styles.section} id="foundations">
             <SectionHeader description="Exact tokens create the density and calm visible in every Wodana module." eyebrow="Foundations" title="One rhythm, everywhere" />
             <div className={styles.twoColumn}>
-              <Specimen description="Action, selection and state—not decoration." title="Color roles"><div className={styles.tokens}>{["action", "aqua", "ink", "muted", "line", "surface", "canvas", "success", "warning", "danger"].map((token) => <span data-token={token} key={token}><i /><small>{token}</small></span>)}</div></Specimen>
+              <Specimen description="Action, selection and state, not decoration." title="Color roles"><div className={styles.tokens}>{["action", "aqua", "ink", "muted", "line", "surface", "canvas", "success", "warning", "danger"].map((token) => <span data-token={token} key={token}><i /><small>{token}</small></span>)}</div></Specimen>
               <Specimen description="No marketing-sized type inside the app." title="Type hierarchy"><div className={styles.typeSample}><Heading size="lg">24px page title</Heading><Heading size="md">18px section title</Heading><Text>14px interface copy for calm, readable work.</Text><Text size="xs" tone="muted">12PX LABEL · UPDATED 4 MINUTES AGO</Text></div></Specimen>
             </div>
             <div className={styles.motionStrip}><span><strong>150ms</strong> hover and focus</span><span><strong>200ms</strong> interface movement</span><span><strong>320ms</strong> large transitions</span><span><strong>480ms</strong> marketing reveal only</span></div>
@@ -259,7 +259,7 @@ function DesignSystemShowcaseContent() {
 
           <section className={styles.section} id="collaboration">
             <SectionHeader description="Files, approvals, versions and point comments share one interaction language." eyebrow="Collaboration" title="Context stays attached" />
-            <Specimen description="Rows for documents; visual cards only for visual assets." title="File browser"><FileBrowser items={[{ id: "f1", name: "Production drawings", kind: "folder", updatedAt: "Today" }, { id: "f2", name: "Kitchen joinery — Rev 04.pdf", kind: "pdf", updatedAt: "Today", size: "4.2 MB", version: 4, status: "review" }, { id: "f3", name: "Client-approved BOQ.pdf", kind: "pdf", updatedAt: "1 Sep", size: "860 KB", status: "approved" }]} onOpen={(item) => notify("Document selected", item.name, "info")} /></Specimen>
+            <Specimen description="Rows for documents; visual cards only for visual assets." title="File browser"><FileBrowser items={[{ id: "f1", name: "Production drawings", kind: "folder", updatedAt: "Today" }, { id: "f2", name: "Kitchen joinery Rev 04.pdf", kind: "pdf", updatedAt: "Today", size: "4.2 MB", version: 4, status: "review" }, { id: "f3", name: "Client-approved BOQ.pdf", kind: "pdf", updatedAt: "1 Sep", size: "860 KB", status: "approved" }]} onOpen={(item) => notify("Document selected", item.name, "info")} /></Specimen>
             <Callout title="Point comments are live on this page" tone="success">Use the comment control in the lower corner, click a point, mention a teammate, add replies, react, resolve and reopen. When comment mode is off, it does not intercept the interface.</Callout>
           </section>
 

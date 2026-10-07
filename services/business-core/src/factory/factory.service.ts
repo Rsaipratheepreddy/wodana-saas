@@ -405,7 +405,7 @@ export class FactoryService {
         const created = await this.orders.createDraft(client, workspaceId, user.userId, {
           id: purchaseId, supplier, legalEntityId, currency, from: { workOrder: reference },
           header: { deliverTo: "factory", deliveryAddress: "", expectedDate: optionalDate(body.expectedDate, "Back by"), notes: "" },
-          lines: [{ source: "free", projectId: order.projectId, description: `${name} — ${reference} ${order.title}`.slice(0, 500), quantity, unit: order.unit, unitPrice: body.unitPrice ?? "0", taxRate: body.taxRate }],
+          lines: [{ source: "free", projectId: order.projectId, description: `${name} (${reference} ${order.title})`.slice(0, 500), quantity, unit: order.unit, unitPrice: body.unitPrice ?? "0", taxRate: body.taxRate }],
         });
         const line = (await client.query<{ id: string }>(`SELECT id FROM purchase_order_lines WHERE workspace_id = $1 AND order_id = $2`, [workspaceId, purchaseId])).rows[0];
         await client.query(`UPDATE purchase_order_lines SET work_order_id = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, orderId]);

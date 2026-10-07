@@ -55,7 +55,7 @@ export function portfolioCalendarEvents(rows: PortfolioBookingRow[], from: strin
         endTime: slot.endTime,
         title: [row.dealReference, row.clientName, department.visibleName, row.resourceName, memberNames.join(", ")]
           .filter(Boolean)
-          .join(" — "),
+          .join(" · "),
         acknowledgement: row.acknowledgement,
         bookingStatus: row.status ?? "confirmed",
         units: Number(row.units ?? 1),

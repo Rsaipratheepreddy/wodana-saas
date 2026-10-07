@@ -41,7 +41,7 @@ export const documentTypes=[
  tKey('Presentation / client approval'),
  tKey('Other'),
 ] as const;
-export const scopeLabels:Record<string,MessageKey>={included:tKey('Included'),excluded:tKey('Not included'),later:tKey('Later phase'),not_possible:tKey('Not possible'),undecided:tKey('To decide'),must_have:tKey('Need — essential'),preferred:tKey('Want — preferred'),optional:tKey('Optional — nice to have'),captured:tKey('Client draft'),reviewed:tKey('Consultant confirmed'),clarification:tKey('Needs clarification'),requirement:tKey('Scope item'),note:tKey('Note'),inspiration:tKey('Inspiration'),file:tKey('Reference file')};
+export const scopeLabels:Record<string,MessageKey>={included:tKey('Included'),excluded:tKey('Not included'),later:tKey('Later phase'),not_possible:tKey('Not possible'),undecided:tKey('To decide'),must_have:tKey('Need: essential'),preferred:tKey('Want: preferred'),optional:tKey('Optional: nice to have'),captured:tKey('Client draft'),reviewed:tKey('Consultant confirmed'),clarification:tKey('Needs clarification'),requirement:tKey('Scope item'),note:tKey('Note'),inspiration:tKey('Inspiration'),file:tKey('Reference file')};
 /** A scope, priority or review label in the person's language; unknown values show as sent. */
 export function scopeLabel(t:Translate,value:string){const label=scopeLabels[value];return label?t(label):value;}
 export function deriveDiscoveryCoverage(rooms:CaseRoom[],entries:ScopeEntry[],verifiedMeasurementItemIds:string[]=[]):DiscoveryCoverage {

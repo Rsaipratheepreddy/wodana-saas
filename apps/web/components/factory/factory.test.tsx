@@ -235,7 +235,7 @@ describe("factory", () => {
     const materials = await within(sheet).findByRole("region", { name: "Materials" });
     expect(within(materials).getByText("11 of 13.3334 sheets issued · 9 sheets free")).toBeInTheDocument();
     expect(within(materials).getByText(/Issued worth .*550/)).toBeInTheDocument();
-    expect(within(materials).getByText("Instead of Oak veneer: Client changed the finish — Faisal")).toBeInTheDocument();
+    expect(within(materials).getByText("Instead of Oak veneer: Client changed the finish (Faisal)")).toBeInTheDocument();
     await userEvent.click(within(materials).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "decide_substitution", materialId: "m2", decision: "approve", version: 2 }));
 

@@ -43,7 +43,7 @@ export function WorkOrderMaterials({ state, run, busy }: { state: WorkOrderState
     {shown.length ? <ul className={styles.list}>{shown.map((row) => <li key={row.id}>
       <span className={styles.nameCell}>
         <span>{row.itemName}</span>
-        <small>{row.status === "pending" ? t("Instead of {item}: {reason} — {name}", { item: row.replacesName ?? "", reason: row.reason, name: row.requestedByName })
+        <small>{row.status === "pending" ? t("Instead of {item}: {reason} ({name})", { item: row.replacesName ?? "", reason: row.reason, name: row.requestedByName })
           : row.status === "replaced" ? t("Replaced; {quantity} still issued", { quantity: amount(row, row.issued) })
           : row.status === "removed" ? t("Removed; {quantity} still issued", { quantity: amount(row, row.issued) })
           : [t("{issued} of {quantity} issued", { issued: quantityText(row.issued) || "0", quantity: amount(row, row.quantity) }),

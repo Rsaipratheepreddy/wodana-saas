@@ -307,7 +307,7 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
     } catch (error) { setFailure(error instanceof Error ? error.message : t("Stage could not be updated.")); }
     finally { inFlight.current = false; setBusy(false); }
   }}>
-    {failure && <Callout tone={persisted ? "warning" : "danger"} title={persisted ? t("Stage saved — refresh needed") : t("Stage not updated")}>{failure}</Callout>}
+    {failure && <Callout tone={persisted ? "warning" : "danger"} title={persisted ? t("Stage saved. Refresh needed.") : t("Stage not updated")}>{failure}</Callout>}
     <strong>{t("Change stage to {stage}", { stage: t(leadStageLabel(stage)) })}</strong>
     {stage && !["disqualified", "paused"].includes(stage) && !lead.ownerMembershipId && !lead.nextActionAt && <CrmDateTimeField label={t("Next follow-up")} isRequired value={nextDate} isDisabled={busy} onChange={setNextDate} />}
     {stage === "disqualified" && <TextInput label={t("Reason")} value={reason} onChange={setReason} isRequired isDisabled={busy} />}

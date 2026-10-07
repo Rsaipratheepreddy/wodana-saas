@@ -15,7 +15,9 @@ import styles from "./follow-up-editor.module.css";
 /** "Aisha Karim · Jumeirah, Dubai": an enquiry titled after its customer doesn't repeat the name. */
 export function leadTargetLabel(name: string, title: string): string {
   const trimmed = title.trim();
-  const rest = trimmed.toLocaleLowerCase().startsWith(name.trim().toLocaleLowerCase()) ? trimmed.slice(name.trim().length).replace(/^[\s·—–:,-]+/, "") : trimmed;
+  const after = trimmed.toLocaleLowerCase().startsWith(name.trim().toLocaleLowerCase()) ? trimmed.slice(name.trim().length).trim() : null;
+  // "Name (Place)" today; "Name — Place" on older records.
+  const rest = after === null ? trimmed : /^\(.*\)$/.test(after) ? after.slice(1, -1).trim() : after.replace(/^[\s·—–:,-]+/, "");
   return rest ? `${name} · ${rest}` : name;
 }
 
@@ -269,10 +271,10 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
       </FormSection>
     </fieldset>
   </>;
-  if (!inline) return <FormDialog cancelLabel={created ? t("Close") : undefined} error={failure || undefined} errorTitle={t("Saved — refresh needed")} hideSubmit={created} isDirty={dirty && !created}
+  if (!inline) return <FormDialog cancelLabel={created ? t("Close") : undefined} error={failure || undefined} errorTitle={t("Saved. Refresh needed.")} hideSubmit={created} isDirty={dirty && !created}
     isSubmitDisabled={!relation} onClose={onClose} onSubmit={create} submitLabel={t("Save reminder")} title={t("Add follow-up")}>{fields}</FormDialog>;
   const content = <Form className={styles.editor} onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      {failure ? <Callout title={t(created ? "Saved — refresh needed" : "Could not save follow-up")} tone={created ? "warning" : "danger"}>{failure}</Callout> : null}
+      {failure ? <Callout title={t(created ? "Saved. Refresh needed." : "Could not save follow-up")} tone={created ? "warning" : "danger"}>{failure}</Callout> : null}
       {fields}<div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={close}>{t(created ? "Close" : "Cancel")}</Button><Button size="compact" type="submit" variant="primary" isLoading={busy} isDisabled={!relation || created}>{t("Save reminder")}</Button></div>
     </Form>;
   return <><EditorPage title={t("New follow-up")} onClose={close}>{content}</EditorPage>{confirmationDialog}</>;

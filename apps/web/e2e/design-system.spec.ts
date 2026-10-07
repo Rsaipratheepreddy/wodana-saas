@@ -226,7 +226,7 @@ test.describe("design system reference", () => {
     await expect(page.getByText("Drawings approved", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Continue to Purchase order", exact: true }).click();
     await expect(page.getByRole("button", { name: "Continue to Receive", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /Kitchen joinery — Rev 04/ }).click();
+    await page.getByRole("button", { name: /Kitchen joinery Rev 04/ }).click();
     await expect(page.getByText("Document selected", { exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "AI review", exact: true }).click();
     await page.getByRole("button", { name: "91% confidence", exact: true }).click();

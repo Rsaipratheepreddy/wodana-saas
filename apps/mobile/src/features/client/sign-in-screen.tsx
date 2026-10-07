@@ -73,8 +73,8 @@ export function ClientSignInScreen() {
 
   const send = async (via: PortalChannel) => {
     const problem = phone.national.trim() ? phoneProblem(phone.national, country, {
-      tooShort: (name, code, digits) => t('Too short — {country} mobile numbers are {digits} digits after {code}', { country: name, digits, code }),
-      tooLong: (name, code, digits) => t('Too long — {country} mobile numbers are {digits} digits after {code}', { country: name, digits, code }),
+      tooShort: (name, code, digits) => t('Too short: {country} mobile numbers are {digits} digits after {code}', { country: name, digits, code }),
+      tooLong: (name, code, digits) => t('Too long: {country} mobile numbers are {digits} digits after {code}', { country: name, digits, code }),
       invalid: (name) => t('Not a valid number for {country}', { country: name }),
       notMobile: (name) => t('Not a mobile number for {country}', { country: name }),
       chooseCountry: t('Choose the country code'),

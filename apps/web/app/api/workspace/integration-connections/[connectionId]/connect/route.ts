@@ -33,7 +33,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
   const code = (payload as { error?: { code?: unknown } } | null)?.error?.code;
   const unavailable = code === "provider_not_configured" || code === "google_not_configured";
   const response = NextResponse.json(
-    result.upstream.ok ? payload : { message: unavailable ? t("Not available yet — Wodana is setting this up")
+    result.upstream.ok ? payload : { message: unavailable ? t("Not available yet. Wodana is setting this up.")
       : safeBackendMessage(payload, t("Provider authorization could not be started.")) },
     { status: result.upstream.status },
   );

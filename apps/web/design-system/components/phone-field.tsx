@@ -76,8 +76,8 @@ export function PhoneField({ label, value, onChange, countryCode: chosenCountry,
 
   const example = countryCode && isSupportedCountry(countryCode) ? getExampleNumber(countryCode as CountryCode, mobileExamples) : undefined;
   const validate = (current: string) => phoneProblem(current, countryCode, {
-    tooShort: (country, code, digits) => t("Too short — {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
-    tooLong: (country, code, digits) => t("Too long — {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
+    tooShort: (country, code, digits) => t("Too short: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
+    tooLong: (country, code, digits) => t("Too long: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
     invalid: (country) => t("Not a valid number for {country}", { country }),
     notMobile: (country) => t("Not a mobile number for {country}", { country }),
     chooseCountry: t("Choose the country code"),

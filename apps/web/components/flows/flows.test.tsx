@@ -68,7 +68,7 @@ describe("Enquiry types list", () => {
     expect(within(interiorCard).getByRole("link", { name: /^Interior design/ })).toHaveAttribute("href", `/workspace/enquiry-types/${interior}`);
     expect(card("Kitchen only")).toHaveTextContent("Starter");
     expect(screen.getAllByRole("button", { name: "New enquiry type" })).toHaveLength(1);
-    expect(screen.getByText("Not sure yet — stays in New Opportunity until a type is chosen.")).toBeInTheDocument();
+    expect(screen.getByText("Not sure yet: stays in New Opportunity until a type is chosen.")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/flow/i);
   });
 

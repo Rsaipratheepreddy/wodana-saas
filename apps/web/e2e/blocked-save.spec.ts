@@ -20,7 +20,7 @@ for (const [language, direction] of [["en", "ltr"], ["ar", "rtl"]] as const) {
     await expect(mobile).toHaveValue("7400123456");
     await mobile.fill("74001234567");
     await mobile.blur();
-    await expect(page.getByText(/Too long — United Kingdom mobile numbers are 10 digits after \+44/)).toBeVisible();
+    await expect(page.getByText(/Too long: United Kingdom mobile numbers are 10 digits after \+44/)).toBeVisible();
     await mobile.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`blocked-save-${direction}.png`), animations: "disabled" });
   });

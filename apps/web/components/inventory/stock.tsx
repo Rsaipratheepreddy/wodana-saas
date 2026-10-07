@@ -150,7 +150,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
       <h3 className={styles.subhead}>{t("Corrections waiting for approval")}</h3>
       <ul className={styles.places}>{state.pendingAdjustments.map((request) => <li key={request.id}>
         <span className={styles.nameCell}><span>{`${request.itemName} · ${request.locationName}${request.projectReference ? ` · ${request.projectReference}` : ""}`}</span>
-          <small>{t("Counted {counted} ({difference}), worth {value}: {reason} — {name}", { counted: `${quantityText(request.counted)} ${request.unit}`.trim(),
+          <small>{t("Counted {counted} ({difference}), worth {value}: {reason} ({name})", { counted: `${quantityText(request.counted)} ${request.unit}`.trim(),
             difference: `${Number(request.difference) > 0 ? "+" : ""}${quantityText(request.difference)}`, value: format.money(request.value, state.currency),
             reason: request.reason, name: request.requestedByName })}</small></span>
         {state.canAdjust && request.requestedBy !== state.me ? <span className={styles.filters}>
@@ -163,7 +163,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No reorder points yet")}
         description={t("Set one from an item's actions to be told when free stock runs low.")} />} />
-    : <>{noQuantities ? <InlineNotice message={t("No quantities recorded yet — count stock or import quantities.")} /> : null}
+    : <>{noQuantities ? <InlineNotice message={t("No quantities recorded yet. Count stock or import quantities.")} /> : null}
     <DataGrid<ListRow> gridKey="inventory.stock" ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={stockFilters}
       toolbarActions={state?.canAdjust ? <Button size="compact" onPress={() => setChange({ mode: "add", row: null })}>{t("Add stock")}</Button> : null}

@@ -183,8 +183,8 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   const [serverProblems, setServerProblems] = useState<SaveProblem[]>(initialProblems ?? []);
   const regionWord = translateKnown(t, areaLabel);
   const phoneMessages = {
-    tooShort: (country: string, code: string, digits: number) => t("Too short — {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
-    tooLong: (country: string, code: string, digits: number) => t("Too long — {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
+    tooShort: (country: string, code: string, digits: number) => t("Too short: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
+    tooLong: (country: string, code: string, digits: number) => t("Too long: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
     invalid: (country: string) => t("Not a valid number for {country}", { country }),
     notMobile: (country: string) => t("Not a mobile number for {country}", { country }),
     chooseCountry: t("Choose the country code"),
