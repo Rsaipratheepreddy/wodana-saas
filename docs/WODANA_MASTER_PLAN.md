@@ -1552,6 +1552,261 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
     - The project's manager (or someone who manages projects) approves it or rejects it with why — never their own claim, which the database refuses too. Approved, it's a cost of the project; people with `payables.manage` reimburse it once, with a reference. Each person sees their own claims; whoever decides sees them all.
     - Notices: submitted (the project's managers), approved or rejected (the claimant), to reimburse (people with `payables.manage`), reimbursed (the claimant).
 
+### 6.21b Wodana Ledger (engine E7): build spec (8 Oct 2026)
+**Name.** Users see **Ledger** ("Wodana Ledger"): the menu, pages, Settings › Ledger and the route `/workspace/ledger`. In code the module, tables and permissions keep the engine name `books` (`src/books`, `books_*`, `books.view`).
+
+**Approach.** A new `books` module builds journals from the money records that already exist. It does this with a **sweep of source adapters**, following the `enqueuePostings` pattern in `src/accounting/accounting-sync.ts`:
+- each run anti-joins on a unique source key;
+- it runs every 30 s, under `pg_try_advisory_xact_lock` per workspace, with at most 500 events per run;
+- it also runs on demand before any Ledger read.
+
+No existing module command changes. QuickBooks and Zoho sync stay as an optional export.
+
+**What exists (sources).**
+- Client invoices and credit notes (`receivables`, migration 0068). They are immutable and gap-free per entity.
+- Receipts (`commercial_receipts`; `finance-ledger.ts verifyReceipt` and `reverseProviderSettlement`).
+- Supplier bills and payments (`purchasing/payables.service.ts`, payment runs).
+- Goods receipts (services and outside work).
+- `stock_movements`: immutable, with `batch_id` and `unit_cost` in the workspace currency.
+- Petty cash claims.
+- Labour cost entries (`project-money.ts readProjectCosts`).
+- Legal entities with TRN, `tax_profiles`/`tax_rates`, `allocate_document_number()`, `exchange_rates`.
+- Region packs in `tenant_setup_profiles`.
+- The approval engine (E3).
+- The Woddy tool registry (names must avoid money/invoice/payment; permissions must avoid `accounting.`/`receivables.`).
+- The go-live clear classification (SQL + TS).
+
+**Gaps:**
+- bill lines have no tax treatment and no account;
+- stock and labour have no entity and are valued in the workspace currency;
+- receipts and payments have no paid-into account;
+- debit notes are derived, not stored;
+- invoices outside milestones are not Wodana documents;
+- region tax rates are not validated.
+
+**Data model.**
+
+*0282_books_core.* Every table has `workspace_id`, forced RLS, `tenant_isolation`, composite FKs with `workspace_id`, grants to `wodana_app`, and classification rows in both SQL and TS.
+- `books_settings`, one per legal entity:
+  - `enabled`;
+  - `start_date`;
+  - `lock_date`;
+  - `functional_currency` (fixed once journals exist);
+  - `fiscal_year_start_month`;
+  - `template_code` and `template_version`;
+  - `revenue_recognition`: 'invoice' now;
+  - `tax_point_on_payment`;
+  - `vat_region`;
+  - `version`.
+- `books_accounts`:
+  - `code`, `name`;
+  - `type`: asset, liability, equity, income, expense;
+  - `subtype`;
+  - `parent_id`;
+  - `is_control`;
+  - `currency`;
+  - `allow_manual`;
+  - `template_key`;
+  - `archived_at`.
+  - UNIQUE(ws, entity, code). Never deleted once used.
+- `books_account_roles`: (entity, role) → account.
+- `books_payment_accounts`: (entity, direction in/out, method bank|cheque|cash|card|other|provider) → account.
+- `books_tax_codes`:
+  - `code`, `rate numeric(7,4)`;
+  - `treatment`: standard, zero, exempt, out_of_scope, reverse_charge, import_reverse_charge;
+  - `direction`, `recoverable`;
+  - `base_box`, `tax_box`, `rc_output_box`;
+  - `effective_from` and `effective_to`.
+- `books_journals`:
+  - `number`, from `allocate_document_number(...,'JOURNAL')`, gap-free;
+  - `journal_date`, `event_date`, `late`;
+  - `kind`: auto, manual, opening, reversal;
+  - `source_type`, `source_id`, `source_event`, `source_label`, `source_href`;
+  - currencies and `rate`, `total`;
+  - `reverses_journal_id`.
+  - **UNIQUE(ws, source_type, source_id, source_event).**
+  - An immutable trigger rejects UPDATE and DELETE.
+- `books_journal_lines`:
+  - `account_id`;
+  - `debit` or `credit` numeric(20,4) (exactly one > 0);
+  - `doc_amount`, `description`;
+  - dimensions: project, case, business unit, party type and id;
+  - tax: `tax_code_id`, `tax_base`, `tax_region`.
+  - Immutable. A **deferred trigger** checks Σdebit = Σcredit = total at commit.
+- `books_posting_issues`:
+  - code: missing_rate, missing_account, unknown_tax, no_cost, no_entity, currency_mismatch, external_invoice, entity_not_enabled;
+  - attempts, notified, resolved.
+- `books_manual_journals` and their lines:
+  - reference MJ-n;
+  - status: draft, submitted, returned, approved, cancelled;
+  - approver ≠ preparer;
+  - `posted_journal_id`.
+- `books_bill_captures`:
+  - file storage key, sha256 (unique while active);
+  - status: reading, read, failed, drafted, discarded;
+  - immutable `reading` jsonb snapshot;
+  - model, confidence;
+  - matched vendor, `supplier_invoice_id`, `confirmed_by`.
+- Added columns: `supplier_invoice_lines.tax_code`, `books_account_id`; `supplier_payments.paid_from_account_id`.
+- `list_books_workspaces()` (SECURITY DEFINER).
+- Permissions: `books.view`, `books.post`, `books.approve`, `books.manage`.
+  - Owner and administrator get all four.
+  - The finance role gets view and post.
+  - The finance_approver role gets view and approve.
+- The `tenant_setup_profiles` kind CHECK gains `books`.
+
+*0283_books_templates.* Data only.
+- **AE v1:**
+  - about 60 accounts and the role mapping;
+  - tax codes SR 5% (sales box 1 by emirate, purchases box 9), ZR (box 4), EX (box 5), OS, RC (box 3 and box 10), IG (box 6 and box 10);
+  - the VAT 201 layout as configuration.
+- **IFRS v1:** generic, with no tax.
+- **Later, data only:** IN (GST), SA (ZATCA), GB (MTD).
+- Applying a template is opt-in and versioned per entity.
+
+Reserved migration numbers: 0284 (B), 0285 (C), 0286 (D), 0287 (E).
+
+**Posting rules.**
+
+Every rule:
+- **Entity:** the document's legal entity. Stock and labour take the PO entity, else the project company, else the single enabled entity, else the issue `no_entity`.
+- **Date:** at or before the lock date, the journal posts on the first open day with `late`.
+- **Currency:** converted to functional currency at the day's rate, else the issue `missing_rate`. Lines are rounded and the residual goes to `rounding`.
+- **Reversals:** negated lines, linked through `reverses_journal_id`.
+
+| # | Source · event | Debit | Credit | Monday |
+| --- | --- | --- | --- | --- |
+| P1 | client invoice issued | AR control (total) | project revenue (net); VAT output (tax, base, region). If a verified receipt came before: VAT on advances contra instead of output, plus Dr client advances / Cr AR | yes |
+| P2 | credit note issued | revenue, VAT output | AR | yes |
+| P3 | receipt finance-verified (dated verifiedAt) | payment account (in) | AR if the invoice was issued before, else client advances; with tax point on payment, also Dr VAT advance contra / Cr VAT output | yes |
+| P4 | receipt reversed | reversal of P3 | | yes |
+| P5 | supplier bill approved (invoice_date) | order lines: GRNI at PO price plus price variance; charges: their account, else other project cost or general expense; VAT input; RC/IG on both sides; non-recoverable tax into cost | AP control (total) | yes |
+| P6 | bill cancelled | reversal of P5 | | yes |
+| P7 | supplier payment (including payment runs) | AP | payment account (out) | yes |
+| P8 | payment reversed | reversal of P7 | | yes |
+| P9 | services/outside work received | subcontract cost | GRNI | yes |
+| P10 | goods receipt reversed | reversal of P9 | | yes |
+| P11 | stock movements per batch (qty × unit_cost); counterpart by kind as listed below | | | yes |
+| P12 | petty cash approved | site expenses | employee claims | yes |
+| P13 | petty cash reimbursed | employee claims | cash | yes |
+| P14 | labour costed, with delta on rate change | labour cost | labour absorbed | yes, cut first |
+| P15 | manual or opening journal approved (E3) | as entered | as entered | yes |
+
+P11 owner account and counterparts:
+- **Owner:** free stock → inventory; project stock → project materials.
+- **Counterpart:**
+  - receive: GRNI;
+  - supplier_return and reverse: GRNI;
+  - issue and return: the consumer's project materials;
+  - transfer: stock in transit;
+  - allocate and release: paired within the batch;
+  - adjust: stock adjustments;
+  - sale and sale_return: COGS;
+  - produce: nothing.
+- **Issues:** no unit cost → `no_cost`; currency differs → `currency_mismatch`.
+
+A milestone invoiced in QuickBooks raises the issue `external_invoice`.
+
+Later: retention, stored debit notes, realised and unrealised FX, refunds paid, payroll/WPS, fixed assets, VAT settlement, write-offs, POC/WIP revenue, landed costs, free-form sales invoices.
+
+**Monday scope.** Plus the six launch promises: posts itself, snap a bill, ask Woddy, live project profit, reports in one click, UAE VAT.
+- Ledger core: immutability, balance check, gap-free JV numbers, lock and start dates, FX, rounding, issues list.
+- AE and IFRS templates; roles, payment accounts and tax codes editable in Settings › Ledger (per company).
+- Posting P1 to P15.
+- Manual journals with E3 approval; opening trial balance from CSV.
+- Reports, each with entity and period pickers, CSV export, print to PDF, and drill-down from report → account → journal → source:
+  - trial balance;
+  - P&L;
+  - balance sheet;
+  - VAT report in UAE VAT 201 shape, with a review list;
+  - AR and AP ageing, reconciled to the control accounts;
+  - general ledger;
+  - project P&L and a Projects profit grid.
+- Project Money tab: a "Profit so far" card and margin against the quote.
+- Bill capture: photo or PDF → AI reading → a draft bill a person confirms; tax and account pickers on bill lines.
+- Woddy tools `project_profit` and `books_report`, permission-checked.
+
+**Acceptance checks.** Run on a seeded UAE workspace with Ledger on from 1 Oct 2026. Each is a real-Postgres integration test unless it says browser.
+1. The AE template creates the accounts, roles and tax codes. Three sweeps give the same journal count, with gap-free numbers even under concurrent sweeps.
+2. An invoice of AED 105,000 posts Dr AR 105,000 / Cr Revenue 100,000 / Cr VAT 5,000.
+3. A receipt after the invoice clears AR. A receipt before the invoice goes to advances with 5/105 VAT. Once invoiced, VAT is counted once and advances and AR return to 0.
+4. A credit note reverses revenue and VAT. UPDATE or DELETE on journals fails.
+5. A bill with order lines, a charge and an RC line clears GRNI, books the variance, posts VAT input and RC both sides, and AP equals the total. Cancelling reverses it.
+6. A payment and its reversal post. Payment runs post.
+7. Stock received posts Dr Inventory / Cr GRNI. An issue to a project posts Dr materials / Cr Inventory. An allocation nets within its batch.
+8. Petty cash approved and reimbursed post. Labour posts, and a rate change posts only the delta.
+9. The trial balance balances and the balance sheet balances.
+10. Project cost in the Ledger equals the Money tab's "spent". Revenue equals invoices net of credits.
+11. The October VAT report shows boxes 1b, 3, 8, 9, 10, 11 and 14 with drill-down and CSV.
+12. With the lock date at 30 Sep, an event on 29 Sep posts on 1 Oct as late, and a manual journal dated 29 Sep is refused.
+13. A preparer cannot approve their own manual journal. It appears in the Approvals inbox and posts with a JV number. The opening CSV must balance, and an unknown code is refused with its row number.
+14. Bill capture produces a draft in under 20 s, matched by TRN or name, with the PO if it matches. A total mismatch is flagged. A duplicate file is refused. Provenance is kept. Nothing posts before approval.
+15. Woddy answers "did Villa 12 make money?" with revenue, costs, profit and margin against the quote, citing the project. It respects permissions.
+16. Cross-tenant RLS deny tests pass. The clear classification spec passes.
+17. Browser: Arabic RTL works, there are no AED/Emirate constants outside templates, and every page uses the shared page anatomy.
+
+**Shared contracts** (slice A1 first):
+- migrations 0282 and 0283;
+- `packages/contracts/src/books.ts`: AccountRole list, TaxTreatment, source types and events, PostingIssueCode, report DTOs, fixed AE account codes;
+- `src/books/ledger/ledger.ts`: `postJournal`, `reverseLines`, `resolveRole`, `toFunctional`, `postingDate`, and the PostingAdapter interface;
+- `books.module.ts` with stub submodules `ledger`, `posting`, `reports`, `capture` and `project`;
+- drill-down routes;
+- slices never edit `en.json`; the integrator runs `npm run i18n:extract` at the end.
+
+AccountRole list: ar_control, ap_control, client_advances, vat_output, vat_input, vat_advance_contra, grni, inventory, stock_in_transit, stock_adjustments, employee_claims_payable, revenue_project, revenue_other, cost_materials, cost_subcontract, cost_labour, cost_site_expenses, cost_price_variance, cost_other, cogs_goods, general_expense, labour_absorbed, fx_gain_loss, rounding, retained_earnings, opening_balance_equity.
+
+Fixed AE account codes:
+
+| Code | Account | Code | Account |
+| --- | --- | --- | --- |
+| 1100 | Bank | 3900 | Opening balance equity |
+| 1150 | Petty cash | 4100 | Project revenue |
+| 1200 | Trade receivables | 4900 | Other income |
+| 1210 | VAT recoverable | 5100 | Project materials |
+| 1300 | Inventory | 5200 | Subcontract |
+| 1310 | Stock in transit | 5300 | Labour |
+| 2100 | Trade payables | 5400 | Site expenses |
+| 2110 | GRNI | 5500 | Price variance |
+| 2120 | Employee claims | 5600 | Other project costs |
+| 2200 | VAT output | 5700 | COGS |
+| 2210 | VAT on advances | 6100 | General expenses |
+| 2300 | Client advances | 6200 | Stock adjustments |
+| 3100 | Retained earnings | 6300 | Labour absorbed |
+| | | 6900 | FX gain/loss |
+| | | 6990 | Rounding |
+
+**Slices** (one git worktree each):
+
+| Slice | Owns | Delivers |
+| --- | --- | --- |
+| A (A1 contracts first, then A2) | migrations 0282/0283, `schema.ts` kind check, contracts, `books.module.ts`, `src/books/ledger`, `src/books/settings`, `src/books/journals`, `app.module.ts`, clear classification, approval kind `manual_journal`; web Settings › Ledger, manual journal editor, opening import, roles-permissions, notification modules | core, settings, manual journals, notices |
+| B | `src/books/posting/*` (one adapter per source, sweep service, issues); web `components/books/attention.tsx` | P1 to P15 with integration tests |
+| C | `src/books/reports/*`; web `app/workspace/ledger/[[...section]]`, `components/books/reports/*`, access, route-map, navigation | the Ledger area: Overview, Reports, Journals, Accounts, Needs attention |
+| D | `src/books/capture/*`, AI rate limit feature `books.bill_capture`, tax and account on bill lines in payables; web bill editor ("From photo") | bill capture |
+| E | `src/books/project/*`, Woddy tools `books-tools.ts` plus registry; web project Money card and `components/books/projects-profit.tsx` | project P&L and Woddy |
+
+Merge order: A1 → B → C, E → D → A2 → integration (i18n extract, full gate, smoke runs, English and Arabic browser pass, reconciliation check, enable on production).
+
+**Cut order if Monday is at risk:**
+1. labour postings;
+2. VAT on advances;
+3. opening CSV;
+4. PO matching in capture;
+5. control reconciliation rows;
+6. the `books_report` tool;
+7. print.
+
+**Never cut:**
+- RLS and its deny tests;
+- immutable journals;
+- the balance trigger;
+- the unique source key;
+- gap-free numbers;
+- the lock date;
+- permission checks;
+- VAT boxes 1, 8, 9, 11 and 14;
+- project P&L reconciliation.
+
 ### 6.22 Client portal
 - **Access:** passwordless (email/phone OTP), per deal and project grants, multiple client contacts with roles (decision-maker vs viewer).
 - **Content (published projections only):** timeline, current approved scope and designs, decision requests (quote, design, material list, variation, handover), payment requests with a pay link, progress stories (staff-approved), documents, handover pack, warranty claim form.
