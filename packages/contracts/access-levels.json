@@ -94,7 +94,7 @@
       "edit": ["module.organization.write", "module.organization.edit", "module.integrations.write", "module.integrations.edit", "legal_entities.manage", "integrations.manage"],
       "manage": ["module.organization.delete", "module.integrations.delete", "module.roles.write", "module.roles.edit", "module.roles.delete", "workspace.roles.manage", "workspace.settings.manage", "workspace.view_as"],
       "$comment": "Management dashboards (PLM-134) are given one by one: owners and administrators hold them; managers get them later, per dashboard and team.",
-      "advanced": ["reports.management.view", "reports.management.targets"]
+      "advanced": ["reports.management.view", "reports.management.targets", "reminders.manage", "reminders.team"]
     },
     {
       "id": "woddy",

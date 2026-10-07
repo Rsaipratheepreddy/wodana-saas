@@ -21,6 +21,25 @@ describe("live events (FD-4)", () => {
     expect(JSON.stringify(liveScopes({ eventType: "site.x", aggregateType: "site_report", aggregateId: "r", payload: envelope({ note: "private" }) }))).not.toContain("private");
   });
 
+  it("tells reminders, cases, leads, Finance and the Ledger what changed (E4)", () => {
+    const caseId = "44444444-4444-4444-8444-444444444444";
+    const leadId = "55555555-5555-4555-8555-555555555555";
+    const scopes = (eventType: string, aggregateType: string, aggregateId = "x", data?: Record<string, unknown>) =>
+      liveScopes({ eventType, aggregateType, aggregateId, payload: data ? envelope(data) : null });
+    expect(scopes("reminders.subject_snoozed", "reminder_subject")).toEqual(expect.arrayContaining(["workspace", "reminders"]));
+    expect(scopes("reminders.step_sent", "reminder_step")).toContain("reminders");
+    expect(scopes("commercial.quote_resent.v1", "pre_project_case", caseId)).toEqual(expect.arrayContaining(["planning", "cases", `case:${caseId}`]));
+    expect(scopes("design.stage_done", "design_journey", "x", { caseId })).toEqual(expect.arrayContaining(["cases", `case:${caseId}`]));
+    expect(scopes("crm.lead.updated", "crm_lead", leadId)).toEqual(expect.arrayContaining(["sales", "leads", `lead:${leadId}`]));
+    expect(scopes("crm.activity.logged", "crm_activity", "x", { leadId })).toEqual(expect.arrayContaining(["sales", `lead:${leadId}`]));
+    expect(scopes("receivables.payment_received", "receipt")).toContain("finance");
+    expect(scopes("finance_request.approved", "finance_request")).toContain("finance");
+    expect(scopes("books.manual_journal_approved", "books_manual_journal")).toEqual(expect.arrayContaining(["ledger"]));
+    expect(scopes("books.manual_journal_approved", "books_manual_journal")).not.toContain("finance");
+    expect(scopes("site.report_submitted", "site_report", "x", { projectId })).not.toEqual(expect.arrayContaining(["reminders"]));
+    expect(scopes("crm.lead.updated", "crm_lead", "not-a-uuid")).not.toContain("lead:not-a-uuid");
+  });
+
   it("sends a workspace only its own changes", async () => {
     const live = new LiveEventsService();
     const received = firstValueFrom(live.stream(workspaceId).pipe(take(1), toArray()));

@@ -142,9 +142,13 @@ const keep = [
   "automation_versions",
   // Notifications configuration
   "notification_device_consents",
+  "notification_person_settings",
   "notification_policies",
   "notification_preferences",
   "notification_templates",
+  // Reminder rules and settings (firm and personal)
+  "reminder_rules",
+  "reminder_settings",
   // Integrations
   "integration_connections",
   "integration_resources",
@@ -542,6 +546,10 @@ const clear = [
   "books_manual_journal_lines",
   "books_manual_journals",
   "books_posting_issues",
+  // Reminders: what is due, its steps and the digests
+  "reminder_digests",
+  "reminder_steps",
+  "reminder_subjects",
 ] as const;
 
 const reset = [

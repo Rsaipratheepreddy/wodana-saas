@@ -30,6 +30,22 @@ export function liveScopes(event: LiveEventSource): string[] {
     if (conversation) scopes.add(`conversation:${conversation}`);
   }
   if (has(aggregate, "crm_", "lead", "enquiry") || has(type, "crm.")) scopes.add("sales");
+  // A lead or enquiry, and the one record (its record shell listens to lead:<id>).
+  if (has(aggregate, "crm_lead", "lead", "crm_enquiry", "enquiry") || has(type, "crm.lead", "crm.enquiry") || id(data.leadId)) {
+    scopes.add("leads");
+    const lead = ["crm_lead", "lead", "crm_enquiry", "enquiry"].includes(aggregate) ? id(event.aggregateId) : id(data.leadId);
+    if (lead) scopes.add(`lead:${lead}`);
+  }
+  // A planning case (deal file, quotes, design) and the one case.
+  if (has(aggregate, "pre_project_case", "commercial_case") || id(data.caseId)) {
+    scopes.add("cases");
+    const caseId = aggregate === "pre_project_case" || aggregate === "commercial_case" ? id(event.aggregateId) : id(data.caseId);
+    if (caseId) scopes.add(`case:${caseId}`);
+  }
+  if (has(aggregate, "client_invoice", "invoice", "receipt", "receivable", "commercial_payment", "finance_", "petty_cash", "payment_run", "supplier_invoice", "supplier_payment", "accounting_")
+    || has(type, "receivables.", "payables.", "finance.", "finance_request", "petty_cash.", "payments.", "invoice.", "accounting.")) scopes.add("finance");
+  if (has(aggregate, "books_") || has(type, "books.", "books_")) scopes.add("ledger");
+  if (has(aggregate, "reminder_") || has(type, "reminders.")) scopes.add("reminders");
   if (has(aggregate, "pre_project", "commercial_case", "quotation", "design_") || has(type, "design.", "quotation.", "pre_project")) scopes.add("planning");
   if (has(aggregate, "project", "delivery_project", "site_", "snag", "handover", "warranty") || has(type, "project.", "site.", "work.", "handover.", "warranty.")) {
     scopes.add("projects");

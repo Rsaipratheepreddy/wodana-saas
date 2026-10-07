@@ -31,7 +31,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     // Records a client's decision given outside the portal, with the file it came in (commercial.record_decision, Q-24).
     // Asks Finance for invoices and refunds from the client, deal or project (finance_requests.raise, PLM-107).
     permissions: [...CRM_DAY_TO_DAY, "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view", "portal.contacts.manage", "commercial.record_decision",
-      "finance_requests.raise"],
+      "finance_requests.raise",
+      // Assigns enquiries, so works the team's My day (0289).
+      "reminders.team"],
   },
   {
     code: "quantity_surveyor",
@@ -61,6 +63,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "projects.schedule.view", "projects.schedule.manage", "jobs.stage.manage",
       "pre_projects.view", "crm.opportunities.view", "catalog.view",
       "purchasing.view", "stock.view", "vendors.view", "hrms.team", "finance_requests.raise",
+      // Runs projects, so works the team's My day (0289).
+      "reminders.team",
     ],
   },
   {

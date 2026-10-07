@@ -26,7 +26,7 @@ describe("pushes for work people act on away from a desk (FD-3)", () => {
     const { db: client, calls } = db({ pushPreference: true, device: true });
     await notifyUserInApp(client, notice("site.report_missing"));
     const push = calls.find((call) => call.sql.includes("INSERT INTO notifications") && call.sql.includes("'push'"));
-    expect(push?.values).toEqual([workspaceId, "template", userId, "site.report_missing", "Report missing for Villa 4", "Add today's report.", "/workspace/projects/p/site", "site.report_missing:1:push", expect.any(Date)]);
+    expect(push?.values).toEqual([workspaceId, "template", userId, "site.report_missing", "Report missing for Villa 4", "Add today's report.", "/workspace/projects/p/site", "site.report_missing:1:push", expect.any(Date), false]);
     expect(calls.some((call) => call.sql.includes("notification.delivery_requested.v1"))).toBe(true);
   });
 

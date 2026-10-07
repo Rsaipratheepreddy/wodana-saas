@@ -54,6 +54,7 @@ import { SiteModule } from "./site/site.module";
 import { ReceivablesModule } from "./receivables/receivables.module";
 import { AccountingModule } from "./accounting/accounting.module";
 import { BooksModule } from "./books/books.module";
+import { RemindersModule } from "./reminders/reminders.module";
 import { PettyCashModule } from "./petty-cash/petty-cash.module";
 import { FinanceRequestsModule } from "./finance-requests/finance-requests.module";
 import { FulfilmentModule } from "./fulfilment/fulfilment.module";
@@ -132,6 +133,7 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     ReceivablesModule,
     AccountingModule,
     BooksModule,
+    RemindersModule,
     PettyCashModule,
     FinanceRequestsModule,
     FulfilmentModule,

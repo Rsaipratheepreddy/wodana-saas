@@ -1261,6 +1261,20 @@
       "when": 1801740005000,
       "tag": "0288_books_commands_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1801740005100,
+      "tag": "0289_reminders_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1801740005200,
+      "tag": "0290_reminders_seed",
+      "breakpoints": true
     }
   ]
 }
