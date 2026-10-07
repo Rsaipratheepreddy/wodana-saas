@@ -1870,6 +1870,259 @@ Merge order: A1 → B → C, E → D → A2 → integration (i18n extract, full 
   | Handover ready / accepted | client / PM, Owner | portal + email / in-app |
   | Vendor document expiring | buyer, Finance | in-app, email |
 
+### 6.24a Reminder engine (E4) and My day: build spec (8 Oct 2026)
+**Approach.** E4 sits on the delivery pipeline that already exists:
+- the `notifications` table plus `notification_delivery_attempts`, `notification_policies` and `notification_preferences`;
+- the enqueue/claim/result code in `crm/notifications/crm-notifications.service.ts`;
+- the helpers in `notifications/default-templates.ts`;
+- the worker channels (Expo push, Mailgun branded email, WhatsApp templates through `sendClientEvent`, which needs `crm_consents`);
+- live updates over the outbox → Redis → SSE `/events` chain.
+
+E4 adds:
+- one subject/step model;
+- a 60 s sweep with **source adapters**, following the Ledger posting pattern in `books/posting/sweep.ts`;
+- critical items that can't be muted (R13);
+- at most one client reminder per party per local day;
+- My day;
+- a personal digest;
+- a per-message health list.
+
+About 30 module chasers live today in `projects/project-reminders.service.ts`, payment reminders, approval chasers and client follow-ups. Each migrated kind removes its legacy send **in the same commit**. The `notifications` table has RLS enabled but not forced, which breaks rule 3; 0289 forces it.
+
+**Data model.** Each table gets forced RLS, `tenant_isolation`, composite FKs, grants to `wodana_app` and a classification row (SQL + TS).
+
+*0289_reminders_core:*
+- `reminder_rules` (keep): one row per firm and kind; a missing row means the contract default.
+  - `kind` (module.event), `enabled`;
+  - `offsets int[]` (1–6 values), `unit` day|hour, `working_days`;
+  - `escalate_after` (null = no escalation);
+  - `chain text[]` ⊆ manager, project_manager, finance, purchasing, owner (at most 3);
+  - `channels text[]` ordered from in_app, push, email, whatsapp;
+  - `digest`, `quiet_hours jsonb`, `version`.
+  - Critical kinds can't be disabled; the service enforces this from the contract.
+- `reminder_settings` (keep), one per workspace:
+  - quiet start/end (default 20:00–08:00) and digest time (08:00);
+  - client window (null = work-calendar hours);
+  - `critical_breaks_quiet` (false);
+  - `version`.
+- `notification_person_settings` (keep), key (ws, membership):
+  - digest enabled and digest time;
+  - quiet hours;
+  - IANA `time_zone`;
+  - `version`.
+- `reminder_subjects` (clear): one row per thing due.
+  - `kind`, `source_key` (text), `source_type`/`source_id`;
+  - `job_id`, `project_id`, `case_id`, `party_id`;
+  - `audience` staff|client, `critical`;
+  - `owner_membership_id`, `cc_membership_ids`;
+  - `title`, `context`, `href` (/workspace or /portal), `variables jsonb` (template snapshot);
+  - `due_at`, `due_revision`;
+  - `status` open|snoozed|done|cancelled, with snooze until/reason/by;
+  - `reminders_sent`, `escalation_level`, `last_step_at`;
+  - `done_at`, `done_reason` record|source_gone|cancelled;
+  - `version`.
+  - UNIQUE(ws, kind, source_key).
+- `reminder_steps` (clear):
+  - `subject_id`, `due_revision`, `step_key` (r:-2, e:1), `kind` remind|escalate, `level`, `fire_at`;
+  - `state` planned|held|sent|digested|skipped|cancelled;
+  - `skip_reason` done|snoozed|consent_missing|cap_reached|no_recipient|muted|unreachable|disabled;
+  - recipients, `fired_at`, `digest_id`.
+  - **UNIQUE(ws, subject_id, due_revision, step_key)**: the idempotency key. Steps form the timeline visible on the record.
+- `reminder_digests` (clear): key (ws, membership, date), plus counts and the notification ids.
+- `notifications`:
+  - FORCE ROW LEVEL SECURITY;
+  - new columns `reminder_step_id`, `critical`, `fallback_of`, `accepted_at`;
+  - an index (ws, status, updated_at).
+- `list_reminder_engine_workspaces()` (SECURITY DEFINER).
+- Permissions:
+  - `reminders.manage`: owner and administrator;
+  - `reminders.team`: owner, administrator, and roles holding `projects.manage` or `crm.leads.assign`.
+- Consent reuses `crm_consents`. WhatsApp STOP writes `withdrawn`.
+
+*0290_reminders_seed:* copies each firm's current values into `reminder_rules`. Nothing reads the old columns after cutover.
+- decision days and the quote follow-up day → client.quote_decision and client.design_decision;
+- quote expiry warning days → quote.expiring;
+- payment offsets → payment.due;
+- approval hours → approval.waiting;
+- push quiet hours → person settings.
+
+Reserved migration numbers: 0291 (B), 0292 (C), 0293 (D), 0294 (E).
+
+**Source adapter** (contract in `reminders/engine/engine.ts`):
+
+```
+ReminderSource {
+  kind
+  module
+  audience: staff | client
+  critical
+  notify: "engine" | "module"          // module = My day only
+  viewPermission
+  open(db, ws, {clock, now, limit}) → DueItem[]
+  stillOpen(db, ws, keys) → Set        // the done predicate; re-checked before every send
+  complete? {label, run}               // the module's own audited command
+  reassign? {permission, run}
+  deliverClient?
+  template {code}
+}
+
+DueItem { key, sourceType, sourceId, jobSource, projectId, caseId, partyId,
+          ownerMembershipId, ccMembershipIds, dueAt, title, context, href, variables }
+```
+
+Subjects close only through `stillOpen`. Nobody marks a subject done by hand; "Mark done" runs the module's own command.
+
+Chain resolvers:
+- manager: a team lead (`workspace_team_members.is_lead`) of the owner's team, else the project manager;
+- project_manager;
+- finance (`receivables.manage`);
+- purchasing (`purchasing.approve`);
+- owner (system role).
+
+When a level resolves to nobody, the next level is used. Each level fires once.
+
+**Sources the engine notifies (MVP).** The last column is the legacy send each one replaces.
+
+| Kind | Audience / critical | Default cadence | Escalate | Done when | Replaces |
+| --- | --- | --- | --- | --- | --- |
+| work.due | staff / no | −1d, 0, +1d, +3d | after 2 | done or cancelled, or project inactive | processWorkDeadlines |
+| crm.follow_up | staff / no | 0, +1d | after 2 | activity not pending, or lead closed | none (new) |
+| approval.waiting (one per decider) | staff / **critical** | +24h, +48h | after 2, only when the E3 policy has no own escalation | waitingFor no longer returns it | chaseApprovals sends |
+| client.quote_decision | client / priority 2 | +2d, +5d (+ the merged follow-up day) | staff copy after 2 | quote no longer issued, or case inactive | client decisions (quote), the quote nudge in client-followups, the expiry tellClients |
+| client.design_decision | client / priority 2 | +2d, +5d | after 2 | version decided or superseded | client decisions (design) |
+| quote.expiring | staff / no | −3d, 0 | none | not issued, or extended | the warning part of quote-expiry |
+| payment.due | client / **critical**, priority 1 | −3, 0, +3, +7 | none | balance 0, verified, or reported paid | CrmPaymentReminders schedule; delivered through sendPaymentReminder |
+| invoice.overdue | staff / **critical** | +1d, +7d, +14d | after 2 | balance 0, credited or cancelled | processReceivablesOverdue |
+| payables.due | staff / **critical** | −3d, 0, +3d | after 2 | paid, cancelled or held | processPayablesDue |
+| purchase.order_late | staff / no | +1d, +7d, +14d | after 2 | received, cancelled or date moved | the late-orders part of processPurchasingDeadlines |
+| design.stage_due | staff / no | −1d, 0, +1d, +3d | after 2 | stage done or skipped | the overdue part of design deadlines |
+| permit.expiry | staff / **critical** | −3wd, −1wd, 0 | after 1 | a valid permit covers the day, or the booking moved | processLogisticsAlerts |
+| finance_request.waiting | staff / no | +1d, +3d | after 2 | status changed | none (new) |
+
+Sources shown in My day only (`notify: module`, the module keeps its own notices):
+- crm.first_response (SLA and takeover stay in CRM);
+- crm.unowned, crm.confirm_client, crm.reply_waiting;
+- site.daily_report;
+- factory.production_due;
+- books.posting_issue.
+
+These are ported from `home-summary.ts readDueNow`.
+
+Later: HRMS, supplier and warranty documents; retention; materials waiting; client calls; logistics overdue; CRM SLA notices in the engine; SMS; the AI9 delay-impact line.
+
+**Sweep.**
+- Every 60 s (`REMINDERS_SWEEP_ENABLED`), one tenant transaction per workspace under `pg_try_advisory_xact_lock`.
+- The scan (open → upsert subjects) runs at most every 5 minutes per workspace. The fire step runs every pass, up to 500 steps, each in a savepoint.
+- **Plan:** when `due_at` changes, bump `due_revision`, cancel the planned steps and plan again.
+  - Working-day offsets use `workspaceClock` and its holidays.
+  - Escalation steps are planned lazily.
+- **Fire:** in this order:
+  1. stillOpen;
+  2. snooze;
+  3. recipients;
+  4. mute (non-critical only);
+  5. quiet hours;
+  6. the client cap;
+  7. deliver.
+  - Only escalations and closures are audited.
+- **Idempotency keys:** the step; `rem:{stepId}:{recipient}:{channel}` for notifications; (person, date) for digests.
+- **Recipient time zone:** person setting → device time zone → `users.preferred_timezone` (unless 'UTC') → workspace clock.
+- **Quiet hours:** in-app is written now; push and email are held to the end of the window. Critical items break quiet hours only when `critical_breaks_quiet` is on.
+- **Clients:**
+  - Sends happen only inside the client window on working days.
+  - `clientDailyGate(db, ws, partyId, priority)` in `reminders/delivery/client-gate.ts` allows **at most one reminder per party per local day**. It is used by the engine, by automatic `sendClientEvent` and by `tellClients` decision/payment.
+  - Priority: payment before decision before other. A loser is held.
+  - Transactional notices are exempt.
+- **Channels:**
+  - Staff: in-app (always for critical) → push → branded email. Non-critical items with digest on go only into the digest.
+  - Client: WhatsApp (needs consent, a connected number and an approved template) → branded email. The portal always shows the item.
+- **Fallback:** a failed or undelivered item goes to the next consented channel, recorded with `fallback_of`. When none is left the item is `unreachable` and the owner is told once.
+- **R13:** the helpers take a `critical` flag that ignores mutes. The preferences API refuses a mute on a critical event.
+
+**API and screens.**
+- **API**, contracts in `packages/contracts/src/reminders.ts`:
+  - `GET /workspaces/:ws/my-day?scope=me|team` returns counts plus groups by job. Each item has kind, title, context, dueAt, urgency, critical, href, reminders {sent, escalationLevel, nextAt}, actions and version. A try-lock stillOpen check runs first, and items are filtered by permission.
+  - `POST /my-day/:id/snooze {until, reason, version}`: at most 14 days. A critical item snoozes only to the next working day, and its escalation clock keeps running.
+  - `POST /my-day/:id/complete`.
+  - `POST /my-day/:id/reassign`.
+  - `GET /reminders/subjects?sourceKey=`: the timeline for a record.
+  - `GET|PUT /reminders/settings` and `/reminders/rules/:kind` (`reminders.manage`).
+  - `GET|PUT /notification-person-settings/me`.
+  - `GET /delivery-health/messages`.
+  - `POST /internal/reminders/sweep`.
+- **My day** at `/workspace/my-day`, as a Home tab:
+  - PageHeader "My day";
+  - toolbar: Me/Team (with `reminders.team`), chips Overdue/Today/Waiting/Snoozed, a module filter;
+  - a RecordTable grouped by job, with a critical badge and a "Reminded 2× · escalated" chip;
+  - row actions: Open, plus a menu with Snooze… (date and reason), Mark done and Reassign…, with 10 s undo;
+  - Skeleton, EmptyState "Nothing due today", ErrorState.
+  - Home's Today list reads the same API (top 6 and "See all"), and `readDueNow` is retired.
+- **Mobile:** the Today screen reads My day, and a full My day list adds swipe snooze/done and refetches on focus, on push and every 60 s.
+- **Digest:** at each person's digest time (08:00 local), on working days, only when not empty. One in-app notice and one branded email with counts and up to 10 grouped items.
+- **Settings › Reminders:** firm defaults, then one section per module with a row per kind: a switch ("Always on" when critical), cadence chips, escalate after N with a chain picker, channels and digest. Quotations and Inbox settings link to it.
+- **Settings › Notifications:** digest on/off and time, quiet hours for all channels, the time zone, and locked "Always on" groups for critical events.
+- **Health** (`/workspace/settings/delivery`): a Messages grid showing sent, delivered, read, failed, held and suppressed with the reason, plus attempts and the provider id, with filters and CSV. Admins get one alert per (channel, error code, day) for failed client or critical deliveries.
+- **Live updates:**
+  - `live-scopes` adds reminders, cases/case, leads/lead, finance and ledger.
+  - My day, Home, the bell, record shells and the main grids subscribe.
+  - A dirty edit form shows "Changed by {name} · Reload".
+  - Mobile refetches on focus and on push.
+
+**Acceptance checks.** Real Postgres, a fake clock, members in two time zones:
+1. RLS is forced on every new table and on `notifications`; deny tests pass; the clear spec passes.
+2. Three sweeps, or two concurrent sweeps, give one step and one notification per channel.
+3. A work.due item fires at −1, 0, +1 and +3. When it is done before +1, it is skipped and nothing more is sent.
+4. Escalation goes to the lead once, then the owner once, and shows in the timeline. With no lead, the next level is used.
+5. A moved due date gets a new revision and no duplicates.
+6. A push at 22:30 waits until the quiet hours end in each recipient's zone, while in-app is immediate. `critical_breaks_quiet` sends it now.
+7. Client cap: when a payment and a quote decision fall on the same day, only the payment is sent, the other is held, and a quote-issued notice is exempt.
+8. With no WhatsApp consent the email goes. When consent is withdrawn mid-way, the next channel is used. A failure falls back to email with `fallback_of`.
+9. A client with no contact details is marked unreachable and the owner is told once.
+10. Muting Projects stops work.due, while critical approval.waiting and invoice.overdue still arrive. A mute on a critical event is refused.
+11. The digest goes at 08:00 local on working days, with counts equal to My day, no duplicates, and nothing on holidays or empty days.
+12. My day groups enquiry → case → project as one job, filters by permission, requires a snooze reason, limits critical snoozes, runs the module command on complete, and checks permission on reassign.
+13. 0290 copies each firm's settings.
+14. No double sends: the legacy processors for migrated kinds are removed, and a simulated week sends only engine notifications.
+15. The health list shows each status, and alerts are deduplicated.
+16. Browser: a change in a second session updates My day live.
+17. English and Arabic RTL pages use the shared anatomy, with no AED/Dubai.
+18. Mobile Today and My day work, and a push opens the record.
+
+**Slices:**
+
+| Slice | Owns | Delivers |
+| --- | --- | --- |
+| A1 (first) | 0289/0290, contracts `reminders.ts`, `reminders.module.ts` with stub submodules (engine, sources, delivery, my-day, settings, digest), `engine/engine.ts` (interfaces plus the pure planSteps, nextOpenWindow, resolveRecipientZone, capPriority, with tests), app.module, classification, permissions, `default-templates.ts` (`reminders.*` codes and the `critical` helper flag), `live-scopes.ts` | the contract |
+| B | `reminders/engine/*` (sweep, plan, fire, escalation, fallback, timer, internal controller), `reminders/delivery/*` (routers, `client-gate.ts`), the gate calls in `client-messages.ts` and `portal-notices.ts`, 0291 | checks 2–10 |
+| C | `reminders/sources/*`, removing the legacy calls, WhatsApp STOP → withdrawn, 0292 | check 14 |
+| D | `reminders/my-day/*`, `home-summary.ts`, web my-day, the Home Today list, the live consumers, mobile my-day and Today | checks 12, 16, 18 |
+| E | `reminders/digest/*`, `delivery-health.service.ts` messages and alerts, web health grid, 0294 | checks 11, 15 |
+| A2 (last) | `reminders/settings/*`, web Settings › Reminders, `notification-settings-page.tsx`, `notification-modules.ts` critical lock | settings |
+
+Merge order: A1 → B → C → D and E → A2 → integration. The integration step runs i18n extract, the full gate, the smoke runs and a browser check in English and Arabic, then sets `REMINDERS_SWEEP_ENABLED` and confirms `REDIS_URL` in production. Only A1 edits `default-templates.ts`, live-scopes, the classification and app.module.
+
+**Cut order:**
+1. Team scope.
+2. Reassign.
+3. The finance_request, payables and permit sources (they stay on their legacy processors).
+4. The digest email.
+5. Health filters and CSV.
+6. The full mobile list.
+7. The "changed by someone" banner.
+
+**Never cut:**
+- RLS, including FORCE on `notifications`;
+- the step and notification idempotency keys;
+- the re-check before every send;
+- consent checks and STOP;
+- one client reminder a day;
+- quiet hours in the recipient's zone;
+- critical items can't be muted;
+- removing the legacy chasers for migrated kinds;
+- escalation once per level;
+- permission filtering in My day;
+- branded emails.
+
 ### 6.25 Integrations
 One adapter interface per capability. States: **Not configured → Connected → Delivery verified (date)**. A test action produces a real receipt.
 
