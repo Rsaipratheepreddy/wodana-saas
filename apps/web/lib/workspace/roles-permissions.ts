@@ -123,6 +123,10 @@ const EXACT_LABELS: Record<string, MessageKey> = {
   "logistics.manage": tKey("Book deliveries, installations, permits and production"),
   "reports.management.view": tKey("Open the management dashboards"),
   "reports.management.targets": tKey("Enter the management dashboard targets"),
+  "books.view": tKey("See the Ledger: journals, accounts and reports"),
+  "books.post": tKey("Prepare manual and opening journals"),
+  "books.approve": tKey("Approve journals someone else prepared"),
+  "books.manage": tKey("Set up the Ledger: accounts, tax codes, dates"),
 };
 
 function words(value: string) {
@@ -132,7 +136,7 @@ function words(value: string) {
 export function permissionArea(code: string): Exclude<PermissionAreaId, "all"> {
   if (code.startsWith("crm.") || code.startsWith("jobs.")) return "sales";
   if (code.startsWith("pre_projects.")) return "planning";
-  if (code.startsWith("commercial.")) return "commercial";
+  if (code.startsWith("commercial.") || code.startsWith("books.")) return "commercial";
   if (code === "projects.buy" || ["catalog.", "supplier_offers.", "vendors."].some((prefix) => code.startsWith(prefix))) return "supply";
   if (code.startsWith("portal.")) return "clients";
   if (code.startsWith("projects.")) return "projects";
@@ -158,7 +162,7 @@ export function permissionLabel(code: string, t: Translate = english) {
 }
 
 /** Erasing or exporting data, changing settings, verifying money and approvals deserve a second look. */
-const SENSITIVE_PERMISSIONS = /(\.(erase|export|delete|approve|verify|release|override|override_price)$)|(settings\.manage$)|(^workspace\.roles\.manage$)|(^commercial\.estimate$)/;
+const SENSITIVE_PERMISSIONS = /(\.(erase|export|delete|approve|verify|release|override|override_price)$)|(settings\.manage$)|(^workspace\.roles\.manage$)|(^commercial\.estimate$)|(^books\.manage$)/;
 
 export function isSensitivePermission(code: string) {
   return SENSITIVE_PERMISSIONS.test(code);
@@ -272,6 +276,7 @@ const FIXTURE_PERMISSION_CODES = [
   "factory.view", "factory.manage", "factory.report", "factory.approve",
   "payables.view", "payables.manage", "payables.approve", "receivables.view", "receivables.manage", "accounting.manage",
   "finance_requests.raise", "finance_requests.manage", "reports.management.view", "reports.management.targets",
+  "books.view", "books.post", "books.approve", "books.manage",
 ] as const;
 
 export const workspacePermissionFixture: WorkspacePermissionDefinition[] = FIXTURE_PERMISSION_CODES.map((code) => ({

@@ -1240,6 +1240,13 @@
       "when": 1801740004500,
       "tag": "0283_books_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1801740005000,
+      "tag": "0288_books_commands_notices",
+      "breakpoints": true
     }
   ]
 }
