@@ -34,6 +34,7 @@ export const KIND_TITLE: Record<string, MessageKey> = {
   stock_correction: tKey("Stock correction"),
   ledger_change: tKey("Material change after sign-off"),
   payable_request: tKey("Payable request"),
+  manual_journal: tKey("Manual journal"),
 };
 
 /** The approvers a firm picks from by permission: the people who hold it today, never a role's name. */
@@ -44,6 +45,7 @@ export const PERMISSION_APPROVERS: Array<{ code: string; label: MessageKey }> = 
   { code: "commercial.approve", label: tKey("Quotation approver") },
   { code: "payables.approve", label: tKey("Payables approver") },
   { code: "purchasing.approve", label: tKey("Purchasing approver") },
+  { code: "books.approve", label: tKey("Ledger approver") },
 ];
 
 export const APPROVER_KINDS: Array<{ id: ApproverKind; label: MessageKey }> = [

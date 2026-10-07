@@ -48,6 +48,8 @@ const EVENT_ACTIONS: Record<string, string> = {
   "finance_request.needs_info": "Add what's missing",
   "finance_request.done": "Open request",
   "finance_request.rejected": "Open request",
+  "books.journal_decided": "Open journal",
+  "books.lock_date_changed": "Open Ledger settings",
 };
 
 const MODULE_ACTIONS: Record<string, string> = {
@@ -68,6 +70,7 @@ const MODULE_ACTIONS: Record<string, string> = {
   receivables: "Open invoice",
   account: "Open workspace",
   ai: "Open AI credits",
+  books: "Open Ledger",
 };
 
 export function staffEmailAction(eventType: string | null | undefined, recipientType?: string | null) {

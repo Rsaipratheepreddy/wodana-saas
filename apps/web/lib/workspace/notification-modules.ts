@@ -5,7 +5,7 @@ import { tKey } from "@/lib/i18n/keys";
  * the notifications page and Settings → Notifications share these groups; a preference for a group is
  * stored as each of its event prefixes with ".*".
  */
-export type NotificationModule = "sales" | "planning" | "projects" | "operations" | "finance" | "people" | "workspace";
+export type NotificationModule = "sales" | "planning" | "projects" | "operations" | "finance" | "ledger" | "people" | "workspace";
 
 export const NOTIFICATION_MODULES: Array<{ id: NotificationModule; label: string; prefixes: string[] }> = [
   { id: "sales", label: tKey("Sales"), prefixes: ["crm"] },
@@ -13,6 +13,8 @@ export const NOTIFICATION_MODULES: Array<{ id: NotificationModule; label: string
   { id: "projects", label: tKey("Projects"), prefixes: ["project", "work", "site", "handover", "warranty", "gallery"] },
   { id: "operations", label: tKey("Operations"), prefixes: ["purchasing", "stock", "supplier", "factory"] },
   { id: "finance", label: tKey("Finance"), prefixes: ["payables", "petty_cash", "receivables", "accounting"] },
+  // The Ledger (books): lock date moved, a manual journal decided.
+  { id: "ledger", label: tKey("Ledger"), prefixes: ["books"] },
   { id: "people", label: tKey("People"), prefixes: ["hrms"] },
   { id: "workspace", label: tKey("Workspace"), prefixes: ["account", "workspace", "delivery"] },
 ];

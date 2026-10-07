@@ -1,0 +1,8 @@
+/* Settings › Ledger and the manual journal editor. */
+.value { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.code { font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
+.number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.badges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.link { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.turnOn { display: grid; gap: var(--wd-space-3); inline-size: min(100%, 24rem); text-align: start; }

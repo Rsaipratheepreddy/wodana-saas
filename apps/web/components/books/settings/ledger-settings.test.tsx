@@ -1,0 +1,112 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DesignSystemProvider } from "@/design-system";
+import type { AccountView, CompanySummary, LedgerSettingsView } from "@/lib/books/settings-client";
+import { LedgerSettings } from "./ledger-settings";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }), usePathname: () => "/workspace/settings/ledger", useSearchParams: () => new URLSearchParams() }));
+
+const COMPANY = "00000000-0000-4000-8000-0000000000e1";
+const templates = [{ code: "AE", version: 1, name: "United Arab Emirates (VAT)", recommended: true }, { code: "IFRS", version: 1, name: "IFRS (no tax)", recommended: false }];
+const off: CompanySummary = { id: COMPANY, code: "MAIN", name: "Studio Interiors LLC", countryCode: "AE", baseCurrency: "AED", settings: null, templates };
+const settings = {
+  workspaceId: "w", legalEntityId: COMPANY, enabled: true, startDate: "2026-10-01", lockDate: null, functionalCurrency: "AED", fiscalYearStartMonth: 1,
+  templateCode: "AE", templateVersion: 1, revenueRecognition: "invoice" as const, taxPointOnPayment: true, vatRegion: "DXB", version: 3,
+};
+const account = (code: string, name: string, patch: Partial<AccountView> = {}): AccountView => ({
+  id: `acc-${code}`, code, name, type: "asset", subtype: "", parentId: null, isControl: false, allowManual: true, currency: null, archived: false, used: false, roles: [],
+  templateKey: null, version: 1, ...patch,
+});
+const view = (): LedgerSettingsView => ({
+  company: { ...off, settings },
+  regions: { label: "Emirate", options: [{ code: "DXB", name: "Dubai" }, { code: "AUH", name: "Abu Dhabi" }] },
+  accounts: [account("1100", "Bank"), account("1200", "Trade receivables", { isControl: true, allowManual: false, roles: ["ar_control"], used: true }),
+    account("6100", "General expenses", { type: "expense", roles: ["general_expense"] })],
+  roles: [{ role: "ar_control", accountId: "acc-1200", version: 1 }, { role: "general_expense", accountId: "acc-6100", version: 1 }],
+  paymentAccounts: [{ direction: "in", method: "bank", accountId: "acc-1100", version: 1 }, { direction: "out", method: "cash", accountId: null, version: 0 }],
+  taxCodes: [{ id: "tax-sr", code: "SR", name: "Standard rated", rate: "5", treatment: "standard", direction: "sales", recoverable: false, baseBox: "1", taxBox: "1",
+    rcOutputBox: null, effectiveFrom: "2018-01-01", effectiveTo: null, archived: false, used: false, version: 1 }],
+  hasJournals: false, today: "2026-10-08", canManage: true,
+});
+
+const mount = (respond: (url: string, method: string, body: Record<string, unknown> | undefined) => unknown) => {
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200,
+    json: async () => respond(url, init?.method ?? "GET", typeof init?.body === "string" ? JSON.parse(init.body) : undefined) }));
+  vi.stubGlobal("fetch", fetcher);
+  return fetcher;
+};
+const posted = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(String(init!.body)));
+
+describe("Settings › Ledger", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers Turn on Ledger with the company's country template chosen, and turns it on from the start date", async () => {
+    let on = false;
+    const fetcher = mount((url, method, body) => {
+      if (method === "POST" && body?.action === "turn_on") { on = true; return view(); }
+      if (url.includes(`/settings/${COMPANY}`)) return view();
+      return { companies: [on ? { ...off, settings } : off], canManage: true };
+    });
+    render(<DesignSystemProvider><LedgerSettings workspaceId="w" /></DesignSystemProvider>);
+    expect(await screen.findByText("Studio Interiors LLC")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Chart of accounts/ }).textContent).toContain("United Arab Emirates (VAT)");
+    const turnOn = screen.getByRole("button", { name: "Turn on Ledger" });
+    expect(turnOn.hasAttribute("disabled") || turnOn.getAttribute("aria-disabled") === "true" || turnOn.hasAttribute("data-disabled")).toBe(true);
+    const start = screen.getByRole("group", { name: "Start date" });
+    await userEvent.click(within(start).getAllByRole("spinbutton")[0]);
+    await userEvent.keyboard("10012026");
+    await userEvent.click(screen.getByRole("button", { name: "Turn on Ledger" }));
+    await waitFor(() => expect(posted(fetcher)).toEqual([expect.objectContaining({ action: "turn_on", legalEntityId: COMPANY, templateCode: "AE", startDate: "2026-10-01",
+      commandId: expect.stringMatching(/^[0-9a-f-]{36}$/) })]));
+    expect(await screen.findByRole("tab", { name: "General" })).toBeTruthy();
+  });
+
+  it("shows the company's settings in tabs: General, Accounts, Tax codes, Payment accounts", async () => {
+    const fetcher = mount((url, method, body) => {
+      if (method === "POST") {
+        const next = view();
+        if (body?.action === "map_payment_account") next.paymentAccounts[1] = { direction: "out", method: "cash", accountId: String(body.accountId), version: 1 };
+        return next;
+      }
+      if (url.includes(`/settings/${COMPANY}`)) return view();
+      return { companies: [{ ...off, settings }], canManage: true };
+    });
+    render(<DesignSystemProvider><LedgerSettings workspaceId="w" /></DesignSystemProvider>);
+    expect((await screen.findAllByRole("tab")).map((tab) => tab.textContent)).toEqual(["General", "Accounts", "Tax codes", "Payment accounts"]);
+    expect(screen.getByRole("button", { name: /Emirate/ }).textContent).toContain("Dubai");
+    expect(screen.getByRole("switch", { name: "Ledger on" })).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Accounts" }));
+    const accounts = await screen.findByRole("grid", { name: "Accounts" }).catch(() => screen.findByRole("table", { name: "Accounts" }));
+    expect(within(accounts).getAllByText("Trade receivables").length).toBeGreaterThan(0);
+    expect(within(accounts).getAllByText("Control account")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Add account" })).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Tax codes" }));
+    expect((await screen.findAllByText("Standard rated")).length).toBeGreaterThan(0);
+    expect(screen.getByText("5%")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Payment accounts" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Money out · Cash/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "1100 · Bank" }));
+    await waitFor(() => expect(posted(fetcher)).toEqual([expect.objectContaining({ action: "map_payment_account", direction: "out", method: "cash", accountId: "acc-1100", version: 0 })]));
+  });
+
+  it("asks before moving the lock date and sends the confirmation with the version", async () => {
+    const fetcher = mount((url, method) => {
+      if (method === "POST") return { ...view(), company: { ...view().company, settings: { ...settings, lockDate: "2026-09-30", version: 4 } } };
+      if (url.includes(`/settings/${COMPANY}`)) return view();
+      return { companies: [{ ...off, settings }], canManage: true };
+    });
+    render(<DesignSystemProvider><LedgerSettings workspaceId="w" /></DesignSystemProvider>);
+    const lock = await screen.findByRole("group", { name: "Lock date" });
+    await userEvent.click(within(lock).getAllByRole("spinbutton")[0]);
+    await userEvent.keyboard("09302026");
+    await userEvent.click(await screen.findByRole("button", { name: "Save" }));
+    const dialog = await screen.findByRole("dialog", { name: "Lock the books up to 2026-09-30?" });
+    expect(posted(fetcher)).toEqual([]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Lock" }));
+    await waitFor(() => expect(posted(fetcher)).toEqual([expect.objectContaining({ action: "update_settings", version: 3, lockDate: "2026-09-30", confirmLockDate: true })]));
+  });
+});

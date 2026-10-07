@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, BriefcaseBusiness, Factory, FolderKanban, LayoutGrid, Ruler, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Bell, BookOpen, BriefcaseBusiness, Factory, FolderKanban, LayoutGrid, Ruler, Users, Wallet, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -25,7 +25,7 @@ export type WorkspaceNotice = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIVE_SCOPES = ["notifications", "workspace"] as const;
 export const MODULE_ICONS: Record<NotificationModule, LucideIcon> = {
-  sales: BriefcaseBusiness, planning: Ruler, projects: FolderKanban, operations: Factory, finance: Wallet, people: Users, workspace: LayoutGrid,
+  sales: BriefcaseBusiness, planning: Ruler, projects: FolderKanban, operations: Factory, finance: Wallet, ledger: BookOpen, people: Users, workspace: LayoutGrid,
 };
 
 /** The signed-in person's notices (newest 200), refreshed every 30 seconds while the page is visible. */

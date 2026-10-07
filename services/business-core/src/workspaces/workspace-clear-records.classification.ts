@@ -536,6 +536,7 @@ const clear = [
   "idempotency_keys",
   // Ledger: everything posted, waiting or captured
   "books_bill_captures",
+  "books_commands",
   "books_journal_lines",
   "books_journals",
   "books_manual_journal_lines",

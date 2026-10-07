@@ -1254,6 +1254,13 @@
       "when": 1801740004800,
       "tag": "0286_books_bill_capture",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1801740005000,
+      "tag": "0288_books_commands_notices",
+      "breakpoints": true
     }
   ]
 }

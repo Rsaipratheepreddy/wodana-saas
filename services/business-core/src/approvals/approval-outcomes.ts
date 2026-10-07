@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { applyManualJournalDecision } from "../books/journals/manual-journal-approval";
 import { applyChangeApproval } from "../change-requests/change-request.store";
 import { applyLedgerChangeOutcome } from "../change-requests/ledger-change-approval";
 import { applyValueDecision } from "../crm/opportunities/opportunity-proposals";
@@ -18,4 +19,5 @@ export const APPROVAL_OUTCOMES: Partial<Record<string, Outcome>> = {
   ledger_change: applyLedgerChangeOutcome,
   refund: applyFinanceRequestDecision,
   payable_request: applyFinanceRequestDecision,
+  manual_journal: applyManualJournalDecision,
 };
