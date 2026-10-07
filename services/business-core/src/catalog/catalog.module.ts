@@ -12,6 +12,7 @@ import { CatalogV2Service } from "../catalog-core/catalog-v2.service";
 import { CatalogItemImagesController, CatalogItemImagesService } from "../catalog-core/catalog-item-images";
 import { CatalogAssetsService, CATALOG_ASSET_MAX_BYTES } from "./catalog-assets.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
+import { ItemReadinessService } from "../catalog-core/item-readiness.service";
 import { ArchiveCatalogDto, CatalogAssetUploadQueryDto, CatalogTargetDto, CreateCatalogDto, ImportCatalogDto, OrganizeCatalogDto, RecipePreviewDto, SaveCatalogRecordDto, UpdateCatalogAssetDto } from "./catalog.dto";
 
 @ApiTags("workspace-catalog") @ApiBearerAuth()
@@ -52,5 +53,5 @@ export class CatalogController {
     return new StreamableFile(file.body,{type:file.contentType,disposition:`${file.preview||(view==="1"&&file.contentType==="application/pdf")?"inline":"attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`});
   }
 }
-@Module({imports:[WorkspacesModule],controllers:[CatalogController,CatalogV2Controller,CatalogItemImagesController],providers:[CatalogService,CatalogAssetsService,BrandAssetStorageService,CatalogV2Service,CatalogItemImagesService],exports:[CatalogV2Service]})
+@Module({imports:[WorkspacesModule],controllers:[CatalogController,CatalogV2Controller,CatalogItemImagesController],providers:[CatalogService,CatalogAssetsService,BrandAssetStorageService,CatalogV2Service,CatalogItemImagesService,ItemReadinessService],exports:[CatalogV2Service]})
 export class CatalogModule {}

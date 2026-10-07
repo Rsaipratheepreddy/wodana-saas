@@ -27,6 +27,14 @@ describe("server-side import mapping", () => {
     }
   });
 
+  it("matches a name inside a heading only as whole words, so a product sheet's readiness columns aren't taken for its name", () => {
+    const headings = ["Code", "Render", "Height", "Length", "Depth", "Price", "Technical Drawing", "Materials Needed", "Amount", "Trades Required", "Hours Needed"];
+    const guess = suggestMapping("catalog", headings);
+    expect(guess).toEqual(web.suggestMapping("catalog", headings));
+    expect(guess.columns).toEqual({ Code: "code", Height: "height", Length: "width", Depth: "depth", Price: "price", "Technical Drawing": "technicalDrawing" });
+    expect(suggestMapping("catalog", ["Material name", "Qty"]).columns).toEqual({ "Material name": "name" });
+  });
+
   it("takes an operator's overrides over the guess: a field moved to another column leaves its old one", () => {
     const guess = { REMARKS: "description", ITEM: "name", "PRICE (AED)": "price" };
     expect(overrideMapping(guess, { ITEM: "description", DESCRIPTION: "name" })).toEqual({ ITEM: "description", DESCRIPTION: "name", "PRICE (AED)": "price" });

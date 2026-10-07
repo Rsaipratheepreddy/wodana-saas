@@ -96,11 +96,12 @@ export function suggestMapping(target: ImportTarget, headings: string[]): Column
   const columns: Record<string, string> = {};
   const used = new Set<string>();
   // Exact names first, so "Item code" wins the code over a later "Item".
+  // A name found inside a heading counts only as whole words: "Materials needed" is not the "Material" name column.
   for (const pass of ["exact", "contains"] as const) {
     for (const heading of headings) {
       if (columns[heading]) continue;
       const written = key(heading);
-      const field = fields.find((id) => !used.has(id) && (pass === "exact" ? ALIASES[id]?.includes(written) : ALIASES[id]?.some((alias) => alias.length > 3 && written.includes(alias))));
+      const field = fields.find((id) => !used.has(id) && (pass === "exact" ? ALIASES[id]?.includes(written) : ALIASES[id]?.some((alias) => alias.length > 3 && ` ${written} `.includes(` ${alias} `))));
       if (field) { columns[heading] = field; used.add(field); }
     }
   }

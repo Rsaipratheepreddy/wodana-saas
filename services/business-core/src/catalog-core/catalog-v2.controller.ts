@@ -4,13 +4,20 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { AllowWhenReadOnly } from "../auth/tenant-write-block.guard";
 import { CatalogV2Service } from "./catalog-v2.service";
+import { ItemReadinessService } from "./item-readiness.service";
 import { AiCleanDto, ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, MergeCategoryDto, UpdateCategoryDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto } from "./catalog-v2.dto";
 
 @ApiTags("catalogs")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/catalogs")
 export class CatalogV2Controller {
-  constructor(private readonly catalogs: CatalogV2Service) {}
+  constructor(private readonly catalogs: CatalogV2Service, private readonly readiness: ItemReadinessService) {}
+
+  // Item readiness: the firm's settings (which columns count, which attributes hold a sheet's materials and labour) and one catalogue's items.
+  @Get("readiness/settings") readinessSettings(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string) { return this.readiness.settings(a, w); }
+  @Put("readiness/settings") saveReadinessSettings(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Body() body: Record<string, unknown>) { return this.readiness.saveSettings(a, w, body ?? {}); }
+  @Get(":catalogId/readiness") catalogReadiness(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string,
+    @Query("categoryId") categoryId?: string, @Query("search") search?: string) { return this.readiness.catalog(a, w, c, { categoryId, search }); }
 
   @Get() list(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string) { return this.catalogs.listCatalogs(a, w); }
   @Post() create(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Body() body: CreateCatalogDto) { return this.catalogs.createCatalog(a, w, body); }

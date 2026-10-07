@@ -15,7 +15,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && (path[0] === "projects" || path[0] === "work")) return method === "GET";
   if (path.length === 2 && path[0] === "work" && path[1] === "insights") return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
-  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "drawings", "close-out", "money", "overview"].includes(path[2])) return method === "GET";
+  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "drawings", "close-out", "money", "overview", "readiness"].includes(path[2])) return method === "GET";
   // Technical drawings: a file uploaded to a revision, and a drawing file (or its preview) opened.
   if (path.length === 6 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && UUID.test(path[3]) && path[4] === "files" && UUID.test(path[5])) return method === "POST";
   if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && path[3] === "files" && UUID.test(path[4])) return method === "GET";

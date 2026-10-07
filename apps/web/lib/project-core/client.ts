@@ -1,3 +1,4 @@
+import type { ProjectReadiness } from "@/lib/readiness/types";
 import type { DrawingsState, CloseOut, LabourRates, LineHistoryEntry, Milestones, ProjectMoney, ProjectOverview, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
@@ -32,6 +33,8 @@ export function projectApi(workspaceId: string) {
     get: (projectId: string) => request<ProjectDetail>(path(`projects/${projectId}`)),
     scope: (projectId: string) => request<LiveScope>(path(`projects/${projectId}/scope`)),
     materials: (projectId: string) => request<MaterialsState>(path(`projects/${projectId}/materials`)),
+    /** Each scope line with what it still needs, worked out from the records. */
+    readiness: (projectId: string) => request<ProjectReadiness>(path(`projects/${projectId}/readiness`)),
     /** The technical drawings: revisions, files, the site check and the client's decision. */
     drawings: (projectId: string) => request<DrawingsState>(path(`projects/${projectId}/drawings`)),
     /** A drawing (on the revision being prepared, or starting the next) or the client's signed approval; replayed safely by its id. */

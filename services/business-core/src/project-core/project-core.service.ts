@@ -43,6 +43,8 @@ import { readInstallationCrew } from "../logistics/logistics.store";
 import { parseKeepInformed } from "./project-keep-informed";
 import { readProduction } from "../factory/production-status";
 import { projectAreas } from "./project-areas";
+import { readProjectReadiness } from "./project-readiness";
+import { readReadinessSettings } from "../catalog-core/item-readiness";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -253,6 +255,19 @@ export class ProjectCoreService {
       const status = new Map((await readNeeds(client, workspaceId, false, projectId)).filter((need) => need.source === "material").map((need) => [need.sourceId, need.status]));
       return { ...materials, items: materials.items.map((item) => ({ ...item, status: status.get(item.id) ?? null })), version: project.version,
         canEdit: onTeam && ["active", "on_hold"].includes(project.status) };
+    });
+  }
+
+  /**
+   * Item readiness: every active line of the scope with what it still needs (picture, size, drawing, materials, labour,
+   * the client's material choice, purchase, production and installation), worked out from the records. The columns
+   * are the firm's choice, less the delivery areas the project's path doesn't use.
+   */
+  readiness(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { project } = await this.visible(client, workspaceId, projectId, user);
+      const areas = await projectAreas(client, workspaceId, projectId, project.caseId ?? null);
+      return { ...(await readProjectReadiness(client, workspaceId, projectId, await readReadinessSettings(client, workspaceId), areas)), caseId: project.caseId };
     });
   }
 

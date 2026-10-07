@@ -23,16 +23,18 @@ type ItemDetail = {
   canViewCosts: boolean;
 };
 
-/** Kinds of item with an outside size (the fit check reads it). */
-const SIZED = ["product", "ready_made", "material"];
+/** Kinds of item with an outside size (the fit check reads it; made furniture has one too). */
+const SIZED = ["product", "ready_made", "material", "assembly", "package"];
 /** The attribute an import keeps size text in when a cell isn't one number. */
 const SIZE_NOTES = "size_notes";
 
 /** Item detail in the grid inspector: details, photos, size, components, prices, suppliers and where it came from, one tab each. */
-export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, canManage = false, canReview = false, currency, structure, onChanged }: { workspaceId: string; catalogId: string; itemId: string; locale?: string; canManage?: boolean; canReview?: boolean; currency: string; structure?: CatalogStructure | null; onChanged?: () => void }) {
+export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, canManage = false, canReview = false, currency, structure, onChanged, initialTab = "details" }: { workspaceId: string; catalogId: string; itemId: string; locale?: string; canManage?: boolean; canReview?: boolean; currency: string; structure?: CatalogStructure | null; onChanged?: () => void;
+  /** The tab it opens on (a readiness chip opens the tab where the missing fact is filled). */
+  initialTab?: string }) {
   const t = useT();
   const [editing, setEditing] = useState<"details" | "components" | null>(null);
-  const [tab, setTab] = useState("details");
+  const [tab, setTab] = useState(initialTab);
   const [item, setItem] = useState<ItemDetail | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);

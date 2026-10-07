@@ -17,12 +17,13 @@ import { factoryApi } from "@/lib/factory/client";
 import { SampleRequests } from "../factory/samples";
 import { ProjectMaterials } from "./project-materials";
 import { ProjectDrawings } from "./project-drawings";
+import { ProjectReadiness } from "./project-readiness";
 import { SealedDocument } from "./sealed-document";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
-type View = "items" | "materials" | "drawings" | "changes" | "sealed";
-const VIEWS: View[] = ["items", "materials", "drawings", "changes", "sealed"];
+type View = "items" | "readiness" | "materials" | "drawings" | "changes" | "sealed";
+const VIEWS: View[] = ["items", "readiness", "materials", "drawings", "changes", "sealed"];
 type Group = "package" | "area";
 const SUPPLIES: Supply[] = ["make", "buy", "ready_made", "subcontract", "client", "site_work"];
 const NONE = "__none";
@@ -108,7 +109,7 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
 
   return <div className={styles.scopeView}>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => { setView(key as View); setSeal(null); }}
-      items={[{ id: "items", label: t("Items") }, { id: "materials", label: t("Materials") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
+      items={[{ id: "items", label: t("Items") }, { id: "readiness", label: t("Readiness") }, { id: "materials", label: t("Materials") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
 
     {view === "items" ? <>
       <div className={styles.scopeToolbar}>
@@ -130,7 +131,8 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
         onSectionAction={group === "package" && scope.canManage ? (id) => { const found = scope.packages.find((item) => item.id === id); if (found) setEditing(found); } : undefined} />
         : <EmptyState illustration={null} title={t("No items")} />}
       <p className={styles.agreedLine}><span>{t("Agreed value")}</span><strong>{money(agreed)}</strong></p>
-    </> : view === "materials" ? <>
+    </> : view === "readiness" ? <ProjectReadiness workspaceId={workspaceId} projectId={projectId} version={version} onView={(next) => { setView(next); setSeal(null); }} />
+    : view === "materials" ? <>
       <ProjectMaterials workspaceId={workspaceId} projectId={projectId} version={version} run={run} lines={scope.lines} />
       {/* PLM-061: the samples the design team asked the factory for. */}
       <SampleRequests api={factoryApi(workspaceId)} caseId={scope.caseId} />

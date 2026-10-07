@@ -45,6 +45,7 @@ const keep = [
   "view_as_session_views",
   "view_as_sessions",
   "workspace_view_as_settings",
+  "workspace_readiness_settings",
   // Platform, billing and tenant lifecycle
   "ai_credit_accounts",
   "ai_credit_ledger",

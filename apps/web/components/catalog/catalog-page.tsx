@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileUp, Link2, Plus } from "lucide-react";
 import {
-  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
+  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
   type DataGridColumn,
   TypeChip,
 } from "@/design-system";
@@ -14,6 +14,7 @@ import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { LinkedImportDialog } from "../linked-imports/linked-import-dialog";
 import { CatalogCategoryTree } from "./catalog-category-tree";
 import { CatalogItemInspector } from "./catalog-item-inspector";
+import { CatalogReadinessView } from "./catalog-readiness";
 import { ProductClipDialog } from "./product-clip-dialog";
 import { catalogImageUrl } from "@/lib/quotation/client";
 import styles from "./catalog-page.module.css";
@@ -36,6 +37,22 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   const [importLinkId, setImportLinkId] = useState<string | null>(null);
   // The browser button opens the catalog with ?clip=<supplier page>; the link waits in "Add from link".
   const [clipUrl, setClipUrl] = useState("");
+  // The list as items, or as readiness (what each item still needs).
+  const [view, setView] = useState<"items" | "readiness">("items");
+  // An item's panel opened at a tab: from a readiness chip, or a link here with ?item=<id>&tab=<tab> (a project's readiness).
+  const [inspect, setInspect] = useState<{ id: string; name: string; tab: string } | null>(null);
+  const [readinessKey, setReadinessKey] = useState(0);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const item = params.get("item");
+    if (!item || !/^[0-9a-f-]{36}$/i.test(item)) return;
+    const linkedCatalog = params.get("catalog");
+    const url = new URL(window.location.href); ["item", "tab", "catalog"].forEach((key) => url.searchParams.delete(key)); window.history.replaceState(null, "", url.toString());
+    queueMicrotask(() => {
+      if (linkedCatalog && initialCatalogs.some((entry) => entry.id === linkedCatalog)) setCatalogId(linkedCatalog);
+      setInspect({ id: item, name: "", tab: params.get("tab") ?? "details" });
+    });
+  }, [initialCatalogs]);
   useEffect(() => {
     const linked = new URLSearchParams(window.location.search).get("import");
     if (!linked || !canManage) return;
@@ -49,6 +66,10 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
     const url = new URL(window.location.href); url.searchParams.delete("clip"); window.history.replaceState(null, "", url.toString());
   }, [canManage]);
   const catalog = catalogs.find((entry) => entry.id === catalogId);
+  const views = useMemo(() => [{ id: "items", label: t("Items") }, { id: "readiness", label: t("Readiness") }], [t]);
+  const changeView = useCallback((next: string) => setView(next === "readiness" ? "readiness" : "items"), []);
+  const typeLabel = useCallback((type: string) => typeLabels(t)[type] ?? type, [t]);
+  const openItem = useCallback((item: { id: string; name: string }, tab: string) => setInspect({ id: item.id, name: item.name, tab }), []);
 
   const loadItems = useCallback(async () => {
     if (!catalogId) return;
@@ -116,7 +137,9 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
           selectedId={categoryId} workspaceId={workspaceId} />
       </nav>
       <section className={styles.content} aria-label={t("Items")}>
-        {error ? <ErrorState onRetry={() => void loadItems()} description={error} />
+        {view === "readiness" ? <CatalogReadinessView catalogId={catalogId} categoryId={categoryId} onOpen={openItem} onSearchChange={setSearch} onViewChange={changeView}
+            reloadKey={readinessKey} search={search} structure={structure} typeLabel={typeLabel} views={views} workspaceId={workspaceId} />
+          : error ? <ErrorState onRetry={() => void loadItems()} description={error} />
           : <DataGrid<CatalogItemRow>
               ariaLabel={t("Catalog items")}
               columns={columns}
@@ -130,15 +153,22 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
               menuActions={canManage ? [{ id: "import", label: t("Import") }] : undefined}
               onMenuAction={(id) => { if (id === "import") setDialog("import"); }}
               onSearchChange={setSearch}
+              onViewChange={changeView}
               renderInspector={(row) => <CatalogItemInspector canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={row.id} locale={locale} onChanged={() => void loadItems()} structure={structure} workspaceId={workspaceId} />}
               searchLabel={t("Search items")}
               searchValue={search}
               rowNumbers={false}
+              savedViews={views}
               selectable={false}
+              selectedView="items"
               wrapText
             />}
       </section>
     </div>
+    {inspect ? <InspectorSheet isOpen onOpenChange={(open) => { if (!open) setInspect(null); }} size="md" title={inspect.name || items.find((row) => row.id === inspect.id)?.name || t("Catalog item")}>
+      <CatalogItemInspector canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} initialTab={inspect.tab} itemId={inspect.id} key={`${inspect.id}:${inspect.tab}`} locale={locale}
+        onChanged={() => { void loadItems(); setReadinessKey((value) => value + 1); }} structure={structure} workspaceId={workspaceId} />
+    </InspectorSheet> : null}
     <LinkedImportDialog catalogId={catalogId} isOpen={dialog === "import"} onClose={() => { setDialog(null); setImportLinkId(null); }} onImported={() => void loadItems()} openLinkId={importLinkId}
       target="catalog" workspaceId={workspaceId} />
     <ProductClipDialog catalogId={catalogId} initialUrl={clipUrl} isOpen={dialog === "clip"} onClose={() => { setDialog(null); setClipUrl(""); }} onSaved={() => { setDialog(null); setClipUrl(""); void loadItems(); }} structure={structure} workspaceId={workspaceId} />

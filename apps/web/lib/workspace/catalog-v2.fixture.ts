@@ -36,6 +36,20 @@ export function e2eCatalogResponse(method: string, path: string[], body: unknown
       components: item.itemType === "assembly" ? [{ componentItemId: items[0].id, name: items[0].name, quantityFormula: "width * height / 2973000 * 2", unitCode: "sheet" }, { componentItemId: items[1].id, name: items[1].name, quantityFormula: "ceil(height / 450) * 2", unitCode: "pcs" }] : [],
       prices: item.sellPrice ? [{ id: "p1", priceBookId: "7a1c0000-0000-4000-8000-0000000000b1", variantId: null, method: "fixed", status: "active", version: 2, price: item.sellPrice.price, currency: "AED" }] : [] };
   }
+  // Item readiness: the cells as business-core works them out (a material needs no size or drawing; the wardrobe has its components).
+  const settings = { columns: ["picture", "size", "price", "drawing", "materials", "labour", "selection", "purchase", "production", "delivery"], materialAttributes: [], labourAttributes: [], version: 0, saved: false };
+  if (first === "readiness" && section === "settings") return method === "PUT" ? { ...settings, ...(body as object), version: 1, saved: true } : settings;
+  if (method === "GET" && section === "readiness") {
+    const missing = { state: "missing" }, notNeeded = { state: "not_needed" }, done = { state: "done" };
+    const rows = items.map((item) => {
+      const made = item.itemType === "assembly";
+      const cells = { picture: missing, size: item.itemType === "material" ? notNeeded : missing, price: item.sellPrice ? done : notNeeded, drawing: item.itemType === "material" ? notNeeded : missing,
+        materials: made ? { state: "done", note: "components" } : notNeeded, labour: made ? missing : notNeeded };
+      return { id: item.id, catalogId: catalog.id, code: item.code, name: item.name, itemType: item.itemType, unitCode: item.unitCode, categoryName: item.categoryName, image: null, cells,
+        missing: Object.values(cells).filter((cell) => cell.state === "missing").length };
+    });
+    return { columns: settings.columns.slice(0, 6), rows, settings, canManage: true };
+  }
   if (method === "GET" && section === "price-books") return [{ id: "7a1c0000-0000-4000-8000-0000000000b1", name: "Standard prices", currency: "AED", status: "active", version: 1 }];
   if (method === "PUT" && first === "price-books") return { id: "p-new", status: "draft" };
   if (method === "POST" && first === "prices") return { id: section, status: (body as { decision: string }).decision };
