@@ -350,6 +350,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "purchasing.over_funds", channel: "in_app", subject: "Ordered beyond the money in hand: {{order}}", body: "{{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.funds_blocked", channel: "in_app", subject: "Order waiting for money: {{order}}", body: "{{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "accounting.attention", channel: "in_app", subject: "Accounting needs attention · {{company}}", body: "{{note}}", variables: ["company", "note"] },
+  // The Ledger (books/posting/issues.ts): people who manage it, once when an event can't post yet.
+  { code: "books.posting_blocked", channel: "in_app", subject: "Ledger needs attention · {{source}}", body: "{{note}}", variables: ["source", "note"] },
   { code: "receivables.overdue", channel: "in_app", subject: "Client invoice overdue: {{invoice}}", body: "{{note}}", variables: ["invoice", "client", "amount", "actor", "note"] },
   { code: "receivables.credited", channel: "in_app", subject: "Invoice credited: {{invoice}}", body: "{{note}}", variables: ["invoice", "client", "amount", "actor", "note"] },
   { code: "payables.held", channel: "in_app", subject: "Supplier invoice held: {{supplier}} {{invoice}}", body: "{{note}}", variables: ["supplier", "invoice", "amount", "actor", "note"] },
