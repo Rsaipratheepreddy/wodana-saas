@@ -32,7 +32,7 @@ export function levelLabel(moduleId: string, level: AccessLevel): MessageKey {
 export const MODULE_LABELS: Record<string, MessageKey> = {
   sales: tKey("Sales"), inbox: tKey("Inbox"), flows: tKey("Enquiry types & automations"), planning: tKey("Planning"), quotations: tKey("Quotations"),
   projects: tKey("Projects"), purchasing: tKey("Purchasing"), inventory: tKey("Inventory"), factory: tKey("Factory"),
-  finance: tKey("Finance"), people: tKey("People"), settings: tKey("Settings"), woddy: tKey("Woddy"),
+  finance: tKey("Finance"), ledger: tKey("Ledger"), people: tKey("People"), settings: tKey("Settings"), woddy: tKey("Woddy"),
 };
 
 export function offeredLevels(module: AccessModule): AccessLevel[] {

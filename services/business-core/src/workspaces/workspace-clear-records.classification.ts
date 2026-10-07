@@ -111,6 +111,12 @@ const keep = [
   // Commercial, quotation and finance configuration
   "accounting_links",
   "accounting_tax_codes",
+  // Ledger configuration: settings, chart, roles, payment accounts, tax codes
+  "books_account_roles",
+  "books_accounts",
+  "books_payment_accounts",
+  "books_settings",
+  "books_tax_codes",
   "commercial_payment_templates",
   "commercial_quotation_templates",
   "design_packages",
@@ -528,6 +534,13 @@ const clear = [
   "ai_suggestions",
   "ai_tool_calls",
   "idempotency_keys",
+  // Ledger: everything posted, waiting or captured
+  "books_bill_captures",
+  "books_journal_lines",
+  "books_journals",
+  "books_manual_journal_lines",
+  "books_manual_journals",
+  "books_posting_issues",
 ] as const;
 
 const reset = [
@@ -566,6 +579,7 @@ export const WORKSPACE_TABLE_CLASSIFICATION: ReadonlyMap<string, WorkspaceTableD
 // (only keys inside this workspace's prefix and not referenced by any kept row). The files listed in
 // `project_execution.content.files` (`projects/<workspace>/<project>/<file id>`) are collected too.
 export const WORKSPACE_CLEARED_FILE_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  books_bill_captures: ["storage_key"],
   building_permits: ["file_key"],
   catalog_item_images: ["object_key", "preview_key"],
   crm_message_attachments: ["object_key"],

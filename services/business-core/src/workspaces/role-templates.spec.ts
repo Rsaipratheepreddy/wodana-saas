@@ -15,8 +15,8 @@ const kitMigration = readFileSync(resolve(migrationsDir, "0130_firm_kit_role_tem
 const operationsMigration = readFileSync(resolve(migrationsDir, "0152_operations_v2.sql"), "utf8");
 const DELIVERY_TEMPLATES = ["buyer", "purchasing_approver", "storekeeper", "factory_lead", "qc_inspector"];
 const FINANCE_TEMPLATES = ["finance", "finance_approver"];
-/** Granted after 0152 by a later migration (0266 finance requests: existing roles get them by what they already hold). */
-const ADDED_LATER = new Set(["finance_requests.raise", "finance_requests.manage"]);
+/** Granted after 0152 by a later migration (0266 finance requests: existing roles get them by what they already hold; 0282 the Ledger). */
+const ADDED_LATER = new Set(["finance_requests.raise", "finance_requests.manage", "books.view", "books.post", "books.approve"]);
 
 describe("firm kit role templates", () => {
   it("gives a firm the people it employs, each with a permission set the catalog knows", () => {

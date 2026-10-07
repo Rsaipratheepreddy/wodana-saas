@@ -52,7 +52,7 @@ export class TenantProvisioningDraftsService {
   async listProfiles(): Promise<SetupProfile[]> {
     const result = await this.database.query<SetupProfile>(
       `SELECT kind, code, version, configuration FROM tenant_setup_profiles
-       WHERE selectable = true ORDER BY kind, code, version DESC`,
+       WHERE selectable = true AND kind IN ('region', 'firm_kit', 'plan') ORDER BY kind, code, version DESC`,
     );
     return result.rows;
   }

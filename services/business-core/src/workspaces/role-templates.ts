@@ -115,13 +115,15 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "payables.view", "payables.manage", "receivables.view", "receivables.manage", "accounting.manage", "purchasing.view", "projects.view",
       // Works the Finance requests board (PLM-107).
       "finance_requests.raise", "finance_requests.manage",
+      // Ledger: reads it and prepares manual journals; someone else approves them.
+      "books.view", "books.post",
     ],
   },
   {
     code: "finance_approver",
     name: "Finance approver",
     description: "Approves held supplier invoices and payment runs that someone else prepared",
-    permissions: ["payables.view", "payables.approve", "receivables.view", "purchasing.view", "projects.view"],
+    permissions: ["payables.view", "payables.approve", "receivables.view", "purchasing.view", "projects.view", "books.view", "books.approve"],
   },
 ];
 

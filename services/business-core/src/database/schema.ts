@@ -870,7 +870,7 @@ export const tenantSetupProfiles = pgTable(
   },
   (table) => [
     primaryKey({ name: "tenant_setup_profiles_pk", columns: [table.kind, table.code, table.version] }),
-    check("tenant_setup_profiles_kind_check", sql`${table.kind} IN ('region', 'firm_kit', 'plan')`),
+    check("tenant_setup_profiles_kind_check", sql`${table.kind} IN ('region', 'firm_kit', 'plan', 'books')`),
     check("tenant_setup_profiles_version_check", sql`${table.version} > 0`),
     check("tenant_setup_profiles_configuration_check", sql`jsonb_typeof(${table.configuration}) = 'object'`),
   ],

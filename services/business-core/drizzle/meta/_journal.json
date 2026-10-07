@@ -1226,6 +1226,20 @@
       "when": 1801740004300,
       "tag": "0281_workspace_readiness_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1801740004400,
+      "tag": "0282_books_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1801740004500,
+      "tag": "0283_books_templates",
+      "breakpoints": true
     }
   ]
 }

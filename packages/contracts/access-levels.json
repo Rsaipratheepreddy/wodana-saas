@@ -74,6 +74,14 @@
       "advanced": ["finance_requests.raise"]
     },
     {
+      "id": "ledger",
+      "$comment": "The Ledger (engine books): view reads journals, accounts and reports; edit prepares manual journals and works the attention list; manage approves others' journals and sets the Ledger up.",
+      "view": ["books.view"],
+      "edit": ["books.post"],
+      "manage": ["books.approve", "books.manage"],
+      "advanced": []
+    },
+    {
       "id": "people",
       "view": ["hrms.self", "module.members.read", "module.teams.read"],
       "edit": ["hrms.team", "hrms.evidence", "module.members.write", "module.members.edit", "module.teams.write", "module.teams.edit"],
