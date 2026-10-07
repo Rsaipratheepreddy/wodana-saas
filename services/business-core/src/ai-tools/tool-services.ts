@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { plainToInstance, type ClassConstructor } from "class-transformer";
 import { validate } from "class-validator";
+import type { ProjectProfitService } from "../books/project/project-profit.service";
 import type { CatalogV2Service } from "../catalog-core/catalog-v2.service";
 import type { CrmActivitiesService } from "../crm/activities/crm-activities.service";
 import type { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
@@ -34,6 +35,8 @@ export type ToolServices = {
   catalog: CatalogV2Service;
   inventory: InventoryService;
   suppliers: SuppliersService;
+  /** The Ledger's project profit and summary (read only). */
+  books: ProjectProfitService;
 };
 
 /**
