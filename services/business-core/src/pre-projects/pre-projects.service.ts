@@ -11,6 +11,7 @@ import { ensureSiteLocation } from "../crm/opportunities/site-location";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { transitionEngagement, type EngagementLifecycleState } from "./engagement-lifecycle";
 import { casePlan, casePlans } from "./case-plan";
+import { caseQuoteFacts } from "../commercial/case-quote-facts";
 import { ListPreProjectsDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
 
 const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
@@ -88,8 +89,12 @@ export class PreProjectsService {
       const total = await client.query(`${records} SELECT count(*)::int AS total FROM records${where}`, values);
       const items = await client.query(`${records} SELECT * FROM records${where} ORDER BY "updatedAt" DESC, id DESC LIMIT 24 OFFSET $5`, [...values, ((query.page ?? 1) - 1) * 24]);
       // The phases each case goes through on its path (PLM-121/126), so the list names the stage the case shows.
-      const plans = await casePlans(client, workspaceId, items.rows.filter((row) => !row.qualifiedLead).map((row) => String(row.id)));
+      const caseIds = items.rows.filter((row) => !row.qualifiedLead).map((row) => String(row.id));
+      const plans = await casePlans(client, workspaceId, caseIds);
       for (const row of items.rows) if (plans.has(String(row.id))) row.plan = plans.get(String(row.id));
+      // Its quotations and agreement, so the list names the stage and next step the case's overview shows (a sent quote waits for the client).
+      const commercial = await caseQuoteFacts(client, workspaceId, caseIds);
+      for (const row of items.rows) if (commercial.has(String(row.id))) row.commercial = commercial.get(String(row.id));
       const canCreate = await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.create")
         && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.view");
       const canStartLead = canCreate && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.manage")

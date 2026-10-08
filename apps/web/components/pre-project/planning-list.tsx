@@ -9,14 +9,14 @@ import {
   type DataGridColumn, type ToolbarFilter,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { tKey, translateKnown } from "@/lib/i18n/keys";
+import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 import type { PreProjectList, PreProjectListItem } from "@/lib/pre-project/types";
 import type { ProjectWorkflowPhase } from "@/lib/projects/workflow-templates";
 import { projectDisplayName } from "@/lib/projects/format";
 import type { PortfolioRow } from "@/components/projects/project-portfolio";
 import { useProjectFormat } from "@/components/project-core/format";
 import { StartQualifiedLead } from "./start-qualified-lead";
-import { casePhaseText, plannedPhase } from "@/lib/pre-project/case-record";
+import { caseListStep } from "@/lib/pre-project/case-record";
 import styles from "./planning-list.module.css";
 
 export type PlanningGroup = "ready" | "before_deal" | "in_design";
@@ -26,6 +26,8 @@ export type WorkflowPhases = Record<string, Record<string, ProjectWorkflowPhase>
 export type PlanningRow = {
   id: string; title: string; reference?: string; description?: string; customer: string; group: PlanningGroup;
   stage: string; next: string; owner: string | null; amount: string | null; currency: string | null; onHold: boolean;
+  /** The values the next step names (the quotation it waits on), when it names one. */
+  nextValues?: Record<string, string | number>;
   href?: string; caseId?: string; projectId?: string; source?: PreProjectListItem;
 };
 
@@ -38,12 +40,14 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
   const linked = new Set(projects.map((project) => project.caseId));
   const cases = new Map(planning.map((item) => [item.id, item]));
   const caseRows: PlanningRow[] = planning.filter((item) => !linked.has(item.id) && item.status !== "cancelled").map((item) => {
-    // A case's planning phase as the person reads it on its path's own line (PLM-121/126), and what it needs next.
-    const phase = casePhaseText(plannedPhase(item.phase ?? "discover", item.plan), item.plan);
+    // A case's planning phase as the person reads it on its path's own line (PLM-121/126), moved on by its quotations
+    // and agreement as its overview reads them, and what it needs next (a sent quotation waits for the client).
+    const step = caseListStep({ phase: item.phase ?? "discover", plan: item.plan }, item.commercial);
     const ready = Boolean(item.qualifiedLead) || item.status === "qualified";
     return {
       id: `case-${item.id}`, title: item.title, description: item.description?.trim() || undefined, customer: item.customerName, group: ready ? "ready" : "before_deal",
-      stage: ready ? tKey("Ready to start") : servicePathEnabled ? tKey("Before deal") : phase.stage, next: ready ? tKey("Start planning") : phase.next,
+      stage: ready ? tKey("Ready to start") : servicePathEnabled ? tKey("Before deal") : step.stage, next: ready ? tKey("Start planning") : step.next.key,
+      ...(!ready && step.next.values ? { nextValues: step.next.values } : {}),
       owner: personDisplayName(item.leadManagerName) || null, amount: item.amount, currency: item.currencyCode,
       onHold: item.status === "on_hold" || ["lost", "abandoned"].includes(item.opportunityStatus ?? ""), caseId: item.id, source: item,
       ...(!item.qualifiedLead ? { href: `/workspace/pre-projects/cases/${item.id}/requirements` } : {}),
@@ -121,7 +125,7 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
     </span> } },
     { id: "stage", header: t("Stage"), accessorFn: (row) => (row.onHold ? t("On hold") : translateKnown(t, row.stage)), size: 150, meta: { renderCell: (row) => row.onHold
       ? <Badge tone="warning">{t("On hold")}</Badge> : <Badge tone={row.group === "in_design" ? "info" : "neutral"}>{translateKnown(t, row.stage)}</Badge> } },
-    { id: "next", header: t("Next step"), accessorFn: (row) => translateKnown(t, row.next), size: 200, meta: { priority: "medium" } },
+    { id: "next", header: t("Next step"), accessorFn: (row) => (row.nextValues ? t(row.next as MessageKey, row.nextValues) : translateKnown(t, row.next)), size: 200, meta: { priority: "medium" } },
     { id: "owner", header: t("Owner"), accessorFn: (row) => row.owner ?? "", size: 150, meta: { priority: "low", renderCell: (row) => <OwnerCell fallback={t("Unassigned")} person={row.owner} /> } },
     { id: "value", header: t("Value"), accessorFn: (row) => Number(row.amount ?? 0), size: 120, meta: { align: "end", renderCell: (row) => row.amount && row.currency
       ? format.money(row.amount, row.currency) : <span className={styles.muted}>—</span> } },

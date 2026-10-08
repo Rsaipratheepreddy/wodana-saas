@@ -90,10 +90,18 @@ export async function qsRequirement(db: Db, workspaceId: string, caseId: string,
 }
 
 /**
- * Whether a deal quotation needs the QS estimate before it is approved. A firm that switched QS review on decides it
- * by its rules (standard catalogue items need none); without that switch every deal quotation keeps the QS estimate.
+ * Whether a deal quotation needs the QS estimate before it is approved: exactly what the firm's QS rules say
+ * (Settings › Quotations). With "QS prices quotations" off the QS prices nothing, so it is approved as priced.
  */
 export async function qsEstimateRequired(db: Db, workspaceId: string, caseId: string, quoteId: string): Promise<boolean> {
-  if (!(await readQsRules(db, workspaceId)).qsReview) return true;
   return (await qsRequirement(db, workspaceId, caseId, quoteId)).required;
+}
+
+/**
+ * The review a quotation in review waits for: the QS estimate (`qs_approve`) for a deal-first quotation the firm's QS
+ * rules send to the QS, else the plain approval (`approve`). The quote builder, the commercial page and the Approvals
+ * inbox all ask this one question, so the same quote is approved the same way wherever the button is pressed.
+ */
+export async function quoteReviewAction(db: Db, workspaceId: string, caseId: string, quote: { id: string; kind: string }, dealFirst: boolean): Promise<"qs_approve" | "approve"> {
+  return dealFirst && quote.kind === "quotation" && await qsEstimateRequired(db, workspaceId, caseId, quote.id) ? "qs_approve" : "approve";
 }

@@ -13958,5 +13958,13 @@
   "Prepare manual and opening journals": "Prepare manual and opening journals",
   "Approve journals someone else prepared": "Approve journals someone else prepared",
   "Set up the Ledger: accounts, tax codes, dates": "Set up the Ledger: accounts, tax codes, dates",
-  "Logistics": "Logistics"
+  "Logistics": "Logistics",
+  "Finish quotation {quote}": "Finish quotation {quote}",
+  "Review quotation {quote}": "Review quotation {quote}",
+  "Send quotation {quote} to the client": "Send quotation {quote} to the client",
+  "Quotation {quote} is with the client": "Quotation {quote} is with the client",
+  "Revise quotation {quote}": "Revise quotation {quote}",
+  "The client declined {quote}": "The client declined {quote}",
+  "{quote} expired before the client decided": "{quote} expired before the client decided",
+  "{quote} accepted": "{quote} accepted"
 }

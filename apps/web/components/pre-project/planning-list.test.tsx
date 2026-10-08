@@ -24,6 +24,15 @@ describe("Planning rows (D-31)", () => {
     expect(planningRows([{ ...project, phase: "planning" }], [planning])).toEqual([expect.objectContaining({ stage: "Execution planning", href: "/workspace/pre-projects/cases/case-1/overview", amount: "48000.00" })]);
   });
 
+  it("moves a case on once its quotation is sent: the next step waits for the client, not Send the quotation", () => {
+    const sent = { ...planning, phase: "price", commercial: { data: { quotes: [{ id: "q1", number: 1, kind: "quotation", round: "main", status: "issued" }], agreement: null },
+      quoteReferences: { q1: "PLM-QUO-2026-00001" } } } as PreProjectListItem;
+    expect(planningRows([], [sent])).toEqual([expect.objectContaining({ stage: "Quotation", next: "Waiting for the client's decision" })]);
+    render(<PlanningList projects={[]} planning={list([sent])} />);
+    expect(within(screen.getByRole("table", { name: "Planning" })).getByText("Waiting for the client's decision")).toBeVisible();
+    expect(screen.queryByText("Send the quotation")).not.toBeInTheDocument();
+  });
+
   it("opens the planning case, never the project, when a project in planning has one; otherwise its plan", () => {
     const inPlanning = { ...project, phase: "planning" as const };
     expect(planningRows([inPlanning], [planning], {}, true)[0].href).toBe("/workspace/pre-projects/cases/case-1/overview");

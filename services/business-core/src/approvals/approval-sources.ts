@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { canDecideApproval, pendingForPerson } from "./approval-engine";
 import { KINDS_WITH_OWN_INBOX_ROW } from "./approval-policy";
+import { quoteReviewAction } from "../proposals/qs-requirement";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -96,12 +97,19 @@ const quotes: Source = async (db, ctx) => {
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
       WHERE quote.workspace_id = $1 AND quote.status = 'internal_review'
       ORDER BY quote.updated_at LIMIT 100`, [ctx.workspaceId])).rows;
-  return rows.filter((quote) => (quote.servicePath && quote.kind === "quotation" ? estimate : approve)).map((quote) => row({
-    kind: "quote_review", group: "quotes", id: quote.id, title: `Q-${quote.number} · ${quote.title}`, subject: quote.client, project: null,
-    amount: quote.amount, currency: quote.currency, since: quote.since, own: false, version: quote.revision, parentId: quote.caseId,
-    href: `/workspace/pre-projects/cases/${quote.caseId}/quotations?quote=${quote.id}`,
-    decide: { approve: quote.servicePath && quote.kind === "quotation" ? "qs_approve" : "approve", other: "return", approveNeedsNote: false },
-  }));
+  const waiting: ApprovalRow[] = [];
+  for (const quote of rows) {
+    // The same review the quote builder offers: the QS estimate only where the firm's QS rules send it to the QS.
+    const action = await quoteReviewAction(db, ctx.workspaceId, quote.caseId, quote, quote.servicePath);
+    if (!(action === "qs_approve" ? estimate : approve)) continue;
+    waiting.push(row({
+      kind: "quote_review", group: "quotes", id: quote.id, title: `Q-${quote.number} · ${quote.title}`, subject: quote.client, project: null,
+      amount: quote.amount, currency: quote.currency, since: quote.since, own: false, version: quote.revision, parentId: quote.caseId,
+      href: `/workspace/pre-projects/cases/${quote.caseId}/quotations?quote=${quote.id}`,
+      decide: { approve: action, other: "return", approveNeedsNote: false },
+    }));
+  }
+  return waiting;
 };
 
 /** Client payments reported and waiting for Finance to verify them. */

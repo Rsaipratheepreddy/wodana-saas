@@ -128,7 +128,8 @@ import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 import { contactEmailSql } from "../client-portal/contact-email";
 import { beforeQuoteIssued, quotationEntityId, quotingEntity } from "../proposals/quote-issue";
-import { qsEstimateRequired } from "../proposals/qs-requirement";
+import { quoteReviewAction } from "../proposals/qs-requirement";
+import { quoteReferences } from "./case-quote-facts";
 import { readLetterhead } from "../workspaces/entity-letterhead";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
@@ -146,7 +147,7 @@ export function commercialDataForCostAccess(data: CommercialData, canViewCosts: 
  * QS rules (qs-requirement.ts) say so. Approving, sending and the page's approve button all ask this one question.
  */
 export async function needsQsEstimate(db: Pick<PoolClient, "query">, workspaceId: string, caseId: string, data: Pick<CommercialData, "servicePath">, quote: Pick<Quote, "id" | "kind">) {
-  return Boolean(data.servicePath && quote.kind === "quotation" && await qsEstimateRequired(db, workspaceId, caseId, quote.id));
+  return await quoteReviewAction(db, workspaceId, caseId, quote, Boolean(data.servicePath)) === "qs_approve";
 }
 
 /** The quotations in review that wait for the QS estimate (the page offers the QS approval for these only). */
@@ -506,6 +507,7 @@ export class CommercialService {
           ...record,
           servicePathEnabled,
           data: commercialDataForCostAccess(data, canViewCosts),
+          quoteReferences: (await quoteReferences(client, workspaceId, [caseId])).get(caseId) ?? {},
           dealApproval,
           dealInsight: await dealInsightFor(client, workspaceId, { caseId, opportunityId: record.opportunityId ? String(record.opportunityId) : null, data, canViewCosts,
             team: data.dealFile || data.ownerReview ? await readCaseTeam(client, workspaceId, caseId) : [] }),

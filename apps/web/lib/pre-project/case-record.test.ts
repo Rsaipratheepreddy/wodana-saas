@@ -3,7 +3,7 @@ import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import type { JourneyView } from "./design-workspace";
 import type { PreProjectCase } from "./types";
-import { caseActivity, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline, effectivePhase } from "./case-record";
+import { caseActivity, caseListStep, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline, effectivePhase } from "./case-record";
 
 const record: PreProjectCase = {
   id: "c1", title: "Villa 12", description: null, status: "active", customerId: "p1", customerName: "Dana Demo", opportunityId: "o1", opportunityStatus: "won",
@@ -33,12 +33,12 @@ describe("the case's next step", () => {
 
   it("follows the quotation: finish, review, send, wait for the client (overdue once it lapses), revise", () => {
     const step = (status: Quote["status"]) => caseNextStep({ record, commercial: commercial({ quotes: [quote({ status })] }), today });
-    expect(step("draft").title).toEqual({ key: "Finish quotation Q-{number}", values: { number: 1 } });
-    expect(step("internal_review").title.key).toBe("Review quotation Q-{number}");
-    expect(step("internal_approved").title.key).toBe("Send quotation Q-{number} to the client");
+    expect(step("draft").title).toEqual({ key: "Finish quotation {quote}", values: { quote: "Q-1" } });
+    expect(step("internal_review").title.key).toBe("Review quotation {quote}");
+    expect(step("internal_approved").title.key).toBe("Send quotation {quote} to the client");
     expect(step("issued")).toMatchObject({ title: { key: "Waiting for the client's decision" }, due: "2026-10-10", overdue: false });
     expect(caseNextStep({ record, commercial: commercial({ quotes: [quote({ status: "issued", validUntil: "2026-10-01" })] }), today }).overdue).toBe(true);
-    expect(step("changes_requested")).toMatchObject({ title: { key: "Revise quotation Q-{number}" }, status: "attention" });
+    expect(step("changes_requested")).toMatchObject({ title: { key: "Revise quotation {quote}" }, status: "attention" });
   });
 
   it("after acceptance: the agreement, then each payment in due order, then the release", () => {
@@ -77,6 +77,35 @@ describe("the case's strip, money and timeline", () => {
     expect(effectivePhase(record, commercial({ quotes: [quote({ status: "issued" })] }))).toBe("price");
     expect(casePosition(record, commercial({ quotes: [quote({ status: "accepted" })] }))).toEqual({ position: 5, count: 6 });
     expect(effectivePhase({ phase: "design" }, commercial({ quotes: [quote({ status: "draft" })] }))).toBe("design");
+  });
+
+  it("after a design fee's Deal File, the case is in design: nothing is priced, agreed or ready for production yet", () => {
+    // Interior design job: the design fee accepted, its agreement signed and paid, its Deal File approved; no main quotation yet.
+    const designFee = quote({ id: "fee", round: "design", status: "accepted", decidedAt: "2026-09-29T18:01:28Z", total: 12000 });
+    const paid = commercial({ quotes: [designFee], agreement: { ...executed, quoteId: "fee", acceptedTotal: 12000 }, payments: [payment({ status: "verified" })],
+      dealFile: { quoteId: "fee" } as CommercialState["data"]["dealFile"] });
+    expect(effectivePhase(record, paid)).toBe("design");
+    expect(casePosition(record, paid)).toEqual({ position: 3, count: 6 });
+    expect(caseTimeline({ record, commercial: paid, today }).map((step) => [step.id, step.state])).toEqual([
+      ["discover", "done"], ["define", "done"], ["design", "current"], ["price", "upcoming"], ["agree", "upcoming"], ["release", "upcoming"],
+    ]);
+    expect(caseNextStep({ record, commercial: paid, today }).title.key).toBe("Present the design");
+    // Before it is accepted, the design fee doesn't move the case; the main quotation then prices it as usual.
+    expect(effectivePhase(record, commercial({ quotes: [{ ...designFee, status: "issued" }] }))).toBe("discover");
+    const main = commercial({ quotes: [designFee, quote({ id: "main", number: 2, round: "main", status: "issued" })] });
+    expect(effectivePhase({ ...record, phase: "design" }, main)).toBe("price");
+  });
+
+  it("gives the Planning list the overview's reading: a sent quotation waits for the client, an approved one is to send", () => {
+    const facts = (status: string) => ({ data: { quotes: [{ id: "q1", number: 1, kind: "quotation", round: "main" as const, status }], agreement: null }, quoteReferences: { q1: "PLM-QUO-2026-00001" } });
+    expect(caseListStep({ phase: "price" }, facts("issued"))).toEqual({ stage: "Quotation", next: { key: "Waiting for the client's decision" } });
+    expect(caseListStep({ phase: "discover" }, facts("internal_approved"))).toEqual({ stage: "Quotation", next: { key: "Send quotation {quote} to the client", values: { quote: "PLM-QUO-2026-00001" } } });
+    expect(caseListStep({ phase: "price" })).toEqual({ stage: "Quotation", next: { key: "Send the quotation" } });
+  });
+
+  it("names a sent quotation by the number it was issued under", () => {
+    const sent = { ...commercial({ quotes: [quote({ status: "issued" })] }), quoteReferences: { q1: "PLM-QUO-2026-00001" } };
+    expect(caseNextStep({ record, commercial: sent, today }).why).toEqual({ key: "Quotation {quote} is with the client", values: { quote: "PLM-QUO-2026-00001" } });
   });
 
   it("adds money exactly: agreed, paid (verified only) and outstanding", () => {

@@ -1,4 +1,4 @@
-import { tKey } from "@/lib/i18n/keys";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
 /** What the client is buying on an enquiry that starts from a deal; it decides which stages and quotes apply. */
 export const SERVICE_PATHS = [
@@ -19,4 +19,17 @@ export function defaultServicePath(plan?: { source: string; design: boolean; rel
     ? scope.design && scope.mainQuotation
     : !scope.design && scope.mainQuotation && scope.manufacturing === (plan.release === "production"));
   return Math.max(0, index);
+}
+
+/**
+ * What a quote is, as its Type reads: a variation, the design fee, or the order itself, named by what the client buys.
+ * The service chosen for the deal decides (work on site is a fit-out, goods alone are furniture); without one, the
+ * case's path does (goods from stock, a supplier or made to order without a BOQ are furniture). Never by a label.
+ */
+export function quoteTypeLabel(quote: { kind: string; round?: string | null }, scope?: { siteWorks: boolean } | null,
+  plan?: { source: string } | null): MessageKey {
+  if (quote.kind === "variation") return tKey("Variation");
+  if (quote.round === "design") return tKey("Design fee");
+  if (scope) return scope.siteWorks ? tKey("Fit-out") : tKey("Furniture");
+  return plan?.source === "path" ? tKey("Furniture") : tKey("Fit-out");
 }

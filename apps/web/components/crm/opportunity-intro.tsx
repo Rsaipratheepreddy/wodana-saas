@@ -54,7 +54,8 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, 
   const t = useT();
   const own = useIntro(workspaceId, opportunityId, !lifted);
   const source = lifted ?? own;
-  const members = useCrmResource<unknown>(workspaceId, "members");
+  // The designers this intro can be booked with: names only, for whoever books it (no member directory needed).
+  const members = useCrmResource<unknown>(workspaceId, `opportunities/${opportunityId}/designers`);
   const [dialog, setDialog] = useState<"book" | "designer" | null>(null);
   const [notice, setNotice] = useState("");
   const view = source.view;

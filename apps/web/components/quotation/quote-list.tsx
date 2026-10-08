@@ -7,7 +7,7 @@ import { Plus } from "lucide-react";
 import { Badge, Button, EmptyState, FormDialog, InlineNotice, PageShell, RadioSet, RecordTable, useDesignSystem, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
-import { defaultServicePath, SERVICE_PATHS } from "@/lib/commercial/service-paths";
+import { defaultServicePath, quoteTypeLabel, SERVICE_PATHS } from "@/lib/commercial/service-paths";
 import type { CasePlan } from "@/lib/pre-project/types";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import { money, QUOTE_STATUS } from "@/lib/quotation/format";
@@ -56,7 +56,9 @@ export function QuoteList({ initial, baseHref, plan }: { initial: CommercialStat
   const start = () => (needsPath ? setChoosing(true) : void create());
   const action = canCreate ? <Button variant="primary" size="compact" isLoading={busy && !choosing} onPress={start}><Plus aria-hidden="true" size={14} />{canStartMain ? t("New fit-out quote") : t("New quote")}</Button> : null;
 
-  const kind = (quote: Quote) => quote.kind === "variation" ? t("Variation") : quote.round === "design" ? t("Design fee") : t("Fit-out");
+  // What the client buys on this deal names the order's type; a sent quote reads the number it was issued under.
+  const kind = (quote: Quote) => t(quoteTypeLabel(quote, data.servicePath?.scope, plan));
+  const name = (quote: Quote) => initial.quoteReferences?.[quote.id] ?? t("Q-{number}", { number: quote.number });
   const date = (value: string) => value ? new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00Z`)) : "—";
 
   const toolbar = replaced.length ? <div className={styles.toolbar}>
@@ -71,7 +73,7 @@ export function QuoteList({ initial, baseHref, plan }: { initial: CommercialStat
       onRowAction={(quote) => router.push(hrefOf(quote.id))}
       columns={[
         { id: "title", header: t("Quote"), size: 320, accessorFn: (quote) => quote.title, meta: { primary: true },
-          cell: ({ row: { original: quote } }) => <span className={styles.title}><Link data-tour={quote.kind === "quotation" && quote.round !== "design" ? "quote-open quote-main" : "quote-open"} href={hrefOf(quote.id)}>{quote.title}</Link><small>{t("Q-{number}", { number: quote.number })}</small></span> },
+          cell: ({ row: { original: quote } }) => <span className={styles.title}><Link data-tour={quote.kind === "quotation" && quote.round !== "design" ? "quote-open quote-main" : "quote-open"} href={hrefOf(quote.id)}>{quote.title}</Link><small>{name(quote)}</small></span> },
         { id: "kind", header: t("Type"), size: 130, accessorFn: kind, cell: ({ row: { original: quote } }) => <TypeChip typeKey={`${quote.kind}:${quote.round}`}>{kind(quote)}</TypeChip> },
         { id: "total", header: t("Amount"), size: 150, accessorFn: (quote) => quote.total, meta: { align: "end" },
           cell: ({ row: { original: quote } }) => <span className={styles.amount}>{money(quote.clientDecision?.acceptedTotal ?? quote.total, quote.currency, currencyDigits(quote.currency, locale), locale)}</span> },

@@ -22,6 +22,12 @@ type Opportunity = { id: string; status: string; title: string; partyId: string;
 type Designer = { membershipId: string; name: string; introActivityId: string | null; version: number };
 
 /**
+ * Who does design work, so can be the dedicated designer: a member whose roles (or teams) let them work on a planning
+ * case and record the client's design decisions. A permission, never a role's name; owners and administrators hold it too.
+ */
+export const DESIGNER_PERMISSIONS = ["pre_projects.edit", "pre_projects.record_client_design_decisions"] as const;
+
+/**
  * PLM-043: the Account Manager books the intro meeting straight into a designer's calendar once the
  * floor plan, area and client email are in; the designer and the Account Manager are invited.
  * PLM-088: that designer becomes the opportunity's dedicated designer; changing them later needs a
@@ -35,6 +41,36 @@ export class IntroMeetingService {
     return this.access.withPermission(actor, workspaceId, "crm.opportunities.view", async (client, user) => {
       await this.opportunity(client, workspaceId, opportunityId, false);
       return this.view(client, workspaceId, opportunityId, await this.access.hasPermission(client, workspaceId, user.userId, "crm.settings.manage"));
+    });
+  }
+
+  /**
+   * The designers the intro can be booked with (and the dedicated designer changed to), for whoever books it: no member
+   * directory, only each one's name. Where the design package asks for a role (a creative director), the members who
+   * hold it; otherwise the people who do design work (DESIGNER_PERMISSIONS). The current designer always stays listed.
+   */
+  designers(actor: RequestActor, workspaceId: string, opportunityId: string) {
+    return this.access.withPermissions(actor, workspaceId, ["crm.opportunities.manage", "crm.activities.manage"], async (client) => {
+      await this.opportunity(client, workspaceId, opportunityId, false);
+      const required = await this.requiredRole(client, workspaceId, opportunityId);
+      const items = (await client.query<{ id: string; displayName: string }>(
+        `SELECT membership.id, account.display_name AS "displayName"
+           FROM workspace_memberships membership
+           JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+          WHERE membership.workspace_id = $1 AND membership.status = 'active'
+            AND (membership.id = (SELECT designer.membership_id FROM crm_opportunity_designer designer WHERE designer.workspace_id = $1 AND designer.opportunity_id = $2)
+              OR CASE WHEN $3::text IS NOT NULL
+                THEN EXISTS (SELECT 1 FROM effective_member_roles assigned JOIN roles role ON role.id = assigned.role_id
+                              WHERE assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id AND role.code = $3)
+                ELSE (SELECT count(DISTINCT permission.code) FROM effective_member_roles assigned
+                        JOIN role_permissions granted ON granted.role_id = assigned.role_id
+                        JOIN permissions permission ON permission.id = granted.permission_id
+                       WHERE assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
+                         AND permission.code = ANY($4::text[])) = cardinality($4::text[])
+              END)
+          ORDER BY account.display_name, membership.id`,
+        [workspaceId, opportunityId, required?.code ?? null, DESIGNER_PERMISSIONS])).rows;
+      return { items };
     });
   }
 
@@ -169,15 +205,21 @@ export class IntroMeetingService {
 
   /** A package can require a role (for example a creative director); the designer must hold it. */
   private async assertPackageRole(client: PoolClient, workspaceId: string, opportunityId: string, membershipId: string) {
-    const required = (await client.query<{ code: string | null; name: string }>(
-      `SELECT package.required_role_code AS code, package.name FROM crm_opportunity_discovery discovery
-         JOIN design_packages package ON package.workspace_id = discovery.workspace_id AND package.id = discovery.design_package_id
-        WHERE discovery.workspace_id = $1 AND discovery.opportunity_id = $2`, [workspaceId, opportunityId])).rows[0];
-    if (!required?.code) return;
+    const required = await this.requiredRole(client, workspaceId, opportunityId);
+    if (!required) return;
     const holds = await client.query(
       `SELECT 1 FROM effective_member_roles assigned JOIN roles role ON role.id = assigned.role_id
         WHERE assigned.workspace_id = $1 AND assigned.membership_id = $2 AND role.code = $3`, [workspaceId, membershipId, required.code]);
     if (!holds.rowCount) throw new UnprocessableEntityException(`${required.name} needs a designer with the ${required.code.replace(/_/g, " ")} role`);
+  }
+
+  /** The role the opportunity's design package asks its designer to hold, when it asks for one. */
+  private async requiredRole(client: PoolClient, workspaceId: string, opportunityId: string) {
+    const row = (await client.query<{ code: string | null; name: string }>(
+      `SELECT package.required_role_code AS code, package.name FROM crm_opportunity_discovery discovery
+         JOIN design_packages package ON package.workspace_id = discovery.workspace_id AND package.id = discovery.design_package_id
+        WHERE discovery.workspace_id = $1 AND discovery.opportunity_id = $2`, [workspaceId, opportunityId])).rows[0];
+    return row?.code ? { code: row.code, name: row.name } : undefined;
   }
 
   private async member(client: PoolClient, workspaceId: string, membershipId: string) {

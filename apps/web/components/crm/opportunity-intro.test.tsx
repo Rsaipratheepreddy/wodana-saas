@@ -1,12 +1,16 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { OpportunityIntro, type IntroView } from "./opportunity-intro";
 
 afterEach(() => vi.unstubAllGlobals());
 const base: IntroView = { designer: null, intro: null, history: [], blockers: [], timezone: "Europe/London", canChangeDesigner: false };
+/** The API as Sales sees it: the opportunity's designers, and no member directory (403). */
 function stub(view: IntroView) {
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("/members") ? { items: [{ id: "m1", displayName: "Dana Designer" }] } : view })));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("/members")
+    ? { ok: false, status: 403, json: async () => ({ message: "Any permission required: module.members.read" }) }
+    : { ok: true, json: async () => url.includes("/opportunities/o1/designers") ? { items: [{ id: "m1", displayName: "Dana Designer" }, { id: "m2", displayName: "Omar Designer" }] } : view }));
 }
 const renderIntro = () => render(<DesignSystemProvider><OpportunityIntro workspaceId="ws" opportunityId="o1" locale="en-GB" /></DesignSystemProvider>);
 
@@ -39,6 +43,16 @@ describe("opportunity intro meeting (PLM-043, PLM-088)", () => {
     await waitFor(() => expect(onBlocked).toHaveBeenCalled());
     expect(onBookingStarted).toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: "Book intro meeting" })).not.toBeInTheDocument();
+  });
+
+  it("lets Sales book with a designer from the opportunity's designers, without the member directory", async () => {
+    stub(base);
+    renderIntro();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Book intro meeting" }));
+    const dialog = await screen.findByRole("dialog", { name: "Book intro meeting" });
+    await userEvent.setup().click(within(dialog).getByRole("button", { name: /Designer/ }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Dana Designer", "Omar Designer"]);
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url)).some((url) => url.includes("/members"))).toBe(false);
   });
 
   it("hides Change from people who cannot change the designer", async () => {

@@ -142,9 +142,13 @@ export async function inviteClient(db: Db, input: {
     await db.query(`UPDATE client_portal_grants SET active = true, email = coalesce(email, $3), version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
       [input.workspaceId, grantId, email]);
   } else {
-    grantId = randomUUID();
-    await db.query(`INSERT INTO client_portal_grants (id, workspace_id, case_id, name, phone, email, role, active) VALUES ($1, $2, $3, $4, $5, $6, 'approver', true)`,
-      [grantId, input.workspaceId, input.caseId, name.slice(0, 160), phone, email]);
+    // The client's contact may have been added a moment ago (reading the case's contacts adds it): reuse it, turned on.
+    grantId = (await db.query<{ id: string }>(
+      `INSERT INTO client_portal_grants (id, workspace_id, case_id, name, phone, email, role, active) VALUES ($1, $2, $3, $4, $5, $6, 'approver', true)
+       ON CONFLICT (workspace_id, case_id, phone) DO UPDATE SET active = true, email = coalesce(client_portal_grants.email, excluded.email),
+         version = client_portal_grants.version + 1, updated_at = now()
+       RETURNING id`,
+      [randomUUID(), input.workspaceId, input.caseId, name.slice(0, 160), phone, email])).rows[0].id;
   }
   const token = newInviteToken();
   const expiresAt = new Date(Date.now() + INVITE_DAYS * 86_400_000);

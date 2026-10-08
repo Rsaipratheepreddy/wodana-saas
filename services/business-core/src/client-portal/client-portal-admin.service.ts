@@ -262,15 +262,18 @@ export class ClientPortalAdminService {
   /**
    * The case's own client is its first contact: when a case has none yet, the client from the enquiry (name,
    * mobile, email) is added as someone who decides. They still need an invite or a code to sign in. Audited.
+   * Reading the contacts does this, and the Send dialog reads them more than once at the same moment: the insert
+   * keeps the contact a concurrent read already added (same mobile on the case), so a repeat never fails or doubles.
    */
   private async addCaseClient(client: PoolClient, workspaceId: string, caseId: string, userId: string) {
     if ((await client.query(`SELECT 1 FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 LIMIT 1`, [workspaceId, caseId])).rowCount) return;
     const found = await projectClient(client, workspaceId, caseId);
     if (!found?.phone || !/^\+[1-9]\d{7,14}$/.test(found.phone)) return;
-    const grantId = randomUUID();
-    await client.query(`INSERT INTO client_portal_grants (id, workspace_id, case_id, name, phone, email, role, active) VALUES ($1, $2, $3, $4, $5, $6, 'approver', true)`,
-      [grantId, workspaceId, caseId, found.name.slice(0, 160), found.phone, found.email]);
-    await recordAudit(client, { workspaceId, actorUserId: userId, action: "client_portal.contact_added", entityType: "client_portal_grant", entityId: grantId, after: { caseId, from: "case_client" } });
+    const added = (await client.query<{ id: string }>(
+      `INSERT INTO client_portal_grants (id, workspace_id, case_id, name, phone, email, role, active) VALUES ($1, $2, $3, $4, $5, $6, 'approver', true)
+       ON CONFLICT (workspace_id, case_id, phone) DO NOTHING RETURNING id`,
+      [randomUUID(), workspaceId, caseId, found.name.slice(0, 160), found.phone, found.email])).rows[0];
+    if (added) await recordAudit(client, { workspaceId, actorUserId: userId, action: "client_portal.contact_added", entityType: "client_portal_grant", entityId: added.id, after: { caseId, from: "case_client" } });
   }
 
   /** Who names a case's client contacts: portal managers, and whoever sends quotes (portal.contacts.manage). */

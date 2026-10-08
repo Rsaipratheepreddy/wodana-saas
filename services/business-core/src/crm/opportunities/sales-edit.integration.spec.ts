@@ -121,4 +121,16 @@ integration("Sales edits opportunities; the client's identity stays with Sales a
         .resolves.toMatchObject({ normalizedValue: "+971550000000" });
     });
   });
+
+  it("renames an opportunity whose value is not set; a currency without an amount is still refused", async () => {
+    await scenario(async (client, { workspaceId, admin, opportunityId }, as) => {
+      const current = () => version(client, "crm_opportunities", opportunityId);
+      await as(admin).opportunities.update(actor, workspaceId, opportunityId, { version: await current(), amount: null, currencyCode: null } as never);
+      // What the edit dialog sends for a title change on an opportunity with Value "Not set": neither amount nor currency.
+      await expect(as(admin).opportunities.update(actor, workspaceId, opportunityId, { version: await current(), title: "Villa fit-out (phase 2)" } as never))
+        .resolves.toMatchObject({ title: "Villa fit-out (phase 2)", amount: null, currencyCode: null });
+      await expect(as(admin).opportunities.update(actor, workspaceId, opportunityId, { version: await current(), amount: null, currencyCode: "AED" } as never))
+        .rejects.toThrow("Amount and currency must be supplied or cleared together");
+    });
+  });
 });

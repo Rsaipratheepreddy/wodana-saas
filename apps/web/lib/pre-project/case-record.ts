@@ -3,7 +3,7 @@ import { fromMinor, minorUnits, toMinor } from "@/lib/money-exact";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import type { JourneyStageKey, JourneyStageView, JourneyView } from "./design-workspace";
-import { caseHref, type CasePlan, type PreProjectCase } from "./types";
+import { caseHref, type CaseCommercialFacts, type CasePlan, type PreProjectCase } from "./types";
 
 /**
  * A planning case read as a record (§5c D.7): where it stands, the one next step computed from its real state
@@ -83,10 +83,35 @@ const href = (record: PreProjectCase, section: string, query?: Record<string, st
   return query ? `${path}${path.includes("?") ? "&" : "?"}${new URLSearchParams(query)}` : path;
 };
 
+type FactQuote = CaseCommercialFacts["data"]["quotes"][number];
+
 /** The quotation that matters now: the newest one still in play (not superseded or withdrawn). */
-export function currentQuote(commercial?: CommercialState | null): Quote | null {
+export function currentQuote<Q extends FactQuote>(commercial?: { data: { quotes: Q[] } } | null): Q | null {
   const quotes = commercial?.data.quotes.filter((quote) => quote.kind === "quotation" && !["superseded", "withdrawn"].includes(quote.status)) ?? [];
   return quotes.find((quote) => quote.status === "accepted" && quote.round !== "design") ?? quotes.at(-1) ?? null;
+}
+
+/** A quotation as people name it: the number it was issued under once sent (PLM-QUO-2026-00001), else Q-3. */
+export function quoteName(quote: Pick<FactQuote, "id" | "number">, commercial?: Pick<CaseCommercialFacts, "quoteReferences"> | null) {
+  return commercial?.quoteReferences?.[quote.id] ?? `Q-${quote.number}`;
+}
+
+/**
+ * What the current quotation asks for next while it is still with the firm or the client, in the case's words; null
+ * once it is accepted (the agreement, payments and release follow). The overview and the Planning list both read it.
+ */
+export function quoteStep(quote: FactQuote, commercial?: Pick<CaseCommercialFacts, "quoteReferences"> | null): { title: Message; why?: Message; attention?: boolean } | null {
+  const named = { quote: quoteName(quote, commercial) };
+  switch (quote.status) {
+    case "draft": return { title: { key: tKey("Finish quotation {quote}"), values: named } };
+    case "internal_review": return { title: { key: tKey("Review quotation {quote}"), values: named }, why: { key: tKey("Waiting for the internal review") } };
+    case "internal_approved": return { title: { key: tKey("Send quotation {quote} to the client"), values: named } };
+    case "issued": return { title: { key: tKey("Waiting for the client's decision") }, why: { key: tKey("Quotation {quote} is with the client"), values: named } };
+    case "changes_requested": return { title: { key: tKey("Revise quotation {quote}"), values: named }, why: { key: tKey("The client asked for changes") }, attention: true };
+    case "declined": case "expired": return { title: { key: tKey("Prepare a new quotation") },
+      why: { key: quote.status === "declined" ? tKey("The client declined {quote}") : tKey("{quote} expired before the client decided"), values: named }, attention: true };
+    default: return null;
+  }
 }
 
 /** The design stage being worked on now, when the design stages have started. */
@@ -97,10 +122,15 @@ export function activeJourneyStage(journey?: JourneyView | null): JourneyStageVi
 /**
  * Where the case really is: its recorded phase, moved on by what the commercial records already show (a quotation
  * in review or with the client is pricing; an accepted one is the agreement; a signed agreement is the release).
+ * A design fee's round buys the design work, not the order: accepted, it opens the design phase, and its agreement
+ * releases nothing (the main quotation, priced after the design, does).
  */
-export function effectivePhase(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CommercialState | null): PreProjectCase["phase"] {
+export function effectivePhase(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CaseCommercialFacts | null): PreProjectCase["phase"] {
   const quote = currentQuote(commercial);
-  const implied = commercial?.data.agreement?.status === "executed" ? "release"
+  const agreement = commercial?.data.agreement;
+  const designFee = (quoteId: string) => commercial?.data.quotes.find((item) => item.id === quoteId)?.round === "design";
+  const implied = agreement?.status === "executed" && !designFee(agreement.quoteId) ? "release"
+    : quote?.round === "design" ? (quote.status === "accepted" ? "design" : null)
     : quote?.status === "accepted" ? "agree"
     : quote && quote.status !== "draft" ? "price" : null;
   const recorded = Math.max(0, CASE_PHASES.indexOf(record.phase));
@@ -108,7 +138,7 @@ export function effectivePhase(record: Pick<PreProjectCase, "phase" | "plan">, c
 }
 
 /** The case's position in its phases (1-based) and how many there are. */
-export function casePosition(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CommercialState | null) {
+export function casePosition(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CaseCommercialFacts | null) {
   const phases = casePhases(record.plan);
   return { position: phases.indexOf(effectivePhase(record, commercial)) + 1, count: phases.length };
 }
@@ -155,22 +185,18 @@ export function caseNextStep({ record, commercial, journey, project, today }: Ca
 
   const quote = currentQuote(commercial);
   if (quote && commercial) {
-    const open = (label: MessageKey) => ({ label: { key: label }, href: href(record, "quotations", { quote: quote.id }) });
-    const number = { number: quote.number };
-    switch (quote.status) {
-      case "draft": return { title: { key: tKey("Finish quotation Q-{number}"), values: number }, owner, action: open(tKey("Open quotation")) };
-      case "internal_review": return { title: { key: tKey("Review quotation Q-{number}"), values: number }, why: { key: tKey("Waiting for the internal review") }, owner: quote.approvedBy ?? owner, action: open(tKey("Open quotation")) };
-      case "internal_approved": return { title: { key: tKey("Send quotation Q-{number} to the client"), values: number }, owner, action: open(tKey("Open quotation")) };
-      case "issued": return { title: { key: tKey("Waiting for the client's decision") }, why: { key: tKey("Quotation Q-{number} is with the client"), values: number }, owner, due: quote.validUntil,
-        overdue: Boolean(quote.validUntil && dayOf(quote.validUntil) < today), action: open(tKey("Open quotation")) };
-      case "changes_requested": return { title: { key: tKey("Revise quotation Q-{number}"), values: number }, why: { key: tKey("The client asked for changes") }, owner, status: "attention", action: open(tKey("Open quotation")) };
-      case "declined": case "expired": return { title: { key: tKey("Prepare a new quotation") }, why: { key: quote.status === "declined" ? tKey("The client declined Q-{number}") : tKey("Q-{number} expired before the client decided"), values: number }, owner, status: "attention",
-        action: { label: { key: tKey("Open quotations") }, href: href(record, "quotations") } };
-      default: break;
+    const step = quoteStep(quote, commercial);
+    if (step) {
+      const { attention, ...shown } = step;
+      const open = quote.status === "declined" || quote.status === "expired" ? { label: { key: tKey("Open quotations") }, href: href(record, "quotations") }
+        : { label: { key: tKey("Open quotation") }, href: href(record, "quotations", { quote: quote.id }) };
+      return { ...shown, owner: quote.status === "internal_review" ? quote.approvedBy ?? owner : owner, action: open,
+        ...(attention ? { status: "attention" as const } : {}),
+        ...(quote.status === "issued" ? { due: quote.validUntil, overdue: Boolean(quote.validUntil && dayOf(quote.validUntil) < today) } : {}) };
     }
     // Accepted: the agreement, then the payments it schedules, then the release.
     const agreement = commercial.data.agreement;
-    if (!agreement || agreement.status !== "executed") return { title: { key: tKey("Sign the agreement") }, why: { key: tKey("Q-{number} accepted"), values: number }, owner, action: { label: { key: tKey("Open the agreement") }, href: href(record, "contracts") } };
+    if (!agreement || agreement.status !== "executed") return { title: { key: tKey("Sign the agreement") }, why: { key: tKey("{quote} accepted"), values: { quote: quoteName(quote, commercial) } }, owner, action: { label: { key: tKey("Open the agreement") }, href: href(record, "contracts") } };
     const waiting = commercial.data.payments.filter((payment) => payment.status !== "verified").sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"))[0];
     if (waiting) {
       const amount = { title: waiting.title };
@@ -182,7 +208,9 @@ export function caseNextStep({ record, commercial, journey, project, today }: Ca
     }
     const review = commercial.data.ownerReview;
     if (!commercial.data.dealFile && review && ["submitted", "pending_finance", "pending_approval"].includes(review.status)) return { title: { key: tKey("Approve the deal") }, why: { key: tKey("Waiting for the owner's review") }, action: { label: { key: tKey("Open approvals") }, href: href(record, "approvals") } };
-    return { title: { key: casePhaseText("release", record.plan).next }, why: { key: tKey("Agreed and paid") }, owner, action: { label: { key: tKey("Open release") }, href: href(record, "execution-release") } };
+    // A paid design fee opens the design work (above, once its stages run); the order is priced after it, so nothing is released yet.
+    if (quote.round !== "design")
+      return { title: { key: casePhaseText("release", record.plan).next }, why: { key: tKey("Agreed and paid") }, owner, action: { label: { key: tKey("Open release") }, href: href(record, "execution-release") } };
   }
 
   const phase = casePhaseText(effectivePhase(record, commercial), record.plan);
@@ -232,6 +260,17 @@ export type CaseStep = {
   people: Array<{ id: string; name: string }>;
   detail?: Message | null;
 };
+
+/**
+ * A case's stage and next step as the Planning list shows them, from the same reading as its overview: the phase the
+ * records put it in, and what its current quotation waits for while it is with the firm or the client.
+ */
+export function caseListStep(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CaseCommercialFacts | null): { stage: MessageKey; next: Message } {
+  const phase = casePhaseText(effectivePhase(record, commercial), record.plan);
+  const quote = currentQuote(commercial);
+  const step = quote ? quoteStep(quote, commercial) : null;
+  return { stage: phase.stage, next: step?.title ?? { key: phase.next } };
+}
 
 /** The case's phases as steps (✓ done · ● now · ○ next), with who and when where the records say; then its project. */
 export function caseTimeline({ record, commercial, journey, project }: CaseRecordInput): CaseStep[] {

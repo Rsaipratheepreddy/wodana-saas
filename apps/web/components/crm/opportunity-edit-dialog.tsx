@@ -40,6 +40,10 @@ export function OpportunityEditDialog({ workspaceId, opportunity, members, onClo
   const [start] = useState(() => JSON.stringify(form));
   const set = <K extends keyof typeof form>(key: K) => (value: (typeof form)[K]) => setForm((current) => ({ ...current, [key]: value }));
 
+  // The value travels as a pair: an amount with its currency, a cleared value as both cleared, and no value as neither.
+  const hadValue = opportunity.amount !== null && opportunity.amount !== undefined && opportunity.amount !== "";
+  const value = !hasValue ? {} : form.amount ? { amount: Number(form.amount), currencyCode: currency || undefined } : hadValue ? { amount: null, currencyCode: null } : {};
+
   const save = async () => {
     if (!form.title.trim()) throw new Error(t("Give the opportunity a title."));
     const [followDate, followTime] = form.followUp.split("T");
@@ -48,7 +52,7 @@ export function OpportunityEditDialog({ workspaceId, opportunity, members, onClo
     if (followDate && followTime && !nextActionAt) throw new Error(t("Choose the next follow-up date and time."));
     await crmRequest(workspaceId, `opportunities/${opportunity.id}`, "PATCH", {
       version: opportunity.version, title: form.title.trim(), ...(form.owner ? { ownerMembershipId: form.owner } : {}),
-      ...(hasValue ? { amount: form.amount ? Number(form.amount) : null, currencyCode: currency || undefined } : {}),
+      ...value,
       // A close date is a day; it is kept at local noon so it reads as the same day in every time zone nearby.
       expectedCloseAt: form.closeDate ? new Date(`${form.closeDate}T12:00:00`).toISOString() : null,
       nextActionAt,

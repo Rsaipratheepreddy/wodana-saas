@@ -40,12 +40,26 @@ export type CasePlan = {
 };
 /** One of the workspace's roles on the case: the person holding it, or "not applicable" for this job. */
 export type CaseTeamRole = { role: string; label: string; member: { membershipId: string; name: string; email: string | null } | null; notApplicable: boolean };
+/**
+ * What a case's stage and next step are read from: its quotations (a design fee's round apart from the main one), its
+ * agreement and the numbers its quotations were issued under. The case page has the whole commercial record; the
+ * Planning list a summary of it.
+ */
+export type CaseCommercialFacts = {
+  data: {
+    quotes: Array<{ id: string; number: number; kind: string; round?: "design" | "main" | null; status: string }>;
+    agreement?: { quoteId: string; status: string } | null;
+  };
+  quoteReferences?: Record<string, string>;
+};
 export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
   projectId?: string | null;
   servicePathEnabled?: boolean;
   plan?: CasePlan;
+  /** The case's quotations and agreement, so the list's stage and next step match its overview. */
+  commercial?: CaseCommercialFacts;
 };
 export type PreProjectList = { items: PreProjectListItem[]; canStartLead?: boolean; total: number; canCreate: boolean; workspaceId: string; error?: string };
 export type PreProjectCandidate = { id: string; title: string; customerName: string; status: string; caseId: string | null };
