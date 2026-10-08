@@ -1865,6 +1865,6 @@
 
 /* Minimal sidebar: plain icons in one colour (no tiles), quiet section labels; the active row is the only emphasis. */
 .shell .navigationMark { background: transparent; }
-.shell .navigationMark svg { inline-size: var(--wd-navigation-icon-size); block-size: var(--wd-navigation-icon-size); color: var(--wd-color-text-secondary); }
-.shell .navigationItemRow[data-active] .navigationMark svg { color: var(--wd-color-text); }
+.shell .navigationItemGroup[data-destination] .navigationItem .navigationMark svg { inline-size: var(--wd-navigation-icon-size); block-size: var(--wd-navigation-icon-size); color: var(--wd-color-text-secondary); }
+.shell .navigationItemGroup[data-destination] .navigationItemRow[data-active] .navigationMark svg { color: var(--wd-color-text); }
 .shell .sectionToggle { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); }
