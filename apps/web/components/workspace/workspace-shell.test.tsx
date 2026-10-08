@@ -72,12 +72,12 @@ describe("WorkspaceShell theme", () => {
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/workspace");
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^Sales$/);
   });
-  it("collapses and reopens the Business group with pointer and keyboard", async () => {
+  it("collapses and reopens the Work group with pointer and keyboard", async () => {
     route.pathname = "/workspace/projects";
     const user = userEvent.setup();
     render(<WorkspaceShell {...shellProps}><p>Content</p></WorkspaceShell>);
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
-    const trigger = navigation.getByRole("button", { name: "Business" });
+    const trigger = navigation.getByRole("button", { name: "Work" });
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     await user.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "false");

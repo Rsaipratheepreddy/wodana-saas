@@ -1763,8 +1763,8 @@
 .shell .navigationItem.accordionTrigger { grid-template-columns: var(--wd-navigation-icon-size) minmax(0, 1fr) 15px; }
 .shell .navigationItem .accordionChevron { inline-size: 15px; block-size: 15px; }
 @media (pointer: coarse) {
-  .shell .navigationItem { min-block-size: 44px; block-size: 44px; }
-  .shell .sectionToggle { min-block-size: 44px; block-size: 44px; }
+  .shell .navigationItem { min-block-size: 40px; block-size: 40px; }
+  .shell .sectionToggle { min-block-size: 32px; block-size: 32px; }
   .shell .submenuItem { min-block-size: 44px; }
 }
 .shell .navigationItemGroup[data-destination="daily-follow-ups"] { --nav-illustration: var(--wd-color-module-follow-ups); }
@@ -1862,3 +1862,9 @@
 /* Home shows how many things wait for this person. */
 .navigationItem:has(.navigationCount) { grid-template-columns: 1.25rem minmax(0, 1fr) auto; }
 .navigationCount { justify-self: end; }
+
+/* Minimal sidebar: plain icons in one colour (no tiles), quiet section labels; the active row is the only emphasis. */
+.shell .navigationMark { background: transparent; }
+.shell .navigationMark svg { inline-size: var(--wd-navigation-icon-size); block-size: var(--wd-navigation-icon-size); color: var(--wd-color-text-secondary); }
+.shell .navigationItemRow[data-active] .navigationMark svg { color: var(--wd-color-text); }
+.shell .sectionToggle { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); }

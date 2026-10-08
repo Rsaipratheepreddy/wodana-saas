@@ -129,7 +129,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/ai-credits", icon: "billing", id: "ai-credits", label: tKey("AI credits") },
           { href: "/workspace/settings/audit-logs", icon: "audit", id: "audit-log", label: tKey("Audit history") },
           { href: "/workspace/organizations", icon: "companies", id: "organizations-account", label: tKey("Manage workspaces"), showInSidebar: false },
-          { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery"), showInSidebar: false },
+          { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery") },
           // Management dashboards (PLM-134): their own sidebar entry under Business, not a Settings page.
           { href: "/workspace/reports", icon: "reports", id: "management-reports", label: tKey("Reports"), showInSidebar: false },
           // The Ledger (engine books): its own sidebar entry under Business, not a Settings page.
@@ -141,6 +141,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         id: "workspace-modules",
         label: tKey("Modules"),
         items: [
+          { href: "/workspace/enquiry-types", icon: "automations", id: "enquiry-types-settings", label: tKey("Enquiry types") },
           { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: tKey("Quotations") },
           { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: tKey("Design packages") },
           { href: "/workspace/settings/projects", icon: "projects", id: "project-settings", label: tKey("Projects") },
@@ -380,34 +381,35 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
   const reachable = new Set(modules.flatMap(module => module.navigation.flatMap(group => group.items).map(item => item.id)));
   const salesEntry = modules.find(module => module.id === "crm")?.navigation.flatMap(group => group.items).find(item => allowed.has(item.id) && ["crm-overview", "leads", "opportunities", "follow-ups"].includes(item.id));
   const sections: WorkspaceNavigationSection[] = [
-    // Daily work: Home (Overview, Tasks, Approvals as tabs), then Calendar and Inbox on their own.
-    { id: "main", label: tKey("Daily work"), items: [
+    // The day's three doors, with no heading: Home (Overview, Tasks, Approvals as tabs), Inbox and Calendar.
+    { id: "main", label: "", items: [
       { id: "home", label: tKey("Home"), href: "/workspace", icon: "home" },
-      ...(allowed.has("follow-ups") || allowed.has("calendar") ? [{ id: "daily-follow-ups", label: tKey("Calendar"), href: "/workspace/crm/follow-ups?view=schedule", icon: "calendar" as const }] : []),
       ...(allowed.has("conversations") ? [{ id: "inbox", label: tKey("Inbox"), href: "/workspace/crm/conversations", icon: "conversations" as const }] : []),
+      ...(allowed.has("follow-ups") || allowed.has("calendar") ? [{ id: "daily-follow-ups", label: tKey("Calendar"), href: "/workspace/crm/follow-ups?view=schedule", icon: "calendar" as const }] : []),
     ] },
-    { id: "work", label: tKey("Business"), items: [
-      ...(reachable.has("enquiry-types") ? [{ id: "enquiry-types", label: tKey("Enquiry types"), href: "/workspace/enquiry-types", icon: "automations" as const }] : []),
+    // The job from first contact to handover. Enquiry types live in Settings (they configure this flow).
+    { id: "work", label: tKey("Work"), items: [
       ...(salesEntry ? [{ id: "sales", label: tKey("Sales"), href: salesEntry.href, icon: "opportunities" as const }] : []),
       ...(allowed.has("customers") || allowed.has("projects-overview") ? [{ id: "clients", label: tKey("Clients"), href: allowed.has("customers") ? "/workspace/crm/customers" : "/workspace/projects/clients", icon: "customers" as const }] : []),
       ...(allowed.has("pre-projects") ? [{ id: "planning", label: tKey("Planning"), href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),
       ...(allowed.has("projects-overview") ? [{ id: "projects", label: tKey("Projects"), href: "/workspace/projects", icon: "projects" as const }] : []),
-      ...(allowed.has("global-finance") ? [{ id: "finance", label: tKey("Finance"), href: "/workspace/finance", icon: "commercial" as const }] : []),
-      ...(reachable.has("ledger") ? [{ id: "ledger", label: tKey("Ledger"), href: "/workspace/ledger", icon: "billing" as const }] : []),
-      ...(reachable.has("management-reports") ? [{ id: "reports", label: tKey("Reports"), href: "/workspace/reports", icon: "reports" as const }] : []),
     ] },
     { id: "operations", label: tKey("Operations"), items: [
       ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: tKey("Purchasing"), href: "/workspace/purchasing", icon: "procurement" as const }] : []),
       ...(allowed.has("global-inventory") ? [{ id: "inventory", label: tKey("Inventory"), href: "/workspace/inventory", icon: "materialPlan" as const }] : []),
       ...(allowed.has("global-factory") ? [{ id: "factory", label: tKey("Factory"), href: "/workspace/factory", icon: "production" as const }] : []),
-      // Palm, 6 Oct: the factory and logistics calendar is the main booking point for deliveries, installations, permits and production.
-      ...(allowed.has("global-factory") ? [{ id: "logistics-calendar", label: tKey("Logistics calendar"), href: "/workspace/factory/calendar", icon: "calendar" as const }] : []),
+      // The factory and logistics calendar is the booking point for deliveries, installations, permits and production.
+      ...(allowed.has("global-factory") ? [{ id: "logistics-calendar", label: tKey("Logistics"), href: "/workspace/factory/calendar", icon: "calendar" as const }] : []),
     ] },
+    { id: "money", label: tKey("Money"), items: [
+      ...(allowed.has("global-finance") ? [{ id: "finance", label: tKey("Finance"), href: "/workspace/finance", icon: "commercial" as const }] : []),
+      ...(reachable.has("ledger") ? [{ id: "ledger", label: tKey("Ledger"), href: "/workspace/ledger", icon: "billing" as const }] : []),
+      ...(reachable.has("management-reports") ? [{ id: "reports", label: tKey("Reports"), href: "/workspace/reports", icon: "reports" as const }] : []),
+    ] },
+    // Gallery and Connections live in Settings; the sidebar keeps the three places people open every week.
     { id: "utilities", label: tKey("Company"), items: [
-      ...(peopleTabs(modules).slice(0, 1).map(tab => ({ id: "team", label: tKey("People"), description: tKey("Team, attendance and leave"), href: tab.href, icon: "members" as const }))),
       ...(allowed.has("pre-project-catalogs") ? [{ id: "resources", label: tKey("Catalog"), description: tKey("Shared items, materials and prices"), href: "/workspace/catalogs", icon: "materialPlan" as const }] : []),
-      ...(modules.some(module => module.navigation.some(group => group.items.some(item => item.id === "gallery"))) ? [{ id: "gallery", label: tKey("Gallery"), description: tKey("Your brochure to share"), href: "/workspace/gallery", icon: "designs" as const }] : []),
-      ...(allowed.has("integrations") ? [{ id: "integrations", label: tKey("Connections"), href: "/workspace/integrations", icon: "integrations" as const }] : []),
+      ...(peopleTabs(modules).slice(0, 1).map(tab => ({ id: "team", label: tKey("People"), description: tKey("Team, attendance and leave"), href: tab.href, icon: "members" as const }))),
       ...(modules.find(module => module.id === "workspace")?.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false && !["integrations", "members", "teams", "roles"].includes(item.id)).sort((a, b) => Number(b.id === "company") - Number(a.id === "company")).slice(0, 1).map(item => ({ id: "settings", label: tKey("Settings"), href: item.href, icon: "settings" as const })) ?? []),
     ] },
   ];
@@ -444,7 +446,9 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   const exists = (id: string | undefined) => id && items.some(item => item.id === id) ? id : undefined;
   const nav = resolveWorkspaceRoute(pathname, query).nav;
   // Planning cases belong to Projects for people who reach them from a project.
-  return exists(nav) ?? (nav === "planning" ? exists("projects") : undefined);
+  // Planning cases belong to Projects for people who reach them from a project; pages that live in Settings
+  // (Connections, Gallery, Enquiry types) light up Settings.
+  return exists(nav) ?? (nav === "planning" ? exists("projects") : ["integrations", "gallery", "enquiry-types"].includes(nav ?? "") ? exists("settings") : undefined);
 }
 
 export const workspaceScreens = workspaceModules.flatMap((module) =>

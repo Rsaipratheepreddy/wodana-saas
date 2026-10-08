@@ -255,7 +255,7 @@
   --wd-auth-control-radius: var(--wd-radius-md);
   --wd-auth-panel-width: 25rem;
   --wd-navigation-item-height: 2rem;
-  --wd-navigation-icon-size: 1.375rem;
+  --wd-navigation-icon-size: 1.125rem;
   --wd-navigation-section-height: 1.25rem;
   --wd-table-row: 2.5rem;
   --wd-table-row-compact: 2rem;
@@ -266,7 +266,7 @@
   /* Checkbox and radio box, and the switch height. */
   --wd-choice-size: 1.125rem;
   --wd-sidebar-rail: 3.5rem;
-  --wd-sidebar-width: 15rem;
+  --wd-sidebar-width: 14rem;
   --wd-topbar-height: 3.5rem;
   --wd-inspector-sm: 26.25rem;
   --wd-inspector-md: 35rem;

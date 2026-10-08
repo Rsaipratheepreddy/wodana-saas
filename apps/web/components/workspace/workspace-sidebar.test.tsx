@@ -143,9 +143,11 @@ describe("WorkspaceSidebar", () => {
       />,
     );
 
-    for (const destination of ['Home','Calendar','Inbox','Projects','Connections','Settings']) expect(screen.getByRole('link',{name:destination})).toBeVisible();
+    for (const destination of ['Home','Calendar','Inbox','Projects','Catalog','Settings']) expect(screen.getByRole('link',{name:destination})).toBeVisible();
+    for (const moved of ['Connections','Gallery','Enquiry types']) expect(screen.queryByRole('link',{name:moved})).not.toBeInTheDocument();
     expect(screen.getByRole('link',{name:'Settings'})).toHaveAttribute('href','/workspace/company');
-    for (const section of ['Daily work','Business','Company']) expect(screen.getByRole('button',{name:section})).toBeVisible();
+    for (const section of ['Work','Company']) expect(screen.getByRole('button',{name:section})).toBeVisible();
+    expect(screen.queryByRole('button',{name:'Daily work'})).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Manage workspaces" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Teams" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "User Settings" })).not.toBeInTheDocument();
@@ -156,7 +158,7 @@ describe("WorkspaceSidebar", () => {
 it("marks the direct Catalog link active without selecting Settings", () => {
   render(<WorkspaceSidebar activeModule={workspaceModules[0]} modules={workspaceModules} navigation={workspaceModules[0].navigation} pathname="/workspace/catalogs" workspaces={workspaces} />);
   const catalog = screen.getByRole("link", { name: "Catalog" });
-  expect(screen.getByRole("link", { name: "Connections" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "People" })).toBeVisible();
   expect(catalog).toHaveAttribute("aria-current", "page");
   expect(screen.queryByRole("button", { name: "Resources" })).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Settings" })).not.toHaveAttribute("aria-current");

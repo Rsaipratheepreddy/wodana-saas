@@ -65,7 +65,6 @@ import type {
   WorkspaceModuleDefinition,
   WorkspaceNavigationSection,
 } from "./workspace-navigation";
-import { MessagingMark } from "@/components/brand/messaging-mark";
 import { useTours } from "@/components/tours/tour-provider";
 import { inPersonaView } from "@/lib/tours/personas";
 import { ModuleIcon as WorkspaceModuleIconTile } from "@/design-system/atoms/module-icon";
@@ -340,7 +339,7 @@ export function WorkspaceSidebar({
                                 isDisabled={!isOpen}
                                 onPress={() => toggleSubmenu(item.id, defaultOpen)}
                               >
-                                <WorkspaceModuleIconTile className={styles.navigationMark}>{item.id === "inbox" ? <MessagingMark size={28} /> : <ItemIcon aria-hidden="true" size={20} strokeWidth={1.8} />}</WorkspaceModuleIconTile>
+                                <WorkspaceModuleIconTile className={styles.navigationMark}><ItemIcon aria-hidden="true" size={18} strokeWidth={1.8} /></WorkspaceModuleIconTile>
                                 <span>{t(item.label as never)}</span>
                                 <ChevronDown aria-hidden="true" className={styles.accordionChevron} data-open={showSubmenu || undefined} size={15} />
                               </AriaButton>
@@ -353,7 +352,7 @@ export function WorkspaceSidebar({
                               onClick={onNavigate}
                               tabIndex={isOpen ? undefined : -1}
                             >
-                              <WorkspaceModuleIconTile className={styles.navigationMark}>{item.id === "inbox" ? <MessagingMark size={28} /> : <ItemIcon aria-hidden="true" size={20} strokeWidth={1.8} />}</WorkspaceModuleIconTile>
+                              <WorkspaceModuleIconTile className={styles.navigationMark}><ItemIcon aria-hidden="true" size={18} strokeWidth={1.8} /></WorkspaceModuleIconTile>
                               <span>{t(item.label as never)}</span>
                               {item.id === "home" && activeWorkspace?.id ? <WaitingBadge workspaceId={activeWorkspace.id} /> : null}
                             </Link>}
