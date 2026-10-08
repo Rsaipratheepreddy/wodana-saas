@@ -28,13 +28,13 @@ const wrap = (node: React.ReactNode) => <DesignSystemProvider locale="en-US" tim
 afterEach(() => { vi.unstubAllGlobals(); push.mockReset(); });
 
 describe("Enquiry types navigation", () => {
-  it("puts Enquiry types above Sales, only for people who manage them", () => {
+  it("keeps Enquiry types in Settings, only for people who manage them", () => {
     const scoped = (permissions: string[]) => workspaceModules.map((module) => ({ ...module, navigation: module.navigation.map((section) => ({ ...section, items: section.items.filter((item) => canOpen(item.id, { permissions, roles: ["member"] })) })) }));
-    const items = (permissions: string[]) => productNavigation(scoped(permissions)).flatMap((section) => section.items.map((item) => item.id));
-    const manager = items(["crm.settings.manage", "crm.leads.view"]);
-    expect(manager.indexOf("enquiry-types")).toBeGreaterThanOrEqual(0);
-    expect(manager.indexOf("enquiry-types")).toBe(manager.indexOf("sales") - 1);
-    expect(items(["crm.leads.view"])).not.toContain("enquiry-types");
+    const sidebar = (permissions: string[]) => productNavigation(scoped(permissions)).flatMap((section) => section.items.map((item) => item.id));
+    const settings = (permissions: string[]) => scoped(permissions).flatMap((module) => module.navigation.flatMap((section) => section.items.map((item) => item.id)));
+    expect(sidebar(["crm.settings.manage", "crm.leads.view"])).not.toContain("enquiry-types");
+    expect(settings(["crm.settings.manage", "crm.leads.view"])).toContain("enquiry-types-settings");
+    expect(settings(["crm.leads.view"])).not.toContain("enquiry-types-settings");
   });
 });
 

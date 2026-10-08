@@ -71,6 +71,7 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "crm-settings": [["crm.leads.view"], ["crm.settings.manage"]],
   // Enquiry types (plan §5a): only people who manage the steps each type follows.
   "enquiry-types": [["crm.settings.manage"]],
+  "enquiry-types-settings": [["crm.settings.manage"]],
   // Planning
   "pre-projects": [["pre_projects.view"]],
   "pre-project-catalogs": [["catalog.view"]],
