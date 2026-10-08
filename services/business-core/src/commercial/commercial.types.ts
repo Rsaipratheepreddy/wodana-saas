@@ -758,6 +758,8 @@ export type CommercialState = {
   canEdit: boolean;
   canApprove: boolean;
   canEstimate?: boolean;
+  /** Deal quotations in review that the firm's QS rules send to the QS estimate; any other one is approved as priced. */
+  qsEstimateQuoteIds?: string[];
   canApproveDeal?: boolean;
   /** Who is looking (their user id), for the separation-of-duties rules the page shows. */
   viewerId?: string;

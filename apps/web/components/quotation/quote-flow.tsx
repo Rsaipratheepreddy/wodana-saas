@@ -79,7 +79,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   } else if (status === "internal_approved") {
     actions = <>
       {flow.canReview ? <Button size="compact" isLoading={busy === "return"} onPress={() => setReturning(true)}>{t("Return")}</Button> : null}
-      <Button size="compact" variant="primary" isLoading={busy === "issue"} onPress={() => confirmSend("issue", [["issue"]])}>{t("Send to client")}</Button>
+      <Button size="compact" variant="primary" isLoading={busy === "issue"} isDisabled={state.checks.some((check) => check.requirementId)} onPress={() => confirmSend("issue", [["issue"]])}>{t("Send to client")}</Button>
     </>;
   } else if (status === "issued" || status === "expired") {
     // A sent quote can be kept open longer; an expired one sent again with the same content (Q-7).

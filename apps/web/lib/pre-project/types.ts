@@ -76,3 +76,7 @@ export function caseHref(id: string, query = new URLSearchParams(), section = "r
   const state = listSearch(query).toString();
   return `${PRE_PROJECT_ROOT}/cases/${id}/${section}${state ? `?${state}` : ""}`;
 }
+/** One requirement of a case: its Requirements view, taken straight to that requirement's card. */
+export function requirementHref(caseId: string, requirementId: string) {
+  return `${caseHref(caseId)}?${new URLSearchParams({ requirement: requirementId })}`;
+}

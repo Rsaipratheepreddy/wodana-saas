@@ -36,7 +36,8 @@ import {
   validateControlledChangeSources,
 } from "./change-control";
 import { startJourney } from "../design/design-journey.store";
-import { servicePathRoute, quotationRequiresSitePlan, type ServicePathScope } from "../projects/service-path-route";
+import { servicePathRoute, quotationNeedsSitePlan, type ServicePathScope } from "../projects/service-path-route";
+import { casePlan } from "../pre-projects/case-plan";
 import { resolvedProjectWorkflowTemplate } from "../projects/project-workflow.repository";
 import { qsEstimateCurrent, qsEstimateHash } from "./qs-estimate";
 import { activeAcceptedBaseQuote, beginMainRound } from "./service-path-rounds";
@@ -138,6 +139,22 @@ export function commercialDataForCostAccess(data: CommercialData, canViewCosts: 
     quotes: data.quotes.map((quote) => ({ ...quote, lines: quote.lines.map((line) => ({ ...line, unitCost: 0 })) })),
     ...(data.dealFile ? { dealFile: { ...data.dealFile, cost: 0, margin: 0 } } : {}),
   };
+}
+
+/**
+ * Whether a quotation needs the QS estimate before it's approved and sent: a deal-first quotation, where the firm's
+ * QS rules (qs-requirement.ts) say so. Approving, sending and the page's approve button all ask this one question.
+ */
+export async function needsQsEstimate(db: Pick<PoolClient, "query">, workspaceId: string, caseId: string, data: Pick<CommercialData, "servicePath">, quote: Pick<Quote, "id" | "kind">) {
+  return Boolean(data.servicePath && quote.kind === "quotation" && await qsEstimateRequired(db, workspaceId, caseId, quote.id));
+}
+
+/** The quotations in review that wait for the QS estimate (the page offers the QS approval for these only). */
+async function qsEstimateQuoteIds(db: Pick<PoolClient, "query">, workspaceId: string, caseId: string, data: CommercialData) {
+  const ids: string[] = [];
+  for (const quote of data.quotes)
+    if (quote.status === "internal_review" && await needsQsEstimate(db, workspaceId, caseId, data, quote)) ids.push(quote.id);
+  return ids;
 }
 
 export function preserveUnauthorizedCosts(lines: QuoteLine[], previous: Map<string, QuoteLine>, canEditCosts: boolean) {
@@ -520,6 +537,7 @@ export class CommercialService {
             user.userId,
             "commercial.estimate",
           ),
+          qsEstimateQuoteIds: await qsEstimateQuoteIds(client, workspaceId, caseId, data),
           viewerId: user.userId,
           // Deal approval is a permission plus separation of duties, never a role name.
           canApproveDeal:
@@ -2380,9 +2398,8 @@ export class CommercialService {
                 {
                   target: "pricing",
                   requireIncludedScope: linked.length > 0,
-                  requireSitePlan: data.servicePath
-                    ? quotationRequiresSitePlan(data.servicePath.scope, q.round)
-                    : true,
+                  // The case's path decides: no site visit (no Site area) means no plan to ask for.
+                  requireSitePlan: quotationNeedsSitePlan(await casePlan(client, workspaceId, caseId), data.servicePath?.scope, q.round),
                   scopeReferences: linked.map((line) => ({
                     scopeId: line.scopeId!,
                     title: line.title,
@@ -2466,7 +2483,7 @@ export class CommercialService {
                 sellingTotal: estimate.total, reviewedAt: now,
                 reviewedById: user.userId, reviewedBy: user.displayName,
               };
-            } else if (data.servicePath && q.kind === "quotation" && await qsEstimateRequired(client, workspaceId, caseId, q.id)) {
+            } else if (await needsQsEstimate(client, workspaceId, caseId, data, q)) {
               // The firm's QS rules decide (standard catalogue items at approved list prices need no QS estimate).
               throw new ConflictException("A Quantity Surveyor must review this quotation before it is issued.");
             }
@@ -2509,7 +2526,8 @@ export class CommercialService {
                 [workspaceId, caseId])).rows[0].count;
               if (open) throw new ConflictException(`Decide every requirement before sending: ${open} still to decide.`);
             }
-            if (data.servicePath && q.kind === "quotation" && !qsEstimateCurrent(q))
+            // A QS estimate already given must still match; one the firm's QS rules don't ask for isn't required.
+            if (data.servicePath && q.kind === "quotation" && !qsEstimateCurrent(q) && (q.qsEstimate || await needsQsEstimate(client, workspaceId, caseId, data, q)))
               throw new ConflictException("The QS estimate review is missing or the quotation changed. Return it for a fresh review.");
             const controlledRequest = controlledChangeForQuote(data, q.id);
             const isCaseSibling = (other: Quote) =>

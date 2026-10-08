@@ -5,14 +5,15 @@ import { DesignSystemProvider } from '@/design-system';
 import { blankEntry, briefFields, type CaseContent } from '@/lib/pre-project/content';
 import { BriefScopePage } from './brief-scope-page';
 vi.mock('next/font/google',()=>({Caveat:()=>({variable:'note-font'})}));
-vi.mock('next/navigation', () => ({useSearchParams: () => new URLSearchParams(), useRouter: () => ({push: vi.fn()})}));
+const nav = vi.hoisted(() => ({ params: new URLSearchParams() }));
+vi.mock('next/navigation', () => ({useSearchParams: () => nav.params, useRouter: () => ({push: vi.fn()})}));
 const rooms = [{id:'kitchen',name:'Kitchen',version:1},{id:'bedroom',name:'Bedroom',version:1}];
 const data = {workspaceId:'workspace',caseId:'case',canEdit:true,rooms,entries:[
   {...blankEntry('kitchen'),id:'one',title:'Kitchen drawers',note:'Soft-close hardware',version:1},
   {...blankEntry('bedroom'),id:'two',title:'Bedroom wardrobe',version:1},
 ],brief:{...Object.fromEntries(Object.keys(briefFields).map(key => [key,''])),version:0},crmContext:{}} as CaseContent;
 beforeEach(() => vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({items:[],canEdit:true})})));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); nav.params = new URLSearchParams(); });
 describe('Requirements workspace', () => {
   it('keeps the compact project toolbar to search, room filter and add', async () => {
     render(<DesignSystemProvider><BriefScopePage initialData={data} compact/></DesignSystemProvider>);
@@ -43,6 +44,13 @@ describe('Requirements workspace', () => {
     await user.click(screen.getByRole('option',{name:'Bedroom'}));
     expect(screen.getByRole('article',{name:'Bedroom wardrobe'})).toBeVisible();
     expect(screen.queryByRole('article',{name:'Kitchen drawers'})).not.toBeInTheDocument();
+  });
+  it("lands on the requirement a quote's decide check links to, with its decision in focus", async () => {
+    nav.params = new URLSearchParams('requirement=two');
+    render(<DesignSystemProvider><BriefScopePage initialData={data}/></DesignSystemProvider>);
+    const card = screen.getByRole('article',{name:'Bedroom wardrobe'});
+    await waitFor(() => expect(card).toContainElement(document.activeElement as HTMLElement));
+    expect(document.activeElement).toHaveAccessibleName('To decide');
   });
   it('keeps one primary capture action and makes room management available', () => {
     render(<DesignSystemProvider><BriefScopePage initialData={data}/></DesignSystemProvider>);

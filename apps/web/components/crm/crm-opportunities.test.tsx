@@ -128,6 +128,21 @@ describe("CrmOpportunities", () => {
     vi.unstubAllGlobals();
   });
 
+  it("arriving from an enquiry's View opportunity link opens the record and leaves it usable", async () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    const record = data.items[0];
+    vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}` ? { ...record, version: 1 } : path === "pipelines" ? data.supporting.pipelines : { data: [] });
+    const user = userEvent.setup();
+    // The link lands on the Pipeline with ?record= (a client-side navigation, so the record opens on the first render).
+    render(<CrmOpportunities initialData={data} initialRecordId={String(record.id)} />);
+    const dialog = await screen.findByRole("dialog", { name: "Opportunity details" });
+    expect(dialog.parentElement?.closest("[aria-hidden='true'], [inert]")).toBeNull();
+    expect(await within(dialog).findByRole("heading", { name: String(record.title) })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Close dialog" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Convert enquiry" }).closest("[aria-hidden='true'], [inert]")).toBeNull();
+  });
+
   it("asks for the payment proof when a card is dropped on Won without one (PLM-122)", async () => {
     const data = structuredClone(crmScreenFixture("opportunities"));
     const record = data.items[0];

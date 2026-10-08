@@ -30,6 +30,18 @@ export function PopoverSurface({ children }: { children: ReactNode }) {
   return <Popover {...portalTheme} className="wd-popover" dir={direction}>{children}</Popover>;
 }
 
+// A modal hides the rest of the page from where it first opened. A page's own portal only exists after its first
+// render, so a dialog open on arrival (a record link) opens in the document and then moves into the page; keyed by
+// its portal it opens again there, otherwise the page around it stays hidden and inert with the dialog inside it.
+const portalIds = new WeakMap<Element, number>();
+let nextPortalId = 0;
+function portalKey(container: Element | null) {
+  if (!container) return "document";
+  let id = portalIds.get(container);
+  if (id === undefined) { id = ++nextPortalId; portalIds.set(container, id); }
+  return `portal-${id}`;
+}
+
 type ModalDialogProps = Omit<DialogTriggerProps, "children"> & {
   children: ReactNode;
   description?: ReactNode;
@@ -65,7 +77,7 @@ export function ModalDialog({ children, description, footer, title, trigger, ...
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
-  return <DialogTrigger {...props}><>{trigger}</><ModalOverlay {...portalTheme} dir={direction} className="wd-modal-overlay" UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-modal"><Dialog className="wd-dialog" aria-label={title}>{({ close }) => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close dialog")} onPress={close}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay></DialogTrigger>;
+  return <DialogTrigger {...props}><>{trigger}</><ModalOverlay key={portalKey(portalContainer)} {...portalTheme} dir={direction} className="wd-modal-overlay" UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-modal"><Dialog className="wd-dialog" aria-label={title}>{({ close }) => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close dialog")} onPress={close}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay></DialogTrigger>;
 }
 
 export function AlertDialog({ body, confirmLabel, onConfirm, title, trigger }: { body: ReactNode; confirmLabel: string; onConfirm: () => void; title: string; trigger: ReactNode }) {
@@ -108,7 +120,7 @@ export function ControlledModalDialog({ children, className, description, footer
     return () => element.removeEventListener("keydown", keyDown);
   }, [isOpen]);
   return <DialogCloseContext.Provider value={requestClose}>
-    <ModalOverlay {...portalTheme} dir={direction} className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className={["wd-modal", className].filter(Boolean).join(" ")} data-size={size}><Dialog className="wd-dialog" aria-label={title} ref={dialog}>{() => <><header className={hideTitle ? "wd-dialog-minimal-header" : undefined}>{hideTitle ? null : <div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div>}<IconButton aria-label={t("Close dialog")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>
+    <ModalOverlay key={portalKey(portalContainer)} {...portalTheme} dir={direction} className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className={["wd-modal", className].filter(Boolean).join(" ")} data-size={size}><Dialog className="wd-dialog" aria-label={title} ref={dialog}>{() => <><header className={hideTitle ? "wd-dialog-minimal-header" : undefined}>{hideTitle ? null : <div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div>}<IconButton aria-label={t("Close dialog")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>
     {isDirty || confirming ? <ConfirmationDialog isOpen={confirming} onOpenChange={setConfirming}
       title={keepsDraft ? t("Close this form?") : t("Discard unsaved changes?")}
       body={keepsDraft ? t("Your changes stay here as a draft until you save or discard them.") : t("Your saved records will stay as they are. Unsaved changes will be discarded.")}
@@ -198,7 +210,7 @@ export function SideSheet({ children, defaultOpen, description, footer, isDirty 
     onOpenChange?.(nextOpen);
   };
   const overlayClass = side === "bottom" ? "wd-sheet-overlay wd-sheet-overlay-bottom" : side === "inline-start" ? "wd-sheet-overlay wd-sheet-overlay-start" : "wd-sheet-overlay";
-  return <><DialogTrigger {...props} isOpen={isOpen} onOpenChange={requestChange}><>{trigger}</><ModalOverlay {...portalTheme} dir={direction} className={overlayClass} isDismissable UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-side={side} data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={() => requestChange(false)}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay></DialogTrigger>{confirmationDialog}</>;
+  return <><DialogTrigger {...props} isOpen={isOpen} onOpenChange={requestChange}><>{trigger}</><ModalOverlay key={portalKey(portalContainer)} {...portalTheme} dir={direction} className={overlayClass} isDismissable UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-side={side} data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={() => requestChange(false)}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay></DialogTrigger>{confirmationDialog}</>;
 }
 
 export function Drawer(props: SideSheetProps) { return <SideSheet {...props} side="inline-start" />; }
@@ -214,5 +226,5 @@ export function InspectorSheet({ children, description, footer, hideTitle = fals
     if (isDirty) {setDiscardOpen(true);return;}
     onOpenChange(false);
   };
-  return <DialogCloseContext.Provider value={requestClose}><ModalOverlay {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header data-minimal={hideTitle || undefined}><div className={hideTitle ? "wd-visually-hidden" : undefined}><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} body={t("Your saved records will stay as they are. Unsaved changes will be discarded.")} confirmLabel={t("Discard changes")} cancelLabel={t("Keep editing")} onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></DialogCloseContext.Provider>;
+  return <DialogCloseContext.Provider value={requestClose}><ModalOverlay key={portalKey(portalContainer)} {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header data-minimal={hideTitle || undefined}><div className={hideTitle ? "wd-visually-hidden" : undefined}><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} body={t("Your saved records will stay as they are. Unsaved changes will be discarded.")} confirmLabel={t("Discard changes")} cancelLabel={t("Keep editing")} onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></DialogCloseContext.Provider>;
 }

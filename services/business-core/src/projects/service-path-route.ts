@@ -75,3 +75,13 @@ export function quotationRequiresSitePlan(scope: ServicePathScope, round: "desig
   if (round === "design") return false;
   return scope.design || scope.manufacturing || scope.siteWorks;
 }
+
+/**
+ * Whether a quotation waits for a site plan before review. Only a case whose path has a site visit (the case plan,
+ * which also shows the Site area) can be asked for one; there the deal's scope decides, and a case without a chosen
+ * scope keeps asking. A path without a site visit never asks for a plan the person has nowhere to add.
+ */
+export function quotationNeedsSitePlan(plan: { siteVisit: boolean }, scope: ServicePathScope | null | undefined, round: "design" | "main" | undefined): boolean {
+  if (!plan.siteVisit) return false;
+  return scope ? quotationRequiresSitePlan(scope, round) : true;
+}

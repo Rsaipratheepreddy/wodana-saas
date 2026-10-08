@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Percent, Sparkles } from "lucide-react";
 import { Button, Form, IconButton, MoneyField, PercentageInput, SegmentedControl, submitOnModEnter, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -15,7 +16,7 @@ const AI_FIXABLE = new Set(["{name} is included but no line covers it", "{name} 
 type Target = { scope: "area" | "trade" | "quote"; target: string; name: string };
 
 /** The quote's totals, top to bottom in the order they're worked out, with the quote discount and tax. */
-export function QuoteSummary({ state, api, onState, onError, discountFor, onDiscountFor, totalComments, onFocusLine, onFix, onPayments }: {
+export function QuoteSummary({ state, api, onState, onError, discountFor, onDiscountFor, totalComments, onFocusLine, onFix, onPayments, requirementHref }: {
   state: BuilderState; api: ReturnType<typeof quoteApi>; onState: (state: BuilderState) => void; onError: (message: string) => void;
   discountFor: Target | null; onDiscountFor: (target: Target | null) => void; totalComments?: React.ReactNode;
   /** A check about one line: show that line. */
@@ -24,6 +25,8 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
   onFix?: (request: string) => void;
   /** The payments check: open the payment milestones. */
   onPayments?: () => void;
+  /** A check about undecided requirements: where the first one to decide is. */
+  requirementHref?: (requirementId: string) => string;
 }) {
   const t = useT();
   const { locale } = useDesignSystem();
@@ -58,7 +61,8 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
       <ul>{state.checks.map((check, index) => {
         const text = t(check.code as never, check.values);
         return <li key={`${check.code}-${check.lineId ?? index}`} data-tone={check.tone}>
-          {check.lineId && onFocusLine ? <button type="button" className={styles.checkLink} onClick={() => onFocusLine(check.lineId!)}>{text}</button> : <span>{text}</span>}
+          {check.lineId && onFocusLine ? <button type="button" className={styles.checkLink} onClick={() => onFocusLine(check.lineId!)}>{text}</button>
+            : check.requirementId && requirementHref ? <Link className={styles.checkLink} href={requirementHref(check.requirementId)}>{text}</Link> : <span>{text}</span>}
           {check.code === "Add the payment milestones" && onPayments ? <button type="button" className={styles.fixLink} onClick={onPayments}>{t("Open payments")}</button>
             : !check.lineId && onFix && AI_FIXABLE.has(check.code) ? <button type="button" className={styles.fixLink} onClick={() => onFix(text)}><Sparkles aria-hidden="true" size={12} />{t("Fix with AI")}</button> : null}
         </li>;

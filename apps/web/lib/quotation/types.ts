@@ -106,7 +106,8 @@ export type BuilderState = {
 /** A line of the project's live BOQ that a variation can remove, move or replace. */
 export type BoqPick = { id: string; title: string; unit: string; quantity: string; net: string; areaId: string | null; areaName: string | null };
 
-export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; tone: "danger" | "warning" };
+/** A check about one line names it (`lineId`); one about an undecided requirement names the first to decide (`requirementId`). */
+export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; requirementId?: string; tone: "danger" | "warning" };
 
 export type AiChange = {
   key: string; action: "add" | "update" | "move" | "remove"; lineId: string | null; lineVersion: number | null; lineTitle: string | null;

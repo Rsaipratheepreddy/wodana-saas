@@ -199,6 +199,25 @@ it("reviews an approved quotation without editing and requires a client approver
  expect(screen.getByText(/Publishing to the portal does not send/)).toBeVisible();
 });
 
+it("asks for the QS estimate only on a deal quotation the firm's QS rules send to the QS", () => {
+  const scope = { design: false, mainQuotation: true, materialSelection: false, procurement: true, manufacturing: true, siteWorks: false, installation: false };
+  const inReview = (qsEstimateQuoteIds: string[]) => {
+    const next = structuredClone(state);
+    next.data.quotes[1].status = "internal_review";
+    next.data.servicePath = { selectedAt: "now", selectedBy: "sales", scope };
+    return { ...next, canEstimate: true, qsEstimateQuoteIds };
+  };
+  // Standard catalogue items only: approved as priced, no QS cost estimate to enter.
+  const { unmount } = render(<CommercialPage reviewOnly initial={inReview([])} record={record} section="quotations" quotationId="q2" search=""/>);
+  expect(screen.getByRole("button", { name: "Approve pricing" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Approve QS estimate" })).not.toBeInTheDocument();
+  unmount();
+  // Lines the rules name: the QS approves the estimate.
+  render(<CommercialPage reviewOnly initial={inReview(["q2"])} record={record} section="quotations" quotationId="q2" search=""/>);
+  expect(screen.getByRole("button", { name: "Approve QS estimate" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Approve pricing" })).not.toBeInTheDocument();
+});
+
 it('opens the payment schedule directly from its route and preserves accepted milestone amounts', async () => {
   const payments = structuredClone(state);
   payments.data.quotes[1].status = 'accepted';

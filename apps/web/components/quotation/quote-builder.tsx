@@ -9,6 +9,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { inOverlay, isTypingTarget } from "@/lib/keyboard/typing-target";
 import { catalogImageUrl, quoteApi, quoteColumnsApi, QuotationRequestError } from "@/lib/quotation/client";
 import { caseApi, caseRequest, saveCaseRoom, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
+import { requirementHref } from "@/lib/pre-project/types";
 import { groupLines, money, QUOTE_STATUS, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
 import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteAnchor, QuoteColumn, QuoteThread, QuoteView } from "@/lib/quotation/types";
 import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
@@ -366,6 +367,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     lineAmount: Object.fromEntries(state.pricing.lines.map((line) => [line.id, String(Number(line.gross) - Number(line.lineDiscount))])),
   };
   const toFix = state.quote.status === "draft" ? state.checks.length : 0;
+  // An approved quotation waits to be sent until every requirement is decided; the notice opens the first one to decide.
+  const undecided = state.quote.status === "internal_approved" ? state.checks.find((check) => check.requirementId) : undefined;
   const views: Array<{ id: Panel; label: string }> = [
     ...(state.canEdit ? [{ id: "assistant" as const, label: t("Assistant") }, { id: "catalog" as const, label: t("Catalog") }] : []),
     { id: "comments", label: openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments") },
@@ -533,7 +536,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {["accepted", "declined"].includes(state.quote.status) && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round, status: state.quote.status }} projectStarted={Boolean(state.project)} /> : null}
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {flowNotice ? <InlineNotice tone={flowNotice.tone} message={flowNotice.message} /> : null}
-        {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
+        {undecided ? <InlineNotice tone="error" message={<Link className={styles.checkLink} href={requirementHref(caseId, undecided.requirementId!)}>{t(undecided.code as never, undecided.values)}</Link>} /> : null}
+        {!state.canEdit && state.quote.status !== "draft" && !undecided ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
           ? t("This quote is in review. It can be changed again if it's sent back.") : state.quote.status === "internal_approved"
             ? t("This quote is approved and ready to send to the client.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
@@ -595,7 +599,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         </div>
         <div className={styles.panelBody} data-scroll hidden={activePanel !== "totals"}>
           <QuoteSummary state={state} api={api} onState={setState} onError={setError} discountFor={discountFor} onDiscountFor={setDiscountFor}
-            onFocusLine={(id) => { setTab("items"); highlight([id]); }} onPayments={() => setTab("payments")} onFix={canAsk ? (text) => { openPanel("assistant"); requestAnimationFrame(() => assistantRef.current?.ask(text)); } : undefined}
+            onFocusLine={(id) => { setTab("items"); highlight([id]); }} onPayments={() => setTab("payments")} requirementHref={(id) => requirementHref(caseId, id)} onFix={canAsk ? (text) => { openPanel("assistant"); requestAnimationFrame(() => assistantRef.current?.ask(text)); } : undefined}
             totalComments={<CommentButton threads={threadsAt(threads, { kind: "total", key: "" })} label={t("Comments on the total")} onOpen={() => openComments({ kind: "total", key: "" }, t("Total"))} />} />
         </div>
       </aside>

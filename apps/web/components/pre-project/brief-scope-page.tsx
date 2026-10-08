@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type ComponentProps } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { FileText, LayoutGrid, Plus, Table2 } from 'lucide-react';
@@ -103,6 +103,17 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     ? value.specification.dimensions.map(dimension => ({ id: `${value.id}:${dimension.id}`, entry: value, dimension }))
     : []);
   const cardEntries = view === 'measurements' ? visible.filter(storedRequirement) : rows;
+  // A link to one requirement (a quote's "decide" check) lands on its card, with its decision in focus.
+  const requestedRequirement = view === 'requirement' ? searchParams.get('requirement') : null;
+  const revealed = useRef(false);
+  useEffect(() => {
+    if (!requestedRequirement || revealed.current) return;
+    const card = document.getElementById(`requirement-${requestedRequirement}`);
+    if (!card) return;
+    revealed.current = true;
+    (card.querySelector<HTMLElement>('button') ?? card).focus({ preventScroll: true });
+    card.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+  });
   const measurementColumns: DataGridColumn<MeasurementRow>[] = [
     { id:'item',header:t('Item'),size:260,accessorFn:row=>row.entry.title,cell:({row:{original}})=><div className={workspace.rowSummary}><strong>{original.entry.title}</strong><span>{data.rooms.find(room=>room.id===original.entry.roomId)?.name??original.entry.roomName??''}</span></div> },
     { id:'dimension',header:t('Dimension'),size:150,accessorFn:row=>row.dimension?.name??'' },
@@ -139,7 +150,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     {view !== 'inspiration' && sharedNotes.failure && <p className={styles.error} role="alert">{sharedNotes.failure}<Button size="compact" variant="quiet" onPress={sharedNotes.refresh}>{t('Retry')}</Button></p>}
     {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={compact ? workspace.srOnly : styles.notice}>{message}</p>}
     {sharedNotes.loading && !allEntries.length && view !== 'inspiration' ? null : (view === 'requirement' || presentation === 'cards') ? <div className={workspace.cards}>{cardEntries.map(value => {
-      return <article className={workspace.card} data-scope={value.kind === 'requirement' ? value.scopeStatus : undefined} key={value.id} aria-label={value.title}>
+      return <article className={workspace.card} data-scope={value.kind === 'requirement' ? value.scopeStatus : undefined} key={value.id} id={value.kind === 'requirement' ? `requirement-${value.id}` : undefined} aria-label={value.title}>
         <div className={workspace.body}>
           <div className={workspace.meta}><span>{data.rooms.find(r => r.id === value.roomId)?.name ?? value.roomName ?? ''}</span>{!compact && (value.kind === 'requirement' && canEditEntry(value) && !archived ? <MenuButton label={scopeLabel(t, value.scopeStatus)} items={[{id:'included',label:t('Include in scope')},{id:'excluded',label:t('Not included')},{id:'later',label:t('A later phase')},{id:'not_possible',label:t('Not possible')},{id:'undecided',label:t('Decide later')}]} onAction={key => {
             // Anything not included gets a reason the client can read; it's sealed with the accepted scope.

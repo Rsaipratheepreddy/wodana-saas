@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { servicePathRoute, quotationRequiresSitePlan, type ServicePathScope } from "./service-path-route";
+import { servicePathRoute, quotationNeedsSitePlan, quotationRequiresSitePlan, type ServicePathScope } from "./service-path-route";
 
 const full: ServicePathScope = {
   design: true,
@@ -54,6 +54,19 @@ describe("Palm enquiry-to-project route", () => {
     expect(quotationRequiresSitePlan({ ...readyMade, siteWorks: true }, "main")).toBe(true);
     expect(quotationRequiresSitePlan(full, "main")).toBe(true);
     expect(quotationRequiresSitePlan(full, "design")).toBe(false);
+  });
+
+  it("asks for a site plan only on a path with a site visit, where the Site area shows", () => {
+    const madeToOrder = { ...full, design: false, materialSelection: false, siteWorks: false, installation: false };
+    // Furniture made to order on a path without a site visit (no Site area): no plan, whatever the scope says.
+    expect(quotationNeedsSitePlan({ siteVisit: false }, madeToOrder, "main")).toBe(false);
+    expect(quotationNeedsSitePlan({ siteVisit: false }, full, "main")).toBe(false);
+    expect(quotationNeedsSitePlan({ siteVisit: false }, null, undefined)).toBe(false);
+    // A path with a site visit: the scope decides, and a case without one keeps asking.
+    expect(quotationNeedsSitePlan({ siteVisit: true }, madeToOrder, "main")).toBe(true);
+    expect(quotationNeedsSitePlan({ siteVisit: true }, { ...madeToOrder, manufacturing: false }, "main")).toBe(false);
+    expect(quotationNeedsSitePlan({ siteVisit: true }, full, "design")).toBe(false);
+    expect(quotationNeedsSitePlan({ siteVisit: true }, undefined, undefined)).toBe(true);
   });
 
   it("rejects unsupported stage combinations rather than silently hiding gates", () => {

@@ -502,6 +502,8 @@ integration("projects core (plan §6.10)", () => {
       let state = await w.builder.builder(actor, w.workspaceId, w.caseId, w.quoteId);
       expect(state.checks.map((check) => [check.code, check.values])).toEqual(expect.arrayContaining([
         ["Decide {count} requirements before sending", { count: "1" }], ["{name} is included but no line covers it", { name: "Soft-close drawers" }]]));
+      // The blocked check opens the requirement to decide in one click.
+      expect(state.checks.find((check) => check.code === "Decide {count} requirements before sending")?.requirementId).toBe(fridge);
       const cabinets = state.lines.find((line) => line.id === "a")!;
       await expect(w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: cabinets.version, scopeId: fridge } }] })).rejects.toThrow(/included in the scope/);
       state = await w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: cabinets.version, scopeId: drawers } }] });

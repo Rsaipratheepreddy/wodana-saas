@@ -403,10 +403,12 @@ describe("requirement trace", () => {
     const traced: BuilderState = { ...base, requirements: [
       { id: "11111111-1111-4111-8111-111111111112", title: "Soft-close drawers", roomName: "Kitchen", priority: "must_have", source: "client", status: "included", note: "" },
       { id: "11111111-1111-4111-8111-111111111113", title: "Wine fridge", roomName: null, priority: "preferred", source: "client", status: "undecided", note: "" }],
-      checks: [{ code: "Decide {count} requirements before sending", values: { count: "1" }, tone: "danger" }] };
+      checks: [{ code: "Decide {count} requirements before sending", values: { count: "1" }, requirementId: "11111111-1111-4111-8111-111111111113", tone: "danger" }] };
     const fetcher = mount(traced);
     await userEvent.click(screen.getByRole("button", { name: /^Totals/ }));
-    expect(await screen.findByText("Decide 1 requirements before sending")).toBeInTheDocument();
+    // One click to the requirement to decide.
+    expect(await screen.findByRole("link", { name: "Decide 1 requirements before sending" }))
+      .toHaveAttribute("href", "/workspace/pre-projects/cases/c/requirements?requirement=11111111-1111-4111-8111-111111111113");
     await userEvent.click(screen.getByRole("button", { name: "Line actions for Base cabinets" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Details" }));
     const dialog = await screen.findByRole("dialog");
@@ -416,6 +418,18 @@ describe("requirement trace", () => {
     await userEvent.click(options[1]);
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posted(fetcher).at(-1)).toEqual({ ops: [{ op: "upsert", line: expect.objectContaining({ id: "a", scopeId: "11111111-1111-4111-8111-111111111112" }) }] }));
+  });
+
+  it("holds an approved quote until every requirement is decided, linking straight to the one to decide", async () => {
+    const base = state([line({})]);
+    const approved: BuilderState = { ...base, canEdit: false, quote: { ...base.quote, status: "internal_approved" }, family: [{ ...base.family[0], status: "internal_approved" }],
+      checks: [{ code: "Decide {count} requirements before sending", values: { count: "1" }, requirementId: "11111111-1111-4111-8111-111111111113", tone: "danger" }] };
+    mount(approved);
+    const notice = await screen.findByRole("alert");
+    expect(within(notice).getByRole("link", { name: "Decide 1 requirements before sending" }))
+      .toHaveAttribute("href", "/workspace/pre-projects/cases/c/requirements?requirement=11111111-1111-4111-8111-111111111113");
+    expect(screen.getByRole("button", { name: "Send to client" })).toBeDisabled();
+    expect(screen.queryByText("This quote is approved and ready to send to the client.")).not.toBeInTheDocument();
   });
 
   it("PLM-045: a revision shows the saving against the previous one and keeps the team's note on what changed", async () => {

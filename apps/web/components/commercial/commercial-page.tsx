@@ -128,6 +128,9 @@ export function CommercialPage({
     dirty = Boolean(
       draft && saved && JSON.stringify(draft) !== JSON.stringify(saved),
     );
+  // The QS approves a deal quotation only where the firm's QS rules send it to the QS; any other one is approved as priced.
+  const qsEstimateNeeded = Boolean(state.data.servicePath && draft?.kind === "quotation"
+    && (state.qsEstimateQuoteIds === undefined || state.qsEstimateQuoteIds.includes(draft.id)));
   useEffect(() => {
     setSelected({ record, search });
   }, [record, search, setSelected]);
@@ -393,7 +396,7 @@ export function CommercialPage({
                       >
                         {t("Return to draft")}</Button>
                     )}
-                  {state.data.servicePath && state.canEstimate && draft.status === "internal_review" && draft.kind === "quotation" && (
+                  {qsEstimateNeeded && state.canEstimate && draft.status === "internal_review" && (
                     <Button
                       size="compact"
                       variant="primary"
@@ -402,7 +405,7 @@ export function CommercialPage({
                     >
                       {t("Approve QS estimate")}</Button>
                   )}
-                  {!state.data.servicePath && state.canApprove && draft.status === "internal_review" && (
+                  {(!state.data.servicePath || (draft.kind === "quotation" && !qsEstimateNeeded)) && state.canApprove && draft.status === "internal_review" && (
                     <Button
                       size="compact"
                       variant="primary"

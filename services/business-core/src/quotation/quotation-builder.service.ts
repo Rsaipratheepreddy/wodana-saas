@@ -1085,7 +1085,8 @@ function decimal(value: unknown, label: string, options: { max: string; nullable
   return parsed.toString();
 }
 
-export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; tone: "danger" | "warning" };
+/** A check about one line names it (`lineId`); one about undecided requirements names the first to decide (`requirementId`). */
+export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; requirementId?: string; tone: "danger" | "warning" };
 
 /**
  * What to fix before sending: lines without a price or quantity, formulas and build-ups that don't
@@ -1125,8 +1126,9 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
   // Requirement trace: nothing is sent while a requirement is undecided; an included one should have a line.
   if (input.kind === "quotation") {
     const requirements = await caseRequirements(db, workspaceId, caseId);
-    const undecided = requirements.filter((item) => item.status === "undecided").length;
-    if (undecided) checks.push({ code: "Decide {count} requirements before sending", values: { count: String(undecided) }, tone: "danger" });
+    const undecided = requirements.filter((item) => item.status === "undecided");
+    // The check opens the first one to decide, so deciding is one click away.
+    if (undecided.length) checks.push({ code: "Decide {count} requirements before sending", values: { count: String(undecided.length) }, requirementId: undecided[0].id, tone: "danger" });
     const covered = new Set(input.lines.map((line) => line.scopeId).filter(Boolean));
     for (const item of requirements.filter((entry) => entry.status === "included" && !covered.has(entry.id)))
       checks.push({ code: "{name} is included but no line covers it", values: { name: item.title }, tone: "warning" });
