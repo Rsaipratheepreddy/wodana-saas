@@ -70,6 +70,8 @@ export function captureApi(workspaceId: string) {
     /** The person saved the draft: the capture names the invoice, and its file becomes the invoice's document. */
     confirm: (id: string, version: number, billId: string) => command(id, { action: "confirm", version, billId }),
     discard: (id: string, version: number) => command(id, { action: "discard", version }),
+    /** Woddy reads a bill again after its reading failed: the same capture and file. */
+    retry: (id: string, version: number) => command(id, { action: "retry", version }),
     coding: (legalEntityId: string, date?: string | null) => request<BillCoding>(at(`bill-coding/${legalEntityId}`, date ? { date } : {}), {}, "Could not load."),
     fileUrl: (id: string) => at(`captures/${id}/file`),
   };

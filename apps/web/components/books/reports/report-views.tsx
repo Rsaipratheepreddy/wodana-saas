@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
-import { DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, Skeleton, type DataGridColumn } from "@/design-system";
+import { Callout, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, Skeleton, type DataGridColumn } from "@/design-system";
 import {
   AGEING_LABELS, ledgerPaths, type AgeingReport, type BalanceSheetReport, type GeneralLedgerReport, type LedgerApi, type LedgerScope, type ProfitAndLossReport,
   type StatementSection, type TrialBalanceReport, type VatBox, type VatBoxLine, type VatReport, type VatReviewItem,
@@ -151,6 +151,19 @@ function reviewReason(t: LedgerT, reason: VatReviewItem["reason"]) {
   }
 }
 
+/**
+ * Tax lines the return can't place for want of a region (neither the line nor the company has one): they're in no box,
+ * so the boxes and the tax due leave them out. Said where the figures are read, with the way to fix it.
+ */
+export function MissingRegionNotice({ lines, label }: { lines: number; label: string | null }) {
+  const t = useLedgerT();
+  const region = label ? t(label) : t("Region");
+  return <Callout tone="warning" title={lines === 1 ? t("1 tax line has no {region}", { region }) : t("{count} tax lines have no {region}", { count: lines, region })}
+    actions={<Link className="wd-button" data-size="compact" data-variant="secondary" href={ledgerPaths.settings()}>{t("Set the {region}", { region })}</Link>}>
+    {t("They're in no box, so the tax due leaves them out.")}
+  </Callout>;
+}
+
 export function VatView({ report, scope, api }: { report: VatReport; scope: LedgerScope; api: LedgerApi }) {
   const t = useLedgerT();
   const format = useLedgerFormat();
@@ -175,7 +188,9 @@ export function VatView({ report, scope, api }: { report: VatReport; scope: Ledg
     moneyColumn<VatReviewItem>("amount", t("Amount"), (row) => row.amount, format),
   ], [t, format, scope]);
   if (!report.layout) return <EmptyState title={t("This company's chart has no tax return")} />;
+  const unplaced = report.review.filter((item) => item.reason === "missing_region").length;
   return <div className={styles.stack}>
+    {unplaced ? <MissingRegionNotice lines={unplaced} label={report.layout.regionLabel} /> : null}
     <DataGrid<VatBox> {...GRID} ariaLabel={t(report.layout.name)} columns={boxColumns} data={report.boxes} getRowId={(row) => row.box}
       onRowAction={(row) => { if (!row.computed) setOpen(row); }} exportFileName={`${report.entity.code}-vat-${report.scope.from}-${report.scope.to}.csv`} />
     {report.review.length ? <section className={styles.stack} aria-label={t("To review")}>

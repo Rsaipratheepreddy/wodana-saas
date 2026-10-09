@@ -106,7 +106,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
     if (!order || !state) return null;
     switch (check.key) {
       case "materials": return <Link className={ops.projectLink} href={`/workspace/purchasing?project=${order.projectId}`}>{t("Order materials")}</Link>;
-      case "drawing": return state.canManage ? <Button size="compact" variant="quiet" onPress={() => setDialog("drawing")}>{t("Record approval")}</Button> : null;
+      // Drawings in Scope › Drawings waiting for the client are approved there; otherwise the approval is recorded here.
+      case "drawing": return state.drawing?.project ? <Link className={ops.projectLink} href={`/workspace/projects/${order.projectId}/scope?view=drawings`}>{t("Open the drawings")}</Link>
+        : state.canManage ? <Button size="compact" variant="quiet" onPress={() => setDialog("drawing")}>{t("Record approval")}</Button> : null;
       case "schedule": return state.canManage ? <Button size="compact" variant="quiet" onPress={() => setDialog("schedule")}>{t("Set where and when")}</Button> : null;
       case "payment": return <Link className={ops.projectLink} href={projectHref(order.projectId, "money")}>{t("Open the project's money")}</Link>;
       case "scope": return <Link className={ops.projectLink} href={projectHref(order.projectId, "scope")}>{t("Open the scope")}</Link>;
@@ -217,7 +219,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
       {order.batchName ? <div><dt>{t("Batch")}</dt><dd>{t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName })}</dd></div> : null}
       <div><dt>{t("Drawing")}</dt><dd>
         <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })
-          : t("Not approved yet")}</span>
+          : state.drawing?.source === "project" && state.drawing.project ? t("Drawings R{number}, approved by {name} on {date}", { number: state.drawing.project.number,
+            name: state.drawing.project.decidedByName ?? "", date: state.drawing.project.decidedOn ? format.day(state.drawing.project.decidedOn) : "" })
+          : state.drawing?.source === "catalogue" ? t("The catalogue drawing") : t("Not approved yet")}</span>
         {order.drawingNewer ? <Badge tone="warning">{t("R{number} is newer", { number: order.drawingNewer })}</Badge> : null}
         {state.canManage && ["planned", "on_hold"].includes(order.status) && !failing.some((check) => check.key === "drawing") ? <Button size="compact" variant="quiet" onPress={() => setDialog(order.status === "on_hold" && order.drawingApprovedAt ? "revise" : "drawing")}>
           {order.drawingApprovedAt ? t("Change") : t("Record approval")}</Button> : null}

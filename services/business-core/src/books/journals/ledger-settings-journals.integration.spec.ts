@@ -148,6 +148,15 @@ integration("Ledger settings, manual and opening journals on real Postgres (comm
 
     await expect(settingsCommand("preparer", { action: "turn_on", templateCode: "AE", startDate: "2026-10-01" })).rejects.toMatchObject({ status: 403 });
     await expect(settingsCommand("manager", { action: "turn_on", templateCode: "GB", startDate: "2026-10-01" })).rejects.toMatchObject({ status: 400 });
+    // The template's return splits by region: turning on asks for it (none in the company's address yet), or every sale is in no box.
+    expect(overview.companies[0].turnOnRegions?.AE).toMatchObject({ label: "Emirate", suggested: null });
+    expect(overview.companies[0].turnOnRegions?.AE?.options.map((region) => region.code)).toContain("DXB");
+    expect(overview.companies[0].turnOnRegions?.IFRS).toBeUndefined();
+    await expect(settingsCommand("manager", { action: "turn_on", templateCode: "AE", startDate: "2026-10-01" })).rejects.toThrow("Choose the emirate the company's tax return is for.");
+    // The company's address names it: that's the suggestion.
+    await superQuery(`UPDATE legal_entities SET address = '{"region": "dubai"}'::jsonb WHERE id = $1`, [entity]);
+    const suggested = await tenant(ws, people.viewer, (client) => readOverview(client, ctx(client, "viewer")));
+    expect(suggested.companies[0].turnOnRegions?.AE?.suggested).toBe("DXB");
 
     const commandId = randomUUID();
     const on = await settingsCommand("manager", { action: "turn_on", templateCode: "AE", startDate: "2026-10-01", vatRegion: "DXB" }, commandId);

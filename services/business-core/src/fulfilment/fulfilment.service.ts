@@ -284,7 +284,10 @@ export async function readFacts(db: Pick<PoolClient, "query">, workspaceId: stri
       WHERE opportunity.workspace_id = $1 AND opportunity.id = $2`, [workspaceId, rule.opportunityId, rule.caseId])).rows[0];
   const made = rule.projectId ? (await db.query<{ drawingApprovedAt: Date | null; slotOn: string | null; slotAt: Date | null; total: number; started: number; ready: number;
     firstStartedAt: Date | null; lastReadyAt: Date | null }>(
-    `SELECT (SELECT min(work.drawing_approved_at) FROM work_orders work WHERE work.workspace_id = project.workspace_id AND work.project_id = project.id AND work.status <> 'cancelled') AS "drawingApprovedAt",
+    // The drawing is approved when a work order records it, or when the client approves the project's technical drawings (Scope › Drawings).
+    `SELECT least((SELECT min(work.drawing_approved_at) FROM work_orders work WHERE work.workspace_id = project.workspace_id AND work.project_id = project.id AND work.status <> 'cancelled'),
+                  (SELECT min(revision.decided_at) FROM project_drawing_revisions revision WHERE revision.workspace_id = project.workspace_id AND revision.project_id = project.id
+                      AND revision.status = 'approved')) AS "drawingApprovedAt",
             project.factory_slot_on::text AS "slotOn", project.factory_slot_at AS "slotAt",
             count(work.id) FILTER (WHERE work.status <> 'cancelled')::int AS total,
             count(work.id) FILTER (WHERE work.started_at IS NOT NULL AND work.status <> 'cancelled')::int AS started,

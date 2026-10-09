@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CardGrid, EmptyState, KpiFigure, SelectField } from "@/design-system";
 import { ledgerPaths, type LedgerOverview as Overview, type LedgerScope } from "@/lib/books/reports-client";
 import { LedgerRegion, useLedgerFormat, useLedgerT } from "./reports/ledger-format";
+import { MissingRegionNotice } from "./reports/report-views";
 import styles from "./reports/ledger.module.css";
 
 /**
@@ -23,6 +24,7 @@ export function LedgerOverview({ overview, onEntity }: { overview: Overview; onE
       <SelectField accent="neutral" label={t("Company")} items={overview.entities.map((item) => ({ id: item.id, label: item.name }))} selectedKey={overview.entity.id}
         onSelectionChange={(value) => value && onEntity(String(value))} />
     </div> : null}
+    {overview.vatMissingRegion ? <MissingRegionNotice lines={overview.vatMissingRegion.lines} label={overview.vatMissingRegion.label} /> : null}
     <Figures overview={overview} />
   </LedgerRegion>;
 }

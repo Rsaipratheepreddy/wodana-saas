@@ -13966,5 +13966,14 @@
   "Revise quotation {quote}": "Revise quotation {quote}",
   "The client declined {quote}": "The client declined {quote}",
   "{quote} expired before the client decided": "{quote} expired before the client decided",
-  "{quote} accepted": "{quote} accepted"
+  "{quote} accepted": "{quote} accepted",
+  "Couldn't read the bill": "Couldn't read the bill",
+  "Enter it by hand or try again.": "Enter it by hand or try again.",
+  "1 tax line has no {region}": "1 tax line has no {region}",
+  "{count} tax lines have no {region}": "{count} tax lines have no {region}",
+  "Set the {region}": "Set the {region}",
+  "They're in no box, so the tax due leaves them out.": "They're in no box, so the tax due leaves them out.",
+  "Drawings R{number}, approved by {name} on {date}": "Drawings R{number}, approved by {name} on {date}",
+  "The catalogue drawing": "The catalogue drawing",
+  "Approved R{number}": "Approved R{number}"
 }

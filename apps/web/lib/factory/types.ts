@@ -106,6 +106,12 @@ export type WorkOrderState = FactoryRights & {
   next?: WorkOrderNext; reworks?: WorkOrderRework[];
   /** The project's designs with an approved revision (the latest of each), to make it to. */
   designs?: Array<{ designId: string; versionId: string; title: string; number: number; documentType: string }>;
+  /**
+   * The drawing it's made to: recorded on it, the project's drawings once the client approved their latest revision
+   * (Scope › Drawings), or a standard piece's catalogue drawing; and the project's latest drawings revision.
+   */
+  drawing?: { source: "work_order" | "project" | "catalogue" | null; approved: boolean;
+    project: { number: number; status: string; decidedOn: string | null; decidedByName: string | null } | null };
   projectStatus?: string;
   /** The project's payment stages it can be tied to, and the reminder its ready date triggered for the tied stage. */
   payments?: Array<{ id: string; title: string; status: "pending" | "proof_submitted" | "verified" }>;

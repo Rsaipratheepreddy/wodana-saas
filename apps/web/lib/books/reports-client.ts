@@ -96,6 +96,8 @@ export type LedgerOverview = {
   entities: ReportEntity[]; entity: ReportEntity | null; canManage: boolean; canPost: boolean;
   balances: { cash: Money; receivables: Money; payables: Money; vatDue: Money | null; profitThisYear: Money } | null;
   vatPeriod: { from: IsoDay; to: IsoDay } | null; fiscalYear: { from: IsoDay; to: IsoDay } | null; openIssues: number;
+  /** Tax lines this quarter in no regional box for want of a region (the VAT due leaves them out). */
+  vatMissingRegion?: { lines: number; label: string | null } | null;
 };
 
 /** What a report reads: the company and the period, kept in the address. Empty means the server's default. */

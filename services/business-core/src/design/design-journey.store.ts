@@ -3,6 +3,7 @@ import { recordAudit } from "../audit/record-audit";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { projectRepository } from "../projects/project-repository";
 import type { ProjectData } from "../projects/execution.types";
+import { formatCalendarDay } from "../common/calendar-day";
 import { addDays, DEFAULT_SITE_VISIT_QUESTIONS, journeyStages, nextStage, normaliseSiteQuestions, SITE_AND_MATERIALS_STAGES, stageDeadlines, STAGE_LABELS, type JourneyKind, type JourneyStage, type StageTimings } from "./design-journey.domain";
 
 type Db = Pick<PoolClient, "query">;
@@ -230,10 +231,7 @@ export function formatDue(due: Date, timeZone: string, locale: string) {
 }
 
 /** A calendar day (no time zone shift): "5 Oct 2026". */
-export function formatDay(day: string, locale: string) {
-  const options: Intl.DateTimeFormatOptions = { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" };
-  try { return new Intl.DateTimeFormat(locale, options).format(new Date(`${day}T00:00:00Z`)); } catch { return new Intl.DateTimeFormat("en", options).format(new Date(`${day}T00:00:00Z`)); }
-}
+export const formatDay = formatCalendarDay;
 
 export async function event(db: Db, workspaceId: string, caseId: string, stage: string, action: string, note: string | null, userId: string | null) {
   await db.query(`INSERT INTO design_journey_events (workspace_id, case_id, stage, action, note, actor_user_id) VALUES ($1, $2, $3, $4, $5, $6)`, [workspaceId, caseId, stage, action, note, userId]);

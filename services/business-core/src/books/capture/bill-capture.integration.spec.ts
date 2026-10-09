@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, Logger } from "@nestjs/common";
+import { AiUnavailableError } from "../../ai-gateway/ai-gateway.service";
 import { Pool, type PoolClient } from "pg";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -7,14 +8,14 @@ import { seedDefaultNotificationTemplates } from "../../notifications/default-te
 import { readBillLines } from "../../purchasing/payables";
 import { PayablesService } from "../../purchasing/payables.service";
 import { applyTemplate } from "../ledger/templates";
-import { BillCaptureService } from "./bill-capture.service";
+import { BillCaptureService, NO_AI_READING } from "./bill-capture.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test runs in one transaction that is
 // rolled back; the services run as the app role under forced RLS.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "T" } as never;
-const ALL = ["payables.view", "payables.manage", "payables.approve"];
+const ALL = ["payables.view", "payables.manage", "payables.approve", "ai.suggestions.use"];
 
 /** A UAE tax invoice as the model reads it: Al Noor's bill for oak veneer on PO-0042, plus delivery. */
 const reading = (patch: Record<string, unknown> = {}) => ({
@@ -212,6 +213,42 @@ integration("Ledger bill capture on real Postgres (photo → reading → draft b
       await expect(w.captures.command(actor, w.workspaceId, failed.capture.id, { action: "discard", commandId: randomUUID(), version: failed.capture.version }))
         .rejects.toThrow(/Someone else changed this capture/);
     });
+  });
+
+  it("reads a bill again after the AI provider refused (quota, HTTP 402): the same capture and file, logged, version-checked, once", async () => {
+    await world(async (w) => {
+      const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+      try {
+        w.ai.generate.mockRejectedValueOnce(new AiUnavailableError("The AI service did not answer. Try again, or continue manually."));
+        const failed = await w.captures.upload(actor, w.workspaceId, await photo(9));
+        expect(failed.capture).toMatchObject({ status: "failed", error: "The AI service did not answer. Try again, or continue manually.", billId: null });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Bill capture ${failed.capture.id}`));
+        expect(warn.mock.calls.map(([message]) => String(message)).join("\n")).toContain("HTTP 503");
+        // Only a failed reading is read again, at the version the person saw.
+        await expect(w.captures.command(actor, w.workspaceId, failed.capture.id, { action: "retry", commandId: randomUUID(), version: failed.capture.version + 1 }))
+          .rejects.toThrow(/Someone else changed this capture/);
+        const commandId = randomUUID();
+        const read = await w.captures.command(actor, w.workspaceId, failed.capture.id, { action: "retry", commandId, version: failed.capture.version });
+        expect(read.capture).toMatchObject({ id: failed.capture.id, status: "drafted", error: null, fileName: "bill-9.png" });
+        expect(w.ai.generate).toHaveBeenCalledTimes(2);
+        // The same command again reads nothing twice.
+        await w.captures.command(actor, w.workspaceId, failed.capture.id, { action: "retry", commandId, version: failed.capture.version });
+        expect(w.ai.generate).toHaveBeenCalledTimes(2);
+        await expect(w.captures.command(actor, w.workspaceId, failed.capture.id, { action: "retry", commandId: randomUUID(), version: read.capture.version }))
+          .rejects.toThrow("Only a bill that couldn't be read is read again.");
+        expect((await w.client.query(`SELECT action FROM audit_events WHERE workspace_id = $1 AND entity_id = $2 ORDER BY occurred_at, action`, [w.workspaceId, failed.capture.id])).rows
+          .map((row) => row.action)).toEqual(expect.arrayContaining(["books_capture.failed", "books_capture.retried", "books_capture.drafted"]));
+      } finally { warn.mockRestore(); }
+    });
+  });
+
+  it("says plainly that reading bills needs the AI permission, without asking the AI, and keeps the photo to enter by hand", async () => {
+    await world(async (w) => {
+      const failed = await w.captures.upload(actor, w.workspaceId, await photo(10));
+      expect(failed.capture).toMatchObject({ status: "failed", error: NO_AI_READING });
+      expect(w.ai.generate).not.toHaveBeenCalled();
+      expect((await w.captures.file(actor, w.workspaceId, failed.capture.id)).body.length).toBeGreaterThan(0);
+    }, ["payables.view", "payables.manage"]);
   });
 
   it("needs the right to enter bills, and refuses a file that isn't a bill photo or PDF", async () => {

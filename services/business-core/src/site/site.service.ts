@@ -21,6 +21,7 @@ import { financeAndAccountManager } from "../factory/factory-ready";
 import { arrangeSiteAccess } from "./site-access";
 import { publishReport, readProgressSettings } from "./progress-delivery";
 import { readSitesToday } from "./sites-today";
+import { formatCalendarDay, workspaceLocale } from "../common/calendar-day";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -574,13 +575,14 @@ export class SiteService {
            JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
           WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND ('buyer' = ANY(assignment.role_keys) OR assignment.is_manager)
           ORDER BY ('buyer' = ANY(assignment.role_keys)) DESC LIMIT 1`, [workspaceId, projectId])).rows[0] ?? null;
-      return { issue, buyer, userId: user.userId };
+      return { issue, buyer, userId: user.userId, locale: await workspaceLocale(client, workspaceId) };
     });
     if (found.issue.raised) return this.state(actor, workspaceId, projectId);
     const blocks = kind === "material" && body.blocks ? uuid(body.blocks, "Task") : null;
     const areaId = kind === "snag" && body.areaId ? uuid(body.areaId, "Area") : null;
     const title = (kind === "snag" ? found.issue.description : `Material needed: ${found.issue.description}`).split("\n")[0].slice(0, 300);
-    const description = `From the site report of ${found.issue.reportDate}:\n${found.issue.description}`;
+    // The report's day as the workspace writes dates (its region's locale), never ISO.
+    const description = `From the site report of ${formatCalendarDay(found.issue.reportDate, found.locale)}:\n${found.issue.description}`;
     if (this.work) {
       await this.work.command(actor, workspaceId, projectId, kind === "snag"
         ? { action: "create", id: issueId, type: "snag", title, description, severity: found.issue.severity, source: "inspection", ...(areaId ? { areaId } : {}) }

@@ -52,10 +52,16 @@ export type CaseCommercialFacts = {
   };
   quoteReferences?: Record<string, string>;
 };
-export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
+export type CaseProjectFacts = {
+  id: string; caseId: string; name: string; reference: string; status: string; onHold: boolean; managerName: string | null; nextAction: string;
+  staged: boolean; stageName: string | null; phase: string; workflow: { templateCode: string; currentStageKey: string; currentStageName: string } | null;
+};
+export type PreProjectListItem =Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
   projectId?: string | null;
+  /** Its project, the same for everyone who sees the case: on staged delivery (left Planning), or an older route's phase and stage. */
+  project?: CaseProjectFacts;
   servicePathEnabled?: boolean;
   plan?: CasePlan;
   /** The case's quotations and agreement, so the list's stage and next step match its overview. */

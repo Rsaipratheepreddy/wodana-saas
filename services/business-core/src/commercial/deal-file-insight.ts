@@ -101,6 +101,8 @@ export type DealLive = {
   designStages: Record<string, "locked" | "active" | "done">;
   boqLines: number;
   workOrders: { total: number; ready: number; drawingsApproved: number };
+  /** The client approved the latest revision of the project's technical drawings (Scope › Drawings): every work order is made to them. */
+  drawingsClientApproved?: boolean;
   supplierOrders: { total: number; arrived: number };
   fulfilment: { collected: number; delivered: number; installed: number };
   proposals: Array<{ kind: ProposalKind; valueStatus: ValueStatus; wonAt: string | null }>;
@@ -147,7 +149,7 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
     sections.push({ key: path === "take_home_now" ? "collection" : "collection_delivery", group: "furniture",
       state: state(live.fulfilment.collected + live.fulfilment.delivered > 0, true), href: opportunityHref });
     if (path === "core_collection_factory" || path === "bespoke")
-      sections.push({ key: "approved_drawing", group: "furniture", state: state(live.workOrders.drawingsApproved > 0, true), count: live.workOrders.drawingsApproved, href: projectHref() ?? opportunityHref });
+      sections.push({ key: "approved_drawing", group: "furniture", state: state(live.workOrders.drawingsApproved > 0 || Boolean(live.drawingsClientApproved), true), count: live.workOrders.drawingsApproved, href: projectHref() ?? opportunityHref });
     if (live.materialsChange) sections.push({ key: "materials_approval", group: "furniture", state: state(Boolean(dealFile?.materialEvidence?.length), true), href: caseHref("execution-release") });
     if (path === "supplier_order")
       sections.push({ key: "supplier_orders", group: "furniture", state: state(live.supplierOrders.total > 0 && live.supplierOrders.arrived === live.supplierOrders.total, live.supplierOrders.total > 0),
@@ -171,7 +173,7 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
       sections.push({ key: "main_quotation", group: "production", state: state(Boolean(main?.wonAt) || data.quotes.some((item) => item.round === "main" && item.status === "accepted"), Boolean(main)), href: caseHref("quotations") });
     }
     sections.push({ key: "boq", group: "production", state: state(live.boqLines > 0, Boolean(live.projectId)), count: live.boqLines, href: projectHref() });
-    sections.push({ key: "technical_drawings", group: "production", state: state(live.workOrders.total > 0 && live.workOrders.drawingsApproved === live.workOrders.total, live.workOrders.total > 0),
+    sections.push({ key: "technical_drawings", group: "production", state: state(Boolean(live.drawingsClientApproved) || (live.workOrders.total > 0 && live.workOrders.drawingsApproved === live.workOrders.total), live.workOrders.total > 0),
       count: live.workOrders.drawingsApproved, href: projectHref() });
     sections.push({ key: "production", group: "production", state: state(live.workOrders.total > 0 && live.workOrders.ready === live.workOrders.total, live.workOrders.total > 0),
       count: live.workOrders.total, href: projectHref() });
@@ -187,7 +189,7 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
 async function dealLive(db: Db, workspaceId: string, caseId: string, opportunityId: string | null): Promise<DealLive> {
   const row = (await db.query<{
     projectId: string | null; flow: string | null; furniturePath: FurniturePath | null; materialsChange: boolean | null; proofCount: number;
-    stages: Record<string, "locked" | "active" | "done"> | null; boqLines: number; workTotal: number; workReady: number; drawings: number;
+    stages: Record<string, "locked" | "active" | "done"> | null; boqLines: number; workTotal: number; workReady: number; drawings: number; drawingsClientApproved: boolean | null;
     ordersTotal: number; ordersArrived: number; collected: number; delivered: number; installed: number;
   }>(
     `SELECT project.id AS "projectId", choice.flow, opportunity.furniture_path AS "furniturePath", opportunity.materials_change AS "materialsChange",
@@ -196,7 +198,11 @@ async function dealLive(db: Db, workspaceId: string, caseId: string, opportunity
             (SELECT count(*)::int FROM project_boq_lines line WHERE line.workspace_id = $1 AND line.project_id = project.id) AS "boqLines",
             (SELECT count(*) FILTER (WHERE work.status <> 'cancelled')::int FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS "workTotal",
             (SELECT count(*) FILTER (WHERE work.status IN ('ready', 'short_closed'))::int FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS "workReady",
-            (SELECT count(*) FILTER (WHERE work.drawing_approved_at IS NOT NULL AND work.status <> 'cancelled')::int FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS drawings,
+            (SELECT revision.status = 'approved' FROM project_drawing_revisions revision WHERE revision.workspace_id = $1 AND revision.project_id = project.id
+              ORDER BY revision.number DESC LIMIT 1) AS "drawingsClientApproved",
+            (SELECT count(*) FILTER (WHERE work.status <> 'cancelled' AND (work.drawing_approved_at IS NOT NULL OR coalesce((SELECT revision.status = 'approved' FROM project_drawing_revisions revision
+              WHERE revision.workspace_id = $1 AND revision.project_id = project.id ORDER BY revision.number DESC LIMIT 1), false)))::int
+               FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS drawings,
             (SELECT count(DISTINCT line.order_id)::int FROM purchase_order_lines line JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
               WHERE line.workspace_id = $1 AND (line.project_id = project.id OR line.opportunity_id = opportunity.id) AND purchase.status NOT IN ('draft', 'cancelled')) AS "ordersTotal",
             (SELECT count(DISTINCT shipment.order_id)::int FROM purchase_order_shipments shipment JOIN purchase_order_lines line ON line.workspace_id = shipment.workspace_id AND line.order_id = shipment.order_id
@@ -215,7 +221,7 @@ async function dealLive(db: Db, workspaceId: string, caseId: string, opportunity
   return {
     caseId, opportunityId, projectId: row?.projectId ?? null, flow: row?.flow ?? null, furniturePath: row?.furniturePath ?? null, materialsChange: Boolean(row?.materialsChange),
     proofCount: row?.proofCount ?? 0, designStages: row?.stages ?? {}, boqLines: row?.boqLines ?? 0,
-    workOrders: { total: row?.workTotal ?? 0, ready: row?.workReady ?? 0, drawingsApproved: row?.drawings ?? 0 },
+    workOrders: { total: row?.workTotal ?? 0, ready: row?.workReady ?? 0, drawingsApproved: row?.drawings ?? 0 }, drawingsClientApproved: Boolean(row?.drawingsClientApproved),
     supplierOrders: { total: row?.ordersTotal ?? 0, arrived: row?.ordersArrived ?? 0 },
     fulfilment: { collected: row?.collected ?? 0, delivered: row?.delivered ?? 0, installed: row?.installed ?? 0 },
     proposals: opportunityId ? (await loadProposals(db, workspaceId, opportunityId)).map((proposal) => ({ kind: proposal.kind, valueStatus: proposal.valueStatus, wonAt: proposal.wonAt })) : [],

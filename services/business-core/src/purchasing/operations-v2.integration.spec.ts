@@ -468,6 +468,49 @@ integration("operations v2 (plan §6.14–6.16, D-8, D-11, D-20, D-26, D-38, D-4
     });
   });
 
+  it("makes work to the project's drawings once the client approved their latest revision (Scope › Drawings), without its own approval; a newer revision stops it again", async () => {
+    await world(async (w) => {
+      const { projectId, as } = await started(w);
+      const maker = as(w.designer, [...ALL, ...FACTORY]).factory;
+      const scope = await w.core.scope(actor, w.workspaceId, projectId);
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      let detail = await w.core.get(actor, w.workspaceId, projectId);
+      detail = await w.core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      const settings = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requireDrawing: true, requirePayment: false, requireMaterials: false });
+      const joinery = randomUUID(), wo = randomUUID();
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
+      await maker.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-09" });
+      const blocked = async () => (await maker.state(actor, w.workspaceId)).orders.find((item) => item.id === wo)!.blocked;
+      // Drawings R1 are with the client: the work order says so.
+      const r1 = randomUUID();
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO project_drawing_revisions (id, workspace_id, project_id, number, status, site_check, site_checked_by, site_checked_at, sent_by, sent_at, created_by)
+        VALUES ($1, $2, $3, 1, 'sent', 'ok', $4, now(), $4, now(), $4)`, [r1, w.workspaceId, projectId, w.manager]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      expect(await blocked()).toEqual([{ key: "drawing", missing: "the client hasn't approved drawings R1" }]);
+      // The client approves R1: the work order is made to them, with no approval recorded on it.
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`UPDATE project_drawing_revisions SET status = 'approved', decided_on = $2, decided_by_name = 'Maya Client', decision_via = 'recorded', decided_at = now()
+        WHERE id = $1`, [r1, "2026-10-01"]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      expect(await blocked()).toEqual([]);
+      let order = await maker.order(actor, w.workspaceId, wo);
+      expect([order.order.drawingApprovedAt, order.drawing, order.next]).toEqual([null,
+        { source: "project", approved: true, project: { number: 1, status: "approved", decidedOn: "2026-10-01", decidedByName: "Maya Client" } }, "release"]);
+      order = await maker.command(actor, w.workspaceId, wo, { action: "release", version: order.order.version });
+      expect(order.order.status).toBe("released");
+      // R2 started after the approval: new work on the line waits for the client again.
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO project_drawing_revisions (id, workspace_id, project_id, number, status, created_by) VALUES ($1, $2, $3, 2, 'uploaded', $4)`,
+        [randomUUID(), w.workspaceId, projectId, w.manager]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      const more = randomUUID();
+      await maker.plan(actor, w.workspaceId, { id: more, lineId: cabinets.id, quantity: "1", workcenterId: joinery, plannedStart: "2026-10-12", plannedEnd: "2026-10-13" });
+      expect((await maker.state(actor, w.workspaceId)).orders.find((item) => item.id === more)!.blocked).toEqual([{ key: "drawing", missing: "the client hasn't approved drawings R2" }]);
+    });
+  });
+
   it("tells the people who buy when a change leaves a project over-ordered (D-41), and shows which variation changed it", async () => {
     await world(async (w) => {
       const { projectId, vendor, buyer } = await started(w);

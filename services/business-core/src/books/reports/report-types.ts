@@ -147,6 +147,8 @@ export type LedgerOverview = {
   canPost: boolean;
   balances: { cash: Money; receivables: Money; payables: Money; vatDue: Money | null; profitThisYear: Money } | null;
   vatPeriod: { from: IsoDay; to: IsoDay } | null;
+  /** Tax lines this quarter in no regional box because neither the line nor the company has a region (the VAT due leaves them out). */
+  vatMissingRegion?: { lines: number; label: string | null } | null;
   fiscalYear: { from: IsoDay; to: IsoDay } | null;
   openIssues: number;
 };

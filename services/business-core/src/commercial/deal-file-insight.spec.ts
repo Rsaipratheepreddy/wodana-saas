@@ -69,6 +69,16 @@ describe("Deal File contents per enquiry type (PLM-123)", () => {
     expect(bespoke.find((section) => section.key === "proof_of_delivery")?.state).toBe("present");
   });
 
+  it("counts the project's client-approved technical drawings as the approved drawing, before any work order records one", () => {
+    const state = (over: Partial<DealLive>, key: string) => dealSections(data(), live({ projectId: "p", flow: "furniture", furniturePath: "bespoke", ...over }),
+      { design: false, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: true, siteWorks: false, installation: false })
+      .find((section) => section.key === key)?.state;
+    expect(state({}, "approved_drawing")).not.toBe("present");
+    expect(state({ drawingsClientApproved: true }, "approved_drawing")).toBe("present");
+    expect(state({ workOrders: { total: 2, ready: 0, drawingsApproved: 0 } }, "technical_drawings")).not.toBe("present");
+    expect(state({ workOrders: { total: 2, ready: 0, drawingsApproved: 0 }, drawingsClientApproved: true }, "technical_drawings")).toBe("present");
+  });
+
   it("adds Full ID's design stages, and Proposal 2 with production for ID & Furniture", () => {
     const scope = { design: true, mainQuotation: true, materialSelection: true, procurement: false, manufacturing: true, siteWorks: false, installation: true };
     const sections = dealSections(data(), live({ projectId: "p", designStages: { inspiration: "done", site_visit: "done", concepts: "active", material_selection: "locked", approval: "locked" },

@@ -92,7 +92,7 @@ export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: 
       </div>
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
-    {data.items?.length ? <DrawingItems items={data.items} canDecide={Boolean(data.canDecideItems)} onDecide={setDeciding} /> : null}
+    {data.items?.length ? <DrawingItems items={data.items} approved={latest?.status === "approved" ? latest.number : null} canDecide={Boolean(data.canDecideItems)} onDecide={setDeciding} /> : null}
     {latest ? <RevisionFacts revision={latest} /> : null}
     {data.revisions.length
       ? <GroupedTable<DrawingFile> ariaLabel={t("Drawings")} columns={columns} selectable={false} getRowId={(file) => file.id} getRowLabel={(file) => file.name}
@@ -182,13 +182,14 @@ function useReasonLabels() {
  * The items and whether each needs technical drawings (PLM-057): bespoke and made-to-order always; a standard item only
  * without a catalogue drawing (linked here); the team's decision, with who and why, wins over the rule.
  */
-function DrawingItems({ items, canDecide, onDecide }: { items: DrawingItem[]; canDecide: boolean; onDecide: (item: DrawingItem) => void }) {
+function DrawingItems({ items, approved, canDecide, onDecide }: { items: DrawingItem[]; approved: number | null; canDecide: boolean; onDecide: (item: DrawingItem) => void }) {
   const t = useT();
   const reasons = useReasonLabels();
+  // An item that needs drawings is covered once the client approved the latest revision (the work orders read the same).
   const columns: GroupedTableColumn<DrawingItem>[] = [
     { id: "item", label: t("Item"), width: "40%", render: (item) => <span className={styles.lineCell}><span>{item.title}</span>{item.area ? <small>{item.area}</small> : null}</span> },
     { id: "drawings", label: t("Drawings"), width: "35%", render: (item) => <span className={styles.lineCell}>
-      <span><Badge tone={item.needed ? "warning" : "success"}>{item.needed ? t("Needed") : t("Not needed")}</Badge></span>
+      <span><Badge tone={item.needed && approved === null ? "warning" : "success"}>{!item.needed ? t("Not needed") : approved === null ? t("Needed") : t("Approved R{number}", { number: approved })}</Badge></span>
       <small>{item.override ? [item.override.reason, item.override.byName].filter(Boolean).join(" · ") : reasons[item.rule.reason]}</small>
     </span> },
     { id: "catalogue", label: t("Catalogue drawing"), width: canDecide ? "15%" : "25%", mobileHidden: true, render: (item) => item.catalogDrawingUrl

@@ -304,6 +304,16 @@ integration("Ledger reports on real Postgres (statements, VAT 201, ageing, drill
     expect(overview).toMatchObject({ canManage: true, canPost: false, entity: { id: entity, currency: "AED", locale: "en-AE" }, vatPeriod: { from: "2026-10-01", to: "2026-12-31" },
       fiscalYear: { from: "2026-01-01", to: "2026-10-31" } });
     expect(overview.balances).toEqual({ cash: "118500.0000", receivables: "63000.0000", payables: "11000.0000", vatDue: "7500.0000", profitThisYear: "137000.0000" });
+    expect(overview.vatMissingRegion).toBeNull();
+    // Without the company's region, its regional sales are in no box: the overview says how many, with the region's name.
+    await tenant(ws, people.finance, (db) => db.query("UPDATE books_settings SET vat_region = NULL WHERE workspace_id = $1 AND legal_entity_id = $2", [ws, entity]));
+    try {
+      const regionless = await as(people.finance).overview(actor, ws, { entity, to: "2026-10-31" }) as LedgerOverview;
+      expect(regionless.vatMissingRegion).toEqual({ lines: expect.any(Number), label: "Emirate" });
+      expect(regionless.vatMissingRegion!.lines).toBeGreaterThan(0);
+    } finally {
+      await tenant(ws, people.finance, (db) => db.query("UPDATE books_settings SET vat_region = 'DXB' WHERE workspace_id = $1 AND legal_entity_id = $2", [ws, entity]));
+    }
     await expect(as(people.sales).report(actor, ws, "trial-balance", october)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(as(people.sales).overview(actor, ws, {})).rejects.toBeInstanceOf(ForbiddenException);
   });

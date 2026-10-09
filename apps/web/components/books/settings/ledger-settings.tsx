@@ -82,17 +82,25 @@ export function LedgerSettings({ workspaceId, companyId: initialCompany }: { wor
   </SettingsPage>;
 }
 
-/** The empty state of a company without the Ledger: the template its country is offered, the start date, and Turn on Ledger. */
+/**
+ * The empty state of a company without the Ledger: the template its country is offered, the start date, the region its
+ * tax return is for when the template's return splits by region (suggested from the company's address), and Turn on Ledger.
+ */
 function TurnOn({ api, company, canManage, onDone }: { api: BooksSettingsApi; company: CompanySummary; canManage: boolean; onDone: (view: LedgerSettingsView) => void }) {
   const t = useT();
   const [template, setTemplate] = useState(company.templates.find((item) => item.recommended)?.code ?? company.templates[0]?.code ?? "");
   const [startDate, setStartDate] = useState<string | null>(null);
+  const regions = template ? company.turnOnRegions?.[template] ?? null : null;
+  const [picked, setPicked] = useState<Record<string, string | null>>({});
+  const region = regions ? (template in picked ? picked[template] : regions.suggested) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const ready = Boolean(template && startDate && (!regions || region));
   const turnOn = async () => {
-    if (!template || !startDate) return;
+    if (!ready) return;
     setBusy(true); setError("");
-    try { onDone(await api.command(company.id, "turn_on", { templateCode: template, startDate })); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    try { onDone(await api.command(company.id, "turn_on", { templateCode: template, startDate, ...(regions ? { vatRegion: region } : {}) })); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
   };
   return <EmptyState title={t(L.turnOn)} description={company.name} action={canManage ? <div className={styles.turnOn}>
@@ -100,6 +108,9 @@ function TurnOn({ api, company, canManage, onDone }: { api: BooksSettingsApi; co
     <SelectField label={t(L.chartTemplate)} selectedKey={template || null} onSelectionChange={(key) => setTemplate(key ? String(key) : "")}
       items={company.templates.map((item) => ({ id: item.code, label: item.name }))} />
     <DateField label={t(L.startDate)} value={startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
-    <Button variant="primary" isDisabled={!template || !startDate} isLoading={busy} onPress={() => void turnOn()}>{t(L.turnOn)}</Button>
+    {regions ? <SelectField isRequired label={regions.label || t(L.region)} selectedKey={region} placeholder={t("Select an option")}
+      onSelectionChange={(key) => setPicked((current) => ({ ...current, [template]: key ? String(key) : null }))}
+      items={regions.options.map((option) => ({ id: option.code, label: option.name }))} /> : null}
+    <Button variant="primary" isDisabled={!ready} isLoading={busy} onPress={() => void turnOn()}>{t(L.turnOn)}</Button>
   </div> : undefined} />;
 }

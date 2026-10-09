@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import { InlineNotice, Woddy } from "@/design-system";
+import { Button, Callout, InlineNotice, Woddy } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown, type Translate } from "@/lib/i18n/keys";
 import type { CaptureField, CaptureState, CaptureWarning } from "@/lib/books/capture-client";
@@ -12,24 +12,29 @@ import styles from "./capture.module.css";
  * The bill as it was photographed, beside the draft Woddy read from it: the original, how sure the reading is,
  * and what to look at before saving (a bill already entered, a total that doesn't add up, a supplier not found).
  */
-export function CaptureReview({ state, fileUrl }: { state: CaptureState; fileUrl: string }) {
+export function CaptureReview({ state, fileUrl, onRetry, retrying = false }: { state: CaptureState; fileUrl: string; onRetry?: () => void; retrying?: boolean }) {
   const t = useT();
   const format = useProjectFormat();
   const { capture, proposal } = state;
   const pdf = capture.contentType === "application/pdf";
   const confidence = capture.confidence === null ? null : Math.round(Number(capture.confidence) * 100);
   const money = (value: string) => (proposal?.currency ? format.money(value, proposal.currency) : value);
+  const failed = capture.status === "failed";
   return <aside aria-label={t("The original bill")} className={styles.original}>
+    {/* A reading that failed is said first and plainly, with why and Retry; the photo stays beside the form to enter it by hand. */}
+    {failed ? <Callout tone="danger" title={t("Couldn't read the bill")}
+      actions={onRetry ? <Button size="compact" isLoading={retrying} onPress={onRetry}>{t("Retry")}</Button> : undefined}>
+      <span>{t("Enter it by hand or try again.")}</span>
+      {capture.error ? <small className={styles.reason}>{translateKnown(t, capture.error)}</small> : null}
+    </Callout> : null}
     <a className={styles.page} href={fileUrl} rel="noreferrer" target="_blank">
       {pdf ? <object aria-label={capture.fileName} className={styles.pdf} data={fileUrl} type="application/pdf"><span>{capture.fileName}</span></object>
         : <img alt={t("Photo of the bill")} className={styles.photo} src={fileUrl} />}
       <span className={styles.open}><ExternalLink aria-hidden="true" data-directional="true" size={12} />{t("Open the original")}</span>
     </a>
-    <p className={styles.read}><Woddy decorative pose={capture.status === "failed" ? "idle" : "celebrating"} size={20} />
+    {failed ? null : <p className={styles.read}><Woddy decorative pose="celebrating" size={20} />
       <span>{capture.status === "reading" ? t("Woddy is still reading. You'll be told when it's done.")
-        : capture.status === "failed" ? t("Woddy couldn't read it. Enter it beside the photo.")
-        : confidence !== null ? t("Read by Woddy, {percent}% sure. Check it before saving.", { percent: confidence }) : t("Read by Woddy. Check it before saving.")}</span></p>
-    {capture.status === "failed" && capture.error ? <InlineNotice message={translateKnown(t, capture.error)} tone="info" /> : null}
+        : confidence !== null ? t("Read by Woddy, {percent}% sure. Check it before saving.", { percent: confidence }) : t("Read by Woddy. Check it before saving.")}</span></p>}
     {state.duplicate ? <InlineNotice message={t("This bill was already captured.")} tone="info" /> : null}
     {proposal?.warnings.map((warning) => <InlineNotice key={warning.code} message={warningText(t, warning, money, format.day)} tone={warning.code === "duplicate_bill" ? "error" : "info"} />)}
   </aside>;

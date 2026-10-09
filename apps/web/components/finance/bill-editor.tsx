@@ -5,7 +5,7 @@ import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
 import { Button, DateField, FormDialog, FormRow, FormSection, IconButton, InlineNotice, MoneyField, SelectField, TextInput, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { captureApi, defaultTaxCode, usableCoding, type BillCoding, type CaptureState } from "@/lib/books/capture-client";
+import { captureApi, defaultTaxCode, usableCoding, waitForReading, type BillCoding, type CaptureState } from "@/lib/books/capture-client";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { BillState, PayablesState, SupplierState } from "@/lib/payables/types";
 import { addExact, currencyDecimals, orderTotals, priceLine } from "@/lib/purchasing/amounts";
@@ -121,6 +121,18 @@ export function BillEditor({ api, vendors, companies, existing, capture, onClose
     setSeed(next);
   };
   const hint = (field: Parameters<typeof captureHint>[2], untouched: boolean) => captureHint(t, captured, field, Boolean(seed) && untouched);
+  /** Woddy reads the same bill again after a failed reading; what it reads fills the form as a first reading does. */
+  const [retrying, setRetrying] = useState(false);
+  const retryCapture = async () => {
+    if (!captures || !captured) return;
+    setRetrying(true); setError("");
+    try {
+      let next = await captures.retry(captured.capture.id, captured.capture.version);
+      if (next.capture.status === "reading") next = await waitForReading(captures, next);
+      await applyCapture(next);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { setRetrying(false); }
+  };
 
   const fromOrders = lines.some((line) => line.orderLineId);
   // Orders of this supplier that fit the invoice: the same company and currency once a line is on it.
@@ -185,7 +197,8 @@ export function BillEditor({ api, vendors, companies, existing, capture, onClose
   return <FormDialog size={captured ? "xl" : "lg"} title={current ? t("Edit invoice") : t("Enter invoice")} onClose={onClose} error={error || undefined}
     isDirty={Boolean(number.trim() || lines.length)} isSubmitting={busy === "save"} isSubmitDisabled={!ready} submitLabel={t("Submit")} onSubmit={() => { setError(""); return persist(true); }}
     secondaryAction={<Button isLoading={busy === "save"} isDisabled={!ready || Boolean(busy)} onPress={() => void saveDraft()}>{t("Save draft")}</Button>}
-    lead={captured && captures ? <CaptureReview fileUrl={captures.fileUrl(captured.capture.id)} state={captured} /> : null}>
+    lead={captured && captures ? <CaptureReview fileUrl={captures.fileUrl(captured.capture.id)} state={captured} retrying={retrying}
+      onRetry={captured.capture.status === "failed" && !current ? () => void retryCapture() : undefined} /> : null}>
       <FormSection title={t("Invoice")}>
         {captures && !current && !captured ? <div><FromPhotoButton api={captures} onCaptured={(state) => void applyCapture(state)} onError={setError} variant="quiet" /></div> : null}
         <SelectField label={t("Supplier")} isRequired placeholder={t("Choose")} selectedKey={vendorId || null} isDisabled={fromOrders} description={vendorHint}

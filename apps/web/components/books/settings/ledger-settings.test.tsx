@@ -62,6 +62,37 @@ describe("Settings › Ledger", () => {
     expect(await screen.findByRole("tab", { name: "General" })).toBeTruthy();
   });
 
+  // The region field, not the chart template (whose name, "United Arab Emirates", holds the same word).
+  const regionField = (name: string) => name.includes("Emirate") && !name.includes("Chart of accounts");
+
+  it("asks for the region the tax return splits by when turning on, suggested from the company's address, and sends it", async () => {
+    const regions = { label: "Emirate", options: [{ code: "AUH", name: "Abu Dhabi" }, { code: "DXB", name: "Dubai" }] };
+    const fetcher = mount((url, method, body) => {
+      if (method === "POST" && body?.action === "turn_on") return view();
+      if (url.includes(`/settings/${COMPANY}`)) return view();
+      return { companies: [{ ...off, turnOnRegions: { AE: { ...regions, suggested: null } } }], canManage: true };
+    });
+    render(<DesignSystemProvider><LedgerSettings workspaceId="w" /></DesignSystemProvider>);
+    expect(await screen.findByText("Studio Interiors LLC")).toBeTruthy();
+    const start = screen.getByRole("group", { name: "Start date" });
+    await userEvent.click(within(start).getAllByRole("spinbutton")[0]);
+    await userEvent.keyboard("10012026");
+    // No region from the address: Turn on waits for it.
+    const turnOn = () => screen.getByRole("button", { name: "Turn on Ledger" });
+    expect(turnOn().hasAttribute("disabled") || turnOn().getAttribute("aria-disabled") === "true" || turnOn().hasAttribute("data-disabled")).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: regionField }));
+    await userEvent.click(await screen.findByRole("option", { name: "Dubai" }));
+    await userEvent.click(turnOn());
+    await waitFor(() => expect(posted(fetcher)).toEqual([expect.objectContaining({ action: "turn_on", templateCode: "AE", startDate: "2026-10-01", vatRegion: "DXB" })]));
+  });
+
+  it("suggests the region from the company's address", async () => {
+    mount((url) => url.includes(`/settings/${COMPANY}`) ? view()
+      : { companies: [{ ...off, turnOnRegions: { AE: { label: "Emirate", options: [{ code: "AUH", name: "Abu Dhabi" }, { code: "DXB", name: "Dubai" }], suggested: "DXB" } } }], canManage: true });
+    render(<DesignSystemProvider><LedgerSettings workspaceId="w" /></DesignSystemProvider>);
+    expect((await screen.findByRole("button", { name: regionField })).textContent).toContain("Dubai");
+  });
+
   it("shows the company's settings in tabs: General, Accounts, Tax codes, Payment accounts", async () => {
     const fetcher = mount((url, method, body) => {
       if (method === "POST") {

@@ -29,6 +29,7 @@ import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { tellScopeChanges } from "../factory/factory-changes";
 import { SiteService } from "../site/site.service";
 import { HandoverService } from "../site/handover.service";
+import { PreProjectsService } from "../pre-projects/pre-projects.service";
 import { WarrantyService } from "../site/warranty.service";
 import { processWarrantyExpiry } from "../site/site-reminders";
 import { processSiteReports } from "../site/site-reminders";
@@ -2538,13 +2539,19 @@ integration("projects core (plan §6.10)", () => {
       mine = site.reports.find((row) => row.id === report)!;
       expect(mine.photos.map((photo) => [photo.phase, photo.pairId, photo.areaId])).toEqual([["before", after, kitchen], ["after", before, kitchen]]);
 
-      // The cracked tiles become a snag on the plan (once, whatever the retries).
+      // The cracked tiles become a snag on the plan (once, whatever the retries), dated the way the workspace writes dates.
+      await w.client.query("UPDATE workspaces SET default_locale = 'en-GB' WHERE id = $1", [w.workspaceId]);
       site = await supervisor.command(actor, w.workspaceId, projectId, { action: "raise_issue", issueId: internalIssue, kind: "snag" });
       site = await supervisor.command(actor, w.workspaceId, projectId, { action: "raise_issue", issueId: internalIssue, kind: "snag" });
       const raised = site.reports.find((row) => row.id === report)!.issues.find((issue) => issue.id === internalIssue)!;
       expect(raised).toMatchObject({ raised: "snag" });
       expect((await w.client.query("SELECT type, severity, title FROM work_items WHERE workspace_id = $1 AND id = $2", [w.workspaceId, raised.workItemId])).rows)
         .toEqual([{ type: "snag", severity: "major", title: "Tile batch cracked by the supplier" }]);
+      const { description, day: reportDay } = (await w.client.query<{ description: string; day: string }>(
+        `SELECT item.description, report.report_date::text AS day FROM work_items item JOIN site_reports report ON report.id = $3 WHERE item.workspace_id = $1 AND item.id = $2`,
+        [w.workspaceId, raised.workItemId, report])).rows[0];
+      expect(description).toMatch(/^From the site report of \d{1,2} [A-Z][a-z]{2} \d{4}:\n/);
+      expect(description).not.toContain(reportDay);
 
       // Submitted: the progress lands on the plan, the best photos are picked, and the client's words are written from the facts.
       mine = site.reports.find((row) => row.id === report)!;
@@ -2727,6 +2734,57 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'handover'", [projectId]);
       detail = await core.get(actor, w.workspaceId, projectId);
       expect(detail.stages.find((stage) => stage.key === "handover")!.checks.find((check) => check.kind === "handover_accepted")!.passed).toBe(true);
+    });
+  });
+
+  it("lists a started project's case in Planning with the project's own facts, the same for a viewer who isn't on the project", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      // Someone with Planning but not on the project and without project rights (Finance).
+      const cases = new PreProjectsService({ withPermission: async (_a: unknown, _w: string, _p: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId: w.designer }),
+        hasPermission: async () => false } as never, {} as never, {} as never);
+      const listed = (await cases.list(actor, w.workspaceId, {})).items.find((item: { id: string }) => item.id === w.caseId);
+      const current = (await w.client.query<{ name: string }>("SELECT name FROM project_stages WHERE project_id = $1 AND status = 'current'", [projectId])).rows[0];
+      expect(listed).toMatchObject({ projectId, project: { id: projectId, caseId: w.caseId, staged: true, stageName: current.name, workflow: null } });
+    });
+  });
+
+  it("issues and accepts the handover at the last stage without a reason: the handover stage isn't open work, and open stages count from 1", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-handover-last-")) }));
+      const pm = new HandoverService({
+        asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          await w.client.query("SAVEPOINT handover"); try { const result = await fn(w.client, { userId: w.manager }); await w.client.query("RELEASE SAVEPOINT handover"); return result; }
+          catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT handover"); throw error; } },
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => code === "projects.view" || code === "projects.manage" } as never, storage);
+      const stages = (await w.client.query<{ key: string; position: number; name: string }>("SELECT key, position, name FROM project_stages WHERE project_id = $1 ORDER BY position", [projectId])).rows;
+      const last = stages.at(-1)!;
+      expect(last.key).toBe("handover");
+      // One earlier stage still running: it's listed, numbered as the project shows it (from 1), and the handover stage isn't.
+      const earlier = stages.at(-2)!;
+      await w.client.query("UPDATE project_stages SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND key NOT IN ($3, 'handover')", [projectId, w.manager, earlier.key]);
+      await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = $2", [projectId, earlier.key]);
+      await w.client.query("UPDATE project_stages SET status = 'upcoming' WHERE project_id = $1 AND key = 'handover'", [projectId]);
+      let state = await pm.state(actor, w.workspaceId, projectId);
+      expect(state.open.stages).toEqual([`${earlier.position + 1}. ${earlier.name}`]);
+      // Every earlier stage finished, the handover stage current, no snags: nothing is open, so no reason is asked.
+      await w.client.query("UPDATE project_stages SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND key = $3", [projectId, w.manager, earlier.key]);
+      await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'handover'", [projectId]);
+      state = await pm.state(actor, w.workspaceId, projectId);
+      expect(state.open).toEqual({ stages: [], snags: [] });
+      const pack = randomUUID();
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "create_pack", id: pack, title: "Handover", areaIds: [] });
+      state = await pm.uploadDocument(actor, w.workspaceId, projectId, pack, randomUUID(), { kind: "manual", title: "Care guide" },
+        { buffer: Buffer.from("%PDF-1.4\n%care\n"), originalname: "care.pdf", mimetype: "application/pdf", size: 0 });
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: state.packs[0].version });
+      expect(state.packs[0].status).toBe("issued");
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "accept", packId: pack, version: state.packs[0].version, decidedOn: "2026-09-27", decidedByName: "Maya Client",
+        method: "signed_document", outstanding: [], balanceReason: "Final payment due on handover" });
+      expect([state.packs[0].status, state.covered]).toEqual(["accepted", true]);
     });
   });
 

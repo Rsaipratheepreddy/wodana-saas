@@ -7,6 +7,7 @@
 .pdf { display: block; inline-size: 100%; block-size: 60vh; pointer-events: none; }
 .open { position: absolute; inset-block-end: var(--wd-space-2); inset-inline-end: var(--wd-space-2); display: inline-flex; align-items: center; gap: var(--wd-space-1);
   padding-block: var(--wd-space-1); padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); font-size: var(--wd-text-xs); }
+.reason { display: block; margin-block-start: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .read { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .coding { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-block-start: var(--wd-space-1); }
 .coding > * { flex: 1 1 10rem; min-inline-size: 0; }

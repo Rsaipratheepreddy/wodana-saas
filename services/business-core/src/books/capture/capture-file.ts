@@ -58,6 +58,11 @@ export async function prepareCapture(file?: CaptureUpload): Promise<PreparedCapt
   return { name, stored, readable: stored, sha256, byteSize };
 }
 
+/** What the AI reads of a stored capture (read again after a failed reading): a PDF's first pages, a photo as stored. */
+export async function readableCapture(stored: { body: Buffer; mimeType: string }) {
+  return stored.mimeType === "application/pdf" ? { body: await firstPages(stored.body), mimeType: stored.mimeType } : stored;
+}
+
 /** The first pages of a PDF as their own PDF; a PDF that can't be split (encrypted, damaged) is read whole. */
 async function firstPages(body: Buffer) {
   try {

@@ -238,3 +238,9 @@ export function payableOf(report: VatReport): string | null {
   const payable = [...report.boxes].reverse().find((box) => box.computed && box.section === "net" && box.vat !== null);
   return payable?.vat ?? ZERO;
 }
+
+/** How many tax lines the return left out of its regional boxes for want of a region, with the region's name; null when none. */
+export function missingRegion(report: VatReport) {
+  const lines = report.review.filter((item) => item.reason === "missing_region").length;
+  return lines && report.layout ? { lines, label: report.layout.regionLabel } : null;
+}

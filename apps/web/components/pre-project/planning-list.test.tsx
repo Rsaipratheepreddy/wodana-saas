@@ -48,6 +48,26 @@ describe("Planning rows (D-31)", () => {
       .toEqual([expect.objectContaining({ stage: "Moodboard" })]);
   });
 
+  it("places a case by its own project, the same for every viewer, whichever projects they're on", () => {
+    const facts = { id: "project-1", caseId: "case-1", name: "Villa 27 furniture", reference: "PRJ-0007", status: "active", onHold: false, managerName: "Khalid", nextAction: "",
+      staged: true, stageName: "Handover", phase: "planning", workflow: null };
+    // On staged delivery (here at Handover): in Projects, so not in Planning, for someone on the project and for Finance who isn't.
+    const delivered = { ...planning, status: "released", projectId: "project-1", project: facts } as PreProjectListItem;
+    const onTeam = planningRows([{ ...project, phase: "planning" }], [delivered], workflow, true);
+    const notOnTeam = planningRows([], [delivered], workflow, true);
+    expect(onTeam).toEqual([]);
+    expect(notOnTeam).toEqual(onTeam);
+    // A project still in a planning stage of its route: one row, the same for both.
+    const paid = { ...delivered, project: { ...facts, staged: false, stageName: null, workflow: { templateCode: "design_build_deal_first", currentStageKey: "concept", currentStageName: "Concept" } } };
+    const rows = planningRows([], [paid], workflow, true);
+    expect(rows).toEqual([expect.objectContaining({ group: "in_design", title: "Villa 27 furniture", stage: "Concept", owner: "Khalid", customer: "Amira", amount: "48000.00" })]);
+    expect(planningRows([{ ...project, manager: "Someone else", phase: "active" }], [paid], workflow, true)).toEqual(rows);
+    // A case whose project the viewer can't see is never shown as before the deal.
+    expect(planningRows([], [{ ...planning, projectId: "project-1" } as PreProjectListItem], workflow, true)).toEqual([]);
+    // A finished project has left Planning too.
+    expect(planningRows([], [{ ...paid, project: { ...paid.project, status: "completed" } }], workflow, true)).toEqual([]);
+  });
+
   it("puts qualified enquiries first to start, and before-deal cases in their own group", () => {
     const qualified = { ...planning, id: "lead-1", qualifiedLead: true, status: "qualified", opportunityId: "deal-1" } as PreProjectListItem;
     const [row] = planningRows([], [qualified], {}, true);

@@ -12,6 +12,7 @@ import { canonicalHash } from "../crm/shared/crm-types";
 import { transitionEngagement, type EngagementLifecycleState } from "./engagement-lifecycle";
 import { casePlan, casePlans } from "./case-plan";
 import { caseQuoteFacts } from "../commercial/case-quote-facts";
+import { readCaseProjects } from "./case-projects";
 import { ListPreProjectsDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
 
 const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
@@ -95,6 +96,9 @@ export class PreProjectsService {
       // Its quotations and agreement, so the list names the stage and next step the case's overview shows (a sent quote waits for the client).
       const commercial = await caseQuoteFacts(client, workspaceId, caseIds);
       for (const row of items.rows) if (commercial.has(String(row.id))) row.commercial = commercial.get(String(row.id));
+      // Its project, the same for every viewer: Planning places the case by it, not by the projects the viewer is on.
+      const projects = await readCaseProjects(client, workspaceId, items.rows.filter((row) => row.projectId).map((row) => String(row.id)));
+      for (const row of items.rows) if (projects.has(String(row.id))) row.project = projects.get(String(row.id));
       const canCreate = await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.create")
         && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.view");
       const canStartLead = canCreate && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.manage")

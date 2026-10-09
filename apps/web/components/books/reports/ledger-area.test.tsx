@@ -103,6 +103,14 @@ describe("the Ledger area", () => {
     expect(push).toHaveBeenCalledWith(`/workspace/ledger/reports/ar-ageing?entity=${ENTITY}&to=2026-10-08`);
   });
 
+  it("says when tax lines have no region, so the VAT due leaves them out, with the way to set it", async () => {
+    mount({ overview: { ...overview, balances: { ...overview.balances!, vatDue: "0.0000" }, vatMissingRegion: { lines: 3, label: "Emirate" } } });
+    render(wrap(<LedgerArea workspaceId={WS} section="overview" sub={null} />));
+    expect(await screen.findByText("3 tax lines have no Emirate")).toBeInTheDocument();
+    expect(screen.getByText("They're in no box, so the tax due leaves them out.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Set the Emirate" })).toHaveAttribute("href", "/workspace/settings/ledger");
+  });
+
   it("switches tabs in place and shows the attention count", async () => {
     const user = userEvent.setup();
     mount();

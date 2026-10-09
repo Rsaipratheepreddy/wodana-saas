@@ -122,6 +122,34 @@ describe("bill capture: From photo", () => {
     expect(within(dialog).getByRole("button", { name: "Submit" })).toBeDisabled();
   });
 
+  it("says plainly when Woddy couldn't read the bill, keeps the photo beside the form to enter by hand, and reads it again on Retry", async () => {
+    const failed = capture({ status: "failed", billId: null, model: null, confidence: null, matchedVendorId: null, matchedOrderId: null,
+      error: "The AI service did not answer. Try again, or continue manually.", version: 2 }, { reading: null, proposal: null });
+    const calls = mount((url, method, body) => {
+      if (url.includes("/api/books/capture/captures?") && method === "POST") return failed;
+      if (url.includes("/api/books/capture/captures/c1?") && method === "POST" && (body as { action?: string }).action === "retry") return capture({ status: "drafted", version: 4 });
+      if (url.includes("/bills/b9")) return draft();
+      if (url.includes("/bill-coding/e1")) return coding;
+      if (url.includes("/suppliers/v1")) return supplier;
+      return overview;
+    });
+    render(<DesignSystemProvider><FinancePage workspaceId="w" section="bills" supplierId={null} /></DesignSystemProvider>);
+    await screen.findByRole("button", { name: "From photo" });
+    await userEvent.upload(screen.getByLabelText("Photo or PDF of the bill"), photo());
+    const dialog = await screen.findByRole("dialog", { name: "Enter invoice" });
+    const original = within(dialog).getByRole("complementary", { name: "The original bill" });
+    expect(within(original).getByText("Couldn't read the bill")).toBeInTheDocument();
+    expect(within(original).getByText("Enter it by hand or try again.")).toBeInTheDocument();
+    expect(within(original).getByText("The AI service did not answer. Try again, or continue manually.")).toBeInTheDocument();
+    // The uploaded photo stays attached beside the empty form.
+    expect(within(original).getByRole("img", { name: "Photo of the bill" })).toHaveAttribute("src", expect.stringContaining("/captures/c1/file"));
+    expect(within(dialog).getByRole("textbox", { name: "Invoice number" })).toHaveValue("");
+    await userEvent.click(within(original).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(posts(calls).find((call) => call.url.includes("/captures/c1?"))?.body).toEqual(expect.objectContaining({ action: "retry", version: 2 })));
+    expect(await within(dialog).findByDisplayValue("INV-2026-0418")).toBeInTheDocument();
+    expect(within(original).queryByText("Couldn't read the bill")).toBeNull();
+  });
+
   it("says when a photo was already captured, and shows why an upload failed", async () => {
     let refuse = true;
     mount((url, method) => {

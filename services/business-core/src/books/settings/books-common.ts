@@ -126,13 +126,17 @@ export async function personName(db: Db, userId: string | null) {
   return (await db.query<{ name: string }>(`SELECT coalesce(nullif(btrim(display_name), ''), primary_email) AS name FROM users WHERE id = $1`, [userId])).rows[0]?.name ?? "";
 }
 
-export type Company = { id: string; code: string; name: string; countryCode: string; baseCurrency: string; timezone: string; today: string };
+export type Company = {
+  id: string; code: string; name: string; countryCode: string; baseCurrency: string; timezone: string; today: string;
+  /** The region of its address (as typed, e.g. the state or emirate), the default for its tax return's region. */
+  addressRegion?: string | null;
+};
 
 /** A company (legal entity) of the workspace, with today's date in its time zone. */
 export async function readCompany(db: Db, workspaceId: string, legalEntityId: string): Promise<Company> {
   const row = (await db.query<Company>(
     `SELECT entity.id, entity.code, entity.display_name AS name, entity.country_code AS "countryCode", entity.base_currency AS "baseCurrency", entity.timezone,
-            (now() AT TIME ZONE entity.timezone)::date::text AS today
+            (now() AT TIME ZONE entity.timezone)::date::text AS today, nullif(trim(entity.address->>'region'), '') AS "addressRegion"
        FROM legal_entities entity WHERE entity.workspace_id = $1 AND entity.id = $2 AND entity.archived_at IS NULL`, [workspaceId, legalEntityId])).rows[0];
   if (!row) throw new NotFoundException("Company not found.");
   return row;
@@ -141,7 +145,7 @@ export async function readCompany(db: Db, workspaceId: string, legalEntityId: st
 export async function readCompanies(db: Db, workspaceId: string): Promise<Company[]> {
   return (await db.query<Company>(
     `SELECT entity.id, entity.code, entity.display_name AS name, entity.country_code AS "countryCode", entity.base_currency AS "baseCurrency", entity.timezone,
-            (now() AT TIME ZONE entity.timezone)::date::text AS today
+            (now() AT TIME ZONE entity.timezone)::date::text AS today, nullif(trim(entity.address->>'region'), '') AS "addressRegion"
        FROM legal_entities entity WHERE entity.workspace_id = $1 AND entity.archived_at IS NULL ORDER BY entity.display_name, entity.code`, [workspaceId])).rows;
 }
 

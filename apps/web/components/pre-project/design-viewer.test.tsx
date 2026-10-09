@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useState, type ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import * as content from "@/lib/pre-project/content";
+import { DesignActions } from "./design-actions";
 import { DesignViewer } from "./design-viewer";
 
 const version = { id: "v1", number: 1, status: "draft", reviewerId: "reviewer", asset: { id: "a", name: "plan.png", mimeType: "image/png", hasPreview: true } };
@@ -146,4 +148,49 @@ it("says nothing about the client on a drawing they don't see", async () => {
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     expect(screen.queryByRole("region", { name: "Client feedback" })).not.toBeInTheDocument();
   } finally { vi.unstubAllGlobals(); }
+});
+
+describe("sending a file for review from the viewer", () => {
+  // A case page: its dropdowns and dialogs open in its own portal, which exists only after the first render.
+  function CasePage({ children }: { children: ReactNode }) {
+    const [portal, setPortal] = useState<HTMLElement | null>(null);
+    return <DesignSystemProvider portalContainer={portal}><section ref={setPortal}><button type="button">Page action</button>{children}</section></DesignSystemProvider>;
+  }
+  const hiddenAncestor = (element: Element) => element.closest("[aria-hidden='true'], [inert]");
+  const reviewers = { ...options, reviewers: [{ id: "maya", name: "Maya" }, { id: "olivia", name: "Olivia" }], canReview: true, canRecordClient: true } as unknown as content.DesignOptions;
+
+  it.each([["opened from its card", false], ["opened on arrival (?file=)", true]])("picks a reviewer and confirms the file when %s", async (_how, onArrival) => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ shared: [], canEdit: true, boards: [], reactions: [], comments: [] }) })));
+    const request = vi.spyOn(content, "caseRequest").mockResolvedValue(design);
+    function Page() {
+      const [open, setOpen] = useState(onArrival);
+      return <CasePage>
+        <button type="button" onClick={() => setOpen(true)}>Open file</button>
+        {open ? <DesignViewer data={data} design={design} options={reviewers} onClose={vi.fn()} onUpdate={vi.fn()}
+          actions={<DesignActions data={data} design={design} options={reviewers} onUpdate={vi.fn()} />} /> : null}
+      </CasePage>;
+    }
+    try {
+      render(<Page />);
+      const user = userEvent.setup();
+      if (!onArrival) await user.click(screen.getByRole("button", { name: "Open file" }));
+      const viewer = await screen.findByRole("dialog", { name: "Kitchen concept" });
+      expect(hiddenAncestor(viewer)).toBeNull();
+      expect(screen.getByText("Page action").closest("[aria-hidden='true'], [inert]")).not.toBeNull();
+      await user.click(within(viewer).getByRole("button", { name: "Send for review" }));
+      await user.click(within(viewer).getByRole("button", { name: /Reviewer/ }));
+      const option = await screen.findByRole("option", { name: "Olivia" });
+      // The list opens where it can be used, not inside the page the viewer hides.
+      expect(hiddenAncestor(option)).toBeNull();
+      await user.click(option);
+      const confirm = within(viewer).getByRole("checkbox", { name: "The file shows the right room and stage" });
+      expect(hiddenAncestor(confirm)).toBeNull();
+      await user.click(confirm);
+      expect(confirm).toBeChecked();
+      const send = within(viewer).getAllByRole("button", { name: "Send for review" }).at(-1)!;
+      await waitFor(() => expect(send).toBeEnabled());
+      await user.click(send);
+      await waitFor(() => expect(request).toHaveBeenCalledWith("w", "c", "designs/d/activity", "POST", expect.objectContaining({ action: "internal_review", reviewerId: "olivia", contextConfirmed: true })));
+    } finally { vi.unstubAllGlobals(); }
+  });
 });

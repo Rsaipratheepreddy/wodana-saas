@@ -42,6 +42,16 @@ function portalKey(container: Element | null) {
   return `portal-${id}`;
 }
 
+/**
+ * Where a custom modal (one built on React Aria's ModalOverlay directly) opens: the page's portal, beside the lists,
+ * menus and confirmations it opens, never the document. A modal in the document hides the page's portal, so a dropdown
+ * opened from inside it would land in that hidden part and could not be clicked. Use `key` on the ModalOverlay.
+ */
+export function useModalPortal() {
+  const { portalContainer } = useDesignSystem();
+  return { key: portalKey(portalContainer), container: portalContainer ?? undefined };
+}
+
 type ModalDialogProps = Omit<DialogTriggerProps, "children"> & {
   children: ReactNode;
   description?: ReactNode;

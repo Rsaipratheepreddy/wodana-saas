@@ -22,6 +22,7 @@ import {
 } from "./factory";
 import { orderReady, readReadyReminder, remindForReady } from "./factory-ready";
 import { drawingsGate } from "../project-core/project-drawings";
+import { readWorkOrderDrawing } from "./work-order-drawing";
 import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
 import { normaliseProductionSteps, parseProductionSteps, parseProductionWeeks, readProduction } from "./production-status";
 import { useForProduction } from "../fulfilment/stock-reservations";
@@ -577,7 +578,6 @@ export class FactoryService {
     };
     const project = (await client.query<{ status: string; caseId: string; quoteId: string }>(
       `SELECT status, case_id AS "caseId", quote_id AS "quoteId" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.projectId])).rows[0];
-    const drawing = (await client.query<{ at: string | null }>(`SELECT drawing_approved_at AS at FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id])).rows[0];
     const checks: Array<{ key: string; passed: boolean; missing: string; detail?: string[] }> = [
       { key: "running", passed: project?.status === "active", missing: project?.status === "on_hold" ? "the project is on hold" : "the project isn't running" },
       { key: "scope", passed: order.lineStatus === "active" && Dec.of(order.scopeOver).cmp(0) <= 0,
@@ -586,8 +586,13 @@ export class FactoryService {
     // PLM-059: on a route that asks for the client's drawing approval, production waits for it (a skipped stage doesn't ask).
     const clientDrawings = await drawingsGate(client, workspaceId, order.projectId);
     if (clientDrawings.required) checks.push({ key: "client_drawings", passed: clientDrawings.approved, missing: "the client hasn't approved the technical drawings" });
-    if (settings.requireDrawing) checks.push({ key: "drawing", passed: Boolean(drawing?.at) && !order.drawingNewer,
-      missing: drawing?.at && order.drawingNewer ? `the drawing has a newer revision (R${order.drawingNewer})` : "the drawing isn't approved" });
+    // Its own recorded drawing, the project's drawings the client approved (Scope › Drawings), or a standard piece's catalogue drawing.
+    if (settings.requireDrawing) {
+      const drawing = await readWorkOrderDrawing(client, workspaceId, order);
+      checks.push({ key: "drawing", passed: drawing.approved,
+        missing: drawing.source === "work_order" && order.drawingNewer ? `the drawing has a newer revision (R${order.drawingNewer})`
+          : drawing.project && drawing.project.status !== "approved" ? `the client hasn't approved drawings R${drawing.project.number}` : "the drawing isn't approved" });
+    }
     if (settings.requirePayment) checks.push({ key: "payment", passed: project ? await productionPaid(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the payment before production isn't verified" });
     if (settings.requireMaterials) {
       // Its own materials when it lists them (issued, or covered by the project's stock); otherwise its package's.
@@ -891,6 +896,8 @@ export class FactoryService {
       payments, readyReminder: await readReadyReminder(client, workspaceId, caseId, extra.readyPaymentId),
       // The project's approved designs, to pick the drawing from.
       designs: await this.approvedDesigns(client, workspaceId, order.projectId),
+      // The drawing it's made to when none is recorded on it: the project's client-approved drawings, or its catalogue drawing.
+      drawing: await readWorkOrderDrawing(client, workspaceId, order),
       projectStatus: (await client.query<{ status: string }>(`SELECT status FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.projectId])).rows[0]?.status ?? "active",
       operations: await this.operations(client, workspaceId, orderId),
       // Suppliers a step can go to (not archived, approved first).

@@ -6,7 +6,7 @@ import { add, isDay, neg, quarterOf } from "./report-math";
 import { isUuid, listReportEntities, resolveScope } from "./report-scope";
 import { COMPANY_REPORTS, type AccountsList, type BooksReportCode, type JournalList, type LedgerOverview, type ReportEntity } from "./report-types";
 import { accountBalances, profitToDate, readBalanceSheet, readGeneralLedger, readProfitAndLoss, readTrialBalance } from "./statements";
-import { payableOf, readVatReport } from "./vat-report";
+import { missingRegion, payableOf, readVatReport } from "./vat-report";
 import type { CsvReport } from "./report-csv";
 
 /** The Ledger area's reads, each inside the member's tenant transaction (forced RLS). */
@@ -103,6 +103,8 @@ export async function readOverview(db: Db, workspaceId: string, query: Record<st
       profitThisYear: profit,
     },
     vatPeriod: vat.layout ? { from: quarter.from, to: quarter.to } : null,
+    // Lines the return can't place without a region: the VAT due shown leaves them out, so the overview says so.
+    vatMissingRegion: missingRegion(vat),
     fiscalYear: { from: yearFrom, to: today },
   };
 }

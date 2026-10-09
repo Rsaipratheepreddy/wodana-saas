@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, HttpException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, HttpException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
@@ -16,7 +16,7 @@ import {
   BILL_CAPTURE_FEATURE, billReadingRequest, fieldHints, matchVendor, proposeLines, sameOrderNumber, taxNumberKey, validateBillReading,
   type BillReading, type CaptureWarning, type DraftLine, type PurchaseTaxCode, type VendorMatch,
 } from "./bill-reading";
-import { prepareCapture, type CaptureUpload } from "./capture-file";
+import { prepareCapture, readableCapture, type CaptureUpload } from "./capture-file";
 
 type Db = Pick<PoolClient, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -26,6 +26,9 @@ export const CAPTURE_WAIT_MS = 18_000;
 const READ_TIMEOUT_MS = 25_000;
 /** Orders a supplier can invoice (payables: placed, including closed ones). */
 const INVOICEABLE_ORDERS = ["approved", "sent", "confirmed", "closed"];
+/** Reading a bill is an AI suggestion: without the person's right to use them, it's said plainly rather than tried. */
+const AI_USE = "ai.suggestions.use";
+export const NO_AI_READING = "Reading bills needs the Use AI suggestions permission. Enter the bill by hand, or ask an admin for it.";
 
 export type CaptureStatus = "reading" | "read" | "failed" | "drafted" | "discarded";
 type CaptureRow = {
@@ -59,6 +62,8 @@ const CAPTURE_SELECT = `SELECT capture.id, capture.legal_entity_id AS "legalEnti
  */
 @Injectable()
 export class BillCaptureService {
+  private readonly logger = new Logger(BillCaptureService.name);
+
   constructor(
     private readonly access: WorkspaceAccessService,
     private readonly ai: AiGatewayService,
@@ -76,7 +81,7 @@ export class BillCaptureService {
     if (!storage) throw new ConflictException("Files can't be stored here yet.");
     const started = await this.access.withPermission(actor, workspaceId, "payables.manage", async (client, user) => {
       const live = await this.liveCapture(client, workspaceId, prepared.sha256);
-      if (live) return { id: live, duplicate: true, userId: user.userId, currency: null };
+      if (live) return { id: live, duplicate: true, userId: user.userId, currency: null, canRead: true };
       const id = randomUUID();
       const key = `books-captures/${workspaceId}/${id}/${prepared.sha256}`;
       await storage.put(key, prepared.stored.body, prepared.stored.mimeType);
@@ -85,22 +90,58 @@ export class BillCaptureService {
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'reading', $8) ON CONFLICT DO NOTHING`,
         [id, workspaceId, key, prepared.name, prepared.stored.mimeType, prepared.byteSize, prepared.sha256, user.userId]);
       // Someone captured the same file a moment ago.
-      if (!inserted.rowCount) return { id: (await this.liveCapture(client, workspaceId, prepared.sha256))!, duplicate: true, userId: user.userId, currency: null };
+      if (!inserted.rowCount) return { id: (await this.liveCapture(client, workspaceId, prepared.sha256))!, duplicate: true, userId: user.userId, currency: null, canRead: true };
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "books_capture.uploaded", entityType: "books_bill_capture", entityId: id,
         after: { fileName: prepared.name, sha256: prepared.sha256, byteSize: prepared.byteSize, contentType: prepared.stored.mimeType } });
       const currency = (await client.query<{ currency: string | null }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? null;
-      return { id, duplicate: false, userId: user.userId, currency };
+      return { id, duplicate: false, userId: user.userId, currency, canRead: await this.access.hasPermission(client, workspaceId, user.userId, AI_USE) };
     });
-    if (!started.duplicate) {
-      let background = false;
-      const reading = this.readAndDraft(actor, workspaceId, started.id, prepared.readable, started.currency)
-        .then(async (outcome) => { if (background) await this.tellRead(actor, workspaceId, started.id, started.userId, outcome).catch(() => undefined); })
-        .catch(() => undefined);
-      const finished = await Promise.race([reading.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), wait).unref?.())]);
-      if (!finished) background = true;
-    }
+    if (!started.duplicate) await this.read(actor, workspaceId, started, prepared.readable, wait);
     const view = await this.get(actor, workspaceId, started.id);
     return { ...view, duplicate: started.duplicate };
+  }
+
+  /**
+   * Reads a capture, waiting up to `wait`; a slower reading carries on in the background and tells the uploader.
+   * Someone without the right to AI suggestions isn't sent to the AI: the capture fails at once, saying why.
+   */
+  private async read(actor: RequestActor, workspaceId: string, started: { id: string; userId: string; currency: string | null; canRead: boolean },
+    readable: { body: Buffer; mimeType: string }, wait: number) {
+    if (!started.canRead) { await this.fail(actor, workspaceId, started.id, NO_AI_READING, "no AI permission"); return; }
+    let background = false;
+    const reading = this.readAndDraft(actor, workspaceId, started.id, readable, started.currency)
+      .then(async (outcome) => { if (background) await this.tellRead(actor, workspaceId, started.id, started.userId, outcome).catch(() => undefined); })
+      .catch(() => undefined);
+    const finished = await Promise.race([reading.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), wait).unref?.())]);
+    if (!finished) background = true;
+  }
+
+  /**
+   * Reads a bill again after its reading failed (the AI refused, ran out of time or answered something unusable):
+   * the same stored file, the same capture. Version-checked, once per command id, audited.
+   */
+  async retry(actor: RequestActor, workspaceId: string, captureId: string, body: Record<string, unknown>, wait = CAPTURE_WAIT_MS) {
+    const id = uuid(captureId, "Capture");
+    const storage = this.storage;
+    if (!storage) throw new ConflictException("Files can't be stored here yet.");
+    const started = await this.access.withPermission(actor, workspaceId, "payables.manage", async (client, user) => {
+      const commandId = uuid(body.commandId, "Command");
+      const capture = (await client.query<CaptureRow>(`${CAPTURE_SELECT} WHERE capture.workspace_id = $1 AND capture.id = $2 FOR UPDATE OF capture`, [workspaceId, id])).rows[0];
+      if (!capture) throw new NotFoundException("Capture not found.");
+      if (!(await firstTime(client, workspaceId, commandId, id, "books_capture_retry", user.userId))) return null;
+      if (body.version !== capture.version) throw new ConflictException("Someone else changed this capture. Reload to see their changes.");
+      if (capture.status !== "failed") throw new ConflictException(capture.status === "reading" ? "Woddy is still reading this bill." : "Only a bill that couldn't be read is read again.");
+      await client.query(`UPDATE books_bill_captures SET status = 'reading', error = NULL, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "books_capture.retried", entityType: "books_bill_capture", entityId: id, before: { error: capture.error } });
+      const currency = (await client.query<{ currency: string | null }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? null;
+      return { id, userId: user.userId, currency, key: capture.storageKey, mimeType: capture.contentType, canRead: await this.access.hasPermission(client, workspaceId, user.userId, AI_USE) };
+    });
+    if (started) {
+      const stored = await storage.read(started.key).catch(() => null);
+      if (!stored) await this.fail(actor, workspaceId, id, "The bill's file couldn't be opened. Enter it by hand.", "file missing");
+      else await this.read(actor, workspaceId, started, await readableCapture({ body: stored.body, mimeType: started.mimeType }), wait);
+    }
+    return this.get(actor, workspaceId, id);
   }
 
   get(actor: RequestActor, workspaceId: string, captureId: string) {
@@ -121,6 +162,7 @@ export class BillCaptureService {
   /** confirm (the person saved the draft: the capture names the invoice and its file becomes the invoice's document) · discard. */
   command(actor: RequestActor, workspaceId: string, captureId: string, body: Record<string, unknown>) {
     const action = body.action;
+    if (action === "retry") return this.retry(actor, workspaceId, captureId, body);
     if (action !== "confirm" && action !== "discard") throw new BadRequestException("Unknown action.");
     const id = uuid(captureId, "Capture");
     return this.access.withPermission(actor, workspaceId, "payables.manage", async (client, user) => {
@@ -188,11 +230,8 @@ export class BillCaptureService {
       model = `${answer.provider}:${answer.model}`.slice(0, 120);
     } catch (error) {
       const message = error instanceof HttpException ? messageOf(error) : "Woddy couldn't read this bill. Enter it beside the photo.";
-      await this.access.withPermission(actor, workspaceId, "payables.manage", async (client, user) => {
-        const failed = await client.query(`UPDATE books_bill_captures SET status = 'failed', error = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND status = 'reading'`,
-          [workspaceId, captureId, message.slice(0, 1000)]);
-        if (failed.rowCount) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "books_capture.failed", entityType: "books_bill_capture", entityId: captureId, after: { error: message } });
-      }).catch(() => undefined);
+      // What failed, for the people who run the service: the HTTP status or the error's name, never the bill's content.
+      await this.fail(actor, workspaceId, captureId, message, error instanceof HttpException ? `HTTP ${error.getStatus()}` : (error as Error)?.name ?? "unknown");
       return { status: "failed" as const };
     }
     const snapshot = { ...reading, raw: JSON.stringify(raw).length <= 100_000 ? raw : null };
@@ -292,6 +331,16 @@ export class BillCaptureService {
   }
 
   // ---------- helpers ----------
+
+  /** A reading that failed: the capture says why (the person enters the bill beside the photo, or tries again), logged and audited. */
+  private async fail(actor: RequestActor, workspaceId: string, captureId: string, message: string, cause: string) {
+    this.logger.warn(`Bill capture ${captureId} (workspace ${workspaceId}) wasn't read: ${cause}`);
+    await this.access.withPermission(actor, workspaceId, "payables.manage", async (client, user) => {
+      const failed = await client.query(`UPDATE books_bill_captures SET status = 'failed', error = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND status = 'reading'`,
+        [workspaceId, captureId, message.slice(0, 1000)]);
+      if (failed.rowCount) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "books_capture.failed", entityType: "books_bill_capture", entityId: captureId, after: { error: message, cause } });
+    }).catch(() => undefined);
+  }
 
   private async view(client: Db, workspaceId: string, captureId: string) {
     const row = (await client.query<CaptureRow>(`${CAPTURE_SELECT} WHERE capture.workspace_id = $1 AND capture.id = $2`, [workspaceId, captureId])).rows[0];

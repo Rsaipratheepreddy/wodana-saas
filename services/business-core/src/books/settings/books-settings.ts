@@ -60,7 +60,13 @@ export type TaxCodeView = {
   id: string; code: string; name: string; rate: string; treatment: TaxTreatment; direction: TaxDirection; recoverable: boolean; baseBox: string | null; taxBox: string | null;
   rcOutputBox: string | null; effectiveFrom: string; effectiveTo: string | null; archived: boolean; used: boolean; version: number;
 };
-export type CompanySummary = Pick<Company, "id" | "code" | "name" | "countryCode" | "baseCurrency"> & { settings: BooksSettings | null; templates: TemplateOption[] };
+/** The regions a template's tax return splits by (from the template, e.g. a state or emirate), and the one the company's address names. */
+export type TemplateRegions = { label: string; options: RegionOption[]; suggested: string | null };
+export type CompanySummary = Pick<Company, "id" | "code" | "name" | "countryCode" | "baseCurrency"> & {
+  settings: BooksSettings | null; templates: TemplateOption[];
+  /** For turning the Ledger on: each offered template's regions (only templates whose return splits by region). */
+  turnOnRegions?: Record<string, TemplateRegions>;
+};
 export type LedgerSettingsView = {
   company: CompanySummary;
   regions: { label: string; options: RegionOption[] };
@@ -92,7 +98,18 @@ export async function templatesFor(db: Db, countryCode: string): Promise<Templat
 async function regionsFor(db: Db, settings: BooksSettings | null, templates: TemplateOption[]) {
   const code = settings?.templateCode ?? templates.find((item) => item.recommended)?.code ?? null;
   if (!code) return { label: "", options: [] as RegionOption[] };
-  const template = await readTemplate(db, code, settings?.templateVersion ?? undefined);
+  return templateRegions(db, code, settings?.templateVersion ?? undefined);
+}
+
+/** The region the company's address names, matched to a template region by its code or name (any case); null when none matches. */
+export function addressRegionCode(addressRegion: string | null | undefined, options: RegionOption[]) {
+  const wanted = addressRegion?.trim().toLowerCase();
+  if (!wanted) return null;
+  return options.find((option) => option.code.toLowerCase() === wanted || option.name.toLowerCase() === wanted)?.code ?? null;
+}
+
+async function templateRegions(db: Db, code: string, version?: number) {
+  const template = await readTemplate(db, code, version);
   const report = template?.taxReport as { regionLabel?: unknown; regions?: unknown } | null | undefined;
   const options = Array.isArray(report?.regions)
     ? (report!.regions as Array<Record<string, unknown>>).filter((item) => typeof item.code === "string" && typeof item.name === "string")
@@ -106,8 +123,15 @@ export async function readOverview(db: Db, ctx: BooksCtx) {
   await requireAny(ctx, [BOOKS.manage, BOOKS.view], "You don't have access to the Ledger settings.");
   const companies: CompanySummary[] = [];
   for (const company of await readCompanies(db, ctx.workspaceId)) {
-    companies.push({ id: company.id, code: company.code, name: company.name, countryCode: company.countryCode, baseCurrency: company.baseCurrency,
-      settings: await readBooksSettings(db, ctx.workspaceId, company.id), templates: await templatesFor(db, company.countryCode) });
+    const settings = await readBooksSettings(db, ctx.workspaceId, company.id);
+    const templates = await templatesFor(db, company.countryCode);
+    // Turning on asks for the region the tax return splits by (when the template's does), suggested from the company's address.
+    const turnOnRegions: Record<string, TemplateRegions> = {};
+    if (!settings?.enabled) for (const template of templates) {
+      const regions = await templateRegions(db, template.code);
+      if (regions.options.length) turnOnRegions[template.code] = { ...regions, suggested: addressRegionCode(company.addressRegion, regions.options) };
+    }
+    companies.push({ id: company.id, code: company.code, name: company.name, countryCode: company.countryCode, baseCurrency: company.baseCurrency, settings, templates, turnOnRegions });
   }
   return { companies, canManage: await ctx.can(BOOKS.manage) };
 }
@@ -220,7 +244,11 @@ async function turnOn(db: Db, ctx: BooksCtx, company: Company, body: Record<stri
   } catch (error) { ledgerHttp(error); }
   const applied = (await readBooksSettings(db, ws, company.id))!;
   const fiscal = body.fiscalYearStartMonth === undefined ? applied.fiscalYearStartMonth : month(body.fiscalYearStartMonth);
-  const region = await checkRegion(db, applied, templates, body.vatRegion);
+  // The region its tax return splits by: as chosen, else the one its address names. A return split by region needs one,
+  // or every sale is left out of the regional boxes.
+  const regions = await regionsFor(db, applied, templates);
+  const region = await checkRegion(db, applied, templates, body.vatRegion) ?? applied.vatRegion ?? addressRegionCode(company.addressRegion, regions.options);
+  if (regions.options.length && !region) throw new BadRequestException(`Choose the ${(regions.label || "region").toLowerCase()} the company's tax return is for.`);
   if (before && hasJournals && startDate !== applied.startDate) throw new ConflictException("The start date is fixed once the company has journals.");
   await db.query(
     `UPDATE books_settings SET enabled = true, start_date = $3, fiscal_year_start_month = $4, vat_region = coalesce($5, vat_region), version = version + 1, updated_by = $6

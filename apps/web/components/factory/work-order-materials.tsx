@@ -89,7 +89,7 @@ function MaterialDialog({ title, state, action, withReason = false, onClose, onS
   return <FormDialog size="md" title={title} onClose={onClose} isSubmitDisabled={!valid} submitLabel={action} onSubmit={async () => {
         await onSave({ ...(listed ? { materialItemId: listed.id } : { name: name.trim(), unit: unit.trim() }), quantity, ...(withReason ? { reason: reason.trim() } : {}) });
       }}>
-      <SelectField label={t("Material")} selectedKey={materialItemId} onSelectionChange={(key) => setMaterialItemId(key ? String(key) : other)}
+      <SelectField isRequired label={t("Material")} selectedKey={materialItemId} onSelectionChange={(key) => setMaterialItemId(key ? String(key) : other)}
         items={[...state.projectMaterials.map((item) => ({ id: item.id, label: item.unit ? `${item.name} (${item.unit})` : item.name })), { id: other, label: t("Another material") }]} />
       {!listed ? <>
         <TextInput label={t("Name")} isRequired value={name} onChange={setName} />

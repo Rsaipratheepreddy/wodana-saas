@@ -101,6 +101,27 @@ describe("factory", () => {
     expect(await within(sheet).findByText(/K-01 rev B, approved by Omar/)).toBeInTheDocument();
   });
 
+  it("shows the project's client-approved drawings as the work order's drawing, and sends drawings waiting for the client to Scope › Drawings", async () => {
+    nav.query = "order=w1";
+    const project = { number: 1, status: "approved", decidedOn: "2026-10-01", decidedByName: "Maya Client" };
+    mount((url) => url.includes("/orders/w1") ? order({}, { drawing: { source: "project", approved: true, project }, releaseChecks: [{ key: "drawing", passed: true, missing: "" }] }) : factory());
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(await within(sheet).findByText(/Drawings R1, approved by Maya Client on/)).toBeInTheDocument();
+    expect(within(sheet).queryByText("Not approved yet")).toBeNull();
+  });
+
+  it("links a drawing check waiting for the client to the project's drawings", async () => {
+    nav.query = "order=w1";
+    const project = { number: 2, status: "sent", decidedOn: null, decidedByName: null };
+    mount((url) => url.includes("/orders/w1") ? order({}, { next: "fix", drawing: { source: null, approved: false, project },
+      releaseChecks: [{ key: "drawing", passed: false, missing: "the client hasn't approved drawings R2" }] }) : factory());
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    const checks = await within(sheet).findByRole("region", { name: "Before it's released" });
+    expect(within(checks).getByRole("link", { name: "Open the drawings" })).toHaveAttribute("href", "/workspace/projects/p1/scope?view=drawings");
+  });
+
   it("changes where and when in place with the work order's version", async () => {
     nav.query = "order=w1";
     let current = order();

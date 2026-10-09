@@ -10,7 +10,7 @@ import {
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
-import type { PreProjectList, PreProjectListItem } from "@/lib/pre-project/types";
+import type { CaseProjectFacts, PreProjectList, PreProjectListItem } from "@/lib/pre-project/types";
 import type { ProjectWorkflowPhase } from "@/lib/projects/workflow-templates";
 import { projectDisplayName } from "@/lib/projects/format";
 import type { PortfolioRow } from "@/components/projects/project-portfolio";
@@ -35,11 +35,15 @@ export type PlanningRow = {
  * What Planning lists: the cases being briefed, designed and priced (not yet a project), and projects whose current
  * workflow stage is still a planning stage (a deal-first route opens the project at the paid deal). Whether a
  * project's stage is planning comes from its workflow template, never from a list of stage keys.
+ *
+ * Where a case belongs is read from the case's own record (its project), so everyone who sees the case sees the same
+ * row: a project on staged delivery or finished has left Planning. The viewer's project list (only the projects
+ * they're on) fills in only a project the case's record doesn't carry.
  */
 export function planningRows(projects: PortfolioRow[], planning: PreProjectListItem[], workflow: WorkflowPhases = {}, servicePathEnabled = false): PlanningRow[] {
-  const linked = new Set(projects.map((project) => project.caseId));
   const cases = new Map(planning.map((item) => [item.id, item]));
-  const caseRows: PlanningRow[] = planning.filter((item) => !linked.has(item.id) && item.status !== "cancelled").map((item) => {
+  const portfolio = new Set(projects.map((project) => project.caseId).filter(Boolean));
+  const caseRows: PlanningRow[] = planning.filter((item) => !item.projectId && !item.project && !portfolio.has(item.id) && item.status !== "cancelled").map((item) => {
     // A case's planning phase as the person reads it on its path's own line (PLM-121/126), moved on by its quotations
     // and agreement as its overview reads them, and what it needs next (a sent quotation waits for the client).
     const step = caseListStep({ phase: item.phase ?? "discover", plan: item.plan }, item.commercial);
@@ -53,14 +57,24 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
       ...(!item.qualifiedLead ? { href: `/workspace/pre-projects/cases/${item.id}/requirements` } : {}),
     };
   });
-  const projectRows: PlanningRow[] = projects.flatMap((item) => {
+  const facts: CaseProjectFacts[] = [
+    ...planning.flatMap((item) => item.project ? [item.project] : []),
+    ...projects.filter((item) => !cases.get(item.caseId)?.project).map((item): CaseProjectFacts => ({ id: item.id, caseId: item.caseId, name: item.name, reference: item.reference,
+      status: "active", onHold: item.onHold, managerName: item.manager, nextAction: item.nextAction, staged: false, stageName: null, phase: item.phase, workflow: item.workflow ?? null })),
+  ];
+  const portfolioRows = new Map(projects.map((item) => [item.id, item]));
+  const projectRows: PlanningRow[] = facts.flatMap((item) => {
+    // Staged delivery and finished projects are in Projects, not Planning.
+    if (item.staged || ["completed", "cancelled", "archived"].includes(item.status)) return [];
     const phase = item.workflow ? workflow[item.workflow.templateCode]?.[item.workflow.currentStageKey] : undefined;
     if ((phase ?? item.phase) !== "planning") return [];
     const origin = cases.get(item.caseId);
+    const listed = portfolioRows.get(item.id);
     return [{
-      id: `project-${item.id}`, title: item.name, reference: item.reference, description: item.description?.trim() || origin?.description?.trim() || undefined, customer: item.customer,
+      id: `project-${item.id}`, title: item.name, reference: item.reference, description: origin?.description?.trim() || listed?.description?.trim() || undefined,
+      customer: origin?.customerName ?? listed?.customer ?? "",
       group: "in_design" as const, stage: phase ? item.workflow!.currentStageName : tKey("Execution planning"), next: item.nextAction || item.workflow?.currentStageName || tKey("Execution planning"),
-      owner: personDisplayName(item.manager) || null, amount: origin?.amount ?? null, currency: origin?.currencyCode ?? null, onHold: item.onHold,
+      owner: personDisplayName(item.managerName) || null, amount: origin?.amount ?? null, currency: origin?.currencyCode ?? null, onHold: item.onHold,
       // Planning opens the planning case; a project without one opens its plan.
       caseId: item.caseId, projectId: item.id, href: item.caseId
         ? `/workspace/pre-projects/cases/${item.caseId}/overview` : `/workspace/projects/${item.id}/plan?${new URLSearchParams({ projectName: projectDisplayName(item.name) })}`,

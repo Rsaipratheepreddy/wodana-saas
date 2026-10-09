@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { Check, Download, Maximize2, MessageSquarePlus, Minimize2, Minus, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Send, X } from "lucide-react";
-import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, PillTabs, SegmentedControl, useDesignSystem, usePortalThemeAttributes } from "@/design-system";
+import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, PillTabs, SegmentedControl, useDesignSystem, useModalPortal, usePortalThemeAttributes } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import { caseApi, caseRequest, type CaseContent, type CaseDesign, type DesignOptions, type DesignThread } from "@/lib/pre-project/content";
@@ -26,6 +26,7 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
   const t = useT();
   const { direction, locale, timeZone } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
+  const modalPortal = useModalPortal();
   const [revisionId, setRevisionId] = useState(design.versions[0]?.id);
   const revision = design.versions.find((item) => item.id === revisionId) ?? design.versions[0];
   const latest = design.versions[0];
@@ -102,7 +103,8 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
   const date = (value: string) => new Intl.DateTimeFormat(locale, { timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
   const title = design.title;
 
-  return <ModalOverlay {...portalTheme} dir={direction} className={`wd-modal-overlay ${styles.overlay}`} isOpen isDismissable={false} isKeyboardDismissDisabled onOpenChange={(open) => { if (!open) close(); }}>
+  // In the page's portal, so the review's reviewer list, checkboxes and confirmations open beside it and stay usable.
+  return <ModalOverlay key={modalPortal.key} UNSTABLE_portalContainer={modalPortal.container} {...portalTheme} dir={direction} className={`wd-modal-overlay ${styles.overlay}`} isOpen isDismissable={false} isKeyboardDismissDisabled onOpenChange={(open) => { if (!open) close(); }}>
     <Modal className={styles.shell} data-full={fullScreen || undefined}>
       <Dialog className={styles.dialog} aria-label={title}>
         <div className={styles.frame} onKeyDown={onKeyDown}>

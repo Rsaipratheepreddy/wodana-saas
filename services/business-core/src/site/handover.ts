@@ -88,10 +88,17 @@ export async function decideHandoverPack(db: Db, workspaceId: string, projectId:
 
 export type OpenWork = { stages: string[]; snags: string[] };
 
-/** What's still open on the project: stages not finished (in order) and snags not closed. A handover with these is real, but it's confirmed on purpose. */
+/**
+ * What's still open on the project: stages not finished (in order, numbered as the project counts them, from 1) and
+ * snags not closed. A handover with these is real, but it's confirmed on purpose. The handover stage itself (the one
+ * that checks "The client accepted the handover") isn't open work: the pack is what finishes it.
+ */
 export async function openWork(db: Db, workspaceId: string, projectId: string): Promise<OpenWork> {
   const stages = (await db.query<{ name: string }>(
-    `SELECT stage.position || '. ' || stage.name AS name FROM project_stages stage WHERE stage.workspace_id = $1 AND stage.project_id = $2 AND stage.status IN ('upcoming', 'current') ORDER BY stage.position`,
+    `SELECT (stage.position + 1) || '. ' || stage.name AS name FROM project_stages stage
+      WHERE stage.workspace_id = $1 AND stage.project_id = $2 AND stage.status IN ('upcoming', 'current')
+        AND NOT stage.checks @> '[{"kind": "handover_accepted"}]'::jsonb
+      ORDER BY stage.position`,
     [workspaceId, projectId])).rows.map((row) => row.name);
   const snags = (await db.query<{ name: string }>(
     `SELECT '#' || item.number || ' ' || item.title || ' (' || item.severity || ')' AS name FROM work_items item
