@@ -144,6 +144,29 @@ export type WorkOrderMaterial = {
   projectOnHand: string; freeOnHand: string;
 };
 
+/** A material on the project's list as one work order sees it: whether its line is the only one it's for, and that line's quantity. */
+export type ListedMaterial = { id: string; name: string; unit: string; catalogItemId: string | null; quantity: string | null; lineOnly: boolean; lineQuantity: string | null };
+
+/** The project's material list, each with how it relates to the work order's line. */
+export async function readListedMaterials(db: Db, workspaceId: string, order: Pick<WorkOrderRow, "projectId" | "boqLineId">): Promise<ListedMaterial[]> {
+  return (await db.query<ListedMaterial>(
+    `SELECT item.id, item.name, item.unit, item.catalog_item_id AS "catalogItemId", item.quantity::text AS quantity, item.boq_line_ids = ARRAY[$3::uuid] AS "lineOnly",
+            line.quantity::text AS "lineQuantity"
+       FROM project_material_items item
+       LEFT JOIN project_boq_lines line ON line.workspace_id = item.workspace_id AND line.id = $3
+      WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.position`, [workspaceId, order.projectId, order.boqLineId])).rows;
+}
+
+/**
+ * A work order's share of a material used only on its line: the material's quantity for the work order's part of the
+ * line, rounded up. A material shared with other items, tied to none or without a quantity has no share to suggest.
+ */
+export function materialShare(material: Pick<ListedMaterial, "quantity" | "lineOnly" | "lineQuantity">, orderQuantity: string): string | null {
+  if (!material.lineOnly || material.quantity === null || material.lineQuantity === null || Dec.of(material.lineQuantity).cmp(0) <= 0) return null;
+  const share = Dec.of(material.quantity).mul(orderQuantity).div(material.lineQuantity).ceil(4);
+  return share.cmp(0) > 0 ? share.toFixed(4) : null;
+}
+
 export async function readWorkOrderMaterials(db: Db, workspaceId: string, orderId: string): Promise<WorkOrderMaterial[]> {
   return (await db.query<WorkOrderMaterial>(
     `SELECT material.id, material.item_id AS "itemId", item.name AS "itemName", item.unit, material.material_item_id AS "materialItemId", material.quantity::text AS quantity,

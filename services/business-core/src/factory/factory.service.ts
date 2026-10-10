@@ -18,7 +18,8 @@ import { readMilestones } from "../receivables/receivables";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import {
-  capacity, defaultHours, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, workOrderNext, type WorkOrderRow,
+  capacity, defaultHours, ensureFactorySettings, materialShare, materialsShort, plain, readBatches, readListedMaterials, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders,
+  workOrderNext, type ListedMaterial, type WorkOrderRow,
 } from "./factory";
 import { orderReady, readReadyReminder, remindForReady } from "./factory-ready";
 import { drawingsGate } from "../project-core/project-drawings";
@@ -688,23 +689,30 @@ export class FactoryService {
     }
     if (action === "suggest_materials") {
       await need("factory.manage", "You can't change a work order's materials.");
-      // Materials used only on this line, at this work order's share of the line.
-      const listed = (await client.query<{ id: string; name: string; unit: string; catalogItemId: string | null; quantity: string | null; lineQuantity: string }>(
-        `SELECT item.id, item.name, item.unit, item.catalog_item_id AS "catalogItemId", item.quantity::text AS quantity, line.quantity::text AS "lineQuantity"
-           FROM project_material_items item JOIN project_boq_lines line ON line.workspace_id = item.workspace_id AND line.id = $3
-          WHERE item.workspace_id = $1 AND item.project_id = $2 AND item.boq_line_ids = ARRAY[$3::uuid] AND item.quantity IS NOT NULL ORDER BY item.position`,
-        [workspaceId, order.projectId, order.boqLineId])).rows;
-      let added = 0;
-      for (const row of listed) {
-        if (materials.some((material) => material.materialItemId === row.id && ["active", "pending"].includes(material.status))) continue;
-        const share = Dec.of(row.quantity!).mul(order.quantity).div(row.lineQuantity).ceil(4);
-        if (share.cmp(0) <= 0) continue;
-        await insert(randomUUID(), { itemId: await stockItemFor(client, workspaceId, { catalogItemId: row.catalogItemId, name: row.name, unit: row.unit }), materialItemId: row.id }, share.toFixed(4));
-        added++;
+      // From the project's list: the materials chosen, with how much each (any material on the list, once), or without a
+      // choice those used only on this line, at this work order's share of the line.
+      const listed = await readListedMaterials(client, workspaceId, order);
+      const chosen = body.items === undefined ? null : chooseListed(body.items, listed, materials);
+      const adds = chosen ?? listed.flatMap((row) => {
+        const share = onWorkOrder(materials, row.id) ? null : materialShare(row, order.quantity);
+        return share ? [{ row, quantity: share }] : [];
+      });
+      // An item the work order already uses (added by name, or another list entry for the same item) isn't added twice.
+      const using = new Set(materials.filter((material) => material.status === "active").map((material) => material.itemId));
+      const added: Array<{ materialItemId: string; name: string; quantity: string }> = [];
+      for (const { row, quantity } of adds) {
+        const itemId = await stockItemFor(client, workspaceId, { catalogItemId: row.catalogItemId, name: row.name, unit: row.unit });
+        if (using.has(itemId)) {
+          if (chosen) throw new ConflictException(`${row.name} is already on this work order: change its quantity instead.`);
+          continue;
+        }
+        using.add(itemId);
+        await insert(randomUUID(), { itemId, materialItemId: row.id }, quantity);
+        added.push({ materialItemId: row.id, name: row.name, quantity });
       }
-      if (!added) throw new ConflictException("No materials from the project's list are used only on this line.");
+      if (!added.length) throw new ConflictException("No materials from the project's list are used only on this line.");
       await bump();
-      return { added };
+      return { added: added.length, materials: added };
     }
     if (action === "set_material") {
       await need("factory.manage", "You can't change a work order's materials.");
@@ -862,9 +870,9 @@ export class FactoryService {
       `SELECT event.id, event.kind, event.detail, person.display_name AS "byName", event.at FROM work_order_events event JOIN users person ON person.id = event.actor_id
         WHERE event.workspace_id = $1 AND event.work_order_id = $2 ORDER BY event.at`, [workspaceId, orderId])).rows;
     const materials = await readWorkOrderMaterials(client, workspaceId, orderId);
-    const projectMaterials = (await client.query<{ id: string; name: string; unit: string; lineOnly: boolean }>(
-      `SELECT item.id, item.name, item.unit, item.boq_line_ids = ARRAY[$3::uuid] AS "lineOnly" FROM project_material_items item
-        WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.position`, [workspaceId, order.projectId, order.boqLineId])).rows;
+    // The project's material list, each with this work order's share when it's used only on its line.
+    const projectMaterials = (await readListedMaterials(client, workspaceId, order))
+      .map((item) => ({ id: item.id, name: item.name, unit: item.unit, suggested: materialShare(item, order.quantity) }));
     // Trips to site, and what was refused there (with the trip that brings it back).
     const dispatches = (await client.query<{ id: string; number: number; status: string; sentOn: string; quantity: string; received: string | null; short: boolean; rejected: string;
       rejectReason: string; returnId: string | null; returnNumber: number | null; returnStatus: string | null }>(
@@ -906,9 +914,9 @@ export class FactoryService {
           ORDER BY approval = 'approved' DESC, lower(display_name) LIMIT 500`, [workspaceId])).rows,
       materialCost: materials.reduce((sum, row) => sum.add(row.issuedValue), Dec.ZERO).toFixed(4),
       currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
-      // Materials from the project's list; those used only on this line can be added in one go.
-      projectMaterials: projectMaterials.map(({ lineOnly: _lineOnly, ...row }) => row),
-      canSuggest: projectMaterials.some((row) => row.lineOnly && !materials.some((material) => material.materialItemId === row.id && ["active", "pending"].includes(material.status))),
+      // Materials from the project's list: any it doesn't use yet can be added from the list, with how much.
+      projectMaterials,
+      canSuggest: projectMaterials.some((row) => !onWorkOrder(materials, row.id)),
       places: await readLocations(client, workspaceId),
       releaseChecks,
       workcenters: await readWorkcenters(client, workspaceId),
@@ -995,6 +1003,29 @@ function amount(value: unknown, label: string) {
   const raw = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
   if (!NUMBER.test(raw)) throw new BadRequestException(`${label} must be a number with up to 4 decimals.`);
   return raw;
+}
+
+/** A material from the project's list that the work order already uses, or waits to swap in. */
+function onWorkOrder(materials: ReadonlyArray<{ materialItemId: string | null; status: string }>, materialItemId: string) {
+  return materials.some((material) => material.materialItemId === materialItemId && ["active", "pending"].includes(material.status));
+}
+
+/** Materials chosen from the project's list with how much each: each on the list, once, not on the work order yet, for more than nothing. */
+function chooseListed(value: unknown, listed: ListedMaterial[], materials: ReadonlyArray<{ materialItemId: string | null; status: string }>) {
+  if (!Array.isArray(value) || !value.length) throw new BadRequestException("Choose materials from the project's list.");
+  if (value.length > 200) throw new BadRequestException("Choose at most 200 materials at a time.");
+  const seen = new Set<string>();
+  return value.map((entry) => {
+    const pick = (entry !== null && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    const row = listed.find((item) => item.id === pick.materialItemId);
+    if (!row) throw new BadRequestException("Choose a material from the project's list.");
+    if (seen.has(row.id)) throw new BadRequestException("Choose each material once.");
+    seen.add(row.id);
+    if (onWorkOrder(materials, row.id)) throw new ConflictException(`${row.name} is already on this work order: change its quantity instead.`);
+    const quantity = amount(pick.quantity, row.name);
+    if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException(`Enter how much ${row.name} it uses.`);
+    return { row, quantity };
+  });
 }
 
 /** The hours one report of output took: more than none, at most 1,000, to the hundredth. */

@@ -121,6 +121,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "finance_requests.raise", "finance_requests.manage",
       // Ledger: reads it and prepares manual journals; someone else approves them.
       "books.view", "books.post",
+      // Woddy reads a supplier bill's photo into a draft invoice (bill capture is Finance's): reading is an AI suggestion (0299).
+      "ai.suggestions.use",
     ],
   },
   {

@@ -274,6 +274,47 @@ describe("factory", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "issue_material", materialId: "m1", locationId: "f1", quantity: "3", from: "free", reason: "Offcuts too short" }));
   });
 
+  it("adds materials from the project's list with how much: the ones for this item alone come ticked with its share, any other can be ticked", async () => {
+    nav.query = "order=w1";
+    const glue = { id: "m3", itemId: "i3", itemName: "Wood glue", unit: "nos", materialItemId: "pm3", quantity: "2.0000", status: "active" as const, replacesId: null, replacesName: null,
+      reason: "", requestedBy: "u1", requestedByName: "Me", decidedByName: null, decisionNote: "", issued: "0", issuedValue: "0", projectOnHand: "0", freeOnHand: "0" };
+    const listed = { canSuggest: true, materials: [glue], projectMaterials: [{ id: "pm1", name: "Oak veneer", unit: "sheets", suggested: "13.3334" },
+      { id: "pm2", name: "Calacatta marble slab", unit: "slab", suggested: null }, { id: "pm3", name: "Wood glue", unit: "nos", suggested: null }] };
+    const fetcher = mount((url, body) => url.includes("/orders/w1") ? order(body ? { version: 3 } : {}, body ? { ...listed, canSuggest: false } : listed) : factory());
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    const materials = await within(sheet).findByRole("region", { name: "Materials" });
+    await userEvent.click(within(materials).getByRole("button", { name: "Add from the material list" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add from the material list" });
+    // What's on the work order already isn't offered again.
+    expect(within(dialog).getAllByRole("checkbox").map((box) => box.closest("label")?.textContent)).toEqual(["Oak veneer (sheets)", "Calacatta marble slab (slab)"]);
+    expect(within(dialog).getByRole("checkbox", { name: "Oak veneer (sheets)" })).toBeChecked();
+    expect(within(dialog).getByRole("textbox", { name: "Quantity of Oak veneer" })).toHaveValue("13.3334");
+    expect(within(dialog).getByRole("checkbox", { name: "Calacatta marble slab (slab)" })).not.toBeChecked();
+    expect(within(dialog).queryByRole("textbox", { name: "Quantity of Calacatta marble slab" })).toBeNull();
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: "Calacatta marble slab (slab)" }));
+    expect(within(dialog).getByRole("button", { name: "Add materials" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Quantity of Calacatta marble slab" }), "1");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add materials" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "suggest_materials", version: 2,
+      items: [{ materialItemId: "pm1", quantity: "13.3334" }, { materialItemId: "pm2", quantity: "1" }] }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add from the material list" })).toBeNull());
+    expect(within(materials).queryByRole("button", { name: "Add from the material list" })).toBeNull();
+  });
+
+  it("asks for the material when one is added by hand, without calling it optional", async () => {
+    nav.query = "order=w1";
+    mount((url) => url.includes("/orders/w1") ? order() : factory());
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    const materials = await within(sheet).findByRole("region", { name: "Materials" });
+    await userEvent.click(within(materials).getByRole("button", { name: "Add material" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add material" });
+    const label = within(dialog).getAllByText("Material").find((node) => node.classList.contains("wd-field-label"))!;
+    expect(label).not.toHaveAttribute("data-optional");
+    expect(within(dialog).getByText("Quantity")).not.toHaveAttribute("data-optional");
+  });
+
   it("stops a work order whose scope a variation reduced, and lets someone else go on after a drawing change", async () => {
     nav.query = "order=w1";
     let current = order({ status: "planned", scopeOver: "1.0000" });

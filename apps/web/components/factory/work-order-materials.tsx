@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, MenuButton, SegmentedControl, SelectField, TextAreaField, TextInput, FormDialog } from "@/design-system";
+import { Button, Checkbox, MenuButton, SegmentedControl, SelectField, TextAreaField, TextInput, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkOrderMaterial, WorkOrderState } from "@/lib/factory/types";
 import { useProjectFormat } from "../project-core/format";
@@ -11,7 +11,7 @@ import styles from "./factory.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
-type Dialog = { kind: "add" } | { kind: "issue" | "return" | "quantity" | "swap"; material: WorkOrderMaterial } | { kind: "refuse"; material: WorkOrderMaterial } | null;
+type Dialog = { kind: "add" | "list" } | { kind: "issue" | "return" | "quantity" | "swap"; material: WorkOrderMaterial } | { kind: "refuse"; material: WorkOrderMaterial } | null;
 
 /**
  * What the work order uses: each material with how much is issued and on hand, what it's worth, and the
@@ -37,7 +37,7 @@ export function WorkOrderMaterials({ state, run, busy }: { state: WorkOrderState
       <h3 className={styles.subhead}>{t("Materials")}</h3>
       {Number(state.materialCost) ? <span className={styles.muted}>{t("Issued worth {value}", { value: format.money(state.materialCost, state.currency) })}</span> : null}
       <span className={styles.spacer} />
-      {open && state.canManage && state.canSuggest ? <Button size="compact" variant="quiet" isLoading={busy} onPress={() => void run("suggest_materials")}>{t("Add from the material list")}</Button> : null}
+      {open && state.canManage && state.canSuggest ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "list" })}>{t("Add from the material list")}</Button> : null}
       {open && state.canManage ? <Button size="compact" onPress={() => setDialog({ kind: "add" })}>{t("Add material")}</Button> : null}
     </div>
     {shown.length ? <ul className={styles.list}>{shown.map((row) => <li key={row.id}>
@@ -60,6 +60,8 @@ export function WorkOrderMaterials({ state, run, busy }: { state: WorkOrderState
         }} /> : null}
     </li>)}</ul> : null}
 
+    {dialog?.kind === "list" ? <ListDialog state={state} onClose={() => setDialog(null)}
+      onSave={async (items) => { if (await run("suggest_materials", { items })) setDialog(null); }} /> : null}
     {dialog?.kind === "add" ? <MaterialDialog title={t("Add material")} state={state} action={t("Add material")} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("add_material", { materialId: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
     {dialog?.kind === "swap" ? <MaterialDialog title={t("Swap {item}", { item: dialog.material.itemName })} state={state} action={t("Ask for the swap")} withReason onClose={() => setDialog(null)}
@@ -71,6 +73,32 @@ export function WorkOrderMaterials({ state, run, busy }: { state: WorkOrderState
     {dialog?.kind === "refuse" ? <RefuseDialog onClose={() => setDialog(null)}
       onSave={async (note) => { if (await run("decide_substitution", { materialId: dialog.material.id, decision: "refuse", note })) setDialog(null); }} /> : null}
   </section>;
+}
+
+/**
+ * Materials from the project's list the work order doesn't use yet, to add with how much each: those used only on its
+ * line come ticked with its share; any other (shared with other items, or tied to none) can be ticked.
+ */
+function ListDialog({ state, onClose, onSave }: {
+  state: WorkOrderState; onClose: () => void; onSave: (items: Array<{ materialItemId: string; quantity: string }>) => Promise<void>;
+}) {
+  const t = useT();
+  const offered = state.projectMaterials.filter((item) => !state.materials.some((row) => row.materialItemId === item.id && (row.status === "active" || row.status === "pending")));
+  const [picks, setPicks] = useState<Record<string, { on: boolean; quantity: string }>>(() =>
+    Object.fromEntries(offered.map((item) => [item.id, { on: Boolean(item.suggested), quantity: item.suggested ? quantityText(item.suggested) : "" }])));
+  const pick = (id: string) => picks[id] ?? { on: false, quantity: "" };
+  const set = (id: string, patch: Partial<{ on: boolean; quantity: string }>) => setPicks((current) => ({ ...current, [id]: { ...(current[id] ?? { on: false, quantity: "" }), ...patch } }));
+  const chosen = offered.filter((item) => pick(item.id).on);
+  const valid = chosen.length > 0 && chosen.every((item) => Number(pick(item.id).quantity) > 0);
+  return <FormDialog size="md" title={t("Add from the material list")} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Add materials")} onSubmit={async () => {
+        await onSave(chosen.map((item) => ({ materialItemId: item.id, quantity: pick(item.id).quantity })));
+      }}>
+      <ul className={styles.picks}>{offered.map((item) => <li key={item.id}>
+        <Checkbox isSelected={pick(item.id).on} onChange={(on) => set(item.id, { on })}>{item.unit ? `${item.name} (${item.unit})` : item.name}</Checkbox>
+        {pick(item.id).on ? <TextInput label={null} aria-label={t("Quantity of {item}", { item: item.name })} isRequired inputMode="decimal" suffix={item.unit || undefined}
+          value={pick(item.id).quantity} onChange={(value) => set(item.id, { quantity: numeric(value) })} /> : null}
+      </li>)}</ul>
+  </FormDialog>;
 }
 
 /** A material from the project's list, or any other by name and unit, with how much the work order uses. */

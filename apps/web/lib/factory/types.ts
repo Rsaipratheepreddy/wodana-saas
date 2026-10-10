@@ -94,7 +94,11 @@ export type WorkOrderState = FactoryRights & {
     /** The order-ready date, and the client's payment stage that falls due when it's ready. */
     readyOn?: string | null; readyPaymentId?: string | null };
   reports: OutputReport[]; checks: QualityCheck[]; events: WorkOrderEvent[]; settings: FactorySettings; releaseChecks: ReleaseCheck[]; workcenters: Workcenter[]; me: string;
-  materials: WorkOrderMaterial[]; materialCost: string; currency: string; projectMaterials: Array<{ id: string; name: string; unit: string }>; canSuggest: boolean; places: StockLocation[];
+  materials: WorkOrderMaterial[]; materialCost: string; currency: string;
+  /** The project's material list, with this work order's share of those used only on its line. */
+  projectMaterials: Array<{ id: string; name: string; unit: string; suggested?: string | null }>;
+  /** Something on the project's list isn't on this work order yet. */
+  canSuggest: boolean; places: StockLocation[];
   /** Steps done by suppliers on its goods: out while their service order still waits for something. */
   operations: Array<{ id: string; name: string; supplierName: string; orderId: string; orderNumber: string; orderStatus: string; orderLineId: string; quantity: string; back: string; out: boolean }>;
   suppliers: Array<{ id: string; name: string; approved: boolean }>;

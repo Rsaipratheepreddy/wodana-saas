@@ -15,8 +15,11 @@ const kitMigration = readFileSync(resolve(migrationsDir, "0130_firm_kit_role_tem
 const operationsMigration = readFileSync(resolve(migrationsDir, "0152_operations_v2.sql"), "utf8");
 const DELIVERY_TEMPLATES = ["buyer", "purchasing_approver", "storekeeper", "factory_lead", "qc_inspector"];
 const FINANCE_TEMPLATES = ["finance", "finance_approver"];
-/** Granted after 0152 by a later migration (0266 finance requests: existing roles get them by what they already hold; 0282 the Ledger). */
-const ADDED_LATER = new Set(["finance_requests.raise", "finance_requests.manage", "books.view", "books.post", "books.approve"]);
+/**
+ * Granted after 0152 by a later migration (0266 finance requests: existing roles get them by what they already hold; 0282 the Ledger;
+ * 0299 Woddy reading bills for Finance).
+ */
+const ADDED_LATER = new Set(["finance_requests.raise", "finance_requests.manage", "books.view", "books.post", "books.approve", "ai.suggestions.use"]);
 
 describe("firm kit role templates", () => {
   it("gives a firm the people it employs, each with a permission set the catalog knows", () => {
@@ -83,6 +86,18 @@ describe("firm kit role templates", () => {
     expect(finance).not.toContain("payables.approve");
     expect(roleTemplatesFor(["finance_approver"])[0].permissions).toContain("payables.approve");
     expect(roleTemplatesFor(["finance_reviewer"])[0].permissions.filter((code) => code.endsWith(".manage"))).toEqual([]);
+  });
+
+  it("lets Finance have Woddy read a bill's photo: the template asks for AI suggestions, and existing Finance roles get it", () => {
+    expect(roleTemplatesFor(["finance"])[0].permissions).toEqual(expect.arrayContaining(["payables.manage", "ai.suggestions.use"]));
+    const upgrade = readFileSync(resolve(migrationsDir, "0299_finance_reads_bills.sql"), "utf8");
+    expect(upgrade).toMatch(/NOT role\.is_system AND role\.code = 'finance'[\s\S]*permission\.code = 'ai\.suggestions\.use'[\s\S]*ON CONFLICT \(role_id, permission_id\) DO NOTHING/);
+    // Keyed by the template's code, never by a tenant; RLS is never turned off.
+    expect(upgrade).not.toMatch(/slug|workspace\.name|DISABLE ROW LEVEL SECURITY|NO FORCE ROW LEVEL SECURITY/i);
+    const journal = JSON.parse(readFileSync(resolve(migrationsDir, "meta/_journal.json"), "utf8")) as { entries: Array<{ tag: string; when: number }> };
+    const entry = journal.entries.find((item) => item.tag === "0299_finance_reads_bills");
+    expect(entry).toBeDefined();
+    expect(entry!.when).toBeGreaterThan(Math.max(...journal.entries.filter((item) => item.tag < "0299").map((item) => item.when)));
   });
 
   it("seeds the new templates exactly as the code defines them, delivery ones only where a kit delivers projects", () => {

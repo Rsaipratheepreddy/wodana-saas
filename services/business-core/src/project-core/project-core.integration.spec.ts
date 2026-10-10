@@ -2243,6 +2243,58 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("lets the factory lead add any material on the project's list to a work order, with how much; those used only on its item come with its share", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const admin = factoryAs(access, w.manager, [...all, "factory.view", "factory.manage"]);
+      // The factory lead as the firm kit sets the role up: no project management.
+      const lead = factoryAs(access, w.designer, ["projects.view", "factory.view", "factory.manage", "factory.report", "factory.approve", "stock.view", "stock.manage", "purchasing.view", "catalog.view"]);
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      const worktop = scope.lines.find((line) => line.title === "Worktop")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      // On the list: a slab tied to no item, glue shared by two items, and oak only for the cabinets.
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta marble slab", quantity: "1", unit: "slab", clientChoice: false, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Wood glue", quantity: "4", unit: "nos", clientChoice: false, boqLineIds: [cabinets.id, worktop.id], version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, boqLineIds: [cabinets.id], version: detail.project.version });
+      const settings = await admin.settings(actor, w.workspaceId);
+      await admin.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requireDrawing: false, requirePayment: false });
+      const joinery = randomUUID();
+      await admin.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
+      const wo = randomUUID();
+      let order = await lead.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.lineId ?? cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2099-10-05", plannedEnd: "2099-10-16" });
+
+      // Everything on the list can be added; only the oak comes with a share (3 of 4.5 m takes two thirds of 20 sheets, rounded up).
+      expect([order.canManage, order.canSuggest]).toEqual([true, true]);
+      expect(order.projectMaterials.map((item) => [item.name, item.suggested])).toEqual([["Calacatta marble slab", null], ["Wood glue", null], ["Oak veneer", "13.3334"]]);
+      const listed = (name: string) => order.projectMaterials.find((item) => item.name === name)!.id;
+      const add = (items: unknown) => lead.command(actor, w.workspaceId, wo, { action: "suggest_materials", items, version: order.order.version });
+      await expect(add([])).rejects.toThrow("Choose materials from the project's list.");
+      await expect(add([{ materialItemId: randomUUID(), quantity: "1" }])).rejects.toThrow("Choose a material from the project's list.");
+      await expect(add([{ materialItemId: listed("Calacatta marble slab"), quantity: "0" }])).rejects.toThrow("Enter how much Calacatta marble slab it uses.");
+      await expect(add([{ materialItemId: listed("Oak veneer"), quantity: "1" }, { materialItemId: listed("Oak veneer"), quantity: "2" }])).rejects.toThrow("Choose each material once.");
+      order = await add([{ materialItemId: listed("Calacatta marble slab"), quantity: "1" }, { materialItemId: listed("Oak veneer"), quantity: "13.3334" }]);
+      expect(order.materials.map((row) => [row.itemName, row.quantity, row.status])).toEqual([["Calacatta marble slab", "1.0000", "active"], ["Oak veneer", "13.3334", "active"]]);
+      await expect(add([{ materialItemId: listed("Calacatta marble slab"), quantity: "1" }])).rejects.toThrow("Calacatta marble slab is already on this work order: change its quantity instead.");
+      // The glue is still left; once it's on, the list has nothing more for this work order.
+      expect(order.canSuggest).toBe(true);
+      order = await add([{ materialItemId: listed("Wood glue"), quantity: "2" }]);
+      expect(order.canSuggest).toBe(false);
+      const audit = (await w.client.query<{ after: { added: number } }>(
+        "SELECT after FROM audit_events WHERE workspace_id = $1 AND entity_id = $2 AND action = 'work_order.suggest_materials' ORDER BY occurred_at", [w.workspaceId, wo])).rows;
+      expect(audit.map((row) => row.after.added)).toEqual([2, 1]);
+
+      // The worktop has nothing of its own on the list, yet what's on it can still be added to its work order.
+      const top = randomUUID();
+      const other = await lead.plan(actor, w.workspaceId, { id: top, lineId: worktop.lineId ?? worktop.id, quantity: "2.25", workcenterId: joinery, plannedStart: "2099-10-05", plannedEnd: "2099-10-16" });
+      expect(other.canSuggest).toBe(true);
+      expect(other.projectMaterials.every((item) => item.suggested === null)).toBe(true);
+      // Without a choice, only what's used on its item alone is added, as before.
+      await expect(lead.command(actor, w.workspaceId, top, { action: "suggest_materials", version: other.order.version })).rejects.toThrow(/No materials from the project's list/);
+    });
+  });
+
   it("stops work orders a variation reduced or removed until they fit the line, and holds running work when the drawing changes until someone else lets it go on", async () => {
     await world(async (w) => {
       const { core, projectId, access, all } = await buying(w);

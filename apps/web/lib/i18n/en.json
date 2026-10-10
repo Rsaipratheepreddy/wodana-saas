@@ -2651,6 +2651,8 @@
   "Swap for another": "Swap for another",
   "Issued worth {value}": "Issued worth {value}",
   "Add from the material list": "Add from the material list",
+  "Add materials": "Add materials",
+  "Quantity of {item}": "Quantity of {item}",
   "Instead of {item}: {reason} ({name})": "Instead of {item}: {reason} ({name})",
   "Replaced; {quantity} still issued": "Replaced; {quantity} still issued",
   "Removed; {quantity} still issued": "Removed; {quantity} still issued",

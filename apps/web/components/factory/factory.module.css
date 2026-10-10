@@ -22,6 +22,10 @@
 .list { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
 .list > li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--wd-space-2); padding-block: var(--wd-space-1-5); font-size: var(--wd-text-sm); }
 .list small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+/* Materials picked from the project's list: each name, and how much once it's ticked. */
+.picks { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.picks > li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 10rem); align-items: center; gap: var(--wd-space-3); min-block-size: var(--wd-control-sm); }
+@media (max-width: 640px) { .picks > li { grid-template-columns: minmax(0, 1fr); } }
 .check[data-passed="false"] > span:first-child { color: var(--wd-color-danger); }
 .places { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
 .places > li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
