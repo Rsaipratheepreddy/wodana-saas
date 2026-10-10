@@ -409,6 +409,10 @@ try {
 
   // The minimum design deposit is workspace configuration (Palm: AED 15,000), not a constant.
   await request(`/workspaces/${workspaceId}/design/settings`, "PUT", { minimumDeposit: { amount: "15000.00", currency: "AED" } });
+  // The QS is the firm's choice too (Settings › Quotations); this flow walks the QS estimate, so its QS prices every quotation.
+  // With the switch off a quotation is approved as priced (qs-requirement.spec).
+  const quotationSettings = await request(`/workspaces/${workspaceId}/quotation/settings`);
+  await request(`/workspaces/${workspaceId}/quotation/settings`, "PUT", { version: quotationSettings.settings.version, qsReview: true, qsReviewScope: "all" });
   const insufficientCase = await createCase("Insufficient design deposit QA");
   await command(insufficientCase, "set_service_path", { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false } });
   const insufficientCreated = await command(insufficientCase, "create");

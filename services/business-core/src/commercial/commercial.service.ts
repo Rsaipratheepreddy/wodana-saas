@@ -2603,7 +2603,9 @@ export class CommercialService {
                 previous.status = "superseded";
             validateDeduction(data, q);
             // QS confirmation (PLM-082), the quotation number and the markup disclosure the client sees (R3).
-            await beforeQuoteIssued(client, { workspaceId, caseId, quoteId: q.id, familyId: q.familyId ?? null, kind: q.kind, actorUserId: user.userId });
+            // A QS estimate on this exact version is the QS's pricing too, so the QS is never asked twice.
+            await beforeQuoteIssued(client, { workspaceId, caseId, quoteId: q.id, familyId: q.familyId ?? null, kind: q.kind, actorUserId: user.userId,
+              qsEstimated: Boolean(data.servicePath && q.kind === "quotation" && qsEstimateCurrent(q)) });
             q.status = "issued";
             q.issuedAt = now;
             q.approverId = grant.id;

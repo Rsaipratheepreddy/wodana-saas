@@ -103,5 +103,15 @@ export async function qsEstimateRequired(db: Db, workspaceId: string, caseId: st
  * inbox all ask this one question, so the same quote is approved the same way wherever the button is pressed.
  */
 export async function quoteReviewAction(db: Db, workspaceId: string, caseId: string, quote: { id: string; kind: string }, dealFirst: boolean): Promise<"qs_approve" | "approve"> {
-  return dealFirst && quote.kind === "quotation" && await qsEstimateRequired(db, workspaceId, caseId, quote.id) ? "qs_approve" : "approve";
+  if (!dealFirst || quote.kind !== "quotation" || !await qsEstimateRequired(db, workspaceId, caseId, quote.id)) return "approve";
+  // The QS already confirmed this quotation's pricing (Send to QS): the plain approval follows, the QS isn't asked twice.
+  // Sending still checks the pricing hasn't changed since (quote-issue.ts).
+  return await qsConfirmed(db, workspaceId, caseId, quote.id) ? "approve" : "qs_approve";
+}
+
+/** Whether the QS's latest review of this quotation (PLM-082) confirmed it. */
+async function qsConfirmed(db: Db, workspaceId: string, caseId: string, quoteId: string) {
+  return (await db.query<{ status: string }>(
+    `SELECT status FROM quote_qs_reviews WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 ORDER BY requested_at DESC, id DESC LIMIT 1`,
+    [workspaceId, caseId, quoteId])).rows[0]?.status === "confirmed";
 }

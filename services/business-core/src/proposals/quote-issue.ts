@@ -80,10 +80,11 @@ export async function qsReviewFor(db: Db, workspaceId: string, caseId: string, q
  * hasn't confirmed at its current pricing (when the firm prices with QS), gives the family its number and
  * records the markup disclosure the client is shown. Idempotent per quote.
  */
-export async function beforeQuoteIssued(db: Db, input: { workspaceId: string; caseId: string; quoteId: string; familyId: string | null; kind: string; actorUserId: string }) {
+export async function beforeQuoteIssued(db: Db, input: { workspaceId: string; caseId: string; quoteId: string; familyId: string | null; kind: string; actorUserId: string; qsEstimated?: boolean }) {
   const settings = await readSettings(db as PoolClient, input.workspaceId);
   // PLM-082/083/084: the QS confirms the pricing where the firm's rules say this quotation needs it (qs-requirement.ts).
-  if (input.kind === "quotation" && (await qsRequirement(db, input.workspaceId, input.caseId, input.quoteId)).required) {
+  // The QS estimate on this exact version (qsEstimated) is that confirmation too: the QS prices a quotation once.
+  if (input.kind === "quotation" && !input.qsEstimated && (await qsRequirement(db, input.workspaceId, input.caseId, input.quoteId)).required) {
     const review = await qsReviewFor(db, input.workspaceId, input.caseId, input.quoteId);
     const snapshot = await quotePricingSnapshot(db as PoolClient, input.workspaceId, input.caseId, input.quoteId);
     const stage = qsStage(true, review, pricingHash(snapshot.lines));
