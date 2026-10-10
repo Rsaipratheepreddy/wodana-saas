@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, NotFoundException, Unprocessable
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
+import { LIVE_TITLE_SQL } from "./approval-titles";
 import {
   amountChangeResets, amountText, ApprovalRuleError, currencyText, DEFAULT_APPROVAL_POLICIES, effectiveSteps, eligibility, escalationStep,
   isEscalated, isExpired, isSubjectKind, needsOwner, nextState, selectPolicy,
@@ -159,7 +160,8 @@ type RequestRow = {
   policyVersionId: string; ownerStep: boolean; status: ApprovalRequestStatus; currentStep: number; stepSince: Date; expiresAt: Date | null;
   requestedBy: string; requesterName: string | null; requestedAt: Date; version: number;
 };
-const REQUEST_SELECT = `request.id, request.subject_kind AS kind, request.subject_id AS "subjectId", request.title, request.href,
+// The title names the record as it is now (approval-titles): a renamed client, opportunity or case shows its current name.
+const REQUEST_SELECT = `request.id, request.subject_kind AS kind, request.subject_id AS "subjectId", ${LIVE_TITLE_SQL} AS title, request.href,
   request.amount::text AS amount, request.currency_code AS currency, request.previous_amount::text AS "previousAmount",
   request.policy_version_id AS "policyVersionId", request.owner_step AS "ownerStep", request.status, request.current_step AS "currentStep",
   request.step_since AS "stepSince", request.expires_at AS "expiresAt", request.requested_by AS "requestedBy",

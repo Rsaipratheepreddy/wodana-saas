@@ -57,7 +57,8 @@ describe("Approvals → Deals", () => {
   it("opens the Deal File for a deal to check or approve, not the case's Approvals table (M4)", async () => {
     const deal = { caseId: CASE, status: "pending_finance", submittedById: "sara", financeReviewedById: null, since: "2026-09-29T10:00:00.000Z", amount: "77960.00",
       currency: "AED", quoteNumber: 1, client: "Sofia Bennett", title: "Emirates Hills Penthouse" };
-    const { rows } = await waitingFor(fakeDb([["'ownerReview'", [deal]]]), context(["commercial.finance.verify"], "layla"));
+    // The deals source's own read (the engine's request reads name 'ownerReview' too, for a Deal File's live title).
+    const { rows } = await waitingFor(fakeDb([["->>'status' IN ('pending_finance', 'pending_approval')", [deal]]]), context(["commercial.finance.verify"], "layla"));
     expect(rows).toEqual([expect.objectContaining({ kind: "deal_finance", group: "deals", title: "Emirates Hills Penthouse · Q-1",
       href: `/workspace/pre-projects/cases/${CASE}/execution-release`, canDecide: true })]);
   });

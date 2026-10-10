@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { FINANCE_REQUEST_REFERENCE } from "../approvals/approval-titles";
 import { Dec } from "../catalog-core/decimal";
 import { currencyDecimals } from "../purchasing/orders";
 
@@ -25,7 +26,8 @@ export type FinanceAction = (typeof FINANCE_ACTIONS)[number];
 export const APPROVAL_KIND: Record<RequestKind, "refund" | "payable_request" | null> = { invoice: null, refund: "refund", payable: "payable_request" };
 
 /** FR-0007: a request's reference. */
-export const requestReference = (number: number) => `FR-${String(number).padStart(4, "0")}`;
+// The approval engine reads a request's live title with the same prefix and width (approval-titles).
+export const requestReference = (number: number) => `${FINANCE_REQUEST_REFERENCE.prefix}${String(number).padStart(FINANCE_REQUEST_REFERENCE.digits, "0")}`;
 
 const OPEN: readonly RequestStatus[] = ["new", "in_progress", "needs_info"];
 export const isOpen = (status: RequestStatus) => OPEN.includes(status);

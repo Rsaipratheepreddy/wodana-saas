@@ -31,6 +31,32 @@ describe("Deal File insight (PLM-066 / PLM-102 / PLM-123)", () => {
     expect(within(screen.getByText("Commission").closest("li")!).getByText("Missing")).toBeInTheDocument();
   });
 
+  it("PLM-100: lists each person on the deal once, with every role they hold, and the roles nobody fills as not applicable", () => {
+    const sara = { membershipId: "m-sara", name: "Sara", email: "sara@example.test" };
+    const noor = { membershipId: "m-noor", name: "Noor", email: null };
+    // A second Sara (another person with the same name) keeps her own row: people are told apart by id, not by name.
+    const otherSara = { membershipId: "m-sara-2", name: "Sara", email: "sara.k@example.test" };
+    const team = [
+      { role: "account_manager", label: "Sales", member: sara, notApplicable: false },
+      { role: "designer", label: "Designer", member: sara, notApplicable: false },
+      { role: "design_manager", label: "Design manager", member: noor, notApplicable: false },
+      { role: "qs", label: "QS", member: null, notApplicable: true },
+      { role: "site_lead", label: "Site lead", member: sara, notApplicable: false },
+      { role: "factory_lead", label: "Factory lead", member: noor, notApplicable: false },
+      { role: "buyer", label: "Buyer", member: otherSara, notApplicable: false },
+    ];
+    render(<DesignSystemProvider locale="en-US"><DealFileInsight insight={{ ...insight, team }} /></DesignSystemProvider>);
+    const rows = within(screen.getByRole("list", { name: "Team" })).getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    expect(within(rows[0]).getByText("Sara")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Sales · Designer · Site lead")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Noor")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Design manager · Factory lead")).toBeInTheDocument();
+    expect(within(rows[2]).getByText("Sara")).toBeInTheDocument();
+    expect(within(rows[2]).getByText("Buyer")).toBeInTheDocument();
+    expect(screen.getByText("Not applicable: QS")).toBeInTheDocument();
+  });
+
   it("says the deal is closed once the records show it", () => {
     render(<DesignSystemProvider locale="en-US"><DealFileInsight insight={{ ...insight, risks: [], closing: { ...insight.closing, closed: true, closedAt: "2026-11-02T10:00:00.000Z", checks: [{ key: "delivered", done: true, at: "2026-11-02T10:00:00.000Z" }] } }} /></DesignSystemProvider>);
     expect(screen.getByText(/^Deal closed · /)).toBeInTheDocument();

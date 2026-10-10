@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { FINANCE_REQUEST_KIND_NAME } from "../approvals/approval-titles";
 import { Dec } from "../catalog-core/decimal";
 import { currencyDecimals } from "../purchasing/orders";
 import { balanceAfter, requestReference, type FileKind, type InvoiceKind, type MaterialLocation, type RequestKind, type RequestStatus } from "./finance-requests";
@@ -146,7 +147,8 @@ export function moneyText(amount: string, currency: string) {
   return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? `.${fraction}` : ""}`;
 }
 
-export const KIND_NAME: Record<RequestKind, string> = { invoice: "Invoice", refund: "Refund", payable: "Payable" };
+// The same words the approval engine reads a request's live title with (approval-titles).
+export const KIND_NAME: Record<RequestKind, string> = FINANCE_REQUEST_KIND_NAME;
 
 /**
  * The settings, or the product defaults (no inbox, no automatic stage requests). How long a refund takes is set per

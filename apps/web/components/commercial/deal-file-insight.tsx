@@ -7,6 +7,8 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { amountText } from "@/lib/approvals/policies";
 import type { ApprovalStatus } from "@/lib/approvals/policies";
+import { dealPeople } from "@/lib/commercial/deal-team";
+import { PeopleList, PersonRow } from "@/components/record/record-parts";
 import type { DealInsight, DealSection } from "../../../../services/business-core/src/commercial/deal-file-insight";
 import s from "./deal-file-insight.module.css";
 
@@ -51,6 +53,7 @@ export function DealFileInsight({ insight }: { insight: DealInsight }) {
   const groups = (["common", "furniture", "design", "production"] as const).map((group) => [group, insight.sections.filter((section) => section.group === group)] as const)
     .filter(([, sections]) => sections.length);
   const closing = insight.closing;
+  const team = dealPeople(insight.team);
   return <section className={s.insight} aria-label={t("Deal File contents")}>
     <dl className={s.money}>
       <div><dt>{t("Agreed value")}</dt><dd>{money(insight.agreed)}</dd></div>
@@ -69,12 +72,12 @@ export function DealFileInsight({ insight }: { insight: DealInsight }) {
     <p className={s.risks} data-tone={risks.length ? "attention" : "calm"}>
       {risks.length ? t("Check: {items}", { items: risks.map((risk) => t(RISK[risk])).join(", ") }) : t("Nothing missing on this Deal File.")}
     </p>
-    {/* PLM-100: who works on the deal, as tagged on the enquiry and the opportunity. */}
-    {insight.team?.length ? <div className={s.group}>
+    {/* PLM-100: who works on the deal, as tagged on the enquiry and the opportunity: each person once, with every role they hold. */}
+    {team.people.length || team.notApplicable.length ? <div className={s.group}>
       <h3>{t("Team")}</h3>
-      <ul className={s.sections} aria-label={t("Team")}>{insight.team.map((role) => <li key={role.role}>
-        <span>{t(role.label as never)}</span><small>{role.member?.name ?? t("Not applicable")}</small>
-      </li>)}</ul>
+      {team.people.length ? <PeopleList label={t("Team")}>{team.people.map((person) => <PersonRow key={person.id} id={person.id} name={person.name} email={person.email}
+        role={person.roles.map((role) => t(role as never)).join(" · ")} />)}</PeopleList> : null}
+      {team.notApplicable.length ? <p className={s.muted}>{t("Not applicable: {roles}", { roles: team.notApplicable.map((role) => t(role as never)).join(", ") })}</p> : null}
     </div> : null}
     {groups.map(([group, sections]) => <div key={group} className={s.group}>
       <h3>{t(GROUP[group])}</h3>

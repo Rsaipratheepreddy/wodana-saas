@@ -6,6 +6,7 @@ import {
   amendApprovalAmount, approvalStatus, cancelApproval, decideApproval, requestApproval, trim,
 } from "../../approvals/approval-engine";
 import type { ApprovalDecision, ApprovalStatus } from "../../approvals/approval-policy";
+import { PROPOSAL_KIND_TITLE } from "../../approvals/approval-titles";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -128,7 +129,8 @@ export async function syncHeadline(db: Db, workspaceId: string, opportunityId: s
     [workspaceId, opportunityId, headline.amount, headline.currencyCode]);
 }
 
-const KIND_TITLE: Record<ProposalKind, string> = { design: "Proposal 1 · Design", main: "Proposal 2 · Main" };
+// The same words the approval engine reads the live title with (approval-titles), so a renamed client shows its current name.
+const KIND_TITLE: Record<ProposalKind, string> = PROPOSAL_KIND_TITLE;
 const href = (opportunityId: string) => `/workspace/crm/opportunities?record=${opportunityId}`;
 
 /**

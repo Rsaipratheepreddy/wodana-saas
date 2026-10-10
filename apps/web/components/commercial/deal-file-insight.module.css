@@ -13,6 +13,7 @@
 .closing li[data-done] { color: var(--wd-color-text); }
 .risks { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
 .risks[data-tone="attention"] { color: var(--wd-color-text); }
+.muted { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
 .group { display: grid; gap: var(--wd-space-2); }
 .group h3 { margin: 0; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
 .sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--wd-space-1) var(--wd-space-4); margin: 0; padding: 0; list-style: none; }

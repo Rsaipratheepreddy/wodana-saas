@@ -282,6 +282,49 @@ integration("E3 approval engine on real Postgres (allow, deny, cross-tenant, rep
     expect(references.rows.map((row) => row.reference)).toEqual(["D-0001", "O-0002"]);
   });
 
+  it("names a waiting request after its record as it is now: a renamed client, opportunity or case shows its current title, not the one it was raised with", async () => {
+    const opportunityId = ids.opportunity;
+    const reference = (await tenant(workspaceId, people.sales, (client) => client.query<{ reference: string }>("SELECT reference FROM crm_opportunities WHERE workspace_id = $1 AND id = $2", [workspaceId, opportunityId]))).rows[0].reference;
+    const context = (userId: string, permissions: string[]): ApprovalContext => ({ workspaceId, userId, displayName: userId, membershipId: null, currency: "AED",
+      can: async (permission) => permissions.includes(permission), managedProjects: new Set() });
+    // Sales enters the main proposal's value; Finance verifies it from Home › Approvals, where the row is named after the client.
+    const { approval } = await tenant(workspaceId, people.sales, (client) => setProposalValue(client, { workspaceId, opportunityId, title: `${reference} · Amira`, kind: "main", amount: "90000", currency: "AED", note: null, actorUserId: people.sales }));
+    const financeRow = () => tenant(workspaceId, people.finance, async (client) => (await waitingFor(client, context(people.finance, ["commercial.finance.verify"]))).rows.find((row) => row.kind === "approval" && row.id === approval!.id));
+    // The client (shared by both opportunities) and the legacy opportunity, whose Planning case carries the second request.
+    const rename = (party: string, legacyTitle: string) => tenant(workspaceId, people.owner, async (client) => {
+      await client.query("UPDATE crm_parties SET display_name = $3 WHERE workspace_id = $1 AND id = $2", [workspaceId, ids.party, party]);
+      await client.query("UPDATE crm_opportunities SET title = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2", [workspaceId, ids.legacyOpportunity, legacyTitle]);
+    });
+    try {
+      expect(await financeRow()).toMatchObject({ title: `${reference} · Amira · Proposal 2 · Main` });
+      // The client is renamed before Finance gets to it: the row and the request read the current name.
+      await rename("Amira Haddad", "Old villa");
+      expect(await financeRow()).toMatchObject({ title: `${reference} · Amira Haddad · Proposal 2 · Main` });
+      expect(await tenant(workspaceId, people.finance, (client) => approvalStatus(client, workspaceId, "opportunity_value", approval!.subjectId))).toMatchObject({ title: `${reference} · Amira Haddad · Proposal 2 · Main` });
+      // A case's approval (material changes after sign-off) follows the opportunity's title when the case is renamed.
+      const caseId = randomUUID();
+      const setup = await pool.connect();
+      try {
+        await setup.query("BEGIN");
+        await setup.query("SET LOCAL session_replication_role = replica");
+        await setup.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, ids.legacyOpportunity, people.sales]);
+        await setup.query("COMMIT");
+      } finally { setup.release(); }
+      await tenant(workspaceId, people.sales, (client) => requestApproval(client, { workspaceId, kind: "ledger_change", subjectId: caseId, title: "Material changes after sign-off · Old villa", amount: null, currency: null,
+        href: `/workspace/pre-projects/cases/${caseId}/designs?stage=ledger`, requesterUserId: people.sales, notify: false }));
+      await rename("Amira Haddad", "Old villa · west wing");
+      expect(await tenant(workspaceId, people.finance, (client) => approvalStatus(client, workspaceId, "ledger_change", caseId))).toMatchObject({ title: "Material changes after sign-off · Old villa · west wing" });
+      // A request whose record is gone keeps the title it was raised with.
+      const orphan = await tenant(workspaceId, people.sales, request(randomUUID()));
+      expect(await tenant(workspaceId, people.finance, (client) => approvalStatus(client, workspaceId, "deal_file", orphan.subjectId))).toMatchObject({ title: "Villa 12 · Q-3" });
+      for (const userId of [people.finance, people.approver])
+        await tenant(workspaceId, userId, (client) => decideProposalValue(client, { workspaceId, opportunityId, kind: "main", decision: "approve", note: null, actorUserId: userId }));
+    } finally {
+      // The other tests know the client as Amira and the legacy opportunity as Old villa.
+      await rename("Amira", "Old villa");
+    }
+  });
+
   it("PLM-102: Deal Closed is computed from the records the closing event names", async () => {
     // An opportunity without an enquiry runs the basic flow; the firm says its deals close on delivery (a row, not code).
     await tenant(workspaceId, people.owner, async (client) => {

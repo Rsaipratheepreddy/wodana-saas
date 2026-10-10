@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { approvalStatus, decideApproval, requestApproval, type ApprovalDecision, type ApprovalStatus } from "../approvals/approval-engine.api";
+import { LEDGER_CHANGE_TITLE } from "../approvals/approval-titles";
 import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { caseTitle } from "../client-portal/portal-notices";
@@ -27,7 +28,7 @@ export async function requestLedgerChangeApproval(db: Db, workspaceId: string, c
   const ledger = await readLedger(db, workspaceId, caseId);
   if (ledger.state !== "changes_pending") return null;
   const facts = await caseTitle(db, workspaceId, caseId);
-  return requestApproval(db, { workspaceId, kind: "ledger_change", subjectId: caseId, title: `Material changes after sign-off · ${facts.title || facts.clientName}`.slice(0, 300),
+  return requestApproval(db, { workspaceId, kind: "ledger_change", subjectId: caseId, title: `${LEDGER_CHANGE_TITLE} · ${facts.title || facts.clientName}`.slice(0, 300),
     href: ledgerHref(caseId), amount: ledger.currency ? pendingImpact(ledger).abs().toFixed(2) : null, currency: ledger.currency, requesterUserId });
 }
 

@@ -10159,6 +10159,7 @@
   "The plan ends {date}": "The plan ends {date}",
   "{from} – {to}": "{from} – {to}",
   "Not named: {roles}": "Not named: {roles}",
+  "Not applicable: {roles}": "Not applicable: {roles}",
   "Resume the project": "Resume the project",
   "On hold for {days} days ({working} working days).": "On hold for {days} days ({working} working days).",
   "On hold since today.": "On hold since today.",
