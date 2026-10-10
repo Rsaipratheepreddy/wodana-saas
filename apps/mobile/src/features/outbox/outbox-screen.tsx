@@ -28,7 +28,8 @@ export function OutboxScreen() {
       empty={<Empty icon={CloudUpload} title={t('Everything is sent')} />}
       renderItem={(item, _, first) => <ListRow first={first} icon={item.status === 'blocked' ? TriangleAlert : CloudUpload} iconTone={item.status === 'blocked' ? 'warning' : 'info'}
         title={item.title} onPress={() => setMenu(item)}
-        detail={item.status === 'blocked' ? (item.issues?.length ? item.issues.map((issue) => t(issue)).join(' · ') : item.error) : [item.detail, item.attempts ? item.error : null].filter(Boolean).join(' · ')}
+        detail={item.status === 'blocked' ? (item.issues?.length ? item.issues.map((issue) => t(issue)).join(' · ') : item.error ? t(item.error) : undefined)
+          : [item.detail, item.attempts && item.error ? t(item.error) : null].filter(Boolean).join(' · ')}
         meta={<Text variant="caption" tone="tertiary">{t('Saved {when}', { when: format.ago(new Date(item.createdAt)) })}</Text>}
         trailing={<Chip label={item.status === 'blocked' ? t('Needs you') : item.status === 'sending' ? t('Sending') : t('Waiting')} tone={item.status === 'blocked' ? 'warning' : 'info'} />} />}
       footer={undefined} />

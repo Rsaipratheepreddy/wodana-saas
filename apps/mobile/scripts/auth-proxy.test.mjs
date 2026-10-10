@@ -119,11 +119,13 @@ test('workspace proxy permits tenant-scoped CRM reads', async (t) => {
 test('workspace proxy forwards the app areas only', async (t) => {
  const id = '00000000-0000-4000-8000-000000000001'; const seen = [];
  const request = await setup(t, async (url, init) => { seen.push(String(url)); assert.equal(init.headers.authorization, 'Bearer field-token'); return Response.json({ ok: true }); });
- for (const area of [`project-core/projects/${id}/work`, `site/projects/${id}`, `purchasing/receipts`, `factory/orders/${id}`, `pre-projects/${id}/assets/${id}/markup`]) {
-  assert.equal((await request(`/workspaces/${id}/${area}`, { id }, { authorization: 'Bearer field-token' })).status, 200, area);
+ // Field work, and what Today, Approvals, Woddy, Me and Finance read.
+ const paths = [`project-core/projects/${id}/work`, `site/projects/${id}`, 'purchasing/receipts', `factory/orders/${id}`, `pre-projects/${id}/assets/${id}/markup`,
+  'home/summary', 'home/metrics', 'approvals/mine/count', 'ai-settings', 'ai/agent/runs', 'me/feedback', 'members', `payables/bills/${id}`, 'receivables'];
+ for (const path of paths) assert.equal((await request(`/workspaces/${id}/${path}`, { id }, { authorization: 'Bearer field-token' })).status, 200, path);
+ for (const other of ['settings', 'billing', 'home-overview', 'site/../settings']) {
+  assert.equal((await request(`/workspaces/${id}/${other}`, {}, { authorization: 'Bearer field-token' })).status, 404, other);
  }
- assert.equal((await request(`/workspaces/${id}/members`, {}, { authorization: 'Bearer field-token' })).status, 404);
- assert.equal((await request(`/workspaces/${id}/site/../members`, {}, { authorization: 'Bearer field-token' })).status, 404);
  assert.equal((await request(`/workspaces/${id}/site/projects/${id}`, {}, { origin: 'https://outside.example', authorization: 'Bearer field-token' })).status, 403);
- assert.equal(seen.length, 5);
+ assert.equal(seen.length, paths.length);
 });

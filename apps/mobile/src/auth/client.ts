@@ -1,3 +1,5 @@
+import apiAreas from './api-areas.json';
+
 export type TenantModuleId = 'workspace' | 'crm' | 'pre-project' | 'projects' | 'hrms';
 export type Membership = {
   /** The membership id: the person inside this workspace (owner and assignee fields use it). */
@@ -69,13 +71,16 @@ const cancelled = () => new AuthError('Sign-in was cancelled.', 'cancelled');
 const expired = () => new AuthError('Your session has expired. Sign in again.', 'expired');
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object';
 
+/**
+ * The workspace API areas the app calls (the first path segment after `/workspaces/{id}/`), each with the product
+ * module it belongs to. `api-areas.json` is shared with the browser preview's proxy (`scripts/auth-proxy.cjs`),
+ * which forwards exactly these areas; `scripts/api-areas.test.mjs` keeps the table in step with the source.
+ */
+const API_AREAS = apiAreas as Record<string, TenantModuleId>;
+
 /** The product module a workspace API area belongs to; the server still decides every request. */
 export function moduleForSegment(segment: string): TenantModuleId {
-  if (['crm', 'jobs'].includes(segment)) return 'crm';
-  if (['pre-projects', 'commercial', 'design', 'quotation', 'supplier-offers', 'catalog', 'catalogs', 'catalog-images'].includes(segment)) return 'pre-project';
-  if (['projects', 'project-core', 'site', 'purchasing', 'inventory', 'factory', 'payables', 'receivables', 'petty-cash', 'vendors', 'warranty-settings', 'accounting'].includes(segment)) return 'projects';
-  if (segment === 'hrms') return 'hrms';
-  return 'workspace';
+  return API_AREAS[segment] ?? 'workspace';
 }
 
 /**

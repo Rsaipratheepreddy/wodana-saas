@@ -5,6 +5,8 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { bytesToHex, hexToBytes } from '@noble/ciphers/utils';
 import { openOfflineBytes, openOfflineText, sealOfflineBytes, sealOfflineText } from './offline-envelope';
+import { indexedDbStore, keepWebFile, openWebFile, PHOTO_GONE, removeWebFiles, type BlobStore } from './outbox-files';
+import { OutboxFileError } from './outbox-model';
 
 const keyName = 'wodana.mobile.offline-key.v1';
 const keyOptions: SecureStore.SecureStoreOptions = {
@@ -45,24 +47,31 @@ export async function protectOfflineFile(sourceUri: string, destination: File, c
 }
 
 const outboxFolder = (itemId: string) => new Directory(Paths.document, 'wodana-outbox', itemId);
+let webStore: BlobStore | null | undefined;
+/** The browser's keeping place for queued photos (IndexedDB), opened once; null where there is none. */
+const webIo = () => ({ store: webStore === undefined ? (webStore = indexedDbStore()) : webStore });
 
 /**
  * Keep a photo for a queued capture: copied out of the camera's temporary files and sealed with the
- * device key, so it survives restarts and can't be read outside the app. The browser preview keeps the
- * page's own URL instead.
+ * device key, so it survives restarts and can't be read outside the app. In the browser the bytes are read
+ * at once and kept in IndexedDB (`outbox-files.ts`): the page's `blob:` URL would die with the page.
  */
 export async function storeOutboxFile(itemId: string, file: { key: string; uri: string; name: string; type: string }) {
-  if (Platform.OS === 'web') return { ...file, encrypted: false };
+  if (Platform.OS === 'web') return keepWebFile(itemId, file, webIo());
   const destination = new File(outboxFolder(itemId), `${file.key.replace(/[^a-zA-Z0-9_-]/g, '_')}.bin`);
   await protectOfflineFile(file.uri, destination, `${itemId}:${file.key}`);
   return { ...file, uri: destination.uri, encrypted: true };
 }
 
-/** A queued photo as a plain file to upload; `cleanup` removes the plain copy afterwards. */
+/**
+ * A queued photo as a plain file to upload; `cleanup` removes the plain copy afterwards. A photo that is gone
+ * from the device blocks its item (an `OutboxFileError`) instead of being retried.
+ */
 export async function openOutboxFile(itemId: string, file: { key: string; uri: string; name: string; type: string; encrypted?: boolean }) {
-  if (!file.encrypted || Platform.OS === 'web') return { file: { uri: file.uri, name: file.name, type: file.type }, cleanup: () => {} };
+  if (Platform.OS === 'web') return openWebFile(file, webIo());
+  if (!file.encrypted) return { file: { uri: file.uri, name: file.name, type: file.type }, cleanup: () => {} };
   const source = new File(file.uri);
-  if (!source.exists) throw new Error('The saved photo is no longer on this phone. Take it again.');
+  if (!source.exists) throw new OutboxFileError(PHOTO_GONE);
   const folder = new Directory(Paths.cache, 'wodana-upload');
   folder.create({ idempotent: true, intermediates: true });
   const plain = new File(folder, `${Crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
@@ -75,6 +84,6 @@ export async function openOutboxFile(itemId: string, file: { key: string; uri: s
 }
 
 export function removeOutboxFiles(itemId: string) {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web') { void removeWebFiles(itemId, webIo()).catch(() => undefined); return; }
   try { const folder = outboxFolder(itemId); if (folder.exists) folder.delete(); } catch { /* nothing to remove */ }
 }

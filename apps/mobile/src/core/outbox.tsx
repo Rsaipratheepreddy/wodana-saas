@@ -1,26 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
-import { useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { ApiError, AuthError } from '../auth/client';
-import { errorIssues, errorMessage, isOffline, useApi, type Api, type UploadFile } from './api';
+import { useQueryClient } from '@tanstack/react-query';
+import { useApi } from './api';
 import {
-  amend as amendItem, classify, createItem, due, enqueue as enqueueItem, markBlocked, markRetry, markSending, markStep, nextWake,
+  amend as amendItem, createItem, due, enqueue as enqueueItem, markBlocked, markRetry, markSending, markStep, nextWake,
   recover, remove, retryNow, type OutboxFile, type OutboxItem,
 } from './outbox-model';
+import { NO_HANDLER, sendItem, type OutboxHandler } from './outbox-send';
 import { openOutboxFile, readProtectedOfflineText, removeOutboxFiles, storeOutboxFile, writeProtectedOfflineText } from './protected-storage';
 import { useSession } from './session';
 
-export type OutboxContext = {
-  api: Api;
-  item: OutboxItem;
-  /** A queued photo as a plain file, for the duration of `use`. */
-  withFile: <T>(key: string, use: (file: UploadFile) => Promise<T>) => Promise<T>;
-  /** Record that a step finished, so a retry doesn't repeat it. */
-  step: (done: number) => void;
-};
-/** Sends one queued item; returns the queries to refresh afterwards. */
-export type OutboxHandler = (context: OutboxContext) => Promise<QueryKey[] | void>;
+export type { OutboxContext, OutboxHandler } from './outbox-send';
 
 const handlers = new Map<string, OutboxHandler>();
 /** Features register how their queued captures are sent (at import time). */
@@ -74,37 +65,23 @@ export function OutboxProvider({ children }: PropsWithChildren) {
         again.current = false;
         for (const item of due(itemsRef.current, workspaceId)) {
           const handler = handlers.get(item.kind);
-          if (!handler) { await commit((list) => markBlocked(list, item.id, 'This capture can no longer be sent from this version of the app.')); continue; }
+          if (!handler) { await commit((list) => markBlocked(list, item.id, NO_HANDLER)); continue; }
           await commit((list) => markSending(list, item.id));
-          try {
-            const current = itemsRef.current.find((entry) => entry.id === item.id) ?? item;
-            const keys = await handler({
-              api, item: current,
-              step: (done) => { void commit((list) => markStep(list, item.id, done)); },
-              withFile: async (key, use) => {
-                const file = current.files.find((entry) => entry.key === key);
-                if (!file) throw new Error('The saved photo is missing. Take it again.');
-                const opened = await openOutboxFile(current.id, file);
-                try { return await use(opened.file); } finally { opened.cleanup(); }
-              },
-            });
+          const current = itemsRef.current.find((entry) => entry.id === item.id) ?? item;
+          const outcome = await sendItem(current, handler, { api, open: openOutboxFile, step: (done) => { void commit((list) => markStep(list, item.id, done)); } });
+          if (outcome.kind === 'sent') {
             await commit((list) => remove(list, item.id));
             removeOutboxFiles(item.id);
-            for (const key of keys ?? []) void queryClient.invalidateQueries({ queryKey: key });
-          } catch (error) {
-            const offline = isOffline(error) || (error instanceof AuthError && error.code === 'network');
-            const status = error instanceof ApiError ? error.status : offline ? 0 : null;
-            if (error instanceof AuthError && error.code !== 'network') {
-              // Signed out or no access: keep it waiting for the next sign-in.
-              await commit((list) => markRetry(list, item.id, errorMessage(error, '')));
-              return;
-            }
-            if (status !== null && classify(status) === 'blocked') {
-              await commit((list) => markBlocked(list, item.id, errorMessage(error, 'The server refused this.'), errorIssues(error)));
-            } else {
-              await commit((list) => markRetry(list, item.id, errorMessage(error, 'No connection')));
-              if (offline) break; // No point trying the rest until the connection is back.
-            }
+            for (const key of outcome.keys) void queryClient.invalidateQueries({ queryKey: key });
+          } else if (outcome.kind === 'signedOut') {
+            // Signed out or no access: keep it waiting for the next sign-in.
+            await commit((list) => markRetry(list, item.id, outcome.message));
+            return;
+          } else if (outcome.kind === 'blocked') {
+            await commit((list) => markBlocked(list, item.id, outcome.message, outcome.issues));
+          } else {
+            await commit((list) => markRetry(list, item.id, outcome.message));
+            if (outcome.offline) break; // No point trying the rest until the connection is back.
           }
         }
       } while (again.current);

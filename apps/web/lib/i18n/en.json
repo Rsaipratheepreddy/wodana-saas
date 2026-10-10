@@ -13975,5 +13975,10 @@
   "They're in no box, so the tax due leaves them out.": "They're in no box, so the tax due leaves them out.",
   "Drawings R{number}, approved by {name} on {date}": "Drawings R{number}, approved by {name} on {date}",
   "The catalogue drawing": "The catalogue drawing",
-  "Approved R{number}": "Approved R{number}"
+  "Approved R{number}": "Approved R{number}",
+  "This capture can no longer be sent from this version of the app.": "This capture can no longer be sent from this version of the app.",
+  "The photo saved for this is missing. Take it again.": "The photo saved for this is missing. Take it again.",
+  "The server refused this.": "The server refused this.",
+  "The photo saved for this is no longer on this device. Take it again.": "The photo saved for this is no longer on this device. Take it again.",
+  "The photo could not be saved for sending. Choose it again.": "The photo could not be saved for sending. Choose it again."
 }

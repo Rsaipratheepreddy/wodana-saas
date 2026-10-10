@@ -104,9 +104,10 @@ async function proxyPublicLogo(response,target,fetcher,path){
     response.end(Buffer.from(await upstream.arrayBuffer()));
   } catch { return send(response,503,{message:'The organization logo is unavailable.'}); }
 }
-// The staff app's API areas. The server authorises every request; this only keeps the preview
-// proxy from becoming a general gateway to other workspace endpoints (settings, members, billing).
-const APP_AREAS = new Set(['crm', 'hrms', 'projects', 'project-core', 'site', 'pre-projects', 'purchasing', 'inventory', 'factory', 'petty-cash', 'home-overview']);
+// The workspace API areas the staff app calls, from the table the app itself gates them by (src/auth/client.ts).
+// The server authorises every request; this only keeps the preview proxy from becoming a general gateway to
+// other workspace endpoints (settings, billing). scripts/api-areas.test.mjs keeps the table complete.
+const APP_AREAS = new Set(Object.keys(require('../src/auth/api-areas.json')));
 function allowedWorkspaceRoute(path, method) {
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
   const match = path.match(/^\/workspaces\/[0-9a-f-]{36}\/([a-z-]+)(?:\/([^?]*))?$/);
@@ -127,4 +128,4 @@ async function proxyWorkspace(request,response,target,fetcher,path){
   response.end(Buffer.from(await upstream.arrayBuffer()));
  }catch{return send(response,503,{message:'The workspace service is unavailable. Please try again.'});}
 }
-module.exports = { createAuthProxy, allowedWorkspaceRoute };
+module.exports = { createAuthProxy, allowedWorkspaceRoute, APP_AREAS };

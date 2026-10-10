@@ -148,7 +148,7 @@ export function ReportScreen() {
     </Row>}>
     {mine ? <Row gap={2}><StatusChip status={mine.delivery === 'sent' ? 'sent' : mine.status} />{mine.decidedByName ? <Text variant="caption" tone="secondary">{mine.decidedByName}</Text> : null}</Row> : null}
     {mine?.status === 'returned' && mine.decisionNote ? <Banner tone="warning" title={t('Sent back')} detail={mine.decisionNote} /> : null}
-    {pending.length ? <Banner tone="info" title={t('This report is waiting to send')} detail={pending[0].status === 'blocked' ? pending[0].error : t('It sends by itself when there is a connection.')}
+    {pending.length ? <Banner tone="info" title={t('This report is waiting to send')} detail={pending[0].status === 'blocked' && pending[0].error ? t(pending[0].error) : t('It sends by itself when there is a connection.')}
       action={{ label: t('View'), onPress: () => router.push('/outbox') }} /> : null}
     {!mine && state.dueTime ? <Text variant="caption" tone="secondary">{t('Due by {time}', { time: state.dueTime })}</Text> : null}
 

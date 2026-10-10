@@ -107,3 +107,11 @@ export function classify(status: number | null): 'retry' | 'blocked' {
   if (status === 408 || status === 429 || status >= 500) return 'retry';
   return 'blocked';
 }
+
+/**
+ * A queued photo that can't be read any more: the browser dropped it, or the file is gone from the phone. A retry
+ * can't mend it, so the item blocks with this message (an English label key) for the person to act on.
+ */
+export class OutboxFileError extends Error {
+  readonly code = 'outbox_file' as const;
+}
