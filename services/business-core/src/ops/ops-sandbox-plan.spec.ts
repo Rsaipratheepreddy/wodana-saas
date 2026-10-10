@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validateProfile } from "./ops-profile";
 import {
-  parseCrmFile, parseTeamsFile, planMembers, SANDBOX_PERSONAS, sandboxEmail, sandboxLegalEntityCode, sandboxProfile, sandboxSeatLimit, scrubForSandbox, SandboxFileError,
+  parseCrmFile, parseTeamsFile, patternEmail, planMembers, SANDBOX_PERSONAS, sandboxAddress, sandboxEmail, sandboxLegalEntityCode, sandboxProfile, sandboxSeatLimit,
+  scrubForSandbox, SandboxFileError,
 } from "./ops-sandbox-plan";
 
 const docs = resolve(__dirname, "../../../../docs/fixtures");
@@ -46,6 +47,15 @@ describe("sandbox members", () => {
     expect(plan.find((member) => member.key === "designer")).toMatchObject({ roleCodes: ["member"], teamCodes: [], email: "designer@studio-2.test" });
     expect(plan.find((member) => member.key === "qs")).toMatchObject({ roleCodes: ["member"], missingRoles: ["quantity_surveyor"] });
     expect(plan.find((member) => member.key === "manager")).toMatchObject({ roleCodes: ["administrator"], missingRoles: ["project_manager", "operations_approver"] });
+  });
+
+  it("gives each member the address --email-pattern makes from their role, else <role>@<slug>.test", () => {
+    const pattern = "wodanatechnology+{role}@gmail.com";
+    expect(planMembers("iglo", KIT_ROLES, [], pattern).map((member) => member.email)).toEqual(SANDBOX_PERSONAS.map((persona) => `wodanatechnology+${persona.key}@gmail.com`));
+    expect(patternEmail(pattern, "design-manager")).toBe("wodanatechnology+design-manager@gmail.com");
+    expect(sandboxAddress("iglo", pattern)("qs")).toBe("wodanatechnology+qs@gmail.com");
+    expect(sandboxAddress("iglo", null)("qs")).toBe("qs@iglo.test");
+    expect(planMembers("iglo", KIT_ROLES, []).map((member) => member.email)).toEqual(SANDBOX_PERSONAS.map((persona) => `${persona.key}@iglo.test`));
   });
 
   it("names the company after the slug and leaves seats to spare", () => {

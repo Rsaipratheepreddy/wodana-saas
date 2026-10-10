@@ -12,7 +12,7 @@ export const SANDBOX_PLAN = "starter";
 export const SANDBOX_SPARE_SEATS = 10;
 
 export type Persona = {
-  /** The address's local part: <key>@<slug>.test. */
+  /** The member's role key: their address is <key>@<slug>.test, or --email-pattern with {role} as the key. */
   key: string;
   displayName: string;
   /** Kit role codes, given when the workspace has them. */
@@ -58,6 +58,12 @@ export const sandboxExternalTenantId = (slug: string) => `sandbox-${slug}`;
  */
 export const sandboxOrganizationKey = (slug: string) => `sandbox-organization:${slug}`;
 export const sandboxEmail = (key: string, slug: string) => `${key}@${slug}.test`;
+/** Where a member's role key goes in an --email-pattern (exactly once, before the @). */
+export const ROLE_PLACEHOLDER = "{role}";
+/** A member's address from an --email-pattern, e.g. wodanatechnology+{role}@gmail.com → wodanatechnology+sales@gmail.com. */
+export const patternEmail = (pattern: string, key: string) => pattern.replace(ROLE_PLACEHOLDER, key);
+/** Each member's address: the pattern's, or <role>@<slug>.test without one. */
+export const sandboxAddress = (slug: string, pattern: string | null) => (key: string) => (pattern ? patternEmail(pattern, key) : sandboxEmail(key, slug));
 /** The first company's code from the slug (A-Z, 0-9 and dashes, at most 24). */
 export const sandboxLegalEntityCode = (slug: string) => slug.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24);
 export const sandboxSeatLimit = (planSeats: number) => Math.max(planSeats, SANDBOX_PERSONAS.length + SANDBOX_SPARE_SEATS);
@@ -65,8 +71,9 @@ export const sandboxSeatLimit = (planSeats: number) => Math.max(planSeats, SANDB
 export type TeamSpec = { code: string; name: string; permissions: string[] };
 export type MemberPlan = { key: string; email: string; displayName: string; roleCodes: string[]; teamCodes: string[]; missingRoles: string[] };
 
-/** Each test member's roles (those the workspace has) and teams (from the teams file, when given). */
-export function planMembers(slug: string, workspaceRoles: ReadonlySet<string>, teams: readonly TeamSpec[]): MemberPlan[] {
+/** Each test member's address, roles (those the workspace has) and teams (from the teams file, when given). */
+export function planMembers(slug: string, workspaceRoles: ReadonlySet<string>, teams: readonly TeamSpec[], emailPattern: string | null = null): MemberPlan[] {
+  const address = sandboxAddress(slug, emailPattern);
   return SANDBOX_PERSONAS.map((persona) => {
     const roleCodes = persona.roles.filter((code) => workspaceRoles.has(code));
     const teamCodes: string[] = [];
@@ -79,7 +86,7 @@ export function planMembers(slug: string, workspaceRoles: ReadonlySet<string>, t
       }
     }
     if (!roleCodes.length && !teamCodes.length) roleCodes.push(FALLBACK_ROLE);
-    return { key: persona.key, email: sandboxEmail(persona.key, slug), displayName: persona.displayName, roleCodes, teamCodes,
+    return { key: persona.key, email: address(persona.key), displayName: persona.displayName, roleCodes, teamCodes,
       missingRoles: persona.roles.filter((code) => !workspaceRoles.has(code)) };
   });
 }

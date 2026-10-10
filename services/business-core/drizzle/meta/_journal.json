@@ -1282,6 +1282,13 @@
       "when": 1801740006100,
       "tag": "0299_finance_reads_bills",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1801740006200,
+      "tag": "0300_operator_sandbox_settings",
+      "breakpoints": true
     }
   ]
 }

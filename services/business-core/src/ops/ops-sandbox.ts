@@ -33,9 +33,11 @@ import type { SandboxArgs } from "./ops-args";
 import { runConfigure } from "./ops-configure";
 import { openContext, OpsError, type Report } from "./ops-context";
 import { ProfileError, validateProfile, type Profile } from "./ops-profile";
+import { changeSandboxAddresses, SANDBOX_EMAIL_CHANGED } from "./ops-sandbox-email";
 import {
-  parseCrmFile, parseTeamsFile, planMembers, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxEmail, sandboxExternalTenantId, SandboxFileError,
-  sandboxLegalEntityCode, sandboxOrganizationKey, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan, type TaxonomySpec, type TeamSpec,
+  parseCrmFile, parseTeamsFile, patternEmail, planMembers, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxAddress, sandboxEmail,
+  sandboxExternalTenantId, SandboxFileError, sandboxLegalEntityCode, sandboxOrganizationKey, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan,
+  type TaxonomySpec, type TeamSpec,
 } from "./ops-sandbox-plan";
 
 /**
@@ -51,6 +53,12 @@ import {
  * with the region pack given and the sandbox's own firm kit and plan. The sandbox's test members join it with the same
  * roles and teams, so one sign-in reaches both through the organization switcher. Refused unless the sandbox and every
  * organization in its account were made by this command.
+ *
+ * The test members are found by role, wherever their address is now: at the address --email-pattern makes, the pattern
+ * the sandbox keeps (operator_sandbox_settings) or <role>@<slug>.test, as members of the sandbox's first organization.
+ * With --email-pattern, members at another address are moved to the pattern's (ops-sandbox-email.ts) before anything
+ * else, and a new sandbox's members get them from the start. A later run, with the pattern or without, finds the same
+ * people and makes nobody new.
  */
 
 type SetupProfile = { code: string; version: number; configuration: Record<string, unknown> };
@@ -61,9 +69,19 @@ type MemberRow = { id: string; status: string; version: number; userId: string; 
 type RoleRow = { id: string; code: string; name: string; isSystem: boolean; version: number; permissions: string[] };
 type TeamRow = { id: string; code: string; version: number; roleIds: string[]; members: Array<{ membershipId: string }> };
 type Taxonomy = { id: string; code: string; name: string; status: string; version: number; options: Array<{ code: string; label: string; position: number; status: string }> };
-type Outcome = { email: string; displayName: string; roles: string[]; teams: string[]; userId: string | null };
-/** The sandbox an organization is added to: its first organization and its customer account. */
-type Base = { slug: string; workspaceId: string; accountId: string; organizationLimit: number; pinned: Pinned | null };
+type Outcome = { key: string; email: string; displayName: string; roles: string[]; teams: string[]; userId: string | null };
+/** The test members by role key, as they are now. */
+type People = Map<string, Person>;
+/**
+ * A sandbox this command made, as found: its first organization (whose test members they are), its customer account and
+ * that account's owner (the test owner who provisioned it), and the address pattern it keeps (null: <role>@<slug>.test).
+ */
+type Sandbox = {
+  slug: string; workspaceId: string; accountId: string; accountActive: boolean; organizationLimit: number; ownerUserId: string; emailPattern: string | null;
+  workspace: { name: string; slug: string; status: string; defaultCurrency: string };
+};
+/** The sandbox an organization is added to, with the kit and plan it was made with. */
+type Base = Sandbox & { pinned: Pinned | null };
 type AccountOrganization = { workspaceId: string; loginSlug: string | null; madeHere: boolean };
 
 const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
@@ -83,19 +101,35 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   const leadOptions = args.crm ? await readCrm(args.crm, report) : null;
   // The sandbox whose people (and, with --organization-of, whose account) this run is for.
   const people = args.organizationOf ?? args.slug;
-  const base = args.organizationOf ? await resolveBase(app, db, args.organizationOf) : null;
+  const base = args.organizationOf ? await resolveBase(app, db, args.organizationOf, args.emailPattern) : null;
   const setup = await resolveSetup(db, args, base?.pinned ?? null);
   const externalTenantId = sandboxExternalTenantId(people);
+  // The sandbox itself once provisioned, recognized as this command's before anything of it is read.
+  const own = base ? null : await findSandbox(app, db, args.slug, args.emailPattern, notOurs(args.slug));
+  const sandbox: Sandbox | null = base ?? own;
+  // Each member's address: the pattern given, else the one the sandbox keeps, else <role>@<slug>.test.
+  const scheme = args.emailPattern ?? sandbox?.emailPattern ?? null;
+  const address = sandboxAddress(people, scheme);
   const ownerPersona = SANDBOX_PERSONAS[0];
-  const ownerEmail = sandboxEmail(ownerPersona.key, people);
   const regionConfig = setup.region.configuration as { currency: string; locale: string; timezone: string; unitSystem: string; weekStartsOn: number; countryCode: string };
   const seatLimit = sandboxSeatLimit(Number((setup.plan.configuration as { seatLimit?: number }).seatLimit ?? 1));
   const provisioned = `${setup.region.code} region pack (${regionConfig.currency}, ${regionConfig.locale}, ${regionConfig.timezone}), firm kit ${setup.kit.code}, plan ${setup.plan.code}, ${seatLimit} seats`;
   report.facts.workspace = { slug: args.slug, name: args.name, externalTenantId: base ? null : externalTenantId, organizationOf: base?.slug ?? null,
     region: `${setup.region.code} v${setup.region.version}`, currency: regionConfig.currency, locale: regionConfig.locale, timezone: regionConfig.timezone,
     firmKit: `${setup.kit.code} v${setup.kit.version}`, plan: `${setup.plan.code} v${setup.plan.version}` };
-  // Who the test members already are, so the run can say whom it made (with --organization-of: nobody).
-  const knownPeople = await peopleByEmail(db, SANDBOX_PERSONAS.map((persona) => sandboxEmail(persona.key, people)));
+  // Who the test members already are, by role, so the run finds them wherever their address is and can say whom it made
+  // (with --organization-of or on a sandbox that has them all: nobody). Their address now: emailOf.
+  const knownPeople = await sandboxPeople(db, sandbox, people, args.emailPattern);
+  const before: People = new Map(knownPeople);
+  const emailOf = (key: string) => knownPeople.get(key)?.email ?? address(key);
+  if (!sandbox && args.emailPattern) {
+    // A new sandbox's test members are new people: an address someone already signs in with is never taken over.
+    const wanted = SANDBOX_PERSONAS.map((persona) => address(persona.key));
+    const taken = (await db.query<{ email: string }>(`SELECT lower(primary_email::text) AS email FROM users WHERE lower(primary_email::text) = ANY($1::text[]) ORDER BY 1`,
+      [wanted])).rows.map((row) => row.email);
+    if (taken.length) throw new OpsError(`${taken.join(", ")} already sign${taken.length === 1 ? "s" : ""} in to Wodana: a new sandbox's test members are new people. `
+      + "Choose another --email-pattern, or add an organization to their sandbox with --organization-of.");
+  }
 
   // Every email the run would send (invitations, notices, the showcase's) is held back and counted.
   const mailer = get(TransactionalEmailService) as unknown as { send: (message: unknown) => Promise<unknown> };
@@ -103,49 +137,55 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   let held = 0;
   mailer.send = async () => { held += 1; return { status: "not_configured", provider: null, messageId: null, suppressedReason: "sandbox_setup" }; };
   try {
+    if (own && own.workspace.status !== "active") throw new OpsError(`The sandbox ${args.slug} is ${own.workspace.status}; reactivate it in Wodana Control first.`);
+    // ---------- the test members' addresses ----------
+    // First, so everything after finds, invites and tells them at the addresses they sign in with.
+    if (sandbox) await ensureAddresses(sandbox);
+
     let workspaceId: string;
     let ownerToken: string | null = null;
     if (base) {
       // ---------- the organization, in the sandbox's account ----------
       const made = await ensureOrganization(base);
-      if (!made) { planRemainder(args, setup, { teams, leadOptions, profile }, report, password, knownPeople); return; }
+      if (!made) { planRemainder(args, setup, { teams, leadOptions, profile }, report, password, scheme, knownPeople); return; }
       workspaceId = made;
     } else {
       // ---------- the workspace ----------
-      const known = (await db.query<{ workspaceId: string }>(`SELECT workspace_id AS "workspaceId" FROM tenant_provisioning_requests WHERE external_tenant_id = $1`, [externalTenantId])).rows[0];
-      const slugTaken = await slugIsTaken(db, args.slug);
-      if (!known && slugTaken) throw notOurs(args.slug);
-      if (!known && args.apply && !password) throw new OpsError("The test members need a password: put it in an environment variable and name it with --password-env.");
-      if (!known && !args.apply) {
+      if (!own && await slugIsTaken(db, args.slug)) throw notOurs(args.slug);
+      if (!own && args.apply && !password) throw new OpsError("The test members need a password: put it in an environment variable and name it with --password-env.");
+      if (!own && !args.apply) {
         report.add("workspace", "would change", args.slug, `provisioned: ${provisioned}`);
-        report.add("members", "would change", ownerEmail, "owner: accepts the owner invitation");
-        planRemainder(args, setup, { teams, leadOptions, profile }, report, password);
+        report.add("members", "would change", address(ownerPersona.key), "owner: accepts the owner invitation");
+        if (args.emailPattern) report.add("email", "would change", "address pattern", `the test members sign in as ${args.emailPattern}`);
+        planRemainder(args, setup, { teams, leadOptions, profile }, report, password, scheme);
         return;
       }
 
-      if (known) {
-        workspaceId = known.workspaceId;
-        const tenant = await get(WorkspacesService).getProvisionedTenant(externalTenantId) as unknown as
-          { workspace: { name: string; slug: string; status: string; defaultCurrency: string }; ownerInvitation: { email: string } };
-        // Made by this command: its id and its test owner both say so (an organization merely given such an id is refused).
-        if (tenant.workspace.slug !== args.slug || tenant.ownerInvitation.email.toLowerCase() !== ownerEmail) throw notOurs(args.slug);
-        if (tenant.workspace.status !== "active") throw new OpsError(`The sandbox ${args.slug} is ${tenant.workspace.status}; reactivate it in Wodana Control first.`);
-        report.add("workspace", "unchanged", args.slug, `${tenant.workspace.name} · ${tenant.workspace.defaultCurrency}`);
+      if (own) {
+        workspaceId = own.workspaceId;
+        report.add("workspace", "unchanged", args.slug, `${own.workspace.name} · ${own.workspace.defaultCurrency}`);
         const pinned = (await db.tenantTransaction(workspaceId, workspaceId, (client) => client.query<{ region: string; kit: string }>(
           `SELECT region_code AS region, firm_kit_code AS kit FROM workspace_setup_versions WHERE workspace_id = $1`, [workspaceId]))).rows[0];
         if (pinned && (pinned.region !== setup.region.code || pinned.kit !== setup.kit.code))
           report.add("workspace", "info", "setup", `made with region ${pinned.region} and kit ${pinned.kit}; an existing sandbox keeps them`);
       } else {
+        const ownerEmail = address(ownerPersona.key);
         const input = await validated(ProvisionTenantDto, {
           externalTenantId, name: args.name, slug: args.slug, ...regionalDefaults(args, regionConfig), owner: { email: ownerEmail, displayName: ownerPersona.displayName },
         });
         const account = await validated(TenantContractContactDto, { displayName: args.name, contactName: ownerPersona.displayName, contactEmail: ownerEmail });
         const defaults = await validated(TenantSetupSelectionsDto, setupSelections(setup, seatLimit));
         const result = await get(WorkspacesService).provisionTenant({ ...input, account, defaults }, `sandbox:${args.slug}`) as unknown as
-          { workspace: { id: string }; ownerInvitation: { invitationToken?: string | null } };
+          { workspace: { id: string }; account: { id: string }; ownerInvitation: { invitationToken?: string | null } };
         workspaceId = result.workspace.id;
         ownerToken = result.ownerInvitation.invitationToken ?? null;
         report.add("workspace", "changed", args.slug, `provisioned: ${provisioned}`);
+        // The sandbox keeps its members' address pattern from the start (it also marks the organization as a sandbox).
+        if (args.emailPattern) {
+          await changeSandboxAddresses(db, { sandbox: { slug: args.slug, workspaceId, accountId: result.account.id }, organizationIds: [workspaceId], changes: [],
+            pattern: { from: null, to: args.emailPattern }, apply: true });
+          report.add("email", "changed", "address pattern", `the test members sign in as ${args.emailPattern}`);
+        }
       }
     }
     (report.facts.workspace as Record<string, unknown>).id = workspaceId;
@@ -156,16 +196,16 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     if (!password && !base) {
       const without: string[] = [];
       for (const persona of SANDBOX_PERSONAS) {
-        const person = knownPeople.get(sandboxEmail(persona.key, people));
+        const person = knownPeople.get(persona.key);
         if (!person || !await auth.hasLocalPassword(workspaceId, person.userId)) without.push(persona.key);
       }
       if (without.length && args.apply) throw new OpsError(`${without.length} test members have no password yet (${without.join(", ")}): name the environment variable that holds it with --password-env.`);
-      for (const key of without) report.add("members", "manual", sandboxEmail(key, people), "no password yet: --apply needs --password-env");
+      for (const key of without) report.add("members", "manual", emailOf(key), "no password yet: --apply needs --password-env");
     }
 
     // ---------- the owner ----------
     const owner = await ensureOwner();
-    if (!owner) { planRemainder(args, setup, { teams, leadOptions, profile }, report, password); return; }
+    if (!owner) { planRemainder(args, setup, { teams, leadOptions, profile }, report, password, scheme); return; }
 
     // ---------- name, sign-in security, onboarding, tax ----------
     await guarded(report, "workspace", "name", () => ensureName(owner.actor));
@@ -197,12 +237,13 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     const teamRoles = new Map<string, string>();
     if (teams) await guarded(report, "teams", "teams", () => ensureTeams(owner.actor, roles, teams, teamIds, teamRoles));
     if (leadOptions) await guarded(report, "crm", "lead options", () => ensureLeadOptions(owner.actor, leadOptions, teamRoles));
-    const plans = planMembers(people, new Set(roles.map((role) => role.code)), teams ?? []);
+    // Each member at the address they sign in with now (a dry run's members are not moved yet).
+    const plans = planMembers(people, new Set(roles.map((role) => role.code)), teams ?? [], scheme).map((plan) => ({ ...plan, email: emailOf(plan.key) }));
     const outcomes: Outcome[] = [];
     for (const plan of plans) {
-      const outcome: Outcome = { email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes, userId: null };
+      const outcome: Outcome = { key: plan.key, email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes, userId: null };
       outcomes.push(outcome);
-      if (plan.email === ownerEmail) { outcome.userId = owner.userId; continue; }
+      if (plan.key === ownerPersona.key) { outcome.userId = owner.userId; outcome.email = owner.email; continue; }
       for (const role of plan.missingRoles) report.add("members", "info", plan.email, `the workspace has no role ${role}`);
       await guarded(report, "members", plan.email, async () => { outcome.userId = await ensureMember(plan, owner, teamIds); });
     }
@@ -212,13 +253,57 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     // such as the QS pricing each quote, would stop it part-way); the profile then sets the firm's rules for testing.
     if (args.seed) await guarded(report, "seed", "showcase", () => seed(outcomes, owner));
     if (profile) {
-      const ctx = await openContext(app, args.slug, ownerEmail, args.apply);
+      const ctx = await openContext(app, args.slug, owner.email, args.apply);
       await runConfigure(ctx, profile, report);
     }
     if (held) report.add("email", "info", "held back", `${held} emails were not sent`);
-    printMembers(report, outcomes, args.passwordEnv, knownPeople, base?.slug ?? null);
+    printMembers(report, outcomes, args.passwordEnv, before, base?.slug ?? null);
 
     // ---------- steps ----------
+
+    /**
+     * The test members at the addresses the scheme makes: with --email-pattern, each member at another address moves to
+     * the pattern's and the sandbox keeps the pattern, in one transaction for every organization of its account
+     * (ops-sandbox-email.ts); emails already queued for the old addresses are skipped. The same people: nobody is made.
+     */
+    async function ensureAddresses(found: Sandbox) {
+      const changes = SANDBOX_PERSONAS.flatMap((persona) => {
+        const person = knownPeople.get(persona.key);
+        return person && person.email !== address(persona.key) ? [{ role: persona.key, userId: person.userId, from: person.email, to: address(persona.key) }] : [];
+      });
+      const pattern = args.emailPattern && args.emailPattern !== found.emailPattern ? { from: found.emailPattern, to: args.emailPattern } : null;
+      const unchanged = () => {
+        if (!args.emailPattern) return;
+        for (const persona of SANDBOX_PERSONAS) {
+          const person = knownPeople.get(persona.key);
+          if (person && !changes.some((change) => change.userId === person.userId)) report.add("email", "unchanged", person.email, `${persona.key} · user ${person.userId}`);
+        }
+      };
+      if (!changes.length && !pattern) { unchanged(); return; }
+      // The people belong to the account's organizations; their addresses change only when the sandbox made them all.
+      const organizations = await accountOrganizations(db, found.accountId, people);
+      if (organizations.some((organization) => !organization.madeHere))
+        throw new OpsError(`The account of sandbox ${people} has organizations this command didn't make; its test members' addresses never change then. Nobody's address was changed.`);
+      const result = await changeSandboxAddresses(db, { sandbox: found, organizationIds: organizations.map((organization) => organization.workspaceId), changes, pattern,
+        apply: args.apply });
+      const status = args.apply ? "changed" : "would change";
+      if (pattern) report.add("email", status, "address pattern", `${pattern.from ?? `<role>@${people}.test`} → ${pattern.to}`);
+      for (const change of result.changes) report.add("email", status, change.from, `→ ${change.to} · ${change.role} · user ${change.userId} (unchanged)`);
+      unchanged();
+      if (changes.length) {
+        report.add("email", result.emailsSkipped ? status : "info", "queued emails", result.emailsSkipped
+          ? `${result.emailsSkipped} emails queued for the old addresses skipped, never sent (${SANDBOX_EMAIL_CHANGED}); in-app notices kept`
+          : "none queued for the old addresses");
+        if (result.invitationsMoved) report.add("email", status, "pending invitations", `${result.invitationsMoved} moved to the new addresses`);
+        report.add("email", "info", "organizations", `${organizations.length} (every organization of sandbox ${people}); no passwords, sessions, memberships, roles or teams changed`);
+      }
+      if (!args.apply) return;
+      for (const change of changes) {
+        const person = knownPeople.get(change.role)!;
+        knownPeople.set(change.role, { ...person, email: change.to, actor: operatorActor({ ...person, email: change.to }) });
+      }
+      found.emailPattern = pattern?.to ?? found.emailPattern;
+    }
 
     /**
      * The organization in the sandbox's account: found by the request this command made for its slug, else (with
@@ -231,10 +316,11 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
         throw new OpsError(`The account of sandbox ${sandbox.slug} has organizations this command didn't make. A sandbox never changes another organization.`);
       const key = sandboxOrganizationKey(args.slug);
       const requests = (await db.query<{ id: string; status: string; version: number; workspaceId: string | null; requestedBy: string }>(
-        `SELECT request.id, request.status, request.version, request.approved_workspace_id AS "workspaceId", lower(person.primary_email::text) AS "requestedBy"
-           FROM organization_requests request JOIN users person ON person.id = request.requested_by
+        `SELECT request.id, request.status, request.version, request.approved_workspace_id AS "workspaceId", request.requested_by AS "requestedBy"
+           FROM organization_requests request
           WHERE request.account_id = $1 AND request.idempotency_key = $2`, [sandbox.accountId, key])).rows;
-      const request = requests.find((row) => row.requestedBy === ownerEmail);
+      // Requested by the sandbox's test owner (the account's owner), whatever their address is now.
+      const request = requests.find((row) => row.requestedBy === sandbox.ownerUserId);
       if (request?.status === "approved" && request.workspaceId) {
         const found = organizations.find((organization) => organization.workspaceId === request.workspaceId);
         if (!found) throw new OpsError(`The organization made for ${args.slug} is no longer in the account of sandbox ${sandbox.slug}.`);
@@ -248,15 +334,15 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       if (await slugIsTaken(db, args.slug)) throw notOurs(args.slug);
       const needsLimit = organizations.length >= sandbox.organizationLimit;
       const limit = needsLimit ? `; the account's organization limit ${sandbox.organizationLimit} → ${organizations.length + 1}` : "";
-      const what = `requested by ${ownerEmail} and approved in the account of sandbox ${sandbox.slug}: ${provisioned}${limit}`;
+      const what = `requested by ${emailOf(ownerPersona.key)} and approved in the account of sandbox ${sandbox.slug}: ${provisioned}${limit}`;
       if (!args.apply) {
         report.add("organization", "would change", args.slug, what);
-        report.add("members", "would change", ownerEmail, "owner: the organization's requester");
+        report.add("members", "would change", emailOf(ownerPersona.key), "owner: the organization's requester");
         return null;
       }
-      const owner = knownPeople.get(ownerEmail);
-      if (!owner || !await activeMembership(db, sandbox.workspaceId, owner.userId))
-        throw new OpsError(`${ownerEmail} is not an active member of sandbox ${sandbox.slug}; run sandbox --slug ${sandbox.slug} first.`);
+      const owner = knownPeople.get(ownerPersona.key);
+      if (!owner || owner.userId !== sandbox.ownerUserId || !await activeMembership(db, sandbox.workspaceId, owner.userId))
+        throw new OpsError(`${emailOf(ownerPersona.key)} is not an active member of sandbox ${sandbox.slug}; run sandbox --slug ${sandbox.slug} first.`);
       const accounts = get(CustomerAccountsService);
       const asked = await accounts.requestOrganization(owner.actor, sandbox.workspaceId, await validated(CreateOrganizationRequestDto, {
         name: args.name, slug: args.slug, ...regionalDefaults(args, regionConfig), reason: `Sandbox: a ${setup.region.code} organization for testing.`,
@@ -273,7 +359,9 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
 
     async function ensureOwner(): Promise<Person | null> {
       const workspaces = get(WorkspacesService);
-      let person = (await peopleByEmail(db, [ownerEmail])).get(ownerEmail);
+      const ownerEmail = emailOf(ownerPersona.key);
+      // The sandbox's owner as found (wherever their address is); a new sandbox's, at the address it was provisioned with.
+      let person = knownPeople.get(ownerPersona.key) ?? (await peopleByEmail(db, [ownerEmail])).get(ownerEmail);
       const active = person ? await activeMembership(db, workspaceId, person.userId) : false;
       if (person && active) report.add("members", "unchanged", ownerEmail, "owner");
       else if (base) throw new OpsError(`${ownerEmail} is no longer an active member of ${args.slug}; make them active again in Members.`);
@@ -440,10 +528,13 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       const workspaces = get(WorkspacesService);
       const label = [...plan.roleCodes, ...plan.teamCodes.map((code) => `team ${code}`)].join(", ");
       const wantedTeamIds = plan.teamCodes.flatMap((code) => (teamIds.has(code) ? [teamIds.get(code)!] : []));
-      let member = (await workspaces.listMembers(ownerPerson.actor, workspaceId) as unknown as MemberRow[]).find((row) => row.email.toLowerCase() === plan.email);
+      // The member by who they are (the sandbox's person for this role), else by address.
+      const known = knownPeople.get(plan.key);
+      const rows = await workspaces.listMembers(ownerPerson.actor, workspaceId) as unknown as MemberRow[];
+      let member = rows.find((row) => known && row.userId === known.userId) ?? rows.find((row) => row.email.toLowerCase() === plan.email);
       if (!member) {
         // An added organization's people are the sandbox's own test members: nobody new is made for it.
-        if (base && !knownPeople.has(plan.email)) { report.add("members", "manual", plan.email, `not a member of sandbox ${base.slug} yet: run sandbox --slug ${base.slug} first`); return null; }
+        if (base && !known) { report.add("members", "manual", plan.email, `not a member of sandbox ${base.slug} yet: run sandbox --slug ${base.slug} first`); return null; }
         if (!args.apply) { report.add("members", "would change", plan.email, `${plan.displayName}: ${base ? "joins" : "invited and active"} as ${label}`); return null; }
         const pending = (await workspaces.listInvitations(ownerPerson.actor, workspaceId) as unknown as Array<{ id: string; email: string; status: string }>)
           .find((row) => row.email.toLowerCase() === plan.email && ["pending", "expired"].includes(row.status));
@@ -490,8 +581,8 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     async function seed(members: Outcome[], ownerPerson: Person) {
       // The showcase's story only runs for real (each stage builds on the one before); a run makes only what is missing.
       if (!args.apply) { report.add("seed", "info", "showcase", "runs with --apply and makes only what an earlier run didn't"); return; }
-      const id = (key: string) => members.find((member) => member.email === sandboxEmail(key, people))?.userId ?? undefined;
-      const actorOf = async (key: string) => (await peopleByEmail(db, [sandboxEmail(key, people)])).get(sandboxEmail(key, people))?.actor ?? ownerPerson.actor;
+      const id = (key: string) => members.find((member) => member.key === key)?.userId ?? undefined;
+      const actorOf = async (key: string) => knownPeople.get(key)?.actor ?? (await peopleByEmail(db, [emailOf(key)])).get(emailOf(key))?.actor ?? ownerPerson.actor;
       await ensureSuppliers(await actorOf("purchasing"), ownerPerson.actor);
       const { seedShowcase } = await import("../seed/showcase");
       // The showcase's people by role; a deal is submitted by someone other than the owner who approves it.
@@ -608,45 +699,84 @@ async function resolveSetup(db: DatabaseService, args: SandboxArgs, pinned: Pinn
 }
 
 /**
- * The sandbox --organization-of names: made by this command (its provisioning id is sandbox-<slug>, its account's
- * too, and its owner invitation went to its test owner) and active, with its customer account and pinned kit and plan.
+ * The sandbox <slug> once provisioned, made by this command: its provisioning id is sandbox-<slug>, its account's too,
+ * and its owner invitation went to its test owner (<owner>@<slug>.test, or the owner's address of the --email-pattern
+ * it was made with) or it keeps an address pattern (which only this command writes). Anything else under that id is
+ * refused: an organization merely given such an id is never touched. Null when nothing was provisioned for it.
  */
-async function resolveBase(app: INestApplicationContext, db: DatabaseService, slug: string): Promise<Base> {
+async function findSandbox(app: INestApplicationContext, db: DatabaseService, slug: string, emailPattern: string | null, refused: OpsError): Promise<Sandbox | null> {
   const externalTenantId = sandboxExternalTenantId(slug);
-  const refused = new OpsError(`${slug} is not a sandbox this command made: --organization-of names one (made with sandbox --slug ${slug}).`);
   const known = (await db.query<{ workspaceId: string }>(`SELECT workspace_id AS "workspaceId" FROM tenant_provisioning_requests WHERE external_tenant_id = $1`, [externalTenantId])).rows[0];
-  if (!known) throw refused;
-  const tenant = await app.get(WorkspacesService, { strict: false }).getProvisionedTenant(externalTenantId) as unknown as
-    { workspace: { slug: string; status: string }; ownerInvitation: { email: string }; account: { id: string; organizationLimit: number } | null };
-  if (tenant.workspace.slug !== slug || tenant.ownerInvitation.email.toLowerCase() !== sandboxEmail(SANDBOX_PERSONAS[0].key, slug) || !tenant.account) throw refused;
-  const account = (await db.query<{ externalId: string | null; status: string }>(
-    `SELECT external_customer_id AS "externalId", status FROM customer_accounts WHERE id = $1`, [tenant.account.id])).rows[0];
+  if (!known) return null;
+  const tenant = await app.get(WorkspacesService, { strict: false }).getProvisionedTenant(externalTenantId) as unknown as {
+    workspace: Sandbox["workspace"]; ownerInvitation: { email: string }; account: { id: string; organizationLimit: number } | null };
+  const kept = await keptPattern(db, known.workspaceId);
+  const owner = SANDBOX_PERSONAS[0].key;
+  const invited = tenant.ownerInvitation.email.toLowerCase();
+  const ownerInvited = invited === sandboxEmail(owner, slug) || kept !== null || (emailPattern !== null && invited === patternEmail(emailPattern, owner));
+  if (tenant.workspace.slug !== slug || !ownerInvited || !tenant.account) throw refused;
+  const account = (await db.query<{ externalId: string | null; status: string; createdBy: string }>(
+    `SELECT external_customer_id AS "externalId", status, created_by AS "createdBy" FROM customer_accounts WHERE id = $1`, [tenant.account.id])).rows[0];
   if (account?.externalId !== externalTenantId) throw refused;
-  if (tenant.workspace.status !== "active" || account.status !== "active") throw new OpsError(`The sandbox ${slug} is not active; reactivate it in Wodana Control first.`);
-  const pinned = (await db.tenantTransaction(known.workspaceId, known.workspaceId, (client) => client.query<{ kit: string; kitVersion: number; plan: string; planVersion: number }>(
+  return { slug, workspaceId: known.workspaceId, accountId: tenant.account.id, accountActive: account.status === "active", organizationLimit: tenant.account.organizationLimit,
+    ownerUserId: account.createdBy, emailPattern: kept, workspace: tenant.workspace };
+}
+
+/** The address pattern a sandbox keeps for its test members (operator_sandbox_settings); null: <role>@<slug>.test. */
+async function keptPattern(db: DatabaseService, workspaceId: string): Promise<string | null> {
+  return (await db.tenantTransaction(workspaceId, workspaceId, (client) => client.query<{ pattern: string }>(
+    `SELECT email_pattern AS pattern FROM operator_sandbox_settings WHERE workspace_id = $1`, [workspaceId]))).rows[0]?.pattern ?? null;
+}
+
+/** The sandbox --organization-of names: made by this command and active, with its customer account and pinned kit and plan. */
+async function resolveBase(app: INestApplicationContext, db: DatabaseService, slug: string, emailPattern: string | null): Promise<Base> {
+  const refused = new OpsError(`${slug} is not a sandbox this command made: --organization-of names one (made with sandbox --slug ${slug}).`);
+  const found = await findSandbox(app, db, slug, emailPattern, refused);
+  if (!found) throw refused;
+  if (found.workspace.status !== "active" || !found.accountActive) throw new OpsError(`The sandbox ${slug} is not active; reactivate it in Wodana Control first.`);
+  const pinned = (await db.tenantTransaction(found.workspaceId, found.workspaceId, (client) => client.query<{ kit: string; kitVersion: number; plan: string; planVersion: number }>(
     `SELECT firm_kit_code AS kit, firm_kit_version AS "kitVersion", plan_code AS plan, plan_version AS "planVersion" FROM workspace_setup_versions WHERE workspace_id = $1`,
-    [known.workspaceId]))).rows[0];
-  return { slug, workspaceId: known.workspaceId, accountId: tenant.account.id, organizationLimit: tenant.account.organizationLimit,
-    pinned: pinned ? { kit: { code: pinned.kit, version: pinned.kitVersion }, plan: { code: pinned.plan, version: pinned.planVersion } } : null };
+    [found.workspaceId]))).rows[0];
+  return { ...found, pinned: pinned ? { kit: { code: pinned.kit, version: pinned.kitVersion }, plan: { code: pinned.plan, version: pinned.planVersion } } : null };
+}
+
+/**
+ * The sandbox's test members as they are now, by role: each at the first of the addresses the given pattern makes, the
+ * pattern the sandbox keeps and <role>@<slug>.test that a member of the sandbox's first organization holds, so a later
+ * run finds the same people whatever their address. Before the sandbox exists: whoever holds the address its members get.
+ */
+async function sandboxPeople(db: DatabaseService, sandbox: Sandbox | null, slug: string, emailPattern: string | null): Promise<People> {
+  const schemes = sandbox ? [...new Set([emailPattern, sandbox.emailPattern, null])] : [emailPattern];
+  const candidates = (key: string) => [...new Set(schemes.map((scheme) => sandboxAddress(slug, scheme)(key)))];
+  const found = await peopleByEmail(db, SANDBOX_PERSONAS.flatMap((persona) => candidates(persona.key)));
+  const ids = [...new Set([...found.values()].map((person) => person.userId))];
+  const members = sandbox ? new Set((await db.tenantTransaction(sandbox.workspaceId, sandbox.workspaceId, (client) => client.query<{ userId: string }>(
+    `SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND user_id = ANY($2::uuid[])`, [sandbox.workspaceId, ids]))).rows.map((row) => row.userId)) : null;
+  const roster: People = new Map();
+  for (const persona of SANDBOX_PERSONAS) {
+    const person = candidates(persona.key).map((email) => found.get(email)).find((candidate) => candidate && (!members || members.has(candidate.userId)));
+    if (person) roster.set(persona.key, person);
+  }
+  return roster;
 }
 
 /**
  * Every organization in a customer account, and whether the sandbox command made it for the sandbox <slug>: its first
- * organization (provisioning id sandbox-<slug>) or one its test owner requested through this command (the request's
- * key is sandbox-organization:<slug>) and that was approved.
+ * organization (provisioning id sandbox-<slug>) or one its test owner (the account's owner) requested through this
+ * command (the request's key is sandbox-organization:<slug>) and that was approved.
  */
 async function accountOrganizations(db: DatabaseService, accountId: string, slug: string): Promise<AccountOrganization[]> {
   return (await db.query<AccountOrganization>(
     `SELECT linked.workspace_id AS "workspaceId", branding.login_slug AS "loginSlug",
             (EXISTS (SELECT 1 FROM tenant_provisioning_requests provisioned WHERE provisioned.workspace_id = linked.workspace_id AND provisioned.external_tenant_id = $2)
-             OR EXISTS (SELECT 1 FROM organization_requests request JOIN users person ON person.id = request.requested_by
+             OR EXISTS (SELECT 1 FROM organization_requests request JOIN customer_accounts account ON account.id = request.account_id
                          WHERE request.approved_workspace_id = linked.workspace_id AND request.account_id = linked.account_id AND request.status = 'approved'
-                           AND request.idempotency_key LIKE 'sandbox-organization:%' AND lower(person.primary_email::text) = $3)) AS "madeHere"
+                           AND request.idempotency_key LIKE 'sandbox-organization:%' AND request.requested_by = account.created_by)) AS "madeHere"
        FROM customer_account_organizations linked
        LEFT JOIN tenant_login_branding branding ON branding.workspace_id = linked.workspace_id
       WHERE linked.account_id = $1
       ORDER BY linked.is_default DESC, linked.workspace_id`,
-    [accountId, sandboxExternalTenantId(slug), sandboxEmail(SANDBOX_PERSONAS[0].key, slug)])).rows;
+    [accountId, sandboxExternalTenantId(slug)])).rows;
 }
 
 /** A slug an organization, or a provisioning reservation, already holds. */
@@ -711,7 +841,7 @@ type Files = { teams: TeamSpec[] | null; leadOptions: TaxonomySpec[] | null; pro
  * A dry run before the owner is in (the workspace isn't made yet, or an earlier run stopped first): what --apply would
  * do after the owner accepts, from the kit's roles and the files given.
  */
-function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Report, password: string | null, known: Map<string, Person> | null = null) {
+function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Report, password: string | null, scheme: string | null, known: People | null = null) {
   const { teams, leadOptions, profile } = files;
   const people = args.organizationOf ?? args.slug;
   // An added organization is covered by the account's policy, which the sandbox already set.
@@ -722,7 +852,7 @@ function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Re
   if (teams) report.add("teams", "would change", "teams", `${teams.length} teams, each with its role`);
   if (leadOptions) report.add("crm", "would change", "lead options", leadOptions.map((taxonomy) => taxonomy.code).join(", "));
   const roles = new Set([...SYSTEM_ROLE_CODES, ...parseRoleTemplateCodes(setup.kit.configuration.roleTemplates)]);
-  const plans = planMembers(people, roles, teams ?? []);
+  const plans = planMembers(people, roles, teams ?? [], scheme).map((plan) => ({ ...plan, email: known?.get(plan.key)?.email ?? plan.email }));
   for (const plan of plans.slice(1)) {
     report.add("members", "would change", plan.email, `${plan.displayName}: ${args.organizationOf ? "joins" : "invited and active"} as ${[...plan.roleCodes, ...plan.teamCodes.map((code) => `team ${code}`)].join(", ")}`);
   }
@@ -730,26 +860,27 @@ function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Re
   if (profile) report.add("profile", "would change", "profile", `${Object.keys(profile).length} sections, applied as configure once the workspace exists`);
   if (args.seed) report.add("seed", "would change", "showcase", "records for every section, made by the test members");
   // An added organization's people are already there (the sandbox's own); a new sandbox's are made with --apply.
-  printMembers(report, plans.map((plan) => ({ email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes,
-    userId: known?.get(plan.email)?.userId ?? null })), args.passwordEnv, known, args.organizationOf);
+  printMembers(report, plans.map((plan) => ({ key: plan.key, email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes,
+    userId: known?.get(plan.key)?.userId ?? null })), args.passwordEnv, known, args.organizationOf);
 }
 
 /**
- * Each test member's address, roles and user id (never a password), the people this run made (with --organization-of:
- * none, as they are the sandbox's own) and the ids for the device-limit exemption.
+ * Each test member's address, roles and user id (never a password), the people this run made (with --organization-of
+ * or on a sandbox that has its members already: none) and the ids for the device-limit exemption.
  */
-function printMembers(report: Report, members: Outcome[], passwordEnv: string | null, before: Map<string, Person> | null, organizationOf: string | null) {
+function printMembers(report: Report, members: Outcome[], passwordEnv: string | null, before: People | null, organizationOf: string | null) {
   report.facts.members = members;
   const ids = members.flatMap((member) => (member.userId ? [member.userId] : []));
   if (ids.length) report.facts.deviceLimitExemptUserIds = ids.join(",");
-  const made = before ? members.flatMap((member) => (member.userId && before.get(member.email)?.userId !== member.userId ? [member.userId] : [])) : [];
+  const made = before ? members.flatMap((member) => (member.userId && before.get(member.key)?.userId !== member.userId ? [member.userId] : [])) : [];
   if (before) report.facts.newUserIds = made;
-  report.note(`\nTest members${passwordEnv ? ` (password from $${passwordEnv}, not shown)` : organizationOf ? ` of sandbox ${organizationOf} (their passwords unchanged)` : ""}:`);
+  report.note(`\nTest members${passwordEnv ? ` (password from $${passwordEnv}, not shown)` : organizationOf ? ` of sandbox ${organizationOf} (their passwords unchanged)` : " (passwords unchanged, not shown)"}:`);
   for (const member of members) {
     report.note(`  ${member.email.padEnd(32)} ${member.displayName.padEnd(22)} ${[...member.roles, ...member.teams.map((code) => `team ${code}`)].join(", ").padEnd(48)} ${member.userId ?? (organizationOf ? `(not in sandbox ${organizationOf})` : "(made with --apply)")}`);
   }
-  if (organizationOf && before) {
-    report.note(made.length ? `New people (unexpected): ${made.join(",")}` : "No new people: the device-limit exemption needs no change.");
+  if (before?.size) {
+    // People the sandbox had already: only someone new needs adding to the exemption.
+    report.note(made.length ? `New people${organizationOf ? " (unexpected)" : ""}: ${made.join(",")}` : "No new people: the device-limit exemption needs no change.");
     if (made.length) report.note(`User ids for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS (add to the list already there): ${made.join(",")}`);
   } else if (ids.length) report.note(`User ids for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS (add to the list already there): ${ids.join(",")}`);
 }

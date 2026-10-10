@@ -1,5 +1,7 @@
 /** The operator CLI's command line: parsed and checked before anything connects to the database. */
+import { isEmail } from "class-validator";
 import { RESERVED_SLUGS } from "../workspaces/reserved-slugs";
+import { patternEmail, ROLE_PLACEHOLDER, SANDBOX_PERSONAS } from "./ops-sandbox-plan";
 
 export class UsageError extends Error {}
 
@@ -27,6 +29,11 @@ export type SandboxArgs = {
    * same test members (<role>@<that slug>.test), switched to with the organization switcher.
    */
   organizationOf: string | null;
+  /**
+   * The test members' sign-in addresses, with {role} for each member's role key (e.g. wodanatechnology+{role}@gmail.com),
+   * lower case. Existing members are moved to them; left out, the sandbox keeps the scheme it has.
+   */
+  emailPattern: string | null;
   seed: boolean; apply: boolean; json: boolean;
 };
 export type OpsArgs = ImportArgs | ConfigureArgs | SandboxArgs | { command: "help" };
@@ -42,9 +49,10 @@ Usage:
   node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> --profile <profile.json> [--apply] [--json]
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> [--profile <profile.json>]
       [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--password-env <ENV VAR>] [--kit <firm kit code>]
-      [--seed] [--apply] [--json]
+      [--email-pattern "<local>+{role}@<domain>"] [--seed] [--apply] [--json]
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> --organization-of <sandbox slug>
-      [--profile <profile.json>] [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--seed] [--apply] [--json]
+      [--profile <profile.json>] [--teams <teams-access.json>] [--crm <crm-intake-profile.json>]
+      [--email-pattern "<local>+{role}@<domain>"] [--seed] [--apply] [--json]
   node dist/ops/ops-cli.js --help
 
 import
@@ -92,7 +100,8 @@ sandbox
   --kit           a firm kit by code, instead of the default
   --seed          the showcase records for every section, made through the test members' own commands
   One active member per role (owner, manager, sales, designer, design manager, QS, purchasing, factory lead,
-  logistics, site supervisor, finance, accountant) as <role>@<slug>.test with the workspace's matching roles and teams.
+  logistics, site supervisor, finance, accountant) as <role>@<slug>.test (or --email-pattern's addresses) with the
+  workspace's matching roles and teams.
   Prints each member's email, roles and user id (for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS), never the password.
   --organization-of  another organization in that sandbox's customer account (e.g. one per country): requested by its
                   test owner and approved as Wodana approves an account's additional organization, with this region
@@ -100,12 +109,21 @@ sandbox
                   and teams (no new people, passwords untouched) and switch between the two with the organization
                   switcher; the account's sign-in policy covers both. Refused unless the sandbox and every organization
                   in its account were made by this command. --password-env and --kit don't apply.
+  --email-pattern  the test members' sign-in addresses, {role} standing for each member's role key once before the @
+                  (e.g. "wodanatechnology+{role}@gmail.com": wodanatechnology+sales@gmail.com, …), so their emails reach
+                  a real inbox. A new sandbox's members get them from the start; existing members are moved to them
+                  (same people, user ids, passwords, sessions, memberships, roles and teams) in every organization of
+                  the sandbox at once, and emails already queued for their old addresses are skipped (never sent to the
+                  new ones). The sandbox keeps the pattern: later runs, with it or without, find the same people. Refused
+                  for anyone who also belongs to an organization the sandbox didn't make, and for an address someone
+                  else signs in with. With --organization-of it is the sandbox's people's addresses (one run covers
+                  every organization they belong to).
 
 Output is counts and messages only. Exit code 0 when everything succeeded, 1 when anything failed, 2 for usage errors.`;
 
 const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
-  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of"]);
+  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ITEM_TYPES = ["product", "material", "assembly", "service", "package", "ready_made"];
@@ -179,7 +197,9 @@ export function parseArgs(argv: string[]): OpsArgs {
   };
 }
 
-const SANDBOX_OPTIONS = ["--slug", "--name", "--region", "--profile", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--seed", "--apply", "--dry-run", "--json"];
+const SANDBOX_OPTIONS = ["--slug", "--name", "--region", "--profile", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern", "--seed", "--apply",
+  "--dry-run", "--json"];
+const STORED_ADDRESS = /^[^@\s{}]+@[^@\s{}]+\.[^@\s{}]+$/;
 /** A login slug that is also a DNS label and makes valid test addresses (<role>@<slug>.test). */
 const LOGIN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -207,10 +227,29 @@ function parseSandbox(values: Map<string, string>, flags: Set<string>, required:
     if (passwordEnv !== null) throw new UsageError(`--password-env does not apply with --organization-of: the test members keep the password sandbox ${organizationOf} gave them.`);
     if (kit !== null) throw new UsageError(`--kit does not apply with --organization-of: the organization gets the firm kit of sandbox ${organizationOf}.`);
   }
+  const emailPattern = values.has("--email-pattern") ? parseEmailPattern(values.get("--email-pattern")!) : null;
   return {
     command: "sandbox", slug, name, region, profile: values.get("--profile")?.trim() || null, teams: values.get("--teams")?.trim() || null,
-    crm: values.get("--crm")?.trim() || null, passwordEnv, kit, organizationOf, seed: flags.has("--seed"), apply: flags.has("--apply"), json: flags.has("--json"),
+    crm: values.get("--crm")?.trim() || null, passwordEnv, kit, organizationOf, emailPattern, seed: flags.has("--seed"), apply: flags.has("--apply"), json: flags.has("--json"),
   };
+}
+
+/**
+ * --email-pattern: an address with {role} once before the @, lower case (addresses are matched without case), that
+ * makes a valid sign-in address (as the invitation and provisioning commands check it) for every test member's role.
+ */
+export function parseEmailPattern(value: string): string {
+  const pattern = value.trim().toLowerCase();
+  const example = "e.g. wodanatechnology+{role}@gmail.com";
+  if (pattern.split(ROLE_PLACEHOLDER).length !== 2) throw new UsageError(`--email-pattern has {role} once, where each member's role goes (${example}).`);
+  const at = pattern.lastIndexOf("@");
+  if (at >= 0 && pattern.indexOf(ROLE_PLACEHOLDER) > at) throw new UsageError(`--email-pattern has {role} before the @, so every member's email reaches the same inbox (${example}).`);
+  if (/[{}]/.test(pattern.replace(ROLE_PLACEHOLDER, ""))) throw new UsageError(`--email-pattern has {role} once and no other braces (${example}).`);
+  // The shape the database keeps (operator_sandbox_settings), and an address the invitation and provisioning commands accept.
+  const invalid = SANDBOX_PERSONAS.map((persona) => patternEmail(pattern, persona.key))
+    .find((email) => !STORED_ADDRESS.test(email) || !isEmail(email) || email.length > 254);
+  if (invalid !== undefined) throw new UsageError(`--email-pattern must make a valid address for every member; ${invalid} is not one (${example}).`);
+  return pattern;
 }
 
 /** --mapping: inline JSON or a JSON file's text, as heading → field overrides (with the tabs' companies for suppliers). */

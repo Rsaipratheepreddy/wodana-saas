@@ -52,11 +52,11 @@ describe("operator CLI arguments", () => {
 
   it("parses sandbox: a dry run unless --apply, region upper-cased, files and the password's variable optional", () => {
     expect(parseArgs(sandbox)).toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: null, teams: null, crm: null, passwordEnv: null,
-      kit: null, organizationOf: null, seed: false, apply: false, json: false });
+      kit: null, organizationOf: null, emailPattern: null, seed: false, apply: false, json: false });
     expect(parseArgs([...sandbox, "--profile", "p.json", "--teams", "t.json", "--crm", "c.json", "--password-env", "SANDBOX_PASSWORD", "--kit", "design_build", "--seed",
       "--apply", "--json"]))
       .toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: "p.json", teams: "t.json", crm: "c.json", passwordEnv: "SANDBOX_PASSWORD",
-        kit: "design_build", organizationOf: null, seed: true, apply: true, json: true });
+        kit: "design_build", organizationOf: null, emailPattern: null, seed: true, apply: true, json: true });
     expect(parseArgs(["sandbox", "--slug", "Test-Studio-2", "--name", "  Test Studio ", "--region", "GB"])).toMatchObject({ slug: "test-studio-2", name: "Test Studio" });
     expect(parseArgs(["sandbox", "--help"])).toEqual({ command: "help" });
   });
@@ -66,7 +66,7 @@ describe("operator CLI arguments", () => {
   it("parses --organization-of: another organization in an existing sandbox's account, for the same test members", () => {
     expect(parseArgs([...organization, "--profile", "p.json", "--teams", "t.json", "--crm", "c.json", "--seed", "--apply"])).toEqual({
       command: "sandbox", slug: "iglo-india", name: "Igolo India", region: "IN", profile: "p.json", teams: "t.json", crm: "c.json", passwordEnv: null,
-      kit: null, organizationOf: "iglo", seed: true, apply: true, json: false });
+      kit: null, organizationOf: "iglo", emailPattern: null, seed: true, apply: true, json: false });
     expect(parseArgs(organization)).toMatchObject({ organizationOf: "iglo", apply: false });
   });
 
@@ -84,6 +84,37 @@ describe("operator CLI arguments", () => {
   ])("refuses --organization-of %j", (argv, message) => {
     expect(() => parseArgs(argv as string[])).toThrow(UsageError);
     expect(() => parseArgs(argv as string[])).toThrow(message as string);
+  });
+
+  it("parses --email-pattern: each test member's sign-in address, with or without --organization-of", () => {
+    expect(parseArgs([...sandbox, "--email-pattern", "wodanatechnology+{role}@gmail.com"])).toMatchObject({ emailPattern: "wodanatechnology+{role}@gmail.com", apply: false });
+    expect(parseArgs([...sandbox, "--email-pattern", "  WodanaTechnology+{ROLE}@Gmail.com "])).toMatchObject({ emailPattern: "wodanatechnology+{role}@gmail.com" });
+    expect(parseArgs([...sandbox, "--email-pattern", "{role}@studio.test", "--apply"])).toMatchObject({ emailPattern: "{role}@studio.test", apply: true });
+    expect(parseArgs([...organization, "--email-pattern", "qa.{role}@example.com"])).toMatchObject({ emailPattern: "qa.{role}@example.com", organizationOf: "iglo" });
+    expect(parseArgs(sandbox)).toMatchObject({ emailPattern: null });
+  });
+
+  it.each([
+    ["wodanatechnology@gmail.com", "{role} once"],
+    ["{role}+{role}@gmail.com", "{role} once"],
+    ["wodana+role@gmail.com", "{role} once"],
+    ["test@{role}.example.com", "before the @"],
+    ["wodanatechnology+{role}", "valid address"],
+    ["wodanatechnology+{role}@gmail", "valid address"],
+    ["wodana technology+{role}@gmail.com", "valid address"],
+    ["a@b+{role}@gmail.com", "valid address"],
+    ["wodana+{role}{n}@gmail.com", "no other braces"],
+    ["\"wodana {role}\"@gmail.com", "valid address"],
+    [`${"a".repeat(50)}+{role}@gmail.com`, "valid address"],
+  ])("refuses --email-pattern %j", (pattern, message) => {
+    expect(() => parseArgs([...sandbox, "--email-pattern", pattern])).toThrow(UsageError);
+    expect(() => parseArgs([...sandbox, "--email-pattern", pattern])).toThrow(message);
+  });
+
+  it("refuses --email-pattern without a value or twice", () => {
+    expect(() => parseArgs([...sandbox, "--email-pattern"])).toThrow("--email-pattern needs a value");
+    expect(() => parseArgs([...sandbox, "--email-pattern", "a+{role}@x.com", "--email-pattern", "b+{role}@x.com"])).toThrow("--email-pattern is given twice");
+    expect(() => parseArgs(["configure", ...base, "--profile", "p.json", "--email-pattern", "a+{role}@x.com"])).toThrow("--email-pattern does not apply to configure");
   });
 
   it.each([
@@ -124,6 +155,7 @@ describe("operator CLI arguments", () => {
     expect(USAGE).toContain("--password-env <ENV VAR>");
     expect(USAGE).toContain("--crm <crm-intake-profile.json>");
     expect(USAGE).toContain("--organization-of <sandbox slug>");
+    expect(USAGE).toContain("--email-pattern \"<local>+{role}@<domain>\"");
   });
 
   it("reads --mapping overrides as headings to fields", () => {
