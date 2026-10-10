@@ -1,6 +1,7 @@
 import { DesignPackagesService } from "../design/design-packages.service";
 import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
+import { prefillDesignFeeQuote } from "../quotation/design-fee-line";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
 import { dealAmount, dealApprovalView, decideDealStep, openDealApproval } from "./deal-file-approval";
@@ -3408,6 +3409,12 @@ export class CommercialService {
           action === "return" && typeof b.note === "string" ? b.note.trim().slice(0, 3000) : "",
           user.userId,
         );
+        // A new design-fee quote starts with the fee Sales priced on the opportunity (one editable line), in this
+        // same command; the Proposal 1 value only for someone who may see the opportunity's values.
+        const prefilled = action === "create" && q?.kind === "quotation" && q.round === "design" && !q.lines.length
+          ? await prefillDesignFeeQuote(client, { workspaceId, caseId, quoteId: q.id, actorUserId: user.userId,
+            includeProposalValue: await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.sensitive_values") })
+          : null;
         if (["submit_owner_review", "review_deal_finance", "decide_owner_review"].includes(action))
           await this.notifyDealReview(client, workspaceId, caseId, data, action, user.userId);
         // A new revision starts from the previous one: carry each line's build-up and the discounts.
@@ -3427,7 +3434,9 @@ export class CommercialService {
             dealWaiting: data.ownerReview?.status === "pending_approval" || data.ownerReview?.status === "pending_finance", demo: this.testMode,
           });
         }
-        return sent ? { data, sent } : { data };
+        // The answer shows the filled quote, under the same revision.
+        const answer = prefilled ? await this.load(client, workspaceId, caseId) : data;
+        return sent ? { data: answer, sent } : { data: answer };
       },
     );
   }

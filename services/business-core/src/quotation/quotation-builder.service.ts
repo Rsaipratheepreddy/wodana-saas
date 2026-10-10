@@ -701,19 +701,9 @@ export class QuotationBuilderService {
     }
   }
 
-  /** Prices the quote with the shared engine and keeps its header (total, discount, pricing policy) in step. */
+  /** Prices the quote and keeps its header in step; a separate command, so it moves the case's revision. */
   private async reprice(client: Db, workspaceId: string, caseId: string, quote: Quote, settings: QuotationSettings) {
-    const policy: PricingPolicy = { currencyDecimals: currencyDecimals(quote.currency), pricesIncludeTax: settings.pricesIncludeTax, rounding: settings.rounding };
-    const lines = await readLines(client, workspaceId, caseId, quote.id);
-    const discounts = await readDiscounts(client, workspaceId, caseId, quote.id);
-    let pricing;
-    try { pricing = priceQuote(lines.map((line) => pricedInput(line, quote.taxRate)), discounts, policy); }
-    catch (error) { if (error instanceof PricingError) throw new BadRequestException(error.message); throw error; }
-    await client.query(
-      `UPDATE commercial_quotes SET total = $4, discount = $5, detail = detail || jsonb_build_object('pricing', $6::jsonb),
-              valid_until = CASE WHEN status = 'draft' THEN (SELECT (now() AT TIME ZONE default_timezone)::date FROM workspaces WHERE id = $1) + $7::int ELSE valid_until END
-        WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
-      [workspaceId, caseId, quote.id, pricing.total, pricing.discounts.total, JSON.stringify(policy), settings.validityDays]);
+    const pricing = await storeQuotePricing(client, workspaceId, caseId, quote, settings);
     // Other commands read the case under its revision; moving it makes them reload instead of overwriting.
     await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
     return pricing;
@@ -852,8 +842,27 @@ async function caseAreas(db: Db, workspaceId: string, caseId: string) {
   return (await db.query<{ id: string; name: string }>(`SELECT id, name FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2 ORDER BY lower(name)`, [workspaceId, caseId])).rows;
 }
 
+/**
+ * Prices a quote with the shared engine and keeps its header (total, discount, pricing policy, a draft's validity) in
+ * step, in exact decimals. The caller decides whether the case's revision moves (a separate command) or not (the same one).
+ */
+export async function storeQuotePricing(db: Db, workspaceId: string, caseId: string, quote: { id: string; currency: string; taxRate: string }, settings: QuotationSettings) {
+  const policy: PricingPolicy = { currencyDecimals: currencyDecimals(quote.currency), pricesIncludeTax: settings.pricesIncludeTax, rounding: settings.rounding };
+  const lines = await readLines(db, workspaceId, caseId, quote.id);
+  const discounts = await readDiscounts(db, workspaceId, caseId, quote.id);
+  let pricing;
+  try { pricing = priceQuote(lines.map((line) => pricedInput(line, quote.taxRate)), discounts, policy); }
+  catch (error) { if (error instanceof PricingError) throw new BadRequestException(error.message); throw error; }
+  await db.query(
+    `UPDATE commercial_quotes SET total = $4, discount = $5, detail = detail || jsonb_build_object('pricing', $6::jsonb),
+            valid_until = CASE WHEN status = 'draft' THEN (SELECT (now() AT TIME ZONE default_timezone)::date FROM workspaces WHERE id = $1) + $7::int ELSE valid_until END
+      WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
+    [workspaceId, caseId, quote.id, pricing.total, pricing.discounts.total, JSON.stringify(policy), settings.validityDays]);
+  return pricing;
+}
+
 /** The tax codes of the legal entity on the case's opportunity (or the workspace's first active entity), current rates only. */
-async function taxCodes(db: Db, workspaceId: string, caseId: string) {
+export async function taxCodes(db: Db, workspaceId: string, caseId: string) {
   return (await db.query<{ code: string; label: string; rate: string; isDefault: boolean }>(
     `SELECT rate.code, rate.label, rate.rate::text AS rate, rate.is_default AS "isDefault"
        FROM tax_rates rate JOIN tax_profiles profile ON profile.id = rate.tax_profile_id
