@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { waitingFor, type ApprovalContext } from "./approval-sources";
+import { ApprovalsService } from "./approvals.service";
+import { BriefService } from "../pre-projects/brief.service";
+import { DesignService } from "../pre-projects/design.service";
+import { CrmEventsService } from "../crm/shared/crm-events.service";
+import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 
 // Opt-in: PROJECT_REPOSITORY_TEST_DATABASE_URL must point at a local, migrated database with a
 // superuser role. Every test runs in a transaction that is rolled back.
@@ -122,6 +127,89 @@ integration("waiting for you, across modules", () => {
       await client.query("SET LOCAL session_replication_role = origin");
       const factory = await waitingFor(client, context(ids, ids.approver, ["factory.approve"]));
       expect(factory.rows.find((row) => row.kind === "output")).toMatchObject({ title: "WO-0003 · Wardrobe", subject: "1 nos" });
+    });
+  });
+
+  it("lists a design sent for internal review to its reviewer, and an unassigned one to anyone who reviews designs", async () => {
+    await world(async (client, ids) => {
+      const caseId = randomUUID(), opportunityId = randomUUID(), partyId = randomUUID(), other = randomUUID(), designer = randomUUID(), asset = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO crm_parties(id,workspace_id,type,display_name,normalized_name) VALUES($1,$2,'person','Mariam Al Suwaidi','mariam al suwaidi')", [partyId, ids.workspaceId]);
+      await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,title,reference) VALUES($1,$2,$3,$4,$4,'Majlis design','D-0012')`, [opportunityId, ids.workspaceId, partyId, randomUUID()]);
+      await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, ids.workspaceId, opportunityId, ids.approver]);
+      const design = async (title: string, status: string, reviewer: string | null, archived = false) => {
+        const id = randomUUID();
+        await client.query("INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,stage,created_by,archived_at) VALUES($1,$2,$3,$4,'concept','concepts',$5,$6)",
+          [id, ids.workspaceId, caseId, title, designer, archived ? new Date() : null]);
+        await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status,reviewer_id) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8)",
+          [randomUUID(), ids.workspaceId, caseId, id, asset, designer, status, reviewer]);
+        return id;
+      };
+      const sent = await design("Majlis concept", "internal_review", ids.approver);
+      await design("For someone else", "internal_review", other);
+      await design("Unassigned", "internal_review", null);
+      await design("Still a draft", "draft", ids.approver);
+      await design("Archived", "internal_review", ids.approver, true);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const reviewer = ["pre_projects.view", "pre_projects.edit", "pre_projects.review_designs"];
+      const mine = await waitingFor(client, context(ids, ids.approver, reviewer));
+      expect(mine.rows.map((row) => row.title).sort()).toEqual(["Majlis concept · V1", "Unassigned · V1"]);
+      expect(mine.rows.find((row) => row.id === sent)).toMatchObject({ kind: "design_review", group: "designs", parentId: caseId, subject: "Mariam Al Suwaidi",
+        project: { id: caseId, reference: "D-0012", name: "Majlis design" }, canDecide: true, href: `/workspace/pre-projects/cases/${caseId}/designs?file=${sent}`,
+        decide: { approve: "internal_approved", other: "return", approveNeedsNote: false } });
+      expect(mine.counts.designs).toBe(2);
+      // Another reviewer has the one sent to them and the unassigned one; someone who doesn't review designs has none.
+      expect((await waitingFor(client, context(ids, other, reviewer))).rows.map((row) => row.title).sort()).toEqual(["For someone else · V1", "Unassigned · V1"]);
+      expect((await waitingFor(client, context(ids, ids.approver, ["pre_projects.view", "pre_projects.edit"]))).rows).toEqual([]);
+    });
+  });
+
+  it("approves a design review from Approvals or sends it back, recorded on the design as the design page records it", async () => {
+    await world(async (client, ids) => {
+      const caseId = randomUUID(), opportunityId = randomUUID(), designer = randomUUID(), asset = randomUUID();
+      await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Noor Reviewer'),($3,$4,'Dana Designer')",
+        [ids.approver, `${ids.approver.slice(0, 8)}@example.com`, designer, `${designer.slice(0, 8)}@example.com`]);
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,title,reference) VALUES($1,$2,$3,$3,$3,'Majlis design','D-0012')`, [opportunityId, ids.workspaceId, randomUUID()]);
+      await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, ids.workspaceId, opportunityId, ids.approver]);
+      await client.query("INSERT INTO pre_project_brief_assets(id,workspace_id,case_id,original_name,mime_type,byte_size,object_key,sha256,created_by) VALUES($1,$2,$3,'majlis.pdf','application/pdf',1,'k',repeat('a',64),$4)",
+        [asset, ids.workspaceId, caseId, designer]);
+      const design = async (title: string) => {
+        const id = randomUUID();
+        await client.query("INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,created_by) VALUES($1,$2,$3,$4,'concept',$5)", [id, ids.workspaceId, caseId, title, designer]);
+        await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status,reviewer_id) VALUES($1,$2,$3,$4,1,$5,$6,'internal_review',$7)",
+          [randomUUID(), ids.workspaceId, caseId, id, asset, designer, ids.approver]);
+        return id;
+      };
+      const approved = await design("Majlis concept"), returned = await design("Dining layout");
+      await seedDefaultNotificationTemplates(client, ids.workspaceId);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const permissions = ["pre_projects.view", "pre_projects.edit", "pre_projects.review_designs"];
+      const run = (_a: unknown, _w: string, _p: unknown, work: (c: PoolClient, u: { userId: string; displayName: string }) => unknown) => work(client, { userId: ids.approver, displayName: "Noor Reviewer" });
+      const access = { asMember: (_a: unknown, _w: string, work: (c: PoolClient, u: { userId: string; displayName: string }) => unknown) => work(client, { userId: ids.approver, displayName: "Noor Reviewer" }),
+        withPermission: run, withPermissions: run, hasPermission: async (_c: unknown, _w: string, _u: string, permission: string) => permissions.includes(permission) };
+      const events = new CrmEventsService();
+      const designs = new DesignService(access as never, new BriefService(access as never, events, {} as never), events);
+      const approvals = new ApprovalsService(access as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, designs);
+      const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "Noor Reviewer" } as never;
+      expect((await approvals.mine(actor, ids.workspaceId)).rows.filter((row) => row.kind === "design_review").map((row) => row.id).sort()).toEqual([approved, returned].sort());
+
+      await expect(approvals.decide(actor, ids.workspaceId, { kind: "design_review", id: returned, decision: "return", note: "" })).rejects.toThrow(/Describe the changes/);
+      await approvals.decide(actor, ids.workspaceId, { kind: "design_review", id: approved, decision: "approve" });
+      const after = await approvals.decide(actor, ids.workspaceId, { kind: "design_review", id: returned, decision: "return", note: "Seat twelve, not ten" });
+      expect(after.rows.filter((row) => row.kind === "design_review")).toEqual([]);
+      const recorded = (await client.query<{ design: string; status: string; action: string; note: string }>(
+        `SELECT design.title AS design, version.status, activity.action, activity.note FROM pre_project_design_activity activity
+           JOIN pre_project_design_versions version ON version.workspace_id = activity.workspace_id AND version.id = activity.version_id
+           JOIN pre_project_designs design ON design.workspace_id = activity.workspace_id AND design.id = activity.design_id
+          WHERE activity.workspace_id = $1 ORDER BY design.title`, [ids.workspaceId])).rows;
+      expect(recorded).toEqual([
+        { design: "Dining layout", status: "changes_requested", action: "changes_requested", note: "Seat twelve, not ten" },
+        { design: "Majlis concept", status: "internal_approved", action: "internal_approved", note: "" },
+      ]);
+      // The designer hears each answer, as from the design page.
+      expect((await client.query(`SELECT event_type FROM notifications WHERE workspace_id = $1 AND recipient_id = $2 AND channel = 'in_app' ORDER BY event_type`, [ids.workspaceId, designer])).rows.map((row) => row.event_type))
+        .toEqual(["design.review_approved", "design.sent_back"]);
     });
   });
 

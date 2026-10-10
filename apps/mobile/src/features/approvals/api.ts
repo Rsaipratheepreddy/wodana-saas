@@ -6,11 +6,11 @@ import { key } from '../../core/i18n';
  * "Waiting for you" (AP-1): one list across modules from `GET approvals/mine`, decided in the row through
  * `POST approvals/decide`, which runs each module's own command and returns the refreshed list.
  */
-export const APPROVAL_GROUPS = ['quotes', 'payments', 'deals', 'orders', 'factory', 'site', 'stock', 'finance'] as const;
+export const APPROVAL_GROUPS = ['designs', 'quotes', 'payments', 'deals', 'orders', 'factory', 'site', 'stock', 'finance'] as const;
 export type ApprovalGroup = (typeof APPROVAL_GROUPS)[number];
 export type ApprovalKind =
   | 'quote_review' | 'receipt' | 'agreement' | 'deal_finance' | 'deal_approval' | 'order' | 'output' | 'material_swap'
-  | 'site_report' | 'petty_cash' | 'snag' | 'warranty' | 'stock_correction' | 'bill' | 'payment_run' | 'reimbursement' | 'invoice';
+  | 'site_report' | 'petty_cash' | 'snag' | 'warranty' | 'stock_correction' | 'bill' | 'payment_run' | 'reimbursement' | 'invoice' | 'design_review';
 export type ApprovalRow = {
   kind: ApprovalKind;
   group: ApprovalGroup;
@@ -35,7 +35,7 @@ export type WaitingForYou = { rows: ApprovalRow[]; count: number; counts: Record
 export type Decision = 'approve' | 'return' | 'reject';
 
 export const GROUP_LABEL: Record<ApprovalGroup, string> = {
-  quotes: key('Quotes'), payments: key('Payments'), deals: key('Deals'), orders: key('Orders'),
+  designs: key('Designs'), quotes: key('Quotes'), payments: key('Payments'), deals: key('Deals'), orders: key('Orders'),
   factory: key('Factory'), site: key('Site'), stock: key('Stock'), finance: key('Finance'),
 };
 /** What the row asks for, in a word or two (the web's words). */
@@ -44,6 +44,7 @@ export const KIND_LABEL: Record<ApprovalKind, string> = {
   order: key('Order to approve'), output: key('Output to approve'), material_swap: key('Material swap'), site_report: key('Daily progress'),
   petty_cash: key('Petty cash'), snag: key('Snag to close'), warranty: key('Warranty claim'), stock_correction: key('Stock correction'),
   bill: key('Held bill'), payment_run: key('Payment run'), reimbursement: key('To reimburse'), invoice: key('To invoice'),
+  design_review: key('Design to review'),
 };
 /** A daily report approved here goes to the client as reviewed. */
 export const approveLabel = (kind: ApprovalKind) => (kind === 'receipt' ? key('Verify') : kind === 'site_report' ? key('Approve & send') : key('Approve'));

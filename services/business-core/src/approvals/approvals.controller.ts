@@ -6,6 +6,7 @@ import { CommercialModule } from "../commercial/commercial.module";
 import { FactoryModule } from "../factory/factory.module";
 import { InventoryModule } from "../inventory/inventory.module";
 import { PettyCashModule } from "../petty-cash/petty-cash.module";
+import { PreProjectsModule } from "../pre-projects/pre-projects.module";
 import { PurchasingModule } from "../purchasing/purchasing.module";
 import { SiteModule } from "../site/site.module";
 import { WorkspacesModule } from "../workspaces/workspaces.module";
@@ -81,7 +82,7 @@ export class ApprovalsController {
 }
 
 @Module({
-  imports: [WorkspacesModule, CommercialModule, PurchasingModule, FactoryModule, InventoryModule, SiteModule, PettyCashModule],
+  imports: [WorkspacesModule, CommercialModule, PurchasingModule, FactoryModule, InventoryModule, SiteModule, PettyCashModule, PreProjectsModule],
   controllers: [ApprovalsController],
   providers: [ApprovalsService, ApprovalPoliciesService],
 })

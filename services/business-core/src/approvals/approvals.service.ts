@@ -6,6 +6,7 @@ import { CommercialService } from "../commercial/commercial.service";
 import { FactoryService } from "../factory/factory.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { PettyCashService } from "../petty-cash/petty-cash.service";
+import { DesignService } from "../pre-projects/design.service";
 import { OrdersService } from "../purchasing/orders.service";
 import { PayablesService } from "../purchasing/payables.service";
 import { PaymentRunsService } from "../purchasing/payment-runs.service";
@@ -36,6 +37,7 @@ export class ApprovalsService {
     private readonly runs: PaymentRunsService,
     private readonly site: SiteService,
     private readonly pettyCash: PettyCashService,
+    private readonly designs: DesignService,
   ) {}
 
   mine(actor: RequestActor, workspaceId: string) {
@@ -100,6 +102,9 @@ export class ApprovalsService {
           await APPROVAL_OUTCOMES[status.kind]?.(client, workspaceId, status, decision, user.userId, note || null);
           return status;
         });
+      case "design_review":
+        // Approved, or sent back with what needs to change, on the design's latest version (its own review step).
+        return this.designs.decideReview(actor, workspaceId, row.parentId!, row.id, { approve, version: row.version!, note });
       case "petty_cash":
         return this.pettyCash.command(actor, workspaceId, row.parentId!, { action: approve ? "approve" : "reject", claimId: row.id, version: row.version, note, commandId: randomUUID() });
       default:

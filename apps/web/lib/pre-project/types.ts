@@ -26,6 +26,8 @@ export type PreProjectCase = {
   team?: CaseTeamRole[];
   /** PLM-121/126/098: the phases, site visit, design and release the job's enquiry type and path call for. */
   plan?: CasePlan;
+  /** The day the client signed off the design (PLM-053), once they have: the case is priced next. */
+  designApprovedOn?: string | null;
 };
 /**
  * What a case goes through, from its job's configuration (never its enquiry type's name). `default` is the full
@@ -56,7 +58,7 @@ export type CaseProjectFacts = {
   id: string; caseId: string; name: string; reference: string; status: string; onHold: boolean; managerName: string | null; nextAction: string;
   staged: boolean; stageName: string | null; phase: string; workflow: { templateCode: string; currentStageKey: string; currentStageName: string } | null;
 };
-export type PreProjectListItem =Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
+export type PreProjectListItem =Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt" | "designApprovedOn"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
   projectId?: string | null;

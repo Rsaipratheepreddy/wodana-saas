@@ -16,8 +16,8 @@ import { siteApi } from "@/lib/site/client";
 type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
 
 /**
- * Everything waiting for this person across the modules: quotes, payments, deals, orders, factory output,
- * site reports, stock and finance. Decided in the row (with a note where the module asks for one) or
+ * Everything waiting for this person across the modules: design reviews, quotes, payments, deals, orders,
+ * factory output, site reports, stock and finance. Decided in the row (with a note where the module asks for one) or
  * opened for the evidence. Only what they may decide counts; their own work shows who else decides.
  */
 const subscribeMinute = (notify: () => void) => { const timer = window.setInterval(notify, 60_000); return () => window.clearInterval(timer); };

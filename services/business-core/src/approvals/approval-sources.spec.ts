@@ -12,6 +12,35 @@ const context = (permissions: string[], userId = "olivia"): ApprovalContext => (
   can: async (permission) => permissions.includes(permission),
 });
 
+describe("Approvals → Designs", () => {
+  const DESIGN = "00000000-0000-4000-8000-000000000002";
+  const review = { designId: DESIGN, caseId: CASE, title: "Majlis concept", number: 2, version: 5, reviewerId: "noor", since: new Date("2026-10-09T09:00:00.000Z"),
+    client: "Mariam Al Suwaidi", reference: "D-0012", caseTitle: "Majlis design" };
+  const reviewer = ["pre_projects.view", "pre_projects.edit", "pre_projects.review_designs"];
+
+  it("lists a design sent for internal review to its reviewer, approved or sent back in the row, and opens the design", async () => {
+    const db = fakeDb([["FROM pre_project_designs", [review]]]);
+    const { rows, count, counts } = await waitingFor(db, context(reviewer, "noor"));
+    expect(rows).toEqual([expect.objectContaining({
+      kind: "design_review", group: "designs", id: DESIGN, parentId: CASE, version: 5, title: "Majlis concept · V2", subject: "Mariam Al Suwaidi",
+      project: { id: CASE, reference: "D-0012", name: "Majlis design" }, since: "2026-10-09T09:00:00.000Z", canDecide: true,
+      href: `/workspace/pre-projects/cases/${CASE}/designs?file=${DESIGN}`, decide: { approve: "internal_approved", other: "return", approveNeedsNote: false },
+    })]);
+    expect(count).toBe(1);
+    expect(counts.designs).toBe(1);
+  });
+
+  it("asks only the reviewer it was sent to (any reviewer when none was named), and only people who review designs", async () => {
+    const db = fakeDb([["FROM pre_project_designs", [review]]]);
+    expect((await waitingFor(db, context(reviewer, "sara"))).rows).toEqual([]);
+    expect((await waitingFor(db, context(["pre_projects.view", "pre_projects.edit"], "noor"))).rows).toEqual([]);
+    const unassigned = fakeDb([["FROM pre_project_designs", [{ ...review, reviewerId: null }]]]);
+    expect((await waitingFor(unassigned, context(reviewer, "sara"))).rows).toEqual([expect.objectContaining({ kind: "design_review", canDecide: true })]);
+    // A reviewer who can't change the case's records opens the design instead of deciding in the row.
+    expect((await waitingFor(db, context(["pre_projects.view", "pre_projects.review_designs"], "noor"))).rows).toEqual([expect.objectContaining({ kind: "design_review", decide: null })]);
+  });
+});
+
 describe("Approvals → Deals", () => {
   it("lists a signed agreement waiting to be verified under Deals, for whoever verifies agreements (M6)", async () => {
     const agreement = { caseId: CASE, reference: "AGR-2026-001", since: new Date("2026-09-29T09:00:00.000Z"), revision: 7, amount: "77960.00", currency: "AED",

@@ -96,6 +96,24 @@ describe("the case's strip, money and timeline", () => {
     expect(effectivePhase({ ...record, phase: "design" }, main)).toBe("price");
   });
 
+  it("after the design approval, the case is priced next: the estimate's new draft doesn't send it back to Requirements", () => {
+    // The approval hands off to the main estimate: a draft main quotation now follows the accepted design fee.
+    const designFee = quote({ id: "fee", round: "design", status: "accepted", decidedAt: "2026-09-29T18:01:28Z", total: 12000 });
+    const estimate = commercial({ quotes: [designFee, quote({ id: "main", number: 2, round: "main", status: "draft" })],
+      agreement: { ...executed, quoteId: "fee", acceptedTotal: 12000 }, payments: [payment({ status: "verified" })] });
+    const approved = { ...record, designApprovedOn: "2026-10-09" };
+    expect(effectivePhase(approved, estimate)).toBe("price");
+    expect(casePosition(approved, estimate)).toEqual({ position: 4, count: 6 });
+    expect(caseTimeline({ record: approved, commercial: estimate, today }).map((step) => [step.id, step.state, step.doneAt ?? null])).toEqual([
+      ["discover", "done", null], ["define", "done", null], ["design", "done", "2026-10-09"], ["price", "current", null], ["agree", "upcoming", null], ["release", "upcoming", null],
+    ]);
+    expect(caseNextStep({ record: approved, commercial: estimate, today }).title).toEqual({ key: "Finish quotation {quote}", values: { quote: "Q-2" } });
+    expect(caseListStep(approved, { data: { quotes: [{ id: "fee", number: 1, kind: "quotation", round: "design", status: "accepted" }, { id: "main", number: 2, kind: "quotation", round: "main", status: "draft" }], agreement: null } }))
+      .toEqual({ stage: "Quotation", next: { key: "Finish quotation {quote}", values: { quote: "Q-2" } } });
+    // Before the approval, the paid design fee keeps the case in design whichever quotation came last.
+    expect(effectivePhase(record, estimate)).toBe("design");
+  });
+
   it("gives the Planning list the overview's reading: a sent quotation waits for the client, an approved one is to send", () => {
     const facts = (status: string) => ({ data: { quotes: [{ id: "q1", number: 1, kind: "quotation", round: "main" as const, status }], agreement: null }, quoteReferences: { q1: "PLM-QUO-2026-00001" } });
     expect(caseListStep({ phase: "price" }, facts("issued"))).toEqual({ stage: "Quotation", next: { key: "Waiting for the client's decision" } });

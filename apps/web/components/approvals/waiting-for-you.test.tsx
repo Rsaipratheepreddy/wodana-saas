@@ -14,7 +14,7 @@ const aiRow: ApprovalRow = {
   project: null, amount: null, currency: null, since: new Date(Date.now() - 5 * 60_000).toISOString(), href: `/workspace/ai-actions/${CALL}`,
   canDecide: true, reason: null, decide: null, version: null, parentId: null,
 };
-const waiting: WaitingForYou = { rows: [aiRow], count: 1, counts: { quotes: 0, payments: 0, deals: 0, orders: 0, factory: 0, site: 0, stock: 0, finance: 0, ai: 1 } };
+const waiting: WaitingForYou = { rows: [aiRow], count: 1, counts: { designs: 0, quotes: 0, payments: 0, deals: 0, orders: 0, factory: 0, site: 0, stock: 0, finance: 0, ai: 1 } };
 
 describe("Waiting for you: changes AI apps prepared", () => {
   it("lists the change in the person's words under AI apps, and opens it", async () => {
@@ -60,5 +60,34 @@ describe("Waiting for you: E3 rows", () => {
     await userEvent.click(within(table).getAllByRole("button", { name: "Open" })[0]);
     expect(push).toHaveBeenCalledWith("/workspace/pre-projects/cases/c/quotations?quote=q");
     expect(within(table).getByRole("button", { name: "Approve" })).toBeInTheDocument();
+  });
+});
+
+describe("Waiting for you: design reviews", () => {
+  const DESIGN = "00000000-0000-4000-8000-0000000000d1";
+  const CASE = "00000000-0000-4000-8000-0000000000c2";
+  const review: ApprovalRow = { ...aiRow, kind: "design_review", group: "designs", id: DESIGN, title: "Majlis concept · V2", phrase: null, subject: "Mariam Al Suwaidi",
+    project: { id: CASE, reference: "D-0012", name: "Majlis design" }, href: `/workspace/pre-projects/cases/${CASE}/designs?file=${DESIGN}`,
+    decide: { approve: "internal_approved", other: "return", approveNeedsNote: false }, version: 5, parentId: CASE };
+
+  it("shows a design sent for review under Designs, opens the design, and sends it back with what needs to change", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, status: 201, json: async () => ({ rows: [], count: 0, counts: { ...waiting.counts, ai: 0 } }) }));
+    vi.stubGlobal("fetch", fetch);
+    render(<DesignSystemProvider><WaitingForYouList workspaceId="00000000-0000-4000-8000-000000000001"
+      initial={{ rows: [review], count: 1, counts: { ...waiting.counts, ai: 0, designs: 1 } }} /></DesignSystemProvider>);
+    expect(screen.getByRole("radio", { name: /Designs/ })).toBeInTheDocument();
+    const table = screen.getByRole("table", { name: "Waiting for you" });
+    expect(within(table).getByText("Design to review")).toBeInTheDocument();
+    expect(within(table).getByText("Majlis concept · V2")).toBeInTheDocument();
+    expect(within(table).getByText("D-0012 · Majlis design")).toBeInTheDocument();
+    await userEvent.click(within(table).getByText("Majlis concept · V2"));
+    expect(push).toHaveBeenCalledWith(`/workspace/pre-projects/cases/${CASE}/designs?file=${DESIGN}`);
+    await userEvent.click(within(table).getByRole("button", { name: "Return" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText(/What needs to change/), "Seat twelve, not ten");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Return" }));
+    expect(await screen.findByText("Majlis concept · V2 sent back.")).toBeInTheDocument();
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ kind: "design_review", id: DESIGN, decision: "return", note: "Seat twelve, not ten" });
+    vi.unstubAllGlobals();
   });
 });

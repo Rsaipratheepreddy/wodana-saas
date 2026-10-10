@@ -6,7 +6,7 @@ import { quoteReviewAction } from "../proposals/qs-requirement";
 type Db = Pick<PoolClient, "query">;
 
 /** The chips on the Approvals page, one per kind of work. */
-export const APPROVAL_GROUPS = ["quotes", "payments", "deals", "orders", "factory", "site", "stock", "finance", "ai"] as const;
+export const APPROVAL_GROUPS = ["designs", "quotes", "payments", "deals", "orders", "factory", "site", "stock", "finance", "ai"] as const;
 export type ApprovalGroup = (typeof APPROVAL_GROUPS)[number];
 
 export type ApprovalKind =
@@ -19,7 +19,9 @@ export type ApprovalKind =
   // A request on the E3 approval engine whose module has no row of its own (an opportunity value, a refund…).
   | "approval"
   // A quotation handed to a QS to price and confirm ("With QS", PLM-082/084), decided on the quotation.
-  | "qs_review";
+  | "qs_review"
+  // A design file sent for internal review, to the reviewer it was sent to (approved or sent back with a note).
+  | "design_review";
 
 /** What deciding in the row does: approve, and whether the other answer is a return or a refusal (with a note). */
 export type RowDecision = { approve: string; other: "return" | "reject" | null; approveNeedsNote: boolean };
@@ -110,6 +112,38 @@ const quotes: Source = async (db, ctx) => {
     }));
   }
   return waiting;
+};
+
+/**
+ * Design files sent for internal review: to the reviewer they were sent to, or to anyone who reviews designs when no
+ * reviewer was named (the design queue's rule). The row approves the latest version or sends it back with what needs
+ * to change, through the design's own review step; a reviewer who can't change the case's records opens the design.
+ */
+const designReviews: Source = async (db, ctx) => {
+  if (!(await ctx.can("pre_projects.view")) || !(await ctx.can("pre_projects.review_designs"))) return [];
+  const edit = await ctx.can("pre_projects.edit");
+  const rows = (await db.query<{ designId: string; caseId: string; title: string; number: number; version: number; reviewerId: string | null; since: Date;
+    client: string; reference: string | null; caseTitle: string }>(
+    `SELECT design.id AS "designId", design.case_id AS "caseId", design.title, latest.number, design.version, latest.reviewer_id AS "reviewerId",
+            coalesce((SELECT max(activity.created_at) FROM pre_project_design_activity activity
+                       WHERE activity.workspace_id = latest.workspace_id AND activity.version_id = latest.id AND activity.action = 'internal_review'), latest.created_at) AS since,
+            coalesce(party.display_name, opportunity.title) AS client, opportunity.reference, opportunity.title AS "caseTitle"
+       FROM pre_project_designs design
+       JOIN LATERAL (SELECT version.id, version.workspace_id, version.number, version.status, version.reviewer_id, version.created_at FROM pre_project_design_versions version
+                      WHERE version.workspace_id = design.workspace_id AND version.design_id = design.id ORDER BY version.number DESC LIMIT 1) latest ON true
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = design.workspace_id AND pre_case.id = design.case_id AND pre_case.status = 'active'
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+      WHERE design.workspace_id = $1 AND design.archived_at IS NULL AND latest.status = 'internal_review'
+        AND (latest.reviewer_id = $2 OR latest.reviewer_id IS NULL)
+      ORDER BY since LIMIT 100`, [ctx.workspaceId, ctx.userId])).rows;
+  return rows.filter((review) => !review.reviewerId || review.reviewerId === ctx.userId).map((review) => row({
+    kind: "design_review", group: "designs", id: review.designId, parentId: review.caseId, version: review.version,
+    title: `${review.title} · V${review.number}`, subject: review.client, project: { id: review.caseId, reference: review.reference, name: review.caseTitle },
+    amount: null, currency: null, since: review.since, own: false,
+    href: `/workspace/pre-projects/cases/${review.caseId}/designs?file=${review.designId}`,
+    decide: edit ? { approve: "internal_approved", other: "return", approveNeedsNote: false } : null,
+  }));
 };
 
 /** Client payments reported and waiting for Finance to verify them. */
@@ -523,7 +557,7 @@ const engine: Source = async (db, ctx) => {
   }));
 };
 
-export const APPROVAL_SOURCES: Source[] = [quotes, qsReviews, receipts, invoices, agreements, deals, orders, factory, site, stock, finance, aiActions, engine];
+export const APPROVAL_SOURCES: Source[] = [designReviews, quotes, qsReviews, receipts, invoices, agreements, deals, orders, factory, site, stock, finance, aiActions, engine];
 
 /** Everything waiting on this person, oldest first; what they may decide before what is their own. */
 export async function waitingFor(db: Db, ctx: ApprovalContext) {

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
@@ -147,6 +148,16 @@ export class DesignService {
    if(input.action!=='comment')await noticeDesignStep(client,{workspaceId,caseId,designId:id,title:design.title,action:input.action,fromStatus:latest.status,actorUserId:userId,reviewerUserId:input.reviewerId??latest.reviewerId??null,uploaderUserId:latest.createdBy??null,note:input.note,activityId:input.id});
    return this.read(client,workspaceId,caseId,id);
   });
+ }
+ /**
+  * The internal reviewer's answer from Approvals ("Waiting for you"): approve the latest version, or send it back with
+  * what needs to change. Recorded through the same review step as the design page, so its permission, reviewer,
+  * version and note checks, its notices and its audit are the ones that apply.
+  */
+ async decideReview(actor:RequestActor,workspaceId:string,caseId:string,id:string,input:{approve:boolean;version:number;note:string}) {
+  const latest=await this.access.withPermission(actor,workspaceId,'pre_projects.view',async(client)=>(await client.query<{id:string}>(`SELECT id FROM pre_project_design_versions WHERE workspace_id=$1 AND case_id=$2 AND design_id=$3 ORDER BY number DESC LIMIT 1`,[workspaceId,caseId,id])).rows[0]);
+  if(!latest)throw new NotFoundException('Design not found.');
+  return this.activity(actor,workspaceId,caseId,id,{id:randomUUID(),version:input.version,versionId:latest.id,action:input.approve?'internal_approved':'changes_requested',note:input.note,decisionBy:''});
  }
  saveFolder(actor:RequestActor,w:string,c:string,input:SaveDesignFolderDto) {
   return this.brief.edit(actor,w,c,async(client,userId)=>{

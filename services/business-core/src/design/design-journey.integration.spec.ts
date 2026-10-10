@@ -6,6 +6,7 @@ import { DesignJourneyService } from "./design-journey.service";
 import { processDesignDeadlines, startInspirationTimer, startJourney } from "./design-journey.store";
 import { syncDesignStages } from "./design-stage-sync";
 import { designQueue, noticeDesignStep } from "../pre-projects/design-notices";
+import { PreProjectsService } from "../pre-projects/pre-projects.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -61,6 +62,11 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
     }
   }
   const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "T" } as never;
+  /** The Planning case read (the case page and the Planning list), as the person. */
+  const cases = (client: PoolClient, userId: string) => {
+    const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(client, { userId });
+    return new PreProjectsService({ withPermission: run, withPermissions: run, hasPermission: async () => true } as never, {} as never, {} as never);
+  };
   const stage = async (client: PoolClient, ids: Ids, name: string) => (await client.query(`SELECT status, due_at, started_at, version, activity_id FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = $3`, [ids.workspaceId, ids.caseId, name])).rows[0];
 
   it("runs inspiration, then a site visit due within the configured hours that needs every wall measured with photos", async () => {
@@ -207,9 +213,15 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       await expect(service.signOff(actor, ids.workspaceId, ids.caseId, { ...approval, approvedOn: "2099-01-01" })).rejects.toThrow(/future/);
       await expect(service.signOff(actor, ids.workspaceId, ids.caseId, { ...approval, assetId: randomUUID() })).rejects.toThrow(/signed approval/);
       await expect(service.signOff(actor, ids.workspaceId, ids.caseId, { ...approval, signer: "" })).rejects.toThrow(/who signed/);
+      expect(await cases(client, ids.amUser).get(actor, ids.workspaceId, ids.caseId)).toMatchObject({ phase: "discover", designApprovedOn: null });
       const signed = await service.signOff(actor, ids.workspaceId, ids.caseId, approval);
       expect(signed.stages.every((row) => row.status === "done")).toBe(true);
       expect(signed.journey).toMatchObject({ approvedOn: "2026-10-01", approvalAssetName: "a.pdf", approvalSigner: "Maya Client", approvalMethod: "signed_document" });
+      // The case read carries the approval day, so the case page and the Planning list read the case as priced next
+      // (Quotation), whatever quotation the hand-off adds, instead of falling back to its first stage.
+      expect(await cases(client, ids.amUser).get(actor, ids.workspaceId, ids.caseId)).toMatchObject({ designApprovedOn: "2026-10-01" });
+      expect((await cases(client, ids.amUser).list(actor, ids.workspaceId, {} as never)).items.find((item: { id: string }) => item.id === ids.caseId))
+        .toMatchObject({ designApprovedOn: "2026-10-01" });
       // PLM-053: no estimate yet and no commercial API here: the hand-off says where to prepare it.
       expect(signed.handoff).toEqual({ quoteId: null, problem: "Prepare the estimate from Quotations." });
       expect(Math.round((new Date(signed.journey!.estimateDueAt as Date).getTime() - Date.now()) / 86_400_000)).toBe(7);

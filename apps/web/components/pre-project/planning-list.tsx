@@ -46,7 +46,7 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
   const caseRows: PlanningRow[] = planning.filter((item) => !item.projectId && !item.project && !portfolio.has(item.id) && item.status !== "cancelled").map((item) => {
     // A case's planning phase as the person reads it on its path's own line (PLM-121/126), moved on by its quotations
     // and agreement as its overview reads them, and what it needs next (a sent quotation waits for the client).
-    const step = caseListStep({ phase: item.phase ?? "discover", plan: item.plan }, item.commercial);
+    const step = caseListStep({ phase: item.phase ?? "discover", plan: item.plan, designApprovedOn: item.designApprovedOn }, item.commercial);
     const ready = Boolean(item.qualifiedLead) || item.status === "qualified";
     return {
       id: `case-${item.id}`, title: item.title, description: item.description?.trim() || undefined, customer: item.customerName, group: ready ? "ready" : "before_deal",

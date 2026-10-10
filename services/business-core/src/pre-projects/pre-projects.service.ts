@@ -32,7 +32,10 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
   discovery.property_location AS "siteAddress", discovery.latitude::float8 AS "siteLatitude", discovery.longitude::float8 AS "siteLongitude",
   EXISTS (SELECT 1 FROM project_workflow_templates workflow
     WHERE workflow.workspace_id = c.workspace_id AND workflow.status = 'active'
-      AND workflow.is_default AND workflow.code = 'design_build_deal_first') AS "servicePathEnabled"
+      AND workflow.is_default AND workflow.code = 'design_build_deal_first') AS "servicePathEnabled",
+  -- The day the client signed off the design (PLM-053): the case is priced next, whatever quotation came last.
+  (SELECT to_char(journey.approved_on, 'YYYY-MM-DD') FROM design_journeys journey
+    WHERE journey.workspace_id = c.workspace_id AND journey.case_id = c.id) AS "designApprovedOn"
   FROM pre_project_cases c
   JOIN crm_opportunities o ON o.id = c.opportunity_id AND o.workspace_id = c.workspace_id
   JOIN crm_parties p ON p.id = o.party_id AND p.workspace_id = c.workspace_id
@@ -76,7 +79,8 @@ export class PreProjectsService {
           NULL::uuid, opportunity.reference, opportunity.owner_membership_id, NULL::varchar, NULL::varchar, NULL::float8, NULL::float8,
           EXISTS (SELECT 1 FROM project_workflow_templates workflow
             WHERE workflow.workspace_id = lead.workspace_id AND workflow.status = 'active'
-              AND workflow.is_default AND workflow.code = 'design_build_deal_first')
+              AND workflow.is_default AND workflow.code = 'design_build_deal_first'),
+          NULL::text
         FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
         JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id

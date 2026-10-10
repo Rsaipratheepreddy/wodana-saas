@@ -119,26 +119,35 @@ export function activeJourneyStage(journey?: JourneyView | null): JourneyStageVi
   return journey?.journey ? journey.stages.find((stage) => stage.status === "active") ?? null : null;
 }
 
+/** What a case's phase is read from: its recorded phase, its path and the day its design was signed off. */
+type PhaseRecord = Pick<PreProjectCase, "phase" | "plan" | "designApprovedOn">;
+
 /**
- * Where the case really is: its recorded phase, moved on by what the commercial records already show (a quotation
- * in review or with the client is pricing; an accepted one is the agreement; a signed agreement is the release).
+ * Where the case really is: the furthest of its recorded phase and what its records already show (a quotation in
+ * review or with the client is pricing; an accepted one is the agreement; a signed agreement is the release).
  * A design fee's round buys the design work, not the order: accepted, it opens the design phase, and its agreement
- * releases nothing (the main quotation, priced after the design, does).
+ * releases nothing. The client's sign-off of the design closes it: the main quotation is priced next. Each record
+ * only moves the case on, so a later quotation (the estimate drafted at the design approval) never sends it back.
  */
-export function effectivePhase(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CaseCommercialFacts | null): PreProjectCase["phase"] {
+export function effectivePhase(record: PhaseRecord, commercial?: CaseCommercialFacts | null): PreProjectCase["phase"] {
   const quote = currentQuote(commercial);
+  const main = quote && quote.round !== "design" ? quote : null;
   const agreement = commercial?.data.agreement;
   const designFee = (quoteId: string) => commercial?.data.quotes.find((item) => item.id === quoteId)?.round === "design";
-  const implied = agreement?.status === "executed" && !designFee(agreement.quoteId) ? "release"
-    : quote?.round === "design" ? (quote.status === "accepted" ? "design" : null)
-    : quote?.status === "accepted" ? "agree"
-    : quote && quote.status !== "draft" ? "price" : null;
-  const recorded = Math.max(0, CASE_PHASES.indexOf(record.phase));
-  return plannedPhase(implied && CASE_PHASES.indexOf(implied) > recorded ? implied : CASE_PHASES[recorded], record.plan);
+  const shown: Array<PreProjectCase["phase"] | null> = [
+    record.phase,
+    commercial?.data.quotes.some((item) => item.round === "design" && item.status === "accepted") ? "design" : null,
+    record.designApprovedOn ? "price" : null,
+    main && main.status !== "draft" ? "price" : null,
+    main?.status === "accepted" ? "agree" : null,
+    agreement?.status === "executed" && !designFee(agreement.quoteId) ? "release" : null,
+  ];
+  const furthest = Math.max(0, ...shown.map((phase) => (phase ? CASE_PHASES.indexOf(phase) : -1)));
+  return plannedPhase(CASE_PHASES[furthest], record.plan);
 }
 
 /** The case's position in its phases (1-based) and how many there are. */
-export function casePosition(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CaseCommercialFacts | null) {
+export function casePosition(record: PhaseRecord, commercial?: CaseCommercialFacts | null) {
   const phases = casePhases(record.plan);
   return { position: phases.indexOf(effectivePhase(record, commercial)) + 1, count: phases.length };
 }
@@ -265,7 +274,7 @@ export type CaseStep = {
  * A case's stage and next step as the Planning list shows them, from the same reading as its overview: the phase the
  * records put it in, and what its current quotation waits for while it is with the firm or the client.
  */
-export function caseListStep(record: Pick<PreProjectCase, "phase" | "plan">, commercial?: CaseCommercialFacts | null): { stage: MessageKey; next: Message } {
+export function caseListStep(record: PhaseRecord, commercial?: CaseCommercialFacts | null): { stage: MessageKey; next: Message } {
   const phase = casePhaseText(effectivePhase(record, commercial), record.plan);
   const quote = currentQuote(commercial);
   const step = quote ? quoteStep(quote, commercial) : null;
@@ -282,7 +291,7 @@ export function caseTimeline({ record, commercial, journey, project }: CaseRecor
   const designers = [...new Map((journey?.journey ? journey.stages : []).filter((stage) => stage.ownerName).map((stage) => [stage.ownerName!, { id: `designer-${stage.ownerName}`, name: stage.ownerName! }])).values()];
   const ownerPerson = record.engagementOwnerName ? [{ id: record.ownerMembershipId ?? "owner", name: record.engagementOwnerName }] : [];
   const doneAt: Partial<Record<PreProjectCase["phase"], string | null>> = {
-    design: journey?.journey?.approvedOn ?? null, price: accepted?.decidedAt ?? null, agree: agreement?.executedAt ?? null, release: record.releasedAt,
+    design: journey?.journey?.approvedOn ?? record.designApprovedOn ?? null, price: accepted?.decidedAt ?? null, agree: agreement?.executedAt ?? null, release: record.releasedAt,
   };
   const steps: CaseStep[] = phases.map((phase, index) => {
     const state: CaseStep["state"] = released || index < current ? "done" : index === current ? (record.status === "on_hold" || record.status === "cancelled" ? "blocked" : "current") : "upcoming";

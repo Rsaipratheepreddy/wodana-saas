@@ -14,9 +14,25 @@ function service() {
   const client = { query: vi.fn(async () => ({ rows: [], rowCount: 0 })) };
   const access = { asMember: vi.fn(async (_a: unknown, _w: string, work: (c: unknown, u: unknown) => unknown) => work(client, { userId: "u1", displayName: "Layla" })), hasPermission: vi.fn(async () => true) };
   const instance = new ApprovalsService(access as never, { command: record("commercial") } as never, { command: record("orders") } as never, { command: record("factory") } as never,
-    { decideAdjustment: record("inventory") } as never, { command: record("payables") } as never, { command: record("runs") } as never, { command: record("site") } as never, { command: record("pettyCash") } as never);
+    { decideAdjustment: record("inventory") } as never, { command: record("payables") } as never, { command: record("runs") } as never, { command: record("site") } as never, { command: record("pettyCash") } as never,
+    { decideReview: record("designs") } as never);
   return { instance, calls };
 }
+
+describe("deciding a design review in the row", () => {
+  it("approves the design or sends it back with what needs to change, through the design's own review step", async () => {
+    rows.splice(0, rows.length,
+      { ...base, kind: "design_review", group: "designs", id: id(6), parentId: id(8), version: 5, title: "Majlis concept · V2", decide: { approve: "internal_approved", other: "return", approveNeedsNote: false } });
+    const { instance, calls } = service();
+    await instance.decide({} as never, "w", { kind: "design_review", id: id(6), decision: "approve" });
+    await instance.decide({} as never, "w", { kind: "design_review", id: id(6), decision: "return", note: "Make the majlis seating longer" });
+    await expect(instance.decide({} as never, "w", { kind: "design_review", id: id(6), decision: "reject", note: "No" })).rejects.toThrow(/doesn't apply/);
+    expect(calls).toEqual([
+      ["designs", [{}, "w", id(8), id(6), { approve: true, version: 5, note: "" }]],
+      ["designs", [{}, "w", id(8), id(6), { approve: false, version: 5, note: "Make the majlis seating longer" }]],
+    ]);
+  });
+});
 
 describe("deciding in the row", () => {
   it("sends each decision through its module's own command, with the module's words", async () => {

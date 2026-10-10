@@ -12,8 +12,9 @@ import { ApprovalTabs, type ApprovalSource } from "./approval-tabs";
 import { getServerT } from "@/lib/i18n/server";
 
 /**
- * Approvals: everything waiting for you across the modules first; design reviews and project requests
- * (RFAs and order amendments) keep their own queues beside it.
+ * Approvals: everything waiting for you across the modules first (a design sent to you for review too); the
+ * design queue (reviews and the client's steps) and project requests (RFAs and order amendments) keep their own
+ * queues beside it.
  */
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ source?: string }> }) {
   const profile = await getAuthenticatedProfile();
