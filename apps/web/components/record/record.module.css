@@ -51,12 +51,14 @@
 .side :global(.wd-tab-list) { gap: var(--wd-space-4); }
 
 /* Two columns once there is room: the work on the inline-start, the sidebar's tabs on the inline-end.
-   In a frame of fixed height (a record modal) each column scrolls on its own; the sidebar's tab bar stays on top. */
+   In a frame of fixed height (a record modal) each column scrolls on its own; the sidebar's tab bar stays on top.
+   On a page the columns are as tall as their content, so the wheel must pass through them to the page: no
+   overscroll containment here (a column that can't scroll would otherwise swallow the wheel). */
 @container (min-width: 52rem) {
   .record > .frame { display: flex; flex-direction: column; block-size: 100%; }
   .layout { flex: 1 1 auto; min-block-size: 0; grid-template-columns: minmax(0, 1fr) 25rem; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
   .main { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
-  .main, .side { min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .main, .side { min-block-size: 0; overflow-y: auto; }
   .main { padding-block-end: var(--wd-space-4); }
   .next, .side, .activity { order: 0; }
   .side { padding-inline: var(--wd-space-5) var(--wd-space-2); border-inline-start: 1px solid var(--wd-color-structural-divider); scrollbar-gutter: stable; }
