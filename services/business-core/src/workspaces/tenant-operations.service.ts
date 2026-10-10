@@ -10,6 +10,7 @@ import type {
   RecordAccountBillingDocumentEventDto,
   UpdateAccountCollectionStateDto,
   UpdateAccountContractDto,
+  UpdateAccountSecurityPolicyDto,
   UpdateOrganizationBillingAllocationDto,
   UpdateTenantDataPolicyDto,
   UpdateTenantEntitlementsDto,
@@ -674,6 +675,49 @@ export class TenantOperationsService {
     });
   }
 
+  /** The sign-in security policy of the account that owns the organization, with its version. */
+  async securityPolicy(externalTenantId: string) {
+    const registry = await this.registry(externalTenantId);
+    const account = await this.database.tenantTransaction(registry.workspaceId, registry.workspaceId, (client) => this.accountSecurity(client, registry.workspaceId, false));
+    if (!account) throw new NotFoundException("Account was not found");
+    return account;
+  }
+
+  /**
+   * Whether the account's administrators, or all its people, need an authenticator to sign in: version-checked on the
+   * account and audited in the organization and the operator audit. The same values again change nothing. The policy
+   * covers every organization the account owns. A null operator is the platform itself (the operator CLI).
+   */
+  async updateSecurityPolicy(externalTenantId: string, input: UpdateAccountSecurityPolicyDto, operatorUserId: string | null, correlationId?: string) {
+    const registry = await this.registry(externalTenantId);
+    return this.database.tenantTransaction(registry.workspaceId, operatorUserId ?? registry.workspaceId, async (client) => {
+      const current = await this.accountSecurity(client, registry.workspaceId, true);
+      if (!current) throw new NotFoundException("Account was not found");
+      if (current.version !== input.expectedVersion) throw new ConflictException("The account changed. Refresh and try again.");
+      const next = {
+        ...current.securityPolicy,
+        ...(input.requireMfaForAdmins === undefined ? {} : { requireMfaForAdmins: input.requireMfaForAdmins }),
+        ...(input.requireMfaForAllUsers === undefined ? {} : { requireMfaForAllUsers: input.requireMfaForAllUsers }),
+      };
+      if (canonicalHash(next) === canonicalHash(current.securityPolicy)) return { ...current, changed: false };
+      const saved = await client.query<{ accountId: string; version: number; securityPolicy: Record<string, unknown> }>(
+        `UPDATE customer_accounts SET security_policy = $2::jsonb, version = version + 1 WHERE id = $1
+         RETURNING id AS "accountId", version, security_policy AS "securityPolicy"`, [current.accountId, JSON.stringify(next)]);
+      await this.audit(client, registry, operatorUserId, "tenant.security_policy_updated", "customer_account", current.accountId,
+        { securityPolicy: current.securityPolicy }, { securityPolicy: next, reason: input.reason }, correlationId);
+      return { ...saved.rows[0], organizations: current.organizations, changed: true };
+    });
+  }
+
+  private async accountSecurity(client: PoolClient, workspaceId: string, lock: boolean) {
+    const result = await client.query<{ accountId: string; version: number; securityPolicy: Record<string, unknown>; organizations: number }>(
+      `SELECT account.id AS "accountId", account.version, account.security_policy AS "securityPolicy",
+              (SELECT count(*)::int FROM customer_account_organizations other WHERE other.account_id = account.id) AS organizations
+         FROM customer_account_organizations linked JOIN customer_accounts account ON account.id = linked.account_id
+        WHERE linked.workspace_id = $1 ${lock ? "FOR UPDATE OF account" : ""}`, [workspaceId]);
+    return result.rows[0] ?? null;
+  }
+
   async plan(externalTenantId: string, input: CreateTenantOperationPlanDto, idempotencyKey: string, operatorUserId: string, correlationId?: string) {
     const source = await this.registry(externalTenantId);
     const rollbackSource = input.rollbackOf
@@ -1124,7 +1168,7 @@ export class TenantOperationsService {
     return value && /^[0-9a-f-]{36}$/i.test(value) ? value : randomUUID();
   }
 
-  private async audit(client: PoolClient, registry: Registry, operatorUserId: string, action: string,
+  private async audit(client: PoolClient, registry: Registry, operatorUserId: string | null, action: string,
     entityType: string, entityId: string, before: unknown, after: unknown, correlationId?: string) {
     const correlation = this.correlation(correlationId);
     await client.query(`INSERT INTO audit_events
@@ -1136,7 +1180,7 @@ export class TenantOperationsService {
       { workspaceId: registry.workspaceId, entityType, entityId });
   }
 
-  private operatorAudit(client: PoolClient, actorUserId: string, action: string, targetId: string, correlationId: string,
+  private operatorAudit(client: PoolClient, actorUserId: string | null, action: string, targetId: string, correlationId: string,
     details: Record<string, unknown>) {
     return client.query(`INSERT INTO platform_operator_audit
       (actor_user_id,action,target_type,target_id,correlation_id,details)

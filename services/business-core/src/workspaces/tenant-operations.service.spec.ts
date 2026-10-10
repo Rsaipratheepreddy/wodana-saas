@@ -147,3 +147,31 @@ describe("TenantOperationsService commercial entitlements", () => {
     expect(query.mock.calls.some(([sql]) => String(sql).includes("organization_entitlement_allocations"))).toBe(false);
   });
 });
+
+describe("TenantOperationsService account security policy", () => {
+  const policy = { requireMfaForAdmins: true, requireMfaForAllUsers: false, recoveryCodeCount: 10, enrollmentGraceDays: 7 };
+  const queryFor = () => vi.fn(async (sql: string, values?: unknown[]) => {
+    if (sql.includes("FROM customer_account_organizations linked")) return { rowCount: 1, rows: [{ accountId, version: 3, securityPolicy: policy, organizations: 1 }] };
+    if (sql.trim().startsWith("UPDATE customer_accounts")) return { rowCount: 1, rows: [{ accountId, version: 4, securityPolicy: JSON.parse(String(values?.[1])) }] };
+    if (sql.includes("INSERT INTO audit_events") || sql.includes("INSERT INTO platform_operator_audit")) return { rowCount: 1, rows: [] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const reason = "Test members sign in without an authenticator.";
+
+  it("turns the authenticator off for administrators, version-checked and audited for the platform when no operator is named", async () => {
+    const query = queryFor();
+    const service = new TenantOperationsService(databaseFor(query) as never);
+    await expect(service.updateSecurityPolicy("tenant-test", { expectedVersion: 3, requireMfaForAdmins: false, reason }, null))
+      .resolves.toMatchObject({ version: 4, changed: true, securityPolicy: { ...policy, requireMfaForAdmins: false } });
+    const audit = query.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO platform_operator_audit"));
+    expect(audit?.[1]).toEqual([null, "tenant.security_policy_updated", "tenant-test", expect.any(String), expect.any(String)]);
+  });
+
+  it("changes nothing for the same values and refuses a stale version", async () => {
+    const query = queryFor();
+    const service = new TenantOperationsService(databaseFor(query) as never);
+    await expect(service.updateSecurityPolicy("tenant-test", { expectedVersion: 3, requireMfaForAdmins: true, reason }, null)).resolves.toMatchObject({ changed: false, version: 3 });
+    await expect(service.updateSecurityPolicy("tenant-test", { expectedVersion: 2, requireMfaForAdmins: false, reason }, null)).rejects.toBeInstanceOf(ConflictException);
+    expect(query.mock.calls.some(([sql]) => String(sql).trim().startsWith("UPDATE customer_accounts"))).toBe(false);
+  });
+});

@@ -1,4 +1,5 @@
 /** The operator CLI's command line: parsed and checked before anything connects to the database. */
+import { RESERVED_SLUGS } from "../workspaces/reserved-slugs";
 
 export class UsageError extends Error {}
 
@@ -12,10 +13,21 @@ export type ImportArgs = Common & {
   approvedPrices: boolean;
 };
 export type ConfigureArgs = Common & { command: "configure"; profile: string };
-export type OpsArgs = ImportArgs | ConfigureArgs | { command: "help" };
+/** A test workspace with one member per role (ops-sandbox.ts); no --workspace or --as: the workspace may not exist yet. */
+export type SandboxArgs = {
+  command: "sandbox"; slug: string; name: string; region: string; profile: string | null; teams: string | null;
+  /** A CRM intake profile whose lead options (sources, channels, enquiry types, …) the sandbox gets. */
+  crm: string | null;
+  /** The name of the environment variable that holds the members' password; never the password. */
+  passwordEnv: string | null;
+  /** A firm kit code; left out, the sandbox default. */
+  kit: string | null;
+  seed: boolean; apply: boolean; json: boolean;
+};
+export type OpsArgs = ImportArgs | ConfigureArgs | SandboxArgs | { command: "help" };
 
 export const USAGE = `Wodana operator CLI: a workspace's go-live import and configuration, run on the server through the app's own
-services as a named workspace member. Every command is a dry run unless --apply is given.
+services as a named workspace member, and test sandboxes. Every command is a dry run unless --apply is given.
 
 Usage:
   node dist/ops/ops-cli.js import --workspace <slug> --as <member email> --target stock|catalog|suppliers --file <path.xlsx|csv>
@@ -23,6 +35,9 @@ Usage:
       [--catalog <code|name>] [--location <place name>] [--name <import name>] [--item-type <kind>] [--no-sets-stock]
       [--pictures] [--approved-prices] [--apply] [--json]
   node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> --profile <profile.json> [--apply] [--json]
+  node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> [--profile <profile.json>]
+      [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--password-env <ENV VAR>] [--kit <firm kit code>]
+      [--seed] [--apply] [--json]
   node dist/ops/ops-cli.js --help
 
 import
@@ -53,11 +68,31 @@ configure
   Applies a workspace configuration profile (JSON) through the settings commands. Sections the profile leaves out are
   skipped; a second run changes nothing. See docs/fixtures/palm-golive-config.json.
 
+sandbox
+  A test workspace for end-to-end testing, created (or found) through the same provisioning as Wodana Control: the
+  region pack's currency, tax, locale and time zone, a firm kit (default design_build_deal_first, the deal-first
+  design & build kit), login at <slug>.<domain>, seats for the test members, and sign-in without an authenticator.
+  Refuses a slug that belongs to a workspace it didn't create. Emails are held back while it runs. A second run
+  changes nothing.
+  --teams         a teams access file (e.g. docs/fixtures/palm-teams-access.json): a role and a team for each team
+  --crm           a CRM intake profile (e.g. docs/fixtures/palm-crm-intake-profile.json), its lead options only:
+                  sources, channels, enquiry types, budget ranges, client types and referral lists
+  --profile       a configuration profile, applied as configure does
+                  From every file, email addresses, web addresses, phone numbers, bank accounts and integration
+                  settings are taken out first (each one is listed in the output).
+  --password-env  the environment variable that holds the test members' password (never the password itself; it is
+                  never printed or stored). Needed while a test member has no password; given again, it resets theirs.
+  --kit           a firm kit by code, instead of the default
+  --seed          the showcase records for every section, made through the test members' own commands
+  One active member per role (owner, manager, sales, designer, design manager, QS, purchasing, factory lead,
+  logistics, site supervisor, finance, accountant) as <role>@<slug>.test with the workspace's matching roles and teams.
+  Prints each member's email, roles and user id (for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS), never the password.
+
 Output is counts and messages only. Exit code 0 when everything succeeded, 1 when anything failed, 2 for usage errors.`;
 
-const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--help", "-h"]);
+const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
-  "--item-type", "--profile"]);
+  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ITEM_TYPES = ["product", "material", "assembly", "service", "package", "ready_made"];
@@ -68,7 +103,7 @@ export const listOf = (value: string) => [...new Set(value.split(",").map((part)
 export function parseArgs(argv: string[]): OpsArgs {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h" || command === "help") return { command: "help" };
-  if (command !== "import" && command !== "configure") throw new UsageError(`Unknown command ${command}. Use import or configure.`);
+  if (command !== "import" && command !== "configure" && command !== "sandbox") throw new UsageError(`Unknown command ${command}. Use import, configure or sandbox.`);
   const flags = new Set<string>();
   const values = new Map<string, string>();
   for (let index = 0; index < rest.length; index++) {
@@ -88,6 +123,7 @@ export function parseArgs(argv: string[]): OpsArgs {
     if (!value) throw new UsageError(`${name} is required.`);
     return value;
   };
+  if (command === "sandbox") return parseSandbox(values, flags, required);
   const workspace = required("--workspace").toLowerCase();
   if (!SLUG.test(workspace)) throw new UsageError("--workspace is a workspace slug (lowercase letters, digits and dashes).");
   const as = required("--as").toLowerCase();
@@ -127,6 +163,31 @@ export function parseArgs(argv: string[]): OpsArgs {
     mapping: values.get("--mapping") ?? null, legalEntity: values.get("--legal-entity")?.trim() || null, fillOnly: flags.has("--fill-only"),
     catalog: values.get("--catalog")?.trim() || null, location: values.get("--location")?.trim() || null, name, itemType,
     setsStock: !flags.has("--no-sets-stock"), pictures: flags.has("--pictures"), approvedPrices: flags.has("--approved-prices"),
+  };
+}
+
+const SANDBOX_OPTIONS = ["--slug", "--name", "--region", "--profile", "--teams", "--crm", "--password-env", "--kit", "--seed", "--apply", "--dry-run", "--json"];
+/** A login slug that is also a DNS label and makes valid test addresses (<role>@<slug>.test). */
+const LOGIN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function parseSandbox(values: Map<string, string>, flags: Set<string>, required: (name: string) => string): SandboxArgs {
+  for (const name of [...values.keys(), ...flags]) if (!SANDBOX_OPTIONS.includes(name)) throw new UsageError(`${name} does not apply to sandbox.`);
+  const slug = required("--slug").toLowerCase();
+  if (!LOGIN_SLUG.test(slug) || slug.length < 2 || slug.length > 40)
+    throw new UsageError("--slug is the sandbox's login name: 2 to 40 lowercase letters and digits, single dashes between them (e.g. iglo).");
+  if (RESERVED_SLUGS.has(slug)) throw new UsageError(`--slug ${slug} is reserved for the platform; choose another.`);
+  const name = required("--name");
+  if (name.length < 2 || name.length > 160) throw new UsageError("--name is 2 to 160 characters.");
+  const region = required("--region").toUpperCase();
+  if (!/^[A-Z]{2}$/.test(region)) throw new UsageError("--region is a two-letter country code (its region pack), e.g. AE.");
+  const passwordEnv = values.get("--password-env")?.trim() || null;
+  if (passwordEnv !== null && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(passwordEnv))
+    throw new UsageError("--password-env is the name of an environment variable that holds the password, never the password itself.");
+  const kit = values.get("--kit")?.trim() || null;
+  if (kit !== null && !/^[a-z][a-z0-9_]{0,39}$/.test(kit)) throw new UsageError("--kit is a firm kit code (lowercase letters, digits and _), e.g. design_build.");
+  return {
+    command: "sandbox", slug, name, region, profile: values.get("--profile")?.trim() || null, teams: values.get("--teams")?.trim() || null,
+    crm: values.get("--crm")?.trim() || null, passwordEnv, kit, seed: flags.has("--seed"), apply: flags.has("--apply"), json: flags.has("--json"),
   };
 }
 

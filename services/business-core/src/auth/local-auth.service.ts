@@ -760,6 +760,67 @@ export class LocalAuthService {
     return { passwordReset: true };
   }
 
+  /** Whether an active member of the workspace has a local password and sign-in identity (the operator CLI's sandbox). */
+  async hasLocalPassword(workspaceId: string, userId: string) {
+    const found = await this.database.tenantTransaction(workspaceId, userId, (client) => client.query(
+      `SELECT 1 FROM workspace_memberships membership
+         JOIN local_auth_credentials credential ON credential.user_id = membership.user_id
+         JOIN user_identities identity ON identity.user_id = membership.user_id AND identity.provider = 'local'
+        WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active'`,
+      [workspaceId, userId]));
+    return Boolean(found.rowCount);
+  }
+
+  /**
+   * The operator CLI's sandbox (src/ops): gives an active member a local password, hashed as activating an invitation
+   * does (scrypt), with their local sign-in identity. Not a sign-in: no session is issued. The same password again
+   * changes nothing; a new one ends the member's sessions, as a password reset does. Audited in the workspace as an
+   * internal change (the platform, not a person); the password itself is never stored or recorded.
+   */
+  async setMemberPassword(workspaceId: string, userId: string, password: string): Promise<{ changed: boolean }> {
+    return this.database.tenantTransaction(workspaceId, userId, async (client) => {
+      const member = await client.query<{ email: string }>(
+        `SELECT app_user.primary_email AS email FROM workspace_memberships membership JOIN users app_user ON app_user.id = membership.user_id
+          WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active' AND app_user.status = 'active'`,
+        [workspaceId, userId],
+      );
+      if (!member.rowCount) throw new NotFoundException("This person is not an active member of the workspace");
+      await this.lockSessions(client, userId);
+      const current = await client.query<{ passwordHash: string; passwordSalt: string }>(
+        `SELECT password_hash AS "passwordHash", password_salt AS "passwordSalt" FROM local_auth_credentials WHERE user_id = $1`, [userId]);
+      const identity = await client.query(`SELECT 1 FROM user_identities WHERE provider = 'local' AND provider_subject = $1`, [`local:${userId}`]);
+      const credential = current.rows[0];
+      const same = credential ? await verifyPassword(password, credential.passwordSalt, credential.passwordHash) : false;
+      if (same && identity.rowCount) return { changed: false };
+      if (!same) {
+        const encoded = await hashPassword(password);
+        await client.query(
+          `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
+             password_salt = EXCLUDED.password_salt, failed_attempts = 0, locked_until = NULL,
+             password_changed_at = now(), updated_at = now()`,
+          [userId, encoded.hash, encoded.salt],
+        );
+        if (credential) {
+          await client.query(`UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE user_id = $1`, [userId]);
+        }
+      }
+      await client.query(
+        `INSERT INTO user_identities (user_id, provider, provider_subject, email_at_provider)
+         VALUES ($1, 'local', $2, $3)
+         ON CONFLICT (provider, provider_subject) DO UPDATE SET email_at_provider = EXCLUDED.email_at_provider, updated_at = now()`,
+        [userId, `local:${userId}`, member.rows[0].email.toLowerCase()],
+      );
+      await client.query(
+        `INSERT INTO audit_events (workspace_id, actor_user_id, source, action, entity_type, entity_id, after, correlation_id)
+         VALUES ($1, NULL, 'internal', 'auth.local_password_set', 'user', $2, $3::jsonb, $4)`,
+        [workspaceId, userId, JSON.stringify({ firstPassword: !credential }), randomUUID()],
+      );
+      return { changed: true };
+    });
+  }
+
   async ensureDemoAccount(workspaceId: string, email: string, password: string) {
     const user = await this.database.query<{ id: string; displayName: string }>(
       `SELECT id, display_name AS "displayName" FROM users WHERE primary_email = $1`,

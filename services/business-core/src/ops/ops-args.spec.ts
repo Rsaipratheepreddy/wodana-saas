@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listOf, parseArgs, parseMappingOverrides, UsageError } from "./ops-args";
+import { listOf, parseArgs, parseMappingOverrides, USAGE, UsageError } from "./ops-args";
 import { buildMapping, errorReason, pickTabs } from "./ops-import";
 
 const base = ["--workspace", "palm-living", "--as", "Owner@Example.test"];
@@ -46,6 +46,58 @@ describe("operator CLI arguments", () => {
   ])("refuses %j", (argv, message) => {
     expect(() => parseArgs(argv as string[])).toThrow(UsageError);
     expect(() => parseArgs(argv as string[])).toThrow(message as string);
+  });
+
+  const sandbox = ["sandbox", "--slug", "iglo", "--name", "Igolo Test", "--region", "ae"];
+
+  it("parses sandbox: a dry run unless --apply, region upper-cased, files and the password's variable optional", () => {
+    expect(parseArgs(sandbox)).toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: null, teams: null, crm: null, passwordEnv: null,
+      kit: null, seed: false, apply: false, json: false });
+    expect(parseArgs([...sandbox, "--profile", "p.json", "--teams", "t.json", "--crm", "c.json", "--password-env", "SANDBOX_PASSWORD", "--kit", "design_build", "--seed",
+      "--apply", "--json"]))
+      .toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: "p.json", teams: "t.json", crm: "c.json", passwordEnv: "SANDBOX_PASSWORD",
+        kit: "design_build", seed: true, apply: true, json: true });
+    expect(parseArgs(["sandbox", "--slug", "Test-Studio-2", "--name", "  Test Studio ", "--region", "GB"])).toMatchObject({ slug: "test-studio-2", name: "Test Studio" });
+    expect(parseArgs(["sandbox", "--help"])).toEqual({ command: "help" });
+  });
+
+  it.each([
+    [["sandbox", "--name", "Igolo Test", "--region", "AE"], "--slug is required"],
+    [["sandbox", "--slug", "iglo", "--region", "AE"], "--name is required"],
+    [["sandbox", "--slug", "iglo", "--name", "Igolo Test"], "--region is required"],
+    [["sandbox", "--slug", "iglo test", "--name", "Igolo Test", "--region", "AE"], "--slug is the sandbox's login name"],
+    [["sandbox", "--slug", "-iglo", "--name", "Igolo Test", "--region", "AE"], "--slug is the sandbox's login name"],
+    [["sandbox", "--slug", "iglo--test", "--name", "Igolo Test", "--region", "AE"], "--slug is the sandbox's login name"],
+    [["sandbox", "--slug", "iglo_test", "--name", "Igolo Test", "--region", "AE"], "--slug is the sandbox's login name"],
+    [["sandbox", "--slug", "a", "--name", "Igolo Test", "--region", "AE"], "--slug is the sandbox's login name"],
+    [["sandbox", "--slug", `a${"b".repeat(40)}`, "--name", "Igolo Test", "--region", "AE"], "--slug is the sandbox's login name"],
+    [["sandbox", "--slug", "admin", "--name", "Igolo Test", "--region", "AE"], "reserved"],
+    [["sandbox", "--slug", "iglo", "--name", "I", "--region", "AE"], "--name is 2 to 160 characters"],
+    [["sandbox", "--slug", "iglo", "--name", "Igolo Test", "--region", "UAE"], "--region is a two-letter country code"],
+    [["sandbox", "--slug", "iglo", "--name", "Igolo Test", "--region", "A1"], "--region is a two-letter country code"],
+    [[...sandbox, "--password-env", "Secret#2026!"], "--password-env is the name of an environment variable"],
+    [[...sandbox, "--kit", "Design Build"], "--kit is a firm kit code"],
+    [[...sandbox, "--workspace", "iglo"], "--workspace does not apply to sandbox"],
+    [[...sandbox, "--as", "owner@iglo.test"], "--as does not apply to sandbox"],
+    [[...sandbox, "--file", "a.xlsx"], "--file does not apply to sandbox"],
+    [[...sandbox, "--pictures"], "--pictures does not apply to sandbox"],
+    [[...sandbox, "--owner", "x@y.test"], "Unknown option --owner"],
+    [[...sandbox, "--password", "Secret#2026!"], "Unknown option --password"],
+    [[...sandbox, "--slug", "other"], "--slug is given twice"],
+    [[...sandbox, "--password-env", "--seed"], "--password-env needs a value"],
+    [[...sandbox, "--apply", "--dry-run"], "either --apply or --dry-run"],
+    [["configure", ...base, "--profile", "p.json", "--seed"], "--seed does not apply to configure"],
+    [["configure", ...base, "--profile", "p.json", "--crm", "c.json"], "--crm does not apply to configure"],
+    [["import", ...base, "--target", "stock", "--file", "a.xlsx", "--slug", "iglo"], "--slug does not apply to --target stock"],
+  ])("refuses sandbox %j", (argv, message) => {
+    expect(() => parseArgs(argv as string[])).toThrow(UsageError);
+    expect(() => parseArgs(argv as string[])).toThrow(message as string);
+  });
+
+  it("documents the sandbox command in the usage text", () => {
+    expect(USAGE).toContain("node dist/ops/ops-cli.js sandbox --slug <slug> --name \"<name>\" --region <country code>");
+    expect(USAGE).toContain("--password-env <ENV VAR>");
+    expect(USAGE).toContain("--crm <crm-intake-profile.json>");
   });
 
   it("reads --mapping overrides as headings to fields", () => {

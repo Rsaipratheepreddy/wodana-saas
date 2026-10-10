@@ -148,6 +148,8 @@ const SYSTEM_ROLES = [
   ["member", "Member", "Standard workspace access"],
   ["viewer", "Viewer", "Read-only workspace access"],
 ] as const;
+/** The roles every workspace is made with, whatever its kit. */
+export const SYSTEM_ROLE_CODES: readonly string[] = SYSTEM_ROLES.map(([code]) => code);
 
 
 @Injectable()

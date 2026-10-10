@@ -6,6 +6,7 @@ import { parseArgs, USAGE, UsageError, type OpsArgs } from "./ops-args";
 import { runConfigure } from "./ops-configure";
 import { openContext, OpsError, Report } from "./ops-context";
 import { runImport } from "./ops-import";
+import { runSandbox } from "./ops-sandbox";
 import { ProfileError, validateProfile } from "./ops-profile";
 
 /**
@@ -13,6 +14,7 @@ import { ProfileError, validateProfile } from "./ops-profile";
  * access runs a workspace's go-live import and configuration without a sign-in, through the app's own services, as a
  * named active member of the workspace: the same validation, tenant isolation, version checks and permissions apply,
  * and every audit row it writes names that member and carries via = 'operator_cli'. Dry run unless --apply.
+ * `sandbox` makes (or finds) a test workspace with one member per role through the same provisioning (ops-sandbox.ts).
  */
 
 export type OpsOutput = { out: (line: string) => void; err: (line: string) => void };
@@ -24,6 +26,13 @@ export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs
     // Everything this run writes is audited as the member, marked as the operator CLI (audit_events.via).
     // A dry run's transactions are all rolled back, so it writes nothing, not even defaults a read would make.
     return await runWithCommandOrigin({ via: "operator_cli", dryRun: !args.apply }, async () => {
+      if (args.command === "sandbox") {
+        // No member to act as yet: the sandbox's own test owner acts once the workspace is made (ops-sandbox.ts).
+        report.note(`sandbox ${args.slug}: ${args.apply ? "APPLY" : "dry run"}`);
+        await runSandbox(app, args, report);
+        report.finish({ command: args.command, workspace: args.slug, mode: args.apply ? "apply" : "dry-run" });
+        return report.failed ? 1 : 0;
+      }
       const profile = args.command === "configure" ? await readProfile(args.profile) : null;
       const ctx = await openContext(app, args.workspace, args.as, args.apply);
       report.note(`${args.command} in ${ctx.workspace.slug} as ${args.as}: ${args.apply ? "APPLY" : "dry run"}`);
@@ -36,7 +45,8 @@ export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs
     if (error instanceof UsageError) { output.err(error.message); return 2; }
     const message = error instanceof OpsError || error instanceof ProfileError ? error.message
       : error instanceof HttpException ? `${error.getStatus()} ${error.message}` : `Unexpected error: ${(error as Error).message}`;
-    if (args.json) output.out(JSON.stringify({ command: args.command, workspace: args.workspace, mode: args.apply ? "apply" : "dry-run", error: message, lines: report.lines }, null, 2));
+    const workspace = args.command === "sandbox" ? args.slug : args.workspace;
+    if (args.json) output.out(JSON.stringify({ command: args.command, workspace, mode: args.apply ? "apply" : "dry-run", error: message, lines: report.lines }, null, 2));
     else output.err(message);
     return 1;
   }
