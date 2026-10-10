@@ -88,11 +88,11 @@ describe("firm kit role templates", () => {
     expect(roleTemplatesFor(["finance_reviewer"])[0].permissions.filter((code) => code.endsWith(".manage"))).toEqual([]);
   });
 
-  it("lets Finance have Woddy read a bill's photo: the template asks for AI suggestions, and existing Finance roles get it", () => {
+  it("lets Finance have Woddy read a bill's photo: the template asks for AI suggestions, and existing Finance and payables roles get it", () => {
     expect(roleTemplatesFor(["finance"])[0].permissions).toEqual(expect.arrayContaining(["payables.manage", "ai.suggestions.use"]));
     const upgrade = readFileSync(resolve(migrationsDir, "0299_finance_reads_bills.sql"), "utf8");
-    expect(upgrade).toMatch(/NOT role\.is_system AND role\.code = 'finance'[\s\S]*permission\.code = 'ai\.suggestions\.use'[\s\S]*ON CONFLICT \(role_id, permission_id\) DO NOTHING/);
-    // Keyed by the template's code, never by a tenant; RLS is never turned off.
+    expect(upgrade).toMatch(/permission\.code = 'ai\.suggestions\.use'[\s\S]*NOT role\.is_system[\s\S]*role\.code = 'finance'[\s\S]*'payables\.manage'[\s\S]*ON CONFLICT \(role_id, permission_id\) DO NOTHING/);
+    // Keyed by the template's code and what a role holds, never by a tenant; RLS is never turned off.
     expect(upgrade).not.toMatch(/slug|workspace\.name|DISABLE ROW LEVEL SECURITY|NO FORCE ROW LEVEL SECURITY/i);
     const journal = JSON.parse(readFileSync(resolve(migrationsDir, "meta/_journal.json"), "utf8")) as { entries: Array<{ tag: string; when: number }> };
     const entry = journal.entries.find((item) => item.tag === "0299_finance_reads_bills");

@@ -11,7 +11,7 @@ const integration = describe.skipIf(!databaseUrl);
 const upgrade = readFileSync(join(__dirname, "../../drizzle/0299_finance_reads_bills.sql"), "utf8");
 const AI = "ai.suggestions.use";
 
-/** 0299: the Finance role of every workspace can have Woddy read a bill's photo (the permission reading needs). */
+/** 0299: whoever enters supplier bills (the Finance role, or any role managing payables) can have Woddy read a bill's photo. */
 integration("Finance reads bills with Woddy (0299)", () => {
   let pool: Pool;
   beforeAll(() => {
@@ -21,8 +21,12 @@ integration("Finance reads bills with Woddy (0299)", () => {
   });
   afterAll(() => pool.end());
 
-  type Roles = Record<"finance" | "approver" | "team" | "viewer", string>;
-  /** Two workspaces whose Finance role lost AI suggestions (a role edited to a firm's own list), and other roles without it. */
+  type Roles = Record<"finance" | "payables" | "approver" | "other" | "member" | "viewer", string>;
+  /**
+   * Two workspaces where nobody can have Woddy read a bill: the Finance role (template code) and a firm's own role that
+   * manages payables both lost AI suggestions to a firm's own permission list. Layla holds the Finance role in the first
+   * and the firm's payables role in the second (as a team role does). Other roles don't manage payables.
+   */
   async function scenario(work: (client: PoolClient, ids: { workspaces: string[]; layla: string; roles: Roles[] }) => Promise<void>) {
     const client = await pool.connect();
     const layla = randomUUID();
@@ -32,21 +36,25 @@ integration("Finance reads bills with Woddy (0299)", () => {
       await client.query("BEGIN");
       await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Layla Finance')", [layla, `layla-${layla.slice(0, 8)}@example.com`]);
       await client.query("SET LOCAL session_replication_role = replica"); // fixtures only: skip provisioning triggers
-      for (const workspaceId of workspaces) {
-        const ids: Roles = { finance: randomUUID(), approver: randomUUID(), team: randomUUID(), viewer: randomUUID() };
+      for (const [index, workspaceId] of workspaces.entries()) {
+        const ids: Roles = { finance: randomUUID(), payables: randomUUID(), approver: randomUUID(), other: randomUUID(), member: randomUUID(), viewer: randomUUID() };
         roles.push(ids);
         const membership = randomUUID();
         await client.query("INSERT INTO workspaces(id,name,slug,default_currency,created_by) VALUES($1,'Studio',$2,'AED',$3)", [workspaceId, `fin-${workspaceId.slice(0, 8)}`, layla]);
         await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [membership, workspaceId, layla]);
-        await client.query(`INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$5,'finance','Finance',false),($2,$5,'finance_approver','Finance approver',false),
-          ($3,$5,'team_finance','Finance',false),($4,$5,'viewer','Viewer',true)`, [ids.finance, ids.approver, ids.team, ids.viewer, workspaceId]);
-        for (const role of [ids.finance, ids.team]) {
-          await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code = ANY($3::text[])",
-            [workspaceId, role, ["payables.view", "payables.manage", "receivables.view", "books.view"]]);
-        }
-        await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code = ANY($3::text[])",
-          [workspaceId, ids.approver, ["payables.view", "payables.approve"]]);
-        await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [workspaceId, membership, ids.finance]);
+        await client.query(`INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$7,'finance','Finance',false),($2,$7,'team_accounts','Accounts',false),
+          ($3,$7,'finance_approver','Finance approver',false),($4,$7,'team_procurement','Procurement',false),($5,$7,'member','Member',true),($6,$7,'viewer','Viewer',true)`,
+          [ids.finance, ids.payables, ids.approver, ids.other, ids.member, ids.viewer, workspaceId]);
+        const grant = (role: string, codes: string[]) => client.query(
+          "INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code = ANY($3::text[])", [workspaceId, role, codes]);
+        // The Finance role by its template code (here without payables.manage), and a firm's own role by what it holds.
+        await grant(ids.finance, ["payables.view", "receivables.view", "books.view"]);
+        await grant(ids.payables, ["payables.view", "payables.manage", "receivables.view"]);
+        await grant(ids.approver, ["payables.view", "payables.approve"]);
+        await grant(ids.other, ["purchasing.view", "purchasing.manage", "payables.view"]);
+        // A system role is never changed by this, even one holding payables.manage.
+        await grant(ids.member, ["projects.view", "payables.manage"]);
+        await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [workspaceId, membership, index === 0 ? ids.finance : ids.payables]);
       }
       await client.query("SET LOCAL session_replication_role = origin");
       await work(client, { workspaces, layla, roles });
@@ -72,14 +80,15 @@ integration("Finance reads bills with Woddy (0299)", () => {
     }
   };
 
-  it("gives every workspace's Finance role AI suggestions, and nothing else changes; replaying it changes nothing", async () => {
+  it("gives AI suggestions to every workspace's Finance role and every role that manages payables, and nothing else; replaying it changes nothing", async () => {
     await scenario(async (client, { workspaces, layla, roles }) => {
       for (const workspaceId of workspaces) expect(await canRead(client, workspaceId, layla)).toBe(false);
       await client.query(upgrade);
       for (const [index, workspaceId] of workspaces.entries()) {
         expect(await holds(client, roles[index].finance)).toBe(true);
-        // A firm's own roles (even one named Finance), the approver and the viewer are left as they are.
-        for (const role of [roles[index].approver, roles[index].team, roles[index].viewer]) expect(await holds(client, role)).toBe(false);
+        expect(await holds(client, roles[index].payables)).toBe(true);
+        // Roles that don't manage payables (approving or buying isn't entering bills) and system roles are left as they are.
+        for (const role of [roles[index].approver, roles[index].other, roles[index].member, roles[index].viewer]) expect(await holds(client, role)).toBe(false);
         expect(await canRead(client, workspaceId, layla)).toBe(true);
       }
       const count = async () => Number((await client.query<{ n: string }>("SELECT count(*) AS n FROM role_permissions WHERE workspace_id = ANY($1::uuid[])", [workspaces])).rows[0].n);
