@@ -10,10 +10,12 @@ import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 import { stableId } from "../seed/palm-showcase/ids";
+import { CustomerAccountsService } from "../workspaces/customer-accounts.service";
 import { CreateBusinessUnitDto } from "../workspaces/dto/create-business-unit.dto";
 import { CreateRoleDto } from "../workspaces/dto/create-role.dto";
 import { CreateTeamDto } from "../workspaces/dto/create-team.dto";
 import { InviteMemberDto } from "../workspaces/dto/invite-member.dto";
+import { ApproveOrganizationRequestDto, CreateOrganizationRequestDto } from "../workspaces/dto/organization-request.dto";
 import { ProvisionTenantDto } from "../workspaces/dto/provision-tenant.dto";
 import { SaveTaxSettingsDto } from "../workspaces/dto/tax-numbering.dto";
 import { UpdateAccountSecurityPolicyDto } from "../workspaces/dto/tenant-operations.dto";
@@ -22,6 +24,7 @@ import { CompleteOnboardingDto, UpdateOnboardingDto, WorkspaceOnboardingStep } f
 import { UpdateMemberDto } from "../workspaces/dto/update-member.dto";
 import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
 import { UpdateTeamDto } from "../workspaces/dto/update-team.dto";
+import { UpdateWorkspaceDto } from "../workspaces/dto/update-workspace.dto";
 import { parseRoleTemplateCodes } from "../workspaces/role-templates";
 import { TaxNumberingService } from "../workspaces/tax-numbering.service";
 import { TenantOperationsService } from "../workspaces/tenant-operations.service";
@@ -32,7 +35,7 @@ import { openContext, OpsError, type Report } from "./ops-context";
 import { ProfileError, validateProfile, type Profile } from "./ops-profile";
 import {
   parseCrmFile, parseTeamsFile, planMembers, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxEmail, sandboxExternalTenantId, SandboxFileError,
-  sandboxLegalEntityCode, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan, type TaxonomySpec, type TeamSpec,
+  sandboxLegalEntityCode, sandboxOrganizationKey, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan, type TaxonomySpec, type TeamSpec,
 } from "./ops-sandbox-plan";
 
 /**
@@ -42,16 +45,26 @@ import {
  * same validation, tenant isolation, version checks and audit apply. Only a workspace this command made (its external
  * tenant id is sandbox-<slug>) is ever touched; any other organization's slug is refused. No email leaves while it
  * runs. Dry run unless --apply; a second run changes nothing.
+ *
+ * With --organization-of <sandbox>, the workspace is another organization in that sandbox's customer account: its test
+ * owner requests it and it is approved as Wodana approves an account's additional organization (CustomerAccountsService),
+ * with the region pack given and the sandbox's own firm kit and plan. The sandbox's test members join it with the same
+ * roles and teams, so one sign-in reaches both through the organization switcher. Refused unless the sandbox and every
+ * organization in its account were made by this command.
  */
 
 type SetupProfile = { code: string; version: number; configuration: Record<string, unknown> };
 type Setup = { region: SetupProfile; kit: SetupProfile; plan: SetupProfile };
+type Pinned = { kit: { code: string; version: number }; plan: { code: string; version: number } };
 type Person = { userId: string; email: string; displayName: string; actor: RequestActor };
 type MemberRow = { id: string; status: string; version: number; userId: string; email: string; displayName: string; roles: string[]; teams: Array<{ id: string }> };
 type RoleRow = { id: string; code: string; name: string; isSystem: boolean; version: number; permissions: string[] };
 type TeamRow = { id: string; code: string; version: number; roleIds: string[]; members: Array<{ membershipId: string }> };
 type Taxonomy = { id: string; code: string; name: string; status: string; version: number; options: Array<{ code: string; label: string; position: number; status: string }> };
 type Outcome = { email: string; displayName: string; roles: string[]; teams: string[]; userId: string | null };
+/** The sandbox an organization is added to: its first organization and its customer account. */
+type Base = { slug: string; workspaceId: string; accountId: string; organizationLimit: number; pinned: Pinned | null };
+type AccountOrganization = { workspaceId: string; loginSlug: string | null; madeHere: boolean };
 
 const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
 const validated = <T>(dto: Type<T>, body: unknown): Promise<T> => pipe.transform(body, { type: "body", metatype: dto });
@@ -59,6 +72,7 @@ const describe = (error: unknown) => (error instanceof HttpException ? `${error.
 const operatorActor = (person: { userId: string; email: string; displayName: string }): RequestActor => ({
   subject: `operator-cli:${person.userId}`, email: person.email, displayName: person.displayName, provider: "operator_cli", operator: { userId: person.userId },
 });
+const notOurs = (slug: string) => new OpsError(`${slug} belongs to an organization this command didn't make. A sandbox never changes another organization; choose another slug.`);
 
 export async function runSandbox(app: INestApplicationContext, args: SandboxArgs, report: Report): Promise<void> {
   const get = <T>(type: Type<T>) => app.get(type, { strict: false });
@@ -67,14 +81,21 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   const profile = args.profile ? await readProfile(args.profile, report) : null;
   const teams = args.teams ? await readTeams(args.teams) : null;
   const leadOptions = args.crm ? await readCrm(args.crm, report) : null;
-  const setup = await resolveSetup(db, args);
-  const externalTenantId = sandboxExternalTenantId(args.slug);
+  // The sandbox whose people (and, with --organization-of, whose account) this run is for.
+  const people = args.organizationOf ?? args.slug;
+  const base = args.organizationOf ? await resolveBase(app, db, args.organizationOf) : null;
+  const setup = await resolveSetup(db, args, base?.pinned ?? null);
+  const externalTenantId = sandboxExternalTenantId(people);
   const ownerPersona = SANDBOX_PERSONAS[0];
-  const ownerEmail = sandboxEmail(ownerPersona.key, args.slug);
+  const ownerEmail = sandboxEmail(ownerPersona.key, people);
   const regionConfig = setup.region.configuration as { currency: string; locale: string; timezone: string; unitSystem: string; weekStartsOn: number; countryCode: string };
   const seatLimit = sandboxSeatLimit(Number((setup.plan.configuration as { seatLimit?: number }).seatLimit ?? 1));
-  report.facts.workspace = { slug: args.slug, name: args.name, externalTenantId, region: `${setup.region.code} v${setup.region.version}`, currency: regionConfig.currency,
-    locale: regionConfig.locale, timezone: regionConfig.timezone, firmKit: `${setup.kit.code} v${setup.kit.version}`, plan: `${setup.plan.code} v${setup.plan.version}` };
+  const provisioned = `${setup.region.code} region pack (${regionConfig.currency}, ${regionConfig.locale}, ${regionConfig.timezone}), firm kit ${setup.kit.code}, plan ${setup.plan.code}, ${seatLimit} seats`;
+  report.facts.workspace = { slug: args.slug, name: args.name, externalTenantId: base ? null : externalTenantId, organizationOf: base?.slug ?? null,
+    region: `${setup.region.code} v${setup.region.version}`, currency: regionConfig.currency, locale: regionConfig.locale, timezone: regionConfig.timezone,
+    firmKit: `${setup.kit.code} v${setup.kit.version}`, plan: `${setup.plan.code} v${setup.plan.version}` };
+  // Who the test members already are, so the run can say whom it made (with --organization-of: nobody).
+  const knownPeople = await peopleByEmail(db, SANDBOX_PERSONAS.map((persona) => sandboxEmail(persona.key, people)));
 
   // Every email the run would send (invitations, notices, the showcase's) is held back and counted.
   const mailer = get(TransactionalEmailService) as unknown as { send: (message: unknown) => Promise<unknown> };
@@ -82,87 +103,89 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   let held = 0;
   mailer.send = async () => { held += 1; return { status: "not_configured", provider: null, messageId: null, suppressedReason: "sandbox_setup" }; };
   try {
-    // ---------- the workspace ----------
-    const known = (await db.query<{ workspaceId: string }>(`SELECT workspace_id AS "workspaceId" FROM tenant_provisioning_requests WHERE external_tenant_id = $1`, [externalTenantId])).rows[0];
-    const slugTaken = (await db.query<{ taken: boolean }>(
-      `SELECT wodana_internal_slug_taken($1::varchar) OR EXISTS (SELECT 1 FROM tenant_provisioning_drafts WHERE slug = $1
-         AND (status = 'provisioned' OR (status IN ('draft', 'provisioning', 'failed') AND reservation_expires_at > now()))) AS taken`, [args.slug])).rows[0]?.taken;
-    if (!known && slugTaken) throw new OpsError(`${args.slug} belongs to an organization this command didn't make. A sandbox never changes another organization; choose another slug.`);
-    if (!known && args.apply && !password) throw new OpsError("The test members need a password: put it in an environment variable and name it with --password-env.");
-    if (!known && !args.apply) {
-      report.add("workspace", "would change", args.slug, `provisioned: ${setup.region.code} region pack (${regionConfig.currency}, ${regionConfig.locale}, ${regionConfig.timezone}), firm kit ${setup.kit.code}, plan ${setup.plan.code}, ${seatLimit} seats`);
-      report.add("members", "would change", ownerEmail, "owner: accepts the owner invitation");
-      planRemainder(args, setup, { teams, leadOptions, profile }, report, password);
-      return;
-    }
-
     let workspaceId: string;
     let ownerToken: string | null = null;
-    if (known) {
-      workspaceId = known.workspaceId;
-      const tenant = await get(WorkspacesService).getProvisionedTenant(externalTenantId) as unknown as
-        { workspace: { name: string; slug: string; status: string; defaultCurrency: string }; ownerInvitation: { email: string } };
-      // Made by this command: its id and its test owner both say so (an organization merely given such an id is refused).
-      if (tenant.workspace.slug !== args.slug || tenant.ownerInvitation.email.toLowerCase() !== ownerEmail)
-        throw new OpsError(`${args.slug} belongs to an organization this command didn't make. A sandbox never changes another organization; choose another slug.`);
-      if (tenant.workspace.status !== "active") throw new OpsError(`The sandbox ${args.slug} is ${tenant.workspace.status}; reactivate it in Wodana Control first.`);
-      report.add("workspace", "unchanged", args.slug, `${tenant.workspace.name} · ${tenant.workspace.defaultCurrency}`);
-      if (tenant.workspace.name !== args.name) report.add("workspace", "info", "name", `stays "${tenant.workspace.name}" (rename it in Settings)`);
-      const pinned = (await db.tenantTransaction(workspaceId, workspaceId, (client) => client.query<{ region: string; kit: string }>(
-        `SELECT region_code AS region, firm_kit_code AS kit FROM workspace_setup_versions WHERE workspace_id = $1`, [workspaceId]))).rows[0];
-      if (pinned && (pinned.region !== setup.region.code || pinned.kit !== setup.kit.code))
-        report.add("workspace", "info", "setup", `made with region ${pinned.region} and kit ${pinned.kit}; an existing sandbox keeps them`);
+    if (base) {
+      // ---------- the organization, in the sandbox's account ----------
+      const made = await ensureOrganization(base);
+      if (!made) { planRemainder(args, setup, { teams, leadOptions, profile }, report, password, knownPeople); return; }
+      workspaceId = made;
     } else {
-      const input = await validated(ProvisionTenantDto, {
-        externalTenantId, name: args.name, slug: args.slug,
-        defaultCurrency: regionConfig.currency, defaultLocale: regionConfig.locale, defaultTimezone: regionConfig.timezone,
-        unitSystem: regionConfig.unitSystem, weekStartsOn: regionConfig.weekStartsOn,
-        firstLegalEntity: { code: sandboxLegalEntityCode(args.slug), displayName: args.name, registeredName: args.name, countryCode: regionConfig.countryCode,
-          baseCurrency: regionConfig.currency, locale: regionConfig.locale, timezone: regionConfig.timezone },
-        owner: { email: ownerEmail, displayName: ownerPersona.displayName },
-      });
-      const account = await validated(TenantContractContactDto, { displayName: args.name, contactName: ownerPersona.displayName, contactEmail: ownerEmail });
-      const defaults = await validated(TenantSetupSelectionsDto, {
-        region: { code: setup.region.code, version: setup.region.version }, firmKit: { code: setup.kit.code, version: setup.kit.version },
-        plan: { code: setup.plan.code, version: setup.plan.version }, seatLimit,
-      });
-      const provisioned = await get(WorkspacesService).provisionTenant({ ...input, account, defaults }, `sandbox:${args.slug}`) as unknown as
-        { workspace: { id: string }; ownerInvitation: { invitationToken?: string | null } };
-      workspaceId = provisioned.workspace.id;
-      ownerToken = provisioned.ownerInvitation.invitationToken ?? null;
-      report.add("workspace", "changed", args.slug, `provisioned: ${setup.region.code} region pack (${regionConfig.currency}, ${regionConfig.locale}, ${regionConfig.timezone}), firm kit ${setup.kit.code}, plan ${setup.plan.code}, ${seatLimit} seats`);
+      // ---------- the workspace ----------
+      const known = (await db.query<{ workspaceId: string }>(`SELECT workspace_id AS "workspaceId" FROM tenant_provisioning_requests WHERE external_tenant_id = $1`, [externalTenantId])).rows[0];
+      const slugTaken = await slugIsTaken(db, args.slug);
+      if (!known && slugTaken) throw notOurs(args.slug);
+      if (!known && args.apply && !password) throw new OpsError("The test members need a password: put it in an environment variable and name it with --password-env.");
+      if (!known && !args.apply) {
+        report.add("workspace", "would change", args.slug, `provisioned: ${provisioned}`);
+        report.add("members", "would change", ownerEmail, "owner: accepts the owner invitation");
+        planRemainder(args, setup, { teams, leadOptions, profile }, report, password);
+        return;
+      }
+
+      if (known) {
+        workspaceId = known.workspaceId;
+        const tenant = await get(WorkspacesService).getProvisionedTenant(externalTenantId) as unknown as
+          { workspace: { name: string; slug: string; status: string; defaultCurrency: string }; ownerInvitation: { email: string } };
+        // Made by this command: its id and its test owner both say so (an organization merely given such an id is refused).
+        if (tenant.workspace.slug !== args.slug || tenant.ownerInvitation.email.toLowerCase() !== ownerEmail) throw notOurs(args.slug);
+        if (tenant.workspace.status !== "active") throw new OpsError(`The sandbox ${args.slug} is ${tenant.workspace.status}; reactivate it in Wodana Control first.`);
+        report.add("workspace", "unchanged", args.slug, `${tenant.workspace.name} · ${tenant.workspace.defaultCurrency}`);
+        const pinned = (await db.tenantTransaction(workspaceId, workspaceId, (client) => client.query<{ region: string; kit: string }>(
+          `SELECT region_code AS region, firm_kit_code AS kit FROM workspace_setup_versions WHERE workspace_id = $1`, [workspaceId]))).rows[0];
+        if (pinned && (pinned.region !== setup.region.code || pinned.kit !== setup.kit.code))
+          report.add("workspace", "info", "setup", `made with region ${pinned.region} and kit ${pinned.kit}; an existing sandbox keeps them`);
+      } else {
+        const input = await validated(ProvisionTenantDto, {
+          externalTenantId, name: args.name, slug: args.slug, ...regionalDefaults(args, regionConfig), owner: { email: ownerEmail, displayName: ownerPersona.displayName },
+        });
+        const account = await validated(TenantContractContactDto, { displayName: args.name, contactName: ownerPersona.displayName, contactEmail: ownerEmail });
+        const defaults = await validated(TenantSetupSelectionsDto, setupSelections(setup, seatLimit));
+        const result = await get(WorkspacesService).provisionTenant({ ...input, account, defaults }, `sandbox:${args.slug}`) as unknown as
+          { workspace: { id: string }; ownerInvitation: { invitationToken?: string | null } };
+        workspaceId = result.workspace.id;
+        ownerToken = result.ownerInvitation.invitationToken ?? null;
+        report.add("workspace", "changed", args.slug, `provisioned: ${provisioned}`);
+      }
     }
     (report.facts.workspace as Record<string, unknown>).id = workspaceId;
 
     // A member without a password can't sign in: refuse before changing anything when one would be left without.
+    // An added organization's people are the sandbox's own: their passwords are its business, never this run's.
     const auth = get(LocalAuthService);
-    if (!password) {
-      const people = await peopleByEmail(db, SANDBOX_PERSONAS.map((persona) => sandboxEmail(persona.key, args.slug)));
+    if (!password && !base) {
       const without: string[] = [];
       for (const persona of SANDBOX_PERSONAS) {
-        const person = people.get(sandboxEmail(persona.key, args.slug));
+        const person = knownPeople.get(sandboxEmail(persona.key, people));
         if (!person || !await auth.hasLocalPassword(workspaceId, person.userId)) without.push(persona.key);
       }
       if (without.length && args.apply) throw new OpsError(`${without.length} test members have no password yet (${without.join(", ")}): name the environment variable that holds it with --password-env.`);
-      for (const key of without) report.add("members", "manual", sandboxEmail(key, args.slug), "no password yet: --apply needs --password-env");
+      for (const key of without) report.add("members", "manual", sandboxEmail(key, people), "no password yet: --apply needs --password-env");
     }
 
     // ---------- the owner ----------
     const owner = await ensureOwner();
     if (!owner) { planRemainder(args, setup, { teams, leadOptions, profile }, report, password); return; }
 
-    // ---------- sign-in security, onboarding, tax ----------
+    // ---------- name, sign-in security, onboarding, tax ----------
+    await guarded(report, "workspace", "name", () => ensureName(owner.actor));
     await guarded(report, "security", "authenticator", async () => {
+      // The policy is the account's, so it covers each of its organizations; it is changed only when the sandbox made them all.
       const operations = get(TenantOperationsService);
       const policy = await operations.securityPolicy(externalTenantId);
-      if (policy.organizations !== 1) { report.add("security", "manual", "authenticator", "this account owns other organizations; change it in Wodana Control"); return; }
+      const organizations = await accountOrganizations(db, policy.accountId, people);
+      if (organizations.some((organization) => !organization.madeHere)) {
+        report.add("security", "manual", "authenticator", "this account owns organizations this command didn't make; change it in Wodana Control");
+        return;
+      }
+      const where = organizations.length > 1 ? ` in ${organizations.length} organizations` : "";
       const now = { admins: policy.securityPolicy.requireMfaForAdmins !== false, everyone: policy.securityPolicy.requireMfaForAllUsers === true };
-      if (!now.admins && !now.everyone) { report.add("security", "unchanged", "authenticator", "not needed to sign in"); return; }
-      if (!args.apply) { report.add("security", "would change", "authenticator", "needed → not needed to sign in"); return; }
+      if (!now.admins && !now.everyone) { report.add("security", "unchanged", "authenticator", `not needed to sign in${where}`); return; }
+      if (!args.apply) { report.add("security", "would change", "authenticator", `needed → not needed to sign in${where}`); return; }
       await operations.updateSecurityPolicy(externalTenantId, await validated(UpdateAccountSecurityPolicyDto, {
         expectedVersion: policy.version, requireMfaForAdmins: false, requireMfaForAllUsers: false, reason: "Sandbox: test members sign in without an authenticator.",
       }), null);
-      report.add("security", "changed", "authenticator", "needed → not needed to sign in");
+      report.add("security", "changed", "authenticator", `needed → not needed to sign in${where}`);
     });
     await guarded(report, "workspace", "onboarding", () => ensureOnboarding(owner.actor));
     await guarded(report, "workspace", "client portal", () => ensurePortal(owner.actor));
@@ -174,7 +197,7 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     const teamRoles = new Map<string, string>();
     if (teams) await guarded(report, "teams", "teams", () => ensureTeams(owner.actor, roles, teams, teamIds, teamRoles));
     if (leadOptions) await guarded(report, "crm", "lead options", () => ensureLeadOptions(owner.actor, leadOptions, teamRoles));
-    const plans = planMembers(args.slug, new Set(roles.map((role) => role.code)), teams ?? []);
+    const plans = planMembers(people, new Set(roles.map((role) => role.code)), teams ?? []);
     const outcomes: Outcome[] = [];
     for (const plan of plans) {
       const outcome: Outcome = { email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes, userId: null };
@@ -193,15 +216,67 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       await runConfigure(ctx, profile, report);
     }
     if (held) report.add("email", "info", "held back", `${held} emails were not sent`);
-    printMembers(report, outcomes, args.passwordEnv);
+    printMembers(report, outcomes, args.passwordEnv, knownPeople, base?.slug ?? null);
 
     // ---------- steps ----------
+
+    /**
+     * The organization in the sandbox's account: found by the request this command made for its slug, else (with
+     * --apply) requested by the sandbox's test owner and approved with the region pack and the sandbox's kit and plan.
+     * Its workspace id; null on a dry run before it exists.
+     */
+    async function ensureOrganization(sandbox: Base): Promise<string | null> {
+      const organizations = await accountOrganizations(db, sandbox.accountId, sandbox.slug);
+      if (organizations.some((organization) => !organization.madeHere))
+        throw new OpsError(`The account of sandbox ${sandbox.slug} has organizations this command didn't make. A sandbox never changes another organization.`);
+      const key = sandboxOrganizationKey(args.slug);
+      const requests = (await db.query<{ id: string; status: string; version: number; workspaceId: string | null; requestedBy: string }>(
+        `SELECT request.id, request.status, request.version, request.approved_workspace_id AS "workspaceId", lower(person.primary_email::text) AS "requestedBy"
+           FROM organization_requests request JOIN users person ON person.id = request.requested_by
+          WHERE request.account_id = $1 AND request.idempotency_key = $2`, [sandbox.accountId, key])).rows;
+      const request = requests.find((row) => row.requestedBy === ownerEmail);
+      if (request?.status === "approved" && request.workspaceId) {
+        const found = organizations.find((organization) => organization.workspaceId === request.workspaceId);
+        if (!found) throw new OpsError(`The organization made for ${args.slug} is no longer in the account of sandbox ${sandbox.slug}.`);
+        if (found.loginSlug !== args.slug) throw new OpsError(`The organization made for ${args.slug} signs in at ${found.loginSlug ?? "no login name"} now; a sandbox never changes its slug.`);
+        const status = (await db.tenantTransaction(request.workspaceId, request.workspaceId, (client) => client.query<{ status: string; name: string; currency: string }>(
+          `SELECT status, name, default_currency AS currency FROM workspaces WHERE id = $1`, [request.workspaceId]))).rows[0];
+        if (status?.status !== "active") throw new OpsError(`The organization ${args.slug} is ${status?.status ?? "missing"}; reactivate it in Wodana Control first.`);
+        report.add("organization", "unchanged", args.slug, `${status.name} · ${status.currency} · in the account of sandbox ${sandbox.slug}`);
+        return request.workspaceId;
+      }
+      if (await slugIsTaken(db, args.slug)) throw notOurs(args.slug);
+      const needsLimit = organizations.length >= sandbox.organizationLimit;
+      const limit = needsLimit ? `; the account's organization limit ${sandbox.organizationLimit} → ${organizations.length + 1}` : "";
+      const what = `requested by ${ownerEmail} and approved in the account of sandbox ${sandbox.slug}: ${provisioned}${limit}`;
+      if (!args.apply) {
+        report.add("organization", "would change", args.slug, what);
+        report.add("members", "would change", ownerEmail, "owner: the organization's requester");
+        return null;
+      }
+      const owner = knownPeople.get(ownerEmail);
+      if (!owner || !await activeMembership(db, sandbox.workspaceId, owner.userId))
+        throw new OpsError(`${ownerEmail} is not an active member of sandbox ${sandbox.slug}; run sandbox --slug ${sandbox.slug} first.`);
+      const accounts = get(CustomerAccountsService);
+      const asked = await accounts.requestOrganization(owner.actor, sandbox.workspaceId, await validated(CreateOrganizationRequestDto, {
+        name: args.name, slug: args.slug, ...regionalDefaults(args, regionConfig), reason: `Sandbox: a ${setup.region.code} organization for testing.`,
+      }), key) as { id: string; status: string; version: number };
+      const approved = await accounts.approveRequest(asked.id, await validated(ApproveOrganizationRequestDto, {
+        expectedVersion: asked.version, ...(needsLimit ? { organizationLimit: organizations.length + 1 } : {}),
+        decisionReason: "Sandbox: approved by the operator CLI for testing.", defaults: setupSelections(setup, seatLimit),
+      })) as { approvedWorkspaceId: string | null; organization?: { workspace: { id: string } } };
+      const made = approved.organization?.workspace.id ?? approved.approvedWorkspaceId;
+      if (!made) throw new OpsError(`The request for ${args.slug} was not approved.`);
+      report.add("organization", "changed", args.slug, what);
+      return made;
+    }
 
     async function ensureOwner(): Promise<Person | null> {
       const workspaces = get(WorkspacesService);
       let person = (await peopleByEmail(db, [ownerEmail])).get(ownerEmail);
       const active = person ? await activeMembership(db, workspaceId, person.userId) : false;
       if (person && active) report.add("members", "unchanged", ownerEmail, "owner");
+      else if (base) throw new OpsError(`${ownerEmail} is no longer an active member of ${args.slug}; make them active again in Members.`);
       else if (!args.apply) { report.add("members", "would change", ownerEmail, "owner: accepts the owner invitation"); return null; }
       else {
         // The token from provisioning, else a fresh one (an earlier run stopped before the owner accepted).
@@ -216,6 +291,18 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
         report.add("members", changed ? "changed" : "unchanged", `${ownerEmail} password`, changed ? "set" : "as given");
       }
       return person!;
+    }
+
+    /** The organization's name as --name gives it, through the workspace identity command (the login page's name follows); the slug never changes. */
+    async function ensureName(actor: RequestActor) {
+      const workspaces = get(WorkspacesService);
+      const current = (await workspaces.get(actor, workspaceId) as unknown as { workspace: { name: string; version: number } }).workspace;
+      const login = (await db.query<{ name: string }>(`SELECT display_name AS name FROM tenant_login_branding WHERE workspace_id = $1`, [workspaceId])).rows[0]?.name ?? null;
+      if (current.name === args.name && login === args.name) { report.add("workspace", "unchanged", "name", `"${args.name}"`); return; }
+      const change = `"${current.name}" → "${args.name}"`;
+      if (!args.apply) { report.add("workspace", "would change", "name", change); return; }
+      await workspaces.updateWorkspace(actor, workspaceId, await validated(UpdateWorkspaceDto, { version: current.version, name: args.name }));
+      report.add("workspace", "changed", "name", change);
     }
 
     async function ensureOnboarding(actor: RequestActor) {
@@ -355,7 +442,9 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       const wantedTeamIds = plan.teamCodes.flatMap((code) => (teamIds.has(code) ? [teamIds.get(code)!] : []));
       let member = (await workspaces.listMembers(ownerPerson.actor, workspaceId) as unknown as MemberRow[]).find((row) => row.email.toLowerCase() === plan.email);
       if (!member) {
-        if (!args.apply) { report.add("members", "would change", plan.email, `${plan.displayName}: invited and active as ${label}`); return null; }
+        // An added organization's people are the sandbox's own test members: nobody new is made for it.
+        if (base && !knownPeople.has(plan.email)) { report.add("members", "manual", plan.email, `not a member of sandbox ${base.slug} yet: run sandbox --slug ${base.slug} first`); return null; }
+        if (!args.apply) { report.add("members", "would change", plan.email, `${plan.displayName}: ${base ? "joins" : "invited and active"} as ${label}`); return null; }
         const pending = (await workspaces.listInvitations(ownerPerson.actor, workspaceId) as unknown as Array<{ id: string; email: string; status: string }>)
           .find((row) => row.email.toLowerCase() === plan.email && ["pending", "expired"].includes(row.status));
         const token = pending
@@ -401,8 +490,8 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     async function seed(members: Outcome[], ownerPerson: Person) {
       // The showcase's story only runs for real (each stage builds on the one before); a run makes only what is missing.
       if (!args.apply) { report.add("seed", "info", "showcase", "runs with --apply and makes only what an earlier run didn't"); return; }
-      const id = (key: string) => members.find((member) => member.email === sandboxEmail(key, args.slug))?.userId ?? undefined;
-      const actorOf = async (key: string) => (await peopleByEmail(db, [sandboxEmail(key, args.slug)])).get(sandboxEmail(key, args.slug))?.actor ?? ownerPerson.actor;
+      const id = (key: string) => members.find((member) => member.email === sandboxEmail(key, people))?.userId ?? undefined;
+      const actorOf = async (key: string) => (await peopleByEmail(db, [sandboxEmail(key, people)])).get(sandboxEmail(key, people))?.actor ?? ownerPerson.actor;
       await ensureSuppliers(await actorOf("purchasing"), ownerPerson.actor);
       const { seedShowcase } = await import("../seed/showcase");
       // The showcase's people by role; a deal is submitted by someone other than the owner who approves it.
@@ -496,23 +585,92 @@ async function readCrm(path: string, report: Report): Promise<TaxonomySpec[]> {
   return (value as TaxonomySpec[]).map((taxonomy) => ({ ...taxonomy, options: taxonomy.options.filter((option) => option.label) })).filter((taxonomy) => taxonomy.options.length);
 }
 
-/** The published region pack, firm kit and plan the sandbox is made with (latest selectable versions). */
-async function resolveSetup(db: DatabaseService, args: SandboxArgs): Promise<Setup> {
-  const latest = async (kind: string, code: string | null) => (await db.query<SetupProfile>(
+/**
+ * The published region pack, firm kit and plan the sandbox is made with (latest selectable versions). An organization
+ * added to a sandbox's account takes the sandbox's own kit and plan (the versions it was made with while they are still
+ * published, else their latest).
+ */
+async function resolveSetup(db: DatabaseService, args: SandboxArgs, pinned: Pinned | null): Promise<Setup> {
+  const latest = async (kind: string, code: string | null, version: number | null = null) => (await db.query<SetupProfile>(
     `SELECT code, version, configuration FROM tenant_setup_profiles WHERE kind = $1 AND selectable AND ($2::text IS NULL OR code = $2)
-      ORDER BY (code = $3) DESC, code, version DESC LIMIT 1`, [kind, code, SANDBOX_PLAN])).rows[0];
+      ORDER BY (code = $3) DESC, code, (version = $4::int) IS TRUE DESC, version DESC LIMIT 1`, [kind, code, SANDBOX_PLAN, version])).rows[0];
   const region = await latest("region", args.region);
   if (!region) {
     const known = (await db.query<{ code: string }>(`SELECT DISTINCT code FROM tenant_setup_profiles WHERE kind = 'region' AND selectable ORDER BY code`)).rows.map((row) => row.code);
     throw new OpsError(`No published region pack for ${args.region}. Region packs: ${known.join(", ")}.`);
   }
-  const kitCode = args.kit ?? SANDBOX_DEFAULT_KIT;
-  const kit = await latest("firm_kit", kitCode);
+  const kitCode = pinned?.kit.code ?? args.kit ?? SANDBOX_DEFAULT_KIT;
+  const kit = await latest("firm_kit", kitCode, pinned?.kit.version ?? null);
   if (!kit) throw new OpsError(`No published firm kit ${kitCode}.`);
-  const plan = await latest("plan", null);
-  if (!plan) throw new OpsError("No published plan.");
+  const plan = await latest("plan", pinned?.plan.code ?? null, pinned?.plan.version ?? null);
+  if (!plan) throw new OpsError(pinned ? `No published plan ${pinned.plan.code}.` : "No published plan.");
   return { region, kit, plan };
 }
+
+/**
+ * The sandbox --organization-of names: made by this command (its provisioning id is sandbox-<slug>, its account's
+ * too, and its owner invitation went to its test owner) and active, with its customer account and pinned kit and plan.
+ */
+async function resolveBase(app: INestApplicationContext, db: DatabaseService, slug: string): Promise<Base> {
+  const externalTenantId = sandboxExternalTenantId(slug);
+  const refused = new OpsError(`${slug} is not a sandbox this command made: --organization-of names one (made with sandbox --slug ${slug}).`);
+  const known = (await db.query<{ workspaceId: string }>(`SELECT workspace_id AS "workspaceId" FROM tenant_provisioning_requests WHERE external_tenant_id = $1`, [externalTenantId])).rows[0];
+  if (!known) throw refused;
+  const tenant = await app.get(WorkspacesService, { strict: false }).getProvisionedTenant(externalTenantId) as unknown as
+    { workspace: { slug: string; status: string }; ownerInvitation: { email: string }; account: { id: string; organizationLimit: number } | null };
+  if (tenant.workspace.slug !== slug || tenant.ownerInvitation.email.toLowerCase() !== sandboxEmail(SANDBOX_PERSONAS[0].key, slug) || !tenant.account) throw refused;
+  const account = (await db.query<{ externalId: string | null; status: string }>(
+    `SELECT external_customer_id AS "externalId", status FROM customer_accounts WHERE id = $1`, [tenant.account.id])).rows[0];
+  if (account?.externalId !== externalTenantId) throw refused;
+  if (tenant.workspace.status !== "active" || account.status !== "active") throw new OpsError(`The sandbox ${slug} is not active; reactivate it in Wodana Control first.`);
+  const pinned = (await db.tenantTransaction(known.workspaceId, known.workspaceId, (client) => client.query<{ kit: string; kitVersion: number; plan: string; planVersion: number }>(
+    `SELECT firm_kit_code AS kit, firm_kit_version AS "kitVersion", plan_code AS plan, plan_version AS "planVersion" FROM workspace_setup_versions WHERE workspace_id = $1`,
+    [known.workspaceId]))).rows[0];
+  return { slug, workspaceId: known.workspaceId, accountId: tenant.account.id, organizationLimit: tenant.account.organizationLimit,
+    pinned: pinned ? { kit: { code: pinned.kit, version: pinned.kitVersion }, plan: { code: pinned.plan, version: pinned.planVersion } } : null };
+}
+
+/**
+ * Every organization in a customer account, and whether the sandbox command made it for the sandbox <slug>: its first
+ * organization (provisioning id sandbox-<slug>) or one its test owner requested through this command (the request's
+ * key is sandbox-organization:<slug>) and that was approved.
+ */
+async function accountOrganizations(db: DatabaseService, accountId: string, slug: string): Promise<AccountOrganization[]> {
+  return (await db.query<AccountOrganization>(
+    `SELECT linked.workspace_id AS "workspaceId", branding.login_slug AS "loginSlug",
+            (EXISTS (SELECT 1 FROM tenant_provisioning_requests provisioned WHERE provisioned.workspace_id = linked.workspace_id AND provisioned.external_tenant_id = $2)
+             OR EXISTS (SELECT 1 FROM organization_requests request JOIN users person ON person.id = request.requested_by
+                         WHERE request.approved_workspace_id = linked.workspace_id AND request.account_id = linked.account_id AND request.status = 'approved'
+                           AND request.idempotency_key LIKE 'sandbox-organization:%' AND lower(person.primary_email::text) = $3)) AS "madeHere"
+       FROM customer_account_organizations linked
+       LEFT JOIN tenant_login_branding branding ON branding.workspace_id = linked.workspace_id
+      WHERE linked.account_id = $1
+      ORDER BY linked.is_default DESC, linked.workspace_id`,
+    [accountId, sandboxExternalTenantId(slug), sandboxEmail(SANDBOX_PERSONAS[0].key, slug)])).rows;
+}
+
+/** A slug an organization, or a provisioning reservation, already holds. */
+async function slugIsTaken(db: DatabaseService, slug: string): Promise<boolean> {
+  return Boolean((await db.query<{ taken: boolean }>(
+    `SELECT wodana_internal_slug_taken($1::varchar) OR EXISTS (SELECT 1 FROM tenant_provisioning_drafts WHERE slug = $1
+       AND (status = 'provisioned' OR (status IN ('draft', 'provisioning', 'failed') AND reservation_expires_at > now()))) AS taken`, [slug])).rows[0]?.taken);
+}
+
+type RegionConfig = { currency: string; locale: string; timezone: string; unitSystem: string; weekStartsOn: number; countryCode: string };
+
+/** An organization's regional defaults and first company, all from the region pack. */
+function regionalDefaults(args: SandboxArgs, region: RegionConfig) {
+  return {
+    defaultCurrency: region.currency, defaultLocale: region.locale, defaultTimezone: region.timezone, unitSystem: region.unitSystem, weekStartsOn: region.weekStartsOn,
+    firstLegalEntity: { code: sandboxLegalEntityCode(args.slug), displayName: args.name, registeredName: args.name, countryCode: region.countryCode,
+      baseCurrency: region.currency, locale: region.locale, timezone: region.timezone },
+  };
+}
+
+const setupSelections = (setup: Setup, seatLimit: number) => ({
+  region: { code: setup.region.code, version: setup.region.version }, firmKit: { code: setup.kit.code, version: setup.kit.version },
+  plan: { code: setup.plan.code, version: setup.plan.version }, seatLimit,
+});
 
 /** The standard rate the region pack gives: its own rates, else the standard sales rate of its ledger template. */
 async function regionRates(db: DatabaseService, setup: Setup, model: { model: string; label: string | null }) {
@@ -553,33 +711,45 @@ type Files = { teams: TeamSpec[] | null; leadOptions: TaxonomySpec[] | null; pro
  * A dry run before the owner is in (the workspace isn't made yet, or an earlier run stopped first): what --apply would
  * do after the owner accepts, from the kit's roles and the files given.
  */
-function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Report, password: string | null) {
+function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Report, password: string | null, known: Map<string, Person> | null = null) {
   const { teams, leadOptions, profile } = files;
-  report.add("security", "would change", "authenticator", "needed → not needed to sign in");
+  const people = args.organizationOf ?? args.slug;
+  // An added organization is covered by the account's policy, which the sandbox already set.
+  if (!args.organizationOf) report.add("security", "would change", "authenticator", "needed → not needed to sign in");
   report.add("workspace", "would change", "onboarding", "complete");
   report.add("workspace", "would change", "client portal", "on");
   report.add("tax", "would change", "tax profile", "the region pack's standard rate");
   if (teams) report.add("teams", "would change", "teams", `${teams.length} teams, each with its role`);
   if (leadOptions) report.add("crm", "would change", "lead options", leadOptions.map((taxonomy) => taxonomy.code).join(", "));
   const roles = new Set([...SYSTEM_ROLE_CODES, ...parseRoleTemplateCodes(setup.kit.configuration.roleTemplates)]);
-  const plans = planMembers(args.slug, roles, teams ?? []);
+  const plans = planMembers(people, roles, teams ?? []);
   for (const plan of plans.slice(1)) {
-    report.add("members", "would change", plan.email, `${plan.displayName}: invited and active as ${[...plan.roleCodes, ...plan.teamCodes.map((code) => `team ${code}`)].join(", ")}`);
+    report.add("members", "would change", plan.email, `${plan.displayName}: ${args.organizationOf ? "joins" : "invited and active"} as ${[...plan.roleCodes, ...plan.teamCodes.map((code) => `team ${code}`)].join(", ")}`);
   }
-  if (!password) report.add("members", "manual", "passwords", "--apply needs --password-env");
+  if (!password && !args.organizationOf) report.add("members", "manual", "passwords", "--apply needs --password-env");
   if (profile) report.add("profile", "would change", "profile", `${Object.keys(profile).length} sections, applied as configure once the workspace exists`);
   if (args.seed) report.add("seed", "would change", "showcase", "records for every section, made by the test members");
-  printMembers(report, plans.map((plan) => ({ email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes, userId: null })), args.passwordEnv);
+  // An added organization's people are already there (the sandbox's own); a new sandbox's are made with --apply.
+  printMembers(report, plans.map((plan) => ({ email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes,
+    userId: known?.get(plan.email)?.userId ?? null })), args.passwordEnv, known, args.organizationOf);
 }
 
-/** Each test member's address, roles and user id (never a password), and the ids for the device-limit exemption. */
-function printMembers(report: Report, members: Outcome[], passwordEnv: string | null) {
+/**
+ * Each test member's address, roles and user id (never a password), the people this run made (with --organization-of:
+ * none, as they are the sandbox's own) and the ids for the device-limit exemption.
+ */
+function printMembers(report: Report, members: Outcome[], passwordEnv: string | null, before: Map<string, Person> | null, organizationOf: string | null) {
   report.facts.members = members;
   const ids = members.flatMap((member) => (member.userId ? [member.userId] : []));
   if (ids.length) report.facts.deviceLimitExemptUserIds = ids.join(",");
-  report.note(`\nTest members${passwordEnv ? ` (password from $${passwordEnv}, not shown)` : ""}:`);
+  const made = before ? members.flatMap((member) => (member.userId && before.get(member.email)?.userId !== member.userId ? [member.userId] : [])) : [];
+  if (before) report.facts.newUserIds = made;
+  report.note(`\nTest members${passwordEnv ? ` (password from $${passwordEnv}, not shown)` : organizationOf ? ` of sandbox ${organizationOf} (their passwords unchanged)` : ""}:`);
   for (const member of members) {
-    report.note(`  ${member.email.padEnd(32)} ${member.displayName.padEnd(22)} ${[...member.roles, ...member.teams.map((code) => `team ${code}`)].join(", ").padEnd(48)} ${member.userId ?? "(made with --apply)"}`);
+    report.note(`  ${member.email.padEnd(32)} ${member.displayName.padEnd(22)} ${[...member.roles, ...member.teams.map((code) => `team ${code}`)].join(", ").padEnd(48)} ${member.userId ?? (organizationOf ? `(not in sandbox ${organizationOf})` : "(made with --apply)")}`);
   }
-  if (ids.length) report.note(`User ids for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS (add to the list already there): ${ids.join(",")}`);
+  if (organizationOf && before) {
+    report.note(made.length ? `New people (unexpected): ${made.join(",")}` : "No new people: the device-limit exemption needs no change.");
+    if (made.length) report.note(`User ids for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS (add to the list already there): ${made.join(",")}`);
+  } else if (ids.length) report.note(`User ids for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS (add to the list already there): ${ids.join(",")}`);
 }

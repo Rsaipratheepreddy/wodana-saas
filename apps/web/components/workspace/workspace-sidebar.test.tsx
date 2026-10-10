@@ -37,6 +37,22 @@ describe("WorkspaceSidebar", () => {
     expect(within(chooser).getByText("Studio Group · Suspended")).toBeVisible();
     expect(within(chooser).queryByRole("button", { name: /Paused Studio/ })).not.toBeInTheDocument();
   });
+  it("lists every organization the person belongs to and switches to another on the same host", async () => {
+    const interaction = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    const assign = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("location", { ...window.location, assign });
+    render(<WorkspaceSidebar activeModule={workspaceModule} modules={workspaceModules} navigation={workspaceModule.navigation} pathname="/workspace"
+      workspaces={[{ description: "Studio Group · Active", id: "org-uae", name: "Studio UAE" }, { description: "Studio Group · Active", id: "org-india", name: "Studio India" }]} />);
+    await interaction.click(screen.getByRole("button", { name: "Switch workspace. Current: Studio UAE" }));
+    const chooser = await screen.findByRole("dialog", { name: "Choose workspace" });
+    expect(within(chooser).getByRole("button", { name: /Studio UAE/ })).toBeVisible();
+    await interaction.click(within(chooser).getByRole("button", { name: /Studio India/ }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspace/active", expect.objectContaining({ method: "POST", body: JSON.stringify({ workspaceId: "org-india" }) }));
+    expect(assign).toHaveBeenCalledWith(workspaceModule.href);
+  });
+
   it.each(["desktop", "mobile"] as const)("keeps shared destinations accessible on %s", async (mode) => {
     render(<WorkspaceSidebar activeModule={preProjectModule} mode={mode} modules={workspaceModules} navigation={preProjectModule.navigation} pathname="/workspace/pre-projects/requirements" workspaces={workspaces}/>);
     const nav = within(screen.getByRole('navigation',{name:'Main navigation'}));

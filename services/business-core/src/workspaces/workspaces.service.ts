@@ -328,15 +328,7 @@ export class WorkspacesService {
           throw new BadRequestException("Account contact and setup versions must be supplied together");
         }
         const setup = input.defaults ? await this.resolveTenantSetup(client, input.defaults) : null;
-        if (setup) {
-          const region = setup.region.configuration;
-          if (input.defaultCurrency !== region.currency || input.defaultLocale !== region.locale
-            || input.defaultTimezone !== region.timezone || input.unitSystem !== region.unitSystem
-            || input.weekStartsOn !== region.weekStartsOn
-            || input.firstLegalEntity.countryCode !== region.countryCode) {
-            throw new BadRequestException("Organization regional defaults do not match the pinned region version");
-          }
-        }
+        if (setup) this.assertRegionalDefaults(input, setup);
 
         const insertedOwner = await client.query<{ id: string }>(
           `INSERT INTO users (primary_email, display_name, preferred_locale, preferred_timezone)
@@ -416,44 +408,11 @@ export class WorkspacesService {
         await seedDefaultQuickReplies(client, workspaceId);
         // The kit's Sales pipeline, so a salesperson's first conversion needs no CRM-settings permission.
         await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
-        if (setup) {
-          // The kit's payment plan becomes the workspace's default for new quotes (Q-34).
-          await seedKitPaymentPlan(client, workspaceId, (setup.firmKit.configuration as Record<string, unknown>).paymentTemplate);
-          const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
-          await client.query(
-            `INSERT INTO project_workflow_templates
-               (workspace_id, code, name, description, is_default, version, stages, created_by)
-             VALUES ($1, $2, $3, $4, true, $5, $6, $7)`,
-            [workspaceId, workflow.code, workflow.name, workflow.description,
-              workflow.version, JSON.stringify(workflow.stages), ownerUserId],
-          );
-        }
+        if (setup) await this.applyFirmKit(client, workspaceId, ownerUserId, setup);
 
         const workspaceResponse = this.mapWorkspace(workspace.rows[0]);
-        if (setup) {
-          const plan = setup.plan.configuration;
-          await client.query(
-            `INSERT INTO workspace_subscriptions
-              (workspace_id, plan_code, billing_cycle, seat_limit, project_limit, currency, renews_at)
-             VALUES ($1, $2, $3, $4, $5, $6, now() + interval '14 days')`,
-            [workspaceId, input.defaults!.plan.code, plan.billingCycle, input.defaults!.seatLimit ?? plan.seatLimit, plan.projectLimit, input.defaultCurrency],
-          );
-          await client.query(
-            `INSERT INTO workspace_setup_versions
-              (workspace_id, region_code, region_version, firm_kit_code, firm_kit_version,
-               plan_code, plan_version, configuration_snapshot)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [workspaceId, input.defaults!.region.code, input.defaults!.region.version,
-              input.defaults!.firmKit.code, input.defaults!.firmKit.version,
-              input.defaults!.plan.code, input.defaults!.plan.version, setup],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
-             VALUES ($1, $2, now() + interval '14 days')`,
-            [workspaceId, input.defaultCurrency],
-          );
-        }
+        await this.insertSubscriptionAndSetup(client, workspaceId, input.defaultCurrency,
+          setup && input.defaults ? { selections: input.defaults, setup } : null);
         await this.insertCustomerAccountFoundation(client, {
           accountId,
           workspaceId,
@@ -558,16 +517,24 @@ export class WorkspacesService {
     }
   }
 
+  /**
+   * An organization an account added (its request approved): the requester becomes its owner. With setup selections
+   * it is made as a first organization is: the region pack's defaults (checked against the request), the firm kit's
+   * roles, sales pipeline, payment plan and project route, the plan's seats, and the versions pinned.
+   */
   async provisionApprovedOrganization(
     client: PoolClient,
     input: CreateWorkspaceDto,
     ownerUserId: string,
     accountId: string,
+    selections?: TenantSetupSelectionsDto,
   ) {
     const workspaceId = randomUUID();
     const legalEntityId = randomUUID();
     const membershipId = randomUUID();
     const slug = input.slug ?? this.toSlug(input.name);
+    const setup = selections ? await this.resolveTenantSetup(client, selections) : null;
+    if (setup) this.assertRegionalDefaults(input, setup);
 
     await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceId]);
     await client.query("SELECT set_config('app.current_actor_id', $1, true)", [ownerUserId]);
@@ -607,7 +574,7 @@ export class WorkspacesService {
       [membershipId, workspaceId, ownerUserId],
     );
     const roleIds = await this.insertSystemRoles(client, workspaceId);
-    await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(undefined));
+    await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(setup?.firmKit.configuration.roleTemplates));
     await client.query(
       `INSERT INTO member_roles (workspace_id, membership_id, role_id)
        VALUES ($1, $2, $3)`,
@@ -621,14 +588,11 @@ export class WorkspacesService {
       input.firstLegalEntity.code,
     );
     await this.insertDefaultCrmAutomations(client, workspaceId);
-    await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
-          await seedDefaultNotificationTemplates(client, workspaceId);
+    await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
+    await seedDefaultNotificationTemplates(client, workspaceId);
     await seedDefaultQuickReplies(client, workspaceId);
-    await client.query(
-      `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
-       VALUES ($1, $2, now() + interval '14 days')`,
-      [workspaceId, input.defaultCurrency],
-    );
+    if (setup) await this.applyFirmKit(client, workspaceId, ownerUserId, setup);
+    await this.insertSubscriptionAndSetup(client, workspaceId, input.defaultCurrency, setup && selections ? { selections, setup } : null);
     await client.query(
       `INSERT INTO customer_account_organizations (account_id, workspace_id, is_default)
        VALUES ($1, $2, false)`,
@@ -641,13 +605,14 @@ export class WorkspacesService {
       action: "customer_account.organization_provisioned",
       entityType: "workspace",
       entityId: workspaceId,
-      after: { ...this.mapWorkspace(workspace.rows[0]), accountId, isDefaultOrganization: false },
+      after: { ...this.mapWorkspace(workspace.rows[0]), accountId, isDefaultOrganization: false, setupVersions: selections ?? null },
     });
     return {
       workspace: this.mapWorkspace(workspace.rows[0]),
       legalEntity: this.mapLegalEntity(legalEntity),
       onboarding: this.mapOnboarding(onboarding),
       membership: { id: membershipId, role: "owner", status: "active" },
+      setupVersions: selections ?? null,
     };
   }
 
@@ -4435,6 +4400,64 @@ export class WorkspacesService {
         (account_id, workspace_id, is_default)
        VALUES ($1, $2, true)`,
       [input.accountId, input.workspaceId],
+    );
+  }
+
+  /** A pinned region pack's defaults are the organization's: currency, locale, time zone, units, week and country. */
+  private assertRegionalDefaults(input: CreateWorkspaceDto, setup: { region: { configuration: Record<string, unknown> } }) {
+    const region = setup.region.configuration;
+    if (input.defaultCurrency !== region.currency || input.defaultLocale !== region.locale
+      || input.defaultTimezone !== region.timezone || input.unitSystem !== region.unitSystem
+      || input.weekStartsOn !== region.weekStartsOn
+      || input.firstLegalEntity.countryCode !== region.countryCode) {
+      throw new BadRequestException("Organization regional defaults do not match the pinned region version");
+    }
+  }
+
+  /** The firm kit's payment plan (the default for new quotes, Q-34) and its project route. */
+  private async applyFirmKit(client: PoolClient, workspaceId: string, ownerUserId: string, setup: { firmKit: { configuration: Record<string, unknown> } }) {
+    await seedKitPaymentPlan(client, workspaceId, setup.firmKit.configuration.paymentTemplate);
+    const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
+    await client.query(
+      `INSERT INTO project_workflow_templates
+         (workspace_id, code, name, description, is_default, version, stages, created_by)
+       VALUES ($1, $2, $3, $4, true, $5, $6, $7)`,
+      [workspaceId, workflow.code, workflow.name, workflow.description,
+        workflow.version, JSON.stringify(workflow.stages), ownerUserId],
+    );
+  }
+
+  /** The organization's subscription: the plan's seats and projects with pinned setup versions, else the defaults. */
+  private async insertSubscriptionAndSetup(
+    client: PoolClient,
+    workspaceId: string,
+    currency: string,
+    pinned: { selections: TenantSetupSelectionsDto; setup: { plan: { configuration: Record<string, unknown> } } } | null,
+  ) {
+    if (!pinned) {
+      await client.query(
+        `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
+         VALUES ($1, $2, now() + interval '14 days')`,
+        [workspaceId, currency],
+      );
+      return;
+    }
+    const { selections, setup } = pinned;
+    const plan = setup.plan.configuration;
+    await client.query(
+      `INSERT INTO workspace_subscriptions
+        (workspace_id, plan_code, billing_cycle, seat_limit, project_limit, currency, renews_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now() + interval '14 days')`,
+      [workspaceId, selections.plan.code, plan.billingCycle, selections.seatLimit ?? plan.seatLimit, plan.projectLimit, currency],
+    );
+    await client.query(
+      `INSERT INTO workspace_setup_versions
+        (workspace_id, region_code, region_version, firm_kit_code, firm_kit_version,
+         plan_code, plan_version, configuration_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [workspaceId, selections.region.code, selections.region.version,
+        selections.firmKit.code, selections.firmKit.version,
+        selections.plan.code, selections.plan.version, setup],
     );
   }
 

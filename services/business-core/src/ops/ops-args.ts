@@ -22,6 +22,11 @@ export type SandboxArgs = {
   passwordEnv: string | null;
   /** A firm kit code; left out, the sandbox default. */
   kit: string | null;
+  /**
+   * The slug of an existing sandbox: --slug is then another organization in that sandbox's customer account, for the
+   * same test members (<role>@<that slug>.test), switched to with the organization switcher.
+   */
+  organizationOf: string | null;
   seed: boolean; apply: boolean; json: boolean;
 };
 export type OpsArgs = ImportArgs | ConfigureArgs | SandboxArgs | { command: "help" };
@@ -38,6 +43,8 @@ Usage:
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> [--profile <profile.json>]
       [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--password-env <ENV VAR>] [--kit <firm kit code>]
       [--seed] [--apply] [--json]
+  node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> --organization-of <sandbox slug>
+      [--profile <profile.json>] [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--seed] [--apply] [--json]
   node dist/ops/ops-cli.js --help
 
 import
@@ -73,7 +80,7 @@ sandbox
   region pack's currency, tax, locale and time zone, a firm kit (default design_build_deal_first, the deal-first
   design & build kit), login at <slug>.<domain>, seats for the test members, and sign-in without an authenticator.
   Refuses a slug that belongs to a workspace it didn't create. Emails are held back while it runs. A second run
-  changes nothing.
+  changes nothing. On a sandbox that exists, a different --name renames it (the slug never changes).
   --teams         a teams access file (e.g. docs/fixtures/palm-teams-access.json): a role and a team for each team
   --crm           a CRM intake profile (e.g. docs/fixtures/palm-crm-intake-profile.json), its lead options only:
                   sources, channels, enquiry types, budget ranges, client types and referral lists
@@ -87,12 +94,18 @@ sandbox
   One active member per role (owner, manager, sales, designer, design manager, QS, purchasing, factory lead,
   logistics, site supervisor, finance, accountant) as <role>@<slug>.test with the workspace's matching roles and teams.
   Prints each member's email, roles and user id (for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS), never the password.
+  --organization-of  another organization in that sandbox's customer account (e.g. one per country): requested by its
+                  test owner and approved as Wodana approves an account's additional organization, with this region
+                  pack and the sandbox's firm kit and plan. The sandbox's own test members join it with the same roles
+                  and teams (no new people, passwords untouched) and switch between the two with the organization
+                  switcher; the account's sign-in policy covers both. Refused unless the sandbox and every organization
+                  in its account were made by this command. --password-env and --kit don't apply.
 
 Output is counts and messages only. Exit code 0 when everything succeeded, 1 when anything failed, 2 for usage errors.`;
 
 const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
-  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit"]);
+  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ITEM_TYPES = ["product", "material", "assembly", "service", "package", "ready_made"];
@@ -166,7 +179,7 @@ export function parseArgs(argv: string[]): OpsArgs {
   };
 }
 
-const SANDBOX_OPTIONS = ["--slug", "--name", "--region", "--profile", "--teams", "--crm", "--password-env", "--kit", "--seed", "--apply", "--dry-run", "--json"];
+const SANDBOX_OPTIONS = ["--slug", "--name", "--region", "--profile", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--seed", "--apply", "--dry-run", "--json"];
 /** A login slug that is also a DNS label and makes valid test addresses (<role>@<slug>.test). */
 const LOGIN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -185,9 +198,18 @@ function parseSandbox(values: Map<string, string>, flags: Set<string>, required:
     throw new UsageError("--password-env is the name of an environment variable that holds the password, never the password itself.");
   const kit = values.get("--kit")?.trim() || null;
   if (kit !== null && !/^[a-z][a-z0-9_]{0,39}$/.test(kit)) throw new UsageError("--kit is a firm kit code (lowercase letters, digits and _), e.g. design_build.");
+  const organizationOf = values.has("--organization-of") ? values.get("--organization-of")!.trim().toLowerCase() : null;
+  if (organizationOf !== null) {
+    if (!LOGIN_SLUG.test(organizationOf) || organizationOf.length < 2 || organizationOf.length > 40 || RESERVED_SLUGS.has(organizationOf))
+      throw new UsageError("--organization-of is the slug of the sandbox whose account gets the organization (e.g. iglo).");
+    if (organizationOf === slug) throw new UsageError("--organization-of is another sandbox than --slug: the one whose account gets this organization.");
+    // The people are the sandbox's own: their passwords stay as they are, and the organization gets the sandbox's kit.
+    if (passwordEnv !== null) throw new UsageError(`--password-env does not apply with --organization-of: the test members keep the password sandbox ${organizationOf} gave them.`);
+    if (kit !== null) throw new UsageError(`--kit does not apply with --organization-of: the organization gets the firm kit of sandbox ${organizationOf}.`);
+  }
   return {
     command: "sandbox", slug, name, region, profile: values.get("--profile")?.trim() || null, teams: values.get("--teams")?.trim() || null,
-    crm: values.get("--crm")?.trim() || null, passwordEnv, kit, seed: flags.has("--seed"), apply: flags.has("--apply"), json: flags.has("--json"),
+    crm: values.get("--crm")?.trim() || null, passwordEnv, kit, organizationOf, seed: flags.has("--seed"), apply: flags.has("--apply"), json: flags.has("--json"),
   };
 }
 

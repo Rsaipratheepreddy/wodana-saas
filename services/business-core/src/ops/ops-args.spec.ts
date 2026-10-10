@@ -52,13 +52,38 @@ describe("operator CLI arguments", () => {
 
   it("parses sandbox: a dry run unless --apply, region upper-cased, files and the password's variable optional", () => {
     expect(parseArgs(sandbox)).toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: null, teams: null, crm: null, passwordEnv: null,
-      kit: null, seed: false, apply: false, json: false });
+      kit: null, organizationOf: null, seed: false, apply: false, json: false });
     expect(parseArgs([...sandbox, "--profile", "p.json", "--teams", "t.json", "--crm", "c.json", "--password-env", "SANDBOX_PASSWORD", "--kit", "design_build", "--seed",
       "--apply", "--json"]))
       .toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: "p.json", teams: "t.json", crm: "c.json", passwordEnv: "SANDBOX_PASSWORD",
-        kit: "design_build", seed: true, apply: true, json: true });
+        kit: "design_build", organizationOf: null, seed: true, apply: true, json: true });
     expect(parseArgs(["sandbox", "--slug", "Test-Studio-2", "--name", "  Test Studio ", "--region", "GB"])).toMatchObject({ slug: "test-studio-2", name: "Test Studio" });
     expect(parseArgs(["sandbox", "--help"])).toEqual({ command: "help" });
+  });
+
+  const organization = ["sandbox", "--slug", "iglo-india", "--name", "Igolo India", "--region", "in", "--organization-of", "Iglo"];
+
+  it("parses --organization-of: another organization in an existing sandbox's account, for the same test members", () => {
+    expect(parseArgs([...organization, "--profile", "p.json", "--teams", "t.json", "--crm", "c.json", "--seed", "--apply"])).toEqual({
+      command: "sandbox", slug: "iglo-india", name: "Igolo India", region: "IN", profile: "p.json", teams: "t.json", crm: "c.json", passwordEnv: null,
+      kit: null, organizationOf: "iglo", seed: true, apply: true, json: false });
+    expect(parseArgs(organization)).toMatchObject({ organizationOf: "iglo", apply: false });
+  });
+
+  it.each([
+    [["sandbox", "--slug", "iglo-india", "--name", "Igolo India", "--organization-of", "iglo"], "--region is required"],
+    [["sandbox", "--name", "Igolo India", "--region", "IN", "--organization-of", "iglo"], "--slug is required"],
+    [[...organization.slice(0, -1), "iglo india"], "--organization-of is the slug of the sandbox"],
+    [[...organization.slice(0, -1), "-iglo"], "--organization-of is the slug of the sandbox"],
+    [[...organization.slice(0, -1), "admin"], "--organization-of is the slug of the sandbox"],
+    [[...organization.slice(0, -1), "iglo-india"], "--organization-of is another sandbox than --slug"],
+    [[...organization, "--password-env", "SANDBOX_PASSWORD"], "--password-env does not apply with --organization-of"],
+    [[...organization, "--kit", "design_build"], "--kit does not apply with --organization-of"],
+    [[...organization, "--organization-of", "other"], "--organization-of is given twice"],
+    [["sandbox", "--slug", "iglo-india", "--name", "Igolo India", "--region", "IN", "--organization-of"], "--organization-of needs a value"],
+  ])("refuses --organization-of %j", (argv, message) => {
+    expect(() => parseArgs(argv as string[])).toThrow(UsageError);
+    expect(() => parseArgs(argv as string[])).toThrow(message as string);
   });
 
   it.each([
@@ -98,6 +123,7 @@ describe("operator CLI arguments", () => {
     expect(USAGE).toContain("node dist/ops/ops-cli.js sandbox --slug <slug> --name \"<name>\" --region <country code>");
     expect(USAGE).toContain("--password-env <ENV VAR>");
     expect(USAGE).toContain("--crm <crm-intake-profile.json>");
+    expect(USAGE).toContain("--organization-of <sandbox slug>");
   });
 
   it("reads --mapping overrides as headings to fields", () => {

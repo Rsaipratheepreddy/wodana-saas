@@ -52,6 +52,11 @@ export const SANDBOX_SUPPLIERS: ReadonlyArray<{ key: string; name: string; categ
 export const FALLBACK_ROLE = "member";
 
 export const sandboxExternalTenantId = (slug: string) => `sandbox-${slug}`;
+/**
+ * The key of the request for an organization added to a sandbox's account (--organization-of): it makes the request
+ * idempotent and marks the organization as the sandbox command's, as sandbox-<slug> marks a sandbox's first one.
+ */
+export const sandboxOrganizationKey = (slug: string) => `sandbox-organization:${slug}`;
 export const sandboxEmail = (key: string, slug: string) => `${key}@${slug}.test`;
 /** The first company's code from the slug (A-Z, 0-9 and dashes, at most 24). */
 export const sandboxLegalEntityCode = (slug: string) => slug.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24);

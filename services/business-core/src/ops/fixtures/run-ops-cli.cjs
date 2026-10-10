@@ -23,8 +23,8 @@ const { parseArgs } = require("../ops-args.ts");
   } finally {
     await app.close().catch(() => undefined);
   }
-  process.stdout.write(`\n@@RESULT@@${JSON.stringify(results)}\n`);
-  process.exit(0);
+  // Exit once the pipe has taken everything: exiting at once cuts a long result off at the pipe's buffer.
+  process.stdout.write(`\n@@RESULT@@${JSON.stringify(results)}\n`, () => process.exit(0));
 })().catch((error) => {
   process.stderr.write(`${error && error.stack ? error.stack : error}\n`);
   process.exit(1);

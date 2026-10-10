@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { Transform } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsIn,
   IsInt,
@@ -8,8 +8,10 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from "class-validator";
 import { CreateWorkspaceDto } from "./create-workspace.dto";
+import { TenantSetupSelectionsDto } from "./tenant-provisioning-draft.dto";
 
 export class CreateOrganizationRequestDto extends CreateWorkspaceDto {
   @ApiPropertyOptional({ description: "Business reason for the additional organization" })
@@ -43,6 +45,15 @@ export class ApproveOrganizationRequestDto extends VersionedOrganizationRequestD
   @IsString()
   @MaxLength(500)
   decisionReason?: string;
+
+  @ApiPropertyOptional({
+    type: TenantSetupSelectionsDto,
+    description: "Region pack, firm kit and plan the organization is made with, as a first organization is; the request's regional defaults must match the region pack",
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TenantSetupSelectionsDto)
+  defaults?: TenantSetupSelectionsDto;
 }
 
 export class RejectOrganizationRequestDto extends VersionedOrganizationRequestDto {
