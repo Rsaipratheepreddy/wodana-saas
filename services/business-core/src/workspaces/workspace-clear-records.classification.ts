@@ -552,6 +552,7 @@ const clear = [
   "books_manual_journals",
   "books_posting_issues",
   // Reminders: what is due, its steps and the digests
+  "reminder_client_days",
   "reminder_digests",
   "reminder_steps",
   "reminder_subjects",

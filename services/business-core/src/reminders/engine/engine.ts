@@ -1,12 +1,13 @@
 import type { PoolClient } from "pg";
 import { addDays, wallClock, zonedInstant } from "../../booking/booking.domain";
+import type { RequestActor } from "../../auth/actor";
 import type { JobLineageLink } from "../../jobs/job-lineage";
 import { workdays } from "../../project-core/work-calendar";
 import type { Clock } from "../../team-calendars/workspace-clock";
 import {
   REMINDER_KIND_DEFAULTS, REMINDER_KIND_INFO, reminderStepKey,
   type EngineReminderKind, type HoursWindow, type ReminderAudience, type ReminderChainLink, type ReminderChannel, type ReminderKind,
-  type ReminderModule, type ReminderNotify, type ReminderUnit,
+  type ReminderModule, type ReminderNotify, type ReminderSkipReason, type ReminderUnit,
 } from "../reminders-contract";
 
 /**
@@ -41,20 +42,38 @@ export type DueItem = {
   variables: Record<string, string>;
 };
 
-export type ReminderActor = { userId: string; membershipId: string };
+/** Who runs a My day command: the person, and their request (the module's own command checks it as usual). */
+/** The moment a done predicate is asked at, and that day in the workspace's zone. */
+export type StillOpenAt = { now: Date; today: string };
+
+export type ReminderActor = { userId: string; membershipId: string; request: RequestActor };
+
+/** A module command run from My day, outside My day's own transaction (the module opens and audits its own). */
+export type ReminderCommandInput = { workspaceId: string; subject: ReminderSubjectRef; actor: ReminderActor };
 
 /** The subject an action or a delivery is about, as the engine stores it. */
 export type ReminderSubjectRef = { id: string; kind: ReminderKind; sourceKey: string; sourceType: string; sourceId: string; partyId: string | null; caseId: string | null; projectId: string | null };
 
 export type ClientDelivery = {
-  subject: ReminderSubjectRef;
+  subject: ReminderSubjectRef & { title: string; context: string; href: string };
   stepId: string;
-  channel: Extract<ReminderChannel, "whatsapp" | "email">;
-  /** `rem:{stepId}:{recipient}:{channel}` */
+  /** The rule's client channels in order (WhatsApp, then email). A fallback lists only what is left. */
+  channels: Array<Extract<ReminderChannel, "whatsapp" | "email">>;
+  /** `rem:{stepId}`: the send's key (WhatsApp record key, and the one-a-day gate key the engine claimed). */
   idempotencyKey: string;
+  /** The template snapshot plus `due` in the client's day. */
   variables: Record<string, string>;
+  now: Date;
+  /** The failed notice this send falls back from (recorded on the new notices). */
+  fallbackOf?: string | null;
 };
-export type ClientDeliveryResult = { status: "queued" | "skipped" | "failed"; notificationId: string | null; reason: string | null };
+export type ClientDeliveryResult = {
+  status: "queued" | "skipped" | "failed";
+  channel: Extract<ReminderChannel, "whatsapp" | "email"> | null;
+  /** The notices written (tagged with the step), for the fallback pass and the health list. */
+  notificationIds: string[];
+  reason: ReminderSkipReason | null;
+};
 
 /**
  * A source adapter (one per kind). `open` lists what is due now; `stillOpen` is the done predicate, re-checked
@@ -68,13 +87,27 @@ export interface ReminderSource {
   critical: boolean;
   /** "module": My day only, the module keeps its own notices. */
   notify: ReminderNotify;
-  /** Who may see the item in My day (a permission code). */
+  /** Who may see the item in My day (a permission code): the team view, and the subject's timeline. */
   viewPermission: string;
+  /**
+   * Items nobody owns are shown in the "me" view of the people holding this permission (an unowned enquiry to
+   * whoever assigns enquiries, a late work order to the factory managers). Without it, an unowned item shows only
+   * in the team view.
+   */
+  poolPermission?: string;
   open(db: Db, workspaceId: string, options: { clock: Clock; now: Date; limit: number }): Promise<DueItem[]>;
-  /** Of these source keys, the ones still open. */
-  stillOpen(db: Db, workspaceId: string, keys: readonly string[]): Promise<Set<string>>;
-  complete?: { label: string; run(db: Db, workspaceId: string, subject: ReminderSubjectRef, actor: ReminderActor): Promise<void> };
-  reassign?: { permission: string; run(db: Db, workspaceId: string, subject: ReminderSubjectRef, toMembershipId: string, actor: ReminderActor): Promise<void> };
+  /**
+   * Of these source keys, the ones still open (the done predicate). `at` is the sweep's clock: a source whose
+   * open() lists only a window of due dates applies the same window, so a date moved out of it closes the subject.
+   */
+  stillOpen(db: Db, workspaceId: string, keys: readonly string[], at?: StillOpenAt): Promise<Set<string>>;
+  /**
+   * "Mark done": the module's own audited command (who may run it, and how). The subject then closes through
+   * `stillOpen`, as always.
+   */
+  complete?: { label: string; permission: string; run(input: ReminderCommandInput): Promise<void> };
+  /** "Reassign": moves the record to another member through the module's own audited command. */
+  reassign?: { permission: string; run(input: ReminderCommandInput & { toMembershipId: string }): Promise<void> };
   /** Client kinds: send through the module's own client message (WhatsApp template, branded email). */
   deliverClient?(db: Db, workspaceId: string, delivery: ClientDelivery): Promise<ClientDeliveryResult>;
   template: { code: string };

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readMyDay } from "../reminders/my-day/my-day";
+import { builtinReminderSources, runReminderSweep } from "../reminders/testing";
 import { readHomeSummary, type HomeSummaryAccess } from "./home-summary";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -78,12 +80,18 @@ integration("Home summary with PostgreSQL", () => {
     await scenario(async (client, ids) => {
       const summary = await readHomeSummary(client, { workspaceId: ids.workspaceId, membershipId: ids.me, userId: ids.userId }, everything, now);
       expect(summary.today).toBe("2026-09-28");
-      expect(summary.focus.items.map((item) => [item.title, item.urgency])).toEqual([
-        ["Rami's late fitting", "overdue"],
-        ["Call Amira back", "overdue"],
-        ["Send the brochure", "today"],
-      ]);
-      expect(summary.focus.items[0]).toMatchObject({ source: "work", context: "Villa 12 · Rami Factory", projectId: ids.project });
+      // Focus holds only what waits for the person's decision; what is due is My day's (the reminder engine's subjects).
+      expect(summary.focus.items).toEqual([]);
+      await runReminderSweep(client, ids.workspaceId, { now });
+      const myDay = await readMyDay(client, { workspaceId: ids.workspaceId, membershipId: ids.me, userId: ids.userId, permissions: new Set(["projects.view", "crm.activities.view"]),
+        timeZone: "Asia/Dubai" }, builtinReminderSources(), { scope: "me" }, now);
+      const items = myDay.groups.flatMap((group) => group.items);
+      // Their follow-ups (overdue and today), the team's late work on the project they manage, and work assigned to them;
+      // not a colleague's call, nor another tenant's.
+      expect(items.map((item) => [item.title, item.urgency]).sort()).toEqual([
+        ["#1 Not my project", "overdue"], ["#1 Rami's late fitting", "overdue"], ["Call Amira back", "overdue"], ["Send the brochure", "today"]].sort());
+      expect(items.find((item) => item.title === "#1 Rami's late fitting")).toMatchObject({ kind: "work.due", context: "PRJ-1 · Villa 12", owner: { membershipId: expect.any(String) } });
+      expect(myDay.counts).toMatchObject({ overdue: 3, today: 1 });
       expect(summary.upcoming.map((item) => item.title)).toEqual(["Check in next week", "Rami's fitting next week"]);
       expect(summary.funnel.find((stage) => stage.id === "enquiries")).toMatchObject({ count: 1 });
       expect(summary.funnel.find((stage) => stage.id === "projects")).toMatchObject({ count: 1, stuck: 0 });

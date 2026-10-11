@@ -1,7 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { readWaitingApprovals, type HomeApprovalAccess } from "./home-approvals";
-import { visibleSql, type InboxViewer } from "../crm/conversations/inbox/inbox-visibility";
+import type { InboxViewer } from "../crm/conversations/inbox/inbox-visibility";
 
 // Structural copy of HomeSummary in packages/contracts/src/home.ts (business-core does not depend on contracts).
 export type HomeFocusSource =
@@ -79,154 +79,6 @@ function validTimeZone(value: string | null | undefined) {
   try { new Intl.DateTimeFormat("en", { timeZone: zone }); return zone; } catch { return "UTC"; }
 }
 const localDay = (at: Date, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
-
-const focusItem = (source: HomeFocusSource, row: Row, href: string, extra: Partial<HomeFocusItem> = {}): HomeFocusItem => ({
-  id: `${source}:${row.recordId}`, source, urgency: row.urgency === "overdue" || row.urgency === "waiting" ? row.urgency : "today", recordId: row.recordId,
-  title: row.title ?? "", context: row.context ?? "", due: text(row.due), href, ...extra,
-});
-
-/** Overdue and due-today work that belongs to the person, from every source they may see. */
-async function readDueNow(db: Db, person: Person, clock: Clock, access: HomeSummaryAccess): Promise<HomeFocusItem[]> {
-  const { workspaceId, membershipId } = person;
-  const items: HomeFocusItem[] = [];
-  if (access.followUps) {
-    // A meeting still ahead today is in Upcoming with its time; one that has passed without an outcome is overdue.
-    const rows = (await db.query<Row>(
-      `SELECT activity.id::text AS "recordId", activity.title, coalesce(party.display_name, '') AS context, activity.due_at AS due,
-              CASE WHEN activity.due_at < $3::timestamptz THEN 'overdue' ELSE 'today' END AS urgency
-         FROM crm_activities activity
-         LEFT JOIN crm_leads lead ON lead.workspace_id = activity.workspace_id AND lead.id = activity.lead_id
-         LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = activity.workspace_id AND opportunity.id = activity.opportunity_id
-         LEFT JOIN crm_parties party ON party.workspace_id = activity.workspace_id AND party.id = coalesce(activity.party_id, lead.party_id, opportunity.party_id)
-        WHERE activity.workspace_id = $1 AND activity.owner_membership_id = $2 AND activity.status = 'pending' AND activity.type <> 'note'
-          AND activity.due_at < ${endOfToday("$4", "$5")}
-          AND NOT EXISTS (SELECT 1 FROM crm_appointments appointment WHERE appointment.workspace_id = activity.workspace_id
-            AND appointment.activity_id = activity.id AND appointment.attendance_status = 'scheduled' AND appointment.starts_at >= $3::timestamptz)
-        ORDER BY activity.due_at, activity.id LIMIT 20`,
-      [workspaceId, membershipId, clock.now, clock.today, clock.timeZone])).rows;
-    items.push(...rows.map((row) => focusItem("follow_up", row, `/workspace/crm/follow-ups?record=${segment(row.recordId)}`)));
-  }
-  if (access.leads) {
-    // An enquiry whose first-response time ran out: the owner's, or an unowned one for someone who assigns enquiries.
-    const rows = (await db.query<Row>(
-      `SELECT sla.id::text AS "recordId", lead.id::text AS "linkId", party.display_name AS title, coalesce(enquiry.title, '') AS context,
-              sla.due_at AS due, 'overdue' AS urgency
-         FROM crm_sla_instances sla
-         JOIN crm_leads lead ON lead.workspace_id = sla.workspace_id AND lead.id = sla.lead_id
-         JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id
-         LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
-        WHERE sla.workspace_id = $1 AND lead.status IN ${OPEN_LEADS}
-          AND (sla.status = 'breached' OR (sla.status = 'active' AND sla.due_at < $3::timestamptz))
-          AND (sla.owner_membership_id = $2 OR (sla.owner_membership_id IS NULL AND $4::boolean))
-        ORDER BY sla.due_at, sla.id LIMIT 20`,
-      [workspaceId, membershipId, clock.now, access.assignLeads])).rows;
-    items.push(...rows.map((row) => focusItem("response", row, `/workspace/crm/leads?lead=${segment(row.linkId ?? "")}`)));
-    // An open enquiry nobody owns waits on whoever assigns enquiries (late once its escalation time passed), unless its
-    // first-response time ran out and it is listed above.
-    if (access.assignLeads) {
-      const unowned = (await db.query<Row>(
-        `SELECT lead.id::text AS "recordId", party.display_name AS title, coalesce(enquiry.title, '') AS context,
-                CASE WHEN lead.escalation_due_at < $3::timestamptz THEN lead.escalation_due_at ELSE lead.created_at END AS due,
-                CASE WHEN lead.escalation_due_at < $3::timestamptz THEN 'overdue' ELSE 'waiting' END AS urgency
-           FROM crm_leads lead
-           JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id
-           LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
-          WHERE lead.workspace_id = $1 AND lead.owner_membership_id IS NULL AND lead.status IN ('new', 'attempting_contact', 'connected', 'nurturing')
-            AND NOT EXISTS (SELECT 1 FROM crm_sla_instances sla WHERE sla.workspace_id = lead.workspace_id AND sla.lead_id = lead.id
-              AND (sla.status = 'breached' OR (sla.status = 'active' AND sla.due_at < $3::timestamptz))
-              AND (sla.owner_membership_id = $2 OR sla.owner_membership_id IS NULL))
-          ORDER BY lead.created_at, lead.id LIMIT 20`,
-        [workspaceId, membershipId, clock.now])).rows;
-      items.push(...unowned.map((row) => focusItem("unowned", row, `/workspace/crm/leads?lead=${segment(row.recordId)}`)));
-    }
-    // Their enquiry whose client may already be known waits for them to confirm who it is (late after its review time).
-    const confirm = (await db.query<Row>(
-      `SELECT lead.id::text AS "recordId", party.display_name AS title, coalesce(enquiry.title, '') AS context,
-              CASE WHEN lead.client_review_due_at < $3::timestamptz THEN lead.client_review_due_at ELSE lead.created_at END AS due,
-              CASE WHEN lead.client_review_due_at < $3::timestamptz THEN 'overdue' ELSE 'waiting' END AS urgency
-         FROM crm_leads lead
-         JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id
-         JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
-        WHERE lead.workspace_id = $1 AND lead.owner_membership_id = $2 AND lead.status IN ${OPEN_LEADS}
-          AND EXISTS (SELECT 1 FROM crm_identity_candidates candidate WHERE candidate.workspace_id = lead.workspace_id
-            AND candidate.intake_event_id = enquiry.intake_event_id AND candidate.status = 'pending')
-        ORDER BY lead.created_at, lead.id LIMIT 20`,
-      [workspaceId, membershipId, clock.now])).rows;
-    items.push(...confirm.map((row) => focusItem("confirm_client", row, `/workspace/crm/leads?lead=${segment(row.recordId)}`)));
-  }
-  if (access.replies) {
-    const rows = (await db.query<Row>(
-      `SELECT conversation.id::text AS "recordId", party.display_name AS title, coalesce(conversation.subject, '') AS context,
-              conversation.last_inbound_at AS due, 'today' AS urgency
-         FROM crm_conversations conversation
-         JOIN crm_parties party ON party.workspace_id = conversation.workspace_id AND party.id = conversation.party_id
-        WHERE conversation.workspace_id = $1 AND conversation.status = 'open' AND conversation.last_inbound_at IS NOT NULL
-          AND (conversation.owner_membership_id = $2 OR conversation.owner_membership_id IS NULL)
-          ${access.inbox ? `AND ${visibleSql(access.inbox, "$2::uuid")}` : ""}
-          AND NOT EXISTS (SELECT 1 FROM crm_messages outbound WHERE outbound.workspace_id = conversation.workspace_id
-            AND outbound.conversation_id = conversation.id AND outbound.direction = 'outbound'
-            AND outbound.status IN ('sent', 'delivered', 'read') AND outbound.created_at >= conversation.last_inbound_at)
-        ORDER BY conversation.last_inbound_at, conversation.id LIMIT 20`,
-      [workspaceId, membershipId])).rows;
-    items.push(...rows.map((row) => focusItem("reply", row, `/workspace/crm/conversations?record=${segment(row.recordId)}`)));
-  }
-  if (access.projects) {
-    // Their own work due by today; and, on a project they manage, the team's late work and work due with no one on it.
-    const rows = (await db.query<Row & { projectId: string }>(
-      `SELECT item.id::text AS "recordId", item.project_id::text AS "projectId", item.title,
-              CASE WHEN item.assignee_membership_id = $2 THEN project.name ELSE concat_ws(' · ', project.name, person.display_name) END AS context,
-              item.due_date::text AS due, CASE WHEN item.due_date < $3::date THEN 'overdue' ELSE 'today' END AS urgency
-         FROM work_items item
-         JOIN delivery_projects project ON project.workspace_id = item.workspace_id AND project.id = item.project_id
-         LEFT JOIN workspace_memberships member ON member.workspace_id = item.workspace_id AND member.id = item.assignee_membership_id
-         LEFT JOIN users person ON person.id = member.user_id
-        WHERE item.workspace_id = $1 AND item.status NOT IN ('done', 'cancelled') AND item.due_date <= $3::date
-          AND project.status IN ('active', 'on_hold') AND ${visibleProject("$2", "$4")}
-          AND (item.assignee_membership_id = $2 OR (${managedProject("$2")}
-            AND (item.due_date < $3::date OR item.assignee_membership_id IS NULL)))
-        ORDER BY item.due_date, item.number, item.id LIMIT 20`,
-      [workspaceId, membershipId, clock.today, access.manageProjects])).rows;
-    items.push(...rows.map((row) => focusItem("work", row, `/workspace/projects/${segment(row.projectId)}/plan?item=${segment(row.recordId)}`, { projectId: row.projectId })));
-  }
-  if (access.purchasing) {
-    const rows = (await db.query<Row>(
-      `SELECT purchase.id::text AS "recordId", purchase.number AS title, coalesce(vendor.display_name, '') AS context,
-              coalesce(purchase.promised_date, purchase.expected_date)::text AS due, 'overdue' AS urgency
-         FROM purchase_orders purchase
-         LEFT JOIN workspace_vendors vendor ON vendor.workspace_id = purchase.workspace_id AND vendor.id = purchase.vendor_id
-        WHERE purchase.workspace_id = $1 AND purchase.status IN ('sent', 'confirmed', 'partly_received')
-          AND coalesce(purchase.promised_date, purchase.expected_date) < $2::date
-        ORDER BY due, purchase.id LIMIT 20`,
-      [workspaceId, clock.today])).rows;
-    items.push(...rows.map((row) => focusItem("delivery", row, `/workspace/purchasing/orders?order=${segment(row.recordId)}`)));
-  }
-  if (access.receivables) {
-    // Issued and still unpaid: the milestone it bills has not been verified.
-    const rows = (await db.query<Row>(
-      `SELECT invoice.id::text AS "recordId", invoice.number AS title, coalesce(invoice.customer_name, '') AS context,
-              invoice.due_date::text AS due, 'overdue' AS urgency
-         FROM client_invoices invoice
-         LEFT JOIN commercial_payments payment ON payment.workspace_id = invoice.workspace_id AND payment.case_id = invoice.case_id AND payment.id = invoice.payment_id
-        WHERE invoice.workspace_id = $1 AND invoice.status = 'issued' AND invoice.due_date < $2::date
-          AND coalesce(payment.status, '') <> 'verified'
-        ORDER BY invoice.due_date, invoice.id LIMIT 20`,
-      [workspaceId, clock.today])).rows;
-    items.push(...rows.map((row) => focusItem("invoice", row, `/workspace/finance/client-invoices?invoice=${segment(row.recordId)}`)));
-  }
-  if (access.factory) {
-    const rows = (await db.query<Row>(
-      `SELECT work_order.id::text AS "recordId", work_order.title, coalesce(project.name, '') AS context, work_order.planned_end::text AS due,
-              CASE WHEN work_order.planned_end < $2::date THEN 'overdue' ELSE 'today' END AS urgency
-         FROM work_orders work_order
-         LEFT JOIN delivery_projects project ON project.workspace_id = work_order.workspace_id AND project.id = work_order.project_id
-        WHERE work_order.workspace_id = $1 AND work_order.status IN ('planned', 'released', 'in_production', 'on_hold')
-          AND work_order.planned_end <= $2::date
-        ORDER BY work_order.planned_end, work_order.number LIMIT 20`,
-      [workspaceId, clock.today])).rows;
-    items.push(...rows.map((row) => focusItem("production", row, `/workspace/factory/orders?order=${segment(row.recordId)}`)));
-  }
-  return items;
-}
 
 /** Dated work from now to the horizon: meetings, follow-ups, work, deliveries, client payments and production. */
 async function readUpcoming(db: Db, person: Person, clock: Clock, access: HomeSummaryAccess, days: number, team = false): Promise<HomeUpcomingItem[]> {
@@ -464,11 +316,9 @@ export async function readHomeSummary(db: Db, person: Person, access: HomeSummar
   const timeZone = validTimeZone(workspace.timeZone);
   const clock: Clock = { now: now.toISOString(), today: localDay(now, timeZone), timeZone };
 
-  const due = await readDueNow(db, person, clock, access);
-  const approvals = await readWaitingApprovals(db, person, access.approvals);
-  const byDue = (a: HomeFocusItem, b: HomeFocusItem) => (a.due ?? "9999").localeCompare(b.due ?? "9999");
-  const focus = [...due.filter((item) => item.urgency === "overdue").sort(byDue), ...due.filter((item) => item.urgency === "today").sort(byDue),
-    ...due.filter((item) => item.urgency === "waiting").sort(byDue), ...approvals];
+  // What is due today and overdue is My day's (the reminder engine's subjects, GET /my-day; Home's Today list and the
+  // phone's Today read it). Focus keeps what waits for the person's decision.
+  const focus = await readWaitingApprovals(db, person, access.approvals);
 
   // A quiet week reads further ahead, then what is due on the person's projects, so Home always says what's next.
   let horizonDays: 7 | 30 = 7;

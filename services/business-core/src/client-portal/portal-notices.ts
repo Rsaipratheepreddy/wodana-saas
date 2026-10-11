@@ -4,7 +4,8 @@ import { notifyUserInApp, queueUserEmail } from "../notifications/default-templa
 import { portalLink } from "./portal-site";
 import { contactEmailSql } from "./contact-email";
 import { effectiveSections, readPortalSettings, readProjectAccess, type Section } from "./portal-settings";
-import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
+import { partyOfCase, recordClientMessageSkipped, sendClientEvent, type ClientGateClaim } from "../crm/conversations/inbox/client-messages";
+import { clientDailyGate } from "../reminders/delivery/client-gate";
 import type { TemplateContext } from "../crm/conversations/inbox/template-variables";
 import type { StarterEvent } from "../crm/conversations/inbox/whatsapp-starter-pack";
 
@@ -56,6 +57,11 @@ export async function tellClients(db: Db, input: {
   workspaceId: string; caseId: string; event: ClientEvent; recordId: string; title: string; due?: string | null; note?: string; demo?: boolean;
   /** The event's own record for the WhatsApp values (e.g. a reminder's invoice and the amount still due). */
   record?: TemplateContext["record"];
+  /**
+   * An automatic decision or payment reminder (not a first notice): it claims the client's one reminder of the day
+   * (plan §6.24a; payment 1, decision 2), and is "capped" when another reminder already went today.
+   */
+  gate?: ClientGateClaim;
 }) {
   const settings = await readPortalSettings(db, input.workspaceId);
   if (!settings.enabled) return { queued: 0, reason: "portal_off" as const };
@@ -73,6 +79,12 @@ export async function tellClients(db: Db, input: {
   if (access?.paused) return { queued: 0, reason: "paused" as const };
   const section = SECTION[input.event];
   if (!effectiveSections(settings, access)[section]) return { queued: 0, reason: "hidden" as const };
+  if (input.gate) {
+    const party = await partyOfCase(db, input.workspaceId, input.caseId);
+    if (party.partyId && !(await clientDailyGate(db, input.workspaceId, { partyId: party.partyId, priority: input.gate.priority, key: input.gate.key })).allowed) {
+      return { queued: 0, reason: "capped" as const };
+    }
+  }
   // WhatsApp first when the firm has the event on and an approved template; email to the portal contacts otherwise.
   const whatsappEvent = WHATSAPP_EVENT[input.event];
   const both = BOTH_CHANNELS.has(input.event);

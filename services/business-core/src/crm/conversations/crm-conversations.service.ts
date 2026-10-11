@@ -24,6 +24,8 @@ import { conversationVisible, findJob, INBOX_MANAGE, INBOX_READ, JOB_SQL, loadIn
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A WhatsApp message that is only an opt-out word withdraws the client's WhatsApp consent. */
+export const WHATSAPP_OPT_OUT = /^\s*(stop|stop all|unsubscribe|opt out|optout)\s*[.!]?\s*$/i;
 /** A message's file (one per message), without the storage key; a hidden message hides its file too. */
 export const MESSAGE_ATTACHMENT_SQL = `CASE WHEN message.hidden_at IS NULL THEN (SELECT jsonb_build_object('id', attachment.id, 'kind', attachment.kind,
     'mimeType', attachment.content_type, 'fileName', attachment.file_name, 'byteSize', attachment.byte_size, 'status', attachment.status,
@@ -393,9 +395,13 @@ export class CrmConversationsService {
       await client.query(`INSERT INTO crm_contact_points (workspace_id,party_id,type,raw_value,normalized_value,is_primary,is_verified,verified_at) VALUES($1,$2,$3,$4,$5,true,true,now())`, [input.workspaceId, partyId, type, input.contact, normalized]);
     }
     const consent = await client.query<{ id: string }>(`SELECT id FROM crm_consents WHERE workspace_id=$1 AND party_id=$2 AND legal_entity_id IS NULL AND purpose='service' AND channel=$3 ORDER BY captured_at DESC LIMIT 1`, [input.workspaceId, partyId, input.channel]);
-    const evidence = { method: "provider_inbound", providerMessageId: input.providerMessageId };
-    if (consent.rowCount) await client.query(`UPDATE crm_consents SET status='granted',evidence=$1,captured_at=now(),withdrawn_at=NULL,version=version+1,updated_at=now() WHERE id=$2 AND workspace_id=$3`, [evidence, consent.rows[0].id, input.workspaceId]);
-    else await client.query(`INSERT INTO crm_consents (workspace_id,party_id,purpose,channel,status,evidence) VALUES($1,$2,'service',$3,'granted',$4)`, [input.workspaceId, partyId, input.channel, evidence]);
+    // A client who writes in consents to be answered on that channel; a WhatsApp "STOP" withdraws it (automatic messages
+    // and reminders then go by email, plan §6.24a), until they write again.
+    const stop = input.channel === "whatsapp" && WHATSAPP_OPT_OUT.test(input.bodyText ?? "");
+    const evidence = { method: stop ? "provider_inbound_stop" : "provider_inbound", providerMessageId: input.providerMessageId };
+    const status = stop ? "withdrawn" : "granted";
+    if (consent.rowCount) await client.query(`UPDATE crm_consents SET status=$4::crm_consent_status,evidence=$1,captured_at=now(),withdrawn_at=CASE WHEN $4='withdrawn' THEN now() END,version=version+1,updated_at=now() WHERE id=$2 AND workspace_id=$3`, [evidence, consent.rows[0].id, input.workspaceId, status]);
+    else await client.query(`INSERT INTO crm_consents (workspace_id,party_id,purpose,channel,status,evidence,withdrawn_at) VALUES($1,$2,'service',$3,$5::crm_consent_status,$4,CASE WHEN $5='withdrawn' THEN now() END)`, [input.workspaceId, partyId, input.channel, evidence, status]);
     if (input.channel === "whatsapp") await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`whatsapp-chat:${input.workspaceId}:${partyId}`]);
     const found = await client.query<{ id: string }>(`SELECT id FROM crm_conversations WHERE workspace_id=$1 AND channel=$2 AND provider_thread_id=$3`, [input.workspaceId, input.channel, input.providerThreadId]);
     let conversationId = found.rows[0]?.id ?? (thread ? await thread(partyId) ?? undefined : undefined);

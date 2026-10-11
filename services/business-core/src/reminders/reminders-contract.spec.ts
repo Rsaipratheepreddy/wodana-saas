@@ -4,12 +4,16 @@ import { describe, expect, it } from "vitest";
 import * as shared from "../../../../packages/contracts/src/reminders";
 import * as local from "./reminders-contract";
 
-const migration = readFileSync(resolve(__dirname, "../../drizzle/0289_reminders_core.sql"), "utf8");
-/** The quoted values of a named CHECK constraint (an IN list or an ARRAY[...]). */
+const core = readFileSync(resolve(__dirname, "../../drizzle/0289_reminders_core.sql"), "utf8");
+/** 0306 re-adds the kind lists with change_request.client_decision: the latest definition of a constraint wins. */
+const engine = readFileSync(resolve(__dirname, "../../drizzle/0306_reminders_engine.sql"), "utf8");
+const migration = core;
+/** The quoted values of a named CHECK constraint (an IN list or an ARRAY[...]), from its latest definition. */
 const checkList = (constraint: string, column: string) => {
-  const start = migration.indexOf(`CONSTRAINT ${constraint} CHECK`);
+  const source = engine.includes(`CONSTRAINT ${constraint} CHECK`) ? engine : core;
+  const start = source.indexOf(`CONSTRAINT ${constraint} CHECK`);
   if (start < 0) return [];
-  const list = new RegExp(String.raw`${column} (?:IN \(|<@ ARRAY\[)([^)\]]*)[)\]]`).exec(migration.slice(start));
+  const list = new RegExp(String.raw`${column} (?:IN \(|<@ ARRAY\[)([^)\]]*)[)\]]`).exec(source.slice(start));
   return list ? [...list[1].matchAll(/'([a-z_.]+)'/g)].map((value) => value[1]) : [];
 };
 
@@ -19,7 +23,7 @@ describe("reminder contract", () => {
       "ENGINE_REMINDER_KINDS", "MY_DAY_ONLY_KINDS", "REMINDER_KINDS", "REMINDER_MODULES", "REMINDER_AUDIENCES", "REMINDER_UNITS", "REMINDER_CHAIN_LINKS",
       "REMINDER_CHANNELS", "REMINDER_SUBJECT_STATUSES", "REMINDER_DONE_REASONS", "REMINDER_STEP_KINDS", "REMINDER_STEP_STATES", "REMINDER_SKIP_REASONS",
       "REMINDER_HOLD_REASONS", "CLIENT_REMINDER_PRIORITY", "REMINDER_KIND_INFO", "REMINDER_KIND_DEFAULTS", "REMINDER_RULE_LIMITS", "REMINDER_SETTINGS_DEFAULTS",
-      "MAX_SNOOZE_DAYS", "REMINDER_PERMISSIONS",
+      "MAX_SNOOZE_DAYS", "REMINDER_PERMISSIONS", "CLIENT_DECISION_KINDS", "WAITING_REMINDER_KINDS", "CRITICAL_REMINDER_EVENT_TYPES",
     ] as const) {
       expect((local as Record<string, unknown>)[name], name).toEqual((shared as Record<string, unknown>)[name]);
     }

@@ -8,6 +8,7 @@ import { fetchWorkerBeat, type WorkerBeat } from "../health/worker-heartbeat";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { wakeDelivery } from "./default-templates";
 import { deliveryAllowlist } from "./delivery-allowlist";
+import { readDeliveryMessages, type DeliveryMessagesQuery } from "./delivery-messages";
 
 export const DELIVERY_CHANNELS = ["email", "whatsapp", "push"] as const;
 export type DeliveryChannel = (typeof DELIVERY_CHANNELS)[number];
@@ -147,6 +148,11 @@ export class DeliveryHealthService {
       channels: result,
       attention,
     };
+  }
+
+  /** The per-message list (status, reason, attempts, provider id, critical, reminder step, fallback), newest change first. */
+  messages(actor: RequestActor, workspaceId: string, query: DeliveryMessagesQuery) {
+    return this.access.withAnyPermission(actor, workspaceId, DELIVERY_HEALTH_PERMISSIONS, (client) => readDeliveryMessages(client, workspaceId, query));
   }
 
   /**

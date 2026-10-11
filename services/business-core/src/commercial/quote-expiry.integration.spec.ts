@@ -3,6 +3,7 @@ import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { commercialRepository } from "./commercial-repository";
+import { runReminderSweep } from "../reminders/testing";
 import { processQuoteExpiry } from "./quote-expiry";
 
 // Opt-in: PROJECT_REPOSITORY_TEST_DATABASE_URL must point at a local, migrated database with a
@@ -52,7 +53,7 @@ integration("quotes that run out (Q-6)", () => {
 
   it("marks a sent quote Expired the day after its validity, audits it and tells Sales by app and email, once", async () => {
     await withQuote(day(-2), async (client, ids) => {
-      await expect(processQuoteExpiry(client, ids.workspaceId)).resolves.toEqual({ warned: 0, expired: 1 });
+      await expect(processQuoteExpiry(client, ids.workspaceId)).resolves.toEqual({ expired: 1 });
       const stored = await commercialRepository.load(client, ids.workspaceId, ids.caseId);
       expect(stored!.content.quotes!.find((quote) => quote.id === "q1")!.status).toBe("expired");
       expect(stored!.revision).toBe(5);
@@ -63,16 +64,18 @@ integration("quotes that run out (Q-6)", () => {
         { channel: "email", subject: "Q-7 · Kitchen expired", link: `/workspace/pre-projects/cases/${ids.caseId}/quotations?quote=q1` },
         { channel: "in_app", subject: "Q-7 · Kitchen expired", link: `/workspace/pre-projects/cases/${ids.caseId}/quotations?quote=q1` },
       ]);
-      await expect(processQuoteExpiry(client, ids.workspaceId)).resolves.toEqual({ warned: 0, expired: 0 });
+      await expect(processQuoteExpiry(client, ids.workspaceId)).resolves.toEqual({ expired: 0 });
     });
   });
 
-  it("warns the case owner a few days before, and leaves the quote open", async () => {
+  it("warns the case owner a few days before (the reminder engine's quote.expiring), and leaves the quote open", async () => {
     await withQuote(day(2), async (client, ids) => {
-      await expect(processQuoteExpiry(client, ids.workspaceId)).resolves.toEqual({ warned: 1, expired: 0 });
+      await expect(processQuoteExpiry(client, ids.workspaceId)).resolves.toEqual({ expired: 0 });
+      await runReminderSweep(client, ids.workspaceId, { now: new Date() });
+      await runReminderSweep(client, ids.workspaceId, { now: new Date() });
       expect((await client.query(`SELECT status FROM commercial_quotes WHERE workspace_id = $1 AND id = 'q1'`, [ids.workspaceId])).rows[0].status).toBe("issued");
-      expect((await client.query(`SELECT recipient_id AS recipient FROM notifications WHERE workspace_id = $1 AND event_type = 'quotation.expiring'`, [ids.workspaceId])).rows)
-        .toEqual([{ recipient: ids.ownerUserId }]);
+      expect((await client.query(`SELECT recipient_id AS recipient, subject FROM notifications WHERE workspace_id = $1 AND event_type = 'quotation.expiring' AND channel = 'in_app'`, [ids.workspaceId])).rows)
+        .toEqual([{ recipient: ids.ownerUserId, subject: expect.stringMatching(/^Q-7 · Kitchen · due (in \d days|tomorrow)$/) }]);
     });
   });
 });

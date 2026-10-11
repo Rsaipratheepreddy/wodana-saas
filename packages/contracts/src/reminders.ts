@@ -21,6 +21,7 @@ export const ENGINE_REMINDER_KINDS = [
   "design.stage_due",
   "permit.expiry",
   "finance_request.waiting",
+  "change_request.client_decision",
 ] as const;
 export type EngineReminderKind = (typeof ENGINE_REMINDER_KINDS)[number];
 
@@ -120,6 +121,7 @@ export const REMINDER_KIND_INFO: Record<ReminderKind, ReminderKindInfo> = {
   "design.stage_due": { module: "design", audience: "staff", critical: false, notify: "engine", eventType: "design.stage_due" },
   "permit.expiry": { module: "projects", audience: "staff", critical: true, notify: "engine", eventType: "site.permit_expiry" },
   "finance_request.waiting": { module: "finance", audience: "staff", critical: false, notify: "engine", eventType: "finance_request.waiting" },
+  "change_request.client_decision": { module: "projects", audience: "client", critical: false, notify: "engine", eventType: "change_request.client_decision" },
   "crm.first_response": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.unowned": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.confirm_client": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
@@ -168,6 +170,7 @@ export const REMINDER_KIND_DEFAULTS: Record<EngineReminderKind, ReminderRuleDefa
   "design.stage_due": { offsets: [-1, 0, 1, 3], unit: "day", workingDays: false, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
   "permit.expiry": { offsets: [-3, -1, 0], unit: "day", workingDays: true, escalateAfter: 1, chain: ["project_manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
   "finance_request.waiting": { offsets: [1, 3], unit: "day", workingDays: false, escalateAfter: 2, chain: ["finance", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
+  "change_request.client_decision": { offsets: [2, 5], unit: "day", workingDays: false, escalateAfter: 2, chain: [], channels: CLIENT_CHANNELS, digest: false, priority: CLIENT_REMINDER_PRIORITY.decision },
 };
 
 /** Bounds a rule must keep (the database checks the same). */
@@ -186,7 +189,7 @@ export const reminderTemplateCode = {
   /** Staff kinds (in_app, push, email); client kinds (email to the client). */
   kind: (kind: EngineReminderKind) => `reminders.${kind}`,
   /** The staff copy of a client kind after `escalateAfter` reminders (in_app, push, email). */
-  staffCopy: (kind: "client.quote_decision" | "client.design_decision") => `reminders.${kind}.staff`,
+  staffCopy: (kind: ClientDecisionKind) => `reminders.${kind}.staff`,
   escalated: "reminders.escalated",
   digest: "reminders.digest",
   unreachable: "reminders.unreachable",
@@ -194,6 +197,21 @@ export const reminderTemplateCode = {
 } as const;
 
 export type HoursWindow = { start: string; end: string };
+
+/** Client kinds whose first escalation is a staff copy to the subject's owner ("waiting on the client"). */
+export type ClientDecisionKind = "client.quote_decision" | "client.design_decision" | "change_request.client_decision";
+export const CLIENT_DECISION_KINDS: readonly ClientDecisionKind[] = ["client.quote_decision", "client.design_decision", "change_request.client_decision"];
+
+/** Kinds that wait on someone since a moment (My day's "Waiting"), rather than fall due on a day. */
+export const WAITING_REMINDER_KINDS: readonly ReminderKind[] = [
+  "approval.waiting", "client.quote_decision", "client.design_decision", "change_request.client_decision", "finance_request.waiting",
+  "crm.unowned", "crm.confirm_client", "crm.reply_waiting",
+];
+
+/** Notification event types that can't be muted (R13): the critical kinds' events. Settings › Notifications shows them "Always on". */
+export const CRITICAL_REMINDER_EVENT_TYPES: readonly string[] = (Object.keys(REMINDER_KIND_INFO) as ReminderKind[])
+  .filter((kind) => REMINDER_KIND_INFO[kind].critical && REMINDER_KIND_INFO[kind].eventType)
+  .map((kind) => REMINDER_KIND_INFO[kind].eventType as string);
 
 // ---- My day ------------------------------------------------------------------------------------------------
 
@@ -254,6 +272,10 @@ export type MyDayQuery = { scope?: MyDayScope; urgency?: MyDayUrgency; module?: 
 export type MyDaySnoozeInput = { until: string; reason: string; version: number };
 export type MyDayCompleteInput = { version: number };
 export type MyDayReassignInput = { membershipId: string; version: number };
+/** What a My day action returns: the item as it is now (null when it closed or left the person's list). */
+export type MyDayActionResult = { item: MyDayItem | null };
+/** People an item can be reassigned to (GET /my-day/:id/assignees). */
+export type MyDayAssignee = { membershipId: string; name: string };
 
 // ---- Timeline on a record ----------------------------------------------------------------------------------
 
@@ -325,6 +347,10 @@ export type ReminderSettingsDto = {
   version: number;
 };
 
+/** GET /reminders/settings: the firm's settings and one rule per engine kind (the default when the firm has none). */
+export type ReminderSettingsResponse = { settings: ReminderSettingsDto; rules: ReminderRuleDto[] };
+export type ReminderSettingsInput = ReminderSettingsDto;
+
 export type NotificationPersonSettingsDto = {
   digestEnabled: boolean;
   /** Null = the firm's digest time. */
@@ -335,6 +361,17 @@ export type NotificationPersonSettingsDto = {
   timeZone: string | null;
   version: number;
 };
+
+/** GET /notification-person-settings/me: the person's own values and what applies when they leave one unset. */
+export type NotificationPersonSettingsView = NotificationPersonSettingsDto & {
+  firm: { quietStart: string; quietEnd: string; digestTime: string };
+  /** The zone their reminders use now (own, then phone, then profile, then workspace). */
+  effectiveTimeZone: string;
+  workspaceTimeZone: string;
+  /** Event types that are always on (critical); a mute of one is refused. */
+  criticalEventTypes: string[];
+};
+export type NotificationPersonSettingsInput = NotificationPersonSettingsDto;
 
 // ---- Delivery health -----------------------------------------------------------------------------------------
 
@@ -392,6 +429,7 @@ export const reminderApi = {
   snooze: (workspaceId: string, subjectId: string) => `/workspaces/${workspaceId}/my-day/${subjectId}/snooze`,
   complete: (workspaceId: string, subjectId: string) => `/workspaces/${workspaceId}/my-day/${subjectId}/complete`,
   reassign: (workspaceId: string, subjectId: string) => `/workspaces/${workspaceId}/my-day/${subjectId}/reassign`,
+  assignees: (workspaceId: string, subjectId: string) => `/workspaces/${workspaceId}/my-day/${subjectId}/assignees`,
   subjects: (workspaceId: string, sourceKey: string) => `/workspaces/${workspaceId}/reminders/subjects${query({ sourceKey })}`,
   settings: (workspaceId: string) => `/workspaces/${workspaceId}/reminders/settings`,
   rule: (workspaceId: string, kind: EngineReminderKind) => `/workspaces/${workspaceId}/reminders/rules/${encodeURIComponent(kind)}`,

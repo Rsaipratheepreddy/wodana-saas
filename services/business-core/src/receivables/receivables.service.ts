@@ -199,41 +199,6 @@ export class ReceivablesService {
   }
 }
 
-/**
- * Overdue client invoices: the people who issue invoices and the project's managers hear once per
- * invoice when it's past due with something left to pay.
- */
-export async function processReceivablesOverdue(db: Pick<PoolClient, "query">, workspaceId: string) {
-  const today = (await db.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`,
-    [workspaceId])).rows[0]?.today;
-  if (!today) return { sent: 0 };
-  const open = (await readInvoices(db, workspaceId)).filter((invoice) => invoice.status === "issued" && invoice.dueDate < today);
-  const overdue = (await withBalances(db, workspaceId, open, today)).filter((invoice) => invoice.overdue);
-  if (!overdue.length) return { sent: 0 };
-  const holders = (await db.query<{ userId: string }>(
-    `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
-       JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
-       JOIN role_permissions granted ON granted.role_id = effective_role.role_id
-       JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'receivables.manage'
-      WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
-  let sent = 0;
-  for (const invoice of overdue) {
-    const managers = (await db.query<{ userId: string }>(
-      `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
-         JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
-        WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND assignment.is_manager`, [workspaceId, invoice.projectId])).rows.map((row) => row.userId);
-    const places = currencyDecimals(invoice.currency);
-    for (const userId of new Set([...holders, ...managers])) {
-      const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "receivables.overdue", eventType: "receivables.overdue",
-        variables: { invoice: invoice.number, client: invoice.customerName, amount: `${invoice.currency} ${Dec.of(invoice.balance).toFixed(places)}`, actor: "",
-          note: `${invoice.customerName} · ${invoice.projectReference}: ${invoice.currency} ${Dec.of(invoice.balance).toFixed(places)} was due on ${invoice.dueDate}.` },
-        deepLink: `/workspace/finance/client-invoices?invoice=${invoice.id}`, idempotencyKey: `receivables.overdue:${invoice.id}:${userId}` });
-      if (result.queued) sent += 1;
-    }
-  }
-  return { sent };
-}
-
 function uuid(value: unknown, label: string) {
   if (typeof value !== "string" || !UUID.test(value)) throw new BadRequestException(`${label} is not valid.`);
   return value;

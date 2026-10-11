@@ -20,6 +20,7 @@ import { approvalPush, approvalVersion } from "../../approvals/approval-push";
 import { contactEmailSql } from "../../client-portal/contact-email";
 import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
 import { CHAT_EMAIL_SQL, dispatchChatEmails } from "./chat-email-dispatch";
+import { CRITICAL_REMINDER_EVENT_TYPES } from "../../reminders/reminders-contract";
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
 @Injectable()
@@ -89,6 +90,8 @@ export class CrmNotificationsService {
         if (!admin.rowCount) throw new UnprocessableEntityException("Only administrators may change another user's preference");
       }
       this.validateQuietHours(input.quietHours ?? {});
+      // R13: critical reminders (approvals waiting, payments and invoices due, permits) can't be muted.
+      if (input.enabled === false && CRITICAL_REMINDER_EVENT_TYPES.includes(input.eventType)) throw new UnprocessableEntityException("This notice is critical and is always on.");
       const result = await client.query(`INSERT INTO notification_preferences (workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (workspace_id,recipient_type,recipient_id,event_type,channel) DO UPDATE SET enabled=EXCLUDED.enabled,quiet_hours=EXCLUDED.quiet_hours,version=notification_preferences.version+1 RETURNING id,recipient_type AS "recipientType",recipient_id AS "recipientId",event_type AS "eventType",channel,enabled,quiet_hours AS "quietHours",version`, [workspaceId, input.recipientType, input.recipientId, input.eventType, input.channel, input.enabled, input.quietHours ?? {}]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.preference.changed.v1", entityType: "notification_preference", entityId: String(result.rows[0].id), after: result.rows[0] as Row });
       return result.rows[0];

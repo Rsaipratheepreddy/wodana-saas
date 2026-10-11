@@ -3,6 +3,7 @@ import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { DesignJourneyService } from "./design-journey.service";
+import { runReminderSweep } from "../reminders/testing";
 import { processDesignDeadlines, startInspirationTimer, startJourney } from "./design-journey.store";
 import { syncDesignStages } from "./design-stage-sync";
 import { designQueue, noticeDesignStep } from "../pre-projects/design-notices";
@@ -139,7 +140,10 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       await client.query(`UPDATE design_journey_stages SET due_at = now() - interval '1 hour' WHERE workspace_id = $1 AND case_id = $2 AND stage = 'site_visit'`, [ids.workspaceId, ids.caseId]);
       expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ closed: 0, alerted: 1 });
       expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ closed: 0, alerted: 0 });
-      const overdue = (await client.query(`SELECT recipient_id, channel FROM notifications WHERE workspace_id = $1 AND subject LIKE 'Site visit is overdue%' ORDER BY channel`, [ids.workspaceId])).rows;
+      // The designer and the account manager are reminded by the reminder engine (design.stage_due), in the app and by email, once.
+      await runReminderSweep(client, ids.workspaceId, { now: new Date() });
+      await runReminderSweep(client, ids.workspaceId, { now: new Date() });
+      const overdue = (await client.query(`SELECT recipient_id, channel FROM notifications WHERE workspace_id = $1 AND event_type = 'design.stage_due' AND subject LIKE 'Site visit%' ORDER BY channel`, [ids.workspaceId])).rows;
       expect(overdue.length).toBe(4);
     });
   });

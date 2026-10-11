@@ -49,8 +49,10 @@ export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   { code: "reminders.client.quote_decision", channel: "email", subject: "Your quotation {{title}} is waiting for you", body: "{{title}} is waiting for your decision.\n\n{{context}}\n\nOpen it to accept it or ask for changes.", variables: REMINDER_VARIABLES },
   { code: "reminders.client.design_decision", channel: "email", subject: "Your design {{title}} is waiting for you", body: "{{title}} is waiting for your approval.\n\n{{context}}\n\nOpen it to approve it or ask for changes.", variables: REMINDER_VARIABLES },
   { code: "reminders.payment.due", channel: "email", subject: "Payment {{title}} · {{due}}", body: "{{title}} is {{due}}.\n\n{{context}}\n\nOpen it to see how to pay. If you have paid already, thank you, and please ignore this message.", variables: REMINDER_VARIABLES },
+  { code: "reminders.change_request.client_decision", channel: "email", subject: "Your change {{title}} is waiting for you", body: "{{title}} is waiting for your decision.\n\n{{context}}\n\nOpen it to approve it or decline it.", variables: REMINDER_VARIABLES },
   ...clientDecisionCopy("client.quote_decision", "quotation"),
   ...clientDecisionCopy("client.design_decision", "design"),
+  ...clientDecisionCopy("change_request.client_decision", "change"),
   // Escalation: the next person in the chain, once per level.
   { code: "reminders.escalated", channel: "in_app", subject: "Escalated · {{title}} · {{due}}", body: "{{owner}} has had {{reminders}} reminders. {{context}}.", variables: [...REMINDER_VARIABLES, "owner", "reminders"] },
   { code: "reminders.escalated", channel: "push", subject: "Escalated · {{title}} · {{due}}", body: "{{owner}} has had {{reminders}} reminders. {{context}}.", variables: [...REMINDER_VARIABLES, "owner", "reminders"] },

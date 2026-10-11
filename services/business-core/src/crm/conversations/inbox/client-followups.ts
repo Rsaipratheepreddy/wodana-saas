@@ -90,8 +90,8 @@ export function thankForHandover(db: Db, workspaceId: string, projectId: string,
 
 /**
  * The time-based client messages, run by the worker's due-work pass (at most every two minutes per workspace):
- * the day-before visit reminder, the nudge on an enquiry that went quiet, and the quotation follow-up. Each stops
- * by itself (the visit moved or was cancelled, the client replied, the enquiry or quote was decided) and goes once.
+ * the day-before visit reminder and the nudge on an enquiry that went quiet (the quotation follow-up is the reminder
+ * engine's client.quote_decision). Each stops by itself (the visit moved or was cancelled, the client replied) and goes once.
  */
 export async function runClientFollowUps(db: Db, workspaceId: string, options: { config?: Config; now?: Date } = {}) {
   const now = options.now ?? new Date();
@@ -99,7 +99,7 @@ export async function runClientFollowUps(db: Db, workspaceId: string, options: {
     `INSERT INTO crm_inbox_settings (workspace_id, followups_checked_at) VALUES ($1, now())
      ON CONFLICT (workspace_id) DO UPDATE SET followups_checked_at = now()`, [workspaceId]);
   const connected = await db.query(`SELECT 1 FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected' LIMIT 1`, [workspaceId]);
-  const sent = { reminders: 0, quiet: 0, quotes: 0 };
+  const sent = { reminders: 0, quiet: 0 };
   if (!connected.rowCount) return sent;
   const settings = await readFollowUpSettings(db, workspaceId);
   const count = (result: ClientMessageResult | null) => (result?.sent && !result.duplicate ? 1 : 0);
@@ -137,21 +137,9 @@ export async function runClientFollowUps(db: Db, workspaceId: string, options: {
     const next = quietFollowUpDue({ lastOutboundAt: lead.lastOutboundAt ? new Date(lead.lastOutboundAt) : null, lastInboundAt: lead.lastInboundAt ? new Date(lead.lastInboundAt) : null, sent: lead.sent, now, settings });
     if (!next) continue;
     sent.quiet += count(await quietly(db, () => sendClientEvent(db, { workspaceId, event: "crm.enquiry.quiet", partyId: lead.partyId, leadId: lead.leadId,
-      recordKey: `${lead.leadId}:${next}`, config: options.config })));
-  }
-
-  // A quotation issued that the client hasn't decided on; it stops once they accept, ask for changes or decline.
-  const quotes = await db.query<{ id: string; caseId: string }>(
-    `SELECT quote.id, quote.case_id AS "caseId" FROM commercial_quotes quote
-      WHERE quote.workspace_id = $1 AND quote.kind = 'quotation' AND quote.status = 'issued'
-        AND COALESCE(CASE WHEN quote.detail->>'issuedAt' ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN (quote.detail->>'issuedAt')::timestamptz END, quote.updated_at)
-            BETWEEN $2::timestamptz - interval '60 days' AND $2::timestamptz - ($3::int * interval '1 day')
-      ORDER BY quote.updated_at LIMIT 50`, [workspaceId, now, settings.quoteDays]);
-  for (const quote of quotes.rows) {
-    const owner = await partyOfCase(db, workspaceId, quote.caseId);
-    if (!owner.partyId) continue;
-    sent.quotes += count(await quietly(db, () => sendClientEvent(db, { workspaceId, event: "commercial.quote_follow_up", partyId: owner.partyId, leadId: owner.leadId,
-      recordKey: quote.id, record: { quoteId: quote.id }, config: options.config })));
+      recordKey: `${lead.leadId}:${next}`, config: options.config,
+      // A nudge is a reminder: it takes the client's one reminder of the day (a payment or decision reminder wins it first).
+      gate: { key: `crm.enquiry.quiet:${lead.leadId}:${next}`, priority: 3 } })));
   }
   return sent;
 }

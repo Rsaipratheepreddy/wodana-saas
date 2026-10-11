@@ -93,8 +93,8 @@ integration("automatic client messages: visits, quiet enquiries, won deals and h
       await meeting(client, world, { startsIn: 20, bookedAgo: 72, address: "Villa 12, Garden Street" });
       await meeting(client, world, { startsIn: 20, bookedAgo: 1, address: "Booked today" });
       await meeting(client, world, { startsIn: 50, bookedAgo: 72, address: "Not tomorrow" });
-      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 1, quiet: 0, quotes: 0 });
-      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 0, quiet: 0, quotes: 0 });
+      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 1, quiet: 0 });
+      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 0, quiet: 0 });
       const sent = await automatic(client, world.w);
       expect(sent.map((row) => row.code)).toEqual(["wd_visit_reminder"]);
       expect(sent[0].body).toMatch(/tomorrow, .+, at Villa 12, Garden Street\./);
@@ -105,14 +105,18 @@ integration("automatic client messages: visits, quiet enquiries, won deals and h
     await withWorld(async (client, world) => {
       await client.query(`INSERT INTO crm_messages (workspace_id, conversation_id, direction, status, authorship, sender_type, sender_id, body_text, created_at)
         VALUES ($1, $2, 'outbound', 'read', 'human', 'user', $3, 'Here is our proposal', now() - interval '4 days')`, [world.w, world.chat, world.admin]);
-      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 0, quiet: 1, quotes: 0 });
+      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 0, quiet: 1 });
       // The pass is idempotent, and only one nudge goes unless the firm turned on a second one.
-      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 0, quiet: 0, quotes: 0 });
+      expect(await runClientFollowUps(client, world.w)).toEqual({ reminders: 0, quiet: 0 });
       expect((await automatic(client, world.w)).map((row) => row.code)).toEqual(["wd_enquiry_follow_up"]);
       await client.query(`UPDATE crm_inbox_settings SET quiet_followup_second_days = 7 WHERE workspace_id = $1`, [world.w]);
       // The second gap counts from the first nudge (our last message).
       await client.query(`UPDATE crm_messages SET created_at = CASE WHEN metadata->>'automatic' = 'crm.enquiry.quiet' THEN now() - interval '8 days' ELSE now() - interval '12 days' END
         WHERE workspace_id = $1 AND direction = 'outbound'`, [world.w]);
+      // A nudge takes the client's one reminder of the day: on the same day the second one is held.
+      expect((await runClientFollowUps(client, world.w)).quiet).toBe(0);
+      // Days later (the first nudge's claim is from another day), it goes.
+      await client.query(`UPDATE reminder_client_days SET local_date = local_date - 8 WHERE workspace_id = $1`, [world.w]);
       expect((await runClientFollowUps(client, world.w)).quiet).toBe(1);
       // The client answered: no more nudges.
       await client.query(`UPDATE crm_inbox_settings SET quiet_followup_second_days = 20 WHERE workspace_id = $1`, [world.w]);

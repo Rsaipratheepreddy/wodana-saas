@@ -28,6 +28,7 @@ import { tellClients } from "./portal-notices";
 import { savePortalSettings } from "./portal-settings";
 import { CrmPaymentRemindersService } from "../crm/conversations/crm-payment-reminders.service";
 import { CrmWhatsAppTemplatesService } from "../crm/conversations/crm-whatsapp-templates.service";
+import { runReminderSweep } from "../reminders/testing";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -1297,7 +1298,7 @@ integration("client portal (plan §6.22)", () => {
     });
   });
 
-  it("reminds the client to pay what's still owed: by email, then on WhatsApp once the template is approved, once a day, never after payment", async () => {
+  it("reminds the client to pay what's still owed: by email, then on WhatsApp once the template is approved, once a day, never after payment (payment.due)", async () => {
     await world(async (w) => {
       await open(w);
       await started(w);
@@ -1308,13 +1309,22 @@ integration("client portal (plan §6.22)", () => {
       const access = { withPermission: run, withAnyPermission: run, hasPermission: async () => true };
       const reminders = new CrmPaymentRemindersService(database as never, access as never, new ConfigService({ WEB_ORIGIN: "https://app.example.com" }));
       const inOffice = new Date(`${today}T06:00:00Z`); // 10:00 in the workspace's Gulf time zone
+      // A firm that works every day, 09:00 to 18:00: whatever weekday the test runs on, today is a working day.
+      await w.client.query(`INSERT INTO hrms_calendars(workspace_id,name,timezone,working_days,day_start,day_end)
+        SELECT id, 'Every day', default_timezone, '{0,1,2,3,4,5,6}', '09:00', '18:00' FROM workspaces WHERE id = $1`, [w.workspaceId]);
 
       // No WhatsApp: the reminder goes by email to the portal contact, and only once today.
       expect(await reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).toMatchObject({ channel: "email", already: false });
       const emails = await w.client.query(`SELECT subject FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.payment_due'`, [w.workspaceId]);
       expect(emails.rows).toEqual([{ subject: "Payment reminder · Before production" }]);
       expect(await reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).toMatchObject({ already: true, channel: "email" });
-      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 0, reason: null });
+      // The reminder engine's payment.due (+3 days today) waits: the client already had today's one reminder (sent by hand).
+      await runReminderSweep(w.client, w.workspaceId, { now: inOffice });
+      const step = async () => (await w.client.query<{ state: string; hold: string | null; heldUntil: Date | null; channels: string[] }>(
+        `SELECT step.state, step.hold_reason AS hold, step.held_until AS "heldUntil", step.channels FROM reminder_steps step
+           JOIN reminder_subjects subject ON subject.id = step.subject_id WHERE subject.workspace_id = $1 AND subject.kind = 'payment.due' AND step.step_key = 'r:3'`, [w.workspaceId])).rows[0];
+      expect(await step()).toMatchObject({ state: "held", hold: "client_cap" });
+      expect(await reminders.scheduleInternal(w.workspaceId)).toEqual({ sent: 0, reason: "reminder_engine" });
 
       // WhatsApp connected, the client consented, the payment_due starter template approved: the next reminder goes there.
       await w.client.query(`INSERT INTO integration_connections(workspace_id,provider,display_name,status,external_account_id,configuration) VALUES($1,'whatsapp','WhatsApp','connected','waba','{"phoneNumberId":"pn"}')`, [w.workspaceId]);
@@ -1323,20 +1333,26 @@ integration("client portal (plan §6.22)", () => {
       const templates = new CrmWhatsAppTemplatesService(database as never, access as never, { record: async () => undefined } as never);
       await templates.submitStarterPack(actor, w.workspaceId, { languages: ["en"] });
       await templates.syncInternal(w.workspaceId, { full: false, templates: [{ id: "meta-due", name: "wd_payment_due", language: "en", status: "APPROVED" }] });
-      await w.client.query(`DELETE FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId]); // as if today's email went yesterday
-      expect(await reminders.scheduleInternal(w.workspaceId, new Date(`${today}T20:00:00Z`))).toEqual({ sent: 0, reason: "closed" });
-      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 1, reason: null });
+      // The next working day's client window: it goes on WhatsApp, with the amount still due, and is logged on the payment.
+      const window = (await step()).heldUntil!;
+      await runReminderSweep(w.client, w.workspaceId, { now: new Date(window.getTime() - 3_600_000) });
+      expect((await step()).state).toBe("held");
+      const later = new Date(window.getTime() + 3_600_000);
+      await runReminderSweep(w.client, w.workspaceId, { now: later });
+      await runReminderSweep(w.client, w.workspaceId, { now: later });
+      expect(await step()).toMatchObject({ state: "sent", channels: ["whatsapp"] });
       const chat = await w.client.query<{ body: string; automatic: string }>(
         `SELECT message.body_text AS body, message.metadata->>'automatic' AS automatic FROM crm_messages message
            JOIN crm_conversations conversation ON conversation.workspace_id = message.workspace_id AND conversation.id = message.conversation_id
           WHERE message.workspace_id = $1 AND conversation.party_id = $2`, [w.workspaceId, w.party]);
       expect(chat.rows).toEqual([{ automatic: "payments.reminder", body: expect.stringMatching(/^Hello Maya, this is a reminder that AED\s?3,925\.00 is due on .+\. You can pay here: \S+\/portal\S* Thank you\.$/) }]);
-      expect((await w.client.query(`SELECT channel, offset_days AS "offset" FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ channel: "whatsapp", offset: 3 }]);
+      expect((await w.client.query(`SELECT channel, offset_days >= 3 AS late FROM crm_payment_reminders WHERE workspace_id = $1 AND channel = 'whatsapp'`, [w.workspaceId])).rows)
+        .toEqual([{ channel: "whatsapp", late: true }]);
 
-      // Paid: the schedule never reminds again, and Send reminder refuses.
-      await w.client.query(`DELETE FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId]);
+      // Paid: the reminder closes and never goes again, and Send reminder refuses.
       await w.client.query(`UPDATE commercial_payments SET status = 'verified' WHERE workspace_id = $1 AND case_id = $2 AND id = 'p2'`, [w.workspaceId, w.caseId]);
-      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 0, reason: null });
+      await runReminderSweep(w.client, w.workspaceId, { now: new Date(later.getTime() + 3 * 86_400_000) });
+      expect((await w.client.query("SELECT status FROM reminder_subjects WHERE workspace_id = $1 AND kind = 'payment.due'", [w.workspaceId])).rows).toEqual([{ status: "done" }]);
       await expect(reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).rejects.toThrow(/Nothing is owed|paid or waiting/);
     });
   });

@@ -113,7 +113,9 @@ export async function processMaterialsWaiting(db: Db, workspaceId: string) {
     for (let day = math.next(list.sentOn); day <= now.today && waited < 400; day = math.next(day)) waited += 1;
     if (waited < MATERIALS_FIRST) continue;
     const round = Math.floor((waited - MATERIALS_FIRST) / MATERIALS_EVERY);
-    await tellClients(db, { workspaceId, caseId: list.caseId, event: "decision_waiting", recordId: `materials:${list.projectId}:${list.number}:reminder:${round}`, title: `Material list R${list.number}` });
+    // A reminder (not the first notice): it takes the client's one reminder of the day, and waits a day when another went.
+    const recordId = `materials:${list.projectId}:${list.number}:reminder:${round}`;
+    await tellClients(db, { workspaceId, caseId: list.caseId, event: "decision_waiting", recordId, title: `Material list R${list.number}`, gate: { key: recordId, priority: 2 } });
     const note = `R${list.number} has been with the client for ${waited} working day${waited === 1 ? "" : "s"}.`;
     for (const userId of await people(db, workspaceId, list.projectId, true)) {
       const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "project.materials_waiting", eventType: "project.materials_waiting",

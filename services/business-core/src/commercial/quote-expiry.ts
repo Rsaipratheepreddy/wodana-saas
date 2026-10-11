@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
-import { tellClients } from "../client-portal/portal-notices";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { freezeHash } from "./commercial.domain";
 import { commercialRepository } from "./commercial-repository";
@@ -11,7 +10,7 @@ import { qsEstimateCurrent, qsEstimateHash } from "./qs-estimate";
 
 type Db = Pick<PoolClient, "query">;
 
-/** Days before a quote's validity ends when Sales and the client hear it, unless the firm set its own. */
+/** Days before a quote's validity ends when Sales hears it (the default of the quote.expiring reminder rule). */
 export const DEFAULT_EXPIRY_WARNING_DAYS = 3;
 const DAY = 86_400_000;
 
@@ -54,34 +53,19 @@ async function dueQuotes(db: Db, workspaceId: string, where: string, params: unk
 }
 
 /**
- * Quotes that run out (Q-6), in the daily run. Before the end (3 days by default, Settings → Quotations) the
- * case owner and account manager are told in the app and the client's decision-makers are reminded when it
- * ends. The day after it ends the quote is Expired: the case is saved through the repository, the change is
- * audited, and Sales hears it by app and email with "Extend validity" one tap away. Once per quote and date.
+ * Quotes that ran out (Q-6), in the daily run. The day after its validity ends the quote is Expired: the case is
+ * saved through the repository, the change is audited, and Sales hears it by app and email with "Extend validity"
+ * one tap away. Once per quote and date. The warning before the end (to Sales) and the client's reminders are
+ * reminder engine kinds (quote.expiring, client.quote_decision).
  */
 export async function processQuoteExpiry(db: Db, workspaceId: string) {
-  const settings = (await db.query<{ today: string; warningDays: number | null; locale: string | null }>(
-    `SELECT (now() AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS today, settings.expiry_warning_days AS "warningDays",
-            workspace.default_locale AS locale
-       FROM workspaces workspace LEFT JOIN workspace_quotation_settings settings ON settings.workspace_id = workspace.id WHERE workspace.id = $1`, [workspaceId])).rows[0];
-  if (!settings) return { warned: 0, expired: 0 };
-  const warningDays = settings.warningDays ?? DEFAULT_EXPIRY_WARNING_DAYS;
-  let warned = 0, expired = 0;
+  const settings = (await db.query<{ today: string; locale: string | null }>(
+    `SELECT (now() AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS today, workspace.default_locale AS locale
+       FROM workspaces workspace WHERE workspace.id = $1`, [workspaceId])).rows[0];
+  if (!settings) return { expired: 0 };
+  let expired = 0;
   const day = (value: string) => { try { return new Intl.DateTimeFormat(settings.locale ?? "en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); } catch { return value; } };
   const deepLink = (quote: Due) => `/workspace/pre-projects/cases/${quote.caseId}/quotations?quote=${encodeURIComponent(quote.id)}`;
-
-  if (warningDays > 0) {
-    for (const quote of await dueQuotes(db, workspaceId, `quote.valid_until >= $2::date AND quote.valid_until <= $3::date`, [settings.today, plusDays(settings.today, warningDays)])) {
-      const title = `Q-${quote.number} · ${quote.title}`;
-      await tellClients(db, { workspaceId, caseId: quote.caseId, event: "decision_waiting", recordId: `quote:${quote.id}:expiring:${quote.validUntil}`, title: quote.title, due: quote.validUntil });
-      for (const userId of quote.userIds) {
-        const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "quotation.expiring", eventType: "quotation.expiring",
-          variables: { title, clientName: quote.clientName, due: day(quote.validUntil) }, deepLink: deepLink(quote),
-          idempotencyKey: `quotation.expiring:${quote.id}:${quote.validUntil}:${userId}`.slice(0, 160) });
-        if (result.queued) warned += 1;
-      }
-    }
-  }
 
   for (const quote of await dueQuotes(db, workspaceId, `quote.valid_until < $2::date`, [settings.today])) {
     const stored = await commercialRepository.load(db, workspaceId, quote.caseId, { forUpdate: true });
@@ -105,5 +89,5 @@ export async function processQuoteExpiry(db: Db, workspaceId: string) {
       await queueUserEmail(db, { ...message, idempotencyKey: `quotation.expired:${quote.id}:${quote.validUntil}:${userId}:email`.slice(0, 160) });
     }
   }
-  return { warned, expired };
+  return { expired };
 }

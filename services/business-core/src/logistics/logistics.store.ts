@@ -3,8 +3,7 @@ import type { PoolClient } from "pg";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { INSTALLATION_ROLE, installationRoles } from "../project-core/project-installation";
 import type { StageCheck } from "../project-core/project-checks";
-import { readCalendar } from "../project-core/work-calendar";
-import { KIND_LABEL, permitAlert, permitCollected, permitFor, permitReminderOn, renewalsDue, slotKey, type LogisticsKind, type PermitUse, type Slot } from "./logistics.domain";
+import { KIND_LABEL, permitCollected, permitFor, permitReminderOn, slotKey, type LogisticsKind, type Slot } from "./logistics.domain";
 import { permitRequired, readPermitFacts, type PermitOwner } from "./permits";
 
 type Db = Pick<PoolClient, "query">;
@@ -181,115 +180,6 @@ export async function permitReminderDays(db: Db, workspaceId: string) {
 export async function permitWarningDays(db: Db, workspaceId: string) {
   const row = (await db.query<{ days: number; version: number }>(`SELECT permit_warning_days AS days, version FROM workspace_logistics_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return { days: Number(row?.days ?? 3), version: Number(row?.version ?? 0) };
-}
-
-const formatDay = (day: string, locale: string) => {
-  try { return new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${day}T00:00:00Z`)); } catch { return day; }
-};
-
-/**
- * The daily pass for one workspace (inside its tenant transaction), PLM-136: for each running project whose route checks
- * the building permit, and each won deal delivered without a project where the firm asks for one, with a delivery or
- * installation day booked, its people hear when the permit ends before the first day it should cover, or when there is
- * still none for it the firm's working days before (3 by default). A project's managers and installation team hear
- * it (else the bookers); a deal's owner and the bookers. Each alert is keyed by its record, use and day (and the permit
- * that ends), so a rerun never sends twice and a moved day alerts again.
- */
-export async function processLogisticsAlerts(db: Db, workspaceId: string) {
-  const facts = (await db.query<{ today: string; locale: string }>(
-    `SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today, coalesce(nullif(default_locale, ''), 'en') AS locale FROM workspaces WHERE id = $1`,
-    [workspaceId])).rows[0];
-  if (!facts) return { sent: 0 };
-  let sent = await processPermitRenewals(db, workspaceId, facts);
-  const projects = (await db.query<{ id: string; label: string; deliveryOn: string | null; installationOn: string | null }>(
-    `SELECT project.id, concat_ws(' · ', nullif(project.reference, ''), project.name) AS label, project.delivery_on::text AS "deliveryOn", project.installation_on::text AS "installationOn"
-       FROM delivery_projects project
-      WHERE project.workspace_id = $1 AND project.status = 'active' AND (project.delivery_on >= $2::date OR project.installation_on >= $2::date)
-        AND EXISTS (SELECT 1 FROM project_stages stage, jsonb_array_elements(stage.checks) item WHERE stage.workspace_id = project.workspace_id AND stage.project_id = project.id
-                     AND stage.status <> 'skipped' AND item->>'kind' = 'permit_collected')
-      ORDER BY project.id`, [workspaceId, facts.today])).rows;
-  const deals = (await db.query<{ id: string; label: string; deliveryOn: string; ownerId: string | null }>(
-    `SELECT deal.opportunity_id AS id, concat_ws(' · ', nullif(opportunity.reference, ''), coalesce(party.display_name, opportunity.title)) AS label, deal.delivery_on::text AS "deliveryOn",
-            owner.user_id AS "ownerId"
-       FROM crm_deal_fulfilment deal JOIN crm_opportunities opportunity ON opportunity.workspace_id = deal.workspace_id AND opportunity.id = deal.opportunity_id
-       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
-       LEFT JOIN workspace_memberships owner ON owner.workspace_id = opportunity.workspace_id AND owner.id = opportunity.owner_membership_id AND owner.status = 'active'
-      WHERE deal.workspace_id = $1 AND deal.delivery_on >= $2::date AND deal.cancelled_at IS NULL
-        AND NOT EXISTS (SELECT 1 FROM crm_deal_fulfilment_events event WHERE event.workspace_id = deal.workspace_id AND event.opportunity_id = deal.opportunity_id AND event.event = 'delivered')
-      ORDER BY deal.opportunity_id`, [workspaceId, facts.today])).rows;
-  if (!projects.length && !deals.length) return { sent };
-  const calendar = await readCalendar(db, workspaceId);
-  const warning = await permitWarningDays(db, workspaceId);
-  let bookers: string[] | null = null;
-  const bookersOf = async () => (bookers ??= await permissionHolders(db, workspaceId, ["logistics.manage", "factory.manage"]));
-  const raise = async (owner: PermitOwner, label: string, days: Array<{ use: PermitUse; day: string | null }>, users: string[], deepLink: string) => {
-    const alert = permitAlert({ days, today: facts.today, permits: await readPermitFacts(db, workspaceId, owner), warningDays: warning.days, calendar });
-    if (!alert) return;
-    const id = owner.projectId ?? owner.opportunityId;
-    const variables = { project: label, what: alert.use === "installation" ? "the installation" : "the delivery", date: formatDay(alert.day, facts.locale),
-      until: alert.kind === "expiring" ? formatDay(alert.until, facts.locale) : "" };
-    sent += await tell(db, { workspaceId, users, code: alert.kind === "expiring" ? "logistics.permit_expiring" : "logistics.permit_missing", variables, deepLink,
-      key: alert.kind === "expiring" ? `logistics:permit-expiring:${id}:${alert.use}:${alert.day}:${alert.permitId}` : `logistics:permit-missing:${id}:${alert.use}:${alert.day}` });
-  };
-  for (const project of projects) {
-    let users = (await installationTeam(db, workspaceId, project.id)).map((person) => person.userId);
-    if (!users.length) users = await bookersOf();
-    await raise({ projectId: project.id }, project.label, [{ use: "delivery", day: project.deliveryOn }, { use: "installation", day: project.installationOn }], users,
-      `/workspace/projects/${project.id}`);
-  }
-  for (const deal of deals) {
-    if (!(await permitRequired(db, workspaceId, { opportunityId: deal.id }))) continue;
-    await raise({ opportunityId: deal.id }, deal.label, [{ use: "delivery", day: deal.deliveryOn }], [...(deal.ownerId ? [deal.ownerId] : []), ...await bookersOf()],
-      `/workspace/crm/opportunities?record=${deal.id}`);
-  }
-  return { sent };
-}
-
-/**
- * PLM-136: each collected permit reminds once, its own days before it ends (the permit's override, else the firm's
- * default), while the work it lets in is still ahead: a running or paused project (its managers and installation team
- * hear, else the bookers), or a deal not yet delivered or cancelled (its owner and the bookers). A permit already
- * renewed by a later one stays quiet. Keyed by the permit, and marked, so it never goes twice.
- */
-export async function processPermitRenewals(db: Db, workspaceId: string, facts: { today: string; locale: string }) {
-  const candidates = (await db.query<{ id: string; projectId: string | null; opportunityId: string | null; validTo: string; reminderDays: number | null; number: string; type: string; label: string;
-    ownerId: string | null }>(
-    `SELECT permit.id, permit.project_id AS "projectId", permit.opportunity_id AS "opportunityId", permit.valid_to::text AS "validTo", permit.reminder_days AS "reminderDays",
-            permit.permit_number AS number, permit.permit_type AS type,
-            coalesce(concat_ws(' · ', nullif(project.reference, ''), project.name), concat_ws(' · ', nullif(opportunity.reference, ''), coalesce(party.display_name, opportunity.title))) AS label,
-            owner.user_id AS "ownerId"
-       FROM building_permits permit
-       LEFT JOIN delivery_projects project ON project.workspace_id = permit.workspace_id AND project.id = permit.project_id
-       LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = permit.workspace_id AND opportunity.id = permit.opportunity_id
-       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
-       LEFT JOIN workspace_memberships owner ON owner.workspace_id = opportunity.workspace_id AND owner.id = opportunity.owner_membership_id AND owner.status = 'active'
-      WHERE permit.workspace_id = $1 AND permit.status = 'collected' AND permit.expiry_reminded_at IS NULL AND permit.valid_to >= $2::date
-        AND permit.valid_to <= $2::date + coalesce(permit.reminder_days, (SELECT permit_expiry_reminder_days FROM workspace_logistics_settings WHERE workspace_id = $1), 7)
-        AND (project.status IN ('active', 'on_hold')
-             OR (permit.opportunity_id IS NOT NULL
-                 AND NOT EXISTS (SELECT 1 FROM crm_deal_fulfilment deal WHERE deal.workspace_id = permit.workspace_id AND deal.opportunity_id = permit.opportunity_id AND deal.cancelled_at IS NOT NULL)
-                 AND NOT EXISTS (SELECT 1 FROM crm_deal_fulfilment_events event WHERE event.workspace_id = permit.workspace_id AND event.opportunity_id = permit.opportunity_id AND event.event = 'delivered')))
-      ORDER BY permit.valid_to, permit.id`, [workspaceId, facts.today])).rows;
-  if (!candidates.length) return 0;
-  const defaultDays = await permitReminderDays(db, workspaceId);
-  let bookers: string[] | null = null;
-  const bookersOf = async () => (bookers ??= await permissionHolders(db, workspaceId, ["logistics.manage", "factory.manage"]));
-  let sent = 0;
-  for (const permit of candidates) {
-    const owner: PermitOwner = permit.projectId ? { projectId: permit.projectId } : { opportunityId: permit.opportunityId! };
-    // The permits that cover the same order (a project's and its deal's): a later one renewed it.
-    const linked = (await readPermitFacts(db, workspaceId, owner)).map((fact) => ({ id: fact.id, status: fact.status, validTo: fact.validTo, reminderDays: null, remindedAt: null }));
-    const due = renewalsDue([{ id: permit.id, status: "collected", validTo: permit.validTo, reminderDays: permit.reminderDays, remindedAt: null },
-      ...linked.filter((fact) => fact.id !== permit.id)], facts.today, defaultDays);
-    if (!due.some((item) => item.id === permit.id)) continue;
-    let users = permit.projectId ? (await installationTeam(db, workspaceId, permit.projectId)).map((person) => person.userId) : [...(permit.ownerId ? [permit.ownerId] : []), ...await bookersOf()];
-    if (!users.length) users = await bookersOf();
-    sent += await tell(db, { workspaceId, users, code: "logistics.permit_renewal", key: `logistics:permit-renewal:${permit.id}`,
-      deepLink: permit.projectId ? `/workspace/projects/${permit.projectId}` : `/workspace/crm/opportunities?record=${permit.opportunityId}`,
-      variables: { project: permit.label, number: permit.number, until: formatDay(permit.validTo, facts.locale), type: permit.type } });
-    await db.query(`UPDATE building_permits SET expiry_reminded_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, permit.id]);
-  }
-  return sent;
 }
 
 export const kindLabel = (kind: LogisticsKind) => KIND_LABEL[kind];

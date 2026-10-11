@@ -79,6 +79,16 @@ describe("your own notifications need only membership", () => {
     await expect(service.myPreferences(actor, workspaceId)).resolves.toHaveLength(1);
   });
 
+  it("refuses to mute a critical reminder (R13), and allows turning it back on", async () => {
+    const query = vi.fn(async () => ({ rows: [{ id: "p", eventType: "receivables.overdue", channel: "email", enabled: true, version: 1 }], rowCount: 1 }));
+    const { service } = memberWithoutPermissions(query);
+    for (const eventType of ["receivables.overdue", "approvals.waiting", "receivables.payment_due", "payables.due", "site.permit_expiry"]) {
+      await expect(service.preference(actor, workspaceId, { recipientType: "user", recipientId: qsUserId, eventType, channel: "email", enabled: false })).rejects.toThrow(/critical/);
+    }
+    expect(query).not.toHaveBeenCalled();
+    await expect(service.preference(actor, workspaceId, { recipientType: "user", recipientId: qsUserId, eventType: "receivables.overdue", channel: "email", enabled: true })).resolves.toMatchObject({ enabled: true });
+  });
+
   it("still needs the permission to change anyone else's preference", async () => {
     const query = vi.fn();
     const { service } = memberWithoutPermissions(query);

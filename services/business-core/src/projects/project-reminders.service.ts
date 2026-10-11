@@ -1,10 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
-import { processClientDecisions } from "../commercial/client-decision-reminders";
 import { processQuoteExpiry } from "../commercial/quote-expiry";
 import { resolveQuietChats } from "../crm/conversations/inbox/quiet-chats";
-import { chaseApprovals } from "../approvals/approval-chasers";
+import { escalateWaitingApprovals } from "../approvals/approval-engine";
 import { processDesignDeadlines } from "../design/design-journey.store";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminders";
@@ -13,24 +12,28 @@ import { processMaterialsWaiting, processMilestonesDue, processStagesReady, proc
 import { processSiteReports, processWarrantyExpiry } from "../site/site-reminders";
 import { processDailyProgressAutoSend, processWeeklyRollups } from "../site/progress-delivery";
 import { processProjectBudgets } from "../project-core/project-money";
-import { processReceivablesOverdue } from "../receivables/receivables.service";
-import { processWorkDeadlines } from "../project-core/work-reminders";
-import { processPayablesDue, processPurchasingDeadlines, processRetentionReleases } from "../purchasing/purchasing-reminders";
+import { processPurchasingDeadlines, processRetentionReleases } from "../purchasing/purchasing-reminders";
 import { processSupplierDocuments } from "../purchasing/supplier-controls.service";
 import { raiseStageInvoiceRequests } from "../finance-requests/stage-invoice-requests";
 import { processTeamCalendarDeadlines } from "../team-calendars/team-calendars.store";
 import { processFulfilmentDeadlines } from "../fulfilment/fulfilment-reminders";
 import { processClientCalls } from "../client-calls/client-calls.store";
-import { processLogisticsAlerts } from "../logistics/logistics.store";
 import { processChangeDecisions } from "../change-requests/change-request-reminders";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Tenant = Pick<PoolClient, "query">;
 
 /**
- * The daily run. Every rule reads its module's tables (never the retired project JSON) inside each
- * workspace's own tenant transaction — reminder tables use forced RLS — with a stable key per recipient,
- * record and day, so a rerun or a missed day never sends twice.
+ * The daily run of what is not a reminder engine kind. Every rule reads its module's tables (never the retired
+ * project JSON) inside each workspace's own tenant transaction, with a stable key per recipient, record and day, so
+ * a rerun or a missed day never sends twice.
+ *
+ * Moved to the reminder engine (reminders/, plan §6.24a), so they are no longer sent here: work due and late
+ * (work.due), approval reminders and escalation to the owners (approval.waiting; the E3 policy's own escalation still
+ * runs here), client decisions on quotes and designs (client.quote_decision, client.design_decision), the quote
+ * expiry warning (quote.expiring; expiring the quote stays here), late purchase orders (purchase.order_late; blockers,
+ * stock levels and "late to order" stay), overdue design stages (design.stage_due; the stage's overdue mark stays),
+ * building permits (permit.expiry), supplier bills due (payables.due) and overdue client invoices (invoice.overdue).
  */
 @Injectable()
 export class ProjectRemindersService {
@@ -42,25 +45,23 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, decisionReminders: 0, clientDecisions: 0, quotesExpiring: 0, quotesExpired: 0, quietChatsResolved: 0, approvalReminders: 0, approvalEscalations: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
-      workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, dailyProgressSent: 0, weeklyRollups: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
-      receivablesOverdue: 0, stageInvoiceRequests: 0, changeDecisions: 0, checkoutReminders: 0, documentReminders: 0, teamCalendarAlerts: 0, permitAlerts: 0, clientCallsBooked: 0, lateDeliveries: 0, failedWorkspaces: 0 };
+    const totals = { created: 0, decisionReminders: 0, quotesExpired: 0, quietChatsResolved: 0, approvalEscalations: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
+      lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, dailyProgressSent: 0, weeklyRollups: 0, warrantyEnding: 0, retentionReleased: 0, overBudget: 0,
+      stageInvoiceRequests: 0, changeDecisions: 0, checkoutReminders: 0, documentReminders: 0, teamCalendarAlerts: 0, clientCallsBooked: 0, lateDeliveries: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
           decisions: await this.createDecisionReminders(client),
-          // Quotes and designs waiting on the client: they and the case owner are reminded on the firm's days (Q-8).
-          // Quotes running out are flagged, and those that ran out are Expired, before the client is chased (Q-6).
+          // Quotes that ran out are Expired (Q-6); the warning before and the client's reminders are reminder engine kinds.
           quotes: await processQuoteExpiry(client, workspaceId),
-          clientDecisions: await processClientDecisions(client, workspaceId),
-          // Changes sent to the client and not decided: the client and the project manager on the firm's days (§6.20).
+          // Changes sent to the client and not decided: the client and the project manager on the firm's days (§6.20),
+          // until the change-request source joins the reminder engine.
           changeDecisions: await processChangeDecisions(client, workspaceId),
           // Chats quiet since our last message resolve themselves, unless something is pending (AU-2).
           quietChats: await resolveQuietChats(client, workspaceId),
-          // Approvals that have waited remind their approver, then the owners (AU-3).
-          approvals: await chaseApprovals(client, workspaceId),
+          // E3-1: a step that waited past its policy's escalation hours passes to the next approver (reminders: approval.waiting).
+          approvals: await escalateWaitingApprovals(client, workspaceId),
           design: await processDesignDeadlines(client, workspaceId),
-          work: await processWorkDeadlines(client, workspaceId),
           stages: await processStagesReady(client, workspaceId),
           weekly: await processWeeklySummaries(client, workspaceId),
           materials: await processMaterialsWaiting(client, workspaceId),
@@ -75,8 +76,6 @@ export class ProjectRemindersService {
           factory: await processFactoryDeadlines(client, workspaceId),
           // Render and 2D time, production, deliveries and installations past their day (PLM-090/091).
           teamCalendars: await processTeamCalendarDeadlines(client, workspaceId),
-          // A booked delivery whose building permit ends before it, or is still missing the firm's working days before (Palm, 6 Oct).
-          permits: await processLogisticsAlerts(client, workspaceId),
           // Won orders past their expected date and not yet with the client (PLM-126).
           fulfilment: await processFulfilmentDeadlines(client, workspaceId),
           // The next client update call when the last one is done or its day passed (PLM-046).
@@ -88,19 +87,14 @@ export class ProjectRemindersService {
           warranty: await processWarrantyExpiry(client, workspaceId),
           // Retention released at handover first, so what falls due includes it.
           retention: await processRetentionReleases(client, workspaceId),
-          payables: await processPayablesDue(client, workspaceId),
           budgets: await processProjectBudgets(client, workspaceId),
-          receivables: await processReceivablesOverdue(client, workspaceId),
           checkouts: await processHrmsCheckouts(client, workspaceId),
           documents: await processHrmsDocuments(client, workspaceId),
         }));
         totals.decisionReminders += run.decisions;
-        totals.clientDecisions += run.clientDecisions?.sent ?? 0;
         totals.changeDecisions += run.changeDecisions?.sent ?? 0;
-        totals.quotesExpiring += run.quotes?.warned ?? 0;
         totals.quotesExpired += run.quotes?.expired ?? 0;
         totals.quietChatsResolved += run.quietChats?.resolved ?? 0;
-        totals.approvalReminders += run.approvals?.reminded ?? 0;
         totals.approvalEscalations += run.approvals?.escalated ?? 0;
         totals.weeklySummaries += run.weekly.sent;
         totals.stagesReady += run.stages.sent;
@@ -110,7 +104,6 @@ export class ProjectRemindersService {
         totals.clientUpdates += run.clientUpdates.drafted;
         totals.clientUpdatesSent += run.clientUpdatesSent.sent;
         totals.designAlerts += (run.design?.alerted ?? 0) + (run.design?.closed ?? 0);
-        totals.workReminders += run.work.sent;
         totals.lateOrders += run.purchasing.sent;
         totals.supplierDocuments += (run.suppliers?.held ?? 0) + (run.suppliers?.warned ?? 0);
         totals.factoryShortages += run.factory?.sent ?? 0;
@@ -118,14 +111,11 @@ export class ProjectRemindersService {
         totals.dailyProgressSent += run.dailyProgress.sent;
         totals.weeklyRollups += run.rollups.sent;
         totals.warrantyEnding += run.warranty.sent;
-        totals.payablesDue += run.payables?.sent ?? 0;
         totals.retentionReleased += run.retention?.released ?? 0;
         totals.overBudget += run.budgets.sent;
-        totals.receivablesOverdue += run.receivables?.sent ?? 0;
         totals.checkoutReminders += run.checkouts?.sent ?? 0;
         totals.documentReminders += run.documents?.sent ?? 0;
         totals.teamCalendarAlerts += run.teamCalendars?.sent ?? 0;
-        totals.permitAlerts += run.permits?.sent ?? 0;
         totals.lateDeliveries += run.fulfilment?.sent ?? 0;
         totals.clientCallsBooked += run.clientCalls?.booked ?? 0;
       } catch (error) {
@@ -133,7 +123,7 @@ export class ProjectRemindersService {
         this.logger.error(`Reminder run failed for workspace ${workspaceId}: ${(error as Error).message}`);
       }
     }
-    totals.created = totals.decisionReminders + totals.clientDecisions + totals.weeklySummaries + totals.stagesReady + totals.materialsWaiting + totals.milestonesDue + totals.workReminders;
+    totals.created = totals.decisionReminders + totals.weeklySummaries + totals.stagesReady + totals.materialsWaiting + totals.milestonesDue;
     return totals;
   }
 

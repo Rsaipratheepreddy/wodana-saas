@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
-import { chaseApprovals, chaseSettings } from "./approval-chasers";
+import { runReminderSweep } from "../reminders/testing";
+import { chaseSettings } from "./approval-chasers";
 
 // Opt-in: PROJECT_REPOSITORY_TEST_DATABASE_URL must point at a local, migrated database with a
 // superuser role. Every test runs in a transaction that is rolled back.
@@ -18,7 +19,7 @@ describe("approval reminder settings", () => {
   });
 });
 
-integration("approvals that wait get chased (AU-3)", () => {
+integration("approvals that wait get chased (AU-3, the reminder engine's approval.waiting)", () => {
   let pool: Pool;
   beforeAll(() => {
     const url = new URL(databaseUrl!);
@@ -58,28 +59,37 @@ integration("approvals that wait get chased (AU-3)", () => {
   }
 
   const told = async (client: PoolClient, workspaceId: string, event: string) =>
-    (await client.query(`SELECT recipient_id AS recipient, subject FROM notifications WHERE workspace_id = $1 AND event_type = $2 AND channel = 'in_app'`, [workspaceId, event])).rows;
+    (await client.query(`SELECT recipient_id AS recipient, subject, body, critical FROM notifications WHERE workspace_id = $1 AND event_type = $2 AND channel = 'in_app' ORDER BY created_at`, [workspaceId, event])).rows;
+  const since = async (client: PoolClient, workspaceId: string) =>
+    (await client.query<{ since: Date }>(`SELECT updated_at AS since FROM purchase_orders WHERE workspace_id = $1`, [workspaceId])).rows[0].since;
+  const hoursAfter = (at: Date, hours: number) => new Date(at.getTime() + hours * 3_600_000);
 
-  it("reminds the approver after a day, once, and leaves the owners alone until two", async () => {
+  it("reminds the approver after a day, once (the reminder engine's approval.waiting, critical)", async () => {
     await world(30, async (client, ids) => {
-      await expect(chaseApprovals(client, ids.workspaceId)).resolves.toEqual({ reminded: 1, escalated: 0 });
-      expect(await told(client, ids.workspaceId, "approvals.reminder")).toEqual([{ recipient: ids.approver, subject: "Still waiting for you · PO-0042" }]);
-      await expect(chaseApprovals(client, ids.workspaceId)).resolves.toEqual({ reminded: 0, escalated: 0 });
+      await runReminderSweep(client, ids.workspaceId, { now: new Date() });
+      await runReminderSweep(client, ids.workspaceId, { now: new Date() });
+      expect(await told(client, ids.workspaceId, "approvals.waiting")).toEqual([
+        { recipient: ids.approver, subject: "PO-0042 · waiting 30 hours", body: "Al Noor Timber. It is waiting for your decision.", critical: true }]);
     });
   });
 
-  it("tells the owners after two days, naming who it waits with", async () => {
+  it("tells the owners once the approver had both reminders, naming who it waits with", async () => {
     await world(50, async (client, ids) => {
-      await expect(chaseApprovals(client, ids.workspaceId)).resolves.toEqual({ reminded: 1, escalated: 1 });
-      const escalated = (await client.query(`SELECT recipient_id AS recipient, body FROM notifications WHERE workspace_id = $1 AND event_type = 'approvals.escalated'`, [ids.workspaceId])).rows;
-      expect(escalated).toEqual([{ recipient: ids.owner, body: "Still with Pat Approver." }]);
+      const start = await since(client, ids.workspaceId);
+      await runReminderSweep(client, ids.workspaceId, { now: hoursAfter(start, 25) });
+      await runReminderSweep(client, ids.workspaceId, { now: hoursAfter(start, 49) });
+      await runReminderSweep(client, ids.workspaceId, { now: hoursAfter(start, 49) });
+      expect((await told(client, ids.workspaceId, "approvals.waiting")).map((row) => [row.recipient, row.subject])).toEqual([
+        [ids.approver, "PO-0042 · waiting 25 hours"], [ids.approver, "PO-0042 · waiting 2 days"], [ids.owner, "Escalated · PO-0042 · waiting 2 days"]]);
+      expect((await told(client, ids.workspaceId, "approvals.waiting")).at(-1)?.body).toBe("Pat Approver has had 2 reminders. Al Noor Timber.");
     });
   });
 
-  it("does nothing when the workspace turned the rule off", async () => {
+  it("goes on the firm's own approval hours (its reminder rule)", async () => {
     await world(50, async (client, ids) => {
-      await client.query(`INSERT INTO notification_policies(workspace_id,event_type,name,channels,conditions,status) VALUES($1,'approvals.reminder','Approval reminders','["in_app"]','{}','paused')`, [ids.workspaceId]);
-      await expect(chaseApprovals(client, ids.workspaceId)).resolves.toEqual({ reminded: 0, escalated: 0 });
+      await client.query(`INSERT INTO reminder_rules(workspace_id,kind,offsets,unit,escalate_after,chain,channels) VALUES($1,'approval.waiting','{72}','hour',NULL,'{}','{in_app}')`, [ids.workspaceId]);
+      await runReminderSweep(client, ids.workspaceId, { now: new Date() });
+      expect(await told(client, ids.workspaceId, "approvals.waiting")).toEqual([]);
     });
   });
 });

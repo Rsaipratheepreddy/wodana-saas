@@ -5,6 +5,7 @@ import { readProjectAccess } from "../../../client-portal/portal-settings";
 import { normalizeTemplateParameter, renderTemplate, TEMPLATE_SOURCE_NAMES, templatePlaceholders, type TemplateVariableSource } from "./inbox-rules";
 import { resolveTemplateSources, type TemplateContext } from "./template-variables";
 import { starterForEvent, startersForEvent, type StarterEvent } from "./whatsapp-starter-pack";
+import { clientDailyGate } from "../../../reminders/delivery/client-gate";
 
 type Db = Pick<PoolClient, "query">;
 type Config = { get(key: string): unknown };
@@ -22,7 +23,10 @@ export const EMAIL_FALLBACK = new Set<StarterEvent>(["portal.quote_issued", "por
 
 export type ClientMessageResult =
   | { sent: true; messageId: string; conversationId: string; duplicate: boolean }
-  | { sent: false; reason: "no_client" | "off" | "blocked" | "not_connected" | "no_consent" | "no_phone" | "template_not_approved" | "paused" | "value_missing"; field?: string };
+  | { sent: false; reason: "no_client" | "off" | "blocked" | "not_connected" | "no_consent" | "no_phone" | "template_not_approved" | "paused" | "value_missing" | "capped"; field?: string };
+
+/** An automatic reminder to the client claims the day's one client reminder (plan §6.24a); a transactional notice doesn't. */
+export type ClientGateClaim = { key: string; priority: number };
 
 const SOURCE_NAMES = TEMPLATE_SOURCE_NAMES;
 
@@ -51,6 +55,8 @@ export async function approvedTemplate(db: Db, workspaceId: string, code: string
 export async function sendClientEvent(db: Db, input: {
   workspaceId: string; event: StarterEvent; partyId: string | null; recordKey: string;
   leadId?: string | null; record?: TemplateContext["record"]; config?: Config; actorUserId?: string | null;
+  /** An automatic reminder (a quiet-enquiry nudge): at most one client reminder per day goes, the rest are "capped". */
+  gate?: ClientGateClaim;
 }): Promise<ClientMessageResult> {
   const { workspaceId, event, partyId } = input;
   if (!partyId) return { sent: false, reason: "no_client" };
@@ -93,6 +99,8 @@ export async function sendClientEvent(db: Db, input: {
     break;
   }
   if (!chosen) return missing ?? { sent: false, reason: "template_not_approved" };
+  // Only a message that can go claims the day's one client reminder.
+  if (input.gate && !(await clientDailyGate(db, workspaceId, { partyId, priority: input.gate.priority, key: input.gate.key })).allowed) return { sent: false, reason: "capped" };
   const { template, parameters } = chosen;
   const body = renderTemplate(template.body, parameters);
 

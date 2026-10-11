@@ -162,8 +162,8 @@ export async function processDesignDeadlines(db: Db, workspaceId: string, now = 
     `SELECT case_id AS "caseId", stage, due_at AS "dueAt" FROM design_journey_stages
       WHERE workspace_id = $1 AND status = 'active' AND due_at < $2 AND overdue_notified_at IS NULL FOR UPDATE`, [workspaceId, now])).rows;
   for (const row of late) {
-    const facts = await caseFacts(db, workspaceId, row.caseId);
-    if (facts) await tell(db, workspaceId, row.caseId, facts, "design.stage_overdue", { stage: row.stage, due: row.dueAt }, `design:${row.caseId}:${row.stage}:overdue`, { email: true });
+    // The designer and the account manager are reminded by the reminder engine (design.stage_due: before, on and
+    // after the due day, then their lead); here the stage is marked overdue in its history once.
     await db.query(`UPDATE design_journey_stages SET overdue_notified_at = now() WHERE workspace_id = $1 AND case_id = $2 AND stage = $3`, [workspaceId, row.caseId, row.stage]);
     await event(db, workspaceId, row.caseId, row.stage, "overdue", null, null);
     alerted++;

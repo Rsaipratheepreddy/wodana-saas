@@ -1961,7 +1961,7 @@ About 30 module chasers live today in `projects/project-reminders.service.ts`, p
 - approval hours → approval.waiting;
 - push quiet hours → person settings.
 
-Reserved migration numbers: 0291 (B), 0292 (C), 0293 (D), 0294 (E).
+Migration for slices B to E and A2: 0306_reminders_engine (planning state, the client gate, step channels, the change_request.client_decision kind and its templates). A module adds its own reminder by registering a source with ReminderSourceRegistryService (reminders/sources/registry.service.ts).
 
 **Source adapter** (contract in `reminders/engine/engine.ts`):
 

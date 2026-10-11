@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiProperty, ApiTags } from "@nestjs/swagger";
 import { IsUUID } from "class-validator";
 import type { RequestActor } from "../auth/actor";
@@ -18,6 +18,11 @@ export class DeliveryHealthController {
   /** Per channel: set up or not, last success, last failure and why, and what is queued or failed. */
   @Get() health(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
     return this.delivery.health(actor, workspaceId);
+  }
+
+  /** Each message: sent, delivered, read, failed, held or suppressed, and why; filters by status, channel and dates. */
+  @Get("messages") messages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: Record<string, string>) {
+    return this.delivery.messages(actor, workspaceId, query ?? {});
   }
 
   /** Sends the person asking a test email (and a push to their phone, if registered). */

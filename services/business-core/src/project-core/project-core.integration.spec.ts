@@ -9,7 +9,7 @@ import { seedDefaultNotificationTemplates } from "../notifications/default-templ
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectWorkService } from "./project-work.service";
-import { processWorkDeadlines } from "./work-reminders";
+import { middayIn, runReminderSweep } from "../reminders/testing";
 import { OrdersService } from "../purchasing/orders.service";
 import { PriceRequestsService } from "../purchasing/price-requests.service";
 import { ReceivingService } from "../purchasing/receiving.service";
@@ -37,11 +37,11 @@ import { processDailyProgressAutoSend, processWeeklyRollups } from "../site/prog
 import { PayablesService } from "../purchasing/payables.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { processProjectBudgets } from "./project-money";
-import { ReceivablesService, processReceivablesOverdue } from "../receivables/receivables.service";
+import { ReceivablesService } from "../receivables/receivables.service";
 import { CommercialService } from "../commercial/commercial.service";
 import { AccountingService } from "../accounting/accounting.service";
 import { applyResult, claimPostings } from "../accounting/accounting-sync";
-import { processPayablesDue, processRetentionReleases } from "../purchasing/purchasing-reminders";
+import { processRetentionReleases } from "../purchasing/purchasing-reminders";
 import { PaymentRunsService } from "../purchasing/payment-runs.service";
 import { LabourRatesService } from "./labour-rates.service";
 import { PettyCashService } from "../petty-cash/petty-cash.service";
@@ -767,7 +767,7 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
-  it("reminds the assignee the day before work is due, and the assignee and project manager once when it's late", async () => {
+  it("reminds the assignee the day before work is due, and the assignee and project manager once it's late (reminder engine work.due)", async () => {
     await world(async (w) => {
       await accept(w);
       const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
@@ -780,20 +780,24 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query(`UPDATE work_items SET due_date = ${today} - 2 WHERE id = $1`, [late]);
       await w.client.query(`UPDATE work_items SET due_date = ${today} - 10 WHERE id = $1`, [old]);
       await w.client.query(`UPDATE work_items SET due_date = ${today} - 1, status = 'done', completed_at = now() WHERE id = $1`, [done]);
-      await processWorkDeadlines(w.client, w.workspaceId);
-      await processWorkDeadlines(w.client, w.workspaceId);
-      const sent = (await w.client.query<{ event: string; channel: string; recipient: string; subject: string }>(
-        `SELECT event_type AS event, channel, recipient_id AS recipient, subject FROM notifications WHERE workspace_id = $1 AND event_type IN ('work.due_soon', 'work.overdue') ORDER BY event_type, channel, recipient_id`,
+      await runReminderSweep(w.client, w.workspaceId);
+      await runReminderSweep(w.client, w.workspaceId);
+      const sent = (await w.client.query<{ channel: string; recipient: string; subject: string }>(
+        `SELECT channel, recipient_id AS recipient, subject FROM notifications WHERE workspace_id = $1 AND event_type = 'work.due' ORDER BY channel, recipient_id, subject`,
         [w.workspaceId])).rows;
-      expect(sent.map(({ event, channel, recipient, subject }) => [event, channel, recipient === w.designer ? "designer" : "manager", subject]).sort()).toEqual([
-        ["work.due_soon", "in_app", "designer", "#1 Order hinges is due tomorrow"],
-        ["work.overdue", "email", "designer", "#2 Shop drawings is late · PRJ-0001 · Villa 12"],
-        ["work.overdue", "in_app", "designer", "#2 Shop drawings is late"],
-        ["work.overdue", "in_app", "manager", "#2 Shop drawings is late"],
+      // The late one reached the assignee and the project manager; the one ten days late is past the catch-up week; done work is quiet.
+      expect(sent.map(({ channel, recipient, subject }) => [channel, recipient === w.designer ? "designer" : "manager", subject]).sort()).toEqual([
+        ["email", "designer", "#1 Order hinges · due tomorrow"], ["in_app", "designer", "#1 Order hinges · due tomorrow"],
+        ["email", "designer", "#2 Shop drawings · 2 days overdue"], ["in_app", "designer", "#2 Shop drawings · 2 days overdue"],
+        ["email", "manager", "#2 Shop drawings · 2 days overdue"], ["in_app", "manager", "#2 Shop drawings · 2 days overdue"],
       ].sort());
+      // Marking it done closes its reminder; nothing more goes.
+      await w.client.query(`UPDATE work_items SET status = 'done', completed_at = now() WHERE id = $1`, [late]);
+      await runReminderSweep(w.client, w.workspaceId, { now: middayIn("Asia/Dubai", 1) });
+      expect((await w.client.query("SELECT status, done_reason FROM reminder_subjects WHERE workspace_id = $1 AND source_key = $2", [w.workspaceId, `work:${late}`])).rows)
+        .toEqual([{ status: "done", done_reason: "record" }]);
     });
   });
-
   it("buys what the project needs: signed-off materials and bought lines, priced exactly, approved by someone else, sent, confirmed and changed", async () => {
     await world(async (w) => {
       await accept(w);
@@ -1569,18 +1573,25 @@ integration("projects core (plan §6.10)", () => {
         .rejects.toThrow(/can't confirm more/);
       expect((await buyer.receiving.deliveries(actor, w.workspaceId)).expected.map((order) => [order.number, order.due])).toEqual([[state.order.number, "2026-09-20"]]);
 
-      // The slab is late: the buyer hears once a week, in the app and by email.
-      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(1);
-      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(0);
-      const late = (await w.client.query<{ channel: string }>(`SELECT channel FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.late' AND recipient_id = $2 ORDER BY channel`,
-        [w.workspaceId, w.designer])).rows.map((row) => row.channel);
-      expect(late).toEqual(["email", "in_app"]);
+      // The slab is late (the reminder engine's purchase.order_late): the day after its date the buyer hears it, once,
+      // in the app and by email.
+      const dayAfter = new Date("2026-09-21T08:00:00Z");
+      await runReminderSweep(w.client, w.workspaceId, { now: dayAfter });
+      await runReminderSweep(w.client, w.workspaceId, { now: dayAfter });
+      const late = (await w.client.query<{ channel: string; subject: string }>(
+        `SELECT channel, subject FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.order_late' AND recipient_id = $2 AND reminder_step_id IS NOT NULL ORDER BY channel`,
+        [w.workspaceId, w.designer])).rows;
+      expect(late.map((row) => row.channel)).toEqual(["email", "in_app"]);
+      expect(late[1].subject.startsWith(`${state.order.number} · `) && late[1].subject.endsWith(" · 1 day overdue")).toBe(true);
       // Chased: the late slab moves to its new date; the handles keep theirs; nothing is late any more.
       await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "chase", version: state.order.version })).rejects.toThrow(/what the supplier said/);
       state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "chase", note: "Container held at port", promisedDate: chasedTo, version: state.order.version });
       expect(state.lines.map((line) => line.due)).toEqual([chasedTo, handlesDue]);
       expect(state.events.at(-1)).toMatchObject({ kind: "chased", detail: { note: "Container held at port", promisedDate: chasedTo } });
-      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(0);
+      // Its reminder closes (the date moved past today); nothing more goes.
+      await runReminderSweep(w.client, w.workspaceId, { now: new Date("2026-09-22T08:00:00Z") });
+      expect((await w.client.query("SELECT status FROM reminder_subjects WHERE workspace_id = $1 AND kind = 'purchase.order_late' AND source_key = $2", [w.workspaceId, `po:${orderId}`])).rows)
+        .toEqual([{ status: "done" }]);
 
       // The two m² the supplier can't make are cancelled and ordered from another supplier, linked to this line.
       const other = randomUUID();
@@ -3279,14 +3290,17 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'payer', 'Payer')", [role, w.workspaceId]);
       await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'payables.manage'", [w.workspaceId, role]);
       await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.designerMembership, role]);
-      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 1 });
-      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 0 });
-      const notice = (await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.due' ORDER BY created_at DESC LIMIT 1`,
-        [w.workspaceId])).rows[0];
-      expect(notice?.body).toBe("INV-1: AED 367.00 overdue since 2026-09-01");
-      // The delivery charge falls due too: one more notice, naming both.
-      await w.client.query(`UPDATE supplier_invoices SET due_date = invoice_date WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, freight]);
-      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 1 });
+      // The reminder engine's payables.due: each bill 3 days before, on the day and 3 days after, to the people who pay.
+      await w.client.query(`UPDATE supplier_invoices SET invoice_date = '2026-08-15', due_date = '2026-09-04' WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, freight]);
+      const sep4 = new Date("2026-09-04T08:00:00Z");
+      await runReminderSweep(w.client, w.workspaceId, { now: sep4 });
+      await runReminderSweep(w.client, w.workspaceId, { now: sep4 });
+      const notices = (await w.client.query<{ subject: string; body: string; critical: boolean }>(
+        `SELECT subject, body, critical FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.due' AND channel = 'in_app' AND recipient_id = $2 ORDER BY subject`,
+        [w.workspaceId, w.designer])).rows;
+      expect(notices.map((row) => row.subject)).toEqual([expect.stringMatching(/^INV-1 · .+ · 3 days overdue$/), expect.stringMatching(/^INV-3 · .+ · due today$/)]);
+      expect(notices[0].body).toMatch(/· AED 367\.00\. Pay it, or put it on hold\.$/);
+      expect(notices.every((row) => row.critical)).toBe(true);
     });
   });
 
@@ -3513,9 +3527,13 @@ integration("projects core (plan §6.10)", () => {
       expect(overview.toInvoice).toEqual([]);
       expect(overview.canManage).toBe(false);
 
-      // Overdue: the project's manager hears once per invoice.
-      expect(await processReceivablesOverdue(w.client, w.workspaceId)).toEqual({ sent: 1 });
-      expect(await processReceivablesOverdue(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      // Overdue (the reminder engine's invoice.overdue, critical): the project's manager hears the day after, once.
+      const jan21 = new Date("2026-01-21T08:00:00Z");
+      await runReminderSweep(w.client, w.workspaceId, { now: jan21 });
+      await runReminderSweep(w.client, w.workspaceId, { now: jan21 });
+      const overdue = (await w.client.query<{ recipient: string; subject: string; critical: boolean }>(
+        `SELECT recipient_id AS recipient, subject, critical FROM notifications WHERE workspace_id = $1 AND event_type = 'receivables.overdue' AND channel = 'in_app'`, [w.workspaceId])).rows;
+      expect(overdue).toEqual([{ recipient: w.manager, subject: "FAC-INV-2026-00003 · 1 day overdue", critical: true }]);
     });
   });
 
@@ -3716,9 +3734,11 @@ integration("projects core (plan §6.10)", () => {
       // Past due, retention is still owed but not overdue, and the reminder leaves it out.
       await w.client.query(`UPDATE supplier_invoices SET invoice_date = '2026-08-01', due_date = '2026-09-01' WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, invoice]);
       expect((await payer.supplier(actor, w.workspaceId, vendor)).balances).toEqual([expect.objectContaining({ owed: "1113.3300", retention: "113.3300", overdue: "1000.0000" })]);
-      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 2 });
-      expect((await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.due'`, [w.workspaceId])).rows[0].body)
-        .toBe("INV-R1: AED 1000.00 overdue since 2026-09-01");
+      const sep4 = new Date("2026-09-04T08:00:00Z");
+      await runReminderSweep(w.client, w.workspaceId, { now: sep4 });
+      const due = (await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.due' AND channel = 'in_app'`, [w.workspaceId])).rows;
+      expect(due).toHaveLength(2);
+      expect(due[0].body).toMatch(/AED 1,000\.00\. Pay it, or put it on hold\.$/);
 
       // Released before handover only by someone who approves, with why, up to what's held for that project.
       const version = async () => (await bill(invoice)).version;
@@ -3856,7 +3876,8 @@ integration("projects core (plan §6.10)", () => {
       // Only the second project's retention is left: owed, not overdue, and not due.
       expect(await bill(invoice)).toMatchObject({ balance: "10.0000", retentionHeld: "10.0000", payable: "0.0000" });
       expect((await payer.supplier(actor, w.workspaceId, vendor)).balances).toEqual([expect.objectContaining({ owed: "10.0000", retention: "10.0000", overdue: "0.0000" })]);
-      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      await runReminderSweep(w.client, w.workspaceId, { now: new Date("2026-09-05T08:00:00Z") });
+      expect((await w.client.query("SELECT status FROM reminder_subjects WHERE workspace_id = $1 AND source_key = $2", [w.workspaceId, `bill:${invoice}`])).rows).toEqual([{ status: "done" }]);
       expect((await payer.overview(actor, w.workspaceId)).runs.map((item) => [item.number, item.status])).toEqual([[3, "paid"], [2, "cancelled"], [1, "paid"]]);
 
       // Where invoices are paid only through runs, nothing pays an invoice directly; an advance on an order still can.

@@ -10,7 +10,7 @@ import { ProjectCoreService } from "../project-core/project-core.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { TeamCalendarsService } from "../team-calendars/team-calendars.service";
 import { LogisticsService } from "./logistics.service";
-import { processLogisticsAlerts } from "./logistics.store";
+import { middayIn, runReminderSweep } from "../reminders/testing";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -268,21 +268,27 @@ integration("factory and installation bookings: people by name, vehicles, buildi
       expect((await calendars.entries(actor, w.workspaceId, "logistics", w.today, plus(w.today, 9))).entries.find((item) => item.key === `delivery:${projectId}`))
         .toMatchObject({ permit: { covered: true, validTo: plus(w.today, 10) } });
 
-      // The permit is withdrawn (a wrong file): the daily run raises it, once.
-      await booker.saveSettings(actor, w.workspaceId, { version: 0, permitWarningDays: 30 });
+      // The permit is withdrawn (a wrong file): the reminder engine's permit.expiry (critical) holds a reminder for each
+      // booked day no permit covers; on the delivery day the project's managers and installation team hear it, once.
       permits = await booker.cancelPermit(actor, w.workspaceId, { projectId }, permitId, { version: permits.permits[0].version, reason: "Wrong building" });
       expect(permits).toMatchObject({ valid: false, permits: [] });
-      expect(await processLogisticsAlerts(w.client, w.workspaceId)).toEqual({ sent: 2 });
-      expect(await processLogisticsAlerts(w.client, w.workspaceId)).toEqual({ sent: 0 });
-      expect((await told(w, "logistics.permit_missing"))[0].subject).toContain("No building permit for the delivery");
-      expect((await told(w, "logistics.permit_missing", "email")).length).toBe(2);
+      const deliveryDay = middayIn("UTC", 7);
+      await runReminderSweep(w.client, w.workspaceId, { now: deliveryDay });
+      await runReminderSweep(w.client, w.workspaceId, { now: deliveryDay });
+      const subjects = async () => (await w.client.query<{ key: string; status: string }>(
+        "SELECT source_key AS key, status FROM reminder_subjects WHERE workspace_id = $1 AND kind = 'permit.expiry' ORDER BY source_key", [w.workspaceId])).rows;
+      expect(await subjects()).toEqual([
+        { key: `permit:project:${projectId}:delivery:${plus(w.today, 7)}`, status: "open" }, { key: `permit:project:${projectId}:installation:${plus(w.today, 8)}`, status: "open" }]);
+      const missing = (await told(w, "site.permit_expiry")).filter((row) => row.subject.startsWith("Building permit for the delivery"));
+      expect(missing.map((row) => row.recipient).sort()).toEqual([w.people.manager, w.people.installer].sort());
+      expect(missing[0].subject).toBe("Building permit for the delivery · due today");
 
-      // A new permit that ends before the installation day is raised at once.
-      // It also ends within the firm's 7 reminder days, so its renewal reminder goes with it (once).
+      // A new permit covers the delivery but ends before the installation day: the delivery's reminder closes, the
+      // installation's stays; and it ends while its work is ahead, so its own renewal reminder is due.
       await booker.collectPermit(actor, w.workspaceId, { projectId }, randomUUID(), { permitNumber: "BP-2026-78", validFrom: w.today, validTo: plus(w.today, 7) }, pdf("b"));
-      expect(await processLogisticsAlerts(w.client, w.workspaceId)).toEqual({ sent: 4 });
-      expect((await told(w, "logistics.permit_expiring"))[0].body).toContain("before the installation on");
-      expect((await told(w, "logistics.permit_renewal")).length).toBe(2);
+      await runReminderSweep(w.client, w.workspaceId, { now: deliveryDay });
+      expect((await subjects()).map((row) => [row.key.split(":")[3], row.status])).toEqual([["delivery", "done"], ["installation", "open"], [undefined, "open"]]);
+      expect((await told(w, "site.permit_expiry")).filter((row) => row.subject.startsWith("Building permit BP-2026-78 ends")).length).toBe(2);
     });
   });
 
@@ -297,22 +303,22 @@ integration("factory and installation bookings: people by name, vehicles, buildi
         { permitNumber: "GATE-1", validFrom: w.today, validTo: plus(w.today, 5), reminderDays: "3" }, pdf("short"));
       expect(permits.permits.find((item: { id: string }) => item.id === long)).toMatchObject({ collectedOn: plus(w.today, -2), reminderDays: null, reminderOn: plus(w.today, 355) });
       expect(permits.permits.find((item: { id: string }) => item.id === short)).toMatchObject({ reminderDays: 3, reminderOn: plus(w.today, 2) });
-      // A later permit (the long one) already runs past the short one: nothing to renew.
-      expect(await processLogisticsAlerts(w.client, w.workspaceId)).toEqual({ sent: 0 });
-      // Without it, the short one reminds when its own day comes: 3 days before it ends, then once.
+      // A later permit (the long one) already runs past the short one: nothing to renew (the reminder engine's permit.expiry).
+      const endDay = middayIn("UTC", 5);
+      await runReminderSweep(w.client, w.workspaceId, { now: endDay });
+      expect((await told(w, "site.permit_expiry")).filter((row) => row.subject.startsWith("Building permit GATE-1"))).toEqual([]);
+      // Without it, the short one is reminded before it ends (3 and 1 working days, and on the day), once each.
       permits = await booker.cancelPermit(actor, w.workspaceId, { projectId }, long, { version: permits.permits.find((item: { id: string }) => item.id === long).version, reason: "Wrong" });
-      expect(await processLogisticsAlerts(w.client, w.workspaceId)).toEqual({ sent: 0 });
       const version = permits.permits.find((item: { id: string }) => item.id === short).version;
       await expect(booker.setPermitReminder(actor, w.workspaceId, { projectId }, short, { reminderDays: 400, version })).rejects.toThrow(/between 0 and 365/);
       permits = await booker.setPermitReminder(actor, w.workspaceId, { projectId }, short, { reminderDays: 5, version });
       expect(permits.permits[0]).toMatchObject({ reminderDays: 5, reminderOn: w.today });
-      expect(await processLogisticsAlerts(w.client, w.workspaceId)).toEqual({ sent: 2 });
-      expect(await processLogisticsAlerts(w.client, w.workspaceId)).toEqual({ sent: 0 });
-      const renewal = await told(w, "logistics.permit_renewal");
+      await runReminderSweep(w.client, w.workspaceId, { now: endDay });
+      await runReminderSweep(w.client, w.workspaceId, { now: endDay });
+      const renewal = (await told(w, "site.permit_expiry")).filter((row) => row.subject.startsWith("Building permit GATE-1"));
       expect(renewal.map((row) => row.recipient).sort()).toEqual([w.people.manager, w.people.installer].sort());
-      expect(renewal[0].body).toContain("GATE-1");
-      expect((await told(w, "logistics.permit_renewal", "email")).length).toBe(2);
-      expect((await booker.permits(actor, w.workspaceId, { projectId })).permits[0].remindedAt).toBeTruthy();
+      expect(renewal[0].subject).toBe("Building permit GATE-1 ends · due today");
+      expect((await told(w, "site.permit_expiry", "email")).filter((row) => row.subject.startsWith("Building permit GATE-1")).length).toBe(2);
     });
   });
 

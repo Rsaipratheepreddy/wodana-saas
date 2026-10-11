@@ -17,7 +17,7 @@ import { ProjectCoreService } from "./project-core.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { ProjectOverviewService } from "./project-overview.service";
 import { noticeStageReady } from "./project-stage-watch";
-import { processWorkDeadlines } from "./work-reminders";
+import { runReminderSweep } from "../reminders/testing";
 import { ProjectWorkService } from "./project-work.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -387,8 +387,8 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       expect(leads).toEqual(expect.arrayContaining([{ id: w.designerMembership, lead: true }, { id: w.managerMembership, lead: false }]));
       // The old project manager still opens the project; late work now reaches the new one.
       await expect(w.core(w.manager, ["projects.view"]).get(actor, w.workspaceId, w.projectId)).resolves.toBeTruthy();
-      await processWorkDeadlines(w.client, w.workspaceId);
-      expect((await w.notices("work.overdue")).map((row) => row.recipient)).toEqual([w.designer]);
+      await runReminderSweep(w.client, w.workspaceId);
+      expect([...new Set((await w.client.query<{ recipient: string }>("SELECT recipient_id AS recipient FROM notifications WHERE workspace_id = $1 AND event_type = 'work.due'", [w.workspaceId])).rows.map((row) => row.recipient))]).toEqual([w.designer]);
       // A project always has a project manager.
       await expect(core.command(actor, w.workspaceId, w.projectId, { action: "set_member", role: "project_manager", membershipId: null, version: await w.version() })).rejects.toThrow(/always has a project manager/);
     });

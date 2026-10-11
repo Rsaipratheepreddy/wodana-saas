@@ -5,12 +5,12 @@ import { recordAudit } from "../../audit/record-audit";
 import { RequestActor } from "../../auth/actor";
 import { tellClients } from "../../client-portal/portal-notices";
 import { DatabaseService } from "../../database/database.service";
-import { notifyUserInApp } from "../../notifications/default-templates";
 import { Dec } from "../../catalog-core/decimal";
 import { readInvoices, readMilestonePaid, readMilestones, withBalances } from "../../receivables/receivables";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { SendPaymentReminderDto, UpdatePaymentReminderScheduleDto } from "./dto/whatsapp-templates.dto";
-import { clientMessageRule } from "./inbox/client-messages";
+import { clientMessageRule, partyOfCase } from "./inbox/client-messages";
+import { clientDailyGate, GATE_PRIORITY } from "../../reminders/delivery/client-gate";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Db = Pick<PoolClient, "query">;
@@ -56,6 +56,9 @@ export class CrmPaymentRemindersService {
       if (prior) return { sent: true, already: true, channel: prior.channel, sentOn: today };
       const sent = await this.send(client, workspaceId, item, today, null, actorUser.userId);
       if (!sent.channel) throw new UnprocessableEntityException(`The reminder couldn't go: ${sent.reason}`);
+      // A reminder sent by hand is today's one client reminder: the engine holds its own until tomorrow.
+      const party = await partyOfCase(client, workspaceId, item.caseId);
+      if (party.partyId) await clientDailyGate(client, workspaceId, { partyId: party.partyId, priority: GATE_PRIORITY.payment, key: `manual:payment:${item.paymentId}:${today}`, localDate: today });
       return { sent: true, already: false, channel: sent.channel, sentOn: today };
     });
   }
@@ -80,33 +83,17 @@ export class CrmPaymentRemindersService {
     });
   }
 
-  /** The worker's hourly pass: today's reminders on the schedule, in working hours. */
-  async scheduleInternal(workspaceId: string, now = new Date()) {
+  /**
+   * The worker's hourly pass. The automatic schedule moved to the reminder engine (payment.due, plan §6.24a): its
+   * offsets are the payment.due rule in Settings › Reminders, it sends in the client window at most one client
+   * reminder a day, and Finance hears through invoice.overdue. This only records that the worker checked in.
+   */
+  async scheduleInternal(workspaceId: string) {
     return this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => {
       await client.query(
         `INSERT INTO crm_client_message_rules (workspace_id, event, checked_at) VALUES ($1, 'payments.reminder', now())
          ON CONFLICT (workspace_id, event) DO UPDATE SET checked_at = now()`, [workspaceId]);
-      const { enabled, offsets } = await this.readSchedule(client, workspaceId);
-      if (!enabled) return { sent: 0, reason: "off" };
-      const calendar = await this.calendar(client, workspaceId);
-      if (!isOpen(now, calendar)) return { sent: 0, reason: "closed" };
-      const today = await this.today(client, workspaceId);
-      const due = await client.query<{ caseId: string; paymentId: string; dueDate: string }>(
-        `SELECT payment.case_id AS "caseId", payment.id AS "paymentId", payment.due_date::text AS "dueDate" FROM commercial_payments payment
-          WHERE payment.workspace_id = $1 AND payment.status = 'pending' AND payment.amount > 0 AND payment.due_date IS NOT NULL
-            AND ($2::date - payment.due_date) = ANY($3::int[])
-            AND NOT EXISTS (SELECT 1 FROM crm_payment_reminders reminder WHERE reminder.workspace_id = payment.workspace_id AND reminder.payment_id = payment.id AND reminder.sent_on = $2::date)
-          ORDER BY payment.due_date, payment.id LIMIT 100`, [workspaceId, today, offsets]);
-      let sent = 0;
-      for (const row of due.rows) {
-        const item = await this.dueItem(client, workspaceId, row.caseId, row.paymentId);
-        if (!item || item.status !== "pending") continue;
-        const offset = daysBetween(row.dueDate, today);
-        const result = await this.send(client, workspaceId, item, today, offset, null);
-        if (result.channel) sent += 1;
-        if (offset >= 7) await this.tellFinance(client, workspaceId, item);
-      }
-      return { sent, reason: null };
+      return { sent: 0, reason: "reminder_engine" };
     });
   }
 
@@ -118,33 +105,10 @@ export class CrmPaymentRemindersService {
     return paymentDueItem(client, workspaceId, caseId, paymentId, await this.today(client, workspaceId));
   }
 
-  private async tellFinance(client: Db, workspaceId: string, item: DueItem) {
-    const count = (await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM crm_payment_reminders WHERE workspace_id = $1 AND payment_id = $2`, [workspaceId, item.paymentId])).rows[0]?.count ?? 0;
-    const people = await client.query<{ userId: string }>(
-      `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
-         JOIN effective_member_roles assigned ON assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
-         JOIN role_permissions granted ON granted.role_id = assigned.role_id JOIN permissions permission ON permission.id = granted.permission_id
-        WHERE membership.workspace_id = $1 AND membership.status = 'active' AND permission.code = 'receivables.manage'`, [workspaceId]);
-    for (const person of people.rows) {
-      await notifyUserInApp(client, { workspaceId, recipientUserId: person.userId, code: "receivables.payment_overdue", eventType: "receivables.payment_overdue",
-        variables: { client: item.clientName, title: item.title, count: String(count) }, deepLink: "/workspace/finance?tab=receivables",
-        idempotencyKey: `receivables:overdue:${item.paymentId}:${person.userId}` });
-    }
-  }
-
   private async readSchedule(client: Db, workspaceId: string) {
     const rule = await clientMessageRule(client, workspaceId, "payments.reminder");
     const row = (await client.query<{ offsets: number[] | null }>(`SELECT offsets FROM crm_client_message_rules WHERE workspace_id = $1 AND event = 'payments.reminder'`, [workspaceId])).rows[0];
     return { enabled: rule.enabled, offsets: row?.offsets?.length ? row.offsets : DEFAULT_REMINDER_OFFSETS, version: rule.version };
-  }
-
-  private async calendar(client: Db, workspaceId: string) {
-    const row = (await client.query<{ timeZone: string; start: string | null; end: string | null; days: number[] | null }>(
-      `SELECT coalesce(calendar.timezone, workspace.default_timezone, 'UTC') AS "timeZone", to_char(calendar.day_start, 'HH24:MI') AS start,
-              to_char(calendar.day_end, 'HH24:MI') AS "end", calendar.working_days AS days
-         FROM workspaces workspace LEFT JOIN LATERAL (SELECT * FROM hrms_calendars WHERE workspace_id = workspace.id ORDER BY created_at LIMIT 1) calendar ON true
-        WHERE workspace.id = $1`, [workspaceId])).rows[0];
-    return { timeZone: row?.timeZone || "UTC", start: row?.start ?? "09:00", end: row?.end ?? "18:00", days: row?.days ?? null };
   }
 
   private async today(client: Db, workspaceId: string) {
@@ -164,13 +128,22 @@ export async function sendPaymentReminder(client: Db, workspaceId: string, item:
   if (!result.queued) return { channel: null, reason: result.reason ?? "no_contact" };
   const channel = "channel" in result && result.channel === "whatsapp" ? "whatsapp" : "email";
   const messageId = "messageId" in result ? result.messageId ?? null : null;
+  await recordPaymentReminder(client, workspaceId, item, today, offset, channel, messageId, userId);
+  return { channel, reason: null };
+}
+
+/**
+ * Logs a payment reminder on the payment (at most one a day) and audits it. The reminder engine's payment.due source
+ * calls it after its own send; "Send reminder" through sendPaymentReminder.
+ */
+export async function recordPaymentReminder(client: Db, workspaceId: string, item: Pick<DueItem, "caseId" | "paymentId" | "invoiceId" | "amount" | "currency">, today: string,
+  offset: number | null, channel: "whatsapp" | "email", messageId: string | null, userId: string | null) {
   await client.query(
     `INSERT INTO crm_payment_reminders (workspace_id, case_id, payment_id, invoice_id, sent_on, offset_days, channel, message_id, sent_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workspace_id, payment_id, sent_on) DO NOTHING`,
     [workspaceId, item.caseId, item.paymentId, item.invoiceId, today, offset, channel, messageId, userId]);
   await recordAudit(client, { workspaceId, actorUserId: userId, source: userId ? "user" : "internal", action: "receivables.payment_reminder.sent.v1", entityType: "commercial_payment", entityId: item.caseId,
     after: { paymentId: item.paymentId, invoiceId: item.invoiceId, channel, offset, amount: item.amount, currency: item.currency } });
-  return { channel, reason: null };
 }
 
 /** What is still owed on a payment: its invoice's balance when it has one, else the milestone less what's paid. */

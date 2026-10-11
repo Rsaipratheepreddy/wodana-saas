@@ -42,47 +42,23 @@ describe("Home summary", () => {
     for (const table of ["work_items", "client_invoices", "work_orders", "crm_leads lead WHERE", "pre_project_cases pre_case\n", "commercial_quotes quote\n"]) expect(sql).not.toContain(`FROM ${table}`);
   });
 
-  it("puts overdue first, then due today, then what waits on the person, and counts everything", async () => {
+  it("keeps only what waits for the person's decision in focus: what is due comes from My day (the reminder engine)", async () => {
     const client = clientFor([
-      [/FROM crm_activities activity\s+LEFT JOIN crm_leads[\s\S]*due_at < \(\(/, [
-        { recordId: "today-1", title: "Call Amira", context: "Amira", due: new Date("2026-09-28T10:00:00Z"), urgency: "today" },
-        { recordId: "late-1", title: "Send brochure", context: "Omar", due: new Date("2026-09-26T08:00:00Z"), urgency: "overdue" },
-      ]],
-      [/FROM work_items item[\s\S]*item.due_date <= \$3::date/, [{ recordId: "w-1", projectId: "p-1", title: "Shop drawings", context: "Villa 12", due: "2026-09-25", urgency: "overdue" }]],
       [/status = 'pending_approval'/, [{ recordId: "po-1", parentId: null, title: "PO-17", context: "Oak & Co", due: new Date("2026-09-20T08:00:00Z") }]],
     ]);
-    const summary = await readHomeSummary(client as never, person, { ...none, followUps: true, projects: true, approvals: { ...noApprovals, approveOrders: true } }, now);
-    expect(summary.focus.items.map((item) => [item.id, item.urgency])).toEqual([
-      ["work:w-1", "overdue"], ["follow_up:late-1", "overdue"], ["follow_up:today-1", "today"], ["order_approval:po-1", "waiting"],
-    ]);
-    expect(summary.focus.total).toBe(4);
-    expect(summary.focus.items[0]).toMatchObject({ projectId: "p-1", href: "/workspace/projects/p-1/plan?item=w-1" });
-    expect(summary.focus.items[3].href).toBe("/workspace/purchasing/orders?order=po-1");
+    const summary = await readHomeSummary(client as never, person, { ...none, followUps: true, projects: true, leads: true, assignLeads: true, approvals: { ...noApprovals, approveOrders: true } }, now);
+    expect(summary.focus.items.map((item) => [item.id, item.urgency])).toEqual([["order_approval:po-1", "waiting"]]);
+    expect(summary.focus.total).toBe(1);
+    expect(summary.focus.items[0].href).toBe("/workspace/purchasing/orders?order=po-1");
     // The person never approves an order they raised or submitted.
     const approval = client.calls().find(([sql]) => sql.includes("pending_approval"))!;
     expect(approval[0]).toContain("purchase.created_by <> $2");
     expect(approval[1]).toEqual([workspaceId, person.userId]);
-  });
-
-  it("gives unowned enquiries to whoever assigns them and the owner's unconfirmed clients to the owner, after what is due", async () => {
-    const client = clientFor([
-      [/lead.owner_membership_id IS NULL AND lead.status/, [
-        { recordId: "l-late", title: "Omar", context: "Villa", due: new Date("2026-09-27T08:00:00Z"), urgency: "overdue" },
-        { recordId: "l-new", title: "Sara", context: "Kitchen", due: new Date("2026-09-28T02:00:00Z"), urgency: "waiting" },
-      ]],
-      [/FROM crm_identity_candidates candidate/, [{ recordId: "l-known", title: "Amira", context: "Majlis", due: new Date("2026-09-26T08:00:00Z"), urgency: "waiting" }]],
-      [/FROM crm_activities activity\s+LEFT JOIN crm_leads[\s\S]*due_at < \(\(/, [{ recordId: "f-1", title: "Call Amira", context: "Amira", due: new Date("2026-09-28T10:00:00Z"), urgency: "today" }]],
-    ]);
-    const summary = await readHomeSummary(client as never, person, { ...none, followUps: true, leads: true, assignLeads: true }, now);
-    expect(summary.focus.items.map((item) => [item.id, item.urgency])).toEqual([
-      ["unowned:l-late", "overdue"], ["follow_up:f-1", "today"], ["confirm_client:l-known", "waiting"], ["unowned:l-new", "waiting"],
-    ]);
-    expect(summary.focus.items[0].href).toBe("/workspace/crm/leads?lead=l-late");
-    // The owner confirms their own enquiry's client; without crm.leads.assign nobody else's unowned enquiries are read.
-    expect(client.calls().find(([sql]) => sql.includes("crm_identity_candidates"))![1]).toEqual([workspaceId, person.membershipId, now.toISOString()]);
-    const unassigning = clientFor();
-    await readHomeSummary(unassigning as never, person, { ...none, leads: true }, now);
-    expect(unassigning.calls().some(([sql]) => sql.includes("lead.owner_membership_id IS NULL AND lead.status"))).toBe(false);
+    // Due and overdue work, unowned enquiries and clients to confirm are no longer read here.
+    const sql = client.calls().map(([text]) => text).join("\n");
+    expect(sql).not.toContain("crm_identity_candidates");
+    expect(sql).not.toContain("lead.owner_membership_id IS NULL AND lead.status");
+    expect(sql).not.toContain("crm_sla_instances sla\n");
   });
 
   it("reads a quiet week further ahead, then the work due on the person's projects", async () => {
