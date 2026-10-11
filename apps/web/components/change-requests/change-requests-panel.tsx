@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import {
   Badge, Button, EmptyState, ErrorState, FormDialog, FormRow, FormSection, IconButton, InlineNotice, MoneyField, NumericInput, RecordTable, SelectField, Skeleton, TextAreaField,
@@ -24,6 +26,7 @@ import styles from "../pre-project/design-decisions.module.css";
  */
 export function ChangeRequestsPanel({ workspaceId, caseId }: { workspaceId: string; caseId: string }) {
   const t = useT();
+  const router = useRouter();
   const { locale, timeZone } = useDesignSystem();
   const [view, setView] = useState<ChangeRequestsView | null>(null);
   const [failure, setFailure] = useState("");
@@ -58,14 +61,15 @@ export function ChangeRequestsPanel({ workspaceId, caseId }: { workspaceId: stri
   return <section className={styles.section} aria-label={t("Change requests")}>
     <div className={styles.bar}>
       <span className={styles.spacer} />
-      {view.canEdit ? <Button size="compact" variant="primary" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New change")}</Button> : null}
+      {view.projectId ? <Link className="wd-button" data-size="compact" data-variant="primary" href={`/workspace/projects/${view.projectId}/scope?view=changes`}>{t("Open the project's changes")}</Link>
+        : view.canEdit ? <Button size="compact" variant="primary" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New change")}</Button> : null}
     </div>
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
     {failure ? <InlineNotice tone="error" message={failure} /> : null}
     {view.changes.length ? <RecordTable ariaLabel={t("Change requests")} data={view.changes} columns={columns} getRowId={(row) => row.id} showToolbar={false} selectable={false} rowNumbers={false} wrapText
-      onRowAction={(row) => setOpenId(row.id)} />
+      onRowAction={(row) => (row.projectId ? router.push(`/workspace/projects/${row.projectId}/changes/${row.id}`) : setOpenId(row.id))} />
       : <EmptyState illustration="empty" title={t("No change requests")} description={t("A change after the contract is priced here, approved, and signed by the client.")}
-        action={view.canEdit ? <Button variant="primary" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New change")}</Button> : undefined} />}
+        action={view.canEdit && !view.projectId ? <Button variant="primary" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New change")}</Button> : undefined} />}
     {open ? <ChangeDetail change={open} canEdit={Boolean(view.canEdit)} day={day} money={money} onClose={() => setOpenId(null)} onEdit={() => setEditing(open)}
       run={async (path, body, message) => { const next = await caseRequest<ChangeRequestsView>(workspaceId, caseId, `change-requests/${open.id}/${path}`, "POST", body); saved(message)(next); return next; }} /> : null}
     {editing ? <ChangeEditor change={editing === "new" ? null : editing} sources={view.sources} onClose={() => setEditing(null)}

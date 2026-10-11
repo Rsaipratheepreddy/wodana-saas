@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Plus, Sparkles } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
@@ -10,7 +10,6 @@ import {
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
-import { createVariation } from "@/lib/project-core/variations";
 import type { LineHistoryEntry, LiveScope, ScopeLine, ScopePackage, Supply } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import { factoryApi } from "@/lib/factory/client";
@@ -19,6 +18,7 @@ import { ProjectMaterials } from "./project-materials";
 import { ProjectDrawings } from "./project-drawings";
 import { ProjectReadiness } from "./project-readiness";
 import { SealedDocument } from "./sealed-document";
+import { ProjectChanges } from "../change-requests/project-changes";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
@@ -138,7 +138,7 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
       <SampleRequests api={factoryApi(workspaceId)} caseId={scope.caseId} />
     </>
     : view === "drawings" ? <ProjectDrawings workspaceId={workspaceId} projectId={projectId} version={version} onChanged={onChanged} />
-    : view === "changes" ? <Changes workspaceId={workspaceId} projectId={projectId} scope={scope} />
+    : view === "changes" ? <ProjectChanges workspaceId={workspaceId} projectId={projectId} onChanged={onChanged} />
     : seal ? <SealedDocument workspaceId={workspaceId} projectId={projectId} sealId={seal} onBack={() => setSeal(null)} />
       : <ul className={styles.sealList} aria-label={t("Sealed documents")}>
           {scope.seals.map((item) => <li key={item.id}><button type="button" onClick={() => setSeal(item.id)}>
@@ -224,36 +224,3 @@ function PackageSheet({ item, scope, run, onClose }: { item: ScopePackage | null
     </div>
   </InspectorSheet>;
 }
-
-const QUOTE_STATUS: Record<string, string> = { draft: "Draft", internal_review: "In review", internal_approved: "Approved internally", issued: "Sent", accepted: "Accepted", changes_requested: "Changes requested", declined: "Declined", expired: "Expired" };
-
-/** The project's variations: drafts, sent, accepted, and what each became once applied. A new one opens in the quotation builder. */
-function Changes({ workspaceId, projectId, scope }: { workspaceId: string; projectId: string; scope: LiveScope }) {
-  const t = useT();
-  const router = useRouter();
-  const format = useProjectFormat();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const open = (quoteId: string) => router.push(`/workspace/projects/${projectId}/changes/${quoteId}`);
-  const create = async () => {
-    setBusy(true); setError("");
-    try { open(await createVariation(workspaceId, scope.caseId, scope.baselineQuoteId)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not start a variation.")); setBusy(false); }
-  };
-  return <div className={styles.changes}>
-    <div className={styles.scopeToolbar}>
-      <span />
-      <Button size="compact" variant="primary" isLoading={busy} onPress={() => void create()}><Plus aria-hidden="true" size={14} />{t("New variation")}</Button>
-    </div>
-    {error ? <p className={styles.errorLine} role="alert">{error}</p> : null}
-    {scope.variations.length ? <ul className={styles.sealList} aria-label={t("Variations")}>
-      {scope.variations.map((item) => <li key={item.id}><button type="button" onClick={() => open(item.id)}>
-        <span><strong>{item.appliedAs ?? t("Q-{number}", { number: item.number })}</strong> {item.title}</span>
-        <span className={styles.muted}>{item.appliedAs ? t("Applied") : QUOTE_STATUS[item.status] ? t(QUOTE_STATUS[item.status] as never) : item.status}</span>
-        <span className={styles.number}>{format.money(item.total, scope.currency)}</span>
-      </button></li>)}
-    </ul> : <EmptyState illustration={null} title={t("No variations yet")} description={t("Changes after the scope is sealed are priced and accepted here.")} />}
-  </div>;
-}
-
-

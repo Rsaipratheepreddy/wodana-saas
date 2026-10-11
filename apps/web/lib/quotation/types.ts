@@ -14,6 +14,10 @@ export type QuotationSettings = {
   qsReviewScope?: "all" | "rules";
   /** Catalogue kinds whose lines need the QS under the rules. */
   qsReviewItemTypes?: string[];
+  /** §6.20: variations follow the QS rules, or never go to the QS. */
+  qsVariations?: "rules" | "never";
+  /** §6.20: the size (either way) from which a variation always goes to the QS; null for none. */
+  qsVariationThreshold?: string | null;
   /** How many days a signing link stays open (R8). */
   signingLinkDays?: number;
   /** PLM-106: the firm's intro deck link. */
@@ -97,6 +101,8 @@ export type BuilderState = {
   brand: { name: string; logo: string; primaryColor: string; accentColor: string };
   client: { name: string; project: string; address: string | null };
   canEdit: boolean; canEditCosts: boolean; canViewCosts: boolean;
+  /** A change request's variation: its change moves it on (approval, sending, the client's decision). */
+  changeRequest?: { id: string; reference: string; status: string; projectId: string | null } | null;
   /** The project this quote belongs to once it has started, and the sealed name a variation got when applied. */
   project?: { id: string; reference: string; appliedAs: string | null } | null;
   /** The client's requirements and the decision on each: included, excluded, later, not possible, undecided. */

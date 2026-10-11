@@ -37,6 +37,8 @@ export function ChangeSheet({ change, caseId, api, format, channels, onDecided }
     catch (cause) { setError((cause as Error).message); setBusy(false); }
   };
   const days = change.timeImpactDays ?? 0;
+  const ops: Record<"add" | "omit" | "move", string> = { add: t("Add"), omit: t("Remove"), move: t("Move") };
+  const handoverBefore = change.time?.handoverBefore ?? change.handoverBefore, handoverAfter = change.time?.handoverAfter ?? change.handoverAfter;
   return <div className={styles.sheet}>
     <div className={styles.rowHead}><StateLabel state={change.status} canDecide={change.canDecide} />
       {change.decidedAt ? <span className={styles.muted}>{t("{name} decided on {date}.", { name: change.decidedBy ?? "", date: format.date(change.decidedAt) })}</span> : null}</div>
@@ -49,11 +51,20 @@ export function ChangeSheet({ change, caseId, api, format, channels, onDecided }
       </span>
       <bdi className={home.amount} dir="ltr">{signed(line.amount)}</bdi>
     </li>)}</ul> : null}
+    {change.price?.lines.length ? <ul className={home.lines} aria-label={t("What changes")}>{change.price.lines.map((line) => <li className={home.line} key={line.id}>
+      <span className={styles.itemText}>
+        <span className={styles.itemTitle} dir="auto">{ops[line.op]}: {line.title}</span>
+        <span className={styles.itemMeta}>{[line.area, `${format.number(line.quantity)} ${line.unit}`.trim()].filter(Boolean).join(" · ")}</span>
+      </span>
+      <bdi className={home.amount} dir="ltr">{signed(line.total)}</bdi>
+    </li>)}</ul> : null}
     {change.priceImpact !== null ? <dl className={home.impact}>
+      {change.price ? <><dt>{t("Before tax")}</dt><dd><bdi dir="ltr">{signed(change.price.net)}</bdi></dd><dt>{t("Tax")}</dt><dd><bdi dir="ltr">{money(change.price.tax)}</bdi></dd></> : null}
       <dt>{t("Price")}</dt><dd><bdi dir="ltr">{signed(change.priceImpact)}</bdi></dd>
-      <dt>{t("Handover")}</dt><dd>{days && change.handoverAfter
-        ? t("{before} → {after} ({days} working days)", { before: format.date(change.handoverBefore), after: format.date(change.handoverAfter), days: `${days > 0 ? "+" : ""}${days}` })
-        : change.handoverBefore ? t("{date}, unchanged", { date: format.date(change.handoverBefore) }) : t("No change")}</dd>
+      <dt>{t("Handover")}</dt><dd>{days && handoverAfter && handoverAfter !== handoverBefore
+        ? t("{before} → {after} ({days} working days)", { before: format.date(handoverBefore), after: format.date(handoverAfter), days: `${days > 0 ? "+" : ""}${days}` })
+        : handoverBefore ? t("{date}, unchanged", { date: format.date(handoverBefore) }) : t("No change")}</dd>
+      {change.time?.stages.length ? <><dt>{t("Stages")}</dt><dd>{change.time.stages.map((stage) => t("{stage} +{days} days", { stage: t(stage.name as never), days: stage.delay })).join(" · ")}</dd></> : null}
       {change.designImpact ? <><dt>{t("Design")}</dt><dd dir="auto">{change.designImpact}</dd></> : null}
     </dl> : null}
     {change.status === "declined" && change.declineNote ? <p className={styles.body} dir="auto">{change.declineNote}</p> : null}

@@ -98,6 +98,9 @@ export type PortalChange = {
   currency: string | null; priceImpact: string | null; timeImpactDays: number | null; handoverBefore: string | null; handoverAfter: string | null; designImpact: string;
   lines: Array<{ id: string; action: "add" | "omit" | "replace" | "draw"; title: string; room: string | null; quantity: string | null; unit: string; unitPrice: string | null; amount: string }>;
   decidedAt: string | null; decidedBy: string | null; method: "portal" | "signed_link" | null; declineNote: string | null; version: number; signed: boolean; canDecide: boolean;
+  /** A change on a started project: priced as a variation (client prices only), and the stages and handover it moves, as sent. */
+  price?: { net: string; tax: string; total: string; lines: Array<{ id: string; op: "add" | "omit" | "move"; title: string; area: string | null; quantity: string; unit: string; total: string }> } | null;
+  time?: { handoverBefore: string | null; handoverAfter: string | null; stages: Array<{ name: string; delay: number }> } | null;
 };
 
 /** R1: agreed value + approved changes + allowance spend beyond what was included = forecast final (client prices only). */

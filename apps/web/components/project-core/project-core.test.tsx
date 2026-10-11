@@ -365,19 +365,23 @@ describe("projects", () => {
     expect(await screen.findByText("Agreed in R3 · 6.5 m")).toBeInTheDocument();
   });
 
-  it("lists variations and starts a new one on the accepted quotation, opening it in the project", async () => {
-    const live: LiveScope = { lines: [], packages: [], seals: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1",
-      variations: [{ id: "v1", number: 3, title: "Additional work", status: "accepted", total: "350.00", appliedAs: "VO-1" }] };
-    const fetcher = mount((url, body) => {
-      if (url.startsWith("/api/commercial/cases/c1")) return body ? { data: { revision: 8, quotes: [{ id: "q1", number: 1, kind: "quotation" }, { id: "v1", number: 3, kind: "variation" }, { id: "v2", number: 4, kind: "variation" }] } } : { data: { revision: 7, quotes: [] } };
-      return url.includes("/scope") ? live : detail();
-    });
+  it("lists the project's changes (and variations made in the builder before), and raises a new one from Changes", async () => {
+    const live: LiveScope = { lines: [], packages: [], seals: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1", variations: [] };
+    const changes = { canRaise: true, projectOpen: true,
+      changes: [{ id: "11111111-1111-4111-8111-111111111111", reference: "CR-001", title: "Study wardrobe", reason: "client_request", status: "with_client", currency: "AED", value: "5251.05", days: 3,
+        handoverBefore: "2031-11-06", handoverAfter: "2031-11-11", raisedByName: "Sam Site", raisedByClient: false, updatedAt: "2031-10-01T10:00:00Z", next: null, applyProblem: null }],
+      legacy: [{ id: "v1", number: 3, title: "Additional work", status: "accepted", total: "350.00", appliedAs: "VO-1" }],
+      money: { currency: "AED", sealed: { label: "R1", net: "7200.00", tax: "360.00", total: "7560.00" }, variations: [], variationsTotal: "350.00", variationsNet: "333.33", agreed: "7910.00" } };
+    mount((url) => (url.startsWith("/api/project-changes/") ? (url.includes("/sources") ? { stages: [], rooms: [], scope: [], catalog: [] } : changes) : url.includes("/scope") ? live : detail()));
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
     await userEvent.click(await screen.findByRole("tab", { name: "Changes" }));
-    expect(await screen.findByRole("button", { name: /VO-1 Additional work/ })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "New variation" }));
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/workspace/projects/${PID}/changes/v2`));
-    expect(posts(fetcher)).toEqual([{ action: "variation", revision: 7, quoteId: "q1" }]);
+    expect(await screen.findByText("CR-001 · Study wardrobe")).toBeInTheDocument();
+    expect(screen.getByText("VO-1 · Additional work")).toBeInTheDocument();
+    expect(screen.getByText("With client")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("CR-001 · Study wardrobe"));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/workspace/projects/${PID}/changes/11111111-1111-4111-8111-111111111111`));
+    await userEvent.click(screen.getByRole("button", { name: "Raise a change" }));
+    expect(await screen.findByRole("dialog", { name: "Raise a change" })).toBeInTheDocument();
   });
 
   it("sends the material list and records the client's decision, needing a reason for each rejection", async () => {

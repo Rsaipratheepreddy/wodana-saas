@@ -65,7 +65,13 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   // PLM-082/084: where a QS prices quotations, the QS step comes first and holds sending until it's confirmed.
   const qsStep = qs.qs && status === "draft" ? <QsActions workspaceId={workspaceId} caseId={caseId} quoteId={state.quote.id} qs={qs.qs} onError={onError}
     onChanged={async (next) => { qs.setQs(next); await onDone(); }} /> : null;
-  if (status === "draft" && qsBlocks(qs.qs)) {
+  if (state.changeRequest) {
+    // A change request's variation moves with its change: priced here (the QS first where the rules name it), approved,
+    // sent and applied from the change, so this page only leads back to it.
+    const change = state.changeRequest;
+    actions = <>{qsStep}{change.projectId ? <Link className="wd-button" data-size="compact" data-variant={status === "draft" && !qsBlocks(qs.qs) ? "primary" : "secondary"}
+      href={`/workspace/projects/${change.projectId}/changes/${change.id}`}>{t("Back to {reference}", { reference: change.reference })}</Link> : null}</>;
+  } else if (status === "draft" && qsBlocks(qs.qs)) {
     actions = qsStep;
   } else if (status === "draft" && state.canEdit) {
     const direct = !flow.internalReview && flow.canReview;

@@ -79,6 +79,7 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
   const t = useT();
   const [form, setForm] = useState(data.settings);
   const [busy, setBusy] = useState(false);
+  const [changeDays, setChangeDays] = useState((data.settings.changeReminderDays ?? [3, 7]).join(", "));
   const readOnly = !data.canManage;
   const dirty = JSON.stringify(form) !== JSON.stringify(data.settings);
   return <>
@@ -96,9 +97,19 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
         <TextInput aria-label={t("Project numbers")} label={null} isReadOnly={readOnly} value={form.referencePrefix} onChange={(value) => setForm({ ...form, referencePrefix: value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12) })} />
       </SettingsRow>
     </SettingsSection>
-    <SettingsSection id="variations" title={t("Before a change is applied")}>
-      <SettingsRow label={t("Change payment verified")} hint={t("A variation's payments due before its work starts are verified by finance.")}>
-        <Switch aria-label={t("Change payment verified")} isDisabled={readOnly} isSelected={form.requireVariationPayment} onChange={(value) => setForm({ ...form, requireVariationPayment: value })} />
+    <SettingsSection id="variations" title={t("Changes")}>
+      <SettingsRow label={t("Variations are paid")}>
+        <SelectField aria-label={t("Variations are paid")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.variationPaymentRule ?? "before_work"}
+          onSelectionChange={(key) => setForm({ ...form, variationPaymentRule: key === "next_milestone" ? "next_milestone" : "before_work" })}
+          items={[{ id: "before_work", label: t("All before the work starts") }, { id: "next_milestone", label: t("With the next milestone") }]} />
+      </SettingsRow>
+      <SettingsRow label={t("Work waits for the payment")} hint={t("Added work isn't made or bought until the variation's payment is verified.")}>
+        <Switch aria-label={t("Work waits for the payment")} isDisabled={readOnly} isSelected={form.requireVariationPayment} onChange={(value) => setForm({ ...form, requireVariationPayment: value })} />
+      </SettingsRow>
+      <SettingsRow label={t("Remind the client after (days)")} hint={t("While a change waits, the client and the project manager hear on each of these days.")}>
+        <TextInput aria-label={t("Remind the client after (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={changeDays}
+          onChange={(value) => { const clean = value.replace(/[^\d,\s]/g, ""); setChangeDays(clean);
+            setForm({ ...form, changeReminderDays: clean.split(/[,\s]+/).map(Number).filter((day) => Number.isInteger(day) && day > 0) }); }} />
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="finish" title={t("When a project finishes")}>
@@ -131,7 +142,8 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
       </SettingsRow>
     </SettingsSection>
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!/^[A-Z]/.test(form.referencePrefix)} onDiscard={() => setForm(data.settings)}
-      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
+      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment,
+        variationPaymentRule: form.variationPaymentRule ?? "before_work", changeReminderDays: form.changeReminderDays ?? [3, 7], autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
         reportDueTime: form.reportDueTime ?? "18:00", autoSendPendingReports: Boolean(form.autoSendPendingReports), weeklyRollup: Boolean(form.weeklyRollup) }); setBusy(false); }} />}
   </>;
 }

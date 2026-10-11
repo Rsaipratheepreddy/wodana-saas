@@ -96,6 +96,29 @@ describe("change requests in the portal (R11)", () => {
     expect(decided).toHaveBeenCalled();
   });
 
+  it("shows a project change as priced (before tax, tax, total), the stages it moves and the new handover, and approves it with a code", async () => {
+    const api = portalApi();
+    const decided = vi.fn();
+    render(<DesignSystemProvider><ChangeSheet caseId="case1" api={api} format={format} channels={["email"]} onDecided={decided} change={change({ lines: [], designImpact: "", priceImpact: "5251.05", timeImpactDays: 3,
+      price: { net: "5001.00", tax: "250.05", total: "5251.05", lines: [
+        { id: "w", op: "add", title: "Oak wardrobe", area: "Study", quantity: "1", unit: "nos", total: "4200.00" },
+        { id: "t", op: "omit", title: "Worktop", area: "Kitchen", quantity: "1", unit: "m²", total: "-840.00" }] },
+      time: { handoverBefore: "2031-11-06", handoverAfter: "2031-11-11", stages: [{ name: "Production", delay: 3 }] } })} /></DesignSystemProvider>);
+    expect(screen.getByText("Add: Oak wardrobe")).toBeInTheDocument();
+    expect(screen.getByText("Remove: Worktop")).toBeInTheDocument();
+    expect(screen.getByText("AED -840.00")).toBeInTheDocument();
+    expect(screen.getByText("+AED 5001.00")).toBeInTheDocument();
+    expect(screen.getByText("+AED 5251.05")).toBeInTheDocument();
+    expect(screen.getByText("2031-11-06 → 2031-11-11 (+3 working days)")).toBeInTheDocument();
+    expect(screen.getByText("Production +3 days")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve change" }));
+    await waitFor(() => expect(api.challenge).toHaveBeenCalledWith({ purpose: "change:case1:cr1:accept", channel: "email" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: /Code/ }), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve change" }));
+    await waitFor(() => expect(api.command).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: "change_decision", changeId: "cr1", decision: "accept", version: 3 })));
+    expect(decided).toHaveBeenCalled();
+  });
+
   it("declines only with a reason; a viewer reads it but can't decide; the client's own request waits for the team", async () => {
     const api = portalApi();
     const { unmount } = render(<DesignSystemProvider><ChangeSheet change={change()} caseId="case1" api={api} format={format} channels={["whatsapp"]} onDecided={vi.fn()} /></DesignSystemProvider>);

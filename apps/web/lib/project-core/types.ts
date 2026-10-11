@@ -16,6 +16,10 @@ export type ProjectRoute = { id: string; name: string; isDefault: boolean; versi
 
 export type ProjectSettings = {
   requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; requireVariationPayment: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
+  /** §6.20: how a variation is paid — all before its work, or with the project's next milestone. */
+  variationPaymentRule?: "before_work" | "next_milestone";
+  /** §6.20: days after a change reaches the client when they and the project manager are reminded. */
+  changeReminderDays?: number[];
   /** The project finishes by itself once the client accepts the handover (D-7). */
   autoFinish: boolean;
   /** Hours after which a drafted client update nobody sent goes by itself; null keeps it manual (D-40). */

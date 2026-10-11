@@ -22,7 +22,7 @@ export type DocumentCard = {
 export type QsStage = "not_required" | "to_send" | "with_qs" | "confirmed" | "stale" | "returned";
 /** Why a quotation does or doesn't need the QS (the firm's QS rules, Settings › Quotations). */
 export type QsReason =
-  | { code: "off" | "not_quotation" | "every_quotation" | "no_boq" | "design_fee" | "boq_required" | "standard_only" }
+  | { code: "off" | "not_quotation" | "every_quotation" | "no_boq" | "design_fee" | "boq_required" | "standard_only" | "variation_amount" }
   | { code: "lines"; workPackages: string[]; itemTypes: string[] };
 export type QsState = {
   required: boolean; reason?: QsReason; stage: QsStage; reference: string | null; canSend: boolean; canDecide: boolean;

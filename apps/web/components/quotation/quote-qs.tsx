@@ -11,7 +11,7 @@ import styles from "./quote-builder.module.css";
 export function useQs(workspaceId: string, caseId: string, quoteId: string, revision: number, kind: string) {
   const [qs, setQs] = useState<QsState | null>(null);
   const load = useCallback(async () => {
-    if (kind !== "quotation") return;
+    if (kind !== "quotation" && kind !== "variation") return;
     try { setQs(await proposalApi(workspaceId, caseId).qs(quoteId)); } catch { setQs(null); }
   }, [workspaceId, caseId, quoteId, kind]);
   useEffect(() => { void load(); }, [load, revision]);
@@ -35,6 +35,7 @@ export function qsReasonText(reason: QsReason | undefined, t: Translate): string
   if (reason.code === "design_fee") return t("QS review: not needed for a Design Fee proposal");
   if (reason.code === "standard_only") return t("QS review: not needed for standard items");
   if (reason.code === "no_boq") return t("QS review: not needed, this order needs no BOQ");
+  if (reason.code === "variation_amount") return t("QS review: needed for a variation this size");
   return null;
 }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { Button, Checkbox, EmptyState, Form, FormDialog, FormNotSaved, IconButton, InlineNotice, PercentageInput, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, Checkbox, EmptyState, Form, FormDialog, FormNotSaved, IconButton, InlineNotice, MoneyField, PercentageInput, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { commercialPath } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quotationPath } from "@/lib/quotation/client";
@@ -139,6 +139,15 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
         <SelectField aria-label={t("Quotations the QS prices")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.qsReviewScope ?? "all"}
           onSelectionChange={(key) => set("qsReviewScope", key === "rules" ? "rules" : "all")}
           items={[{ id: "all", label: t("Every quotation") }, { id: "rules", label: t("Only where the rules apply") }]} />
+      </SettingsRow> : null}
+      {form.qsReview ? <SettingsRow label={t("Variations the QS prices")} hint={t("By the same rules as quotations, and every variation from the size below.")}>
+        <SelectField aria-label={t("Variations the QS prices")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.qsVariations ?? "rules"}
+          onSelectionChange={(key) => set("qsVariations", key === "never" ? "never" : "rules")}
+          items={[{ id: "rules", label: t("By the rules") }, { id: "never", label: t("None") }]} />
+      </SettingsRow> : null}
+      {form.qsReview && (form.qsVariations ?? "rules") === "rules" ? <SettingsRow label={t("Variations from (amount)")}>
+        <MoneyField aria-label={t("Variations from (amount)")} label={null} isReadOnly={readOnly} value={form.qsVariationThreshold ?? ""}
+          onChange={(value) => set("qsVariationThreshold", value ? value : null)} />
       </SettingsRow> : null}
       {form.qsReview && form.qsReviewScope === "rules" ? <SettingsRow align="start" label={t("Catalogue kinds for QS review")}>
         <div className={styles.kinds}>{QS_ITEM_TYPES.map((type) => <Checkbox key={type} isDisabled={readOnly} isSelected={(form.qsReviewItemTypes ?? []).includes(type)}

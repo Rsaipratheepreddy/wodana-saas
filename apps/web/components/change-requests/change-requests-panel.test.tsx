@@ -4,6 +4,8 @@ import { DesignSystemProvider } from "@/design-system";
 import type { ChangeRequest, ChangeRequestsView } from "@/lib/change-requests/types";
 import { ChangeRequestsPanel } from "./change-requests-panel";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }) }));
+
 const change = (overrides: Partial<ChangeRequest> = {}): ChangeRequest => ({
   id: "11111111-1111-4111-8111-111111111111", caseId: "c1", number: 1, reference: "CR-001", kind: "replacement", title: "Smoked oak and a shelf", description: "Darker veneer.",
   designImpact: "Elevation C", status: "pending_approval", currency: "AED", priceImpact: "6551.00", allowanceDraw: "5600.00", timeImpactDays: 4, handoverBefore: "2031-10-15",
