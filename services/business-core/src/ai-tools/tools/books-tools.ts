@@ -1,7 +1,8 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Dec } from "../../catalog-core/decimal";
 import { ToolInputError, ToolQuestion, type AiTool, type AiToolContext } from "../ai-tool";
-import { PROJECT_PROFIT_PERMISSIONS, type ProjectPnlView } from "../../books/project/project-profit.service";
+import { PROJECT_PROFIT_PERMISSIONS, type ProjectPnlView as LedgerPnlView } from "../../books/project/project-profit.service";
+import type { ProjectPnlView } from "../../project-core/project-finance.service";
 import { clip, ref } from "../tool-kit";
 import type { ToolServices } from "../tool-services";
 
@@ -22,7 +23,7 @@ function verdict(profit: string | null) {
   return sign > 0 ? "made money" : sign < 0 ? "lost money" : "broke even";
 }
 
-function profitFacts(context: AiToolContext, pnl: Extract<ProjectPnlView, { enabled: true }>) {
+function profitFacts(context: AiToolContext, pnl: Extract<LedgerPnlView, { enabled: true }>) {
   const project = { reference: pnl.reference, name: clip(pnl.name, 160), client: clip(pnl.clientName, 160), status: pnl.status };
   const facts: Record<string, unknown> = {
     source: context.cite({ type: "project", id: pnl.projectId, label: pnl.reference || pnl.name, href: pnl.links.project }),
@@ -44,6 +45,32 @@ function profitFacts(context: AiToolContext, pnl: Extract<ProjectPnlView, { enab
 }
 
 /**
+ * The same project from Wodana's own records (Money › Summary): what was agreed, costs by category against the
+ * quotation's estimate, what's committed, and the margin so far and expected at completion with its flags. Null when the
+ * person doesn't see the project's costs this way (a Ledger reader without project cost rights).
+ */
+async function recordsFacts(context: AiToolContext, services: ToolServices, projectId: string) {
+  if (!services.projectFinance) return null;
+  let pnl: ProjectPnlView;
+  try { pnl = await services.projectFinance.pnl(context.actor, context.workspaceId, projectId); } catch (error) {
+    if (error instanceof ForbiddenException || error instanceof NotFoundException) return null;
+    throw error;
+  }
+  const facts: Record<string, unknown> = {
+    basis: "Wodana's own records: orders and deliveries, supplier bills, stock, labour and petty cash; client invoices and verified receipts.",
+    costCurrency: pnl.currency, contractCurrency: pnl.contractCurrency,
+    agreedBeforeTax: { total: pnl.contract.net, quotation: pnl.contract.baselineNet, variations: pnl.contract.variationsNet },
+    invoicedBeforeTax: pnl.revenue.invoicedNet, received: pnl.revenue.received,
+    costsSoFar: pnl.totals.actual, committedOnOpenOrders: pnl.totals.committed, expectedCostAtCompletion: pnl.totals.forecast, costEstimate: pnl.totals.budget,
+    byCategory: Object.fromEntries(pnl.categories.map((row) => [row.category, { estimate: row.budget, spent: row.actual, committed: row.committed, expected: row.forecast, over: row.over }])),
+    flags: pnl.flags,
+  };
+  if (pnl.marginHidden) return { ...facts, marginHidden: true };
+  return { ...facts, marginSoFar: pnl.margin.toDate, marginSoFarPercent: pnl.margin.toDatePercent, expectedMargin: pnl.margin.forecast,
+    expectedMarginPercent: pnl.margin.forecastPercent, targetMarginPercent: pnl.margin.target };
+}
+
+/**
  * Woddy's Ledger reads (plan §6.21b): a project's live profit and the books at a glance. Both run through the Ledger's
  * own service as the person, so the Money tab's cost and margin rules, the Ledger's `books.view` and the workspace's
  * RLS apply. Read only.
@@ -51,7 +78,7 @@ function profitFacts(context: AiToolContext, pnl: Extract<ProjectPnlView, { enab
 export function booksTools(services: ToolServices): AiTool[] {
   const projectProfit: AiTool = {
     name: "project_profit",
-    description: "Did a project make money? Its live profit from the Ledger (the firm's books), found by the project's name, reference or client (e.g. \"Villa 12\"), or the project the person is on: revenue invoiced (after credit notes, before tax), costs so far by type (materials, subcontract, labour, site expenses, price variance, other, cost of goods), profit, margin %, the margin the accepted quote planned and the difference in points, and spend still committed on open orders. Use it for every question about a project's profit, margin, losses or costs so far. Answer with the numbers and their currency, say whether it made or lost money, compare with the quote, and cite the project and its Ledger journals.",
+    description: "Did a project make money? Its live profit from the Ledger (the firm's books), found by the project's name, reference or client (e.g. \"Villa 12\"), or the project the person is on: revenue invoiced (after credit notes, before tax), costs so far by type (materials, subcontract, labour, site expenses, price variance, other, cost of goods), profit, margin %, the margin the accepted quote planned and the difference in points, and spend still committed on open orders; plus, from Wodana's own records (fromRecords), the agreed value with variations, costs by category against the quotation's estimate, the margin so far and the margin expected at completion, and flags (over the estimate, below the firm's target, an expected loss). Use it for every question about a project's profit, margin, losses, costs so far or expected margin. Answer with the numbers and their currency, say whether it made or lost money, compare with the quote, and cite the project (and its Ledger journals when the Ledger is on).",
     kind: "read",
     confirmation: "none",
     calls: "ProjectProfitService.pnl",
@@ -81,10 +108,13 @@ export function booksTools(services: ToolServices): AiTool[] {
           throw error;
         }
       });
+      const records = await recordsFacts(context, services, id);
       if (!pnl.enabled)
         return { data: { source: context.cite(ref("project", pnl.projectId, pnl.reference || pnl.name)), project: { reference: pnl.reference, name: clip(pnl.name, 160) },
-          ledger: "off", note: "The Ledger isn't on for this project's company, so there is no profit from the books. The project's Money tab shows what was spent." } };
-      return { data: profitFacts(context, pnl) };
+          ledger: "off", ...(records
+            ? { fromRecords: records, note: "The Ledger isn't on for this project's company: answer from Wodana's own records (fromRecords)." }
+            : { note: "The Ledger isn't on for this project's company, so there is no profit from the books. The project's Money tab shows what was spent." }) } };
+      return { data: { ...profitFacts(context, pnl), ...(records ? { fromRecords: records } : {}) } };
     },
   };
 

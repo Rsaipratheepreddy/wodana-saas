@@ -212,7 +212,10 @@ export class ProjectCoreService {
           attention: attention.get(project.id) ?? { late: 0, blocked: 0 },
         });
       }
-      return { projects: rows, canStart: all };
+      // Projects › Profitability is for people who see project costs (with margins, or their own projects' costs).
+      const canSeeProfit = await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.view")
+        || await this.access.hasPermission(client, workspaceId, user.userId, "projects.costs.view");
+      return { projects: rows, canStart: all, canSeeProfit };
     });
   }
 

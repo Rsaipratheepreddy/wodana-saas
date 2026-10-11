@@ -2,8 +2,13 @@ import { randomUUID } from "node:crypto";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { toolContext } from "../ai-tools/ai-tool-context";
+import { AiToolRegistry } from "../ai-tools/ai-tools.registry";
+import { validateToolInput } from "../ai-tools/tool-kit";
+import type { ToolServices } from "../ai-tools/tool-services";
 import { postJournal, type DraftLine } from "../books/ledger/ledger";
 import { applyTemplate } from "../books/ledger/templates";
+import { ProjectProfitService } from "../books/project/project-profit.service";
 import { addDays, dayIn } from "./project-cash-flow";
 import { ProjectFinanceService } from "./project-finance.service";
 
@@ -56,6 +61,10 @@ integration("project P&L, cash flow and profitability on real Postgres", () => {
   const access = (userId: string, permissions: string[]) => ({
     asMember: (_a: unknown, workspaceId: string, work: (c: PoolClient, u: { userId: string }) => unknown) => tenant(workspaceId, userId, (client) => Promise.resolve(work(client, { userId }))),
     hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code),
+    withAnyPermission: async (_a: unknown, workspaceId: string, codes: string[], work: (c: PoolClient, u: { userId: string }) => unknown) => {
+      if (!codes.some((code) => permissions.includes(code))) throw new ForbiddenException(`Any permission required: ${codes.join(", ")}`);
+      return tenant(workspaceId, userId, (client) => Promise.resolve(work(client, { userId })));
+    },
   }) as never;
   const as = {
     manager: () => new ProjectFinanceService(access(people.manager, ["projects.manage", "projects.view", "commercial.costs.view"])),
@@ -319,6 +328,22 @@ integration("project P&L, cash flow and profitability on real Postgres", () => {
     const own = await as.lead().profitability(actor, ws);
     expect(own.marginHidden).toBe(true);
     expect(own.rows.map((row) => [row.reference, row.forecastMarginPercent])).toEqual([["PRJ-0007", null]]);
+  });
+
+  it("lets Woddy's project_profit answer from Wodana's records next to the Ledger, within the person's permissions", async () => {
+    const woddy = (userId: string, granted: string[]) => {
+      const registry = AiToolRegistry.catalogue({ books: new ProjectProfitService(access(userId, granted)), projectFinance: new ProjectFinanceService(access(userId, granted)) } as unknown as ToolServices);
+      const { context } = toolContext({ actor, workspaceId: ws, runId: "run-1", asker: { userId, membershipId: "m", permissions: new Set(granted), timeZone: "Asia/Dubai", locale: "en" } });
+      const tool = registry.get("project_profit")!;
+      return (project: string) => tool.run!(context, validateToolInput(tool.parameters, { project })) as Promise<{ data: Record<string, unknown> }>;
+    };
+    const manager = await woddy(people.manager, ["projects.manage", "projects.view", "commercial.costs.view"])("Villa 7");
+    expect(manager.data).toMatchObject({ project: { reference: "PRJ-0007" }, revenue: "40000.0000", totalCost: "19000.0000",
+      fromRecords: { agreedBeforeTax: { total: "110000.0000", variations: "10000.0000" }, costsSoFar: "19800.0000", expectedCostAtCompletion: "65800.0000",
+        expectedMargin: "44200.0000", expectedMarginPercent: "40.2", targetMarginPercent: "45.0", byCategory: { materials: { estimate: "16000.0000", over: true } } } });
+    const lead = await woddy(people.lead, ["projects.view", "projects.costs.view"])("PRJ-0007");
+    expect(lead.data).toMatchObject({ marginHidden: true, fromRecords: { marginHidden: true, costsSoFar: "19800.0000" } });
+    expect(lead.data.fromRecords).not.toHaveProperty("expectedMargin");
   });
 
   it("keeps each workspace's projects to itself", async () => {

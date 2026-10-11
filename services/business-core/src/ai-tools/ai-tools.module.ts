@@ -20,6 +20,7 @@ import { CrmPartiesService } from "../crm/parties/crm-parties.service";
 import { InventoryModule } from "../inventory/inventory.module";
 import { InventoryService } from "../inventory/inventory.service";
 import { ProjectCoreModule } from "../project-core/project-core.module";
+import { ProjectFinanceService } from "../project-core/project-finance.service";
 import { ProjectWorkService } from "../project-core/project-work.service";
 import { PurchasingModule } from "../purchasing/purchasing.module";
 import { SuppliersService } from "../purchasing/suppliers.service";
@@ -41,11 +42,11 @@ import { AiToolRegistry } from "./ai-tools.registry";
   providers: [
     {
       provide: AiToolRegistry,
-      inject: [WorkspaceAccessService, WorkspaceSearchService, CrmLeadsService, CrmIntakeService, CrmOpportunitiesService, CrmActivitiesService, CrmPartiesService, CrmConversationsService, CrmInboxService, CrmScheduledMessagesService, ProjectWorkService, QuotationCollabService, CatalogV2Service, InventoryService, SuppliersService, ProjectProfitService],
+      inject: [WorkspaceAccessService, WorkspaceSearchService, CrmLeadsService, CrmIntakeService, CrmOpportunitiesService, CrmActivitiesService, CrmPartiesService, CrmConversationsService, CrmInboxService, CrmScheduledMessagesService, ProjectWorkService, QuotationCollabService, CatalogV2Service, InventoryService, SuppliersService, ProjectProfitService, ProjectFinanceService],
       useFactory: (access: WorkspaceAccessService, search: WorkspaceSearchService, leads: CrmLeadsService, intake: CrmIntakeService, opportunities: CrmOpportunitiesService, activities: CrmActivitiesService,
         parties: CrmPartiesService, conversations: CrmConversationsService, inbox: CrmInboxService, scheduled: CrmScheduledMessagesService, work: ProjectWorkService, quoteComments: QuotationCollabService,
-        catalog: CatalogV2Service, inventory: InventoryService, suppliers: SuppliersService, books: ProjectProfitService) =>
-        AiToolRegistry.catalogue({ access, search, leads, intake, opportunities, activities, parties, conversations, inbox, scheduled, work, quoteComments, catalog, inventory, suppliers, books }),
+        catalog: CatalogV2Service, inventory: InventoryService, suppliers: SuppliersService, books: ProjectProfitService, projectFinance: ProjectFinanceService) =>
+        AiToolRegistry.catalogue({ access, search, leads, intake, opportunities, activities, parties, conversations, inbox, scheduled, work, quoteComments, catalog, inventory, suppliers, books, projectFinance }),
     },
     AiToolCallsService,
     AiAgentService,
