@@ -18,7 +18,6 @@ import { raiseStageInvoiceRequests } from "../finance-requests/stage-invoice-req
 import { processTeamCalendarDeadlines } from "../team-calendars/team-calendars.store";
 import { processFulfilmentDeadlines } from "../fulfilment/fulfilment-reminders";
 import { processClientCalls } from "../client-calls/client-calls.store";
-import { processChangeDecisions } from "../change-requests/change-request-reminders";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Tenant = Pick<PoolClient, "query">;
@@ -47,52 +46,11 @@ export class ProjectRemindersService {
     );
     const totals = { created: 0, decisionReminders: 0, quotesExpired: 0, quietChatsResolved: 0, approvalEscalations: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
       lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, dailyProgressSent: 0, weeklyRollups: 0, warrantyEnding: 0, retentionReleased: 0, overBudget: 0,
-      stageInvoiceRequests: 0, changeDecisions: 0, checkoutReminders: 0, documentReminders: 0, teamCalendarAlerts: 0, clientCallsBooked: 0, lateDeliveries: 0, failedWorkspaces: 0 };
+      stageInvoiceRequests: 0, checkoutReminders: 0, documentReminders: 0, teamCalendarAlerts: 0, clientCallsBooked: 0, lateDeliveries: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
-        const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
-          decisions: await this.createDecisionReminders(client),
-          // Quotes that ran out are Expired (Q-6); the warning before and the client's reminders are reminder engine kinds.
-          quotes: await processQuoteExpiry(client, workspaceId),
-          // Changes sent to the client and not decided: the client and the project manager on the firm's days (§6.20),
-          // until the change-request source joins the reminder engine.
-          changeDecisions: await processChangeDecisions(client, workspaceId),
-          // Chats quiet since our last message resolve themselves, unless something is pending (AU-2).
-          quietChats: await resolveQuietChats(client, workspaceId),
-          // E3-1: a step that waited past its policy's escalation hours passes to the next approver (reminders: approval.waiting).
-          approvals: await escalateWaitingApprovals(client, workspaceId),
-          design: await processDesignDeadlines(client, workspaceId),
-          stages: await processStagesReady(client, workspaceId),
-          weekly: await processWeeklySummaries(client, workspaceId),
-          materials: await processMaterialsWaiting(client, workspaceId),
-          milestones: await processMilestonesDue(client, workspaceId),
-          // A reached payment stage raises its invoice request for Finance, where the firm turned it on (PLM-108).
-          stageInvoices: await raiseStageInvoiceRequests(client, workspaceId),
-          clientUpdates: await processClientUpdateDrafts(client, workspaceId),
-          // Drafts nobody sent or discarded in time go out by themselves when the firm chose so (D-40).
-          clientUpdatesSent: await processClientUpdateAutoSend(client, workspaceId),
-          purchasing: await processPurchasingDeadlines(client, workspaceId),
-          suppliers: await processSupplierDocuments(client, workspaceId),
-          factory: await processFactoryDeadlines(client, workspaceId),
-          // Render and 2D time, production, deliveries and installations past their day (PLM-090/091).
-          teamCalendars: await processTeamCalendarDeadlines(client, workspaceId),
-          // Won orders past their expected date and not yet with the client (PLM-126).
-          fulfilment: await processFulfilmentDeadlines(client, workspaceId),
-          // The next client update call when the last one is done or its day passed (PLM-046).
-          clientCalls: await processClientCalls(client, workspaceId),
-          site: await processSiteReports(client, workspaceId),
-          // Daily progress approved but not sent (or, if the firm chose, never reviewed) goes after D-40's hours; Friday's roll-up.
-          dailyProgress: await processDailyProgressAutoSend(client, workspaceId),
-          rollups: await processWeeklyRollups(client, workspaceId),
-          warranty: await processWarrantyExpiry(client, workspaceId),
-          // Retention released at handover first, so what falls due includes it.
-          retention: await processRetentionReleases(client, workspaceId),
-          budgets: await processProjectBudgets(client, workspaceId),
-          checkouts: await processHrmsCheckouts(client, workspaceId),
-          documents: await processHrmsDocuments(client, workspaceId),
-        }));
+        const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) => this.sendWorkspace(client, workspaceId));
         totals.decisionReminders += run.decisions;
-        totals.changeDecisions += run.changeDecisions?.sent ?? 0;
         totals.quotesExpired += run.quotes?.expired ?? 0;
         totals.quietChatsResolved += run.quietChats?.resolved ?? 0;
         totals.approvalEscalations += run.approvals?.escalated ?? 0;
@@ -125,6 +83,51 @@ export class ProjectRemindersService {
     }
     totals.created = totals.decisionReminders + totals.weeklySummaries + totals.stagesReady + totals.materialsWaiting + totals.milestonesDue;
     return totals;
+  }
+
+  /**
+   * One workspace's daily run, in the caller's tenant transaction. Changes waiting on the client aren't here: they are
+   * the reminder engine's change_request.client_decision (change-requests/change-request-reminder-source.ts).
+   */
+  async sendWorkspace(client: PoolClient, workspaceId: string) {
+    return {
+      decisions: await this.createDecisionReminders(client),
+      // Quotes that ran out are Expired (Q-6); the warning before and the client's reminders are reminder engine kinds.
+      quotes: await processQuoteExpiry(client, workspaceId),
+      // Chats quiet since our last message resolve themselves, unless something is pending (AU-2).
+      quietChats: await resolveQuietChats(client, workspaceId),
+      // E3-1: a step that waited past its policy's escalation hours passes to the next approver (reminders: approval.waiting).
+      approvals: await escalateWaitingApprovals(client, workspaceId),
+      design: await processDesignDeadlines(client, workspaceId),
+      stages: await processStagesReady(client, workspaceId),
+      weekly: await processWeeklySummaries(client, workspaceId),
+      materials: await processMaterialsWaiting(client, workspaceId),
+      milestones: await processMilestonesDue(client, workspaceId),
+      // A reached payment stage raises its invoice request for Finance, where the firm turned it on (PLM-108).
+      stageInvoices: await raiseStageInvoiceRequests(client, workspaceId),
+      clientUpdates: await processClientUpdateDrafts(client, workspaceId),
+      // Drafts nobody sent or discarded in time go out by themselves when the firm chose so (D-40).
+      clientUpdatesSent: await processClientUpdateAutoSend(client, workspaceId),
+      purchasing: await processPurchasingDeadlines(client, workspaceId),
+      suppliers: await processSupplierDocuments(client, workspaceId),
+      factory: await processFactoryDeadlines(client, workspaceId),
+      // Render and 2D time, production, deliveries and installations past their day (PLM-090/091).
+      teamCalendars: await processTeamCalendarDeadlines(client, workspaceId),
+      // Won orders past their expected date and not yet with the client (PLM-126).
+      fulfilment: await processFulfilmentDeadlines(client, workspaceId),
+      // The next client update call when the last one is done or its day passed (PLM-046).
+      clientCalls: await processClientCalls(client, workspaceId),
+      site: await processSiteReports(client, workspaceId),
+      // Daily progress approved but not sent (or, if the firm chose, never reviewed) goes after D-40's hours; Friday's roll-up.
+      dailyProgress: await processDailyProgressAutoSend(client, workspaceId),
+      rollups: await processWeeklyRollups(client, workspaceId),
+      warranty: await processWarrantyExpiry(client, workspaceId),
+      // Retention released at handover first, so what falls due includes it.
+      retention: await processRetentionReleases(client, workspaceId),
+      budgets: await processProjectBudgets(client, workspaceId),
+      checkouts: await processHrmsCheckouts(client, workspaceId),
+      documents: await processHrmsDocuments(client, workspaceId),
+    };
   }
 
   private async createDecisionReminders(client: Tenant) {

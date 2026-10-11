@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { changeReminderRound } from "./change-request-reminders";
 import { allowedActions, cleanProjectDraft, cleanScopeLine, nextStep, replacementId, signedAmount, variationOps, variationPaymentTerms, type ChangeRights } from "./change-request-flow";
 import { ChangeRuleError, nextStatus } from "./change-request.domain";
 
@@ -92,9 +91,5 @@ describe("a project change's steps, and who takes them", () => {
     expect(nextStep(allowedActions(at("approved"), rights({ commercial: true })))).toBeNull();
     expect(allowedActions(at("applied"), rights({ manager: true, commercial: true }))).toEqual([]);
     expect(allowedActions(at("draft"), rights({ view: false, commercial: true }))).toEqual([]);
-  });
-
-  it("reminds on the firm's days, the latest round once", () => {
-    expect([changeReminderRound(2, [3, 7]), changeReminderRound(3, [3, 7]), changeReminderRound(9, [7, 3, 3]), changeReminderRound(9, [])]).toEqual([0, 1, 2, 0]);
   });
 });

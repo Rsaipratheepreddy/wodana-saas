@@ -114,19 +114,15 @@ export class ProjectCoreService {
       const keepInformed = body.keepInformed === undefined
         ? Object.fromEntries(Object.entries(current.keepInformed).map(([event, list]) => [event, list.filter((role) => roles.some((next) => next.key === role))]))
         : parseKeepInformed(body.keepInformed, roles);
-      // §6.20: how a variation is paid, and when a change waiting for the client is chased.
+      // §6.20: how a variation is paid. When a change waiting for the client is chased is its reminder rule (Settings › Reminders).
       const paymentRule = body.variationPaymentRule === undefined ? current.variationPaymentRule : body.variationPaymentRule;
       if (paymentRule !== "before_work" && paymentRule !== "next_milestone") throw new BadRequestException("Choose how a variation is paid.");
-      const reminderDays = body.changeReminderDays === undefined ? current.changeReminderDays : body.changeReminderDays;
-      if (!Array.isArray(reminderDays) || reminderDays.length > 5 || reminderDays.some((day) => !Number.isInteger(day) || Number(day) < 1 || Number(day) > 60))
-        throw new BadRequestException("Remind on up to five days, each from 1 to 60.");
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
                 require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, report_due_time = $11::time, auto_send_pending_reports = $12, weekly_rollup = $13,
-                keep_informed = $14::jsonb, variation_payment_rule = $15, change_reminder_days = $16::smallint[], version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+                keep_informed = $14::jsonb, variation_payment_rule = $15, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend,
-          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule,
-          [...new Set((reminderDays as number[]).map(Number))].sort((a, b) => a - b)]);
+          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };

@@ -28,7 +28,8 @@ type Db = Pick<PoolClient, "query">;
  *   change_request.materials       approved: what to make or buy    the factory lead and procurement on the project, the factory and purchasing managers
  *   change_request.schedule_moved  applied: new dates               the whole project team and everyone whose work moved (work.moved per task as well)
  *   change_request.apply_blocked   approved but couldn't be applied the project manager
- *   change_request.reminder        still waiting for the client     the project manager (the client gets a decision_waiting reminder)
+ *   change_request.client_decision still waiting for the client     the reminder engine (change-request-reminder-source.ts): the client on the
+ *                                                                  rule's days, then the staff copy to the project manager (Settings › Reminders)
  */
 
 /** The owners of where the job stands now: the active design stage's owner and the people holding the current project stage's role. */
@@ -182,14 +183,4 @@ export async function noticeProjectChangeBlocked(db: Db, workspaceId: string, ch
   const people = await projectPeople(db, workspaceId, change.projectId, { lead: true });
   await tellStaff(db, { workspaceId, recipients: people, code: "change_request.apply_blocked", deepLink: projectLink(change.projectId, change.id), key: `${change.id}:blocked`, email: true,
     variables: { ...(await facts(db, workspaceId, change.caseId, null)), reference: change.reference, title: change.title, note: problem.slice(0, 480) } });
-}
-
-/** Still with the client after N days: a reminder to the client's decision-makers and to the project manager, once per round. */
-export async function noticeProjectChangeReminder(db: Db, workspaceId: string, change: ProjectChangeNotice, round: number, days: number) {
-  const told = await tellClients(db, { workspaceId, caseId: change.caseId, event: "decision_waiting", recordId: `change:${change.id}:reminder:${round}`,
-    title: `${change.reference} · ${change.title}`, note: impactLine(change.priceImpact, change.timeImpactDays, change.currency) });
-  const people = await projectPeople(db, workspaceId, change.projectId, { lead: true });
-  const staff = await tellStaff(db, { workspaceId, recipients: people, code: "change_request.reminder", deepLink: projectLink(change.projectId, change.id), key: `${change.id}:reminder:${round}`,
-    email: true, variables: { ...(await facts(db, workspaceId, change.caseId, null)), reference: change.reference, title: change.title, days: String(days) } });
-  return { client: Boolean(told.queued), staff };
 }

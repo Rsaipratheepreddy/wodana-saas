@@ -71,18 +71,16 @@ export async function projectForChanges(db: Db, workspaceId: string, caseId: str
       ORDER BY project.started_at LIMIT 1`, [workspaceId, caseId])).rows[0]?.id ?? null;
 }
 
-export type ChangeSettings = { paymentRule: PaymentRule; requireVariationPayment: boolean; reminderDays: number[]; validityDays: number };
+export type ChangeSettings = { paymentRule: PaymentRule; requireVariationPayment: boolean; validityDays: number };
 
 export async function changeSettings(db: Db, workspaceId: string): Promise<ChangeSettings> {
-  const row = (await db.query<{ paymentRule: PaymentRule | null; requireVariationPayment: boolean | null; reminderDays: number[] | null; validityDays: number | null }>(
-    `SELECT project.variation_payment_rule AS "paymentRule", project.require_variation_payment AS "requireVariationPayment", project.change_reminder_days AS "reminderDays",
-            quotation.validity_days AS "validityDays"
+  const row = (await db.query<{ paymentRule: PaymentRule | null; requireVariationPayment: boolean | null; validityDays: number | null }>(
+    `SELECT project.variation_payment_rule AS "paymentRule", project.require_variation_payment AS "requireVariationPayment", quotation.validity_days AS "validityDays"
        FROM workspaces workspace
        LEFT JOIN workspace_project_settings project ON project.workspace_id = workspace.id
        LEFT JOIN workspace_quotation_settings quotation ON quotation.workspace_id = workspace.id
       WHERE workspace.id = $1`, [workspaceId])).rows[0];
-  return { paymentRule: row?.paymentRule ?? "before_work", requireVariationPayment: row?.requireVariationPayment ?? false, reminderDays: row?.reminderDays ?? [3, 7],
-    validityDays: row?.validityDays ?? 30 };
+  return { paymentRule: row?.paymentRule ?? "before_work", requireVariationPayment: row?.requireVariationPayment ?? false, validityDays: row?.validityDays ?? 30 };
 }
 
 async function today(db: Db, workspaceId: string) {

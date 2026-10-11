@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, EmptyState, IconButton, InlineNotice, MultiSelectField, PillTabs, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, TimeField, isNoAccessError, NoAccessState } from "@/design-system";
 import { parseTime } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
+import { reminderHref } from "@/lib/reminders/contract";
 import type { CheckKind, KeepInformedEvent, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
 import { useSupplyLabels } from "./project-scope";
 import { WarrantySettingsSection } from "../site/project-warranty";
@@ -79,7 +81,6 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
   const t = useT();
   const [form, setForm] = useState(data.settings);
   const [busy, setBusy] = useState(false);
-  const [changeDays, setChangeDays] = useState((data.settings.changeReminderDays ?? [3, 7]).join(", "));
   const readOnly = !data.canManage;
   const dirty = JSON.stringify(form) !== JSON.stringify(data.settings);
   return <>
@@ -106,10 +107,9 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
       <SettingsRow label={t("Work waits for the payment")} hint={t("Added work isn't made or bought until the variation's payment is verified.")}>
         <Switch aria-label={t("Work waits for the payment")} isDisabled={readOnly} isSelected={form.requireVariationPayment} onChange={(value) => setForm({ ...form, requireVariationPayment: value })} />
       </SettingsRow>
-      <SettingsRow label={t("Remind the client after (days)")} hint={t("While a change waits, the client and the project manager hear on each of these days.")}>
-        <TextInput aria-label={t("Remind the client after (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={changeDays}
-          onChange={(value) => { const clean = value.replace(/[^\d,\s]/g, ""); setChangeDays(clean);
-            setForm({ ...form, changeReminderDays: clean.split(/[,\s]+/).map(Number).filter((day) => Number.isInteger(day) && day > 0) }); }} />
+      {/* When a change waiting for the client is chased is its reminder rule (Settings › Reminders). */}
+      <SettingsRow label={t("Reminders")}>
+        <Link href={reminderHref.settings("change_request.client_decision")}>{t("Open reminder settings")}</Link>
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="finish" title={t("When a project finishes")}>
@@ -143,7 +143,7 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
     </SettingsSection>
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!/^[A-Z]/.test(form.referencePrefix)} onDiscard={() => setForm(data.settings)}
       onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment,
-        variationPaymentRule: form.variationPaymentRule ?? "before_work", changeReminderDays: form.changeReminderDays ?? [3, 7], autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
+        variationPaymentRule: form.variationPaymentRule ?? "before_work", autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
         reportDueTime: form.reportDueTime ?? "18:00", autoSendPendingReports: Boolean(form.autoSendPendingReports), weeklyRollup: Boolean(form.weeklyRollup) }); setBusy(false); }} />}
   </>;
 }

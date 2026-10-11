@@ -21,7 +21,12 @@ import { EsignService } from "../proposals/esign.service";
 import { QsReviewService } from "../proposals/qs-review.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
-import { processChangeDecisions } from "./change-request-reminders";
+import { changeDecisionReminderSource } from "./change-request-reminder-source";
+import { createSourceRegistry } from "../reminders/engine/engine";
+import { sweepWorkspace } from "../reminders/engine/sweep";
+import { ProjectRemindersService } from "../projects/project-reminders.service";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { ChangeRequestsService } from "./change-requests.service";
 import { ProjectChangesService } from "./project-changes.service";
 import { approvedVariations, readProjectChange } from "./project-changes.store";
@@ -402,12 +407,37 @@ integration("changes on a started project: raise → price → QS → approve �
     expect((await pm.get(actor, s.workspaceId, s.projectId, asked)).change).toMatchObject({ status: "draft", raisedByClient: true, raisedByName: "Maya Client" });
     expect(who(s, await notices(s, "change_request.project_raised"))).toEqual(["pm", "qs"]);
 
-    // Waiting with the client: reminded after the firm's days (3, 7), once per round.
+    // Waiting with the client: one reminder system, the engine's change_request.client_decision (its rule: 2 and 5 days,
+    // then the staff copy to the project manager). Sent on Monday 7 January 2030 at 08:00 UTC.
     const waiting = await toClient("Repair the wall");
-    await pool.query("UPDATE change_requests SET sent_at = now() - interval '4 days' WHERE id = $1", [waiting.change.id]);
-    expect(await asApp(s.workspaceId, NIL, (client) => processChangeDecisions(client, s.workspaceId))).toEqual({ sent: 1 });
-    expect(await asApp(s.workspaceId, NIL, (client) => processChangeDecisions(client, s.workspaceId))).toEqual({ sent: 0 });
-    expect(who(s, await notices(s, "change_request.reminder"))).toEqual(["pm"]);
+    await pool.query("UPDATE change_requests SET sent_at = now() - interval '8 days' WHERE id = $1", [waiting.change.id]);
+    const sources = createSourceRegistry([changeDecisionReminderSource]);
+    const sweep = (now: string) => asApp(s.workspaceId, NIL, (client) => sweepWorkspace(client, s.workspaceId, { sources, now: new Date(now), scan: true, digests: false, health: false }));
+    const reminders = async (recipientType: "portal_contact" | "user", channel: string) => (await pool.query<{ recipient: string; subject: string; link: string | null }>(
+      `SELECT recipient_id::text AS recipient, subject, deep_link AS link FROM notifications WHERE workspace_id = $1 AND event_type = 'change_request.client_decision'
+         AND recipient_type = $2 AND channel = $3 ORDER BY created_at`, [s.workspaceId, recipientType, channel])).rows;
+    // The daily job no longer touches changes: nothing about this one is sent, even days after it went to the client.
+    const aboutTheChange = async () => (await pool.query(`SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1
+      AND (event_type IN ('change_request.reminder', 'change_request.client_decision') OR idempotency_key LIKE '%' || $2 || '%' OR coalesce(deep_link, '') LIKE '%' || $2 || '%')`,
+      [s.workspaceId, waiting.change.id])).rows[0].n;
+    const beforeTheJob = await aboutTheChange();
+    await asApp(s.workspaceId, NIL, (client) => new ProjectRemindersService({} as never).sendWorkspace(client, s.workspaceId));
+    expect(await aboutTheChange()).toBe(beforeTheJob);
+    await pool.query("UPDATE change_requests SET sent_at = '2030-01-07T08:00:00Z' WHERE id = $1", [waiting.change.id]);
+    // Day 2 (Wednesday): the client's decision-maker, once however often the engine sweeps.
+    await sweep("2030-01-09T10:00:00Z");
+    await sweep("2030-01-09T10:00:00Z");
+    expect((await reminders("portal_contact", "email")).map((row) => row.subject)).toEqual([`Your change ${waiting.change.reference} · Repair the wall is waiting for you`]);
+    expect(await reminders("user", "in_app")).toEqual([]);
+    // Day 5 is a Saturday: held to Monday's client window; then the second reminder and, after two, the project manager's copy.
+    await sweep("2030-01-12T10:00:00Z");
+    expect(await reminders("portal_contact", "email")).toHaveLength(1);
+    await sweep("2030-01-14T10:00:00Z");
+    await sweep("2030-01-14T10:00:00Z");
+    expect(await reminders("portal_contact", "email")).toHaveLength(2);
+    expect((await reminders("user", "in_app")).map((row) => [who(s, [{ recipient: row.recipient, channel: "in_app" }])[0], row.subject, row.link])).toEqual([
+      ["pm", `Waiting on the client · ${waiting.change.reference} · Repair the wall`, `/workspace/projects/${s.projectId}/changes/${waiting.change.id}`]]);
+    expect((await pool.query("SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND event_type = 'change_request.reminder'", [s.workspaceId])).rows[0].n).toBe(0);
 
     // Declined: the change and its variation stay as history; nothing moves.
     await expect(portal(s)((ctx) => decidePortalChange(ctx, { caseId: s.caseId, changeId: waiting.change.id, decision: "decline" }))).rejects.toThrow(/Say why/);
@@ -417,6 +447,11 @@ integration("changes on a started project: raise → price → QS → approve �
     expect(declined.actions).toEqual([]);
     expect((await pool.query("SELECT count(*)::int AS n FROM project_scope_seals WHERE project_id = $1 AND kind = 'variation'", [s.projectId])).rows[0].n).toBe(0);
     expect((await pool.query("SELECT status FROM commercial_quotes WHERE case_id = $1 AND id = $2", [s.caseId, declined.change.quoteId])).rows[0].status).toBe("declined");
+    // Decided: its reminder closes, and nothing more goes to the client.
+    await sweep("2030-01-15T10:00:00Z");
+    expect((await pool.query("SELECT status FROM reminder_subjects WHERE workspace_id = $1 AND kind = 'change_request.client_decision'", [s.workspaceId])).rows).toEqual([{ status: "done" }]);
+    await sweep("2030-01-21T10:00:00Z");
+    expect(await reminders("portal_contact", "email")).toHaveLength(2);
     await expect(portal(s)((ctx) => decidePortalChange(ctx, { caseId: s.caseId, changeId: waiting.change.id, decision: "accept", code: "123456" }))).rejects.toThrow(/already declined/);
 
     // Returned by the approver: back to pricing; then withdrawn with why (its variation too).
@@ -430,5 +465,39 @@ integration("changes on a started project: raise → price → QS → approve �
     expect(record.change.status).toBe("withdrawn");
     expect((await pool.query("SELECT status FROM commercial_quotes WHERE case_id = $1 AND id = $2", [s.caseId, record.change.quoteId])).rows[0].status).toBe("withdrawn");
     expect((await asApp(s.workspaceId, s.pm, (client) => approvalStatus(client, s.workspaceId, "change_request", record.change.id)))?.status).toBe("returned");
+  });
+
+  it("copies a firm's own change reminder days into the engine's rule, and only those (0307)", async () => {
+    const copy = readFileSync(resolve(process.cwd(), "drizzle/0307_change_reminders_engine.sql"), "utf8").split("--> statement-breakpoint")[0];
+    const client = await pool.connect();
+    const firms = { standard: randomUUID(), own: randomUUID(), none: randomUUID(), ruled: randomUUID() };
+    try {
+      await client.query("BEGIN");
+      // As before 0307: the project setting's column, and four firms on it.
+      await client.query("ALTER TABLE workspace_project_settings ADD COLUMN change_reminder_days smallint[] NOT NULL DEFAULT '{3,7}'");
+      await client.query("SET LOCAL session_replication_role = replica");
+      for (const id of Object.values(firms))
+        await client.query("INSERT INTO workspaces(id,name,slug,default_currency,default_timezone,created_by) VALUES($1,'Firm',$2,'AED','Asia/Dubai',$1)", [id, `cr7-${id.slice(0, 8)}`]);
+      await client.query(`INSERT INTO workspace_project_settings (workspace_id, roles, change_reminder_days) VALUES ($1, '[]', '{3,7}'), ($2, '[]', '{9,1,4,4}'), ($3, '[]', '{}'), ($4, '[]', '{10}')`,
+        [firms.standard, firms.own, firms.none, firms.ruled]);
+      // A firm that already set the kind's rule keeps it.
+      await client.query(`INSERT INTO reminder_rules (workspace_id, kind, enabled, offsets, unit, working_days, escalate_after, chain, channels, digest)
+        VALUES ($1, 'change_request.client_decision', true, '{1}', 'day', false, 1, '{}', '{email}', false)`, [firms.ruled]);
+      await client.query(copy);
+      await client.query(copy);
+      const rules = (await client.query<{ workspaceId: string; enabled: boolean; offsets: number[]; escalateAfter: number; channels: string[] }>(
+        `SELECT workspace_id AS "workspaceId", enabled, offsets, escalate_after AS "escalateAfter", channels FROM reminder_rules
+          WHERE kind = 'change_request.client_decision' AND workspace_id = ANY($1::uuid[])`, [Object.values(firms)])).rows;
+      const of = (id: string) => rules.find((rule) => rule.workspaceId === id);
+      expect(of(firms.standard)).toBeUndefined();
+      expect(of(firms.own)).toMatchObject({ enabled: true, offsets: [1, 4, 9], escalateAfter: 2, channels: ["whatsapp", "email"] });
+      expect(of(firms.none)).toMatchObject({ enabled: false, offsets: [2, 5] });
+      expect(of(firms.ruled)).toMatchObject({ offsets: [1], escalateAfter: 1, channels: ["email"] });
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+    // After 0307 the column is gone (nothing reads it).
+    expect((await pool.query("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name = 'workspace_project_settings' AND column_name = 'change_reminder_days'")).rows[0].n).toBe(0);
   });
 });
