@@ -151,4 +151,10 @@ export type LedgerOverview = {
   vatMissingRegion?: { lines: number; label: string | null } | null;
   fiscalYear: { from: IsoDay; to: IsoDay } | null;
   openIssues: number;
+  /** Balances at the last six month ends (the last at today), for the home's sparklines. */
+  trend?: { days: IsoDay[]; cash: Money[]; receivables: Money[]; payables: Money[]; vat: Money[] };
+  /** What needs someone: overdue money both ways, manual journals waiting for approval, a trial balance that doesn't balance. */
+  attention?: { overdueReceivables: Money; overduePayables: Money; manualWaiting: number; unbalanced: boolean };
+  /** The latest journals. */
+  recent?: JournalSummary[];
 };

@@ -50,6 +50,7 @@ const EVENT_ACTIONS: Record<string, string> = {
   "finance_request.rejected": "Open request",
   "books.journal_decided": "Open journal",
   "books.lock_date_changed": "Open Ledger settings",
+  "books.statement_source_changed": "Open statements",
 };
 
 const MODULE_ACTIONS: Record<string, string> = {

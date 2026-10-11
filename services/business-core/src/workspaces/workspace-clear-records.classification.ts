@@ -118,6 +118,7 @@ const keep = [
   "books_accounts",
   "books_payment_accounts",
   "books_settings",
+  "books_statement_sources",
   "books_tax_codes",
   "commercial_payment_templates",
   "commercial_quotation_templates",
