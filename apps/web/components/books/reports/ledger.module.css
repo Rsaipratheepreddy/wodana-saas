@@ -58,5 +58,7 @@
   .area, .area * { visibility: visible; }
   .area { display: block; position: absolute; inset-block-start: 0; inset-inline: 0; }
   .noPrint { display: none !important; }
+  .area [role="tablist"] { display: none !important; }
+  .chart { break-inside: avoid; }
   .printTitle { display: block; margin-block: 0 var(--wd-space-4); font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
 }

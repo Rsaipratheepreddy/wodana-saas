@@ -140,8 +140,8 @@ export function ProfitAndLossBody({ response, scope }: { response: StatementResp
   const columns = profitAndLossColumns(t, format, response);
   const empty = response.statement.sections.every((section) => !section.rows.length);
   return <div className={styles.stack}>
-    <SourceLine response={response} />
     <p className={styles.printTitle}>{[t("Profit and loss"), response.company.name, format.period(response.period.from, response.period.to)].join(" · ")}</p>
+    <SourceLine response={response} />
     {empty ? <EmptyState title={t("Nothing in this period")} description={t("Choose another period")} />
       : <StatementTable label={t("Profit and loss")} columns={columns} lines={lines} defaultOpen={["design_fees", "production", "variations", "other_revenue"]} />}
   </div>;
@@ -209,8 +209,8 @@ export function CashFlowBody({ response, scope }: { response: StatementResponse<
   ];
   const moved = statement.sections.some((section) => section.rows.length) || statement.closing.some((value) => !/^-?0+(\.0+)?$/.test(value));
   return <div className={styles.stack}>
-    <SourceLine response={response} />
     <p className={styles.printTitle}>{[t("Cash flow"), response.company.name, format.period(response.period.from, response.period.to)].join(" · ")}</p>
+    <SourceLine response={response} />
     {!moved && !forecast ? <EmptyState title={t("No money moved in this period")} description={t("Choose another period")} /> : <>
       <div className={styles.chart}>
         <TrendLines ariaLabel={t("Cash in and out by month")} categories={categories}
