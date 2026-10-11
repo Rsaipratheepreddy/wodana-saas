@@ -49,7 +49,14 @@ export class ProjectChangesService {
           value: price, days: change.timeImpactDays, handoverBefore: change.handoverBefore, handoverAfter: change.handoverAfter, raisedByName: change.raisedByName,
           raisedByClient: change.raisedByClient, updatedAt: change.updatedAt, next, applyProblem: change.status === "approved" ? change.applyProblem : null });
       }
-      return { changes, money: await approvedVariations(client, workspaceId, projectId), canRaise: viewer.all || viewer.onTeam || viewer.commercial,
+      // Variations made in the builder before changes were raised on the project (no change request): still listed, opened in the builder.
+      const legacy = (await client.query<{ id: string; number: number; title: string; status: string; total: string; appliedAs: string | null }>(
+        `SELECT quote.id, quote.number, quote.title, quote.status, quote.total::text AS total, seal.revision_label AS "appliedAs"
+           FROM commercial_quotes quote
+           LEFT JOIN project_scope_seals seal ON seal.workspace_id = quote.workspace_id AND seal.project_id = $3 AND seal.quote_id = quote.id
+          WHERE quote.workspace_id = $1 AND quote.case_id = $2 AND quote.kind = 'variation' AND NOT (quote.detail ? 'changeRequestId')
+            AND quote.status NOT IN ('superseded', 'withdrawn') ORDER BY quote.number DESC`, [workspaceId, viewer.project.caseId, projectId])).rows;
+      return { changes, legacy, money: await approvedVariations(client, workspaceId, projectId), canRaise: viewer.all || viewer.onTeam || viewer.commercial,
         projectOpen: ["active", "on_hold"].includes(viewer.project.status) };
     });
   }

@@ -54,12 +54,16 @@ export type QuotationSettings = {
   signingLinkDays: number;
   /** PLM-106: the firm's intro deck, shown on the opportunity. */
   introDeckUrl: string | null;
+  /** §6.20: whether variations follow the QS rules ("rules") or never go to the QS ("never"). */
+  qsVariations: "rules" | "never";
+  /** §6.20: the size (either way) from which a variation always goes to the QS; null for none. */
+  qsVariationThreshold: string | null;
   version: number;
 };
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
   discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null,
-  markupDisclosure: "all_inclusive", qsReview: false, qsReviewScope: "all", qsReviewItemTypes: [], signingLinkDays: 14, introDeckUrl: null, version: 0,
+  markupDisclosure: "all_inclusive", qsReview: false, qsReviewScope: "all", qsReviewItemTypes: [], signingLinkDays: 14, introDeckUrl: null, qsVariations: "rules", qsVariationThreshold: null, version: 0,
 };
 
 type LineRow = {
@@ -153,6 +157,11 @@ export class QuotationBuilderService {
         next.signingLinkDays = days;
       }
       if (input.introDeckUrl !== undefined) next.introDeckUrl = deckLink(input.introDeckUrl);
+      if (input.qsVariations !== undefined) next.qsVariations = oneOf(input.qsVariations, ["rules", "never"] as const, "variations and the QS");
+      if (input.qsVariationThreshold !== undefined) {
+        next.qsVariationThreshold = decimal(input.qsVariationThreshold, "Variation size for the QS", { max: "10000000000", nullable: true });
+        if (next.qsVariationThreshold !== null && Dec.of(next.qsVariationThreshold).isZero()) next.qsVariationThreshold = null;
+      }
       if (input.priceBookId !== undefined) {
         next.priceBookId = input.priceBookId === null ? null : uuid(input.priceBookId, "Price book");
         if (next.priceBookId && !(await client.query(`SELECT 1 FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.priceBookId])).rowCount)
@@ -161,8 +170,8 @@ export class QuotationBuilderService {
       await client.query(
         `INSERT INTO workspace_quotation_settings (workspace_id, default_view, prices_include_tax, rounding, default_markup_percent, margin_floor_percent,
            discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, expiry_warning_days, default_payment_template_id,
-           markup_disclosure, qs_review, signing_link_days, intro_deck_url, qs_review_scope, qs_review_item_types, version, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, $14, $15, $16, $17, $18, $19, $20::varchar(16)[], 1, $11, now())
+           markup_disclosure, qs_review, signing_link_days, intro_deck_url, qs_review_scope, qs_review_item_types, qs_variations, qs_variation_threshold, version, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, $14, $15, $16, $17, $18, $19, $20::varchar(16)[], $21, $22::numeric, 1, $11, now())
          ON CONFLICT (workspace_id) DO UPDATE SET default_view = excluded.default_view, prices_include_tax = excluded.prices_include_tax,
            rounding = excluded.rounding, default_markup_percent = excluded.default_markup_percent, margin_floor_percent = excluded.margin_floor_percent,
            discount_approval_percent = excluded.discount_approval_percent, validity_days = excluded.validity_days, internal_review = excluded.internal_review,
@@ -170,10 +179,11 @@ export class QuotationBuilderService {
            default_payment_template_id = excluded.default_payment_template_id, markup_disclosure = excluded.markup_disclosure, qs_review = excluded.qs_review,
            signing_link_days = excluded.signing_link_days, intro_deck_url = excluded.intro_deck_url,
            qs_review_scope = excluded.qs_review_scope, qs_review_item_types = excluded.qs_review_item_types,
+           qs_variations = excluded.qs_variations, qs_variation_threshold = excluded.qs_variation_threshold,
            version = workspace_quotation_settings.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
           next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays, next.defaultPaymentTemplateId,
-          next.markupDisclosure, next.qsReview, next.signingLinkDays, next.introDeckUrl, next.qsReviewScope, next.qsReviewItemTypes]);
+          next.markupDisclosure, next.qsReview, next.signingLinkDays, next.introDeckUrl, next.qsReviewScope, next.qsReviewItemTypes, next.qsVariations, next.qsVariationThreshold]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -840,7 +850,8 @@ export async function readSettings(db: Db, workspaceId: string): Promise<Quotati
             margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", validity_days AS "validityDays",
             internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", default_payment_template_id AS "defaultPaymentTemplateId",
             markup_disclosure AS "markupDisclosure", qs_review AS "qsReview", signing_link_days AS "signingLinkDays", intro_deck_url AS "introDeckUrl",
-            qs_review_scope AS "qsReviewScope", qs_review_item_types::text[] AS "qsReviewItemTypes", version
+            qs_review_scope AS "qsReviewScope", qs_review_item_types::text[] AS "qsReviewItemTypes", qs_variations AS "qsVariations",
+            qs_variation_threshold::text AS "qsVariationThreshold", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }

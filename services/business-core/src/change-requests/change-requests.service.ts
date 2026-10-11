@@ -13,6 +13,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { pdfLetterhead } from "../proposals/pdf-letterhead";
 import { quotingEntity } from "../proposals/quote-issue";
 import { composeChangeDocument } from "./change-request-pdf";
+import { projectForChanges } from "./project-changes.store";
 import {
   applyChangeApproval, createChange, readChange, readChangeEvents, readChanges, readPoImpacts, recordSent, saveDraft, submitChange, withdrawChange,
   type ChangeRow, type CreateInput,
@@ -179,7 +180,8 @@ export class ChangeRequestsService {
          JOIN design_ledger_versions version ON version.workspace_id = entry.workspace_id AND version.entry_id = entry.id AND version.number = entry.current_number
         WHERE entry.workspace_id = $1 AND entry.case_id = $2 AND entry.archived_at IS NULL AND version.after_lock AND version.status IN ('proposed', 'confirmed')
         ORDER BY entry.position`, [workspaceId, caseId])).rows;
-    return { changes: detailed, sources: { quoteLines, ledgerChanges } };
+    // A started project with its scope sealed takes its changes on its own record (priced as variations, applied there).
+    return { changes: detailed, sources: { quoteLines, ledgerChanges }, projectId: await projectForChanges(client, workspaceId, caseId) };
   }
 
   private edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient, userId: string) => Promise<T>) {

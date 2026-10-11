@@ -31,6 +31,10 @@ export type ProjectSettings = {
   weeklyRollup: boolean;
   /** PLM-055: the roles told at the project's key moments (technical drawings started, production started, installation scheduled). */
   keepInformed: KeepInformed;
+  /** §6.20: how a variation is paid — all before its work, or with the project's next milestone. */
+  variationPaymentRule: "before_work" | "next_milestone";
+  /** §6.20: days after a change reaches the client when they and the project manager are reminded (up to five). */
+  changeReminderDays: number[];
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -41,7 +45,8 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
     `SELECT require_agreement AS "requireAgreement", require_payment AS "requirePayment", require_approval AS "requireApproval",
             require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish",
             client_update_auto_send_hours AS "clientUpdateAutoSendHours", to_char(report_due_time, 'HH24:MI') AS "reportDueTime",
-            auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup", keep_informed AS "keepInformed"
+            auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup", keep_informed AS "keepInformed",
+            variation_payment_rule AS "variationPaymentRule", change_reminder_days::int[] AS "changeReminderDays"
        FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   // Roles removed since drop out of who is kept informed.
   return { ...row, keepInformed: normaliseKeepInformed(row.keepInformed, row.roles) };
