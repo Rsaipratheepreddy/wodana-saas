@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { DeliveryHealthMessage } from "@wodana/contracts";
 import { translatorFor } from "@/lib/i18n/keys";
 import { channelState, failureReason, nextStep, type ChannelHealth, type DeliveryHealth } from "@/lib/workspace/delivery-health";
 import { DeliveryAttention } from "./delivery-attention";
@@ -63,6 +64,57 @@ describe("Settings → Delivery", () => {
     await waitFor(() => expect(screen.getByText("Test sent to your email and phone.")).toBeInTheDocument());
     const post = fetcher.mock.calls.find(([, options]) => options?.method === "POST");
     expect(JSON.parse(String(post?.[1]?.body))).toHaveProperty("requestId");
+  });
+
+  it("lists each message with its status, reason and attempts, filters it, loads more and downloads the loaded rows", async () => {
+    const message = (overrides: Partial<DeliveryHealthMessage>): DeliveryHealthMessage => ({
+      id: "m1", createdAt: minutesAgo(3), updatedAt: minutesAgo(2), channel: "push", eventType: "reminders.work.due", recipient: { type: "membership", id: "p1", label: "Maya" },
+      status: "held", reason: "quiet_hours", attempts: 0, providerMessageId: null, critical: false, reminderStepId: "s1", fallbackOf: null, href: null, ...overrides,
+    });
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+      urls.push(String(input));
+      if (!String(input).includes("/messages")) return { ok: true, json: async () => health() };
+      const page = String(input).includes("cursor=next")
+        ? { items: [message({ id: "m3", channel: "whatsapp", recipient: { type: "party", id: "c1", label: "Layla Haddad" }, status: "read", reason: null, attempts: 1, providerMessageId: "wamid.77" })], nextCursor: null }
+        : { items: [message({}), message({ id: "m2", channel: "email", status: "failed", reason: "MAILGUN_HTTP_401", attempts: 3, critical: true, fallbackOf: "m1", eventType: "reminders.invoice.overdue" })], nextCursor: "next" };
+      return { ok: true, json: async () => page };
+    }));
+    const user = userEvent.setup();
+    render(<DeliveryHealthPage workspaceId={workspaceId} />);
+    const grid = await screen.findByRole("table", { name: "Messages" });
+    const held = (await within(grid).findByText("Held")).closest("tr")!;
+    expect(held).toHaveTextContent("Quiet hours");
+    expect(held).toHaveTextContent("Maya");
+    const failed = within(grid).getByText("Failed").closest("tr")!;
+    expect(failed).toHaveTextContent("The email service refused the sending credentials");
+    expect(failed).toHaveTextContent("Critical");
+    expect(failed).toHaveTextContent("Fallback");
+    expect(failed).toHaveTextContent("3");
+    expect(urls.find((url) => url.includes("/messages"))).toBe(`/api/workspace/delivery-health/messages?workspaceId=${workspaceId}&limit=50`);
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await within(grid).findByText("wamid.77")).toBeInTheDocument();
+    expect(urls.at(-1)).toBe(`/api/workspace/delivery-health/messages?workspaceId=${workspaceId}&cursor=next&limit=50`);
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+
+    const createObjectURL = vi.fn((_blob: Blob) => "blob:messages");
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    await user.click(screen.getByRole("button", { name: "Table options" }));
+    await user.click(await screen.findByRole("button", { name: "Export filtered rows" }));
+    expect(click).toHaveBeenCalled();
+    const csv = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(createObjectURL.mock.calls[0][0]); });
+    expect(csv.split("\n")).toHaveLength(4);
+    expect(csv).toContain("wamid.77");
+    click.mockRestore();
+    await user.keyboard("{Escape}");
+
+    await user.click(await screen.findByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("button", { name: /Column$/ }));
+    await user.click(await screen.findByRole("option", { name: "Status" }));
+    await user.click(await screen.findByRole("button", { name: /Filter by status/ }));
+    await user.click(await screen.findByRole("option", { name: "Failed" }));
+    await waitFor(() => expect(urls.at(-1)).toBe(`/api/workspace/delivery-health/messages?workspaceId=${workspaceId}&status=failed&limit=50`));
   });
 
   it("says plainly when messages aren't going out", async () => {

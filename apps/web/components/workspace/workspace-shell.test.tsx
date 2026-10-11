@@ -270,11 +270,11 @@ describe("WorkspaceShell theme", () => {
 });
 
 describe("Home tabs", () => {
-  it("shows Overview, Tasks and Approvals as tabs on Home's pages, with the current one selected", () => {
+  it("shows Overview, My day, Tasks and Approvals as tabs on Home's pages, with the current one selected", () => {
     route.pathname = "/workspace/approvals";
     render(<WorkspaceShell {...shellProps}><p>Approvals</p></WorkspaceShell>);
     const tabs = within(screen.getByRole("navigation", { name: "Home" }));
-    expect(tabs.getAllByRole("link").map((link) => link.textContent)).toEqual(["Overview", "Tasks", "Approvals"]);
+    expect(tabs.getAllByRole("link").map((link) => link.textContent)).toEqual(["Overview", "My day", "Tasks", "Approvals"]);
     expect(tabs.getByRole("link", { name: "Approvals" })).toHaveAttribute("aria-current", "page");
     expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   });

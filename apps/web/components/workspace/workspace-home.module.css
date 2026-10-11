@@ -51,6 +51,7 @@
 .list > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
 .copy { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .copy strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+.copy strong :global(.wd-badge) { margin-inline-start: var(--wd-space-1-5); vertical-align: middle; }
 .copy small { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--wd-space-2); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
 .copy small > svg { flex: none; color: var(--wd-color-text-tertiary); }
 /* An icon and its line of text stay together when the text wraps. */

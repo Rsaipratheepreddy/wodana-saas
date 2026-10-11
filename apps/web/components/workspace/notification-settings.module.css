@@ -3,6 +3,7 @@
 .switches { display: grid; grid-template-columns: repeat(3, 4.5rem); justify-items: center; align-items: center; gap: var(--wd-space-2); }
 .header { grid-template-columns: minmax(0, 1fr) repeat(3, 4.5rem); padding-block: var(--wd-space-2); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: 600; }
 .times { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.conflict { display: flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 
 @media (max-width: 640px) {
   .header { grid-template-columns: repeat(3, 4.5rem); justify-content: end; }

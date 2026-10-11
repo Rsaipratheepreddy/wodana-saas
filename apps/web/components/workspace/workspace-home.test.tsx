@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { HomeMetrics, HomeSummary } from "@wodana/contracts";
-import { WorkspaceHome } from "./workspace-home";
+import type { HomeMetrics, HomeSummary, MyDayItem, MyDayResponse } from "@wodana/contracts";
+import { WorkspaceHome, inPlaceTarget } from "./workspace-home";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ usePathname: () => "/workspace", useRouter: () => ({ push, refresh: vi.fn() }) }));
@@ -56,9 +56,34 @@ const metrics: HomeMetrics = {
   activity: [{ id: "e-1", area: "projects", action: "project.updated", subject: "Villa 12", actorName: "Maya", at: "2026-09-28T05:00:00Z", href: "/workspace/projects/p-1" }],
 };
 
-function api({ home = summary as HomeSummary | null, figures = metrics as HomeMetrics | null } = {}) {
+const due = (overrides: Partial<MyDayItem>): MyDayItem => ({
+  id: "s", kind: "approval.waiting", module: "approvals", title: "", context: "", href: "/workspace", dueAt: null, urgency: "waiting", critical: false, audience: "staff",
+  owner: null, reminders: { sent: 0, escalationLevel: 0, nextAt: null }, snoozed: null, actions: ["open"], completeLabel: null, version: 1, ...overrides,
+});
+// Today reads My day: the most urgent six, whatever job they belong to (the order inside groups is not the order shown).
+const myDay: MyDayResponse = {
+  generatedAt: "2026-09-28T06:00:00Z", scope: "me", timeZone: "UTC", today: "2026-09-28",
+  counts: { overdue: 2, today: 1, upcoming: 1, waiting: 4, snoozed: 1, total: 9 },
+  groups: [
+    { jobId: "j-1", jobReference: "JOB-1", title: "Villa 12", href: null, items: [
+      due({ id: "s-wardrobe", kind: "work.due", module: "projects", title: "Fit wardrobe", urgency: "upcoming", dueAt: "2026-09-30", href: "/workspace/projects/p-1/plan?item=w-2" }),
+      due({ id: "s-penthouse", title: "The Penthouse", context: "Layla Haddad", dueAt: "2026-09-20T08:00:00Z", critical: true, href: "/workspace/pre-projects/cases/c-1/quotations?quote=q-1" }),
+      due({ id: "s-drawings", kind: "work.due", module: "projects", title: "Shop drawings", context: "Villa 12", urgency: "overdue", dueAt: "2026-09-25", href: "/workspace/projects/p-1/plan?item=w-1" }),
+    ] },
+    { jobId: null, jobReference: null, title: "", href: null, items: [
+      due({ id: "s-amira", kind: "crm.follow_up", module: "sales", title: "Call Amira back", context: "Amira", urgency: "overdue", dueAt: "2026-09-27T06:00:00Z", href: "/workspace/crm/follow-ups?record=f-1" }),
+      due({ id: "s-brochure", kind: "crm.follow_up", module: "sales", title: "Send the brochure", context: "Omar", urgency: "today", dueAt: "2026-09-28T15:00:00Z", href: "/workspace/crm/follow-ups?record=f-2" }),
+      due({ id: "s-receipt", title: "Ranches Townhouse", context: "Faris", href: "/workspace/pre-projects/cases/c-2/approvals" }),
+      due({ id: "s-order", title: "PALM-PO-17", context: "Oak & Co", href: "/workspace/purchasing/orders?order=o-1" }),
+      due({ id: "s-leave", title: "Rami", context: "Annual leave", href: "/workspace/hrms/team" }),
+      due({ id: "s-snoozed", title: "Snoozed claim", urgency: "snoozed", snoozed: { until: "2026-09-30T08:00:00Z", reason: "Waiting" } }),
+    ] },
+  ],
+};
+
+function api({ home = summary as HomeSummary | null, figures = metrics as HomeMetrics | null, day = myDay as MyDayResponse | null } = {}) {
   const fetcher = vi.fn(async (url: string) => {
-    const body = url.includes("home-summary") ? home : url.includes("home-metrics") ? figures : { items: [], truncated: false };
+    const body = url.includes("home-summary") ? home : url.includes("home-metrics") ? figures : url.includes("/api/workspace/my-day") ? day : { items: [], truncated: false };
     return { ok: body !== null, status: body === null ? 500 : 200, json: async () => body };
   });
   vi.stubGlobal("fetch", fetcher);
@@ -77,26 +102,38 @@ it("keeps the page anatomy: one title, one primary action, search in reach and t
   expect(screen.getByText("Attendance chip").closest("header")).toHaveClass("wd-page-header");
 });
 
-it("lists what needs the person, late first, each with one action; follow-ups and work open in place", async () => {
+it("lists the six most urgent My day items, late first, each with one action; follow-ups and work open in place", async () => {
   api(); render(<WorkspaceHome {...base} permissions={owner} />);
-  const today = await screen.findByRole("region", { name: /^Today/ });
-  await within(today).findByText("Shop drawings");
-  const rows = within(today).getAllByRole("listitem");
+  const region = await screen.findByRole("region", { name: /^Today/ });
+  await within(region).findByText("Shop drawings");
+  const rows = within(region).getAllByRole("listitem");
   expect(rows).toHaveLength(6);
   expect(rows.map((row) => row.getAttribute("data-urgency"))).toEqual(["overdue", "overdue", "today", "waiting", "waiting", "waiting"]);
   expect(rows[0]).toHaveTextContent("3 days late");
-  expect(rows[3]).toHaveTextContent("Quote review · Layla Haddad");
+  expect(rows[1]).toHaveTextContent("Call Amira back");
+  // Waiting items: the oldest first; the critical one says so.
+  expect(rows[3]).toHaveTextContent("Approvals waiting · Layla Haddad");
+  expect(rows[3]).toHaveTextContent("Critical");
   expect(within(rows[3]).getByRole("link", { name: "Review: The Penthouse" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c-1/quotations?quote=q-1");
+  // Everything due or coming counts (the snoozed item waits), and "See all" opens My day.
+  expect(within(region).getByRole("heading", { name: "Today" }).parentElement).toHaveTextContent("8");
+  expect(within(region).getByRole("link", { name: "See all" })).toHaveAttribute("href", "/workspace/my-day");
+  expect(within(region).queryByText("Snoozed claim")).not.toBeInTheDocument();
   fireEvent.click(within(rows[1]).getByRole("button", { name: "Update: Call Amira back" }));
   expect(screen.getByText("Editing follow-up f-1")).toBeVisible();
   fireEvent.click(within(rows[0]).getByRole("button", { name: "Open: Shop drawings" }));
   expect(await screen.findByText("Work item w-1")).toBeVisible();
-  fireEvent.click(within(today).getByRole("button", { name: "Show all 8" }));
-  expect(within(today).getAllByRole("listitem")).toHaveLength(8);
+});
+
+it("opens in place only the follow-ups and work it can read from their links", () => {
+  expect(inPlaceTarget({ kind: "crm.follow_up", href: "/workspace/crm/follow-ups?view=activity&record=f-9" })).toEqual({ followUp: "f-9" });
+  expect(inPlaceTarget({ kind: "work.due", href: "/workspace/projects/p-1/plan?item=w-1" })).toEqual({ projectId: "p-1", itemId: "w-1" });
+  expect(inPlaceTarget({ kind: "work.due", href: "/workspace/projects/p-1/site" })).toBeNull();
+  expect(inPlaceTarget({ kind: "approval.waiting", href: "/workspace/crm/follow-ups?record=f-9" })).toBeNull();
 });
 
 it("says the person is all caught up and still shows what's next", async () => {
-  api({ home: { ...summary, focus: { items: [], total: 0 } } }); render(<WorkspaceHome {...base} permissions={["crm.activities.manage", "crm.activities.view"]} />);
+  api({ day: { ...myDay, groups: [], counts: { overdue: 0, today: 0, upcoming: 0, waiting: 0, snoozed: 0, total: 0 } } }); render(<WorkspaceHome {...base} permissions={["crm.activities.manage", "crm.activities.view"]} />);
   const today = await screen.findByRole("region", { name: /^Today/ });
   expect(await within(today).findByText("You're all caught up")).toBeVisible();
   expect(within(today).getByRole("link", { name: /Next: Site visit - Dubai Hills/ })).toHaveAttribute("href", "/workspace/crm/follow-ups?record=a-1");
@@ -179,13 +216,14 @@ it("shows friendly empty states with the next step", async () => {
 });
 
 it("keeps Home usable when a source fails and retries it", async () => {
-  const request = api({ home: null }); render(<WorkspaceHome {...base} permissions={owner} />);
-  const today = await screen.findByRole("region", { name: /^Today/ });
-  expect(await within(today).findByText("Today's work could not be loaded")).toBeVisible();
-  // The numbers come from their own source and still show.
+  const request = api({ day: null }); render(<WorkspaceHome {...base} permissions={owner} />);
+  const region = await screen.findByRole("region", { name: /^Today/ });
+  expect(await within(region).findByText("Today's work could not be loaded")).toBeVisible();
+  // The numbers and the pipeline come from their own sources and still show.
   expect(await screen.findByRole("navigation", { name: "Key numbers" })).toBeInTheDocument();
-  fireEvent.click(within(today).getByRole("button", { name: "Try again" }));
-  await waitFor(() => expect(request.mock.calls.filter(([url]) => String(url).includes("home-summary")).length).toBe(2));
+  expect(screen.getByRole("region", { name: "Pipeline" })).toBeInTheDocument();
+  fireEvent.click(within(region).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(request.mock.calls.filter(([url]) => String(url).includes("/api/workspace/my-day")).length).toBe(2));
 });
 
 it("reads Home only from the person's workspace-scoped sources", async () => {
@@ -197,6 +235,8 @@ it("reads Home only from the person's workspace-scoped sources", async () => {
     `/api/site/attention?workspaceId=${base.workspaceId}`,
     `/api/workspace/home-metrics?workspaceId=${base.workspaceId}`,
     `/api/workspace/home-summary?workspaceId=${base.workspaceId}`,
+    // Today: the person's own My day.
+    `/api/workspace/my-day?workspaceId=${base.workspaceId}&scope=me&limit=50`,
   ]);
 });
 

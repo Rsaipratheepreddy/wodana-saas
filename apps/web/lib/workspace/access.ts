@@ -48,7 +48,8 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   // Management dashboards (PLM-134): the System Owner (owner/admin) for now; managers are given them later.
   "management-reports": [["reports.management.view"]],
   "report-targets": [["reports.management.targets"]],
-  "reminder-settings": [["crm.automations.view"]],
+  // Settings › Reminders: the reminder engine's firm rules (plan §6.24a).
+  "reminder-settings": [["reminders.manage"]],
   "inbox-settings": [["crm.communications.view", "crm.settings.manage"]],
   "delivery-health": [["workspace.settings.manage", "integrations.manage"]],
   "ai-credits": [["workspace.settings.manage"]],

@@ -6,6 +6,7 @@ import { Badge, Button, Callout, EmptyState, InlineNotice, NoAccessState, Settin
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey } from "@/lib/i18n/keys";
 import { CHANNEL_LABELS, channelState, failureReason, nextStep, type ChannelState, type DeliveryHealth } from "@/lib/workspace/delivery-health";
+import { DeliveryMessages } from "./delivery-messages";
 import styles from "./delivery-health.module.css";
 
 const STATE: Record<ChannelState, { label: string; tone: StatusTone }> = {
@@ -57,7 +58,7 @@ export function DeliveryHealthPage({ workspaceId }: { workspaceId: string }) {
   if (error && !health) return isNoAccessError(error) ? <NoAccessState area={t("Delivery")} /> : <EmptyState illustration="error" title={t("Delivery health didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!health) return <Skeleton lines={6} shape="form" />;
   const silent = health.worker.status === "stale" || health.worker.status === "not-reporting";
-  return <SettingsPage title={t("Delivery")} actions={<Button variant="primary" isLoading={sending} onPress={() => void sendTest()}>{t("Send me a test")}</Button>}>
+  return <SettingsPage title={t("Delivery")} width="wide" actions={<Button variant="primary" isLoading={sending} onPress={() => void sendTest()}>{t("Send me a test")}</Button>}>
     {notice ? <InlineNotice tone={notice.tone} message={notice.message} /> : null}
     {silent ? <Callout tone="danger" title={t("Messages aren't going out")}>
       {health.worker.lastSeenAt ? t("Nothing has been sent since {time}. Contact support.", { time: at(health.worker.lastSeenAt) }) : t("The delivery service isn't running. Contact support.")}
@@ -82,6 +83,9 @@ export function DeliveryHealthPage({ workspaceId }: { workspaceId: string }) {
           </div>
         </SettingsRow>;
       })}
+    </SettingsSection>
+    <SettingsSection id="messages" title={t("Messages")}>
+      <DeliveryMessages workspaceId={workspaceId} />
     </SettingsSection>
   </SettingsPage>;
 }

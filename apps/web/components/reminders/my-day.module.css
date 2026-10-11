@@ -1,0 +1,22 @@
+/* My day: the toolbar (Me/Team, due chips, module), the grouped list and the undo bar. */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); }
+.chips :global(.wd-count-chip) { margin-inline-start: var(--wd-space-1-5); }
+.module { min-inline-size: 12rem; margin-inline-start: auto; }
+
+.due { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); white-space: nowrap; }
+.due[data-urgency="overdue"] { color: var(--wd-color-danger); font-weight: var(--wd-weight-medium); }
+.due[data-urgency="today"] { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.flags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-1); }
+
+.presets { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); }
+
+.undoRegion { position: fixed; z-index: var(--wd-z-toast); inset-inline-end: var(--wd-space-5); inset-block-end: var(--wd-space-5); display: grid; gap: var(--wd-space-2); inline-size: min(24rem, calc(100vw - 2rem)); }
+.undo { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); padding-block: var(--wd-space-2); padding-inline: var(--wd-space-4) var(--wd-space-2); border-radius: var(--wd-radius-md); background: var(--wd-color-text); color: var(--wd-color-text-inverse); font-size: var(--wd-text-sm); box-shadow: var(--wd-shadow-md); }
+.undo :global(.wd-button) { color: var(--wd-color-text-inverse); }
+
+@media (max-width: 48rem) {
+  .module { margin-inline-start: 0; inline-size: 100%; }
+  .undoRegion { inset-inline: var(--wd-space-4); inline-size: auto; }
+}

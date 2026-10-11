@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Plus, X } from "lucide-react";
 import { Button, Checkbox, EmptyState, Form, FormDialog, FormNotSaved, IconButton, InlineNotice, MoneyField, PercentageInput, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { commercialPath } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quotationPath } from "@/lib/quotation/client";
 import { VIEW_LABEL } from "@/lib/quotation/format";
+import { reminderHref } from "@/lib/reminders/contract";
 import type { QuotationSettings as Settings, QuoteView } from "@/lib/quotation/types";
 import { ProposalKitSettings } from "./proposal-kit-settings";
 import { qsItemTypeLabels } from "./quote-qs";
@@ -40,14 +42,13 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
   const [busy, setBusy] = useState(false);
   const [trade, setTrade] = useState("");
   const [creatingPlan, setCreatingPlan] = useState(false);
-  const [days, setDays] = useState("");
   const load = useCallback(async () => {
-    try { const next = await call<Loaded>(quotationPath(workspaceId, "settings")); setData(next); setForm(next.settings); setDays(dayList(next.settings)); setError(""); }
+    try { const next = await call<Loaded>(quotationPath(workspaceId, "settings")); setData(next); setForm(next.settings); setError(""); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [workspaceId, t]);
   useEffect(() => {
     let alive = true;
-    call<Loaded>(quotationPath(workspaceId, "settings")).then((next) => { if (alive) { setData(next); setForm(next.settings); setDays(dayList(next.settings)); } }).catch((cause: Error) => { if (alive) setError(cause.message); });
+    call<Loaded>(quotationPath(workspaceId, "settings")).then((next) => { if (alive) { setData(next); setForm(next.settings); } }).catch((cause: Error) => { if (alive) setError(cause.message); });
     return () => { alive = false; };
   }, [workspaceId]);
 
@@ -63,7 +64,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
     setBusy(true); setError("");
     try {
       const next = await call<Settings>(quotationPath(workspaceId, "settings"), "PUT", { ...form, marginFloorPercent: form.marginFloorPercent || null, discountApprovalPercent: form.discountApprovalPercent || null });
-      setData({ ...data, settings: next }); setForm(next); setDays(dayList(next)); setSaved(true);
+      setData({ ...data, settings: next }); setForm(next); setSaved(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     finally { setBusy(false); }
   };
@@ -122,12 +123,9 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
           : readOnly ? <span className={styles.muted}>{t("None")}</span>
             : <Button size="compact" onPress={() => setCreatingPlan(true)}><Plus aria-hidden="true" size={14} />{t("Create payment plan")}</Button>}
       </SettingsRow>
-      <SettingsRow label={t("Warn before a quote expires (days)")} hint={t("The case owner and the client hear it this many days before. 0 for none.")}>
-        <TextInput aria-label={t("Warn before a quote expires (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.expiryWarningDays ?? 0)} onChange={(value) => set("expiryWarningDays", Number(value.replace(/\D/g, "") || 0))} />
-      </SettingsRow>
-      <SettingsRow label={t("Remind the client after (days)")} hint={t("While a quote or design waits, the client and the case owner hear on each of these days. Leave empty for none.")}>
-        <TextInput aria-label={t("Remind the client after (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={days}
-          onChange={(value) => { const clean = value.replace(/[^\d,\s]/g, ""); setDays(clean); set("decisionReminderDays", clean.split(/[,\s]+/).map(Number).filter((day) => Number.isInteger(day) && day > 0)); }} />
+      {/* Expiry warnings and the client's decision reminders are reminder rules now (Settings › Reminders). */}
+      <SettingsRow label={t("Reminders")}>
+        <Link href={reminderHref.settings("client.quote_decision")}>{t("Open reminder settings")}</Link>
       </SettingsRow>
       <SettingsRow label={t("Review before sending")} hint={t("A reviewer approves each quote before it goes to the client.")}>
         <Switch aria-label={t("Review before sending")} isDisabled={readOnly} isSelected={form.internalReview} onChange={(value) => set("internalReview", value)} />
@@ -171,7 +169,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       const fresh = await call<Loaded>(quotationPath(workspaceId, "settings"));
       setData(fresh); setForm({ ...form, defaultPaymentTemplateId: templateId, version: next.version }); setCreatingPlan(false);
     }} /> : null}
-    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} saved={saved} onDiscard={() => { setForm(data.settings); setDays(dayList(data.settings)); setError(""); }} onSave={() => void save()} />}
+    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} saved={saved} onDiscard={() => { setForm(data.settings); setError(""); }} onSave={() => void save()} />}
 
     <QuotationNumberingSettings workspaceId={workspaceId} />
 
@@ -194,7 +192,6 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
   </SettingsPage>;
 }
 
-const dayList = (settings: Settings) => (settings.decisionReminderDays ?? []).join(", ");
 
 type Milestone = { id: string; title: string; percent: number; trigger: string; requiredForRelease: boolean };
 

@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
-import type { HomeActivityEvent, HomeFocusItem, HomeFocusSource, HomeFunnelStage, HomeMetricWeek, HomeMetrics, HomeRecentRecord, HomeSummary, HomeUpcomingItem } from "@wodana/contracts";
+import type { HomeActivityEvent, HomeFunnelStage, HomeMetricWeek, HomeMetrics, HomeRecentRecord, HomeSummary, HomeUpcomingItem, MyDayItem, MyDayResponse, ReminderKind } from "@wodana/contracts";
 import {
   AlertCircle, Banknote, CalendarClock, ChevronRight, CircleCheck, ClipboardCheck, ClipboardList, Clock3, Factory, FileText, FolderKanban,
   History, MessageSquare, Palette, Receipt, Truck, UserCheck, UserPlus, Users, Wallet, type LucideIcon,
 } from "lucide-react";
-import { Button, EmptyState, ErrorState, SkeletonBlock, Sparkline, useDesignSystem } from "@/design-system";
+import { Badge, Button, EmptyState, ErrorState, SkeletonBlock, Sparkline, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { MY_DAY_ROUTE } from "@/lib/reminders/contract";
+import { REMINDER_KIND_LABELS } from "@/lib/reminders/labels";
+import { dueLabel, openCount, topMyDayItems } from "@/lib/reminders/my-day";
 import { changeBetween, formatCount, formatMoneyText, relativeTime, weekLabel, weekValue } from "./home-format";
 import s from "./workspace-home.module.css";
 
@@ -52,103 +55,79 @@ function InlineError({ retry }: { retry: () => void }) {
 }
 
 /** The workspace's calendar day of an instant (YYYY-MM-DD). */
-export function localDay(value: string | Date, timeZone?: string) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
-}
-const isDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-const dayDiff = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 
 // ---------------------------------------------------------------- Today
 
-type SourceLook = { icon: LucideIcon; reason: string; action: string };
-function sourceLooks(t: T): Record<HomeFocusSource, SourceLook> {
-  return {
-    follow_up: { icon: CalendarClock, reason: t("Follow-up"), action: t("Update") },
-    response: { icon: Clock3, reason: t("First response"), action: t("Respond") },
-    unowned: { icon: UserPlus, reason: t("No owner yet"), action: t("Assign") },
-    confirm_client: { icon: UserCheck, reason: t("Confirm the client"), action: t("Confirm") },
-    reply: { icon: MessageSquare, reason: t("Client reply"), action: t("Reply") },
-    work: { icon: ClipboardList, reason: t("Task"), action: t("Open") },
-    delivery: { icon: Truck, reason: t("Delivery"), action: t("Chase") },
-    invoice: { icon: Receipt, reason: t("Invoice"), action: t("Chase") },
-    production: { icon: Factory, reason: t("Production"), action: t("Open") },
-    quote_review: { icon: FileText, reason: t("Quote review"), action: t("Review") },
-    receipt: { icon: Banknote, reason: t("Payment to verify"), action: t("Verify") },
-    order_approval: { icon: Truck, reason: t("Order approval"), action: t("Review") },
-    design_review: { icon: Palette, reason: t("Design review"), action: t("Review") },
-    design_client: { icon: Palette, reason: t("Client decision"), action: t("Record") },
-    design_present: { icon: Palette, reason: t("Ready to present"), action: t("Present") },
-    design_revise: { icon: Palette, reason: t("Changes requested"), action: t("Revise") },
-    petty_cash: { icon: Wallet, reason: t("Petty cash"), action: t("Review") },
-    leave: { icon: Users, reason: t("Leave request"), action: t("Decide") },
+type KindLook = { icon: LucideIcon; action: string };
+function kindLook(kind: ReminderKind, t: T): KindLook {
+  const looks: Partial<Record<ReminderKind, KindLook>> = {
+    "crm.follow_up": { icon: CalendarClock, action: t("Update") },
+    "crm.first_response": { icon: Clock3, action: t("Respond") },
+    "crm.unowned": { icon: UserPlus, action: t("Assign") },
+    "crm.confirm_client": { icon: UserCheck, action: t("Confirm") },
+    "crm.reply_waiting": { icon: MessageSquare, action: t("Reply") },
+    "work.due": { icon: ClipboardList, action: t("Open") },
+    "approval.waiting": { icon: ClipboardCheck, action: t("Review") },
+    "client.quote_decision": { icon: FileText, action: t("Open") },
+    "quote.expiring": { icon: FileText, action: t("Open") },
+    "client.design_decision": { icon: Palette, action: t("Open") },
+    "design.stage_due": { icon: Palette, action: t("Open") },
+    "payment.due": { icon: Banknote, action: t("Open") },
+    "invoice.overdue": { icon: Receipt, action: t("Chase") },
+    "payables.due": { icon: Wallet, action: t("Open") },
+    "finance_request.waiting": { icon: Wallet, action: t("Open") },
+    "purchase.order_late": { icon: Truck, action: t("Chase") },
+    "factory.production_due": { icon: Factory, action: t("Open") },
+    "site.daily_report": { icon: ClipboardList, action: t("Open") },
   };
-}
-
-function useDueLabel(today: string, timeZone: string) {
-  const t = useT();
-  const locale = useLocale();
-  const time = (value: string) => new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(value));
-  const date = (value: string) => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: isDateOnly(value) ? "UTC" : timeZone }).format(new Date(isDateOnly(value) ? `${value}T00:00:00Z` : value));
-  return (item: HomeFocusItem) => {
-    if (!item.due) return "";
-    const day = isDateOnly(item.due) ? item.due : localDay(item.due, timeZone);
-    if (item.urgency === "waiting") return t("Since {date}", { date: date(item.due) });
-    const late = dayDiff(day, today);
-    if (late === 1) return t("1 day late");
-    if (late > 1) return t("{count} days late", { count: late });
-    if (isDateOnly(item.due)) return t("Today");
-    return item.urgency === "overdue" ? t("Due {time}", { time: time(item.due) }) : t("Today {time}", { time: time(item.due) });
-  };
+  return looks[kind] ?? { icon: AlertCircle, action: t("Open") };
 }
 
 const VISIBLE = 6;
 
-/** What needs the person now, most urgent first, each with the one action that deals with it. */
-export function TodayList({ summary, open, allClear }: {
-  summary: Load<HomeSummary>;
-  /** Opens a follow-up or a work item in place; other items follow their link. */
-  open: (item: HomeFocusItem) => void;
+/**
+ * What needs the person now (My day, plan §6.24a): the six most urgent items (late first, then today's, then what
+ * waits on them, then what is coming), each with the one action that deals with it, and "See all".
+ */
+export function TodayList({ myDay, next, nextZone, inPlace, allClear }: {
+  myDay: Load<MyDayResponse>;
+  /** The next thing coming up, shown under "all caught up". */
+  next?: HomeUpcomingItem | null;
+  nextZone: string;
+  /** Opens a follow-up or a work item in place (null: the item follows its link). */
+  inPlace: (item: MyDayItem) => (() => void) | null;
   /** The next step when nothing is waiting (a quick action), shown under "all caught up". */
   allClear: ReactNode;
 }) {
   const t = useT();
   const locale = useLocale();
-  const [expanded, setExpanded] = useState(false);
-  const data = summary.data;
-  const looks = sourceLooks(t);
-  const due = useDueLabel(data?.today ?? localDay(new Date()), data?.timeZone ?? "UTC");
-  const items = data?.focus.items ?? [];
-  const next = data?.upcoming[0];
-  const shown = expanded ? items : items.slice(0, VISIBLE);
-  const body = !data && !summary.failed ? <Rows rows={4} />
-    : !data ? <div className={s.state}><ErrorState title={t("Today's work could not be loaded")} description="" onRetry={summary.retry} /></div>
+  const data = myDay.data;
+  const items = data ? topMyDayItems(data, VISIBLE) : [];
+  const total = data ? openCount(data.counts) : undefined;
+  const body = !data && !myDay.failed ? <Rows rows={4} />
+    : !data ? <div className={s.state}><ErrorState title={t("Today's work could not be loaded")} description="" onRetry={myDay.retry} /></div>
     : !items.length ? <div className={s.state} data-state="clear"><EmptyState illustration={null} icon={<CircleCheck size={18} aria-hidden="true" />} title={t("You're all caught up")}
-      description={next ? <NextUp item={next} timeZone={data.timeZone} /> : null} action={allClear} /></div>
-    : <>
-      <ul className={s.list}>{shown.map((item) => {
-        const look = looks[item.source];
-        const Icon = look.icon;
-        const title = item.title || look.reason;
-        const when = due(item);
-        const inPlace = item.source === "follow_up" || (item.source === "work" && Boolean(item.projectId));
-        return <li key={item.id} className={s.focusRow} data-urgency={item.urgency}>
-          <span className={s.mark} aria-hidden="true"><Icon size={15} /></span>
-          <span className={s.copy}>
-            <strong>{title}</strong>
-            <small>{[look.reason, item.context].filter(Boolean).join(" · ")}{when ? <em>{when}</em> : null}</small>
-          </span>
-          {inPlace
-            ? <Button size="compact" aria-label={`${look.action}: ${title}`} onPress={() => open(item)}>{look.action}</Button>
-            : <Link className="wd-button" data-size="compact" data-variant="secondary" aria-label={`${look.action}: ${title}`} href={item.href}>{look.action}</Link>}
-        </li>;
-      })}</ul>
-      {items.length > VISIBLE || data.focus.total > items.length ? <div className={s.listFooter}>
-        {items.length > VISIBLE ? <Button size="compact" variant="quiet" onPress={() => setExpanded((value) => !value)}>
-          {expanded ? t("Show less") : t("Show all {count}", { count: formatCount(items.length, locale) })}</Button> : null}
-        {data.focus.total > items.length ? <small className={s.quiet}>{t("{count} more not shown", { count: formatCount(data.focus.total - items.length, locale) })}</small> : null}
-      </div> : null}
-    </>;
-  return <Section id="today" title={t("Today")} count={data?.focus.total} tour="home-widget-attention">{body}</Section>;
+      description={next ? <NextUp item={next} timeZone={nextZone} /> : null} action={allClear} /></div>
+    : <ul className={s.list}>{items.map((item) => {
+      const look = kindLook(item.kind, t);
+      const Icon = look.icon;
+      const reason = t(REMINDER_KIND_LABELS[item.kind]);
+      const title = item.title || reason;
+      const when = dueLabel(item, { today: data.today, timeZone: data.timeZone, locale, t });
+      const open = inPlace(item);
+      return <li key={item.id} className={s.focusRow} data-urgency={item.urgency}>
+        <span className={s.mark} aria-hidden="true"><Icon size={15} /></span>
+        <span className={s.copy}>
+          <strong>{title}{item.critical ? <Badge tone="danger">{t("Critical")}</Badge> : null}</strong>
+          <small>{[reason, item.context].filter((part) => part && part !== title).join(" · ")}{when ? <em>{when}</em> : null}</small>
+        </span>
+        {open
+          ? <Button size="compact" aria-label={`${look.action}: ${title}`} onPress={open}>{look.action}</Button>
+          : <Link className="wd-button" data-size="compact" data-variant="secondary" aria-label={`${look.action}: ${title}`} href={item.href}>{look.action}</Link>}
+      </li>;
+    })}</ul>;
+  return <Section id="today" title={t("Today")} count={total} tour="home-widget-attention"
+    link={data && (items.length || total) ? <Link className={s.textLink} href={MY_DAY_ROUTE}>{t("See all")}</Link> : null}>{body}</Section>;
 }
 
 /** "Next: …" under the all-caught-up state, so a clear day still says what's coming. */

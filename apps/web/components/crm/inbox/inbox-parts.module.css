@@ -14,6 +14,7 @@
 .inline :global(.wd-field) { min-inline-size: 14rem; }
 .name { display: grid; gap: var(--wd-space-0-5); }
 .name small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
+.scheduleLink { justify-self: start; color: var(--wd-color-link); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
 .rowActions { display: flex; align-items: center; gap: var(--wd-space-1); }
 .form { display: grid; gap: var(--wd-space-3); }
 .swatches { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }

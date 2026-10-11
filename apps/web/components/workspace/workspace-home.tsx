@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { HomeFocusItem, HomeMetrics, HomeSummary } from "@wodana/contracts";
+import type { HomeMetrics, HomeSummary, MyDayItem, MyDayResponse } from "@wodana/contracts";
 import { CalendarPlus, ClipboardPlus, Factory, FileText, HardHat, PackageCheck, Plus, Receipt, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
 import { Button, Callout, DesignSystemProvider, MenuButton, PageHeader, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -21,7 +21,20 @@ import { greetingPart } from "./home-format";
 import { WorkspaceUniversalSearch } from "./workspace-universal-search";
 import s from "./workspace-home.module.css";
 
-const HOME_SCOPES = ["workspace"] as const;
+// "reminders" moves Today's list (My day) when something falls due, closes, is snoozed or reassigned.
+const HOME_SCOPES = ["workspace", "reminders"] as const;
+/** Enough of My day to pick Today's six most urgent items; the counts cover everything. */
+const TODAY_LIMIT = 50;
+
+/** A follow-up or a work item Today can open in place, read from its link (anything else follows the link). */
+export function inPlaceTarget(item: Pick<MyDayItem, "kind" | "href">): { followUp: string } | { projectId: string; itemId: string } | null {
+  const [path = "", search = ""] = item.href.split("?");
+  const params = new URLSearchParams(search);
+  if (item.kind === "crm.follow_up" && path === "/workspace/crm/follow-ups" && params.get("record")) return { followUp: params.get("record")! };
+  const project = /^\/workspace\/projects\/([^/]+)\/plan$/.exec(path);
+  if (item.kind === "work.due" && project && params.get("item")) return { projectId: decodeURIComponent(project[1]), itemId: params.get("item")! };
+  return null;
+}
 
 type Props = {
   workspaceId: string;
@@ -74,6 +87,7 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions, 
   const has = (module: string) => modules.includes(module);
   const query = `workspaceId=${encodeURIComponent(workspaceId)}`;
   const summary = useSource<HomeSummary>(`/api/workspace/home-summary?${query}`);
+  const myDay = useSource<MyDayResponse>(`/api/workspace/my-day?${query}&scope=me&limit=${TODAY_LIMIT}`);
   const metrics = useSource<HomeMetrics>(`/api/workspace/home-metrics?${query}`);
   const [creating, setCreating] = useState(false);
   const [followUp, setFollowUp] = useState<string | null>(null);
@@ -98,14 +112,15 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions, 
   const projects = summary.data?.projects ?? [];
 
   /** Follow-ups and work items open in place; everything else follows its link. */
-  const open = async (item: HomeFocusItem) => {
-    if (item.source === "follow_up") { setFollowUp(item.recordId); return; }
-    if (item.source === "work" && item.projectId) {
-      try { setWork({ projectId: item.projectId, itemId: item.recordId, board: await api.work(item.projectId) }); }
-      catch { router.push(item.href); }
-      return;
-    }
-    router.push(item.href);
+  const inPlace = (item: MyDayItem): (() => void) | null => {
+    const target = inPlaceTarget(item);
+    if (!target) return null;
+    if ("followUp" in target) return () => setFollowUp(target.followUp);
+    return () => {
+      void api.work(target.projectId)
+        .then((board) => setWork({ projectId: target.projectId, itemId: target.itemId, board }))
+        .catch(() => router.push(item.href));
+    };
   };
 
   // The role's quick actions, in order of how often each is needed; only what the person can do, at most five.
@@ -153,7 +168,7 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions, 
     ? (part === "morning" ? t("Good morning, {name}", { name: firstName }) : part === "afternoon" ? t("Good afternoon, {name}", { name: firstName }) : t("Good evening, {name}", { name: firstName }))
     : (part === "morning" ? t("Good morning") : part === "afternoon" ? t("Good afternoon") : t("Good evening"));
   const today = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone: zone }).format(new Date());
-  const afterAction = () => { summary.refresh(); metrics.refresh(); };
+  const afterAction = () => { summary.refresh(); metrics.refresh(); myDay.refresh(); };
   // Someone else's change re-reads Home in place (no loading state), so it needs no polling.
   useLiveInvalidate(workspaceId, HOME_SCOPES, afterAction, 5_000);
 
@@ -173,7 +188,7 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions, 
     <div className={s.layout}>
       <div className={s.main}>
         {projectsOn ? <SiteProgressAttention workspaceId={workspaceId} /> : null}
-        <TodayList summary={summary} open={(item) => void open(item)} allClear={nextStep} />
+        <TodayList myDay={myDay} next={summary.data?.upcoming[0]} nextZone={zone ?? "UTC"} inPlace={inPlace} allClear={nextStep} />
         <UpcomingList summary={summary} empty={nextStep} />
       </div>
       <div className={s.aside}>

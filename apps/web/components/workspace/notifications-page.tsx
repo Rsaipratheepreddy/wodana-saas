@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button, EmptyState, ErrorState, IconMenuButton, InlineNotice, ListTabs, PageHeader, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { CRITICAL_REMINDER_EVENT_TYPES } from "@/lib/reminders/contract";
 import { NoticeGroups, matchesFilter, noticeFilters, useWorkspaceNotices, type NoticeFilter, type WorkspaceNotice } from "./notification-list";
 import styles from "./notifications-page.module.css";
 
@@ -45,7 +46,7 @@ export function NotificationsPage({ workspaceId, userId }: { workspaceId: string
         : !visible.length ? <EmptyState illustration={null} title={current === "unread" ? t("You’re all caught up") : t("No notifications yet")} />
           : <div className={styles.list}>
             <NoticeGroups items={visible} onOpen={(item) => void notices.markRead(item)}
-              action={(item) => item.eventType ? <IconMenuButton ariaLabel={t("More for {name}", { name: item.subject || t("Update") })} items={[{ id: "mute", label: t("Mute notices like this") }]} onAction={() => void mute(item)} /> : null} />
+              action={(item) => item.eventType && !CRITICAL_REMINDER_EVENT_TYPES.includes(item.eventType) ? <IconMenuButton ariaLabel={t("More for {name}", { name: item.subject || t("Update") })} items={[{ id: "mute", label: t("Mute notices like this") }]} onAction={() => void mute(item)} /> : null} />
           </div>}
   </section>;
 }

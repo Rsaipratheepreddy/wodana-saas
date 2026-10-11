@@ -433,13 +433,15 @@ export function homeTabs(modules: WorkspaceModuleDefinition[]): { id: string; la
   const projectTasks = allowed.has("projects-overview");
   return [
     { id: "overview", label: tKey("Overview"), href: "/workspace" },
+    // Everything due on the person, from every module they work in.
+    { id: "my-day", label: tKey("My day"), href: "/workspace/my-day" },
     // One name per page (NV-1): project work is Tasks; a salesperson's own queue is their Follow-ups.
     ...(projectTasks || allowed.has("follow-ups") ? [{ id: "tasks", label: projectTasks ? tKey("Tasks") : tKey("Follow-ups"), href: projectTasks ? "/workspace/tasks" : "/workspace/crm/follow-ups?view=activity" }] : []),
     // Everyone has approvals waiting somewhere (quotes, payments, orders, bills, reports): the list is theirs.
     { id: "approvals", label: tKey("Approvals"), href: "/workspace/approvals" },
   ];
 }
-export const HOME_ROUTES = ["/workspace", "/workspace/tasks", "/workspace/approvals"];
+export const HOME_ROUTES = ["/workspace", "/workspace/my-day", "/workspace/tasks", "/workspace/approvals"];
 
 export function productNavigationActive(pathname: string, query: URLSearchParams, sections: WorkspaceNavigationSection[]): string | undefined {
   const items = sections.flatMap(section => section.items);

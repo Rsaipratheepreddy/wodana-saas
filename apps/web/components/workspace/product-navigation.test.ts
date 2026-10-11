@@ -55,10 +55,10 @@ describe('product navigation route ownership', () => {
   });
 });
 
-it('keeps Tasks and Approvals as Home tabs, and CRM-only Tasks on the follow-up list', () => {
-  expect(homeTabs(workspaceModules).map(tab => [tab.label, tab.href])).toEqual([['Overview', '/workspace'], ['Tasks', '/workspace/tasks'], ['Approvals', '/workspace/approvals']]);
+it('keeps My day, Tasks and Approvals as Home tabs, and CRM-only Tasks on the follow-up list', () => {
+  expect(homeTabs(workspaceModules).map(tab => [tab.label, tab.href])).toEqual([['Overview', '/workspace'], ['My day', '/workspace/my-day'], ['Tasks', '/workspace/tasks'], ['Approvals', '/workspace/approvals']]);
   const all = productNavigation(workspaceModules);
-  for (const path of ['/workspace/tasks', '/workspace/approvals']) expect(productNavigationActive(path, new URLSearchParams(), all)).toBe('home');
+  for (const path of ['/workspace/my-day', '/workspace/tasks', '/workspace/approvals']) expect(productNavigationActive(path, new URLSearchParams(), all)).toBe('home');
   expect(homeTabs(workspaceModules.filter(module => module.id === 'crm')).find(tab => tab.id === 'tasks')?.href).toBe('/workspace/crm/follow-ups?view=activity');
   expect(productNavigationActive('/workspace/crm/follow-ups', new URLSearchParams('view=activity'), all)).toBe('home');
 });
