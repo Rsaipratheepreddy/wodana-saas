@@ -1,0 +1,23 @@
+{
+  "code": "0",
+  "message": "success",
+  "cash_flow": [
+    { "name": "Beginning Cash Balance", "total": "4000.00" },
+    {
+      "name": "Cash Flow from Operating Activities", "total": "750.00",
+      "account_transactions": [
+        { "name": "Net Income", "total": "1000.00" },
+        { "account_id": "460000000000361", "name": "Accounts Receivable", "total": "-500.00" },
+        { "account_id": "460000000000367", "name": "Accounts Payable", "total": "250.00" }
+      ]
+    },
+    { "name": "Cash Flow from Investing Activities", "total": "0.00", "account_transactions": [] },
+    {
+      "name": "Cash Flow from Financing Activities", "total": "200.00",
+      "account_transactions": [{ "account_id": "460000000000400", "name": "Owner's Equity", "total": "200.00" }]
+    },
+    { "name": "Net Change in cash", "total": "950.00" },
+    { "name": "Ending Cash Balance", "total": "4950.00" }
+  ],
+  "page_context": { "from_date": "2026-09-01", "to_date": "2026-09-30" }
+}

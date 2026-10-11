@@ -1,0 +1,47 @@
+{
+  "code": "0",
+  "message": "success",
+  "profit_and_loss": [
+    {
+      "name": "Gross Profit", "total": "4120.00",
+      "account_transactions": [
+        {
+          "name": "Operating Income", "total": "10500.00",
+          "account_transactions": [
+            { "account_id": "460000000038003", "account_code": "4100", "name": "Project revenue", "total": "10000.00" },
+            { "account_id": "460000000038005", "account_code": "4900", "name": "Other Charges", "total": "500.00" }
+          ]
+        },
+        {
+          "name": "Cost of Goods Sold", "total": "6380.00",
+          "account_transactions": [
+            { "account_id": "460000000038101", "account_code": "5100", "name": "Cost of Goods Sold", "total": "6380.00" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Operating Profit", "total": "2900.00",
+      "account_transactions": [
+        {
+          "name": "Operating Expense", "total": "1220.00",
+          "account_transactions": [
+            { "account_id": "460000000038201", "name": "Rent Expense", "total": "1000.00" },
+            { "account_id": "460000000038202", "name": "Office Supplies", "total": "220.00" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Net Profit/Loss", "total": "2850.00",
+      "account_transactions": [
+        { "name": "Non Operating Income", "total": "0.00", "account_transactions": [] },
+        {
+          "name": "Non Operating Expense", "total": "50.00",
+          "account_transactions": [{ "account_id": "460000000038301", "name": "Bank Fees and Charges", "total": "50.00" }]
+        }
+      ]
+    }
+  ],
+  "page_context": { "from_date": "2026-10-01", "to_date": "2026-10-31", "report_basis": "Accrual" }
+}

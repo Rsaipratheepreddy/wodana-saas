@@ -1,0 +1,87 @@
+{
+  "Header": {
+    "Time": "2026-11-02T09:14:31-07:00",
+    "ReportName": "ProfitAndLoss",
+    "ReportBasis": "Accrual",
+    "StartPeriod": "2026-10-01",
+    "EndPeriod": "2026-10-31",
+    "SummarizeColumnsBy": "Total",
+    "Currency": "USD",
+    "Option": [{ "Name": "AccountingStandard", "Value": "GAAP" }, { "Name": "NoReportData", "Value": "false" }]
+  },
+  "Columns": {
+    "Column": [
+      { "ColTitle": "", "ColType": "Account", "MetaData": [{ "Name": "ColKey", "Value": "account" }] },
+      { "ColTitle": "Total", "ColType": "Money", "MetaData": [{ "Name": "ColKey", "Value": "total" }] }
+    ]
+  },
+  "Rows": {
+    "Row": [
+      {
+        "type": "Section", "group": "Income",
+        "Header": { "ColData": [{ "value": "Income" }, { "value": "" }] },
+        "Rows": { "Row": [
+          { "type": "Data", "ColData": [{ "value": "Design income", "id": "82" }, { "value": "2250.00" }] },
+          {
+            "type": "Section",
+            "Header": { "ColData": [{ "value": "Landscaping Services", "id": "45" }, { "value": "" }] },
+            "Rows": { "Row": [
+              {
+                "type": "Section",
+                "Header": { "ColData": [{ "value": "Job Materials", "id": "46" }, { "value": "" }] },
+                "Rows": { "Row": [
+                  { "type": "Data", "ColData": [{ "value": "Fountains and Garden Lighting", "id": "48" }, { "value": "1652.50" }] },
+                  { "type": "Data", "ColData": [{ "value": "Plants and Soil", "id": "49" }, { "value": "2523.42" }] }
+                ] },
+                "Summary": { "ColData": [{ "value": "Total Job Materials" }, { "value": "4175.92" }] }
+              },
+              {
+                "type": "Section",
+                "Header": { "ColData": [{ "value": "Labor", "id": "51" }, { "value": "" }] },
+                "Rows": { "Row": [{ "type": "Data", "ColData": [{ "value": "Installation", "id": "52" }, { "value": "250.00" }] }] },
+                "Summary": { "ColData": [{ "value": "Total Labor" }, { "value": "250.00" }] }
+              }
+            ] },
+            "Summary": { "ColData": [{ "value": "Total Landscaping Services" }, { "value": "4425.92" }] }
+          },
+          { "type": "Data", "ColData": [{ "value": "Services", "id": "1" }, { "value": "503.55" }] }
+        ] },
+        "Summary": { "ColData": [{ "value": "Total Income" }, { "value": "7179.47" }] }
+      },
+      {
+        "type": "Section", "group": "COGS",
+        "Header": { "ColData": [{ "value": "Cost of Goods Sold" }, { "value": "" }] },
+        "Rows": { "Row": [{ "type": "Data", "ColData": [{ "value": "Cost of Goods Sold", "id": "80" }, { "value": "405.00" }] }] },
+        "Summary": { "ColData": [{ "value": "Total Cost of Goods Sold" }, { "value": "405.00" }] }
+      },
+      { "type": "Section", "group": "GrossProfit", "Summary": { "ColData": [{ "value": "Gross Profit" }, { "value": "6774.47" }] } },
+      {
+        "type": "Section", "group": "Expenses",
+        "Header": { "ColData": [{ "value": "Expenses" }, { "value": "" }] },
+        "Rows": { "Row": [
+          { "type": "Data", "ColData": [{ "value": "Advertising", "id": "7" }, { "value": "74.86" }] },
+          {
+            "type": "Section",
+            "Header": { "ColData": [{ "value": "Automobile", "id": "55" }, { "value": "" }] },
+            "Rows": { "Row": [
+              { "type": "Data", "ColData": [{ "value": "Automobile", "id": "55" }, { "value": "113.28" }] },
+              { "type": "Data", "ColData": [{ "value": "Fuel", "id": "56" }, { "value": "349.41" }] }
+            ] },
+            "Summary": { "ColData": [{ "value": "Total Automobile" }, { "value": "462.69" }] }
+          },
+          { "type": "Data", "ColData": [{ "value": "Legal & Professional Fees", "id": "12" }, { "value": "1,050.00" }] }
+        ] },
+        "Summary": { "ColData": [{ "value": "Total Expenses" }, { "value": "1587.55" }] }
+      },
+      { "type": "Section", "group": "NetOperatingIncome", "Summary": { "ColData": [{ "value": "Net Operating Income" }, { "value": "5186.92" }] } },
+      {
+        "type": "Section", "group": "OtherExpenses",
+        "Header": { "ColData": [{ "value": "Other Expenses" }, { "value": "" }] },
+        "Rows": { "Row": [{ "type": "Data", "ColData": [{ "value": "Miscellaneous", "id": "14" }, { "value": "2916.00" }] }] },
+        "Summary": { "ColData": [{ "value": "Total Other Expenses" }, { "value": "2916.00" }] }
+      },
+      { "type": "Section", "group": "NetOtherIncome", "Summary": { "ColData": [{ "value": "Net Other Income" }, { "value": "-2916.00" }] } },
+      { "type": "Section", "group": "NetIncome", "Summary": { "ColData": [{ "value": "Net Income" }, { "value": "2270.92" }] } }
+    ]
+  }
+}

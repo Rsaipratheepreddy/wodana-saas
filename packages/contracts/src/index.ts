@@ -6,4 +6,5 @@ export type * from './search.js';
 export type * from './home.js';
 export * from "./brand.js";
 export * from "./books.js";
+export * from "./financial-statements.js";
 export * from "./reminders.js";
