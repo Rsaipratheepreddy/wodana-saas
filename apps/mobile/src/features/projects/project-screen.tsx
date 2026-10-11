@@ -1,6 +1,6 @@
 import { Linking, Platform, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { Check, CheckCircle2, ClipboardList, FileCheck2, HardHat, ListChecks, MapPin, Navigation, ReceiptText, ShieldCheck, TriangleAlert, type LucideIcon } from 'lucide-react-native';
+import { Check, CheckCircle2, ClipboardList, FileCheck2, FilePen, HardHat, ListChecks, MapPin, Navigation, ReceiptText, ShieldCheck, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import type { Blocker, ProjectOverview, ProjectStage } from '../../../../web/lib/project-core/types';
 import { appRouteFor } from '../../core/deep-links';
 import { errorMessage } from '../../core/api';
@@ -58,6 +58,7 @@ export function ProjectScreen() {
     { label: key('Daily report'), icon: ClipboardList, href: `/projects/${id}/report`, show: project.status === 'active' || project.status === 'on_hold' },
     { label: key('Crew days'), icon: HardHat, href: `/projects/${id}/crew-days`, show: crews },
     { label: key('Snags'), icon: TriangleAlert, href: `/projects/${id}/snags`, show: true },
+    { label: key('Raise a change'), icon: FilePen, href: `/projects/${id}/change-new`, show: project.status === 'active' || project.status === 'on_hold' },
     { label: key('Daily progress'), icon: FileCheck2, href: `/projects/${id}/reports`, show: true },
     { label: key('Handover'), icon: ShieldCheck, href: `/projects/${id}/handover`, show: true },
     { label: key('Expenses'), icon: ReceiptText, href: `/projects/${id}/expenses`, show: project.status === 'active' },

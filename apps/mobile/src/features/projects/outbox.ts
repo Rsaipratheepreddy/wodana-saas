@@ -2,6 +2,8 @@ import type { SiteState } from '../../../../web/lib/site/types';
 import { ApiError } from '../../core/api';
 import { registerOutboxHandler } from '../../core/outbox';
 import { projectKeys } from './api';
+import { sendChange } from './change-outbox';
+export type { ChangePayload } from './change-outbox';
 
 /** A snag raised on site: created with its own id, then its "before" photos (each photo id sent once). */
 export type SnagPayload = { projectId: string; create: Record<string, unknown>; photoIds: string[] };
@@ -39,6 +41,8 @@ registerOutboxHandler('project.snag', async ({ api, item, withFile, step }) => {
     withFile(photoId, (file) => api.upload(`${base}/${itemId}/photos/${photoId}?kind=before`, 'POST', 'file', file)));
   return [projectKeys.board(api.workspaceId, payload.projectId), ['projects', api.workspaceId, 'open-work']];
 });
+
+registerOutboxHandler('project.change', sendChange);
 
 registerOutboxHandler('project.work-photos', async ({ api, item, withFile, step }) => {
   const payload = item.payload as unknown as WorkPhotosPayload;
