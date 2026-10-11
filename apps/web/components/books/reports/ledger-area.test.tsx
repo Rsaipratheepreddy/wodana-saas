@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import { presetOf, presetPeriod, type GeneralLedgerReport, type JournalDetail, type LedgerOverview, type ReportEntity, type TrialBalanceReport } from "@/lib/books/reports-client";
+import { periodPresets, presetOf, presetPeriod, type GeneralLedgerReport, type JournalDetail, type LedgerOverview, type ReportEntity, type TrialBalanceReport } from "@/lib/books/reports-client";
 import { canOpen, accessRuleForPath, meetsRule } from "@/lib/workspace/access";
 import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
 import { productNavigation, workspaceModules } from "@/components/workspace/workspace-navigation";
@@ -10,6 +10,7 @@ import { scopeWorkspaceNavigation } from "@/lib/workspace/module-rollout";
 import { JournalSheet } from "../journal-sheet";
 import { ledgerApi } from "@/lib/books/reports-client";
 import { LedgerArea } from "./ledger-area";
+import { ReportPicker } from "./report-picker";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const ENTITY = "22222222-2222-4222-8222-222222222222";
@@ -256,6 +257,23 @@ describe("Ledger periods, access and navigation", () => {
     expect(presetPeriod("last-month", "2026-01-15", 1)).toEqual({ from: "2025-12-01", to: "2025-12-31" });
     expect(presetOf("2026-10-01", "2026-10-08", "2026-10-08", 1)).toBe("month");
     expect(presetOf("2026-02-01", "2026-03-04", "2026-10-08", 1)).toBe("custom");
+    // The calendar year is offered only when the financial year starts later than January.
+    expect(periodPresets(1)).not.toContain("calendar-year");
+    expect(periodPresets(4)).toContain("calendar-year");
+    expect(presetPeriod("calendar-year", "2026-10-08", 4)).toEqual({ from: "2026-01-01", to: "2026-10-08" });
+  });
+
+  it("reads point-in-time reports at a date: today or the end of the last month, quarter or financial year", async () => {
+    const user = userEvent.setup();
+    const onScope = vi.fn();
+    render(wrap(<ReportPicker entities={[main]} entity={main} scope={{ entity: ENTITY, from: "2026-01-01", to: "2026-10-08" }} onScope={onScope} pointInTime />));
+    const asAt = screen.getByRole("button", { name: /As at/ });
+    expect(asAt).toHaveTextContent("Today");
+    await user.click(asAt);
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent))
+      .toEqual(["Today", "End of last month", "End of last quarter", "End of last financial year", "Another date"]);
+    await user.click(screen.getByRole("option", { name: "End of last month" }));
+    expect(onScope).toHaveBeenLastCalledWith({ from: "2026-09-01", to: "2026-09-30" });
   });
 
   it("opens the Ledger to books.view, by address too, with Settings › Ledger for whoever sets it up", () => {

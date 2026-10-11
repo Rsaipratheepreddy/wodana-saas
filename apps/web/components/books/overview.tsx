@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge, EmptyState, KpiFigure, SelectField, Sparkline, type ChartPoint } from "@/design-system";
 import { ledgerPaths, type LedgerOverview as Overview, type LedgerScope } from "@/lib/books/reports-client";
-import { journalKindLabel } from "./journal-sheet";
+import { journalEventLabel } from "./journal-sheet";
 import { LedgerRegion, useLedgerFormat, useLedgerT, type LedgerFormat } from "./reports/ledger-format";
 import { MissingRegionNotice } from "./reports/report-views";
 import styles from "./reports/ledger.module.css";
@@ -119,7 +119,7 @@ function Recent({ overview }: { overview: Overview }) {
       {recent.map((journal) => <li key={journal.id}>
         <span className={styles.listMain}>
           <Link className={styles.link} href={ledgerPaths.journal(journal.id, { entity })}>{journal.sourceLabel || journal.number}</Link>
-          <small>{[journal.number, format.day(journal.journalDate), journalKindLabel(t, journal.kind)].join(" · ")}</small>
+          <small>{[journalEventLabel(t, journal), journal.number, format.day(journal.journalDate)].join(" · ")}</small>
         </span>
         <span className={styles.listEnd}>{format.money(journal.total)}</span>
       </li>)}

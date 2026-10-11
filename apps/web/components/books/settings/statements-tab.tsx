@@ -53,7 +53,7 @@ export function StatementsTab({ workspaceId, companyId }: { workspaceId: string;
     setBusy(false);
   };
   const dirty = draft !== view.source || (!view.chosen && draft !== null);
-  return <SettingsSection id="ledger-statements" title={t("Statements")}>
+  return <SettingsSection id="ledger-statements" title={view.company.name}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     <RadioSet label={t("Where the books live")} value={draft ?? view.source} isDisabled={!view.canManage}
       onChange={(value) => { setDraft(value as FinancialStatementSource); setSaved(false); }}

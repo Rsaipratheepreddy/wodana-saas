@@ -14102,5 +14102,21 @@
   "Hide the lines of {label}": "Hide the lines of {label}",
   "Show the lines of {label}": "Show the lines of {label}",
   "Cash in and out by month": "Cash in and out by month",
-  "Always available": "Always available"
+  "Always available": "Always available",
+  "Credit note issued": "Credit note issued",
+  "Client payment received": "Client payment received",
+  "Client payment reversed": "Client payment reversed",
+  "Supplier bill approved": "Supplier bill approved",
+  "Supplier bill cancelled": "Supplier bill cancelled",
+  "Supplier paid": "Supplier paid",
+  "Supplier payment reversed": "Supplier payment reversed",
+  "Services received": "Services received",
+  "Stock moved": "Stock moved",
+  "Petty cash approved": "Petty cash approved",
+  "Petty cash repaid": "Petty cash repaid",
+  "Labour costed": "Labour costed",
+  "End of last month": "End of last month",
+  "End of last quarter": "End of last quarter",
+  "End of last financial year": "End of last financial year",
+  "Another date": "Another date"
 }

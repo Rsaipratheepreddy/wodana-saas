@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { DataGrid, EmptyState, ErrorState, NoResultsState, RecordName, type DataGridColumn } from "@/design-system";
 import { ledgerPaths, type AccountBalance, type AccountsList, type JournalList, type JournalSummary, type LedgerScope } from "@/lib/books/reports-client";
-import { journalKindLabel } from "../journal-sheet";
+import { journalEventLabel } from "../journal-sheet";
 import { useLedgerFormat, useLedgerT, type LedgerT } from "./ledger-format";
 import { SourceLink } from "./report-views";
 import styles from "./ledger.module.css";
@@ -18,7 +18,7 @@ export function JournalsList({ list, error, scope, search, onSearch, onRetry, on
   const format = useLedgerFormat();
   const columns = useMemo<DataGridColumn<JournalSummary>[]>(() => [
     { id: "journal", header: t("Journal"), accessorFn: (row) => row.number, size: 220,
-      meta: { primary: true, renderCell: (row) => <RecordName title={row.number} detail={journalKindLabel(t, row.kind)} /> } },
+      meta: { primary: true, renderCell: (row) => <RecordName title={row.number} detail={journalEventLabel(t, row)} /> } },
     { id: "date", header: t("Date"), accessorFn: (row) => row.journalDate, size: 130, meta: { renderCell: (row) => format.day(row.journalDate) } },
     { id: "source", header: t("Record"), accessorFn: (row) => row.sourceLabel, size: 260,
       meta: { interactive: true, renderCell: (row) => <span className={styles.cell}><SourceLink href={row.sourceHref} label={row.sourceLabel} />

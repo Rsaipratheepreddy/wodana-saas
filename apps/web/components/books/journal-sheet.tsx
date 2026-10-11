@@ -20,6 +20,28 @@ export function journalKindLabel(t: LedgerT, kind: string) {
   }
 }
 
+/** What a journal records, in a few words: the event of the record it was posted from, else its kind. */
+export function journalEventLabel(t: LedgerT, journal: { kind: string; sourceType: string; sourceEvent: string }) {
+  if (journal.kind !== "auto") return journalKindLabel(t, journal.kind);
+  switch (`${journal.sourceType}:${journal.sourceEvent}`) {
+    case "client_invoice:issued": return t("Invoice issued");
+    case "client_credit_note:issued": return t("Credit note issued");
+    case "receipt:verified": return t("Client payment received");
+    case "receipt:reversed": return t("Client payment reversed");
+    case "supplier_bill:approved": return t("Supplier bill approved");
+    case "supplier_bill:cancelled": return t("Supplier bill cancelled");
+    case "supplier_payment:paid": return t("Supplier paid");
+    case "supplier_payment:reversed": return t("Supplier payment reversed");
+    case "goods_receipt:received": return t("Services received");
+    case "goods_receipt:reversed": return t("Delivery reversed");
+    case "stock_batch:moved": return t("Stock moved");
+    case "petty_cash:approved": return t("Petty cash approved");
+    case "petty_cash:reimbursed": return t("Petty cash repaid");
+    case "labour:costed": case "labour:recosted": return t("Labour costed");
+    default: return journalKindLabel(t, journal.kind);
+  }
+}
+
 /**
  * One posted journal: its number, dates, the record it came from (opens that record's own page), its reversal and
  * its lines, each account opening its ledger. Journals never change; a correction is a reversal, linked both ways.
@@ -53,7 +75,7 @@ function JournalBody({ detail, scope }: { detail: JournalDetail; scope: LedgerSc
   return <div className={styles.sheet}>
     <dl className={styles.facts}>
       <div><dt>{t("Date")}</dt><dd>{format.day(journal.journalDate)}{journal.late ? ` · ${t("Happened {date}, after the books were locked", { date: format.day(journal.eventDate) })}` : ""}</dd></div>
-      <div><dt>{t("Kind")}</dt><dd>{journalKindLabel(t, journal.kind)}</dd></div>
+      <div><dt>{t("Kind")}</dt><dd>{journalEventLabel(t, journal)}</dd></div>
       {journal.sourceLabel || journal.sourceHref ? <div><dt>{t("Record")}</dt><dd><SourceLink href={journal.sourceHref} label={journal.sourceLabel} /></dd></div> : null}
       {journal.description && journal.description !== journal.sourceLabel ? <div><dt>{t("Description")}</dt><dd>{journal.description}</dd></div> : null}
       <div><dt>{t("Total")}</dt><dd className={styles.money}>{format.money(journal.total)}</dd></div>
@@ -63,6 +85,7 @@ function JournalBody({ detail, scope }: { detail: JournalDetail; scope: LedgerSc
       {journal.postedByName ? <div><dt>{t("Posted by")}</dt><dd>{journal.postedByName}</dd></div> : null}
     </dl>
     <DataGrid<JournalLine> rowNumbers={false} selectable={false} pageSize={500} ariaLabel={t("Journal lines")} columns={columns} data={[...detail.lines, totalLine(t, detail)]} getRowId={(row) => row.id}
+      showToolbar={false} totalRowCount={detail.lines.length}
       exportFileName={`${journal.number}.csv`} />
   </div>;
 }

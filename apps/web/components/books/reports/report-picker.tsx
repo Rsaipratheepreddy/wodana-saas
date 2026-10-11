@@ -2,11 +2,12 @@
 
 import type { ReactNode } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateRangeField, SelectField } from "@/design-system";
+import { Button, DateField, DateRangeField, SelectField } from "@/design-system";
 import {
   LEDGER_REPORT_LABELS, LEDGER_REPORTS, PERIOD_LABELS, periodPresets, presetOf, presetPeriod,
   type LedgerReportCode, type LedgerScope, type PeriodPreset,
 } from "@/lib/books/reports-client";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { useLedgerT } from "./ledger-format";
 import styles from "./ledger.module.css";
 
@@ -31,8 +32,11 @@ export function ReportPicker({ report, onReport, reports = LEDGER_REPORTS, entit
   const t = useLedgerT();
   const today = entity?.today ?? new Date().toISOString().slice(0, 10);
   const fiscal = entity?.fiscalYearStartMonth ?? 1;
-  const presets = periodPresets(fiscal);
-  const preset: PeriodPreset = scope.from && scope.to ? presetOf(scope.from, scope.to, today, fiscal) : "year";
+  // A point-in-time report reads the period's end: today, or the end of the last month, quarter or financial year.
+  const presets = pointInTime ? AS_AT_PRESETS : periodPresets(fiscal);
+  const detected: PeriodPreset = scope.from && scope.to ? presetOf(scope.from, scope.to, today, fiscal) : "year";
+  const preset: PeriodPreset = !pointInTime ? detected : !scope.to ? "year"
+    : AS_AT_PRESETS.find((id) => id !== "custom" && presetPeriod(id, today, fiscal).to === scope.to) ?? "custom";
   let range = null;
   try { range = scope.from && scope.to ? { start: parseDate(scope.from), end: parseDate(scope.to) } : null; } catch { range = null; }
   return <div className={`${styles.picker} ${styles.noPrint}`} role="group" aria-label={t("Report options")}>
@@ -40,17 +44,26 @@ export function ReportPicker({ report, onReport, reports = LEDGER_REPORTS, entit
       selectedKey={report} onSelectionChange={(value) => value && onReport(String(value) as LedgerReportCode)} /> : null}
     {entities.length > 1 ? <SelectField accent="neutral" label={t("Company")} items={entities.map((item) => ({ id: item.id, label: item.name }))}
       selectedKey={entity?.id ?? ""} onSelectionChange={(value) => value && onScope({ entity: String(value), from: "", to: "" })} /> : null}
-    <SelectField accent="neutral" label={pointInTime ? t("As at") : t("Period")} items={presets.map((id) => ({ id, label: t(PERIOD_LABELS[id]) }))} selectedKey={preset}
+    <SelectField accent="neutral" label={pointInTime ? t("As at") : t("Period")} items={presets.map((id) => ({ id, label: t(pointInTime ? AS_AT_LABELS[id] ?? PERIOD_LABELS[id] : PERIOD_LABELS[id]) }))} selectedKey={preset}
       onSelectionChange={(value) => {
         const next = String(value ?? "year") as PeriodPreset;
         if (next === "custom") onScope({ from: scope.from || presetPeriod("year", today, fiscal).from, to: scope.to || today });
         else onScope(presetPeriod(next, today, fiscal));
       }} />
-    {preset === "custom" ? <DateRangeField label={t("Dates")} value={range} onChange={(value) => value && onScope({ from: value.start.toString(), to: value.end.toString() })} /> : null}
+    {preset === "custom" && pointInTime
+      ? <DateField label={t("Date")} value={scope.to ? parseDate(scope.to) : null} onChange={(value) => value && onScope({ from: value.toString(), to: value.toString() })} />
+      : preset === "custom" ? <DateRangeField label={t("Dates")} value={range} onChange={(value) => value && onScope({ from: value.start.toString(), to: value.end.toString() })} /> : null}
     {children}
     {actions ? <div className={styles.pickerActions}>{actions}</div> : null}
   </div>;
 }
+
+/** The dates a point-in-time report is read at, and how they are named. */
+const AS_AT_PRESETS: PeriodPreset[] = ["year", "last-month", "last-quarter", "last-year", "custom"];
+const AS_AT_LABELS: Partial<Record<PeriodPreset, MessageKey>> = {
+  year: tKey("Today"), "last-month": tKey("End of last month"), "last-quarter": tKey("End of last quarter"), "last-year": tKey("End of last financial year"),
+  custom: tKey("Another date"),
+};
 
 /** Export (the server's CSV, the same exact figures) and Print (the page laid out for paper, saved as PDF from the print dialog). */
 export function ReportActions({ csvHref }: { csvHref?: string | null }) {
