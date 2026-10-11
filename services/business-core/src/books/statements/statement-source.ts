@@ -7,14 +7,8 @@ import type { FinancialStatementProvider, FinancialStatementSource } from "./sta
  *
  * `statementSource(context)` (statements.service.ts) picks the company's chosen source and returns its provider;
  * the page, CSV and PDF read `.profitAndLoss(query)` and `.cashFlow(query)` from it and never care which it is.
- * The Ledger and operational-cash sources live in this folder. Zoho Books and QuickBooks live in `src/books/sources`
- * and register themselves here on module init:
- *
- *   @Module({ imports: [BooksStatementsModule], providers: [ZohoBooksStatementSource] })
- *   export class BooksSourcesModule implements OnModuleInit {
- *     constructor(private readonly registry: StatementSourceRegistry, private readonly zoho: ZohoBooksStatementSource) {}
- *     onModuleInit() { this.registry.register(this.zoho); }
- *   }
+ * The Ledger and operational-cash sources live in this folder. Zoho Books and QuickBooks live in `src/books/sources`;
+ * BooksStatementsModule registers them on init.
  */
 
 /** What every source gets: the member's tenant transaction and the company it reads. */
