@@ -67,31 +67,41 @@ export function ProjectMoneySummary({ workspaceId, projectId, switcher }: { work
   const month = useCallback((key: string) => new Intl.DateTimeFormat(locale, { timeZone: "UTC", month: "short", year: "numeric" }).format(new Date(`${key}-01T00:00:00Z`)), [locale]);
   const amount = useCallback((value: string | null, currency?: string) =>
     <span className={[styles.number, negative(value) ? styles.danger : ""].filter(Boolean).join(" ")}>{money(value, currency)}</span>, [money]);
+  // Table cells show plain amounts: the currency is named once in the section's title, so every column fits.
+  const plain = useCallback((value: string | null) => {
+    if (value === null) return "—";
+    // The currency's own decimals (2 for AED, 0 for JPY, 3 for KWD), without its code.
+    let digits = 2;
+    try { digits = new Intl.NumberFormat(locale, { style: "currency", currency: pnl?.currency ?? "" }).resolvedOptions().maximumFractionDigits ?? 2; } catch { /* no currency yet */ }
+    return new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(value));
+  }, [locale, pnl?.currency]);
+  const cell = useCallback((value: string | null) =>
+    <span className={[styles.number, negative(value) ? styles.danger : ""].filter(Boolean).join(" ")}>{plain(value)}</span>, [plain]);
 
   const categoryColumns = useMemo<DataGridColumn<PnlCategory>[]>(() => [
-    { id: "category", header: t("Category"), accessorFn: (row) => labels[row.category], size: 200, enableSorting: false, meta: { primary: true } },
-    { id: "budget", header: t("Budget"), accessorFn: (row) => row.budget ?? "", size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.budget) } },
-    { id: "actual", header: t("Spent"), accessorFn: (row) => row.actual, size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.actual) } },
-    { id: "committed", header: t("Committed"), accessorFn: (row) => row.committed, size: 140, enableSorting: false, meta: { align: "end", mobileHidden: true, renderCell: (row) => amount(row.committed) } },
-    { id: "forecast", header: t("Expected"), accessorFn: (row) => row.forecast, size: 140, enableSorting: false, meta: { align: "end", priority: "medium", renderCell: (row) => amount(row.forecast) } },
-    { id: "variance", header: t("Left"), accessorFn: (row) => row.variance ?? "", size: 150, enableSorting: false, meta: { align: "end", renderCell: (row) => row.variance === null
+    { id: "category", header: t("Category"), accessorFn: (row) => labels[row.category], size: 160, enableSorting: false, meta: { primary: true } },
+    { id: "budget", header: t("Budget"), accessorFn: (row) => row.budget ?? "", size: 120, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.budget) } },
+    { id: "actual", header: t("Spent"), accessorFn: (row) => row.actual, size: 120, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.actual) } },
+    { id: "committed", header: t("Committed"), accessorFn: (row) => row.committed, size: 120, enableSorting: false, meta: { align: "end", mobileHidden: true, renderCell: (row) => cell(row.committed) } },
+    { id: "forecast", header: t("Expected"), accessorFn: (row) => row.forecast, size: 120, enableSorting: false, meta: { align: "end", priority: "medium", renderCell: (row) => cell(row.forecast) } },
+    { id: "variance", header: t("Left"), accessorFn: (row) => row.variance ?? "", size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => row.variance === null
       ? <span className={styles.muted}>—</span>
-      : row.over ? <span className={`${styles.number} ${styles.danger}`}>{t("{amount} over", { amount: money(row.variance.replace(/^-/, "")) })}</span> : amount(row.variance) } },
-  ], [t, labels, amount, money]);
+      : row.over ? <span className={`${styles.number} ${styles.danger}`}>{t("{amount} over", { amount: plain(row.variance.replace(/^-/, "")) })}</span> : cell(row.variance) } },
+  ], [t, labels, cell, plain]);
   const monthColumns = useMemo<DataGridColumn<CashMonth>[]>(() => [
     { id: "month", header: t("Month"), accessorFn: (row) => row.month, size: 140, enableSorting: false, meta: { primary: true, renderCell: (row) => <span>{month(row.month)}</span> } },
-    { id: "in", header: t("In"), accessorFn: (row) => row.in, size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.in, cash?.currency) } },
-    { id: "out", header: t("Out"), accessorFn: (row) => row.out, size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.out, cash?.currency) } },
-    { id: "net", header: t("Net"), accessorFn: (row) => row.net, size: 140, enableSorting: false, meta: { align: "end", mobileHidden: true, renderCell: (row) => amount(row.net, cash?.currency) } },
-    { id: "balance", header: t("Balance"), accessorFn: (row) => row.balance, size: 150, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.balance, cash?.currency) } },
-  ], [t, month, amount, cash?.currency]);
+    { id: "in", header: t("In"), accessorFn: (row) => row.in, size: 120, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.in) } },
+    { id: "out", header: t("Out"), accessorFn: (row) => row.out, size: 120, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.out) } },
+    { id: "net", header: t("Net"), accessorFn: (row) => row.net, size: 120, enableSorting: false, meta: { align: "end", mobileHidden: true, renderCell: (row) => cell(row.net) } },
+    { id: "balance", header: t("Balance"), accessorFn: (row) => row.balance, size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.balance) } },
+  ], [t, month, cell]);
   const bucketLabels: Record<UpcomingBucket, string> = { overdue: t("Overdue"), days_0_30: t("Next 30 days"), days_31_60: t("31–60 days"), days_61_90: t("61–90 days") };
   type Bucket = ProjectCashFlow["upcoming"]["buckets"][number];
   const bucketColumns: DataGridColumn<Bucket>[] = [
     { id: "when", header: t("When"), accessorFn: (row) => row.key, size: 160, enableSorting: false, meta: { primary: true, renderCell: (row) => <span>{bucketLabels[row.key]}</span> } },
-    { id: "in", header: t("Due in"), accessorFn: (row) => row.in, size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.in, cash?.currency) } },
-    { id: "out", header: t("Due out"), accessorFn: (row) => row.out, size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.out, cash?.currency) } },
-    { id: "net", header: t("Net"), accessorFn: (row) => row.net, size: 140, enableSorting: false, meta: { align: "end", renderCell: (row) => amount(row.net, cash?.currency) } },
+    { id: "in", header: t("Due in"), accessorFn: (row) => row.in, size: 120, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.in) } },
+    { id: "out", header: t("Due out"), accessorFn: (row) => row.out, size: 120, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.out) } },
+    { id: "net", header: t("Net"), accessorFn: (row) => row.net, size: 120, enableSorting: false, meta: { align: "end", renderCell: (row) => cell(row.net) } },
   ];
 
   if (error && (!pnl || !cash)) return <div className={styles.summary}>{switcher ? <div className={styles.toolbar}>{switcher}</div> : null}<ErrorState description={error} onRetry={() => void load()} /></div>;
@@ -137,7 +147,7 @@ export function ProjectMoneySummary({ workspaceId, projectId, switcher }: { work
     {pnl.uncosted ? <InlineNotice tone="info" message={t("{count} costs have no price or exchange rate yet and aren't counted.", { count: pnl.uncosted })} /> : null}
 
     <section className={styles.section} aria-labelledby="money-pnl">
-      <Heading as="h2" size="sm" id="money-pnl">{t("Profit & loss")}</Heading>
+      <Heading as="h2" size="sm" id="money-pnl">{t("Profit & loss")} <span className={styles.muted}>{pnl.currency}</span></Heading>
       {pnl.categories.length ? <>
         <DataGrid<PnlCategory> ariaLabel={t("Costs by category")} columns={categoryColumns} data={pnl.categories} getRowId={(row) => row.category} rowNumbers={false}
           selectable={false} showToolbar={false} showFooter={false} wrapText />
@@ -154,7 +164,7 @@ export function ProjectMoneySummary({ workspaceId, projectId, switcher }: { work
     </section>
 
     <section className={styles.section} aria-labelledby="money-cash">
-      <Heading as="h2" size="sm" id="money-cash">{t("Cash flow")}</Heading>
+      <Heading as="h2" size="sm" id="money-cash">{t("Cash flow")} <span className={styles.muted}>{cash.currency}</span></Heading>
       <dl className={styles.facts}>
         <div><dt>{t("Project cash")}</dt><dd className={negative(cash.wallet.balance) ? styles.danger : undefined}>{money(cash.wallet.balance, cash.currency)}
           <small>{t("{received} in, {paid} out", { received: money(cash.wallet.received, cash.currency), paid: money(cash.wallet.paid, cash.currency) })}</small></dd></div>
