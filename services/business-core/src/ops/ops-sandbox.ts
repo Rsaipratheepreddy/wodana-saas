@@ -34,6 +34,8 @@ import { runConfigure } from "./ops-configure";
 import { openContext, OpsError, type Report } from "./ops-context";
 import { ProfileError, validateProfile, type Profile } from "./ops-profile";
 import { changeSandboxAddresses, SANDBOX_EMAIL_CHANGED } from "./ops-sandbox-email";
+import { DeliveryHold, describeDeliveries, SANDBOX_SEED } from "./scenarios/scenario-delivery";
+import { runScenarios } from "./scenarios/scenario-run";
 import {
   parseCrmFile, parseTeamsFile, patternEmail, planMembers, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxAddress, sandboxEmail,
   sandboxExternalTenantId, SandboxFileError, sandboxLegalEntityCode, sandboxOrganizationKey, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan,
@@ -135,6 +137,7 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   const mailer = get(TransactionalEmailService) as unknown as { send: (message: unknown) => Promise<unknown> };
   const send = mailer.send;
   let held = 0;
+  let hold: DeliveryHold | null = null;
   mailer.send = async () => { held += 1; return { status: "not_configured", provider: null, messageId: null, suppressedReason: "sandbox_setup" }; };
   try {
     if (own && own.workspace.status !== "active") throw new OpsError(`The sandbox ${args.slug} is ${own.workspace.status}; reactivate it in Wodana Control first.`);
@@ -189,6 +192,9 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       }
     }
     (report.facts.workspace as Record<string, unknown>).id = workspaceId;
+    // From here every email, WhatsApp and push the run writes for the organization is suppressed before it can be sent
+    // (scenario-delivery.ts); seeding also holds its reminder sweep until the run is done.
+    if (args.apply) hold = await DeliveryHold.start(app, [workspaceId], { lockReminders: args.seed });
 
     // A member without a password can't sign in: refuse before changing anything when one would be left without.
     // An added organization's people are the sandbox's own: their passwords are its business, never this run's.
@@ -255,6 +261,25 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     if (profile) {
       const ctx = await openContext(app, args.slug, owner.email, args.apply);
       await runConfigure(ctx, profile, report);
+    }
+    // ---------- the demo scenarios, on the firm's own rules ----------
+    if (args.scenarios) await guarded(report, "scenarios", "scenarios", async () => {
+      await runScenarios(app, { workspaceId, ownerUserId: owner.userId, members: outcomes.map((member) => ({ key: member.key, displayName: member.displayName, userId: member.userId })),
+        apply: args.apply }, report);
+    });
+    if (hold) {
+      // The first reminder sweep (My day's items), on the lock the run holds, its messages suppressed; then the count.
+      if (args.seed) await guarded(report, "reminders", "first sweep", async () => {
+        const swept = await hold!.sweepReminders(workspaceId);
+        if (swept) report.add("reminders", "info", "My day", `${swept.scan?.opened ?? 0} reminders opened, ${swept.fire?.fired ?? 0} sent and suppressed${swept.busy ? " (another sweep was running)" : ""}`);
+      });
+      const counts = await hold.finish(true);
+      hold = null;
+      const mine = counts.get(workspaceId);
+      if (mine) {
+        report.facts.deliveries = { reason: SANDBOX_SEED, ...mine };
+        report.add("email", mine.delivered ? "failed" : "info", "deliveries held back", describeDeliveries(mine));
+      }
     }
     if (held) report.add("email", "info", "held back", `${held} emails were not sent`);
     printMembers(report, outcomes, args.passwordEnv, before, base?.slug ?? null);
@@ -616,6 +641,8 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       }
     }
   } finally {
+    // A run that stopped part-way still suppresses what it wrote and lets go of the locks.
+    if (hold) await (hold as DeliveryHold).finish(args.apply).catch(() => (hold as DeliveryHold).release());
     mailer.send = send;
   }
 }
@@ -859,6 +886,7 @@ function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Re
   if (!password && !args.organizationOf) report.add("members", "manual", "passwords", "--apply needs --password-env");
   if (profile) report.add("profile", "would change", "profile", `${Object.keys(profile).length} sections, applied as configure once the workspace exists`);
   if (args.seed) report.add("seed", "would change", "showcase", "records for every section, made by the test members");
+  if (args.scenarios) report.add("scenarios", "would change", "scenarios", "an example of every main scenario, in the organization's own country and currency");
   // An added organization's people are already there (the sandbox's own); a new sandbox's are made with --apply.
   printMembers(report, plans.map((plan) => ({ key: plan.key, email: plan.email, displayName: plan.displayName, roles: plan.roleCodes, teams: plan.teamCodes,
     userId: known?.get(plan.key)?.userId ?? null })), args.passwordEnv, known, args.organizationOf);

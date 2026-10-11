@@ -52,11 +52,11 @@ describe("operator CLI arguments", () => {
 
   it("parses sandbox: a dry run unless --apply, region upper-cased, files and the password's variable optional", () => {
     expect(parseArgs(sandbox)).toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: null, teams: null, crm: null, passwordEnv: null,
-      kit: null, organizationOf: null, emailPattern: null, seed: false, apply: false, json: false });
+      kit: null, organizationOf: null, emailPattern: null, seed: false, scenarios: false, apply: false, json: false });
     expect(parseArgs([...sandbox, "--profile", "p.json", "--teams", "t.json", "--crm", "c.json", "--password-env", "SANDBOX_PASSWORD", "--kit", "design_build", "--seed",
       "--apply", "--json"]))
       .toEqual({ command: "sandbox", slug: "iglo", name: "Igolo Test", region: "AE", profile: "p.json", teams: "t.json", crm: "c.json", passwordEnv: "SANDBOX_PASSWORD",
-        kit: "design_build", organizationOf: null, emailPattern: null, seed: true, apply: true, json: true });
+        kit: "design_build", organizationOf: null, emailPattern: null, seed: true, scenarios: false, apply: true, json: true });
     expect(parseArgs(["sandbox", "--slug", "Test-Studio-2", "--name", "  Test Studio ", "--region", "GB"])).toMatchObject({ slug: "test-studio-2", name: "Test Studio" });
     expect(parseArgs(["sandbox", "--help"])).toEqual({ command: "help" });
   });
@@ -66,8 +66,14 @@ describe("operator CLI arguments", () => {
   it("parses --organization-of: another organization in an existing sandbox's account, for the same test members", () => {
     expect(parseArgs([...organization, "--profile", "p.json", "--teams", "t.json", "--crm", "c.json", "--seed", "--apply"])).toEqual({
       command: "sandbox", slug: "iglo-india", name: "Igolo India", region: "IN", profile: "p.json", teams: "t.json", crm: "c.json", passwordEnv: null,
-      kit: null, organizationOf: "iglo", emailPattern: null, seed: true, apply: true, json: false });
+      kit: null, organizationOf: "iglo", emailPattern: null, seed: true, scenarios: false, apply: true, json: false });
     expect(parseArgs(organization)).toMatchObject({ organizationOf: "iglo", apply: false });
+  });
+
+  it("parses --scenarios, which implies --seed, for a sandbox and for an added organization", () => {
+    expect(parseArgs(["sandbox", "--slug", "igolo", "--name", "Igolo UAE", "--region", "AE", "--scenarios"])).toMatchObject({ seed: true, scenarios: true, apply: false });
+    expect(parseArgs([...organization, "--scenarios", "--apply"])).toMatchObject({ organizationOf: "iglo", seed: true, scenarios: true, apply: true });
+    expect(parseArgs(["sandbox", "--slug", "igolo", "--name", "Igolo UAE", "--region", "AE", "--seed"])).toMatchObject({ seed: true, scenarios: false });
   });
 
   it.each([

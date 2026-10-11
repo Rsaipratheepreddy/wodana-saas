@@ -34,7 +34,10 @@ export type SandboxArgs = {
    * lower case. Existing members are moved to them; left out, the sandbox keeps the scheme it has.
    */
   emailPattern: string | null;
-  seed: boolean; apply: boolean; json: boolean;
+  seed: boolean;
+  /** Demo data for every main scenario (src/ops/scenarios); implies seed. */
+  scenarios: boolean;
+  apply: boolean; json: boolean;
 };
 export type OpsArgs = ImportArgs | ConfigureArgs | SandboxArgs | { command: "help" };
 
@@ -49,10 +52,10 @@ Usage:
   node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> --profile <profile.json> [--apply] [--json]
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> [--profile <profile.json>]
       [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--password-env <ENV VAR>] [--kit <firm kit code>]
-      [--email-pattern "<local>+{role}@<domain>"] [--seed] [--apply] [--json]
+      [--email-pattern "<local>+{role}@<domain>"] [--seed] [--scenarios] [--apply] [--json]
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> --organization-of <sandbox slug>
       [--profile <profile.json>] [--teams <teams-access.json>] [--crm <crm-intake-profile.json>]
-      [--email-pattern "<local>+{role}@<domain>"] [--seed] [--apply] [--json]
+      [--email-pattern "<local>+{role}@<domain>"] [--seed] [--scenarios] [--apply] [--json]
   node dist/ops/ops-cli.js --help
 
 import
@@ -99,6 +102,12 @@ sandbox
                   never printed or stored). Needed while a test member has no password; given again, it resets theirs.
   --kit           a firm kit by code, instead of the default
   --seed          the showcase records for every section, made through the test members' own commands
+  --scenarios     (implies --seed) at least one realistic example of every main scenario (enquiries in every state,
+                  quotations in every status, design stages, projects at each stage of the route and on hold, completed,
+                  at risk and over budget, change requests in every state, purchase orders and bills, client invoices
+                  and receipts, and the Ledger on with its postings), in the organization's own country, currency and
+                  people; only what is missing is made, and each scenario is listed with its record. While seeding, every
+                  email, WhatsApp and push written for the organization is suppressed (sandbox_seed), counted and audited.
   One active member per role (owner, manager, sales, designer, design manager, QS, purchasing, factory lead,
   logistics, site supervisor, finance, accountant) as <role>@<slug>.test (or --email-pattern's addresses) with the
   workspace's matching roles and teams.
@@ -121,7 +130,7 @@ sandbox
 
 Output is counts and messages only. Exit code 0 when everything succeeded, 1 when anything failed, 2 for usage errors.`;
 
-const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--help", "-h"]);
+const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--scenarios", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
   "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -197,7 +206,7 @@ export function parseArgs(argv: string[]): OpsArgs {
   };
 }
 
-const SANDBOX_OPTIONS = ["--slug", "--name", "--region", "--profile", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern", "--seed", "--apply",
+const SANDBOX_OPTIONS = ["--slug", "--name", "--region", "--profile", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern", "--seed", "--scenarios", "--apply",
   "--dry-run", "--json"];
 const STORED_ADDRESS = /^[^@\s{}]+@[^@\s{}]+\.[^@\s{}]+$/;
 /** A login slug that is also a DNS label and makes valid test addresses (<role>@<slug>.test). */
@@ -230,7 +239,8 @@ function parseSandbox(values: Map<string, string>, flags: Set<string>, required:
   const emailPattern = values.has("--email-pattern") ? parseEmailPattern(values.get("--email-pattern")!) : null;
   return {
     command: "sandbox", slug, name, region, profile: values.get("--profile")?.trim() || null, teams: values.get("--teams")?.trim() || null,
-    crm: values.get("--crm")?.trim() || null, passwordEnv, kit, organizationOf, emailPattern, seed: flags.has("--seed"), apply: flags.has("--apply"), json: flags.has("--json"),
+    crm: values.get("--crm")?.trim() || null, passwordEnv, kit, organizationOf, emailPattern, seed: flags.has("--seed") || flags.has("--scenarios"), scenarios: flags.has("--scenarios"),
+    apply: flags.has("--apply"), json: flags.has("--json"),
   };
 }
 

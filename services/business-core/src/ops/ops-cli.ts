@@ -65,6 +65,9 @@ export async function bootContext(): Promise<INestApplicationContext> {
   // The outbox stays in PostgreSQL for the API's own publisher; the storage cleanup worker is the API's to run.
   process.env.REDIS_URL = "";
   process.env.WORKSPACE_OBJECT_CLEANUP_ENABLED = "false";
+  // The reminder and Ledger sweeps are the API's timers: the CLI runs only the sweeps a command asks for, for its own workspace.
+  process.env.REMINDERS_SWEEP_ENABLED = "false";
+  process.env.BOOKS_SWEEP_ENABLED = "false";
   const { NestFactory } = await import("@nestjs/core");
   const { AppModule } = await import("../app.module");
   return NestFactory.createApplicationContext(AppModule, { logger: ["error"], abortOnError: false });

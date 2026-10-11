@@ -60,6 +60,16 @@ export type ShowcaseRole = "sales" | "salesAdmin" | "designer" | "estimator" | "
 
 export type ShowcaseInput = {
   app: INestApplicationContext;
+  /**
+   * Stories to tell instead of the showcase's own (the demo scenarios, src/ops/scenarios); with them, only these
+   * stories run (no enquiries, Home, inbox, operations, finance or people sections).
+   */
+  stories?: ShowcaseStory[];
+  /**
+   * Settle a project stage's own checks on the way (drawings checked and approved, the factory slot, the building
+   * permit, delivery and installation) instead of stopping at the first stage that needs them.
+   */
+  settleChecks?: boolean;
   workspaceId: string;
   /** The person every step falls back to when no one is given for its role: an administrator or the owner. */
   actorUserId: string;
@@ -87,8 +97,13 @@ export type ScenarioIds = { leadId?: string; partyId?: string; opportunityId?: s
 
 // ---------------------------------------------------------------- the scenarios
 
-/** Where a scenario's story stops. */
-type Stop = "enquiry" | "qualified" | "planning" | "quotation_draft" | "quotation_review" | "quotation_issued" | "accepted" | "project" | "site" | "handover";
+/**
+ * Where a scenario's story stops. quotation_qs: with the QS; quotation_review: submitted, waiting for the estimate;
+ * quotation_approved: approved, not sent; deal_finance / deal_approval: the deal file waiting for Finance / the approver.
+ */
+export type ShowcaseStop = "enquiry" | "qualified" | "planning" | "quotation_draft" | "quotation_qs" | "quotation_review" | "quotation_approved" | "quotation_issued"
+  | "deal_finance" | "deal_approval" | "accepted" | "project" | "site" | "handover";
+type Stop = ShowcaseStop;
 /** A message in the portal conversation: the client writes through the portal, the team replies on the case. */
 type Message = { from: "client" | "team"; title?: string; text: string };
 
@@ -113,6 +128,9 @@ const ORDERS_RECEIVED = (expected: number, promised: number, last: OrderState = 
   { key: "fit-out-supplies", label: "fit-out supplies", pick: /./, supplier: 1, state: last, expected, promised },
 ];
 
+/** A story the showcase engine tells (exported for the demo scenarios). */
+export type ShowcaseStory = Scenario;
+
 type Scenario = {
   key: string;
   /** The id namespace; empty for the first scenario so an earlier seed of it is found again. */
@@ -131,7 +149,8 @@ type Scenario = {
   requirements: Requirement[];
   inspiration: Array<{ key: string; title: string; catalog: string[] }>;
   measurement: { requirement: string; title: string; width: number; height: number };
-  design: "accepted" | "internal_review";
+  /** How far the concept board gets: uploaded, waiting for the internal review, with the client, sent back by the client, or accepted. */
+  design: "accepted" | "internal_review" | "uploaded" | "client_review" | "changes_requested";
   lines: QuoteLine[];
   terms: Term[];
   stop: Stop;
@@ -486,7 +505,8 @@ const TEAM_ROLES: Record<string, ShowcaseRole> = {
   PRODUCTION: "factory", PROJECT_MANAGERS: "projectManager", OPS_ADMIN: "manager",
 };
 
-const STOPS: Stop[] = ["enquiry", "qualified", "planning", "quotation_draft", "quotation_review", "quotation_issued", "accepted", "project", "site", "handover"];
+const STOPS: Stop[] = ["enquiry", "qualified", "planning", "quotation_draft", "quotation_qs", "quotation_review", "quotation_approved", "quotation_issued",
+  "deal_finance", "deal_approval", "accepted", "project", "site", "handover"];
 
 /** What each role is doing this week on the running projects: one task due today, one overdue, one coming up. */
 const HOME_TASKS: Array<{ role: ShowcaseRole; project: string; key: string; title: string; due: number; location: "site" | "factory" | "office" }> = [
@@ -545,14 +565,16 @@ const CLIENT_REPLIES: Array<{ scenario: string; key: string; text: string }> = [
   { scenario: "marina-1804", key: "marina-1", text: "Hello, any news on the sofa delivery? We leave on the 15th." },
 ];
 
-type Any = Record<string, any>;
-type Actor = RequestActor & { userId: string; membershipId: string | null };
+export type Any = Record<string, any>;
+export type ShowcaseActor = RequestActor & { userId: string; membershipId: string | null };
+type Actor = ShowcaseActor;
 type Upload = { buffer: Buffer; originalname: string; mimetype: string; size: number };
-type Ctx = { s: Scenario; rooms: Map<string, string>; ids: ScenarioIds };
+export type ShowcaseCtx = { s: Scenario; rooms: Map<string, string>; ids: ScenarioIds };
+type Ctx = ShowcaseCtx;
 type ProgressDay = { summary: string; tasks?: Array<{ key: string; progress: number }>; next?: string[]; rooms: string[]; pair?: boolean; note?: { text: string; internal: boolean } };
 
 /** A stage that can't go on in this run: reported, never a failure. */
-class Skip extends Error {
+export class Skip extends Error {
   constructor(readonly reason: string) { super(reason); }
 }
 
@@ -581,39 +603,39 @@ export async function ensureSpecificEnquiryType(input: Pick<ShowcaseInput, "app"
   return seed.result;
 }
 
-class ShowcaseSeed {
+export class ShowcaseSeed {
   readonly result: ShowcaseResult = { created: [], reused: [], skipped: [], scenarios: {} };
-  private readonly pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
-  private readonly actors = new Map<string, Actor>();
-  private readonly roles: Partial<Record<ShowcaseRole, string>> = {};
-  private readonly portalTokens = new Map<string, string>();
-  private catalog: Map<string, { id: string; name: string; kind: string; primaryAsset?: { id: string } | null }> | null = null;
-  private slug = "";
-  private timezone = "UTC";
-  private currency = "";
+  protected readonly pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+  protected readonly actors = new Map<string, Actor>();
+  protected readonly roles: Partial<Record<ShowcaseRole, string>> = {};
+  protected readonly portalTokens = new Map<string, string>();
+  protected catalog: Map<string, { id: string; name: string; kind: string; primaryAsset?: { id: string } | null }> | null = null;
+  protected slug = "";
+  protected timezone = "UTC";
+  protected currency = "";
 
-  constructor(private readonly input: ShowcaseInput) {}
+  constructor(protected readonly input: ShowcaseInput) {}
 
-  private get w() { return this.input.workspaceId; }
-  private get<T>(type: Type<T>): T { return this.input.app.get(type, { strict: false }); }
-  private get db() { return this.get(DatabaseService); }
+  protected get w() { return this.input.workspaceId; }
+  protected get<T>(type: Type<T>): T { return this.input.app.get(type, { strict: false }); }
+  protected get db() { return this.get(DatabaseService); }
 
-  private log(line: string) { (this.input.log ?? ((text: string) => process.stdout.write(`${text}\n`)))(line); }
-  private made(label: string) { this.result.created.push(label); this.input.report?.record?.("showcase", "created", label); this.log(`  created  ${label}`); }
-  private kept(label: string) { this.result.reused.push(label); this.input.report?.record?.("showcase", "reused", label); }
-  private skip(stage: string, reason: string) {
+  protected log(line: string) { (this.input.log ?? ((text: string) => process.stdout.write(`${text}\n`)))(line); }
+  protected made(label: string) { this.result.created.push(label); this.input.report?.record?.("showcase", "created", label); this.log(`  created  ${label}`); }
+  protected kept(label: string) { this.result.reused.push(label); this.input.report?.record?.("showcase", "reused", label); }
+  protected skip(stage: string, reason: string) {
     this.result.skipped.push({ stage, reason });
     this.input.report?.notes?.push(`showcase · ${stage}: ${reason}`);
     this.log(`  skipped  ${stage}: ${reason}`);
   }
 
   /** Runs a body through the API's validation pipe for its DTO, exactly as the controller would. */
-  private validated<T>(dto: Type<T>, body: unknown): Promise<T> {
+  protected validated<T>(dto: Type<T>, body: unknown): Promise<T> {
     return this.pipe.transform(body, { type: "body", metatype: dto }) as Promise<T>;
   }
 
   /** A stable id for a record of this scenario in this workspace (UUID-shaped, deterministic). */
-  private id(ctx: Ctx | string, key: string) {
+  protected id(ctx: Ctx | string, key: string) {
     const ns = typeof ctx === "string" ? ctx : ctx.s.ns;
     const hash = createHash("sha1").update(`wodana-showcase:${this.w}:${ns}${key}`).digest();
     hash[6] = (hash[6] & 0x0f) | 0x50;
@@ -655,7 +677,7 @@ class ShowcaseSeed {
   }
 
   /** The person with this user id, as the API sees them after signing in, plus their membership here. */
-  private async actor(userId: string): Promise<Actor> {
+  protected async actor(userId: string): Promise<Actor> {
     const known = this.actors.get(userId);
     if (known) return known;
     const user = (await this.db.query<{ id: string; email: string; displayName: string; provider: string; subject: string }>(
@@ -680,7 +702,7 @@ class ShowcaseSeed {
   }
 
   /** The person for a role, or the run's actor when nobody is named (or the named person isn't a member). */
-  private async as(role: ShowcaseRole): Promise<Actor> {
+  protected async as(role: ShowcaseRole): Promise<Actor> {
     const userId = this.roles[role];
     if (userId) {
       const actor = await this.actor(userId).catch(() => null);
@@ -690,7 +712,7 @@ class ShowcaseSeed {
   }
 
   /** Someone other than `who`, for the rules that need a second pair of eyes; `who` again when nobody else is there. */
-  private async other(who: Actor, prefer: ShowcaseRole[] = ["owner", "manager", "finance", "projectManager", "sales", "estimator"]): Promise<Actor> {
+  protected async other(who: Actor, prefer: ShowcaseRole[] = ["owner", "manager", "finance", "projectManager", "sales", "estimator"]): Promise<Actor> {
     for (const role of prefer) {
       const candidate = await this.as(role);
       if (candidate.userId !== who.userId) return candidate;
@@ -699,7 +721,7 @@ class ShowcaseSeed {
   }
 
   /** Tries the preferred person first; someone without the permission hands over to the run's actor. */
-  private async tryAs<T>(preferred: Actor, work: (actor: Actor) => Promise<T>): Promise<T> {
+  protected async tryAs<T>(preferred: Actor, work: (actor: Actor) => Promise<T>): Promise<T> {
     try { return await work(preferred); } catch (error) {
       const fallback = await this.actor(this.input.actorUserId);
       if (fallback.userId === preferred.userId || !(error instanceof HttpException) || error.getStatus() !== 403) throw error;
@@ -723,7 +745,7 @@ class ShowcaseSeed {
   // ---------------------------------------------------------------- steps
 
   /** One idempotent step: `find` reads what exists; `create` writes it. */
-  private async step<T>(label: string, find: () => Promise<T | null | undefined>, create: () => Promise<T>): Promise<T> {
+  protected async step<T>(label: string, find: () => Promise<T | null | undefined>, create: () => Promise<T>): Promise<T> {
     const found = await find();
     if (found !== null && found !== undefined) { this.kept(label); return found; }
     try {
@@ -737,7 +759,7 @@ class ShowcaseSeed {
   }
 
   /** A change that moves an existing record on; `done` says when there is nothing left to do. */
-  private async advance(label: string, done: boolean, change: () => Promise<unknown>) {
+  protected async advance(label: string, done: boolean, change: () => Promise<unknown>) {
     if (done) { this.kept(label); return false; }
     try { await change(); } catch (error) {
       if (error instanceof Skip) throw error;
@@ -747,7 +769,7 @@ class ShowcaseSeed {
     return true;
   }
 
-  private async stage(name: string, work: () => Promise<void>) {
+  protected async stage(name: string, work: () => Promise<void>) {
     this.log(name);
     try { await work(); } catch (error) {
       if (error instanceof Skip) { this.skip(name, error.reason); return; }
@@ -759,6 +781,16 @@ class ShowcaseSeed {
 
   async run() {
     const only = this.input.only?.length ? new Set(this.input.only) : null;
+    if (this.input.stories) {
+      for (const s of this.input.stories) {
+        if (only && !only.has(s.key)) continue;
+        const ctx: Ctx = { s, rooms: new Map(), ids: {} };
+        this.result.scenarios[s.key] = ctx.ids;
+        this.log(`── ${s.title} (${s.stop})`);
+        await this.scenario(ctx);
+      }
+      return this.result;
+    }
     for (const s of SCENARIOS) {
       if (only && !only.has(s.key)) continue;
       const ctx: Ctx = { s, rooms: new Map(), ids: {} };
@@ -806,7 +838,7 @@ class ShowcaseSeed {
   // ---------------------------------------------------------------- Factory batch and people (HRMS)
 
   /** The planned work orders grouped into a production batch on the joinery workcenter. */
-  private async batch() {
+  protected async batch() {
     const factory = this.get(FactoryService);
     const maker = await this.as("factory");
     const state = (await factory.state(maker, this.w)) as unknown as { orders: Array<{ id: string; status: string; batchId?: string | null; title: string }>; workcenters: Array<{ id: string; name: string }>; batches: Array<{ id: string; name: string; status: string }> };
@@ -819,7 +851,7 @@ class ShowcaseSeed {
   }
 
   /** People's leave: one request waiting for the manager, one approved last week. */
-  private async leave() {
+  protected async leave() {
     const { HrmsSettingsService } = await import("../hrms/hrms-settings.service");
     const { HrmsLeaveService } = await import("../hrms/hrms-leave.service");
     const actor = await this.actor(this.input.actorUserId);
@@ -855,7 +887,7 @@ class ShowcaseSeed {
   }
 
   /** This week's timesheets: hours on the running projects; one submitted and approved, one still open. */
-  private async timesheets() {
+  protected async timesheets() {
     const { HrmsTimeService } = await import("../hrms/hrms-time.service");
     const { HrmsSettingsService } = await import("../hrms/hrms-settings.service");
     const time = this.get(HrmsTimeService);
@@ -898,7 +930,7 @@ class ShowcaseSeed {
   }
 
   /** Attendance: the site and factory people checked in this morning (a photo exception, as a phone without a camera would). */
-  private async attendance() {
+  protected async attendance() {
     const { HrmsAttendanceService } = await import("../hrms/hrms-attendance.service");
     const attendance = this.get(HrmsAttendanceService);
     for (const role of ["site", "factory", "projectManager"] as ShowcaseRole[]) {
@@ -918,15 +950,15 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Operations (purchasing extras, stock)
 
-  private projectOf(key: string) { return this.result.scenarios[key]?.projectId ?? null; }
-  private async suppliers() {
+  protected projectOf(key: string) { return this.result.scenarios[key]?.projectId ?? null; }
+  protected async suppliers() {
     const buyer = await this.as("buyer");
     const register = (await this.get(SuppliersService).list(buyer, this.w)) as unknown as { suppliers: Array<{ id: string; name: string; approval: string; status: string }> };
     return register.suppliers.filter((row) => row.status !== "archived" && row.approval === "approved");
   }
 
   /** A price request for the Marina lighting, sent to two suppliers, both replied: the buyer compares before awarding. */
-  private async priceRequest() {
+  protected async priceRequest() {
     const { PriceRequestsService } = await import("../purchasing/price-requests.service");
     const service = this.get(PriceRequestsService);
     const buyer = await this.as("buyer");
@@ -958,7 +990,7 @@ class ShowcaseSeed {
   }
 
   /** A delivery that arrived without an order (to match), and goods sent back to a supplier for credit. */
-  private async deliveriesExtras() {
+  protected async deliveriesExtras() {
     const receiving = this.get(ReceivingService);
     const buyer = await this.as("buyer");
     const usable = await this.suppliers();
@@ -986,7 +1018,7 @@ class ShowcaseSeed {
   }
 
   /** Stock: a warehouse with free stock, a reservation for Marina, an issue to the Ranches site, and a transfer on its way to the factory. */
-  private async inventory() {
+  protected async inventory() {
     const { InventoryService } = await import("../inventory/inventory.service");
     const inventory = this.get(InventoryService);
     const actor = await this.actor(this.input.actorUserId);
@@ -1040,7 +1072,7 @@ class ShowcaseSeed {
   // ---------------------------------------------------------------- Finance
 
   /** Bills from suppliers against the received orders, matched and approved; paid, part paid, overdue and to pay; and the payments behind them. */
-  private async supplierBills() {
+  protected async supplierBills() {
     const { PayablesService } = await import("../purchasing/payables.service");
     const payables = this.get(PayablesService);
     const orders = this.get(OrdersService);
@@ -1095,7 +1127,7 @@ class ShowcaseSeed {
   }
 
   /** Client invoices for the milestones of the started projects: paid ones, one overdue (Marina's delivery), one awaiting Finance (Ranches' last). */
-  private async clientInvoices() {
+  protected async clientInvoices() {
     const { ReceivablesService } = await import("../receivables/receivables.service");
     const receivables = this.get(ReceivablesService);
     const finance = await this.as("finance");
@@ -1117,7 +1149,7 @@ class ShowcaseSeed {
   }
 
   /** Petty cash on the Ranches site: one reimbursed, one approved and waiting for the money, one waiting for the project manager. */
-  private async pettyCash() {
+  protected async pettyCash() {
     const { PettyCashService } = await import("../petty-cash/petty-cash.service");
     const petty = this.get(PettyCashService);
     const projectId = this.projectOf("ranches-7");
@@ -1150,7 +1182,7 @@ class ShowcaseSeed {
   }
 
   /** The story up to the scenario's stop, one stage at a time. */
-  private async scenario(ctx: Ctx) {
+  protected async scenario(ctx: Ctx) {
     const { s, ids } = ctx;
     const after = (stop: Stop) => STOPS.indexOf(s.stop) > STOPS.indexOf(stop);
     const at = (name: string) => `${s.key} · ${name}`;
@@ -1169,8 +1201,8 @@ class ShowcaseSeed {
     await this.stage(at("quotation"), async () => { ids.quoteId = await this.quotation(ctx, caseId); });
     if (!ids.quoteId || !after("quotation_draft")) return;
     const quoteId = ids.quoteId;
-    await this.stage(at("quotation review and issue"), () => this.issue(ctx, caseId, quoteId, ids.grantId ?? "", { submitOnly: !after("quotation_review") }));
-    if (!after("quotation_review")) return;
+    await this.stage(at("quotation review and issue"), () => this.issue(ctx, caseId, quoteId, ids.grantId ?? "", { submitOnly: !after("quotation_review"), until: s.stop }));
+    if (!after("quotation_approved")) return;
     if (s.messages.length) await this.stage(at("messages"), () => this.messages(ctx, caseId));
     if (!after("quotation_issued")) return;
     await this.stage(at("client acceptance and deal"), () => this.approvals(ctx, caseId, quoteId, ids.opportunityId!));
@@ -1208,12 +1240,12 @@ class ShowcaseSeed {
   // ---------------------------------------------------------------- CRM
 
   /** The intake choices in the workspace's own words: sources, channels, enquiry types, areas. */
-  private async intakeOptions(actor: Actor) {
+  protected async intakeOptions(actor: Actor) {
     const intake = this.get(CrmIntakeService);
     return (await intake.options(actor, this.w)) as { sources: Array<{ id: string }>; channels: Record<string, Array<{ id: string }>>; enquiryTypes: Array<{ id: string }>; emirates: Array<{ id: string }>; customerTypes: Array<{ id: string }>; budgetRanges: Array<{ id: string }>; referralBrokers?: Array<{ id: string }>; referralPartners?: Array<{ id: string }> };
   }
 
-  private async findLead(actor: Actor, party: { displayName: string; email: string }) {
+  protected async findLead(actor: Actor, party: { displayName: string; email: string }) {
     const leads = this.get(CrmLeadsService);
     const list = (await leads.list(actor, this.w, { search: party.displayName, limit: 100 } as never)) as unknown as { data: Array<{ id: string; partyId: string; partyName: string; status: string; version: number; serviceType?: string | null }> };
     const parties = (await this.db.tenantTransaction(this.w, actor.userId, (db) => db.query<{ id: string }>(
@@ -1222,7 +1254,7 @@ class ShowcaseSeed {
   }
 
   /** A manual enquiry, backdated, from one of the workspace's sources and channels, assigned to its owner. */
-  private async intake(key: string, reference: string, party: { displayName: string; email: string; mobile: string }, facts: { title: string; summary: string; area: string; emirate?: string; daysAgo: number; owner: "sales" | "salesAdmin"; pick: { source: number; channel: number; type?: RegExp } }) {
+  protected async intake(key: string, reference: string, party: { displayName: string; email: string; mobile: string }, facts: { title: string; summary: string; area: string; emirate?: string; daysAgo: number; owner: "sales" | "salesAdmin"; pick: { source: number; channel: number; type?: RegExp } }) {
     const actor = await this.actor(this.input.actorUserId);
     const owner = await this.as(facts.owner);
     const intake = this.get(CrmIntakeService);
@@ -1259,7 +1291,7 @@ class ShowcaseSeed {
   }
 
   /** The enquiry itself: a manual intake from one of the workspace's sources and channels, assigned to its owner. */
-  private async record(actor: Actor, owner: Actor, key: string, reference: string, party: { displayName: string; email: string; mobile: string },
+  protected async record(actor: Actor, owner: Actor, key: string, reference: string, party: { displayName: string; email: string; mobile: string },
     facts: { title: string; summary: string; area: string; emirate?: string; daysAgo: number; pick: { source: number; channel: number; type?: RegExp } }) {
     const intake = this.get(CrmIntakeService);
     const find = () => this.findLead(actor, party);
@@ -1306,20 +1338,20 @@ class ShowcaseSeed {
   }
 
   /** Who referred a referral enquiry, in the shape its channel asks for; null when the list it needs is empty. */
-  private referral(channel: string, owner: Actor, options: { referralBrokers?: Array<{ id: string }>; referralPartners?: Array<{ id: string }> }) {
+  protected referral(channel: string, owner: Actor, options: { referralBrokers?: Array<{ id: string }>; referralPartners?: Array<{ id: string }> }) {
     if (channel === "internal") return owner.membershipId ? { membershipId: owner.membershipId } : null;
     if (channel === "external") return { name: "A previous client", contact: "" };
     const list = channel === "broker" ? options.referralBrokers : options.referralPartners;
     return list?.length ? { option: list[0].id } : null;
   }
 
-  private async enquiry(ctx: Ctx) {
+  protected async enquiry(ctx: Ctx) {
     const { s } = ctx;
     const lead = await this.intake(s.key, s.reference, s.client, { title: s.title, summary: s.summary, area: s.area, emirate: s.emirate, daysAgo: s.daysAgo, owner: s.owner, pick: s.pick });
     return { leadId: lead.id, partyId: lead.partyId };
   }
 
-  private async qualify(leadId: string, partyId: string, owner: Actor, facts: { title: string; summary: string; amount: number; daysAgo: number }) {
+  protected async qualify(leadId: string, partyId: string, owner: Actor, facts: { title: string; summary: string; amount: number; daysAgo: number }) {
     const opportunities = this.get(CrmOpportunitiesService), leads = this.get(CrmLeadsService);
     const find = async () => {
       const list = (await opportunities.list(owner, this.w, { partyId, limit: 50 } as never)) as unknown as { data: Array<{ id: string; title: string }> };
@@ -1340,13 +1372,13 @@ class ShowcaseSeed {
     });
   }
 
-  private async opportunity(ctx: Ctx, leadId: string, partyId: string) {
+  protected async opportunity(ctx: Ctx, leadId: string, partyId: string) {
     const { s } = ctx;
     const opportunity = await this.qualify(leadId, partyId, await this.as(s.owner), { title: s.title, summary: s.summary, amount: s.amount, daysAgo: s.daysAgo });
     return opportunity.id;
   }
 
-  private async planningCase(ctx: Ctx, opportunityId: string) {
+  protected async planningCase(ctx: Ctx, opportunityId: string) {
     const owner = await this.as(ctx.s.owner);
     const cases = this.get(PreProjectsService);
     const find = async () => {
@@ -1363,7 +1395,7 @@ class ShowcaseSeed {
   }
 
   /** The client's portal identities on this case, each with the demonstration sign-in code; the one who decides is returned. */
-  private async portalContacts(ctx: Ctx, caseId: string) {
+  protected async portalContacts(ctx: Ctx, caseId: string) {
     const actor = await this.actor(this.input.actorUserId);
     const admin = this.get(ClientPortalAdminService);
     const contacts = async () => ((await admin.contacts(actor, this.w, caseId)) as { contacts: Array<{ id: string; phone: string; version: number; demoCode: boolean }> }).contacts;
@@ -1384,7 +1416,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Planning
 
-  private async brief(ctx: Ctx, caseId: string) {
+  protected async brief(ctx: Ctx, caseId: string) {
     const { s, rooms } = ctx;
     const designer = await this.as("designer");
     const brief = this.get(BriefService);
@@ -1450,7 +1482,7 @@ class ShowcaseSeed {
   }
 
   /** The workspace catalog by lower-cased name: Core Collection or starter items, whatever is there. */
-  private async catalogByName() {
+  protected async catalogByName() {
     if (this.catalog) return this.catalog;
     const byName = new Map<string, { id: string; name: string; kind: string; primaryAsset?: { id: string } | null }>();
     try {
@@ -1466,7 +1498,7 @@ class ShowcaseSeed {
   }
 
   /** The first of these names that is a catalog record here. */
-  private async catalogRecord(names: string[] | undefined) {
+  protected async catalogRecord(names: string[] | undefined) {
     if (!names?.length) return null;
     const catalog = await this.catalogByName();
     for (const name of names) {
@@ -1477,7 +1509,7 @@ class ShowcaseSeed {
   }
 
   /** A Core Collection picture copied onto the case when the catalog record has one; otherwise nothing. */
-  private async picture(ctx: Ctx, caseId: string, actor: Actor, key: string, names: string[]): Promise<string | null> {
+  protected async picture(ctx: Ctx, caseId: string, actor: Actor, key: string, names: string[]): Promise<string | null> {
     const record = await this.catalogRecord(names);
     if (!record?.primaryAsset) return null;
     try {
@@ -1495,7 +1527,7 @@ class ShowcaseSeed {
   }
 
   /** A case asset by stable id: uploaded once, found afterwards (by its record, so a storage moved elsewhere doesn't make it upload again). */
-  private async upload(caseId: string, actor: Actor, id: string, file: Upload) {
+  protected async upload(caseId: string, actor: Actor, id: string, file: Upload) {
     const brief = this.get(BriefService);
     const known = (await this.db.tenantTransaction(this.w, actor.userId, (client) => client.query(
       `SELECT 1 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [this.w, caseId, id]))).rowCount;
@@ -1504,7 +1536,7 @@ class ShowcaseSeed {
     return id;
   }
 
-  private async siteVisit(ctx: Ctx, caseId: string) {
+  protected async siteVisit(ctx: Ctx, caseId: string) {
     const { s, rooms } = ctx;
     const designer = await this.as("designer");
     const site = this.get(PlanningSiteService), specifications = this.get(ItemSpecificationService), brief = this.get(BriefService);
@@ -1514,13 +1546,12 @@ class ShowcaseSeed {
     const found = (state: Awaited<ReturnType<typeof records>>, id: string): Record_ | null =>
       [...(state.visits ?? []), ...(state.measurements ?? []), ...(state.items ?? [])].find((row) => row.id === id) ?? null;
     const outcome = `Measured ${s.rooms.map((room) => room.toLowerCase()).join(", ")}. ${s.measurement.title} ${(s.measurement.width / 1000).toFixed(1)} m; power where needed.`;
-    await this.step("site visit", async () => found(await records(), visitId), async () => {
-      const body = await this.validated(SaveSiteVisitDto, {
-        id: visitId, version: 0, title: "Site visit · measurements and photos", note: outcome, assetIds: [], scheduledAt: daysAgo(s.daysAgo - 7).toISOString(), timezone: this.timezone,
-        durationMinutes: 120, assigneeId: designer.userId, location: `${s.title} (fictional address)`, access: "Call the client on arrival.", status: "completed", outcome,
-      });
-      return site.saveVisit(designer, this.w, caseId, body);
+    // The visit is booked first and marked done once its measurements and photo are in (a done visit needs them).
+    const visitBody = (version: number, status: "planned" | "completed") => this.validated(SaveSiteVisitDto, {
+      id: visitId, version, title: "Site visit · measurements and photos", note: outcome, assetIds: [], scheduledAt: daysAgo(s.daysAgo - 7).toISOString(), timezone: this.timezone,
+      durationMinutes: 120, assigneeId: designer.userId, location: `${s.title} (fictional address)`, access: "Call the client on arrival.", status, outcome: status === "completed" ? outcome : "",
     });
+    await this.step("site visit booked", async () => found(await records(), visitId), async () => site.saveVisit(designer, this.w, caseId, await visitBody(0, "planned")));
     // The made item's specification, then the opening measured against it and verified.
     const entryId = this.id(ctx, `requirement:${s.measurement.requirement}`);
     const entries = ((await brief.get(designer, this.w, caseId)) as { entries: Array<{ id: string }> }).entries;
@@ -1555,6 +1586,8 @@ class ShowcaseSeed {
       const fresh = onEntry(await records())!;
       return this.tryAs(designer, (actor) => site.review(actor, this.w, caseId, fresh.id, { version: fresh.version, status: "verified", note: "Checked against the drawing." } as ReviewSiteMeasurementDto));
     });
+    const visit = found(await records(), visitId);
+    if (visit) await this.advance("site visit done (measurements and photos recorded)", visit.status === "completed", async () => site.saveVisit(designer, this.w, caseId, await visitBody(visit.version, "completed")));
   }
 
   /**
@@ -1562,7 +1595,7 @@ class ShowcaseSeed {
    * internally by the owner, shared with the client and accepted in the portal. A board made before the pictures
    * existed gets a second revision with a real picture, through the same review.
    */
-  private async design(ctx: Ctx, caseId: string) {
+  protected async design(ctx: Ctx, caseId: string) {
     const { s, rooms } = ctx;
     const designer = await this.as("designer");
     const designs = this.get(DesignService);
@@ -1589,27 +1622,33 @@ class ShowcaseSeed {
         return designs.activity(actor, this.w, caseId, designId, await this.validated(DesignActivityDto, { id: this.id(ctx, `design-activity:${key}${suffix}`), version: design.version, versionId: version, action, note: "", decisionBy: "", ...extra }));
       };
       if (["draft", "uploaded"].includes(status())) {
+        if (s.design === "uploaded") { this.kept(`design${suffix} · uploaded, not reviewed yet`); return; }
         await this.advance(`design${suffix} · internal review requested`, false, () => activity(designer, "internal_review", "internal_review", { reviewerId: reviewer.userId, contextConfirmed: true }));
         await refresh();
       }
       if (s.design === "internal_review") { if (status() === "internal_review") this.kept(`design${suffix} · waiting for ${reviewer.displayName}'s review`); return; }
       if (status() === "internal_review") { await this.advance(`design${suffix} · internally approved`, false, () => activity(reviewer, "internal_approved", "internal_approved", { note: "Layout and selections checked." })); await refresh(); }
       if (status() === "internal_approved") { await this.advance(`design${suffix} · shared with the client`, false, () => activity(designer, "client_review", "client_review")); await refresh(); }
+      if (status() === "client_review" && s.design === "client_review") { this.kept(`design${suffix} · waiting for the client's review`); return; }
       if (status() === "client_review") {
-        await this.advance(`design${suffix} · accepted by the client in the portal`, false, async () => {
+        // The client accepts, or asks for changes (a revision), in the portal.
+        const decision = s.design === "changes_requested" ? "changes" : "accept";
+        await this.advance(`design${suffix} · ${decision === "accept" ? "accepted by the client" : "changes asked for by the client"} in the portal`, false, async () => {
           const view = await this.portalView(ctx);
           const project = view.projects.find((row) => row.id === caseId);
           const shared = project?.decisions?.designs?.find((row: Any) => row.id === version);
           if (!shared?.canDecide) throw new Skip("the design is not open for the client's decision in the portal");
-          await this.portalDecision(ctx, "design_decision", `design:${caseId}:${version}:accept`, { caseId, versionId: version, decision: "accept", note: "Love it. Go ahead." });
+          await this.portalDecision(ctx, "design_decision", `design:${caseId}:${version}:${decision}`, { caseId, versionId: version, decision,
+            note: decision === "accept" ? "Love it. Go ahead." : "Could we try a lighter palette and move the media wall to the left?" });
         });
       } else if (status() === "approved") this.kept(`design${suffix} · accepted by the client`);
+      else if (status() === "changes_requested" && s.design === "changes_requested") this.kept(`design${suffix} · changes asked for by the client`);
       else if (status()) this.skip("design", `the concept board is ${status()}`);
     };
     await ladder(versionId, "");
     // A board that only has the seed's tile gets the real picture as its next revision, once the pictures exist.
     const latest = design.versions[0];
-    if (picture && latest?.asset?.id === tileAssetId && ["approved", "internal_review", "rejected", "changes_requested"].includes(latest.status)) {
+    if (picture && ["accepted", "internal_review"].includes(s.design) && latest?.asset?.id === tileAssetId && ["approved", "internal_review", "rejected", "changes_requested"].includes(latest.status)) {
       const versionId2 = this.id(ctx, "design:concept:v2");
       await this.advance("concept board · revision 2 with the Core Collection picture", design.versions.some((row) => row.id === versionId2), async () =>
         designs.addVersion(designer, this.w, caseId, designId, await this.validated(AddDesignVersionDto, { id: versionId2, version: design.version, assetId: picture!, note: "Revision 2 · Core Collection pictures", includedClientRounds: 1 })));
@@ -1620,7 +1659,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Quotation
 
-  private async quotation(ctx: Ctx, caseId: string) {
+  protected async quotation(ctx: Ctx, caseId: string) {
     const { s, rooms } = ctx;
     const salesAdmin = await this.as("salesAdmin");
     const commercial = this.get(CommercialService), builder = this.get(QuotationBuilderService);
@@ -1681,7 +1720,7 @@ class ShowcaseSeed {
   }
 
   /** Live prices in the workspace's currency for the catalog items the quotations pick (see showcase-prices). */
-  private async catalogPrices(lines: ShowcasePriceLine[]) {
+  protected async catalogPrices(lines: ShowcasePriceLine[]) {
     const catalogs = this.get(CatalogV2Service);
     const author = await this.actor(this.input.actorUserId);
     const reviewer = await this.other(author, ["estimator", "owner", "manager"]);
@@ -1710,7 +1749,7 @@ class ShowcaseSeed {
    * The seed's rate and cost on every line: a catalog build-up without costs, or a price book without a price,
    * would otherwise leave the QS nothing to review. Only a draft can be priced.
    */
-  private async price(ctx: Ctx, caseId: string, quoteId: string) {
+  protected async price(ctx: Ctx, caseId: string, quoteId: string) {
     const builder = this.get(QuotationBuilderService);
     const actor = await this.actor(this.input.actorUserId);
     const priced = (await builder.builder(actor, this.w, caseId, quoteId)) as unknown as { quote: { status: string }; lines: Array<{ id: string; version: number; rate: string; unitCost: string | null; pricingMode?: string; catalogPrice?: { status: string } | null }> };
@@ -1722,19 +1761,22 @@ class ShowcaseSeed {
     return 0;
   }
 
-  private async commercialCommand(caseId: string, actor: Actor, action: string, extra: Record<string, unknown> = {}) {
+  protected async commercialCommand(caseId: string, actor: Actor, action: string, extra: Record<string, unknown> = {}) {
     const commercial = this.get(CommercialService);
     const current = (await commercial.state(actor, this.w, caseId)) as unknown as { data: Any };
     return (await commercial.command(actor, this.w, caseId, { action, revision: current.data.revision, ...extra })) as { data: Any };
   }
 
-  private async commercialData(caseId: string, actor?: Actor) {
+  protected async commercialData(caseId: string, actor?: Actor) {
     const commercial = this.get(CommercialService);
     return ((await commercial.state(actor ?? await this.as("salesAdmin"), this.w, caseId)) as unknown as { data: Any }).data;
   }
 
-  /** Review and issue: submitted by Sales admin, the QS estimate, issued to the client's decision-maker. */
-  private async issue(ctx: Ctx, caseId: string, quoteId: string, grantId: string, options: { submitOnly?: boolean } = {}) {
+  /**
+   * Review and issue: the QS confirms the pricing where the firm's rules want it (or the story stops while it is with
+   * them), submitted by Sales admin, the QS estimate, issued to the client's decision-maker.
+   */
+  protected async issue(ctx: Ctx, caseId: string, quoteId: string, grantId: string, options: { submitOnly?: boolean; until?: Stop } = {}) {
     const salesAdmin = await this.as("salesAdmin");
     const quote = async () => ((await this.commercialData(caseId)).quotes as Any[]).find((row) => row.id === quoteId)!;
     let status = (await quote()).status as string;
@@ -1745,13 +1787,29 @@ class ShowcaseSeed {
       await this.price(ctx, caseId, quoteId);
       status = "draft";
     }
-    if (status === "draft") { await this.advance("quotation submitted for review", false, () => this.commercialCommand(caseId, salesAdmin, "submit", { quoteId })); status = "internal_review"; }
+    if (status === "draft") {
+      const stopWithQs = options.until === "quotation_qs";
+      if (stopWithQs || await this.qsNeeded(caseId, quoteId)) {
+        const stage = await this.qsReview(caseId, quoteId, stopWithQs);
+        if (stopWithQs) { if (stage === "with_qs") this.kept("quotation with the QS"); return; }
+      }
+      await this.advance("quotation submitted for review", false, () => this.commercialCommand(caseId, salesAdmin, "submit", { quoteId }));
+      status = "internal_review";
+    }
     if (options.submitOnly) { if (status === "internal_review") this.kept("quotation waiting for the QS estimate review"); return; }
     if (status === "internal_review") {
+      // The QS estimate, or (the QS confirmed the pricing already) the plain approval by someone who approves quotations.
       const estimator = await this.as("estimator");
-      await this.advance("QS estimate approved", false, () => this.tryAs(estimator, (actor) => this.commercialCommand(caseId, actor, "qs_approve", { quoteId })));
+      await this.advance("QS estimate approved", false, async () => {
+        try { await this.tryAs(estimator, (actor) => this.commercialCommand(caseId, actor, "qs_approve", { quoteId })); } catch (error) {
+          if (!(error instanceof HttpException) || ![403, 409, 422].includes(error.getStatus())) throw error;
+          const approver = await this.other(salesAdmin, ["owner", "manager"]);
+          await this.tryAs(approver, (actor) => this.commercialCommand(caseId, actor, "approve", { quoteId }));
+        }
+      });
       status = "internal_approved";
     }
+    if (options.until === "quotation_approved") { if (status === "internal_approved") this.kept("quotation approved, not sent yet"); return; }
     if (status === "internal_approved") {
       if (!grantId) throw new Skip("no client contact to issue the quotation to");
       await this.advance("quotation issued to the client", false, () => this.commercialCommand(caseId, salesAdmin, "issue", { quoteId, approverId: grantId }));
@@ -1760,8 +1818,32 @@ class ShowcaseSeed {
     if (status === "issued") this.kept("quotation awaiting the client's decision");
   }
 
+  /** Whether the firm's QS rules want this quotation confirmed by a QS before it is sent, and it isn't yet. */
+  protected async qsNeeded(caseId: string, quoteId: string) {
+    const { QsReviewService } = await import("../proposals/qs-review.service");
+    const state = (await this.get(QsReviewService).state(await this.as("salesAdmin"), this.w, caseId, quoteId)) as unknown as { required: boolean; stage: string };
+    return state.required && state.stage !== "confirmed";
+  }
+
+  /** The quotation sent to the QS by Sales admin, and confirmed by them unless the story stops while it's with them. Its QS stage after. */
+  protected async qsReview(caseId: string, quoteId: string, stopWithQs: boolean): Promise<string> {
+    const { QsReviewService } = await import("../proposals/qs-review.service");
+    const qs = this.get(QsReviewService);
+    const sender = await this.as("salesAdmin");
+    const surveyor = await this.other(sender, ["estimator", "owner", "manager"]);
+    const read = async () => ((await qs.state(sender, this.w, caseId, quoteId)) as unknown as { stage: string }).stage;
+    let stage = await read();
+    if (stage !== "with_qs" && stage !== "confirmed") {
+      await this.advance(`quotation sent to the QS (${surveyor.displayName})`, false, () => qs.send(sender, this.w, caseId, quoteId, { assigneeUserId: surveyor.userId, note: "Please check the pricing." }));
+      stage = await read();
+    }
+    if (stopWithQs || stage !== "with_qs") return stage;
+    await this.advance("pricing confirmed by the QS", false, () => qs.decide(surveyor, this.w, caseId, quoteId, { decision: "confirm", note: "Pricing checked.", commandId: this.id(caseId, `qs-confirm:${quoteId}`) }));
+    return read();
+  }
+
   /** The client accepts in the portal; then the agreement, the advance, the won opportunity and the deal review. */
-  private async approvals(ctx: Ctx, caseId: string, quoteId: string, opportunityId: string) {
+  protected async approvals(ctx: Ctx, caseId: string, quoteId: string, opportunityId: string) {
     const salesAdmin = await this.as("salesAdmin");
     const quote = async () => ((await this.commercialData(caseId)).quotes as Any[]).find((row) => row.id === quoteId)!;
     let status = (await quote()).status as string;
@@ -1817,10 +1899,12 @@ class ShowcaseSeed {
       paymentProofUrl: `https://example.invalid/receipts/${reference}`, note: "Showcase deal file.",
     }));
     data = await this.commercialData(caseId);
+    if (ctx.s.stop === "deal_finance") { if (data.ownerReview?.status === "pending_finance") this.kept("deal file waiting for Finance"); return; }
     const finance = await this.as("finance");
     await this.advance("deal confirmed by Finance", !["pending_finance", "submitted"].includes(data.ownerReview?.status), () =>
       this.tryAs(finance, (actor) => this.commercialCommand(caseId, actor, "review_deal_finance", { decision: "confirm", paymentVerified: true, commissionLines, note: "Receipt and commission checked." })));
     data = await this.commercialData(caseId);
+    if (ctx.s.stop === "deal_approval") { if (data.ownerReview?.status === "pending_approval") this.kept("deal file waiting for approval"); return; }
     await this.advance("deal approved by the Owner", data.ownerReview?.status !== "pending_approval", () =>
       this.tryAs(owner, (actor) => this.commercialCommand(caseId, actor, "decide_owner_review", { decision: "approve", note: "Approved for delivery." })));
     data = await this.commercialData(caseId);
@@ -1828,7 +1912,7 @@ class ShowcaseSeed {
   }
 
   /** A client payment: reported by Sales with its bank reference, verified by Finance. */
-  private async payment(ctx: Ctx, caseId: string, payment: Any, label: string, reference: string) {
+  protected async payment(ctx: Ctx, caseId: string, payment: Any, label: string, reference: string) {
     const salesAdmin = await this.as("salesAdmin"), finance = await this.as("finance");
     if (payment.status === "verified") { this.kept(`${label} payment verified`); return; }
     const data = await this.commercialData(caseId);
@@ -1841,7 +1925,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Client portal (the client's side)
 
-  private async portalView(ctx: Ctx) {
+  protected async portalView(ctx: Ctx) {
     const portal = this.get(ClientPortalService);
     const client = ctx.s.client;
     let token = this.portalTokens.get(client.mobile);
@@ -1864,7 +1948,7 @@ class ShowcaseSeed {
    * The team shows its ideas in the client's portal; the client likes the first and asks about it, and the designer
    * answers. A portal that isn't open yet leaves the client's part for a later run, never the rest of the brief.
    */
-  private async clientMoodboard(ctx: Ctx, caseId: string, entryIds: string[]) {
+  protected async clientMoodboard(ctx: Ctx, caseId: string, entryIds: string[]) {
     if (!entryIds.length) return;
     const designer = await this.as("designer");
     const admin = this.get(ClientPortalAdminService);
@@ -1888,7 +1972,7 @@ class ShowcaseSeed {
     }
   }
 
-  private async portalDecision(ctx: Ctx, action: string, purpose: string, body: Record<string, unknown>) {
+  protected async portalDecision(ctx: Ctx, action: string, purpose: string, body: Record<string, unknown>) {
     const portal = this.get(ClientPortalService);
     const { token } = await this.portalView(ctx);
     const challenge = (await portal.challenge(this.slug, { purpose }, token, `seed:${ctx.s.key}`)) as { challengeId: string };
@@ -1898,7 +1982,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Project
 
-  private async project(ctx: Ctx, caseId: string, quoteId: string) {
+  protected async project(ctx: Ctx, caseId: string, quoteId: string) {
     const { s } = ctx;
     const projects = this.get(ProjectCoreService);
     const pm = await this.as("projectManager");
@@ -1918,7 +2002,7 @@ class ShowcaseSeed {
   }
 
   /** The project's team, one person per role from the workspace's people (only while the project is open). */
-  private async team(projectId: string) {
+  protected async team(projectId: string) {
     const projects = this.get(ProjectCoreService);
     const actor = await this.actor(this.input.actorUserId);
     const roles: Array<[string, ShowcaseRole]> = [["quantity_surveyor", "estimator"], ["procurement", "buyer"], ["site_supervisor", "site"], ["factory_lead", "factory"], ["designer", "designer"]];
@@ -1934,7 +2018,7 @@ class ShowcaseSeed {
     }
   }
 
-  private async invite(ctx: Ctx, projectId: string) {
+  protected async invite(ctx: Ctx, projectId: string) {
     const admin = this.get(ClientPortalAdminService);
     const actor = await this.actor(this.input.actorUserId);
     const portal = (await admin.project(actor, this.w, projectId)) as { client: { status: string; version: number; blocked: string | null } };
@@ -1945,7 +2029,7 @@ class ShowcaseSeed {
   }
 
   /** After the start: the production payment (when the story has it paid) and a milestone that fell due unpaid. */
-  private async paymentsAfterStart(ctx: Ctx, caseId: string, quoteId: string) {
+  protected async paymentsAfterStart(ctx: Ctx, caseId: string, quoteId: string) {
     const { s } = ctx;
     const data = await this.commercialData(caseId);
     const production = (data.payments as Any[]).find((payment) => payment.sourceQuoteId === quoteId && payment.requiredForProduction);
@@ -1974,7 +2058,7 @@ class ShowcaseSeed {
     }
   }
 
-  private async plan(ctx: Ctx, projectId: string) {
+  protected async plan(ctx: Ctx, projectId: string) {
     const { s } = ctx;
     const projects = this.get(ProjectCoreService), work = this.get(ProjectWorkService);
     const pm = await this.as("projectManager");
@@ -2016,7 +2100,7 @@ class ShowcaseSeed {
     }
   }
 
-  private async materials(ctx: Ctx, projectId: string, caseId: string) {
+  protected async materials(ctx: Ctx, projectId: string, caseId: string) {
     const { s } = ctx;
     const projects = this.get(ProjectCoreService);
     const pm = await this.as("projectManager");
@@ -2062,7 +2146,7 @@ class ShowcaseSeed {
    * else, sent without an email and confirmed by the supplier; received at the factory and inspected by someone
    * else when the story has the goods in.
    */
-  private async purchasing(ctx: Ctx, projectId: string) {
+  protected async purchasing(ctx: Ctx, projectId: string) {
     const orders = this.get(OrdersService), suppliers = this.get(SuppliersService);
     const buyer = await this.as("buyer");
     const register = (await suppliers.list(buyer, this.w)) as unknown as { suppliers: Array<{ id: string; name: string; approval: string; status: string }> };
@@ -2085,7 +2169,7 @@ class ShowcaseSeed {
     return firstId;
   }
 
-  private async order(ctx: Ctx, projectId: string, plan: Order, label: string, supplier: { id: string; name: string }, pick: (need: { title: string; source: string }) => boolean,
+  protected async order(ctx: Ctx, projectId: string, plan: Order, label: string, supplier: { id: string; name: string }, pick: (need: { title: string; source: string }) => boolean,
     price: (need: { title: string; source: string }) => string, detail: { supplierReference: string; deliveryNote: string; notes: string },
     needs: () => Promise<Array<{ title: string; source: string; sourceId: string; remaining: string | null; blocked: string | null }>>) {
     const orders = this.get(OrdersService), receiving = this.get(ReceivingService);
@@ -2155,7 +2239,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Factory
 
-  private async factory(ctx: Ctx, projectId: string) {
+  protected async factory(ctx: Ctx, projectId: string) {
     const { s } = ctx;
     const factory = this.get(FactoryService);
     const maker = await this.as("factory");
@@ -2225,7 +2309,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Site
 
-  private async site(ctx: Ctx, projectId: string) {
+  protected async site(ctx: Ctx, projectId: string) {
     const { s, rooms } = ctx;
     const site = this.get(SiteService), work = this.get(ProjectWorkService);
     const pm = await this.as("projectManager"), supervisor = await this.as("site");
@@ -2365,7 +2449,7 @@ class ShowcaseSeed {
   }
 
   /** A project an earlier run completed opens again (at its last stage) when the story still has things to publish. */
-  private async reopenIfClosed(ctx: Ctx, projectId: string) {
+  protected async reopenIfClosed(ctx: Ctx, projectId: string) {
     const projects = this.get(ProjectCoreService);
     const actor = await this.actor(this.input.actorUserId);
     const detail = (await projects.get(actor, this.w, projectId)) as unknown as { project: { version: number; status: string }; updates: Array<{ note: string; sharedAt: string | null }> };
@@ -2382,7 +2466,7 @@ class ShowcaseSeed {
   }
 
   /** What the client reads under Progress: updates written for them, and the site photos shared from approved reports. */
-  private async progress(ctx: Ctx, projectId: string) {
+  protected async progress(ctx: Ctx, projectId: string) {
     const { s } = ctx;
     const projects = this.get(ProjectCoreService), site = this.get(SiteService);
     const pm = await this.as("projectManager");
@@ -2404,7 +2488,7 @@ class ShowcaseSeed {
   }
 
   /** The conversation in the portal: the client writes there; the team answers on the case (visible to the client). */
-  private async messages(ctx: Ctx, caseId: string) {
+  protected async messages(ctx: Ctx, caseId: string) {
     const { s } = ctx;
     const portal = this.get(ClientPortalService);
     const sales = await this.as(s.owner);
@@ -2441,7 +2525,7 @@ class ShowcaseSeed {
   }
 
   /** The client reports a problem under warranty in the portal; the claim waits for the project manager. */
-  private async claim(ctx: Ctx, caseId: string) {
+  protected async claim(ctx: Ctx, caseId: string) {
     const { s } = ctx;
     const portal = this.get(ClientPortalService), warranty = this.get(WarrantyService);
     const projectId = ctx.ids.projectId;
@@ -2463,7 +2547,7 @@ class ShowcaseSeed {
   // ---------------------------------------------------------------- Everyone's week (Home)
 
   /** Two or three open tasks per person on the running projects, on their execution plan: due today, overdue, coming up. */
-  private async homeTasks() {
+  protected async homeTasks() {
     const execution = this.get(ExecutionService);
     const actor = await this.actor(this.input.actorUserId);
     const projects = new Map<string, string>();
@@ -2488,7 +2572,7 @@ class ShowcaseSeed {
   }
 
   /** Follow-ups owned by the owner and the manager, so their Home shows what waits on them. */
-  private async followUps() {
+  protected async followUps() {
     const activities = this.get(CrmActivitiesService), leads = this.get(CrmLeadsService);
     for (const item of FOLLOW_UPS) {
       const person = await this.as(item.role);
@@ -2534,7 +2618,7 @@ class ShowcaseSeed {
   }
 
   /** Client replies waiting in the inbox: WhatsApp messages as the provider integration delivers them (no reply yet). */
-  private async clientReplies() {
+  protected async clientReplies() {
     const conversations = this.get(CrmConversationsService);
     for (const reply of CLIENT_REPLIES) {
       const scenario = SCENARIOS.find((row) => row.key === reply.scenario);
@@ -2551,7 +2635,7 @@ class ShowcaseSeed {
   }
 
   /** The team inbox: chats with the showcase's clients (records only; nothing is delivered), templates, quick replies and auto replies. */
-  private async inbox() {
+  protected async inbox() {
     await seedShowcaseInbox({
       workspaceId: this.w, owner: await this.actor(this.input.actorUserId), inbox: this.get(CrmInboxService),
       transaction: (work) => this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => work(client)),
@@ -2561,7 +2645,7 @@ class ShowcaseSeed {
   }
 
   /** Stages move forward while their checks pass, up to the stage the story leaves current. */
-  private async stages(ctx: Ctx, projectId: string) {
+  protected async stages(ctx: Ctx, projectId: string) {
     const projects = this.get(ProjectCoreService);
     const pm = await this.as("projectManager");
     const until = ctx.s.execution.stagesUntil;
@@ -2570,6 +2654,8 @@ class ShowcaseSeed {
       const stage = detail.stages.find((row) => row.status === "current");
       if (!stage || detail.project.status !== "active") return;
       if (until && stage.key === until) { this.kept(`project at stage "${stage.key}"`); return; }
+      if (this.input.settleChecks && stage.checks.some((row) => row.kind !== "confirm" && !row.passed))
+        await this.settleChecks(ctx, projectId, stage.checks.filter((row) => !row.passed).map((row) => row.kind));
       for (const check of stage.checks.filter((row) => row.kind === "confirm" && !row.passed)) {
         const fresh = (await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number } };
         await this.advance(`stage ${stage.key} · ${check.key} confirmed`, false, () => projects.command(pm, this.w, projectId, { action: "confirm_check", stageId: stage.id, checkKey: check.key, version: fresh.project.version }));
@@ -2581,9 +2667,87 @@ class ShowcaseSeed {
     }
   }
 
+  /**
+   * What a stage's own checks wait on, done the way the team does it (only with input.settleChecks): the technical
+   * drawings uploaded, checked on site, sent and approved by the client (the signed approval recorded by the project
+   * manager); the factory slot booked; the building permit collected (with its scan); delivery and installation
+   * scheduled, the project's stock taken to site, and the installation signed off.
+   */
+  protected async settleChecks(ctx: Ctx, projectId: string, kinds: string[]) {
+    const projects = this.get(ProjectCoreService);
+    const pm = await this.as("projectManager");
+    const version = async () => ((await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number } }).project.version;
+    const want = (kind: string) => kinds.includes(kind);
+    if (want("drawings_uploaded") || want("drawings_site_checked") || want("drawings_client_approved")) {
+      const { ProjectDrawingsService } = await import("../project-core/project-drawings.service");
+      const drawings = this.get(ProjectDrawingsService);
+      type Revision = { id: string; number: number; status: string };
+      const latest = async () => (((await drawings.read(pm, this.w, projectId)) as unknown as { revisions?: Revision[] }).revisions ?? [])
+        .slice().sort((a, b) => b.number - a.number)[0] ?? null;
+      const revisionId = this.id(ctx, "drawings:r1");
+      let revision = await latest();
+      if (!revision) {
+        await this.advance("technical drawings uploaded", false, () => drawings.upload(pm, this.w, projectId, revisionId, this.id(ctx, "drawings:r1:file"), "drawing", tile(`${ctx.s.key}-drawings`)));
+        revision = await latest();
+      }
+      if (revision?.status === "uploaded") {
+        await this.advance("drawings checked on site", false, async () => projects.command(pm, this.w, projectId, { action: "check_drawings", version: await version(), revisionId: revision!.id, result: "ok", note: "Openings match the drawings." }));
+        revision = await latest();
+      }
+      if (revision && ["checked", "uploaded"].includes(revision.status)) {
+        await this.advance("drawings sent to the client", false, async () => projects.command(pm, this.w, projectId, { action: "send_drawings", version: await version(), revisionId: revision!.id }));
+        revision = await latest();
+      }
+      if (revision?.status === "sent") {
+        await this.advance("client's signed approval of the drawings recorded", false, async () => {
+          await drawings.upload(pm, this.w, projectId, revision!.id, this.id(ctx, `drawings:${revision!.id}:approval`), "approval", tile(`${ctx.s.key}-drawings-approval`));
+          await projects.command(pm, this.w, projectId, { action: "decide_drawings", version: await version(), revisionId: revision!.id, decision: "approve", decidedOn: dayFrom(0),
+            decidedBy: ctx.s.client.displayName, note: "Signed on site." });
+        });
+      }
+    }
+    if (want("factory_slot_booked"))
+      await this.advance("factory slot booked", false, async () => projects.command(pm, this.w, projectId, { action: "book_factory_slot", version: await version(), date: dayFrom(2), note: "Joinery line." }));
+    if (want("permit_collected") || want("installation_scheduled")) {
+      const { LogisticsService } = await import("../logistics/logistics.service");
+      const permitId = this.id(ctx, "permit:main");
+      const known = (await this.db.tenantTransaction(this.w, pm.userId, (client) => client.query(
+        `SELECT 1 FROM building_permits WHERE workspace_id = $1 AND id = $2 AND status = 'collected'`, [this.w, permitId]))).rowCount;
+      if (!known) await this.advance("building permit collected", false, () => this.get(LogisticsService).collectPermit(pm, this.w, { projectId } as never, permitId,
+        { permitType: "Access and works permit", permitNumber: `PRM-${ctx.s.reference.replace(/[^A-Z0-9]/gi, "").slice(-8)}`, validFrom: dayFrom(-3), validTo: dayFrom(30), collectedOn: dayFrom(-2) } as never,
+        tile(`${ctx.s.key}-permit`) as never));
+    }
+    if (want("installation_scheduled"))
+      await this.advance("delivery and installation scheduled", false, async () => projects.command(pm, this.w, projectId, { action: "schedule_installation", version: await version(),
+        deliveryOn: dayFrom(-1), installationOn: dayFrom(0), note: "Lift booked for the morning." }));
+    if (want("goods_delivered")) await this.deliverToSite(ctx, projectId);
+    if (want("installation_done")) {
+      const site = this.get(SiteService);
+      const started = (await this.db.tenantTransaction(this.w, pm.userId, (client) => client.query<{ started: string | null; finished: string | null }>(
+        `SELECT site_started_on::text AS started, site_finished_on::text AS finished FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [this.w, projectId]))).rows[0];
+      if (!started?.started) await this.advance("site work started", false, () => site.command(pm, this.w, projectId, { action: "start_site", on: dayFrom(-1) }));
+      if (!started?.finished) await this.advance("installation signed off (site work finished)", false, () => site.command(pm, this.w, projectId, { action: "finish_site", on: dayFrom(0),
+        owedReason: "Balance agreed with the client at handover." }));
+    }
+  }
+
+  /** The project's stock held elsewhere (received at the factory or the warehouse) goes to site and is used there. */
+  protected async deliverToSite(ctx: Ctx, projectId: string) {
+    const { InventoryService } = await import("../inventory/inventory.service");
+    const inventory = this.get(InventoryService);
+    const actor = await this.actor(this.input.actorUserId);
+    const held = (await this.db.tenantTransaction(this.w, actor.userId, (client) => client.query<{ itemId: string; locationId: string; quantity: string }>(
+      `SELECT balance.item_id AS "itemId", balance.location_id AS "locationId", balance.on_hand::text AS quantity
+         FROM stock_balances balance JOIN stock_locations place ON place.workspace_id = balance.workspace_id AND place.id = balance.location_id
+        WHERE balance.workspace_id = $1 AND balance.project_id = $2 AND balance.on_hand > 0 AND place.project_id IS DISTINCT FROM $2::uuid`, [this.w, projectId]))).rows;
+    for (const row of held)
+      await this.advance(`project stock used on site (${row.quantity})`, false, () => inventory.command(actor, this.w, { id: this.id(ctx, `stock:to-site:${row.itemId}:${row.locationId}`),
+        action: "issue", locationId: row.locationId, itemId: row.itemId, projectId, quantity: row.quantity, reason: "Delivered to site and installed" }));
+  }
+
   // ---------------------------------------------------------------- Handover and warranty
 
-  private async handover(ctx: Ctx, projectId: string, caseId: string, accept = true) {
+  protected async handover(ctx: Ctx, projectId: string, caseId: string, accept = true) {
     const { s, rooms } = ctx;
     const handover = this.get(HandoverService), warranty = this.get(WarrantyService);
     const pm = await this.as("projectManager");
@@ -2636,7 +2800,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Enquiries across the pipeline
 
-  private async enquiries() {
+  protected async enquiries() {
     const leads = this.get(CrmLeadsService);
     for (const enquiry of ENQUIRIES) {
       const reference = `SHOWCASE-${enquiry.key.toUpperCase()}`;
@@ -2665,7 +2829,7 @@ class ShowcaseSeed {
   }
 
   /** A pending follow-up task on the lead, due at the given time, marked as its next action (found again by title). */
-  private async followUp(leadId: string, partyId: string, owner: Actor, title: string, dueAt: string) {
+  protected async followUp(leadId: string, partyId: string, owner: Actor, title: string, dueAt: string) {
     const { CrmActivitiesService } = await import("../crm/activities/crm-activities.service");
     const { CreateActivityDto } = await import("../crm/activities/dto/activities.dto");
     const activities = this.get(CrmActivitiesService);
@@ -2683,7 +2847,7 @@ class ShowcaseSeed {
 // ---------------------------------------------------------------- helpers
 
 /** An error as a person reads it: the API message, not a stack. */
-function describe(error: unknown): string {
+export function describe(error: unknown): string {
   if (error instanceof HttpException) {
     const response = error.getResponse();
     const message = typeof response === "string" ? response : (response as { message?: string | string[] }).message;
@@ -2693,17 +2857,17 @@ function describe(error: unknown): string {
   return String(error);
 }
 
-function daysAgo(days: number) {
+export function daysAgo(days: number) {
   return new Date(Date.now() - days * 86_400_000);
 }
 
 /** A calendar date `days` from today (negative: in the past). */
-function dayFrom(days: number) {
+export function dayFrom(days: number) {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** The first array of records in a service's reply, whatever it is called. */
-function firstArray<T>(value: unknown): T[] {
+export function firstArray<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
   if (value && typeof value === "object") for (const entry of Object.values(value as Record<string, unknown>)) if (Array.isArray(entry) && entry.length && typeof entry[0] === "object") return entry as T[];
   if (value && typeof value === "object") for (const entry of Object.values(value as Record<string, unknown>)) if (Array.isArray(entry)) return entry as T[];
@@ -2722,14 +2886,14 @@ function addDays(date: string, days: number) {
 }
 
 /** A moment `days` from today at the given hour (local to the process; enough for a follow-up). */
-function dateAt(days: number, hour: number) {
+export function dateAt(days: number, hour: number) {
   const at = new Date(Date.now() + days * 86_400_000);
   at.setHours(hour, 0, 0, 0);
   return at;
 }
 
 /** A small, valid PNG for demonstration pictures (the seed carries no camera): a 64×64 tile whose colour comes from its label. */
-function tile(label: string): Upload {
+export function tile(label: string): Upload {
   const size = 64;
   const seed = createHash("sha1").update(label).digest();
   const [r, g, b] = [150 + (seed[0] % 80), 140 + (seed[1] % 80), 130 + (seed[2] % 80)];
