@@ -1807,6 +1807,13 @@ Merge order: A1 → B → C, E → D → A2 → integration (i18n extract, full 
 - VAT boxes 1, 8, 9, 11 and 14;
 - project P&L reconciliation.
 
+**Built (company statements, P&L and cash flow):**
+- **One source per company** (Settings › Ledger › Statements, `books_statement_sources`, migration 0303): Wodana Ledger, Zoho Books, QuickBooks or operational cash (Wodana's payments, invoices and bills without full books). Without a choice: the Ledger when it is on, else operational cash. Only a source that can serve the company is offered; the choice is version-checked, runs once per command, is audited and told to everyone else with `books.manage`.
+- **One interface:** `statementSource(context).profitAndLoss(query)` / `.cashFlow(query)` (`src/books/statements`); every source returns the shared shapes in `packages/contracts/src/financial-statements.ts`. Zoho Books and QuickBooks register into `StatementSourceRegistry` from `src/books/sources`.
+- **P&L:** revenue by type (design fees from the design round, production and fit-out, variations, other), cost of sales (materials, subcontract and labour, factory from work-order labour, other), gross profit and margin, operating expenses by account group, net profit and margin. Period presets from the company's financial year (Ledger settings, else the region pack's `fiscalYearStartMonth`), a comparison column (previous period or same period last year) with change and %, accrual or cash basis, CSV and print. Ledger lines open their account's ledger, then the journal and its record.
+- **Cash flow (direct method):** cash in (client payments, client advances, other receipts) and out (supplier payments, payroll and labour, expenses, tax, other) by month; opening and closing cash in total and per bank or cash account (an opening balance counts before the day it is dated); a 90-day forecast in three 30-day buckets from client milestones and supplier bills still due.
+- **Screens:** statements, trial balance, balance sheet, VAT return and ageing use the shared `StatementTable`; the Ledger home shows cash, receivables, payables and VAT due with their six-month trend, what needs someone with its action, and the latest journals.
+
 ### 6.22 Client portal
 - **Access:** passwordless (email/phone OTP), per deal and project grants, multiple client contacts with roles (decision-maker vs viewer).
 - **Content (published projections only):** timeline, current approved scope and designs, decision requests (quote, design, material list, variation, handover), payment requests with a pay link, progress stories (staff-approved), documents, handover pack, warranty claim form.

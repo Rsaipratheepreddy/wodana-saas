@@ -13,6 +13,7 @@ import type { CashFlowStatement, ProfitAndLossStatement, StatementRow } from "./
 import { StatementSourceRegistry } from "./statement-source";
 import type { StatementResponse, StatementSourceView } from "./statements";
 import { BooksStatementsService } from "./statements.service";
+import { seedDefaultNotificationTemplates } from "../../notifications/default-templates";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Fixtures are committed in their own
 // workspaces; every read and command runs through the service as the app role under forced RLS, exactly as the API does.
@@ -26,7 +27,7 @@ integration("Company statements on real Postgres (P&L by category, comparison, c
   let pool: Pool;
   const run = randomUUID().slice(0, 8);
   const ws = randomUUID(), otherWs = randomUUID(), plainWs = randomUUID();
-  const people = { finance: randomUUID(), viewer: randomUUID(), sales: randomUUID(), other: randomUUID(), plain: randomUUID() };
+  const people = { finance: randomUUID(), controller: randomUUID(), viewer: randomUUID(), sales: randomUUID(), other: randomUUID(), plain: randomUUID() };
   const entity = randomUUID(), otherEntity = randomUUID(), plainEntity = randomUUID();
   const quotes = { design: "q-design", main: "q-main", variation: "q-var" };
   const caseId = randomUUID(), projectId = randomUUID();
@@ -88,7 +89,7 @@ integration("Company statements on real Postgres (P&L by category, comparison, c
       // A firm without the Ledger, in a country whose financial year starts in April (region pack).
       await client.query(company, [plainEntity, plainWs, "PLAIN", "Plain Studio Pvt Ltd", "IN", "INR", "en-IN", "Asia/Kolkata"]);
       const grants: Array<[keyof typeof people, string, string[]]> = [
-        ["finance", ws, ["books.view", "books.manage"]], ["viewer", ws, ["books.view"]], ["sales", ws, ["crm.leads.view"]], ["other", otherWs, ["books.view", "books.manage"]],
+        ["finance", ws, ["books.view", "books.manage"]], ["controller", ws, ["books.view", "books.manage"]], ["viewer", ws, ["books.view"]], ["sales", ws, ["crm.leads.view"]], ["other", otherWs, ["books.view", "books.manage"]],
         ["plain", plainWs, ["books.view", "books.manage"]]];
       for (const [key, workspace, permissions] of grants) {
         const membership = randomUUID(), role = randomUUID();
@@ -129,6 +130,7 @@ integration("Company statements on real Postgres (P&L by category, comparison, c
       await client.query(`INSERT INTO supplier_payments(id,workspace_id,vendor_id,legal_entity_id,paid_on,currency,amount,method,bank_account_id,created_by)
         VALUES($1,$2,$3,$4,'2026-10-12','AED',21000,'bank',$5,$6)`, [randomUUID(), ws, vendor, entity, randomUUID(), people.finance]);
       await client.query("SET LOCAL session_replication_role = origin");
+      await seedDefaultNotificationTemplates(client, ws);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -191,7 +193,7 @@ integration("Company statements on real Postgres (P&L by category, comparison, c
       await client.query("SET LOCAL session_replication_role = replica"); // fixture teardown only
       const all = [ws, otherWs, plainWs];
       for (const table of [...BOOKS_TABLES].reverse()) await client.query(`DELETE FROM ${table} WHERE workspace_id = ANY($1::uuid[])`, [all]);
-      for (const table of ["document_sequences", "audit_events", "notifications", "notification_deliveries", "client_credit_notes", "client_invoices", "commercial_receipts",
+      for (const table of ["document_sequences", "audit_events", "notifications", "notification_deliveries", "notification_templates", "outbox_events", "client_credit_notes", "client_invoices", "commercial_receipts",
         "commercial_payments", "commercial_quotes", "supplier_payments", "supplier_invoice_lines", "supplier_invoices", "work_order_reports", "delivery_projects",
         "workspace_vendors", "member_roles", "role_permissions", "roles", "workspace_memberships", "legal_entities"]) {
         await client.query(`DELETE FROM ${table} WHERE workspace_id = ANY($1::uuid[])`, [all]).catch(() => undefined);
@@ -306,6 +308,12 @@ integration("Company statements on real Postgres (P&L by category, comparison, c
       .rejects.toBeInstanceOf(ConflictException);
     const audits = await pool.query("SELECT before, after FROM audit_events WHERE workspace_id = $1 AND action = 'books.statement_source_changed' AND entity_id = $2", [ws, entity]);
     expect(audits.rows).toEqual([{ before: { source: "ledger", chosen: false, version: 0 }, after: { source: "operational_cash", version: 1 } }]);
+    // Everyone else who sets up the Ledger is told, in the app and by email; never who changed it.
+    const told = async (userId: string) => (await pool.query("SELECT channel, subject FROM notifications WHERE workspace_id = $1 AND recipient_id = $2 AND event_type = $3 ORDER BY channel",
+      [ws, userId, "books.statement_source_changed"])).rows;
+    expect(await told(people.controller)).toEqual(expect.arrayContaining([expect.objectContaining({ subject: "Studio Interiors LLC · statements from Operational cash" })]));
+    expect(await told(people.finance)).toEqual([]);
+    expect(await told(people.viewer)).toEqual([]);
 
     const accrual = await pnl({ from: "2026-10-01", to: "2026-10-31" });
     expect(accrual.source.source).toBe("operational_cash");
