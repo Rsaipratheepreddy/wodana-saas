@@ -9,6 +9,7 @@ import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/referen
 import { LabourRatesService } from "./labour-rates.service";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectDrawingsService } from "./project-drawings.service";
+import { ProjectFinanceService } from "./project-finance.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { ProjectOverviewService } from "./project-overview.service";
 import { ProjectWorkService } from "./project-work.service";
@@ -19,7 +20,8 @@ import { ProjectWorkService } from "./project-work.service";
 @Controller("workspaces/:workspaceId/project-core")
 export class ProjectCoreController {
   constructor(private readonly projects: ProjectCoreService, private readonly work: ProjectWorkService, private readonly money: ProjectMoneyService,
-    private readonly labourRates: LabourRatesService, private readonly overviews: ProjectOverviewService, private readonly drawingFiles: ProjectDrawingsService) {}
+    private readonly labourRates: LabourRatesService, private readonly overviews: ProjectOverviewService, private readonly drawingFiles: ProjectDrawingsService,
+    private readonly finance: ProjectFinanceService) {}
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.projects.settings(actor, workspaceId); }
@@ -101,6 +103,21 @@ export class ProjectCoreController {
   @Get("projects/:projectId/overview")
   overview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.overviews.overview(actor, workspaceId, projectId);
+  }
+
+  @Get("projects/:projectId/money/pnl")
+  projectPnl(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.finance.pnl(actor, workspaceId, projectId);
+  }
+
+  @Get("projects/:projectId/money/cash-flow")
+  projectCashFlow(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.finance.cashFlow(actor, workspaceId, projectId);
+  }
+
+  @Get("profitability")
+  profitability(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.finance.profitability(actor, workspaceId);
   }
 
   @Get("projects/:projectId/money/milestones")

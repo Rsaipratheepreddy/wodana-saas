@@ -13,10 +13,36 @@ import { labourCost, rateOn, readTradeRates, readWorkcenterRates, tradeKey } fro
 type Db = Pick<PoolClient, "query">;
 
 export type CostSource = "stock" | "service" | "price_difference" | "charge" | "labour" | "petty_cash";
+/**
+ * The cost categories of a project's P&L: what a cost was for. Materials bought or issued for the project; the
+ * factory (materials issued to work orders, outside work on them, factory hours and anything for a package made in the
+ * factory); subcontract and labour (bought services, subcontracted packages, site crews); site expenses (petty cash);
+ * anything else. Design time isn't recorded as a cost, so it has no category.
+ */
+export const COST_CATEGORIES = ["materials", "factory", "subcontract_labour", "site_expenses", "other"] as const;
+export type CostCategory = (typeof COST_CATEGORIES)[number];
 /** One cost the project carries, in the workspace's currency, from the record that caused it. */
 export type CostEntry = {
-  key: string; on: string; source: CostSource; description: string; reference: string | null; packageId: string | null; packageName: string | null; amount: string;
+  key: string; on: string; source: CostSource; category: CostCategory; description: string; reference: string | null; packageId: string | null; packageName: string | null;
+  amount: string;
 };
+
+/** A package's way of delivery as a cost category: made in the factory, subcontracted or site work, or bought. */
+export function supplyCategory(supply: string | null | undefined, fallback: CostCategory): CostCategory {
+  if (supply === "make") return "factory";
+  if (supply === "subcontract" || supply === "site_work") return "subcontract_labour";
+  if (supply === "buy" || supply === "ready_made") return "materials";
+  return fallback;
+}
+
+/** A supplier charge's Ledger account role as a cost category (other when it has none). */
+export function roleCategory(roles: readonly string[] | null | undefined): CostCategory {
+  const held = roles ?? [];
+  if (held.includes("cost_materials")) return "materials";
+  if (held.includes("cost_subcontract") || held.includes("cost_labour")) return "subcontract_labour";
+  if (held.includes("cost_site_expenses")) return "site_expenses";
+  return "other";
+}
 
 /**
  * How stock changes what a project carries. Goods count when they become the project's and stop counting
@@ -59,10 +85,10 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
 
   // Stock: every movement into or out of the project's ownership.
   const moves = (await db.query<{ id: string; on: string; kind: string; projectId: string | null; forProjectId: string | null; quantity: string; unitCost: string | null;
-    transferId: string | null; item: string; unit: string; packageId: string | null; packageName: string | null; orderNumber: string | null }>(
+    transferId: string | null; item: string; unit: string; packageId: string | null; packageName: string | null; supply: string | null; forWork: boolean; orderNumber: string | null }>(
     `SELECT movement.id, movement.moved_on::text AS on, movement.kind, movement.project_id AS "projectId", movement.for_project_id AS "forProjectId", movement.quantity::text AS quantity,
             movement.unit_cost::text AS "unitCost", movement.transfer_id AS "transferId", item.name AS item, item.unit, package.id AS "packageId", package.name AS "packageName",
-            purchase.number AS "orderNumber"
+            package.supply, (work.id IS NOT NULL) AS "forWork", purchase.number AS "orderNumber"
        FROM stock_movements movement
        JOIN stock_items item ON item.workspace_id = movement.workspace_id AND item.id = movement.item_id
        LEFT JOIN goods_receipt_lines got ON got.workspace_id = movement.workspace_id AND got.id = movement.receipt_line_id
@@ -85,15 +111,16 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
     const quantity = stockEffect(move, projectId);
     if (quantity.isZero()) continue;
     if (move.unitCost === null) { uncosted += 1; continue; }
-    entries.push({ key: `stock:${move.id}`, on: move.on, source: "stock", description: `${words[move.kind] ?? move.kind}: ${move.item} ${quantity.toString()} ${move.unit}`.trim(),
+    entries.push({ key: `stock:${move.id}`, on: move.on, source: "stock", category: move.forWork ? "factory" : supplyCategory(move.supply, "materials"), description: `${words[move.kind] ?? move.kind}: ${move.item} ${quantity.toString()} ${move.unit}`.trim(),
       reference: move.orderNumber, packageId: move.packageId, packageName: move.packageName, amount: quantity.mul(move.unitCost).round(places(home)).toFixed(4) });
   }
 
   // Services and outside work: what was accepted, at the order line's net price.
   const services = (await db.query<{ id: string; on: string; description: string; accepted: string; unitPrice: string; discountPercent: string; currency: string; orderNumber: string;
-    packageId: string | null; packageName: string | null }>(
+    packageId: string | null; packageName: string | null; outside: boolean }>(
     `SELECT got.id, receipt.received_on::text AS on, ordered.description, got.accepted::text AS accepted, ordered.unit_price::text AS "unitPrice",
-            ordered.discount_percent::text AS "discountPercent", purchase.currency, purchase.number AS "orderNumber", package.id AS "packageId", package.name AS "packageName"
+            ordered.discount_percent::text AS "discountPercent", purchase.currency, purchase.number AS "orderNumber", package.id AS "packageId", package.name AS "packageName",
+            (ordered.work_order_id IS NOT NULL) AS outside
        FROM goods_receipt_lines got
        JOIN goods_receipts receipt ON receipt.workspace_id = got.workspace_id AND receipt.id = got.receipt_id AND receipt.reversed_at IS NULL
        JOIN purchase_order_lines ordered ON ordered.workspace_id = got.workspace_id AND ordered.id = got.order_line_id
@@ -109,15 +136,17 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
   for (const service of services) {
     const amount = await convert(Dec.of(service.accepted).mul(orderUnitPrice(service)).round(places(service.currency)), service.currency, service.on);
     if (amount === null) { uncosted += 1; continue; }
-    entries.push({ key: `service:${service.id}`, on: service.on, source: "service", description: `${service.description} ${Dec.of(service.accepted).toString()}`, reference: service.orderNumber,
+    entries.push({ key: `service:${service.id}`, on: service.on, source: "service", category: service.outside ? "factory" : "subcontract_labour", description: `${service.description} ${Dec.of(service.accepted).toString()}`, reference: service.orderNumber,
       packageId: service.packageId, packageName: service.packageName, amount: amount.round(places(home)).toFixed(4) });
   }
 
   // Suppliers' approved invoices: a different price on order lines, and charges not on an order.
   const billed = (await db.query<{ id: string; on: string; number: string; supplier: string; description: string; quantity: string; net: string; currency: string; orderLineId: string | null;
-    unitPrice: string | null; discountPercent: string | null; packageId: string | null; packageName: string | null }>(
+    unitPrice: string | null; discountPercent: string | null; packageId: string | null; packageName: string | null; supply: string | null; outside: boolean; roles: string[] | null }>(
     `SELECT line.id, bill.invoice_date::text AS on, bill.number, vendor.display_name AS supplier, line.description, line.quantity::text AS quantity, line.net::text AS net, bill.currency,
-            line.order_line_id AS "orderLineId", ordered.unit_price::text AS "unitPrice", ordered.discount_percent::text AS "discountPercent", package.id AS "packageId", package.name AS "packageName"
+            line.order_line_id AS "orderLineId", ordered.unit_price::text AS "unitPrice", ordered.discount_percent::text AS "discountPercent", package.id AS "packageId", package.name AS "packageName",
+            package.supply, (ordered.work_order_id IS NOT NULL) AS outside,
+            (SELECT array_agg(role.role::text) FROM books_account_roles role WHERE role.workspace_id = line.workspace_id AND role.account_id = line.books_account_id) AS roles
        FROM supplier_invoice_lines line
        JOIN supplier_invoices bill ON bill.workspace_id = line.workspace_id AND bill.id = line.invoice_id AND bill.status = 'approved'
        JOIN workspace_vendors vendor ON vendor.workspace_id = bill.workspace_id AND vendor.id = bill.vendor_id
@@ -135,7 +164,8 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
     if (difference.isZero()) continue;
     const amount = await convert(difference, line.currency, line.on);
     if (amount === null) { uncosted += 1; continue; }
-    entries.push({ key: `bill:${line.id}`, on: line.on, source: line.orderLineId ? "price_difference" : "charge",
+    const category: CostCategory = !line.orderLineId ? roleCategory(line.roles) : line.outside ? "factory" : supplyCategory(line.supply, "materials");
+    entries.push({ key: `bill:${line.id}`, on: line.on, source: line.orderLineId ? "price_difference" : "charge", category,
       description: line.orderLineId ? `${line.description}: invoiced at a different price` : line.description, reference: `${line.supplier} ${line.number}`,
       packageId: line.packageId, packageName: line.packageName, amount: amount.round(places(home)).toFixed(4) });
   }
@@ -164,7 +194,7 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
   }
   for (const [id, day] of days) {
     if (!day.total || day.total.isZero()) continue;
-    entries.push({ key: `crew:${id}`, on: day.on, source: "labour", description: `Crew: ${day.crew}, ${day.people} ${day.people === 1 ? "person" : "people"}`,
+    entries.push({ key: `crew:${id}`, on: day.on, source: "labour", category: "subcontract_labour", description: `Crew: ${day.crew}, ${day.people} ${day.people === 1 ? "person" : "people"}`,
       reference: day.marker, packageId: null, packageName: null, amount: day.total.round(places(home)).toFixed(4) });
   }
 
@@ -184,7 +214,7 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
     const amount = rate ? await convert(labourCost(crew.people, rate.rate, rate.currency), rate.currency, crew.on) : null;
     if (amount === null) { uncosted += 1; continue; }
     if (amount.isZero()) continue;
-    entries.push({ key: `labour:${crew.id}`, on: crew.on, source: "labour", description: `Site labour: ${crew.trade}, ${crew.people} ${crew.people === 1 ? "person" : "people"}`,
+    entries.push({ key: `labour:${crew.id}`, on: crew.on, source: "labour", category: "subcontract_labour", description: `Site labour: ${crew.trade}, ${crew.people} ${crew.people === 1 ? "person" : "people"}`,
       reference: crew.author, packageId: null, packageName: null, amount: amount.round(places(home)).toFixed(4) });
   }
 
@@ -206,7 +236,7 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
     const amount = rate ? await convert(labourCost(row.hours, rate.rate, rate.currency), rate.currency, row.on) : null;
     if (amount === null) { uncosted += 1; continue; }
     if (amount.isZero()) continue;
-    entries.push({ key: `labour:${row.id}`, on: row.on, source: "labour", description: `Factory labour: ${row.workcenter}, ${Dec.of(row.hours).toString()} hours`,
+    entries.push({ key: `labour:${row.id}`, on: row.on, source: "labour", category: "factory", description: `Factory labour: ${row.workcenter}, ${Dec.of(row.hours).toString()} hours`,
       reference: `WO-${String(row.number).padStart(4, "0")}`, packageId: row.packageId, packageName: row.packageName, amount: amount.round(places(home)).toFixed(4) });
   }
 
@@ -220,7 +250,7 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
   for (const claim of claims) {
     const amount = await convert(Dec.of(claim.amount), claim.currency, claim.on);
     if (amount === null) { uncosted += 1; continue; }
-    entries.push({ key: `petty_cash:${claim.id}`, on: claim.on, source: "petty_cash", description: claim.description, reference: claimNumber(claim.number),
+    entries.push({ key: `petty_cash:${claim.id}`, on: claim.on, source: "petty_cash", category: "site_expenses", description: claim.description, reference: claimNumber(claim.number),
       packageId: claim.packageId, packageName: claim.packageName, amount: amount.round(places(home)).toFixed(4) });
   }
   entries.sort((a, b) => a.on.localeCompare(b.on) || a.key.localeCompare(b.key));
@@ -235,9 +265,9 @@ export async function readProjectCommitted(db: Db, workspaceId: string, projectI
   const today = (await db.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`,
     [workspaceId])).rows[0].today;
   const lines = (await db.query<{ id: string; quantity: string; cancelled: string; credited: string; accepted: string; unitPrice: string; discountPercent: string; currency: string;
-    packageId: string | null }>(
+    packageId: string | null; supply: string | null; outside: boolean }>(
     `SELECT ordered.id, ordered.quantity::text AS quantity, ordered.cancelled_quantity::text AS cancelled, ordered.unit_price::text AS "unitPrice",
-            ordered.discount_percent::text AS "discountPercent", purchase.currency, package.id AS "packageId",
+            ordered.discount_percent::text AS "discountPercent", purchase.currency, package.id AS "packageId", package.supply, (ordered.work_order_id IS NOT NULL) AS outside,
             coalesce(back.credited, 0)::text AS credited, (coalesce(got.accepted, 0) - coalesce(back.returned_accepted, 0))::text AS accepted
        FROM purchase_order_lines ordered
        JOIN purchase_orders purchase ON purchase.workspace_id = ordered.workspace_id AND purchase.id = ordered.order_id
@@ -253,6 +283,7 @@ export async function readProjectCommitted(db: Db, workspaceId: string, projectI
                            WHERE item.workspace_id = ordered.workspace_id AND item.order_line_id = ordered.id) back ON true
       WHERE ordered.workspace_id = $1 AND ordered.project_id = $2 AND purchase.status IN ('approved', 'sent', 'confirmed', 'partly_received')`, [workspaceId, projectId])).rows;
   const byPackage = new Map<string | null, Dec>();
+  const byCategory = new Map<CostCategory, Dec>();
   let total = Dec.ZERO, unconverted = 0;
   for (const line of lines) {
     const left = Dec.of(line.quantity).sub(line.cancelled).sub(line.credited).sub(line.accepted);
@@ -261,8 +292,11 @@ export async function readProjectCommitted(db: Db, workspaceId: string, projectI
     if (!value) { unconverted += 1; continue; }
     total = total.add(value.amount);
     byPackage.set(line.packageId, (byPackage.get(line.packageId) ?? Dec.ZERO).add(value.amount));
+    // Outside work on a work order is the factory's; otherwise the line's package decides (a bought service is subcontract).
+    const category: CostCategory = line.outside ? "factory" : supplyCategory(line.supply, "materials");
+    byCategory.set(category, (byCategory.get(category) ?? Dec.ZERO).add(value.amount));
   }
-  return { total: total.toFixed(4), byPackage, unconverted };
+  return { total: total.toFixed(4), byPackage, byCategory, unconverted };
 }
 
 /**
