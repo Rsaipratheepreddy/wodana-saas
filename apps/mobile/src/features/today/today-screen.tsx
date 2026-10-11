@@ -1,12 +1,10 @@
-import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import {
-  Banknote, CalendarCheck, CalendarClock, CheckCircle2, ClipboardCheck, ClipboardList, Clock3, CloudOff, CloudUpload, Factory, FileText, Inbox, LogIn, LogOut,
-  MessageSquare, PackageCheck, Palette, Receipt, Truck, UserCheck, UserPlus, Users, Wallet, type LucideIcon,
+  Banknote, CalendarClock, CheckCircle2, ClipboardCheck, ClipboardList, CloudOff, CloudUpload, Factory, Inbox, LogIn, LogOut, PackageCheck, Truck, Users, type LucideIcon,
 } from 'lucide-react-native';
-import type { HomeFocusItem, HomeFocusSource, HomeFunnelStage, HomeUpcomingItem } from '../../../../../packages/contracts/src/home';
-import { errorMessage } from '../../core/api';
+import type { HomeFunnelStage, HomeUpcomingItem } from '../../../../../packages/contracts/src/home';
+import { errorMessage, errorStatus } from '../../core/api';
 import { appRouteFor } from '../../core/deep-links';
 import { useFormat } from '../../core/format';
 import { haptic } from '../../core/haptics';
@@ -26,24 +24,24 @@ import { useInbox } from '../inbox/api';
 import { useSitesToday } from '../projects/api';
 import { useDeliveries } from '../purchasing/api';
 import { WoddyButton } from '../woddy/woddy-screen';
-import { useHomeMetrics, useHomeSummary } from './api';
-import { dueLabel, expectsNumbers, figuresFor, focusItems, lensFor, showsPipeline, SOURCE_REASON, STAGE_LABEL, type Figure } from './home-model';
+import { useHomeMetrics, useHomeSummary, useMyDay, useRefetchOnFocus } from './api';
+import { expectsNumbers, figuresFor, lensFor, showsPipeline, STAGE_LABEL, type Figure } from './home-model';
+import { topItems } from './my-day-model';
+import { MyDayRow, useZonedFormat } from './my-day-screen';
 
-const SOURCE_ICON: Record<HomeFocusSource, LucideIcon> = {
-  follow_up: CalendarClock, response: Clock3, unowned: UserPlus, confirm_client: UserCheck, reply: MessageSquare, work: ClipboardList, delivery: Truck,
-  invoice: Receipt, production: Factory, quote_review: FileText, receipt: Banknote, order_approval: Truck, design_review: Palette, design_client: Palette,
-  design_present: Palette, design_revise: Palette, petty_cash: Wallet, leave: Users,
-};
 const UPCOMING: Record<HomeUpcomingItem['kind'], { label: string; icon: LucideIcon }> = {
   meeting: { label: key('Meeting'), icon: Users }, follow_up: { label: key('Follow-up'), icon: CalendarClock }, work: { label: key('Task'), icon: ClipboardList },
   delivery: { label: key('Delivery'), icon: Truck }, payment: { label: key('Payment due'), icon: Banknote }, production: { label: key('Production'), icon: Factory },
 };
 const VISIBLE = 6;
+/** Approvals have their own row at the top of Today ("N waiting for you"): My day's copies aren't listed twice. */
+const COUNTED_ABOVE = ['approval.waiting'] as const;
 
 /**
  * Today: the web's Home for one person on the phone. First what they act on (attendance, what waits for their
- * decision, their sites), then what needs them now, most urgent first; the pipeline and one or two figures for
- * people who run the business or its front; then what's coming. Every section follows what the server sent.
+ * decision, their sites), then what needs them now from My day, most urgent first, with the full list one tap
+ * away; the pipeline and one or two figures for people who run the business or its front; then what's coming.
+ * Every section follows what the server sent.
  */
 export function TodayScreen() {
   const t = useT();
@@ -67,13 +65,15 @@ export function TodayScreen() {
   const waiting = useWaitingCount();
   const deliveries = useDeliveries(session.has('projects') && session.can('stock.receive', 'purchasing.manage'));
   const summary = useHomeSummary();
+  const myDay = useMyDay();
+  useRefetchOnFocus(myDay.refetch);
+  const zoned = useZonedFormat(myDay.data?.timeZone);
   const numbersExpected = expectsNumbers(session.can);
   const metrics = useHomeMetrics(numbersExpected);
-  const [expanded, setExpanded] = useState(false);
   const today = format.today();
 
   const refresh = () => {
-    void current.refetch(); void sites.refetch(); void summary.refetch(); void inbox.refetch(); void deliveries.refetch();
+    void current.refetch(); void sites.refetch(); void summary.refetch(); void myDay.refetch(); void inbox.refetch(); void deliveries.refetch();
     void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); if (numbersExpected) void metrics.refetch();
   };
   const open = current.data && !current.data.endedAt ? current.data : null;
@@ -82,8 +82,9 @@ export function TodayScreen() {
     + (teamReviews.data ?? []).filter((item) => item.canDecide && item.status === 'pending').length
     + (teamTime.data?.weeks ?? []).filter((week) => week.canDecide).length
     + (crewDays.data?.days ?? []).filter((day) => day.status === 'submitted' && day.canDecide).length;
-  const focus = focusItems(summary.data);
-  const shown = expanded ? focus : focus.slice(0, VISIBLE);
+  const needs = topItems(myDay.data, VISIBLE, COUNTED_ABOVE);
+  // A server without My day yet (an older release) answers 404: the section stays away instead of an error.
+  const myDayMissing = errorStatus(myDay.error) === 404;
   const funnel = summary.data && showsPipeline(summary.data.funnel) ? summary.data.funnel : [];
   const figures = metrics.data ? figuresFor(metrics.data, lensFor(session.can)) : [];
   const upcoming = (summary.data?.upcoming ?? []).slice(0, 3);
@@ -92,14 +93,10 @@ export function TodayScreen() {
   // My sites first: today's report with one tap; after 19:00 a missing report turns amber.
   const mySites = sites.data?.sites ?? [];
   const late = (sites.data?.hour ?? 0) >= 19;
-  const nothing = !focus.length && !approvals && !waiting.count && !expected.length && !(inbox.unread > 0) && !mySites.length && !upcoming.length;
-  const failed = summary.error ?? (hrms ? current.error : null);
+  const nothing = !needs.length && !approvals && !waiting.count && !expected.length && !(inbox.unread > 0) && !mySites.length && !upcoming.length;
+  const failed = summary.error ?? (myDayMissing ? null : myDay.error) ?? (hrms ? current.error : null);
   // Something the phone has no screen for is opened on the web.
   const go = (link: string | null | undefined, fallback?: string) => { const route = appRouteFor(link) ?? fallback; if (route) router.push(route as Href); else toast.show(t('Open this on the web to see it.')); };
-  const due = (item: HomeFocusItem) => {
-    const label = dueLabel(item, summary.data?.today ?? today, summary.data?.timeZone ?? format.timeZone, { time: (value) => format.time(value), date: (value) => format.day(value) });
-    return label ? t(label.key, label.values) : null;
-  };
 
   return <Screen large title={t('Today')} subtitle={format.longDay(today)} action={<WoddyButton />} onRefresh={refresh} refreshing={summary.isRefetching || current.isRefetching}>
     {!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('Captures are saved on this phone and sent later.')} /> : null}
@@ -131,17 +128,10 @@ export function TodayScreen() {
         onPress={() => router.push(site.report ? `/projects/${site.projectId}/reports` : `/projects/${site.projectId}/report`)} />)}
     </Section> : null}
 
-    {summary.isLoading ? <Section><View style={{ padding: theme.space(4), gap: theme.space(2) }}><Shimmer width="60%" height={12} /><Shimmer width="40%" height={9} /></View></Section>
-      : focus.length ? <Section title={t('Needs attention')} action={summary.data && summary.data.focus.total > summary.data.focus.items.length
-        ? <Text variant="caption" tone="tertiary">{t('{count} more not shown', { count: summary.data.focus.total - summary.data.focus.items.length })}</Text> : undefined}>
-        {shown.map((item, index) => {
-          const when = due(item);
-          return <ListRow key={item.id} first={index === 0} icon={SOURCE_ICON[item.source] ?? ClipboardCheck} iconTone={item.urgency === 'overdue' ? 'danger' : item.urgency === 'today' ? 'action' : 'warning'}
-            title={item.title || t(SOURCE_REASON[item.source])} detail={[t(SOURCE_REASON[item.source]), item.context].filter(Boolean).join(' · ')}
-            meta={when ? <Text variant="caption" tone={item.urgency === 'overdue' ? 'danger' : 'tertiary'}>{when}</Text> : undefined}
-            onPress={() => go(item.href, item.projectId ? `/projects/${item.projectId}` : undefined)} />;
-        })}
-        {focus.length > VISIBLE ? <ListRow title={expanded ? t('Show less') : t('Show all {count}', { count: focus.length })} onPress={() => setExpanded((value) => !value)} trailing={<View />} /> : null}
+    {myDay.isLoading ? <Section><View style={{ padding: theme.space(4), gap: theme.space(2) }}><Shimmer width="60%" height={12} /><Shimmer width="40%" height={9} /></View></Section>
+      : needs.length ? <Section title={t('My day')} action={<Button size="sm" variant="ghost" label={t('See all')} onPress={() => router.push('/my-day')} />}>
+        {needs.map((entry, index) => <MyDayRow key={entry.item.id} entry={entry} first={index === 0} withJob today={myDay.data?.today ?? zoned.today()} format={zoned}
+          onPress={() => go(entry.item.href)} />)}
       </Section> : null}
 
     {funnel.length ? <Pipeline stages={funnel} onOpen={(stage) => go(stage.href)} /> : null}
@@ -167,7 +157,7 @@ export function TodayScreen() {
 
     {/* A failed load never reads as "all caught up". */}
     {failed && online ? <Banner tone="warning" title={t('Something went wrong')} detail={errorMessage(failed, t('Try again'))} action={{ label: t('Try again'), onPress: refresh }} /> : null}
-    {!summary.isLoading && !failed && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')}
+    {!summary.isLoading && !myDay.isLoading && !failed && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')}
       action={session.has('crm') && session.can('crm.leads.manage') ? { label: t('New enquiry'), onPress: () => router.push('/sales/new') } : undefined} /> : null}
   </Screen>;
 }

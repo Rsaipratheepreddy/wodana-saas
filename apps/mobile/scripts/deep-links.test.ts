@@ -53,6 +53,9 @@ test('notification links open the same record in the app', () => {
     ['/workspace/finance/bills?bill=1', '/finance'],
     [`/workspace/purchasing/suppliers?supplier=${id}`, `/suppliers/${id}`],
     [`/workspace/ai-actions/${id}`, '/approvals'],
+    ['/workspace/my-day', '/my-day'],
+    ['/workspace/my-day?urgency=overdue', '/my-day?urgency=overdue'],
+    ['/workspace/my-day?scope=team&urgency=bogus', '/my-day'],
   ];
   for (const [link, route] of cases) assert.equal(appRouteFor(link), route, link);
 });

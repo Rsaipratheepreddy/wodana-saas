@@ -1,24 +1,13 @@
-import type { HomeFocusItem, HomeFocusSource, HomeFunnelStage, HomeMetrics, HomeSummary } from '../../../../../packages/contracts/src/home';
+import type { HomeFunnelStage, HomeMetrics } from '../../../../../packages/contracts/src/home';
 import { isoDay } from '../../core/format-core';
 import { key } from '../../core/i18n';
 
 /**
- * Today on the phone mirrors the web's Home (`GET home/summary` and `GET home/metrics`), without native code (node
- * tests import it). Every section follows what the server sent for this person; nothing is guessed from a role name.
+ * Today on the phone mirrors the web's Home (`GET home/summary` and `GET home/metrics`; what needs the person comes
+ * from My day, `my-day-model.ts`), without native code (node tests import it). Every section follows what the
+ * server sent for this person; nothing is guessed from a role name.
  */
 export type Label = { key: string; values?: Record<string, string | number> };
-
-/** What each Today item is about, in the web's words. */
-export const SOURCE_REASON: Record<HomeFocusSource, string> = {
-  follow_up: key('Follow-up'), response: key('First response'), unowned: key('No owner yet'), confirm_client: key('Confirm the client'), reply: key('Client reply'),
-  work: key('Task'), delivery: key('Delivery'), invoice: key('Invoice'), production: key('Production'), quote_review: key('Quote review'),
-  receipt: key('Payment to verify'), order_approval: key('Order approval'), design_review: key('Design review'), design_client: key('Client decision'),
-  design_present: key('Ready to present'), design_revise: key('Changes requested'), petty_cash: key('Petty cash'), leave: key('Leave request'),
-};
-
-/** Items the approvals rows above already count ("N waiting for you", leave and time to approve): not listed twice. */
-const COUNTED_ABOVE: ReadonlySet<HomeFocusSource> = new Set(['quote_review', 'receipt', 'order_approval', 'petty_cash', 'leave']);
-export const focusItems = (summary: Pick<HomeSummary, 'focus'> | null | undefined) => (summary?.focus.items ?? []).filter((item) => !COUNTED_ABOVE.has(item.source));
 
 const isDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 const dayDiff = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
@@ -27,7 +16,7 @@ const dayDiff = (from: string, to: string) => Math.round((Date.parse(`${to}T00:0
  * When an item is due, the web's way: "3 days late", "Due 09:30" (earlier today), "Today 16:00", "Today", or
  * "Since 12 Sep" for what waits on the person. `time` and `date` format an instant or a calendar day.
  */
-export function dueLabel(item: Pick<HomeFocusItem, 'due' | 'urgency'>, today: string, timeZone: string, format: { time: (value: string) => string; date: (value: string) => string }): Label | null {
+export function dueLabel(item: { due: string | null; urgency: string }, today: string, timeZone: string, format: { time: (value: string) => string; date: (value: string) => string }): Label | null {
   if (!item.due) return null;
   const day = isDateOnly(item.due) ? item.due : isoDay(item.due, timeZone);
   if (item.urgency === 'waiting') return { key: key('Since {date}'), values: { date: format.date(day) } };

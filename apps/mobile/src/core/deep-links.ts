@@ -104,6 +104,11 @@ export function appRouteFor(link: string | null | undefined): string | null {
     }
     case 'approvals':
       return '/approvals';
+    // My day (the digest and reminder notices), with its chip.
+    case 'my-day': {
+      const urgency = url.searchParams.get('urgency');
+      return urgency && /^(overdue|today|waiting|upcoming|snoozed)$/.test(urgency) ? `/my-day?urgency=${urgency}` : '/my-day';
+    }
     default:
       return null;
   }

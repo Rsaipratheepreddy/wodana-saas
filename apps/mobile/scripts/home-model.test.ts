@@ -1,16 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { HomeFocusItem, HomeMetrics } from '../../../packages/contracts/src/home';
-import { changeBetween, dueLabel, expectsNumbers, figuresFor, focusItems, lensFor, showsPipeline } from '../src/features/today/home-model';
+import type { HomeMetrics } from '../../../packages/contracts/src/home';
+import { changeBetween, dueLabel, expectsNumbers, figuresFor, lensFor, showsPipeline } from '../src/features/today/home-model';
 
-const item = (overrides: Partial<HomeFocusItem>): HomeFocusItem => ({ id: 'x', source: 'follow_up', urgency: 'today', recordId: 'r', title: 'Call Maya', context: 'E-104', due: null, href: '/workspace/crm/follow-ups?record=r', ...overrides });
+const item = (overrides: Partial<{ due: string | null; urgency: string }>) => ({ due: null, urgency: 'today', ...overrides });
 const format = { time: (value: string) => value.slice(11, 16), date: (value: string) => `<${value}>` };
-
-test('Today lists what needs the person, without repeating what the approvals rows already count', () => {
-  const items = [item({ id: 'a' }), item({ id: 'b', source: 'quote_review', urgency: 'waiting' }), item({ id: 'c', source: 'leave', urgency: 'waiting' }), item({ id: 'd', source: 'design_review', urgency: 'waiting' })];
-  assert.deepEqual(focusItems({ focus: { items, total: 4 } }).map((entry) => entry.id), ['a', 'd']);
-  assert.deepEqual(focusItems(null), []);
-});
 
 test('due reads the web\'s way, on the workspace\'s calendar', () => {
   const today = '2026-09-29';

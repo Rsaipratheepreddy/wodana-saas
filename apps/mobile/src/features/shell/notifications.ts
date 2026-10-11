@@ -10,6 +10,7 @@ import { useSession } from '../../core/session';
 import { useToast } from '../../ui/toast';
 import { approvalsKey } from '../approvals/api';
 import { inboxKey, useInbox } from '../inbox/api';
+import { myDayKeys } from '../today/api';
 import { APPROVE_ACTION, type ApprovalOutcome, type PushApproval } from './approval-action-model';
 import { approveFromNotice, noticeFor, postNotice, registerApprovalCategories, sendPendingApprovals } from './approval-actions';
 import { pushOpening } from './push-open';
@@ -29,7 +30,7 @@ const within = <T,>(promise: Promise<T>, ms: number) => Promise.race([promise, n
 /**
  * Opening a push notification opens the same record in the app (registration: `push-registration.ts`).
  * The server marks it read; a link the app can't read itself (a job) is resolved by the server; a push for
- * another workspace opens nothing here. A push that arrives while the app is open refreshes the inbox, and
+ * another workspace opens nothing here. A push that arrives (or is opened) refreshes the inbox and My day, and
  * the app badge counts what is unread. An approval's Approve button decides it without opening anything
  * (`approval-actions.ts`); a decision the phone couldn't send yet goes out when the app next comes back.
  */
@@ -80,6 +81,7 @@ export function useNotificationOpens() {
         if (!route) route = routeForDestination((await within(marked, 4000))?.destination);
         void marked.then(() => queryClient.invalidateQueries({ queryKey: inboxKey(workspaceId) }));
       }
+      void queryClient.invalidateQueries({ queryKey: myDayKeys.all(workspaceId) });
       // A push the app has no screen for opens the inbox, where the notice opens on the web.
       router.push((route ?? '/inbox') as Href);
     };
@@ -88,6 +90,8 @@ export function useNotificationOpens() {
     const arrived = Notifications.addNotificationReceivedListener(() => {
       void queryClient.invalidateQueries({ queryKey: inboxKey(workspaceId) });
       void queryClient.invalidateQueries({ queryKey: notificationSettingsKey(workspaceId) });
+      // A reminder or an escalation changes what is due: Today and My day refetch.
+      void queryClient.invalidateQueries({ queryKey: myDayKeys.all(workspaceId) });
     });
     return () => { tapped.remove(); arrived.remove(); };
   }, [router, api, t, toast, queryClient, workspaceId, report]);
