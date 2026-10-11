@@ -109,9 +109,9 @@ export type IsoDay = string;
 export type BooksReportQuery = { legalEntityId: string; from: IsoDay; to: IsoDay };
 
 export type BooksReportCode =
-  | "trial-balance" | "profit-and-loss" | "balance-sheet" | "vat" | "ar-ageing" | "ap-ageing" | "general-ledger" | "project-profit";
+  | "trial-balance" | "profit-and-loss" | "cash-flow" | "balance-sheet" | "vat" | "ar-ageing" | "ap-ageing" | "general-ledger" | "project-profit";
 export const BOOKS_REPORT_CODES: readonly BooksReportCode[] = [
-  "trial-balance", "profit-and-loss", "balance-sheet", "vat", "ar-ageing", "ap-ageing", "general-ledger", "project-profit",
+  "trial-balance", "profit-and-loss", "cash-flow", "balance-sheet", "vat", "ar-ageing", "ap-ageing", "general-ledger", "project-profit",
 ];
 
 export type TrialBalanceRow = {
