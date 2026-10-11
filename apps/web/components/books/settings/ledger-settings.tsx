@@ -12,10 +12,11 @@ import { AccountsTab } from "./accounts-tab";
 import { GeneralTab } from "./general-tab";
 import { L } from "./ledger-labels";
 import { PaymentAccountsTab } from "./payment-accounts-tab";
+import { StatementsTab } from "./statements-tab";
 import { TaxCodesTab } from "./tax-codes-tab";
 import styles from "./ledger-settings.module.css";
 
-const TABS = ["general", "accounts", "tax-codes", "payment-accounts"] as const;
+const TABS = ["general", "accounts", "tax-codes", "payment-accounts", "statements"] as const;
 
 /**
  * Settings › Ledger, per company: turn the Ledger on from a chart template offered for the company's country, then
@@ -68,7 +69,10 @@ export function LedgerSettings({ workspaceId, companyId: initialCompany }: { wor
 
   return <SettingsPage title={t(L.ledger)} actions={picker} width="wide">
     {!company ? <EmptyState title={t(L.noCompanies)} action={<Link className={styles.link} href="/workspace/legal-entities">{t(L.addCompany)}</Link>} />
-      : !turnedOn ? <TurnOn api={api} company={company} canManage={overview.canManage} onDone={(next) => { changed(next); }} />
+      : !turnedOn ? <>
+        <TurnOn api={api} company={company} canManage={overview.canManage} onDone={(next) => { changed(next); }} />
+        <StatementsTab workspaceId={workspaceId} companyId={company.id} />
+      </>
         : !view ? <Skeleton lines={6} shape="form" />
           : <>
             {error ? <InlineNotice tone="error" message={error instanceof Error ? error.message : t("Could not save.")} /> : null}
@@ -77,6 +81,7 @@ export function LedgerSettings({ workspaceId, companyId: initialCompany }: { wor
               { id: "accounts", label: t(L.accounts), panel: <AccountsTab api={api} view={view} onChange={changed} /> },
               { id: "tax-codes", label: t(L.taxCodes), panel: <TaxCodesTab api={api} view={view} onChange={changed} /> },
               { id: "payment-accounts", label: t(L.paymentAccounts), panel: <PaymentAccountsTab api={api} view={view} onChange={changed} /> },
+              { id: "statements", label: t("Statements"), panel: <StatementsTab workspaceId={workspaceId} companyId={view.company.id} /> },
             ]} />
           </>}
   </SettingsPage>;

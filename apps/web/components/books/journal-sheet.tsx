@@ -7,6 +7,7 @@ import { ledgerPaths, type JournalDetail, type JournalLine, type LedgerApi, type
 import { LedgerRegion, useLedgerFormat, useLedgerT, type LedgerT } from "./reports/ledger-format";
 import { SourceLink } from "./reports/report-views";
 import { useLoad } from "./reports/use-load";
+import { fromUnits, lineTotals } from "./journals/journal-amounts";
 import styles from "./reports/ledger.module.css";
 
 export function journalKindLabel(t: LedgerT, kind: string) {
@@ -40,7 +41,7 @@ function JournalBody({ detail, scope }: { detail: JournalDetail; scope: LedgerSc
   const { journal } = detail;
   const columns = useMemo<DataGridColumn<JournalLine>[]>(() => [
     { id: "account", header: t("Account"), accessorFn: (row) => `${row.accountCode} ${row.accountName}`, enableSorting: false, size: 260,
-      meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.cell}>
+      meta: { primary: true, interactive: true, renderCell: (row) => row.id === TOTAL_ID ? <span className={styles.row} data-kind="total">{row.accountName}</span> : <span className={styles.cell}>
         <Link className={styles.link} href={ledgerPaths.account(row.accountId, scope)}>{`${row.accountCode} ${row.accountName}`}</Link>
         <small>{[row.description, row.partyName, row.projectName, row.taxCode ? [row.taxCode, row.taxRegion].filter(Boolean).join(" ") : null].filter(Boolean).join(" · ")}</small>
       </span> } },
@@ -54,14 +55,23 @@ function JournalBody({ detail, scope }: { detail: JournalDetail; scope: LedgerSc
       <div><dt>{t("Date")}</dt><dd>{format.day(journal.journalDate)}{journal.late ? ` · ${t("Happened {date}, after the books were locked", { date: format.day(journal.eventDate) })}` : ""}</dd></div>
       <div><dt>{t("Kind")}</dt><dd>{journalKindLabel(t, journal.kind)}</dd></div>
       {journal.sourceLabel || journal.sourceHref ? <div><dt>{t("Record")}</dt><dd><SourceLink href={journal.sourceHref} label={journal.sourceLabel} /></dd></div> : null}
-      {journal.description ? <div><dt>{t("Description")}</dt><dd>{journal.description}</dd></div> : null}
+      {journal.description && journal.description !== journal.sourceLabel ? <div><dt>{t("Description")}</dt><dd>{journal.description}</dd></div> : null}
       <div><dt>{t("Total")}</dt><dd className={styles.money}>{format.money(journal.total)}</dd></div>
       {journal.currency !== journal.functionalCurrency ? <div><dt>{t("Rate")}</dt><dd>{`1 ${journal.currency} = ${journal.rate} ${journal.functionalCurrency}`}</dd></div> : null}
       {journal.reversesJournalId ? <div><dt>{t("Reverses")}</dt><dd><Link className={styles.link} href={ledgerPaths.journal(journal.reversesJournalId, scope)}>{t("The journal it reverses")}</Link></dd></div> : null}
       {journal.reversedByJournalId ? <div><dt>{t("Reversed by")}</dt><dd><Link className={styles.link} href={ledgerPaths.journal(journal.reversedByJournalId, scope)}>{t("The reversal")}</Link></dd></div> : null}
       {journal.postedByName ? <div><dt>{t("Posted by")}</dt><dd>{journal.postedByName}</dd></div> : null}
     </dl>
-    <DataGrid<JournalLine> rowNumbers={false} selectable={false} pageSize={500} ariaLabel={t("Journal lines")} columns={columns} data={detail.lines} getRowId={(row) => row.id}
+    <DataGrid<JournalLine> rowNumbers={false} selectable={false} pageSize={500} ariaLabel={t("Journal lines")} columns={columns} data={[...detail.lines, totalLine(t, detail)]} getRowId={(row) => row.id}
       exportFileName={`${journal.number}.csv`} />
   </div>;
+}
+
+const TOTAL_ID = "__total";
+
+/** The journal's totals as a last line: Σ debit and Σ credit (always equal: the database refuses a journal that isn't). */
+function totalLine(t: LedgerT, detail: JournalDetail): JournalLine {
+  const { debit, credit } = lineTotals(detail.lines);
+  return { id: TOTAL_ID, position: Number.MAX_SAFE_INTEGER, accountId: "", accountCode: "", accountName: t("Total"), debit: fromUnits(debit), credit: fromUnits(credit),
+    docAmount: null, description: "", projectId: null, projectName: null, partyType: null, partyId: null, partyName: null, taxCode: null, taxBase: null, taxRegion: null };
 }

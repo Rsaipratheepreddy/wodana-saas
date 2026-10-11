@@ -11,7 +11,7 @@ import { getServerT } from "@/lib/i18n/server";
  */
 const RESOURCES = new Set([
   "reports", "issues", "settings", "templates", "accounts", "roles", "payment-accounts", "tax-codes", "journals", "manual-journals", "opening",
-  "capture", "captures", "projects",
+  "capture", "captures", "projects", "statements",
 ]);
 const SEGMENT = /^[A-Za-z0-9_-]{1,80}$/;
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);

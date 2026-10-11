@@ -22,7 +22,7 @@ export function JournalsList({ list, error, scope, search, onSearch, onRetry, on
     { id: "date", header: t("Date"), accessorFn: (row) => row.journalDate, size: 130, meta: { renderCell: (row) => format.day(row.journalDate) } },
     { id: "source", header: t("Record"), accessorFn: (row) => row.sourceLabel, size: 260,
       meta: { interactive: true, renderCell: (row) => <span className={styles.cell}><SourceLink href={row.sourceHref} label={row.sourceLabel} />
-        {row.description ? <small>{row.description}</small> : null}</span> } },
+        {row.description && row.description !== row.sourceLabel ? <small>{row.description}</small> : null}</span> } },
     { id: "total", header: t("Total"), accessorFn: (row) => row.total, size: 160,
       meta: { align: "end", renderCell: (row) => <span className={styles.money}>{format.amount(row.total)}</span> } },
   ], [t, format]);

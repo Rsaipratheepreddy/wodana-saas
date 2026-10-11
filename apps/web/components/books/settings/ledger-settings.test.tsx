@@ -30,7 +30,14 @@ const view = (): LedgerSettingsView => ({
   hasJournals: false, today: "2026-10-08", canManage: true,
 });
 
-const mount = (respond: (url: string, method: string, body: Record<string, unknown> | undefined) => unknown) => {
+const capabilities = { accrual: true, cash: true, drillDown: true, cashAccounts: true, forecast: true };
+const none = { accrual: false, cash: false, drillDown: false, cashAccounts: false, forecast: false };
+const sourceView = { legalEntityId: COMPANY, source: "operational_cash", chosen: false, version: 0, canManage: true,
+  company: { id: COMPANY, code: "MAIN", name: "Studio Interiors LLC", currency: "AED", locale: "en-AE", timeZone: "Asia/Dubai", countryCode: "AE", today: "2026-10-08", fiscalYearStartMonth: 1, ledgerOn: false },
+  companies: [], options: [{ source: "ledger", available: false, label: null, capabilities: none }, { source: "zoho_books", available: false, label: null, capabilities: none },
+    { source: "quickbooks", available: false, label: null, capabilities: none }, { source: "operational_cash", available: true, label: null, capabilities }] };
+const mount = (given: (url: string, method: string, body: Record<string, unknown> | undefined) => unknown) => {
+  const respond = (url: string, method: string, body: Record<string, unknown> | undefined) => (url.includes("/api/books/statements/") && method === "GET" ? sourceView : given(url, method, body));
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200,
     json: async () => respond(url, init?.method ?? "GET", typeof init?.body === "string" ? JSON.parse(init.body) : undefined) }));
   vi.stubGlobal("fetch", fetcher);
@@ -104,7 +111,7 @@ describe("Settings › Ledger", () => {
       return { companies: [{ ...off, settings }], canManage: true };
     });
     render(<DesignSystemProvider><LedgerSettings workspaceId="w" /></DesignSystemProvider>);
-    expect((await screen.findAllByRole("tab")).map((tab) => tab.textContent)).toEqual(["General", "Accounts", "Tax codes", "Payment accounts"]);
+    expect((await screen.findAllByRole("tab")).map((tab) => tab.textContent)).toEqual(["General", "Accounts", "Tax codes", "Payment accounts", "Statements"]);
     expect(screen.getByRole("button", { name: /Emirate/ }).textContent).toContain("Dubai");
     expect(screen.getByRole("switch", { name: "Ledger on" })).toBeTruthy();
 
@@ -139,5 +146,25 @@ describe("Settings › Ledger", () => {
     expect(posted(fetcher)).toEqual([]);
     await userEvent.click(within(dialog).getByRole("button", { name: "Lock" }));
     await waitFor(() => expect(posted(fetcher)).toEqual([expect.objectContaining({ action: "update_settings", version: 3, lockDate: "2026-09-30", confirmLockDate: true })]));
+  });
+
+  it("chooses where the statements come from, offering only sources that can serve the company", async () => {
+    const on = { ...sourceView, source: "ledger", options: sourceView.options.map((option) => option.source === "ledger" ? { ...option, available: true, capabilities } : option) };
+    const fetcher = mount((url, method, body) => {
+      if (method === "POST" && url.includes("/api/books/statements/source")) return { ...on, source: body?.source, chosen: true, version: 1 };
+      if (url.includes(`/settings/${COMPANY}`)) return view();
+      return { companies: [{ ...off, settings }], canManage: true };
+    });
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => url.includes("/api/books/statements/") && (init?.method ?? "GET") === "GET"
+      ? { ok: true, status: 200, json: async () => on } : fetcher(url, init)));
+    render(<DesignSystemProvider><LedgerSettings workspaceId="w" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("tab", { name: "Statements" }));
+    const choices = await screen.findByRole("radiogroup", { name: "Where the books live" });
+    expect(within(choices).getByRole("radio", { name: /Zoho Books/ })).toBeDisabled();
+    expect(within(choices).getByRole("radio", { name: /Wodana Ledger/ })).toBeChecked();
+    expect(screen.getByRole("link", { name: "Connect an accounting system" })).toHaveAttribute("href", "/workspace/integrations");
+    await userEvent.click(within(choices).getByRole("radio", { name: /Operational cash/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(fetcher)).toEqual([expect.objectContaining({ legalEntityId: COMPANY, source: "operational_cash", expectedVersion: 0, commandId: expect.any(String) })]));
   });
 });

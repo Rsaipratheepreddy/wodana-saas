@@ -34,8 +34,21 @@ export function useLedgerFormat() {
     const { minimumFractionDigits, maximumFractionDigits } = money.resolvedOptions();
     const plain = new Intl.NumberFormat(locale, { minimumFractionDigits, maximumFractionDigits });
     const empty = (value: string | null | undefined): value is null | undefined | "" => value === null || value === undefined || value === "";
+    const isZero = (value: string) => /^-?0*(\.0*)?$/.test(value.trim());
+    /** The locale's accounting form of an amount without its currency symbol: negatives in brackets where the locale does that. */
+    const figure = (value: string) => money.formatToParts(value as unknown as number)
+      .filter((part, index, parts) => part.type !== "currency" && !(part.type === "literal" && /^\s+$/.test(part.value)
+        && (parts[index - 1]?.type === "currency" || parts[index + 1]?.type === "currency")))
+      .map((part) => part.value).join("").trim();
+    const percent = new Intl.NumberFormat(locale, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
     return {
       currency,
+      /** A statement figure: the locale's accounting form without the currency (it is in the header), a dash for zero. */
+      figure: (value: string | null | undefined) => (empty(value) ? "" : isZero(value) ? "–" : figure(value)),
+      /** A percentage given as decimal text with one place ("23.5" → 23.5 %). */
+      percent: (value: string | null | undefined) => (empty(value) ? "–" : percent.format(Number(value) / 100)),
+      /** Decimal text below zero (and not zero). */
+      negative: (value: string | null | undefined) => !empty(value) && value.trim().startsWith("-") && !isZero(value),
       /** An amount with its currency; negative amounts in brackets. */
       money: (value: string | null | undefined) => (empty(value) ? "" : money.format(value as unknown as number)),
       /** An amount without the currency (report columns, where the currency is in the title). */
@@ -43,6 +56,14 @@ export function useLedgerFormat() {
       /** Blank for zero (debit and credit columns). */
       amountOrBlank: (value: string | null | undefined) => (empty(value) || /^-?0+(\.0+)?$/.test(value) ? "" : plain.format(value as unknown as number)),
       day: (value: string | null | undefined) => (value ? new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00Z`)) : ""),
+      /** A month as a column header ("Oct 2026"). */
+      month: (value: string | null | undefined) => (value ? new Intl.DateTimeFormat(locale, { timeZone: "UTC", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00Z`)) : ""),
+      /** A period as people read it ("1 Oct 2026 – 31 Oct 2026"). */
+      period: (from: string | null | undefined, to: string | null | undefined) => {
+        if (!from || !to) return "";
+        try { return new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).formatRange(new Date(`${from}T00:00:00Z`), new Date(`${to}T00:00:00Z`)); }
+        catch { return `${from} – ${to}`; }
+      },
     };
   }, [currency, locale]);
 }

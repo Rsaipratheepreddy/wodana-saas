@@ -2,8 +2,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import { ledgerApi, type AgeingReport, type ProfitAndLossReport, type ReportEntity, type VatReport } from "@/lib/books/reports-client";
-import { AgeingView, ProfitAndLossView, VatView } from "./report-views";
+import { ledgerApi, type AgeingReport, type BalanceSheetReport, type ReportEntity, type TrialBalanceReport, type VatReport } from "@/lib/books/reports-client";
+import { AgeingView, BalanceSheetView, TrialBalanceView, VatView } from "./report-views";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }), usePathname: () => "/workspace/ledger", useSearchParams: () => new URLSearchParams() }));
 
@@ -16,23 +16,45 @@ const base = { scope: { legalEntityId: ENTITY, from: "2026-10-01", to: "2026-10-
 const wrap = (node: React.ReactNode) => <DesignSystemProvider locale="en-AE" currency="AED">{node}</DesignSystemProvider>;
 
 describe("Ledger report views", () => {
-  it("lays out the P&L with its subtotals, each account opening its ledger", () => {
-    const report: ProfitAndLossReport = { ...base, report: "profit-and-loss",
-      sections: [
-        { key: "revenue", label: "Revenue", lines: [{ accountId: "a1", code: "4100", name: "Project revenue", amount: "160000.0000" }], sections: [], total: "160000.0000" },
-        { key: "cost_of_sales", label: "Cost of sales", lines: [{ accountId: "a2", code: "5100", name: "Project materials", amount: "13000.0000" }], sections: [], total: "13000.0000" },
-        { key: "operating_expenses", label: "Operating expenses", lines: [], sections: [], total: "0.0000" },
-        { key: "other_income", label: "Other income", lines: [], sections: [], total: "0.0000" },
-        { key: "other_expenses", label: "Other expenses", lines: [], sections: [], total: "0.0000" },
+  it("lays out the trial balance as a statement: accounts by type, subtotals, the total under a double rule, each account opening its ledger", () => {
+    const report: TrialBalanceReport = { ...base, report: "trial-balance", balanced: true, fiscalYearStart: "2026-01-01",
+      rows: [
+        { accountId: "a1", code: "1100", name: "Bank", type: "asset", subtype: "bank", opening: "0.0000", debit: "120500.0000", credit: "2000.0000", closing: "118500.0000" },
+        { accountId: "a2", code: "4100", name: "Project revenue", type: "income", subtype: "revenue", opening: "0.0000", debit: "0.0000", credit: "118500.0000", closing: "-118500.0000" },
       ],
-      totals: { revenue: "160000.0000", costOfSales: "13000.0000", grossProfit: "147000.0000", operatingExpenses: "0.0000", operatingProfit: "147000.0000", otherIncome: "0.0000",
-        otherExpenses: "0.0000", netProfit: "147000.0000" } };
-    render(wrap(<ProfitAndLossView report={report} scope={scope} />));
-    const grid = screen.getByRole("table", { name: "Profit and loss" });
-    expect(within(grid).getByRole("link", { name: "4100 Project revenue" })).toHaveAttribute("href", `/workspace/ledger/accounts/a1?entity=${ENTITY}&from=2026-10-01&to=2026-10-31`);
-    const gross = within(grid).getByText("Gross profit").closest("tr") as HTMLElement;
-    expect(within(gross).getByText("147,000.00")).toBeInTheDocument();
-    expect(within(grid).getByText("Net profit")).toBeInTheDocument();
+      totals: { opening: "0.0000", debit: "120500.0000", credit: "120500.0000", closing: "0.0000" } };
+    render(wrap(<TrialBalanceView report={report} scope={scope} />));
+    const table = screen.getByRole("table", { name: "Trial balance" });
+    expect(within(table).getByRole("link", { name: "Bank" })).toHaveAttribute("href", `/workspace/ledger/accounts/a1?entity=${ENTITY}&from=2026-10-01&to=2026-10-31`);
+    const income = within(table).getByText("Total income").closest("tr") as HTMLElement;
+    expect(income).toHaveAttribute("data-kind", "subtotal");
+    // A credit balance reads the locale's accounting way, in brackets, and is marked negative.
+    expect(within(income).getByText("(118,500.00)")).toHaveAttribute("data-negative");
+    const total = within(table).getByText("Total").closest("tr") as HTMLElement;
+    expect(total).toHaveAttribute("data-kind", "result");
+    expect(within(total).getAllByText("120,500.00")).toHaveLength(2);
+    expect(within(total).getAllByText("–")).toHaveLength(2);
+  });
+
+  it("lays out the balance sheet with sub-sections opening to their accounts", async () => {
+    const user = userEvent.setup();
+    const report: BalanceSheetReport = { ...base, report: "balance-sheet", balanced: true, currentYearEarnings: "100.0000", retainedEarnings: "0.0000", fiscalYearStart: "2026-01-01",
+      sections: [
+        { key: "assets", label: "Assets", lines: [], total: "1100.0000", sections: [
+          { key: "current_assets", label: "Current assets", lines: [{ accountId: "bank", code: "1100", name: "Bank", amount: "1100.0000" }], sections: [], total: "1100.0000" },
+          { key: "non_current_assets", label: "Non-current assets", lines: [], sections: [], total: "0.0000" }] },
+        { key: "liabilities", label: "Liabilities", lines: [], total: "1000.0000", sections: [
+          { key: "current_liabilities", label: "Current liabilities", lines: [{ accountId: "ap", code: "2100", name: "Trade payables", amount: "1000.0000" }], sections: [], total: "1000.0000" }] },
+        { key: "equity", label: "Equity", lines: [{ accountId: null, code: null, name: "Current year earnings", amount: "100.0000" }], sections: [], total: "100.0000" },
+      ],
+      totals: { assets: "1100.0000", liabilities: "1000.0000", equity: "100.0000", liabilitiesAndEquity: "1100.0000" } };
+    render(wrap(<BalanceSheetView report={report} scope={scope} />));
+    const table = screen.getByRole("table", { name: "Balance sheet" });
+    expect(within(table).getByRole("link", { name: "Bank" })).toBeInTheDocument();
+    expect(within(table).queryByText("Non-current assets")).not.toBeInTheDocument();
+    await user.click(within(table).getByRole("button", { name: "Hide the lines of Current assets" }));
+    expect(within(table).queryByRole("link", { name: "Bank" })).not.toBeInTheDocument();
+    expect(within(within(table).getByText("Total liabilities and equity").closest("tr") as HTMLElement).getByText("1,100.00")).toBeInTheDocument();
   });
 
   it("shows the VAT return boxes, the review list, and the lines behind a box", async () => {
@@ -68,6 +90,6 @@ describe("Ledger report views", () => {
     render(wrap(<AgeingView report={report} scope={scope} />));
     const grid = screen.getByRole("table", { name: "Receivables ageing" });
     expect(within(within(grid).getByText("Not linked to a party").closest("tr") as HTMLElement).getByText("1,000.00")).toBeInTheDocument();
-    expect(within(grid).getByRole("link", { name: "1200 Trade receivables" })).toHaveAttribute("href", `/workspace/ledger/accounts/ar?entity=${ENTITY}&from=2026-10-01&to=2026-10-31`);
+    expect(within(grid).getByRole("link", { name: "Trade receivables" })).toHaveAttribute("href", `/workspace/ledger/accounts/ar?entity=${ENTITY}&from=2026-10-01&to=2026-10-31`);
   });
 });

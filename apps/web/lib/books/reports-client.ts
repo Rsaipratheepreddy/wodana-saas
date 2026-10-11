@@ -12,12 +12,15 @@ import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
 export type { AgeingBucket, AgeingRow, Money, StatementSection, TrialBalanceRow, VatBox };
 
-export type LedgerReportCode = "trial-balance" | "profit-and-loss" | "balance-sheet" | "vat" | "ar-ageing" | "ap-ageing" | "general-ledger" | "project-profit";
+export type LedgerReportCode = "trial-balance" | "profit-and-loss" | "cash-flow" | "balance-sheet" | "vat" | "ar-ageing" | "ap-ageing" | "general-ledger" | "project-profit";
 /** The reports offered in the picker, in reading order (the general ledger opens from an account). */
-export const LEDGER_REPORTS: readonly LedgerReportCode[] = ["trial-balance", "profit-and-loss", "balance-sheet", "vat", "ar-ageing", "ap-ageing", "project-profit"];
+export const LEDGER_REPORTS: readonly LedgerReportCode[] = ["profit-and-loss", "cash-flow", "balance-sheet", "trial-balance", "vat", "ar-ageing", "ap-ageing", "project-profit"];
+/** The statements a company has whether or not it keeps the Ledger (read from where its books live). */
+export const STATEMENT_REPORTS: readonly LedgerReportCode[] = ["profit-and-loss", "cash-flow"];
 export const LEDGER_REPORT_LABELS: Record<LedgerReportCode, MessageKey> = {
   "trial-balance": tKey("Trial balance"), "profit-and-loss": tKey("Profit and loss"), "balance-sheet": tKey("Balance sheet"), vat: tKey("VAT return"),
   "ar-ageing": tKey("Receivables ageing"), "ap-ageing": tKey("Payables ageing"), "general-ledger": tKey("General ledger"), "project-profit": tKey("Projects profit"),
+  "cash-flow": tKey("Cash flow"),
 };
 
 /** Statement lines the server names itself (no account behind them), translated where they render. */
@@ -98,6 +101,12 @@ export type LedgerOverview = {
   vatPeriod: { from: IsoDay; to: IsoDay } | null; fiscalYear: { from: IsoDay; to: IsoDay } | null; openIssues: number;
   /** Tax lines this quarter in no regional box for want of a region (the VAT due leaves them out). */
   vatMissingRegion?: { lines: number; label: string | null } | null;
+  /** Balances at the last six month ends (the last at today). */
+  trend?: { days: IsoDay[]; cash: Money[]; receivables: Money[]; payables: Money[]; vat: Money[] };
+  /** What needs someone. */
+  attention?: { overdueReceivables: Money; overduePayables: Money; manualWaiting: number; unbalanced: boolean };
+  /** The latest journals. */
+  recent?: JournalSummary[];
 };
 
 /** What a report reads: the company and the period, kept in the address. Empty means the server's default. */
@@ -153,19 +162,27 @@ export function ledgerApi(workspaceId: string) {
       request<T>(workspaceId, report, scopeQuery(scope, extra), signal),
     accounts: (scope: LedgerScope, signal?: AbortSignal) => request<AccountsList>(workspaceId, "accounts", scopeQuery(scope), signal),
     account: (accountId: string, scope: LedgerScope, signal?: AbortSignal) => request<GeneralLedgerReport>(workspaceId, `accounts/${encodeURIComponent(accountId)}`, scopeQuery(scope), signal),
-    journals: (scope: LedgerScope, search: string, project: string, signal?: AbortSignal) =>
-      request<JournalList>(workspaceId, "journals", scopeQuery(scope, { search, project }), signal),
+    journals: (scope: LedgerScope, search: string, project: string, signal?: AbortSignal, kind = "") =>
+      request<JournalList>(workspaceId, "journals", scopeQuery(scope, { search, project, kind }), signal),
+    /** A report as the server's CSV (the same exact figures). */
+    csvHref: (report: Exclude<LedgerReportCode, "project-profit" | "profit-and-loss" | "cash-flow">, scope: LedgerScope, extra: Record<string, string | undefined> = {}) => {
+      const query = scopeQuery(scope, { ...extra, format: "csv", workspaceId });
+      return `/api/books/reports/${report}?${query}`;
+    },
+    /** One account's ledger as CSV. */
+    accountCsvHref: (accountId: string, scope: LedgerScope) =>
+      `/api/books/reports/accounts/${encodeURIComponent(accountId)}?${scopeQuery(scope, { format: "csv", workspaceId })}`,
     journal: (journalId: string, signal?: AbortSignal) => request<JournalDetail>(workspaceId, `journals/${encodeURIComponent(journalId)}`, new URLSearchParams(), signal),
   };
 }
 export type LedgerApi = ReturnType<typeof ledgerApi>;
 
 /** The period presets of the report picker; "Custom dates" opens a date range. */
-export const PERIOD_PRESETS = ["month", "last-month", "quarter", "last-quarter", "year", "last-year", "custom"] as const;
+export const PERIOD_PRESETS = ["month", "last-month", "quarter", "last-quarter", "year", "last-year", "calendar-year", "custom"] as const;
 export type PeriodPreset = (typeof PERIOD_PRESETS)[number];
 export const PERIOD_LABELS: Record<PeriodPreset, MessageKey> = {
   month: tKey("Month to date"), "last-month": tKey("Last month"), quarter: tKey("Quarter to date"), "last-quarter": tKey("Last quarter"),
-  year: tKey("Year to date"), "last-year": tKey("Last financial year"), custom: tKey("Custom dates"),
+  year: tKey("Year to date"), "last-year": tKey("Last financial year"), "calendar-year": tKey("Calendar year to date"), custom: tKey("Custom dates"),
 };
 
 const iso = (year: number, month: number, day: number) => new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10);
@@ -185,12 +202,18 @@ export function presetPeriod(preset: Exclude<PeriodPreset, "custom">, today: str
     case "last-quarter": return { from: iso(year, quarterStart - 3, 1), to: iso(year, quarterStart, 0) };
     case "year": return { from: iso(fyYear, fiscalYearStartMonth, 1), to: today };
     case "last-year": return { from: iso(fyYear - 1, fiscalYearStartMonth, 1), to: iso(fyYear, fiscalYearStartMonth, 0) };
+    case "calendar-year": return { from: iso(year, 1, 1), to: today };
   }
+}
+
+/** The presets offered for a company: the calendar year only when its financial year starts later than January. */
+export function periodPresets(fiscalYearStartMonth = 1): PeriodPreset[] {
+  return PERIOD_PRESETS.filter((preset) => preset !== "calendar-year" || fiscalYearStartMonth !== 1);
 }
 
 /** Which preset a period is, or "custom". */
 export function presetOf(from: string, to: string, today: string, fiscalYearStartMonth = 1): PeriodPreset {
-  for (const preset of PERIOD_PRESETS) {
+  for (const preset of periodPresets(fiscalYearStartMonth)) {
     if (preset === "custom") continue;
     const period = presetPeriod(preset, today, fiscalYearStartMonth);
     if (period.from === from && period.to === to) return preset;

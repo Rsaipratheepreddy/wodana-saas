@@ -66,9 +66,29 @@ const journal: JournalDetail = {
   ],
 };
 
+const capabilities = { accrual: true, cash: true, drillDown: true, cashAccounts: true, forecast: true };
+const company = { id: ENTITY, code: "STUD", name: "Studio Interiors", currency: "AED", locale: "en-AE", timeZone: "Asia/Dubai", countryCode: "AE", today: "2026-10-08",
+  fiscalYearStartMonth: 1, ledgerOn: true };
+const header = { source: "ledger", sourceLabel: null, basis: "accrual", currency: "AED", legalEntityId: ENTITY, projectId: null, generatedAt: "2026-10-08T00:00:00Z", notes: [] };
+const zeroSection = (key: string, label: string) => ({ key, label, rows: [], total: ["0.0000"] });
+const pnlResponse = {
+  statement: { ...header, statement: "profit_and_loss", columns: [{ key: "current", from: "2026-01-01", to: "2026-10-08", role: "current" }],
+    sections: [{ key: "revenue", label: "Revenue", total: ["118500.0000"], rows: [{ key: "production", label: "Production and fit-out", amounts: ["118500.0000"],
+      rows: [{ key: "account:r", label: "Project revenue", code: "4100", accountId: "66666666-6666-4666-8666-666666666666", amounts: ["118500.0000"] }] }] },
+      zeroSection("cost_of_sales", "Cost of sales"), zeroSection("operating_expenses", "Operating expenses"), zeroSection("other_income", "Other income"),
+      zeroSection("other_expenses", "Other expenses")],
+    totals: { revenue: ["118500.0000"], costOfSales: ["0.0000"], grossProfit: ["118500.0000"], grossMarginPercent: ["100.0"], operatingExpenses: ["0.0000"],
+      operatingProfit: ["118500.0000"], otherIncome: ["0.0000"], otherExpenses: ["0.0000"], netProfit: ["118500.0000"], netMarginPercent: ["100.0"] } },
+  company, companies: [company], source: { source: "ledger", label: null, chosen: false, capabilities }, period: { from: "2026-01-01", to: "2026-10-08" }, comparison: null, compare: "none",
+};
+const cashFlowResponse = { ...pnlResponse, statement: { ...header, statement: "cash_flow", basis: "cash", columns: [{ key: "m0", from: "2026-10-01", to: "2026-10-08", role: "month" }],
+  sections: [{ key: "cash_in", label: "Cash in", rows: [], total: ["0.0000"] }, { key: "cash_out", label: "Cash out", rows: [], total: ["0.0000"] }],
+  netCashFlow: ["0.0000"], opening: ["0.0000"], closing: ["0.0000"], accounts: [], forecast: null } };
+
 function mount(answers: { overview?: LedgerOverview } = {}) {
   const fetcher = vi.fn(async (url: string) => {
     const path = new URL(url, "http://localhost").pathname.replace("/api/books/reports/", "");
+    if (path.startsWith("/api/books/statements/")) return { ok: true, status: 200, json: async () => (path.endsWith("cash-flow") ? cashFlowResponse : pnlResponse) };
     const body = path === "overview" ? answers.overview ?? overview
       : path === "trial-balance" ? trialBalance
       : path.startsWith("accounts/") ? bankLedger
@@ -103,6 +123,28 @@ describe("the Ledger area", () => {
     expect(push).toHaveBeenCalledWith(`/workspace/ledger/reports/ar-ageing?entity=${ENTITY}&to=2026-10-08`);
   });
 
+  it("reads like an accounting home: six-month trends, what needs someone with its action, and the latest journals", async () => {
+    mount({ overview: { ...overview,
+      trend: { days: ["2026-05-31", "2026-06-30", "2026-07-31", "2026-08-31", "2026-09-30", "2026-10-08"], cash: ["0", "1000", "5000", "9000", "100000", "118500"],
+        receivables: ["0", "0", "0", "0", "20000", "63000"], payables: ["0", "0", "0", "0", "0", "11000"], vat: ["0", "0", "0", "0", "100", "7500"] },
+      attention: { overdueReceivables: "21000.0000", overduePayables: "0.0000", manualWaiting: 2, unbalanced: false },
+      recent: [journal.journal] } });
+    render(wrap(<LedgerArea workspaceId={WS} section="overview" sub={null} />));
+    const cash = (await screen.findByRole("heading", { name: "Cash" })).closest("section") as HTMLElement;
+    expect(within(cash).getByRole("img", { name: "Cash, last six months" })).toBeInTheDocument();
+    const todo = screen.getByRole("region", { name: "To do" });
+    expect(within(todo).getByText("3 records couldn't post")).toBeInTheDocument();
+    expect(within(todo).getByText("2 journals waiting for approval")).toBeInTheDocument();
+    expect(within(todo).getByText("Clients are overdue")).toBeInTheDocument();
+    expect(within(todo).queryByText("Supplier bills are overdue")).not.toBeInTheDocument();
+    expect(within(todo).getByRole("link", { name: "Chase" })).toHaveAttribute("href", `/workspace/ledger/reports/ar-ageing?entity=${ENTITY}&to=2026-10-08`);
+    expect(within(todo).getAllByRole("link", { name: "Review" })[1]).toHaveAttribute("href", `/workspace/ledger/journals?entity=${ENTITY}&view=manual`);
+    const recent = screen.getByRole("region", { name: "Latest journals" });
+    expect(within(recent).getByRole("link", { name: "RCPT-1" })).toHaveAttribute("href", `/workspace/ledger/journals/${JOURNAL}?entity=${ENTITY}`);
+    expect(within(recent).getByText(/STUD-JV-000004/)).toBeInTheDocument();
+    expect(within(recent).getByRole("link", { name: "All journals" })).toHaveAttribute("href", `/workspace/ledger/journals?entity=${ENTITY}`);
+  });
+
   it("says when tax lines have no region, so the VAT due leaves them out, with the way to set it", async () => {
     mount({ overview: { ...overview, balances: { ...overview.balances!, vatDue: "0.0000" }, vatMissingRegion: { lines: 3, label: "Emirate" } } });
     render(wrap(<LedgerArea workspaceId={WS} section="overview" sub={null} />));
@@ -119,7 +161,7 @@ describe("the Ledger area", () => {
     expect(await screen.findByRole("tab", { name: /Needs attention.*3/ })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: /Reports/ }));
     expect(history).toHaveBeenLastCalledWith(null, "", "/workspace/ledger/reports");
-    expect(await screen.findByRole("table", { name: "Trial balance" })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "Profit and loss" })).toBeInTheDocument();
     history.mockRestore();
   });
 
@@ -147,7 +189,7 @@ describe("the Ledger area", () => {
     search = new URLSearchParams({ entity: ENTITY, from: "2026-01-01", to: "2026-10-08" });
     const { unmount } = render(wrap(<LedgerArea workspaceId={WS} section="reports" sub="trial-balance" />));
     const grid = await screen.findByRole("table", { name: "Trial balance" });
-    expect(within(grid).getByRole("link", { name: "1100 Bank" })).toHaveAttribute("href", `/workspace/ledger/accounts/${BANK}?entity=${ENTITY}&from=2026-01-01&to=2026-10-08`);
+    expect(within(grid).getByRole("link", { name: "Bank" })).toHaveAttribute("href", `/workspace/ledger/accounts/${BANK}?entity=${ENTITY}&from=2026-01-01&to=2026-10-08`);
     unmount();
 
     render(wrap(<LedgerArea workspaceId={WS} section="accounts" sub={BANK} />));
@@ -182,11 +224,19 @@ describe("the Ledger area", () => {
     expect(await screen.findByText(`Editor ${ENTITY} ${JOURNAL}`)).toBeInTheDocument();
   });
 
-  it("asks to turn the Ledger on when no company has it", async () => {
-    mount({ overview: { entities: [], entity: null, canManage: true, canPost: true, openIssues: 0, balances: null, vatPeriod: null, fiscalYear: null } });
-    render(wrap(<LedgerArea workspaceId={WS} section="reports" sub={null} />));
+  it("asks to turn the Ledger on when no company has it, and still gives the P&L and cash flow from where the books live", async () => {
+    const user = userEvent.setup();
+    const off = { entities: [], entity: null, canManage: true, canPost: true, openIssues: 0, balances: null, vatPeriod: null, fiscalYear: null };
+    mount({ overview: off });
+    const { unmount } = render(wrap(<LedgerArea workspaceId={WS} section="overview" sub={null} />));
     expect(await screen.findByText("The Ledger is off")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Turn on Ledger" })).toHaveAttribute("href", "/workspace/settings/ledger");
+    expect(screen.getByRole("link", { name: "Profit and loss" })).toHaveAttribute("href", "/workspace/ledger/reports/profit-and-loss");
+    unmount();
+    render(wrap(<LedgerArea workspaceId={WS} section="reports" sub={null} />));
+    expect(await screen.findByRole("table", { name: "Profit and loss" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Report/ }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Profit and loss", "Cash flow"]);
   });
 
   it("doesn't offer turning it on to someone who can't set it up", async () => {

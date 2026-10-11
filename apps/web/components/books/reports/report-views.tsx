@@ -2,22 +2,24 @@
 
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
-import { Callout, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, Skeleton, type DataGridColumn } from "@/design-system";
 import {
-  AGEING_LABELS, ledgerPaths, type AgeingReport, type BalanceSheetReport, type GeneralLedgerReport, type LedgerApi, type LedgerScope, type ProfitAndLossReport,
-  type StatementSection, type TrialBalanceReport, type VatBox, type VatBoxLine, type VatReport, type VatReviewItem,
+  Callout, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, Skeleton, StatementTable, type DataGridColumn, type StatementColumnHead, type StatementLine,
+} from "@/design-system";
+import {
+  AGEING_LABELS, ledgerPaths, type AgeingReport, type BalanceSheetReport, type GeneralLedgerReport, type LedgerApi, type LedgerScope, type StatementSection,
+  type TrialBalanceReport, type TrialBalanceRow, type VatBox, type VatBoxLine, type VatReport, type VatReviewItem,
 } from "@/lib/books/reports-client";
+import { tKey } from "@/lib/i18n/keys";
 import { useLedgerFormat, useLedgerT, type LedgerFormat, type LedgerT } from "./ledger-format";
 import { useLoad } from "./use-load";
 import styles from "./ledger.module.css";
 
 /**
- * The company reports as tables (DataGrid: CSV export from its toolbar, print from the page). Every account opens
- * its ledger, every journal its sheet and every journal's record its own page (report → account → journal → source).
- * Reports keep their own order: columns don't sort.
+ * The company reports as statements (StatementTable: headings, indented accounts, totals over a rule, results under
+ * a double rule, tabular figures) and the lists behind them (DataGrid). Every account opens its ledger, every
+ * journal its sheet and every journal's record its own page (report → account → journal → source). CSV comes from
+ * the server (the picker's Export) and print lays the page out for paper.
  */
-
-const GRID = { rowNumbers: false, selectable: false, pageSize: 2000, pinFirstColumn: true } as const;
 
 function moneyColumn<T>(id: string, header: string, get: (row: T) => string | null | undefined, format: LedgerFormat, blankZero = false): DataGridColumn<T> {
   return {
@@ -26,9 +28,8 @@ function moneyColumn<T>(id: string, header: string, get: (row: T) => string | nu
   };
 }
 
-function AccountLink({ accountId, code, name, scope }: { accountId: string | null; code: string | null; name: string; scope: LedgerScope }) {
-  const label = [code, name].filter(Boolean).join(" ");
-  return accountId ? <Link className={styles.link} href={ledgerPaths.account(accountId, scope)}>{label}</Link> : <span>{label}</span>;
+function AccountLink({ accountId, name, scope }: { accountId: string | null; name: string; scope: LedgerScope }) {
+  return accountId ? <Link href={ledgerPaths.account(accountId, scope)}>{name}</Link> : <span>{name}</span>;
 }
 
 export function JournalLink({ journalId, number, scope }: { journalId: string; number: string; scope: LedgerScope }) {
@@ -40,44 +41,74 @@ export function SourceLink({ href, label }: { href: string; label: string }) {
   return href ? <Link className={styles.link} href={href}>{label || href}</Link> : <span>{label}</span>;
 }
 
+const figures = (format: LedgerFormat, values: Array<string | null | undefined>) => ({
+  values: values.map((value) => (value === null || value === undefined ? null : format.figure(value))),
+  negative: values.map((value) => format.negative(value)),
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // Trial balance.
 
-type TbRow = TrialBalanceReport["rows"][number] & { kind: "account" | "total" };
+const TYPE_ORDER = ["asset", "liability", "equity", "income", "expense"] as const;
+
+function typeHeading(t: LedgerT, type: TrialBalanceRow["type"]) {
+  switch (type) {
+    case "asset": return t("Assets");
+    case "liability": return t("Liabilities");
+    case "equity": return t("Equity");
+    case "income": return t("Income");
+    case "expense": return t("Expenses");
+    default: return String(type);
+  }
+}
 
 export function TrialBalanceView({ report, scope }: { report: TrialBalanceReport; scope: LedgerScope }) {
   const t = useLedgerT();
   const format = useLedgerFormat();
-  const rows: TbRow[] = [...report.rows.map((row) => ({ ...row, kind: "account" as const })),
-    { accountId: "__total", code: "", name: t("Total"), type: "asset", subtype: "", ...report.totals, kind: "total" }];
-  const columns = useMemo<DataGridColumn<TbRow>[]>(() => [
-    { id: "account", header: t("Account"), accessorFn: (row) => `${row.code} ${row.name}`.trim(), enableSorting: false, size: 320,
-      meta: { primary: true, interactive: true, renderCell: (row) => row.kind === "total" ? <span className={styles.row} data-kind="total">{row.name}</span>
-        : <AccountLink accountId={row.accountId || null} code={row.code} name={row.name} scope={scope} /> } },
-    moneyColumn<TbRow>("opening", t("Opening"), (row) => row.opening, format),
-    moneyColumn<TbRow>("debit", t("Debit"), (row) => row.debit, format, true),
-    moneyColumn<TbRow>("credit", t("Credit"), (row) => row.credit, format, true),
-    moneyColumn<TbRow>("closing", t("Closing"), (row) => row.closing, format),
-  ], [t, format, scope]);
+  const columns: StatementColumnHead[] = [
+    { key: "opening", label: t("Opening") }, { key: "debit", label: t("Debit") }, { key: "credit", label: t("Credit") }, { key: "closing", label: t("Closing") }];
+  const lines = useMemo(() => {
+    const out: StatementLine[] = [];
+    for (const type of TYPE_ORDER) {
+      const rows = report.rows.filter((row) => row.type === type);
+      if (!rows.length) continue;
+      const heading = typeHeading(t, type);
+      out.push({ key: `${type}:head`, kind: "heading", label: heading, values: [null, null, null, null] });
+      for (const row of rows) out.push({ key: row.accountId || row.code, kind: "line", depth: 1, code: row.code,
+        label: <AccountLink accountId={row.accountId || null} name={row.name} scope={scope} />, ...figures(format, [row.opening, row.debit, row.credit, row.closing]) });
+      const sum = (pick: (row: TrialBalanceRow) => string) => rows.reduce((total, row) => addText(total, pick(row)), "0.0000");
+      out.push({ key: `${type}:total`, kind: "subtotal", label: t("Total {section}", { section: heading.toLocaleLowerCase() }),
+        ...figures(format, [sum((row) => row.opening), sum((row) => row.debit), sum((row) => row.credit), sum((row) => row.closing)]) });
+    }
+    out.push({ key: "total", kind: "result", label: t("Total"), ...figures(format, [report.totals.opening, report.totals.debit, report.totals.credit, report.totals.closing]) });
+    return out;
+  }, [report, scope, t, format]);
   return <div className={styles.stack}>
     {!report.balanced ? <InlineNotice tone="error" message={t("The trial balance doesn't balance. Check the journals that need attention.")} /> : null}
-    <DataGrid<TbRow> {...GRID} ariaLabel={t("Trial balance")} columns={columns} data={rows} getRowId={(row) => row.accountId || row.code}
-      exportFileName={`${report.entity.code}-trial-balance-${report.scope.from}-${report.scope.to}.csv`} emptyContent={<EmptyState title={t("No journals in this period")} />} />
+    {report.rows.length ? <StatementTable label={t("Trial balance")} labelHeader={t("Account")} columns={columns} lines={lines} />
+      : <EmptyState title={t("No journals in this period")} description={t("Choose another period")} />}
   </div>;
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// P&L and balance sheet.
+/** Exact sum of two decimal texts (4 places), for subtotals laid out on the screen. */
+function addText(left: string, right: string) {
+  const units = (value: string) => {
+    const match = /^(-)?(\d+)(?:\.(\d{1,4}))?$/.exec(value.trim());
+    if (!match) return 0n;
+    const amount = BigInt(match[2]) * 10_000n + BigInt((match[3] ?? "").padEnd(4, "0"));
+    return match[1] ? -amount : amount;
+  };
+  const total = units(left) + units(right);
+  const negative = total < 0n;
+  const abs = negative ? -total : total;
+  return `${negative ? "-" : ""}${abs / 10_000n}.${String(abs % 10_000n).padStart(4, "0")}`;
+}
 
-type StatementRow = { id: string; kind: "section" | "line" | "total" | "result"; depth: number; name: string; code: string | null; accountId: string | null; amount: string | null };
+// ---------------------------------------------------------------------------------------------------------------
+// Balance sheet.
 
 function sectionLabel(t: LedgerT, section: Pick<StatementSection, "key" | "label">) {
   switch (section.key) {
-    case "revenue": return t("Revenue");
-    case "cost_of_sales": return t("Cost of sales");
-    case "operating_expenses": return t("Operating expenses");
-    case "other_income": return t("Other income");
-    case "other_expenses": return t("Other expenses");
     case "assets": return t("Assets");
     case "current_assets": return t("Current assets");
     case "non_current_assets": return t("Non-current assets");
@@ -89,52 +120,35 @@ function sectionLabel(t: LedgerT, section: Pick<StatementSection, "key" | "label
   }
 }
 
-export function flattenStatement(t: LedgerT, sections: readonly StatementSection[], depth = 0): StatementRow[] {
-  return sections.flatMap((section) => {
-    const label = sectionLabel(t, section);
-    return [
-      { id: `${section.key}:head`, kind: "section" as const, depth, name: label, code: null, accountId: null, amount: null },
-      ...section.lines.map((line, index) => ({ id: `${section.key}:${line.accountId ?? index}`, kind: "line" as const, depth: depth + 1,
-        name: line.accountId ? line.name : t(line.name), code: line.code, accountId: line.accountId, amount: line.amount })),
-      ...flattenStatement(t, section.sections, depth + 1),
-      { id: `${section.key}:total`, kind: "total" as const, depth, name: t("Total {section}", { section: label.toLocaleLowerCase() }), code: null, accountId: null, amount: section.total },
-    ];
-  });
-}
-
-function StatementGrid({ label, rows, scope, fileName }: { label: string; rows: StatementRow[]; scope: LedgerScope; fileName: string }) {
-  const t = useLedgerT();
-  const format = useLedgerFormat();
-  const columns = useMemo<DataGridColumn<StatementRow>[]>(() => [
-    { id: "line", header: t("Account"), accessorFn: (row) => [row.code, row.name].filter(Boolean).join(" "), enableSorting: false, size: 380,
-      meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.row} data-kind={row.kind} data-depth={row.depth}>
-        {row.kind === "line" ? <AccountLink accountId={row.accountId} code={row.code} name={row.name} scope={scope} /> : row.name}</span> } },
-    moneyColumn<StatementRow>("amount", t("Amount"), (row) => row.amount, format),
-  ], [t, format, scope]);
-  return <DataGrid<StatementRow> {...GRID} ariaLabel={label} columns={columns} data={rows} getRowId={(row) => row.id} exportFileName={fileName} />;
-}
-
-export function ProfitAndLossView({ report, scope }: { report: ProfitAndLossReport; scope: LedgerScope }) {
-  const t = useLedgerT();
-  const [revenue, cost, operating, otherIncome, otherExpenses] = report.sections;
-  const flat = (section: StatementSection | undefined) => (section ? flattenStatement(t, [section]) : []);
-  const result = (id: string, name: string, amount: string): StatementRow => ({ id, kind: "result", depth: 0, name, code: null, accountId: null, amount });
-  const rows = [
-    ...flat(revenue), ...flat(cost), result("gross", t("Gross profit"), report.totals.grossProfit),
-    ...flat(operating), result("operating", t("Operating profit"), report.totals.operatingProfit),
-    ...flat(otherIncome), ...flat(otherExpenses), result("net", t("Net profit"), report.totals.netProfit),
+/** A balance sheet section: its heading, its sub-sections (opening to their accounts) and its total. */
+function balanceSectionLines(t: LedgerT, format: LedgerFormat, scope: LedgerScope, section: StatementSection): StatementLine[] {
+  const label = sectionLabel(t, section);
+  const accountLine = (line: StatementSection["lines"][number], depth: number, index: number): StatementLine => ({
+    key: `${section.key}:${line.accountId ?? index}`, kind: "line", depth, code: line.code,
+    label: line.accountId ? <AccountLink accountId={line.accountId} name={line.name} scope={scope} /> : t(line.name), ...figures(format, [line.amount]) });
+  return [
+    { key: `${section.key}:head`, kind: "heading", label, values: [null] },
+    ...section.sections.filter((child) => child.lines.length || child.total !== "0.0000").map((child) => ({
+      key: child.key, kind: "line" as const, depth: 1, label: sectionLabel(t, child), ...figures(format, [child.total]),
+      children: child.lines.map((line, index) => ({ ...accountLine(line, 2, index), key: `${child.key}:${line.accountId ?? index}` })),
+    })),
+    ...section.lines.map((line, index) => accountLine(line, 1, index)),
+    { key: `${section.key}:total`, kind: "subtotal", label: t("Total {section}", { section: label.toLocaleLowerCase() }), ...figures(format, [section.total]) },
   ];
-  return <StatementGrid label={t("Profit and loss")} rows={rows} scope={scope} fileName={`${report.entity.code}-profit-and-loss-${report.scope.from}-${report.scope.to}.csv`} />;
 }
 
 export function BalanceSheetView({ report, scope }: { report: BalanceSheetReport; scope: LedgerScope }) {
   const t = useLedgerT();
+  const format = useLedgerFormat();
   const [assets, liabilities, equity] = report.sections;
-  const rows = [...flattenStatement(t, [assets, liabilities, equity].filter(Boolean)),
-    { id: "total", kind: "result" as const, depth: 0, name: t("Total liabilities and equity"), code: null, accountId: null, amount: report.totals.liabilitiesAndEquity }];
+  const lines: StatementLine[] = [
+    ...[assets, liabilities, equity].filter(Boolean).flatMap((section) => balanceSectionLines(t, format, scope, section)),
+    { key: "total", kind: "result", label: t("Total liabilities and equity"), ...figures(format, [report.totals.liabilitiesAndEquity]) },
+  ];
   return <div className={styles.stack}>
     {!report.balanced ? <InlineNotice tone="error" message={t("Assets and liabilities with equity differ. Check the journals that need attention.")} /> : null}
-    <StatementGrid label={t("Balance sheet")} rows={rows} scope={scope} fileName={`${report.entity.code}-balance-sheet-${report.scope.to}.csv`} />
+    <StatementTable label={t("Balance sheet")} columns={[{ key: "amount", label: t("As at {date}", { date: format.day(report.scope.to) }) }]} lines={lines}
+      defaultOpen={["current_assets", "non_current_assets", "current_liabilities", "non_current_liabilities"]} />
   </div>;
 }
 
@@ -164,18 +178,12 @@ export function MissingRegionNotice({ lines, label }: { lines: number; label: st
   </Callout>;
 }
 
+const VAT_SECTIONS: ReadonlyArray<readonly [VatBox["section"], string]> = [["sales", tKey("Sales")], ["purchases", tKey("Purchases")], ["net", tKey("Net tax")]];
+
 export function VatView({ report, scope, api }: { report: VatReport; scope: LedgerScope; api: LedgerApi }) {
   const t = useLedgerT();
   const format = useLedgerFormat();
   const [open, setOpen] = useState<VatBox | null>(null);
-  const boxColumns = useMemo<DataGridColumn<VatBox>[]>(() => [
-    { id: "box", header: t("Box"), accessorFn: (row) => row.box, enableSorting: false, size: 80, meta: { primary: true } },
-    { id: "label", header: t("Description"), accessorFn: (row) => row.label, enableSorting: false, size: 380,
-      meta: { renderCell: (row) => <span className={styles.row} data-kind={row.computed ? "total" : "line"}>{t(row.label)}</span> } },
-    moneyColumn<VatBox>("amount", t("Amount"), (row) => row.amount, format),
-    moneyColumn<VatBox>("vat", t("VAT"), (row) => row.vat, format),
-    moneyColumn<VatBox>("adjustment", t("Adjustment"), (row) => row.adjustment, format),
-  ], [t, format]);
   const reviewColumns = useMemo<DataGridColumn<VatReviewItem>[]>(() => [
     { id: "journal", header: t("Journal"), accessorFn: (row) => row.journalNumber, enableSorting: false, size: 170,
       meta: { primary: true, interactive: true, renderCell: (row) => <JournalLink journalId={row.journalId} number={row.journalNumber} scope={scope} /> } },
@@ -189,14 +197,24 @@ export function VatView({ report, scope, api }: { report: VatReport; scope: Ledg
   ], [t, format, scope]);
   if (!report.layout) return <EmptyState title={t("This company's chart has no tax return")} />;
   const unplaced = report.review.filter((item) => item.reason === "missing_region").length;
+  const lines: StatementLine[] = VAT_SECTIONS.flatMap(([section, heading]) => {
+    const boxes = report.boxes.filter((box) => box.section === section);
+    if (!boxes.length) return [];
+    return [{ key: `${section}:head`, kind: "heading" as const, label: t(heading), values: [null, null, null] },
+      ...boxes.map((box): StatementLine => ({
+        key: box.box, kind: box.box === "14" ? "result" : box.computed ? "subtotal" : "line", depth: box.computed ? 0 : 1, code: box.box,
+        label: box.computed ? t(box.label) : <button type="button" className={styles.linkButton} onClick={() => setOpen(box)}>{t(box.label)}</button>,
+        ...figures(format, [box.amount, box.vat, box.adjustment]),
+      }))];
+  });
   return <div className={styles.stack}>
     {unplaced ? <MissingRegionNotice lines={unplaced} label={report.layout.regionLabel} /> : null}
-    <DataGrid<VatBox> {...GRID} ariaLabel={t(report.layout.name)} columns={boxColumns} data={report.boxes} getRowId={(row) => row.box}
-      onRowAction={(row) => { if (!row.computed) setOpen(row); }} exportFileName={`${report.entity.code}-vat-${report.scope.from}-${report.scope.to}.csv`} />
+    <StatementTable label={t(report.layout.name)} labelHeader={t("Box")} lines={lines}
+      columns={[{ key: "amount", label: t("Amount") }, { key: "vat", label: t("VAT") }, { key: "adjustment", label: t("Adjustment") }]} />
     {report.review.length ? <section className={styles.stack} aria-label={t("To review")}>
       <h2 className={styles.subhead}>{t("To review")}</h2>
-      <DataGrid<VatReviewItem> {...GRID} ariaLabel={t("To review")} columns={reviewColumns} data={report.review} getRowId={(row) => `${row.reason}:${row.journalId}:${row.taxCode ?? ""}:${row.amount}`}
-        exportFileName={`${report.entity.code}-vat-review-${report.scope.from}-${report.scope.to}.csv`} />
+      <DataGrid<VatReviewItem> rowNumbers={false} selectable={false} pageSize={500} ariaLabel={t("To review")} columns={reviewColumns} data={report.review}
+        getRowId={(row) => `${row.reason}:${row.journalId}:${row.taxCode ?? ""}:${row.amount}`} exportFileName={`${report.entity.code}-vat-review-${report.scope.from}-${report.scope.to}.csv`} />
     </section> : null}
     {open ? <VatBoxSheet api={api} scope={scope} box={open} onClose={() => setOpen(null)} /> : null}
   </div>;
@@ -218,38 +236,33 @@ function VatBoxSheet({ api, scope, box, onClose }: { api: LedgerApi; scope: Ledg
   ], [t, format, scope]);
   return <InspectorSheet isOpen size="lg" title={t("Box {box}", { box: box.box })} description={t(box.label)} onOpenChange={(value) => { if (!value) onClose(); }}>
     {lines.error ? <ErrorState description={lines.error} onRetry={lines.reload} />
-      : <DataGrid<VatBoxLine> {...GRID} ariaLabel={t("Box {box}", { box: box.box })} columns={columns} data={lines.data?.lines ?? []} getRowId={(row) => row.lineId}
-        isLoading={!lines.data} emptyContent={<EmptyState title={t("No lines in this box")} />} />}
+      : <DataGrid<VatBoxLine> rowNumbers={false} selectable={false} pageSize={2000} ariaLabel={t("Box {box}", { box: box.box })} columns={columns} data={lines.data?.lines ?? []}
+        getRowId={(row) => row.lineId} isLoading={!lines.data} emptyContent={<EmptyState title={t("No lines in this box")} />} />}
   </InspectorSheet>;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Ageing.
 
-type AgeingGridRow = { id: string; kind: "party" | "total" | "unlinked" | "control"; name: string; accountId: string | null; buckets: Record<string, string | null>; total: string };
-
 export function AgeingView({ report, scope }: { report: AgeingReport; scope: LedgerScope }) {
   const t = useLedgerT();
   const format = useLedgerFormat();
-  const blank = Object.fromEntries(AGEING_LABELS.map(([bucket]) => [bucket, null]));
-  const rows: AgeingGridRow[] = [
-    ...report.rows.map((row) => ({ id: `${row.partyType}:${row.partyId}`, kind: "party" as const, name: row.partyName || t("Unnamed"), accountId: null, buckets: row.buckets, total: row.total })),
-    { id: "total", kind: "total", name: t("Total"), accountId: null, buckets: report.totals, total: report.totals.total },
-    ...(report.unlinked !== "0.0000" ? [{ id: "unlinked", kind: "unlinked" as const, name: t("Not linked to a party"), accountId: null, buckets: blank, total: report.unlinked }] : []),
-    ...(report.control ? [{ id: "control", kind: "control" as const, name: `${report.control.code} ${report.control.name}`, accountId: report.control.accountId, buckets: blank,
-      total: report.control.balance }] : []),
+  const columns: StatementColumnHead[] = [...AGEING_LABELS.map(([bucket, label]) => ({ key: bucket, label: t(label) })), { key: "total", label: t("Total") }];
+  const blank = AGEING_LABELS.map(() => null);
+  const lines: StatementLine[] = [
+    ...report.rows.map((row): StatementLine => ({ key: `${row.partyType}:${row.partyId}`, kind: "line", label: row.partyName || t("Unnamed"),
+      ...figures(format, [...AGEING_LABELS.map(([bucket]) => row.buckets[bucket]), row.total]) })),
+    { key: "total", kind: "subtotal", label: t("Total"), ...figures(format, [...AGEING_LABELS.map(([bucket]) => report.totals[bucket]), report.totals.total]) },
+    ...(report.unlinked !== "0.0000" ? [{ key: "unlinked", kind: "line" as const, label: t("Not linked to a party"), values: [...blank, format.figure(report.unlinked)] }] : []),
+    ...(report.control ? [{ key: "control", kind: "result" as const, code: report.control.code,
+      label: <Link href={ledgerPaths.account(report.control.accountId, scope)}>{report.control.name}</Link>, values: [...blank, format.figure(report.control.balance)] }] : []),
   ];
-  const columns = useMemo<DataGridColumn<AgeingGridRow>[]>(() => [
-    { id: "party", header: report.side === "receivable" ? t("Client") : t("Supplier"), accessorFn: (row) => row.name, enableSorting: false, size: 280,
-      meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.row} data-kind={row.kind === "party" ? "line" : "total"}>
-        {row.accountId ? <Link className={styles.link} href={ledgerPaths.account(row.accountId, scope)}>{row.name}</Link> : row.name}</span> } },
-    ...AGEING_LABELS.map(([bucket, label]) => moneyColumn<AgeingGridRow>(bucket, t(label), (row) => row.buckets[bucket], format, true)),
-    moneyColumn<AgeingGridRow>("total", t("Total"), (row) => row.total, format),
-  ], [t, format, scope, report.side]);
   return <div className={styles.stack}>
     {!report.reconciled ? <InlineNotice tone="error" message={t("The parties don't add up to the control account.")} /> : null}
-    <DataGrid<AgeingGridRow> {...GRID} ariaLabel={report.side === "receivable" ? t("Receivables ageing") : t("Payables ageing")} columns={columns} data={rows}
-      getRowId={(row) => row.id} exportFileName={`${report.entity.code}-${report.report}-${report.scope.to}.csv`} />
+    {report.rows.length || report.unlinked !== "0.0000"
+      ? <StatementTable label={report.side === "receivable" ? t("Receivables ageing") : t("Payables ageing")}
+          labelHeader={report.side === "receivable" ? t("Client") : t("Supplier")} columns={columns} lines={lines} />
+      : <EmptyState title={report.side === "receivable" ? t("Clients owe nothing") : t("Nothing is owed to suppliers")} />}
   </div>;
 }
 
@@ -270,10 +283,11 @@ export function GeneralLedgerView({ report, scope }: { report: GeneralLedgerRepo
     { id: "journal", header: t("Journal"), accessorFn: (row) => row.journalNumber, enableSorting: false, size: 170,
       meta: { interactive: true, renderCell: (row) => row.journalId ? <JournalLink journalId={row.journalId} number={row.journalNumber} scope={scope} /> : null } },
     { id: "description", header: t("Description"), accessorFn: (row) => row.description, enableSorting: false, size: 300,
-      meta: { renderCell: (row) => <span className={styles.cell}><span className={styles.row} data-kind={row.kind === "line" ? "line" : "total"}>{row.description}</span>
+      meta: { renderCell: (row) => <span className={styles.cell}><span className={styles.row} data-kind={row.kind === "line" ? "line" : "total"}>
+        {row.kind === "line" && row.description === row.sourceLabel ? <SourceLink href={row.sourceHref} label={row.sourceLabel} /> : row.description}</span>
         {row.partyName ? <small>{row.partyName}</small> : null}</span> } },
     { id: "source", header: t("Record"), accessorFn: (row) => row.sourceLabel, enableSorting: false, size: 200,
-      meta: { interactive: true, renderCell: (row) => (row.kind === "line" ? <SourceLink href={row.sourceHref} label={row.sourceLabel} /> : null) } },
+      meta: { interactive: true, renderCell: (row) => (row.kind === "line" && row.description !== row.sourceLabel ? <SourceLink href={row.sourceHref} label={row.sourceLabel} /> : null) } },
     moneyColumn<LedgerGridRow>("debit", t("Debit"), (row) => row.debit, format, true),
     moneyColumn<LedgerGridRow>("credit", t("Credit"), (row) => row.credit, format, true),
     moneyColumn<LedgerGridRow>("balance", t("Balance"), (row) => row.balance, format),
@@ -284,8 +298,9 @@ export function GeneralLedgerView({ report, scope }: { report: GeneralLedgerRepo
       <div><dt>{t("Opening")}</dt><dd>{format.money(report.opening)}</dd></div>
       <div><dt>{t("Closing")}</dt><dd>{format.money(report.closing)}</dd></div>
     </dl>
-    <DataGrid<LedgerGridRow> {...GRID} ariaLabel={t("General ledger")} columns={columns} data={rows} getRowId={(row) => row.lineId}
-      exportFileName={`${report.entity.code}-general-ledger-${report.account.code}-${report.scope.from}-${report.scope.to}.csv`} />
+    <DataGrid<LedgerGridRow> rowNumbers={false} selectable={false} pageSize={2000} ariaLabel={t("General ledger")} columns={columns} data={rows} getRowId={(row) => row.lineId}
+      exportFileName={`${report.entity.code}-general-ledger-${report.account.code}-${report.scope.from}-${report.scope.to}.csv`}
+      emptyContent={<EmptyState title={t("No journals in this period")} />} />
   </div>;
 }
 

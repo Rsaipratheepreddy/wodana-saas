@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { DataGrid, EmptyState, ErrorState, InspectorSheet, ListTabs, RecordName, Tag, type DataGridColumn } from "@/design-system";
+import { DataGrid, EmptyState, ErrorState, InspectorSheet, ListTabs, RecordName, SelectField, Tag, type DataGridColumn } from "@/design-system";
+import { journalKindLabel } from "../journal-sheet";
 import { ledgerPaths, type LedgerApi, type LedgerScope, type ReportEntity } from "@/lib/books/reports-client";
 import { manualJournalsApi, type ManualJournalRow } from "@/lib/books/settings-client";
 import { ManualJournalEditor, OpeningBalanceImport } from "../journals";
@@ -40,9 +41,10 @@ export function JournalsTab({ api, workspaceId, canPost, scope, entities, projec
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [version, setVersion] = useState(0);
+  const [kind, setKind] = useState("");
   useEffect(() => { const timer = setTimeout(() => setQuery(search.trim()), 250); return () => clearTimeout(timer); }, [search]);
-  const posted = useLoad(view === "posted" ? `journals|${scope.entity}|${scope.from}|${scope.to}|${query}|${project}|${version}` : null,
-    (signal) => api.journals(scope, query, project, signal));
+  const posted = useLoad(view === "posted" ? `journals|${scope.entity}|${scope.from}|${scope.to}|${query}|${project}|${kind}|${version}` : null,
+    (signal) => api.journals(scope, query, project, signal, kind));
   const entity = entities.find((item) => item.id === (scope.entity || posted.stale?.entity.id)) ?? posted.stale?.entity ?? entities[0] ?? null;
   const manualApi = useMemo(() => manualJournalsApi(workspaceId), [workspaceId]);
   const manual = useLoad(view === "manual" && entity ? `manual|${entity.id}|${version}` : null, () => manualApi.list(entity!.id));
@@ -50,7 +52,10 @@ export function JournalsTab({ api, workspaceId, canPost, scope, entities, projec
   const tabs = <ListTabs<JournalsView> label={t("Show")} value={view} onChange={onView} items={[{ id: "posted", label: t("Posted") }, { id: "manual", label: t("Manual journals") }]} />;
   const done = () => setVersion((value) => value + 1);
   return <LedgerRegion entity={entity}>
-    {view === "posted" ? <ReportPicker entities={entities} entity={entity} scope={shown} onScope={onScope} /> : null}
+    {view === "posted" ? <ReportPicker entities={entities} entity={entity} scope={shown} onScope={onScope}>
+      <SelectField accent="neutral" label={t("Kind")} selectedKey={kind || "all"} onSelectionChange={(value) => setKind(value && value !== "all" ? String(value) : "")}
+        items={[{ id: "all", label: t("All journals") }, ...(["auto", "manual", "opening", "reversal"] as const).map((id) => ({ id, label: journalKindLabel(t, id) }))]} />
+    </ReportPicker> : null}
     {project && view === "posted" ? <div className={styles.picker}><Tag onRemove={onClearProject}>{t("One project's journals")}</Tag></div> : null}
     {view === "posted"
       ? <JournalsList list={posted.data ?? (posted.loading ? null : posted.stale)} error={posted.error} scope={shown} search={search} onSearch={setSearch} onRetry={posted.reload}
