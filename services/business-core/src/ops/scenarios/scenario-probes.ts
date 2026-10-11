@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import type { ScenarioSpec } from "./scenario-matrix";
+import { PASS_TWO_PROBES } from "./scenario-probes-two";
 
 /**
  * Whether each scenario has an example in the organization, read in its own tenant transaction: one query per scenario
@@ -145,6 +146,7 @@ export type ProbeQuery = (sql: string, values: unknown[]) => Promise<Array<{ ref
 /** The query for one scenario; null for one this pass doesn't probe. */
 export function probeSql(spec: ScenarioSpec): string | null {
   if (FIXED[spec.key]) return FIXED[spec.key];
+  if (PASS_TWO_PROBES[spec.key]) return PASS_TWO_PROBES[spec.key];
   if (spec.key.startsWith("sales.enquiry_type.")) {
     const code = spec.key.slice("sales.enquiry_type.".length).replace(/'/g, "''");
     return lead(`enquiry.service_type = '${code}'`);

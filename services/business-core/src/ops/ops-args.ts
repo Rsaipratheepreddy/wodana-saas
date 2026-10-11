@@ -102,12 +102,16 @@ sandbox
                   never printed or stored). Needed while a test member has no password; given again, it resets theirs.
   --kit           a firm kit by code, instead of the default
   --seed          the showcase records for every section, made through the test members' own commands
-  --scenarios     (implies --seed) at least one realistic example of every main scenario (enquiries in every state,
-                  quotations in every status, design stages, projects at each stage of the route and on hold, completed,
-                  at risk and over budget, change requests in every state, purchase orders and bills, client invoices
-                  and receipts, and the Ledger on with its postings), in the organization's own country, currency and
-                  people; only what is missing is made, and each scenario is listed with its record. While seeding, every
-                  email, WhatsApp and push written for the organization is suppressed (sandbox_seed), counted and audited.
+  --scenarios     (implies --seed) at least one realistic example of every main scenario (enquiries in every state and
+                  type, the sales pipeline's stages, a client message waiting, the design fee, design stages, moodboard
+                  and site visit, quotations in every status, deal files, planning, projects at each stage of the route
+                  and on hold, completed, at risk and over budget, change requests in every state, purchase orders,
+                  bills, low stock, factory work orders, deliveries, installation and permits, site reports and snags,
+                  client invoices, receipts, refunds, finance requests, petty cash and supplier payments, the Ledger on
+                  with its postings, approvals of every kind, My day for each test member and client decisions in the
+                  portal), in the organization's own country, currency and people; only what is missing is made, and
+                  each scenario is listed with its record. While seeding, every email, WhatsApp and push written for the
+                  organization is suppressed (sandbox_seed), counted and audited.
   One active member per role (owner, manager, sales, designer, design manager, QS, purchasing, factory lead,
   logistics, site supervisor, finance, accountant) as <role>@<slug>.test (or --email-pattern's addresses) with the
   workspace's matching roles and teams.

@@ -265,7 +265,7 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     // ---------- the demo scenarios, on the firm's own rules ----------
     if (args.scenarios) await guarded(report, "scenarios", "scenarios", async () => {
       await runScenarios(app, { workspaceId, ownerUserId: owner.userId, members: outcomes.map((member) => ({ key: member.key, displayName: member.displayName, userId: member.userId })),
-        apply: args.apply }, report);
+        apply: args.apply, ...(hold ? { sweepReminders: () => hold!.sweepReminders(workspaceId) } : {}) }, report);
     });
     if (hold) {
       // The first reminder sweep (My day's items), on the lock the run holds, its messages suppressed; then the count.

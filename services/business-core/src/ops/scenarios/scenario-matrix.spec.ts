@@ -67,8 +67,9 @@ describe("demo scenario matrix", () => {
     expect(moduleCounts(rows)).toMatchObject({ quotations: { scenarios: 2, alreadyThere: 1, skipped: 1 }, ledger: { created: 1 } });
   });
 
-  it("has a probe for every scenario of this pass, never naming a tenant", () => {
-    for (const spec of expandMatrix(context).filter((row) => row.pass === 1)) {
+  it("has a probe for every scenario, never naming a tenant (approvals and My day are read as each member sees them)", () => {
+    for (const spec of expandMatrix(context)) {
+      if (spec.key.startsWith("approval.") || spec.key.startsWith("my_day.")) { expect(probeSql(spec)).toBeNull(); continue; }
       const sql = probeSql(spec);
       expect(sql, spec.key).toBeTruthy();
       expect(sql).toContain("$1");

@@ -11,14 +11,16 @@ import { regionAmount, regionPerson, type RegionFixture } from "./scenario-regio
 export type StoryKey =
   | "design-uploaded" | "design-internal" | "design-client" | "design-changes"
   | "quote-draft" | "quote-qs" | "quote-review" | "quote-approved" | "quote-sent" | "quote-declined" | "quote-discount" | "quote-revision"
-  | "deal-finance" | "deal-approval" | "deal-released"
+  | "deal-finance" | "deal-approval" | "deal-released" | "agreement-waiting" | "quote-expiring"
+  | "fee-sent" | "fee-accepted" | "fee-paid" | "planning-scope" | "planning-ready"
   | `stage-${string}` | "project-completed" | "project-hold" | "project-risk" | "project-budget";
 
 /** Each story's client number in the region's people list (stable: changing it would make a new client). */
 const CLIENT: Record<string, number> = {
   "design-uploaded": 21, "design-internal": 22, "design-client": 23, "design-changes": 24,
   "quote-draft": 31, "quote-qs": 32, "quote-review": 33, "quote-approved": 34, "quote-sent": 35, "quote-declined": 36, "quote-discount": 37, "quote-revision": 38,
-  "deal-finance": 41, "deal-approval": 42, "deal-released": 43,
+  "deal-finance": 41, "deal-approval": 42, "deal-released": 43, "fee-sent": 44, "fee-accepted": 45, "fee-paid": 46, "planning-scope": 47, "planning-ready": 48,
+  "agreement-waiting": 49, "quote-expiring": 39,
   "project-completed": 61, "project-hold": 62, "project-risk": 63, "project-budget": 64,
 };
 const STAGE_CLIENT = 50;
@@ -122,6 +124,13 @@ export function storyCatalog(options: StoryOptions): Map<StoryKey, ShowcaseStory
   add("deal-finance", { stop: "deal_finance", daysAgo: 28 });
   add("deal-approval", { stop: "deal_approval", daysAgo: 30 });
   add("deal-released", { stop: "accepted", daysAgo: 33 });
+  add("agreement-waiting", { stop: "quotation_issued", daysAgo: 27 });
+  add("quote-expiring", { stop: "quotation_draft", daysAgo: 24 });
+  add("fee-sent", { stop: "planning", design: "uploaded", daysAgo: 10 });
+  add("fee-accepted", { stop: "planning", design: "uploaded", daysAgo: 11 });
+  add("fee-paid", { stop: "planning", design: "uploaded", daysAgo: 13 });
+  add("planning-scope", { stop: "planning", design: "uploaded", daysAgo: 8 });
+  add("planning-ready", { stop: "planning", design: "uploaded", daysAgo: 16 });
   const route = options.routeStages;
   const at = (stage: string) => route.indexOf(stage);
   for (const stage of route) {

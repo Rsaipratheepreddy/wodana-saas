@@ -22,7 +22,7 @@ export const RECIPES = [
 ] as const;
 export type RecipeKey = typeof RECIPES[number];
 
-export type ScenarioSpec = { key: string; module: ScenarioModule; label: string; recipe: RecipeKey; /** The delivery pass that makes it (1 now, 2 next). */ pass: 1 | 2 };
+export type ScenarioSpec = { key: string; module: ScenarioModule; label: string; recipe: RecipeKey; /** The release that added it (1: the first scenarios, 2: the rest); every run makes both. */ pass: 1 | 2 };
 
 const PASS_TWO = new Set<RecipeKey>(["pipeline", "inbox", "design_fee", "planning", "stock", "factory", "logistics", "site", "approvals", "portal", "my_day"]);
 const PASS_TWO_KEYS = new Set(["design.moodboard", "design.site_visit", "refund.requested", "finance_request.waiting", "petty_cash.claim", "supplier.payment"]);

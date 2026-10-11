@@ -30,8 +30,16 @@ import type { StoryKey } from "./scenario-stories";
 /** Which stories each recipe needs. */
 export const RECIPE_STORIES: Partial<Record<RecipeKey, (route: readonly string[]) => StoryKey[]>> = {
   design_stages: () => ["design-uploaded", "design-internal", "design-client", "design-changes", "quote-draft"],
-  quotes: () => ["quote-draft", "quote-qs", "quote-review", "quote-approved", "quote-sent", "quote-declined", "quote-discount", "quote-revision", "deal-released"],
-  deals: () => ["deal-finance", "deal-approval", "deal-released"],
+  quotes: () => ["quote-draft", "quote-qs", "quote-review", "quote-approved", "quote-sent", "quote-declined", "quote-discount", "quote-revision", "quote-expiring", "deal-released"],
+  deals: () => ["deal-finance", "deal-approval", "deal-released", "agreement-waiting"],
+  design_fee: () => ["fee-sent", "fee-accepted", "fee-paid"],
+  planning: () => ["planning-scope", "planning-ready", "quote-draft"],
+  factory: (route) => [route.includes("production") ? "stage-production" : `stage-${route[0]}` as StoryKey],
+  logistics: (route) => route.filter((stage) => ["installation", "permit", "snagging"].includes(stage)).map((stage) => `stage-${stage}` as StoryKey),
+  site: (route) => ["project-risk", "project-completed", ...(route.includes("snagging") ? ["stage-snagging" as StoryKey] : [])],
+  portal: (route) => ["quote-sent", "design-client", route.includes("production") ? "stage-production" : `stage-${route[0]}` as StoryKey],
+  approvals: () => ["quote-review", "quote-qs", "design-internal", "deal-finance", "deal-approval", "agreement-waiting", "project-budget"],
+  my_day: () => ["project-risk"],
   project_route: (route) => route.map((stage) => `stage-${stage}` as StoryKey),
   project_kickoff: (route) => route.slice(0, 1).map((stage) => `stage-${stage}` as StoryKey),
   project_hold: () => ["project-hold"],
@@ -40,7 +48,7 @@ export const RECIPE_STORIES: Partial<Record<RecipeKey, (route: readonly string[]
   project_budget: () => ["project-budget"],
   changes: (route) => [route.includes("production") ? "stage-production" : `stage-${route[0]}` as StoryKey],
   purchasing: (route) => [...(route.includes("procurement") ? ["stage-procurement" as StoryKey] : []), "project-risk", "project-budget"],
-  finance: () => ["project-completed", "project-budget", "project-risk"],
+  finance: (route) => ["project-completed", "project-budget", "project-risk", ...(route[0] ? [`stage-${route[0]}` as StoryKey] : [])],
 };
 
 export type ScenarioSeedInput = ShowcaseInput & {
@@ -61,7 +69,7 @@ export class ScenarioSeed extends ShowcaseSeed {
     super({ ...scenarioInput, settleChecks: true });
   }
 
-  private storyCtx(key: StoryKey): ShowcaseCtx | null {
+  protected storyCtx(key: StoryKey): ShowcaseCtx | null {
     const s = this.scenarioInput.stories.find((story) => story.key === `scenario-${key}`);
     const ids = this.result.scenarios[`scenario-${key}`];
     return s && ids ? { s, rooms: new Map(), ids } : null;
@@ -77,7 +85,7 @@ export class ScenarioSeed extends ShowcaseSeed {
   }
 
   /** A soft step inside a recipe: a refusal is noted for the scenario it was for and the recipe goes on. */
-  private async soft(scenario: string, work: () => Promise<unknown>) {
+  protected async soft(scenario: string, work: () => Promise<unknown>) {
     try { await work(); } catch (error) {
       const reason = error instanceof Skip ? error.reason : describe(error);
       if (!this.notes.has(scenario)) this.notes.set(scenario, reason.slice(0, 300));
@@ -158,7 +166,7 @@ export class ScenarioSeed extends ShowcaseSeed {
     await this.advance("quotation revised (version 2)", family.length > 1, () => this.commercialCommand(caseId, this.salesAdminSync!, "revise", { quoteId }));
   }
 
-  private salesAdminSync: Actor | null = null;
+  protected salesAdminSync: Actor | null = null;
 
   /** A quotation with a discount over the firm's approval limit, submitted and waiting for someone who approves. */
   async discountQuote() {
@@ -238,7 +246,7 @@ export class ScenarioSeed extends ShowcaseSeed {
   // ---------------------------------------------------------------- purchasing
 
   /** A purchase order with free lines on the project, taken as far as `state` (draft, sent, part received, received). */
-  private async freeOrder(ctx: ShowcaseCtx, projectId: string, key: string, state: "draft" | "sent" | "partly_received" | "received",
+  protected async freeOrder(ctx: ShowcaseCtx, projectId: string, key: string, state: "draft" | "pending_approval" | "sent" | "partly_received" | "received",
     lines: Array<{ description: string; quantity: string; unit: string; unitPrice: string }>, notes: string, expected: number): Promise<string | null> {
     const orders = this.get(OrdersService), receiving = this.get(ReceivingService);
     const buyer = await this.as("buyer");
@@ -280,7 +288,7 @@ export class ScenarioSeed extends ShowcaseSeed {
   }
 
   /** A supplier bill against an order's received lines, matched and approved; due or overdue by its dates. */
-  private async bill(ctx: ShowcaseCtx, orderId: string, key: string, dates: { invoiceDaysAgo: number; dueDays: number }) {
+  protected async bill(ctx: ShowcaseCtx, orderId: string, key: string, dates: { invoiceDaysAgo: number; dueDays: number }, options: { held?: boolean } = {}) {
     const payables = this.get(PayablesService), orders = this.get(OrdersService);
     const finance = await this.as("finance"), buyer = await this.as("buyer");
     const order = (await orders.get(buyer, this.w, orderId)) as unknown as { order: { vendorId: string; legalEntityId: string; currency: string; status: string; number: string };
@@ -295,14 +303,14 @@ export class ScenarioSeed extends ShowcaseSeed {
         vendorId: order.order.vendorId, legalEntityId: order.order.legalEntityId, currency: order.order.currency, number, invoiceDate: dayFrom(-dates.invoiceDaysAgo),
         dueDate: dayFrom(-dates.invoiceDaysAgo + dates.dueDays),
         lines: order.lines.filter((line) => Number(line.accepted ?? line.received ?? 0) > 0).map((line) => ({ orderLineId: line.id, quantity: String(line.accepted ?? line.received),
-          unitPrice: line.unitPrice, ...(line.taxRate !== undefined && line.taxRate !== null ? { taxRate: line.taxRate } : {}) })) })));
+          unitPrice: options.held ? DecOf(line.unitPrice).mul("1.25").toFixed(2) : line.unitPrice, ...(line.taxRate !== undefined && line.taxRate !== null ? { taxRate: line.taxRate } : {}) })) })));
       bill = (await overview()).find((row) => row.id === billId);
     } else this.kept(`supplier bill on ${order.order.number}`);
     if (bill?.status === "draft") {
       await this.advance("supplier bill matched and submitted", false, () => this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "submit", commandId: this.id(ctx, `bill:${key}:submit:${bill!.version}`), id: billId, version: bill!.version })));
       bill = (await overview()).find((row) => row.id === billId);
     }
-    if (bill?.status === "held") {
+    if (bill?.status === "held" && !options.held) {
       const approver = await this.other(finance, ["owner", "manager"]);
       await this.advance("supplier bill approved", false, () => payables.command(approver, this.w, { action: "approve", commandId: this.id(ctx, `bill:${key}:approve:${bill!.version}`), id: billId, version: bill!.version, note: "Checked against the delivery." }));
     }
@@ -378,7 +386,16 @@ export class ScenarioSeed extends ShowcaseSeed {
           const qs = this.get(QsReviewService);
           const state = (await qs.state(pm, this.w, caseId, record.change.quoteId!)) as unknown as { required: boolean; stage: string };
           if (plan.to === "with_qs") {
-            if (!state.required) throw new Skip("the firm's QS rules don't send this variation to the QS (no joinery package or marked item on it)");
+            if (!state.required && state.stage !== "with_qs") {
+              // The firm's QS rules name joinery work: the variation's line goes in the Joinery work package (flagged for QS review in Settings › Quotations).
+              const packageId = await this.qsWorkPackage();
+              const builder = this.get(QuotationBuilderService);
+              const lines = ((await builder.builder(pm, this.w, caseId, record.change.quoteId!)) as unknown as { lines: Array<{ id: string; version: number; workPackageId: string | null }> }).lines;
+              const ops = lines.filter((line) => line.workPackageId !== packageId).map((line) => ({ op: "upsert", line: { id: line.id, version: line.version, workPackageId: packageId } }));
+              if (ops.length) await this.advance(`${plan.key} · drawers in the Joinery work package`, false, () => builder.apply(pm, this.w, caseId, record!.change.quoteId!, { ops }));
+              const again = (await qs.state(pm, this.w, caseId, record.change.quoteId!)) as unknown as { required: boolean };
+              if (!again.required) throw new Skip("the firm's QS rules don't send variations to the QS");
+            }
             if (state.stage !== "with_qs") {
               const surveyor = await this.other(pm, ["estimator", "owner"]);
               await this.advance(`${plan.key} · sent to the QS`, false, () => qs.send(pm, this.w, caseId, record!.change.quoteId!, { assigneeUserId: surveyor.userId, note: "Please price the drawers." }));
@@ -418,6 +435,25 @@ export class ScenarioSeed extends ShowcaseSeed {
         });
       });
     }
+  }
+
+  /**
+   * The Joinery work package, flagged for QS review (Settings › Quotations): found by name, else added. A firm whose
+   * QS rules name joinery work sends its joinery quotations and variations to the QS.
+   */
+  protected async qsWorkPackage(): Promise<string> {
+    const builder = this.get(QuotationBuilderService);
+    const owner = await this.as("owner");
+    const packages = () => this.db.tenantTransaction(this.w, owner.userId, (client) => client.query<{ id: string; qsReview: boolean }>(
+      `SELECT id, qs_review AS "qsReview" FROM workspace_work_packages WHERE workspace_id = $1 AND lower(btrim(name)) = 'joinery' AND archived_at IS NULL`, [this.w]));
+    let found = (await packages()).rows[0];
+    if (!found) {
+      await this.advance("work package · Joinery", false, () => builder.addWorkPackage(owner, this.w, { id: this.id("scenario:quotes:", "work-package:joinery"), name: "Joinery" }));
+      found = (await packages()).rows[0];
+    }
+    if (!found) throw new Skip("the Joinery work package couldn't be added");
+    if (!found.qsReview) await this.advance("work package · Joinery flagged for QS review", false, () => builder.updateWorkPackage(owner, this.w, found!.id, { qsReview: true }));
+    return found.id;
   }
 
   // ---------------------------------------------------------------- client invoices and receipts

@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
@@ -21,7 +22,7 @@ type Json = { counts: Record<string, number>; scenarios?: { matrix: Row[] }; del
   workspace: { id?: string } };
 
 /** Scenarios that can't have an example on the day they are made, with why (each is still checked below). */
-const TIME_OR_RULE_BOUND = new Set(["quote.expired", "change.with_qs"]);
+const TIME_OR_RULE_BOUND = new Set(["quote.expired"]);
 const COUNTED = ["crm_leads", "commercial_quotes", "delivery_projects", "change_requests", "purchase_orders", "client_invoices", "supplier_invoices", "books_journals", "work_orders"];
 
 integration("operator CLI sandbox --scenarios: an example of every scenario, in each organization's region (real Postgres)", () => {
@@ -72,7 +73,37 @@ integration("operator CLI sandbox --scenarios: an example of every scenario, in 
       expect(missing.map((row) => `${row.key}: ${row.reason ?? row.status}`)).toEqual([]);
       // The two that can't exist on the day are reported with the reason.
       for (const row of rows.filter((entry) => TIME_OR_RULE_BOUND.has(entry.key) && !entry.reference)) expect(row.reason).toBeTruthy();
-      for (const module of ["sales", "design", "quotations", "projects", "changes", "purchasing", "finance", "ledger"]) expect(rows.some((row) => row.module === module)).toBe(true);
+      for (const module of ["sales", "design", "quotations", "deals", "projects", "changes", "purchasing", "factory", "site", "finance", "ledger", "approvals", "my_day", "portal"])
+        expect(rows.some((row) => row.module === module)).toBe(true);
+      // The approvals feed shows every kind the scenarios wait on, and every test member has something on their day.
+      for (const kind of ["quote_review", "qs_review", "design_review", "receipt", "invoice", "agreement", "deal_finance", "deal_approval", "order", "output", "site_report",
+        "petty_cash", "snag", "bill", "payment_run", "reimbursement", "approval"]) expect(rows.find((row) => row.key === `approval.${kind}`)?.reference, kind).toBeTruthy();
+      expect(rows.filter((row) => row.key.startsWith("my_day.") && row.reference)).toHaveLength(12);
+      // The expired quotation is the one sent today with a validity ending today: the daily expiry marks it tomorrow.
+      expect(rows.find((row) => row.key === "quote.expired")?.reason ?? rows.find((row) => row.key === "quote.expired")?.reference).toBeTruthy();
+    }
+  });
+
+  it("flags the over-budget project in its P&L (the product's own figures), with costs, committed orders and a budget", async () => {
+    const { readProject } = await import("../project-core/project-core.store");
+    const { projectPnlFigures } = await import("../project-core/project-finance.service");
+    for (const slug of [a, b]) {
+      const id = (await workspaceOf(slug))!;
+      const projectId = (await pool.query<{ id: string }>(`SELECT DISTINCT line.project_id AS id FROM purchase_orders purchase JOIN purchase_order_lines line
+        ON line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id WHERE purchase.workspace_id = $1 AND purchase.notes LIKE '%over the budget%'`, [id])).rows[0]?.id;
+      expect(projectId).toBeTruthy();
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [id]);
+        const project = (await readProject(client, id, projectId!))!;
+        const { figures } = await projectPnlFigures(client, id, project) as unknown as { figures: { flags: Array<{ code: string; category?: string }>; actual: unknown; budget?: unknown } };
+        expect(figures.flags.map((flag) => flag.code)).toContain("over_budget");
+      } finally {
+        await client.query("ROLLBACK");
+        client.release();
+      }
+      expect(await count(`SELECT count(*) FROM petty_cash_claims WHERE workspace_id = $1 AND project_id = $2 AND status IN ('approved', 'reimbursed')`, [id, projectId])).toBeGreaterThan(0);
     }
   });
 

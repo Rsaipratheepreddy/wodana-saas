@@ -1548,7 +1548,7 @@ export class ShowcaseSeed {
     const outcome = `Measured ${s.rooms.map((room) => room.toLowerCase()).join(", ")}. ${s.measurement.title} ${(s.measurement.width / 1000).toFixed(1)} m; power where needed.`;
     // The visit is booked first and marked done once its measurements and photo are in (a done visit needs them).
     const visitBody = (version: number, status: "planned" | "completed") => this.validated(SaveSiteVisitDto, {
-      id: visitId, version, title: "Site visit · measurements and photos", note: outcome, assetIds: [], scheduledAt: daysAgo(s.daysAgo - 7).toISOString(), timezone: this.timezone,
+      id: visitId, version, title: "Site visit · measurements and photos", note: outcome, assetIds: [], scheduledAt: daysAgo(Math.max(s.daysAgo - 7, 1)).toISOString(), timezone: this.timezone,
       durationMinutes: 120, assigneeId: designer.userId, location: `${s.title} (fictional address)`, access: "Call the client on arrival.", status, outcome: status === "completed" ? outcome : "",
     });
     await this.step("site visit booked", async () => found(await records(), visitId), async () => site.saveVisit(designer, this.w, caseId, await visitBody(0, "planned")));
