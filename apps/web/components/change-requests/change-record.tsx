@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, Copy, FileText } from "lucide-react";
 import {
-  Badge, Button, EmptyState, ErrorState, FormDialog, IconButton, IconMenuButton, InlineNotice, NumericInput, PageSkeleton, RecordTable, Tabs, TextAreaField, TextInput,
+  Badge, Button, EmptyState, ErrorState, FormDialog, IconButton, IconMenuButton, InlineNotice, NumericInput, PageHeader, PageSkeleton, RecordTable, Tabs, TextAreaField, TextInput,
   type DataGridColumn,
 } from "@/design-system";
 import { useWorkspaceBreadcrumb } from "@/components/workspace/workspace-breadcrumb";
@@ -90,17 +90,13 @@ export function ChangeRecord({ workspaceId, projectId, changeId, initial }: { wo
   };
 
   return <div className={styles.page}>
-    <header className={styles.head}>
-      <div className={styles.title}>
-        <Link className={styles.back} href={`/workspace/projects/${projectId}/scope?view=changes`}>{record.project.reference}</Link>
-        <h1>{change.reference} · {change.title}</h1>
+    <PageHeader title={`${change.reference} · ${change.title}`}
+      eyebrow={<Link className={styles.back} href={`/workspace/projects/${projectId}/scope?view=changes`}>{record.project.reference}</Link>}
+      actions={<div className={styles.actions}>
         <Badge tone={CHANGE_STATUS_TONE[change.status]}>{t(CHANGE_STATUS_LABEL[change.status])}</Badge>
-      </div>
-      <div className={styles.actions}>
         {primary}
         {menu.length ? <IconMenuButton ariaLabel={t("Change actions")} items={menu} onAction={onMenu} /> : null}
-      </div>
-    </header>
+      </div>} />
     {notice ? <InlineNotice tone={notice.tone} message={notice.message} /> : null}
     {change.status === "approved" && change.applyProblem ? <InlineNotice tone="error" title={t("Not applied yet")} message={change.applyProblem} /> : null}
     {link ? <div className={styles.row}><TextInput label={t("Signing link")} value={link} isReadOnly /><IconButton aria-label={t("Copy")} onPress={() => void navigator.clipboard?.writeText(link)}><Copy size={14} /></IconButton></div> : null}
