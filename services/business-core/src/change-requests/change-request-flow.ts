@@ -138,7 +138,8 @@ export function allowedActions(change: { status: ChangeStatus; hasQuote: boolean
   const { status } = change;
   if (status === "draft" && (steer || rights.raiser)) actions.push("edit", "upload");
   if (status === "pricing" && steer) actions.push("edit", "upload");
-  if (status === "draft" && steer) actions.push("price");
+  // Pricing is quotation work (the builder): Sales or the QS.
+  if (status === "draft" && rights.commercial) actions.push("price");
   if (status === "pricing" && rights.commercial && change.qs === "needed") actions.push("send_to_qs");
   if (status === "pricing" && steer && change.qs !== "needed" && change.qs !== "with_qs") actions.push("submit");
   if (status === "pending_approval" && rights.approver) actions.push("approve", "return");

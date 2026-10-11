@@ -495,7 +495,6 @@ export async function decideProjectChange(db: Db, workspaceId: string, current: 
   quote.clientDecision = { ...quoteDecisionEvidence(quote, decision === "approve" ? "accept" : "decline", [], name, decidedAt, note),
     ...(input.method === "signed_link" ? { method: "signed_document" as const } : {}) };
   quote.status = decision === "approve" ? "accepted" : "declined";
-  let payment = "";
   if (decision === "approve") {
     const total = Dec.of(String(acceptedQuoteValue(quote)));
     const project = await changeProject(db, workspaceId, current.projectId!);
@@ -510,11 +509,9 @@ export async function decideProjectChange(db: Db, workspaceId: string, current: 
           // Before the work: due now. With the next milestone: due when it is.
           dueDate: term.requiredForRelease ? day : next?.dueDate ?? "", requiredForRelease: term.requiredForRelease, requiredForProduction: term.requiredForProduction === true,
           status: "pending", proof: "", reference: "" });
-      payment = terms.map((term, index) => `${term.requiredForRelease ? "Bill before the work starts" : `Bill ${term.title.toLowerCase()}`}: ${Dec.of(shares[index]).toFixed(2)} ${quote.currency}`).join(". ");
     } else if (total.cmp(0) < 0 && !(data.credits ?? []).some((credit) => credit.quoteId === quote.id)) {
       data.credits = [...(data.credits ?? []), { id: randomUUID(), quoteId: quote.id, legalEntityId: data.financeContext?.legalEntityId, amount: total.abs().toNumber(), currency: quote.currency,
         status: "pending", reference: "", evidence: "" }];
-      payment = `Credit the client ${total.abs().toFixed(2)} ${quote.currency}`;
     }
   }
   await persistCommercial(db, workspaceId, current.caseId, data, name, `Client ${decision} ${current.reference} (${input.method === "signed_link" ? "signed" : "portal"})`, quote.id, note);
@@ -535,7 +532,7 @@ export async function decideProjectChange(db: Db, workspaceId: string, current: 
   // Applied in the same transaction when it can be; a refusal keeps the client's approval and goes to the project manager.
   await db.query("SAVEPOINT change_request_apply");
   try {
-    await applyProjectChange(db, workspaceId, current.id, null, { payment });
+    await applyProjectChange(db, workspaceId, current.id, null);
     await db.query("RELEASE SAVEPOINT change_request_apply");
   } catch (error) {
     await db.query("ROLLBACK TO SAVEPOINT change_request_apply");
@@ -607,7 +604,7 @@ async function ordersOnRemovedLines(db: Db, workspaceId: string, changeId: strin
  * the stage work and the handover move as the preview said; finance's invoice request is raised where the firm asks
  * for them. Applying an applied change returns it unchanged.
  */
-export async function applyProjectChange(db: Db, workspaceId: string, id: string, actorUserId: string | null, options: { version?: number; payment?: string } = {}) {
+export async function applyProjectChange(db: Db, workspaceId: string, id: string, actorUserId: string | null, options: { version?: number } = {}) {
   const current = await readChangeById(db, workspaceId, id, true);
   if (!current || !current.projectId) throw new NotFoundException("This change request isn't on a project.");
   if (current.status === "applied") return { replayed: true, change: current, outcome: null };
@@ -620,6 +617,10 @@ export async function applyProjectChange(db: Db, workspaceId: string, id: string
     [workspaceId, projectId])).rows[0].userId;
   const data = await loadCommercial(db, workspaceId, project.caseId);
   const quote = variationOf(data, current);
+  // What finance bills or credits for it: its milestones (made when the client accepted it) or the client's credit.
+  const payment = [...data.payments.filter((item) => item.sourceQuoteId === quote.id)
+    .map((item) => `${item.requiredForRelease ? "Bill before the work starts" : `Bill ${item.title}`}: ${Dec.of(item.amount).toFixed(2)} ${item.currency ?? quote.currency}`),
+    ...(data.credits ?? []).filter((credit) => credit.quoteId === quote.id).map((credit) => `Credit the client ${Dec.of(credit.amount).toFixed(2)} ${credit.currency}`)].join(". ");
   const seal = await sealVariation(db, { workspaceId, projectId, caseId: project.caseId, quote, actorUserId: actor });
   const supplies = await packageNewLines(db, workspaceId, projectId, seal.sealId);
 
@@ -674,7 +675,7 @@ export async function applyProjectChange(db: Db, workspaceId: string, id: string
   const change = (await readChangeById(db, workspaceId, id))!;
   const day = async (value: string | null) => (value ? workspaceDay(db, workspaceId, value) : null);
   const outcome: ApplyOutcome = {
-    label: seal.label, payment: options.payment ?? "", orders: orders.map((order) => order.number),
+    label: seal.label, payment, orders: orders.map((order) => order.number),
     added: seal.lines.filter((line) => line.changeOp !== "omit" && line.changeOp !== "move").map((line) => line.title),
     removed: seal.lines.filter((line) => line.changeOp === "omit").map((line) => line.title),
     make: supplies.has("make"), buy: ["buy", "ready_made", "subcontract"].some((supply) => supplies.has(supply)),
