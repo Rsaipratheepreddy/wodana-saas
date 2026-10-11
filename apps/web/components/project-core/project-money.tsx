@@ -1,14 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, DataGrid, EmptyState, ErrorState, FormDialog, InlineNotice, MenuButton, MoneyField, NoResultsState, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { tKey } from "@/lib/i18n/keys";
 import { projectApi } from "@/lib/project-core/client";
 import type { CostEntry, CostSource, PackageMoney, ProjectMoney as Money } from "@/lib/project-core/types";
 import { subtractExact } from "@/lib/purchasing/amounts";
-import { usePercent, useProjectPnl } from "../books/projects-profit";
 import { ProjectHours } from "../hrms/project-hours";
 import { RaiseFinanceRequest, useCanRaiseFinanceRequest } from "../finance-requests/raise-request";
 import { useProjectFormat } from "./format";
@@ -18,9 +15,9 @@ type View = "packages" | "entries" | "hours";
 const plain = (value: string) => (value.includes(".") ? value.replace(/\.?0+$/, "") : value) || "0";
 
 /**
- * A project's money for people who see costs: what the client paid, what was spent and is still
- * committed, the margin, and each package's budget against its costs — or every cost, entry by entry,
- * or the studio's approved hours on it.
+ * Money › Costs, for people who see costs: each package's budget against what's spent and still committed,
+ * or every cost entry by entry, or the studio's approved hours on it. The key figures and the P&L are on
+ * Money › Summary.
  */
 export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId: string; projectId: string; /** The Money tab's views, shown first in the toolbar. */ switcher?: ReactNode }) {
   const t = useT();
@@ -33,9 +30,6 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
   const [editing, setEditing] = useState<PackageMoney | null>(null);
   const [askingFinance, setAskingFinance] = useState(false);
   const canAskFinance = useCanRaiseFinanceRequest(workspaceId);
-  // With the Ledger on for the project's company: the profit the books show so far.
-  const profit = useProjectPnl(workspaceId, projectId);
-  const { percent, points } = usePercent();
   const load = useCallback(async () => {
     try { setState(await api.money(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Money didn't load.")); }
   }, [api, projectId, t]);
@@ -69,7 +63,6 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
 
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!state) return <Skeleton lines={8} shape="rows" />;
-  const income = state.income;
   const entries = state.entries.filter((entry) => !needle || `${entry.description} ${entry.reference ?? ""} ${entry.packageName ?? ""}`.toLocaleLowerCase().includes(needle));
   const packages = state.packages.filter((row) => !needle || packageName(row.name).toLocaleLowerCase().includes(needle));
   const views: Record<View, string> = { packages: t("By package"), entries: t("Every cost"), hours: t("Hours") };
@@ -77,23 +70,6 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
     items={(["packages", "entries", "hours"] as const).map((id) => ({ id, label: views[id] }))} />
     {canAskFinance ? <Button size="compact" onPress={() => setAskingFinance(true)}>{t("Request from Finance")}</Button> : null}</>;
   return <div className={styles.money}>
-    <dl className={styles.facts}>
-      <div><dt>{t("Received")}</dt><dd>{money(income.received, income.currency)}<small>{t("{invoiced} invoiced of {requested} requested", { invoiced: money(income.invoiced, income.currency), requested: money(income.requested, income.currency) })}</small></dd></div>
-      <div><dt>{t("Spent")}</dt><dd>{money(state.spent)}<small>{t("{amount} committed", { amount: money(state.committed) })}</small></dd></div>
-      <div><dt>{t("Budget")}</dt><dd>{money(state.budget)}{state.budget !== null ? <small className={Number(state.forecast) > Number(state.budget) ? styles.over : undefined}>
-        {t("{amount} expected", { amount: money(state.forecast) })}</small> : null}</dd></div>
-      {state.margin !== null ? <div><dt>{t("Margin")}</dt><dd className={Number(state.margin) < 0 ? styles.over : undefined}>{money(state.margin)}
-        {Number(income.agreedNet) > 0 ? <small>{t("{percent}% of {amount} before tax", { percent: (Math.round(Number(state.margin) / Number(income.agreedNet) * 1000) / 10).toString(),
-          amount: money(income.agreedNet, income.currency) })}</small> : null}</dd></div> : null}
-      {profit && profit.profit !== null ? <div><dt>{t(tKey("Profit so far"))}</dt><dd className={profit.profit.startsWith("-") ? styles.over : undefined}>{money(profit.profit, profit.currency)}
-        <small>{profit.marginPercent === null ? t(tKey("Nothing invoiced yet"))
-          : profit.marginVsQuote === null ? t(tKey("{percent} margin"), { percent: percent(profit.marginPercent) })
-          : t(tKey("{percent} margin, {points} pts against the quote"), { percent: percent(profit.marginPercent), points: points(profit.marginVsQuote) })}</small>
-        <small><Link className={styles.ledgerLink} href={profit.links.journals}>{t(tKey("Ledger journals"))}</Link></small></dd></div> : null}
-      {state.available !== null ? <div><dt>{t("Cash in hand")}</dt><dd className={Number(state.available) < 0 ? styles.over : undefined}>{money(state.available)}
-        <small>{t("Received less spent and committed")}</small></dd></div> : null}
-    </dl>
-    {state.margin === null && !state.marginHidden ? <InlineNotice tone="info" message={t("The project is in {project} and costs are in {costs}, so there's no margin here.", { project: income.currency, costs: state.currency })} /> : null}
     {state.uncosted ? <InlineNotice tone="info" message={t("{count} costs have no price or exchange rate yet and aren't counted.", { count: state.uncosted })} /> : null}
     {view === "hours" ? <ProjectHours workspaceId={workspaceId} projectId={projectId} switcher={toolbar} />
       : view === "packages"

@@ -10,6 +10,7 @@ import { ProjectHandover } from "../site/project-handover";
 import { ProjectWarranty } from "../site/project-warranty";
 import { ProjectClientMoney } from "./project-client-money";
 import { ProjectMoney } from "./project-money";
+import { ProjectMoneySummary } from "./project-money-summary";
 import styles from "./project-core.module.css";
 
 /** A tab's view in the address (`?view=`), so a link or a notice opens the right one and the back button works. */
@@ -27,18 +28,20 @@ function useView<V extends string>(views: readonly V[], fallback: V) {
   return [view, go] as const;
 }
 
-type MoneyView = "client" | "costs" | "petty-cash";
+type MoneyView = "summary" | "client" | "costs" | "petty-cash";
 
 /**
- * Money: the client side (milestones, invoices, receipts), the costs (budgets per package, every cost, hours)
- * and petty cash. Each shows only to the people who see it; everyone on the team sees their own petty cash.
+ * Money: the summary (key figures, the P&L by category and the cash flow), the client side (milestones, invoices,
+ * receipts), the costs (budgets per package, every cost, hours) and petty cash. Each shows only to the people who see
+ * it; everyone on the team sees their own petty cash.
  */
 export function ProjectMoneyTab({ workspaceId, projectId, rights }: { workspaceId: string; projectId: string; rights: MoneyRights }) {
   const t = useT();
-  const views = [...(rights.client ? ["client" as const] : []), ...(rights.costs ? ["costs" as const] : []), "petty-cash" as const];
-  const [view, go] = useView<MoneyView>(views, rights.costs ? "costs" : rights.client ? "client" : "petty-cash");
-  const labels: Record<MoneyView, string> = { client: t("Client"), costs: t("Costs"), "petty-cash": t("Petty cash") };
+  const views = [...(rights.costs ? ["summary" as const] : []), ...(rights.client ? ["client" as const] : []), ...(rights.costs ? ["costs" as const] : []), "petty-cash" as const];
+  const [view, go] = useView<MoneyView>(views, rights.costs ? "summary" : rights.client ? "client" : "petty-cash");
+  const labels: Record<MoneyView, string> = { summary: t("Summary"), client: t("Client"), costs: t("Costs"), "petty-cash": t("Petty cash") };
   const switcher = views.length > 1 ? <SegmentedControl label={t("Money")} value={view} onChange={go} options={views.map((id) => ({ id, label: labels[id] }))} /> : null;
+  if (view === "summary") return <ProjectMoneySummary workspaceId={workspaceId} projectId={projectId} switcher={switcher} />;
   if (view === "client") return <ProjectClientMoney workspaceId={workspaceId} projectId={projectId} switcher={switcher} />;
   if (view === "costs") return <ProjectMoney workspaceId={workspaceId} projectId={projectId} switcher={switcher} />;
   return <ProjectPettyCash workspaceId={workspaceId} projectId={projectId} switcher={switcher} />;

@@ -28,6 +28,7 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
   const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
   const [rows, setRows] = useState<ProjectRow[] | null>(null);
   const [canStart, setCanStart] = useState(false);
+  const [canSeeProfit, setCanSeeProfit] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("open");
@@ -36,7 +37,7 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
   const [starting, setStarting] = useState<string | null>(initialStart ?? null);
 
   const load = useCallback(async () => {
-    try { const next = await api.list(); setRows(next.projects); setCanStart(next.canStart); setError(""); }
+    try { const next = await api.list(); setRows(next.projects); setCanStart(next.canStart); setCanSeeProfit(Boolean(next.canSeeProfit)); setError(""); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Projects didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -98,6 +99,9 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
       searchValue={search}
       searchLabel={t("Search projects")}
       filters={filters}
+      // Every project's margins and flags, for the people who see project costs.
+      menuActions={canSeeProfit ? [{ id: "profitability", label: t("Profitability") }] : undefined}
+      onMenuAction={(id) => { if (id === "profitability") router.push("/workspace/projects/profitability"); }}
       emptyContent={search.trim() || health ? <NoResultsState onClear={() => { setSearch(""); setHealth(null); }} />
         : <EmptyState title={filter === "open" ? t("No running projects") : filter === "on_hold" ? t("Nothing on hold") : t("No closed projects")}
             description={filter === "open" ? t("A project starts from an accepted quotation.") : undefined}

@@ -87,6 +87,22 @@ describe("projects", () => {
     expect(router.replace).toHaveBeenCalledWith("/workspace/projects");
   });
 
+  it("opens Profitability from the table options for people who see project costs, and only for them", async () => {
+    const rows: ProjectRow[] = [{ ...detail().project, stage: null, lead: null, next: null }];
+    mount(() => ({ projects: rows, canStart: false, canSeeProfit: true }));
+    const { unmount } = render(<DesignSystemProvider><ProjectsPage workspaceId="w" /></DesignSystemProvider>);
+    await screen.findByRole("link", { name: "Villa 12" });
+    await userEvent.click(screen.getByRole("button", { name: "Table options" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Profitability" }));
+    expect(router.push).toHaveBeenCalledWith("/workspace/projects/profitability");
+    unmount();
+    mount(() => ({ projects: rows, canStart: false }));
+    render(<DesignSystemProvider><ProjectsPage workspaceId="w" /></DesignSystemProvider>);
+    await screen.findByRole("link", { name: "Villa 12" });
+    await userEvent.click(screen.getByRole("button", { name: "Table options" }));
+    expect(screen.queryByRole("button", { name: "Profitability" })).toBeNull();
+  });
+
   it("works the current stage: confirms a check, then finishes it; sends the project's version with every change", async () => {
     let current = detail();
     const fetcher = mount((url, body) => {

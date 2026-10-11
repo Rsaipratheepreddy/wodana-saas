@@ -106,6 +106,7 @@ function routeTable() {
     { id: "catalog", label: "Catalog", href: "/workspace/catalogs", nav: "resources", paths: ["/workspace/catalogs", "/workspace/pre-projects/catalogs", "/workspace/pre-projects/master-data"] },
     { id: "projects", label: "Projects", href: "/workspace/projects", nav: "projects", paths: ["/workspace/projects"] },
     { id: "project", label: "Project", href: "/workspace/projects", parent: "projects", record: true, pattern: new RegExp(`^/workspace/projects/${UUID}(/|$)`, "i") },
+    { id: "projects-profitability", label: "Profitability", href: "/workspace/projects/profitability", parent: "projects", paths: ["/workspace/projects/profitability"] },
     { id: "finance", label: "Finance", href: "/workspace/finance", nav: "finance", paths: ["/workspace/finance"] },
     { id: "reports", label: "Reports", href: "/workspace/reports", nav: "reports", paths: ["/workspace/reports"] },
     // The Ledger: its reports, journals and accounts are tabs of one page (/workspace/ledger/<tab>/<record>).

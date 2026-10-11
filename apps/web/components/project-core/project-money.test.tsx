@@ -33,13 +33,11 @@ const grid = (name: string) => screen.findByRole("grid", { name }).catch(() => s
 describe("project money", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("shows what came in and went out, the margin, and each package against its budget", async () => {
+  it("shows each package against its budget (the key figures are on the summary)", async () => {
     mount(() => state());
     render(<DesignSystemProvider><ProjectMoney workspaceId="w" projectId="p1" /></DesignSystemProvider>);
     const table = await grid("Budget by package");
-    expect(screen.getByText("Received").closest("div")).toHaveTextContent(/3,925/);
-    expect(screen.getByText("Margin").closest("div")).toHaveTextContent(/5,562.*70\.9% of/);
-    expect(screen.getByText("Cash in hand").closest("div")).toHaveTextContent(/1,637/);
+    expect(screen.queryByText("Cash in hand")).toBeNull();
     expect(screen.getByText(/1 costs have no price or exchange rate/)).toBeInTheDocument();
     expect(table).toHaveTextContent(/Lights.*520.*20.00 over/);
     expect(table).toHaveTextContent(/Fitting.*100/);
@@ -77,42 +75,11 @@ describe("project money", () => {
     expect(String(fetcher.mock.calls.at(-1)![0])).toContain("/api/project-core/projects/p1/money/budgets");
   });
 
-  it("shows the profit so far from the Ledger, against the quote, when the Ledger is on for the project's company", async () => {
-    const pnl = { enabled: true, projectId: "p1", reference: "PRJ-0012", name: "Villa 12", clientName: "Maya", status: "active", company: { id: "e1", name: "Studio LLC" }, currency: "AED",
-      asOf: "2026-10-08", marginHidden: false, revenue: "90000.0000", costs: {}, totalCost: "45250.0000", profit: "44750.0000", marginPercent: "49.72", quotedValue: "100000.0000",
-      quoteCurrency: "AED", quotedCost: "70000.0000", quotedMarginPercent: "30.00", marginVsQuote: "19.72", committed: "1000.0000", committedCurrency: "AED",
-      reconciliation: { moneySpent: "45250.0000", moneyCurrency: "AED", uncosted: 0, difference: "0.0000", matches: true },
-      links: { project: "/workspace/projects/p1/money", journals: "/workspace/ledger/journals?project=p1" } };
-    const fetcher = mount((url) => (url.includes("/api/books/projects/p1/pnl") ? pnl : state()));
-    render(<DesignSystemProvider locale="en"><ProjectMoney workspaceId="w" projectId="p1" /></DesignSystemProvider>);
-    const card = (await screen.findByText("Profit so far")).closest("div")!;
-    expect(card).toHaveTextContent(/44,750\.00.*49\.72% margin, \+19\.72 pts against the quote/);
-    expect(within(card).getByRole("link", { name: "Ledger journals" })).toHaveAttribute("href", "/workspace/ledger/journals?project=p1");
-    expect(fetcher.mock.calls.map((call) => String(call[0]))).toContain("/api/books/projects/p1/pnl?workspaceId=w");
-    // The Money tab's own figures stay as they were.
-    expect(screen.getByText("Margin").closest("div")).toHaveTextContent(/5,562/);
-  });
-
-  it("keeps today's Money tab when the Ledger is off, can't be read, or the person doesn't see margins", async () => {
-    for (const ledger of [{ status: 200, body: { enabled: false, projectId: "p1", reference: "PRJ-1", name: "Villa 12", company: null } }, { status: 403, body: { message: "No" } },
-      { status: 200, body: { enabled: true, marginHidden: true, profit: null, marginPercent: null, marginVsQuote: null, currency: "AED", links: { journals: "/x" } } }]) {
-      vi.stubGlobal("fetch", vi.fn(async (url: string) => (url.includes("/api/books/")
-        ? { ok: ledger.status === 200, status: ledger.status, json: async () => ledger.body } : { ok: true, status: 200, json: async () => state() })));
-      const { unmount } = render(<DesignSystemProvider><ProjectMoney workspaceId="w" projectId="p1" /></DesignSystemProvider>);
-      await grid("Budget by package");
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(screen.queryByText("Profit so far")).toBeNull();
-      expect(screen.getByText("Cash in hand")).toBeInTheDocument();
-      unmount();
-    }
-  });
-
-  it("shows budgets read-only and no margin when the project is in another currency", async () => {
+  it("shows budgets read-only to people who don't manage costs", async () => {
     mount(() => state({ canManage: false, margin: null, available: null, income: { ...state().income, currency: "USD" } }));
     render(<DesignSystemProvider><ProjectMoney workspaceId="w" projectId="p1" /></DesignSystemProvider>);
     const table = await grid("Budget by package");
     expect(within(table).queryByRole("button", { name: "Set budget" })).toBeNull();
-    expect(screen.getByText(/The project is in USD and costs are in AED/)).toBeInTheDocument();
     expect(screen.queryByText("Margin")).toBeNull();
   });
 });

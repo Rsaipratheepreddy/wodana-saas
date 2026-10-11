@@ -149,8 +149,59 @@ export type DrawingsState = {
 };
 
 export type CostSource = "stock" | "service" | "price_difference" | "charge" | "labour" | "petty_cash";
+/** What a cost was for: the project P&L's categories. */
+export type CostCategory = "materials" | "factory" | "subcontract_labour" | "site_expenses" | "other";
 /** One cost the project carries, in the workspace's currency, from the record that caused it. */
-export type CostEntry = { key: string; on: string; source: CostSource; description: string; reference: string | null; packageId: string | null; packageName: string | null; amount: string };
+export type CostEntry = { key: string; on: string; source: CostSource; category?: CostCategory; description: string; reference: string | null; packageId: string | null; packageName: string | null;
+  amount: string };
+
+/** One cost category of the P&L: the quotation's estimate against what's spent, committed and still expected. Money is decimal text. */
+export type PnlCategory = {
+  category: CostCategory; budget: string | null; actual: string; committed: string; remaining: string; forecast: string; variance: string | null; usedPercent: string | null; over: boolean;
+};
+export type PnlFlag =
+  | { code: "over_budget"; category: CostCategory; amount: string }
+  | { code: "forecast_loss"; amount: string }
+  | { code: "below_target"; forecastPercent: string; target: string }
+  | { code: "estimate_incomplete"; count: number }
+  | { code: "no_estimate" };
+export type ContractPart = { sealId: string; label: string; net: string; total: string; acceptedAt: string };
+export type PnlFigures = {
+  currency: string; contractCurrency: string; comparable: boolean;
+  contract: { baselineNet: string; baselineTotal: string; variationsNet: string; variationsTotal: string; variations: ContractPart[]; net: string; total: string };
+  revenue: { invoicedNet: string; invoicedTotal: string; received: string };
+  categories: PnlCategory[];
+  totals: { budget: string | null; actual: string; committed: string; remaining: string; forecast: string };
+  margin: { toDate: string | null; toDatePercent: string | null; forecast: string | null; forecastPercent: string | null; target: string | null };
+  flags: PnlFlag[];
+};
+/** A project's P&L (Money › Summary), with the figures it's read from and how they compare with the Ledger. */
+export type ProjectPnl = PnlFigures & {
+  projectId: string; reference: string; name: string; asOf: string;
+  estimate: { lines: number; missing: number }; uncosted: number; marginHidden: boolean;
+  basis: { source: "operational"; ledger: null | { company: string; currency: string; revenue: string; cost: string; revenueDifference: string | null; costDifference: string | null;
+    matches: boolean | null; journals: string } };
+};
+export type CashMonth = { month: string; in: string; out: string; net: string; cumulativeIn: string; cumulativeOut: string; balance: string };
+export type UpcomingBucket = "overdue" | "days_0_30" | "days_31_60" | "days_61_90";
+export type UpcomingItem = { key: string; direction: "in" | "out"; kind: "milestone" | "bill" | "order" | "petty_cash"; label: string; due: string | null; amount: string };
+/** A project's cash: money in and out by month, its wallet, what's due in 90 days and the spending guard. */
+export type ProjectCashFlow = {
+  projectId: string; currency: string; timeZone: string; asOf: string;
+  months: CashMonth[];
+  wallet: { received: string; paid: string; balance: string };
+  upcoming: { buckets: Array<{ key: UpcomingBucket; from: string | null; to: string; in: string; out: string; net: string }>; undated: { in: string; out: string }; items: UpcomingItem[] };
+  spendingLock: { guard: "off" | "warn" | "strict"; available: string | null; state: "off" | "clear" | "warn" | "locked" };
+  unconverted: number;
+};
+export type ProfitabilityRow = {
+  projectId: string; reference: string; name: string; clientName: string; status: ProjectStatus; href: string;
+  contractCurrency: string; contractNet: string; variationsNet: string; revenue: string; received: string;
+  cost: string; committed: string; forecastCost: string; budget: string | null;
+  margin: string | null; marginPercent: string | null; forecastMargin: string | null; forecastMarginPercent: string | null;
+  flags: PnlFlag[]; comparable: boolean;
+};
+export type Profitability = { currency: string; marginHidden: boolean; target: string | null; categories: CostCategory[]; rows: ProfitabilityRow[] };
 /** A package's budget against what's spent and still committed; `id` null for costs not in a package. */
 export type PackageMoney = { id: string | null; name: string | null; budget: string | null; budgetVersion: number; budgetNote: string; spent: string; committed: string; forecast: string; over: boolean };
 /** A project's money: the client side in the project's currency, costs in the workspace's. */

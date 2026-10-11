@@ -10,7 +10,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "labour-rates") return ["GET", "POST"].includes(method);
   if (path.length === 2 && path[0] === "work-templates" && /^[a-z_]{1,12}$/.test(path[1])) return method === "PUT";
   if (path.length === 3 && path[0] === "routes" && UUID.test(path[1]) && path[2] === "archive") return method === "POST";
-  if (path.length === 1 && path[0] === "ready") return method === "GET";
+  if (path.length === 1 && (path[0] === "ready" || path[0] === "profitability")) return method === "GET";
   if (path.length === 2 && path[0] === "start" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 1 && (path[0] === "projects" || path[0] === "work")) return method === "GET";
   if (path.length === 2 && path[0] === "work" && path[1] === "insights") return method === "GET";
@@ -20,7 +20,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 6 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && UUID.test(path[3]) && path[4] === "files" && UUID.test(path[5])) return method === "POST";
   if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && path[3] === "files" && UUID.test(path[4])) return method === "GET";
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "budgets") return method === "PUT";
-  if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "milestones") return method === "GET";
+  if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && ["milestones", "pnl", "cash-flow"].includes(path[3])) return method === "GET";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && ["seals", "lines", "work"].includes(path[2]) && UUID.test(path[3])) return method === "GET";
   if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work" && UUID.test(path[3]) && path[4] === "ripple") return method === "GET";

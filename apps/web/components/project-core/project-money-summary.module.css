@@ -1,0 +1,20 @@
+/* Money › Summary: key figures, the P&L by category and the cash, one after the other. */
+.summary { display: grid; gap: var(--wd-phi-3); min-inline-size: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.section { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--wd-space-3) var(--wd-space-6); margin: 0; }
+.facts > div { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.facts dd { margin: 0; font-size: var(--wd-text-lg); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.facts small { display: block; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.totals { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-6); margin: 0; justify-content: flex-end; }
+.totals > div { display: flex; gap: var(--wd-space-2); align-items: baseline; }
+.totals dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.totals dd { margin: 0; font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; }
+.flags { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.basis { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.danger { color: var(--wd-color-danger); }
+.muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.link { color: inherit; text-decoration: underline; }
+.link:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }

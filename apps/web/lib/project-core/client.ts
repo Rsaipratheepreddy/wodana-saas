@@ -1,5 +1,5 @@
 import type { ProjectReadiness } from "@/lib/readiness/types";
-import type { DrawingsState, CloseOut, LabourRates, LineHistoryEntry, Milestones, ProjectMoney, ProjectOverview, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { DrawingsState, CloseOut, LabourRates, LineHistoryEntry, Milestones, Profitability, ProjectCashFlow, ProjectMoney, ProjectOverview, ProjectPnl, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -28,7 +28,7 @@ export function projectApi(workspaceId: string) {
   const path = (value: string) => projectPath(workspaceId, value);
   return {
     workspaceId,
-    list: () => request<{ projects: ProjectRow[]; canStart: boolean }>(path("projects")),
+    list: () => request<{ projects: ProjectRow[]; canStart: boolean; canSeeProfit?: boolean }>(path("projects")),
     ready: () => request<{ cases: ReadyCase[] }>(path("ready")),
     get: (projectId: string) => request<ProjectDetail>(path(`projects/${projectId}`)),
     scope: (projectId: string) => request<LiveScope>(path(`projects/${projectId}/scope`)),
@@ -49,6 +49,12 @@ export function projectApi(workspaceId: string) {
       request<ProjectMoney>(path(`projects/${projectId}/money/budgets`), "PUT", input),
     /** The Overview: blockers, the plan per stage, key dates, money at a glance and recent activity. */
     overview: (projectId: string) => request<ProjectOverview>(path(`projects/${projectId}/overview`)),
+    /** The project's P&L: agreed value, revenue, costs by category against the quotation's estimate, margins and flags (Money › Summary). */
+    pnl: (projectId: string) => request<ProjectPnl>(path(`projects/${projectId}/money/pnl`)),
+    /** The project's cash: in and out by month, the wallet, what's due in 90 days and the spending guard (Money › Summary). */
+    cashFlow: (projectId: string) => request<ProjectCashFlow>(path(`projects/${projectId}/money/cash-flow`)),
+    /** Every project the person sees the costs of, with its margins and flags (Projects › Profitability). */
+    profitability: () => request<Profitability>(path("profitability")),
     /** The project's payment milestones with their invoice and receipt (Money → Client). */
     milestones: (projectId: string) => request<Milestones>(path(`projects/${projectId}/money/milestones`)),
     /** What cancelling the project needs settled first, and what it does by itself. */

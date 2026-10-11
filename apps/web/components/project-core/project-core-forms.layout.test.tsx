@@ -90,6 +90,7 @@ describe("Project form dialogs", () => {
       "project-settings.module.css": /^\.taskDetails$/,
       // Read-only money facts.
       "project-money.module.css": /^\.facts$/,
+      "project-money-summary.module.css": /^\.facts$/,
       // The overview's at-a-glance panels and blocker cards.
       "project-overview.module.css": /^\.(glance|blockers ul)$/,
     };
