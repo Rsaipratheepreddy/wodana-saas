@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json as jsonlib
 import re
+from datetime import date as CalendarDate
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal, Optional
 from urllib.parse import quote, urlencode, urlparse
@@ -47,6 +48,9 @@ ZOHO_POSTING_SCOPES = (
     "ZohoBooks.vendorpayments.DELETE",
     "ZohoBooks.expenses.CREATE",
 )
+# What financial statements read from Zoho Books: the Profit and Loss and Cash Flow reports.
+# Connections made before statements existed lack it and must reconnect to read them.
+ZOHO_REPORT_SCOPES = ("ZohoBooks.reports.READ",)
 SCOPES = {
     "quickbooks": ["com.intuit.quickbooks.accounting"],
     "zoho_books": [
@@ -61,10 +65,19 @@ SCOPES = {
         # Chart of accounts, for the account mapping dropdowns.
         "ZohoBooks.accountants.READ",
         *ZOHO_POSTING_SCOPES,
+        *ZOHO_REPORT_SCOPES,
     ],
     "whatsapp": ["whatsapp_business_management", "whatsapp_business_messaging"],
 }
 AccountingProvider = Literal["quickbooks", "zoho_books"]
+ReportKind = Literal["profit_and_loss", "cash_flow"]
+ReportBasis = Literal["accrual", "cash"]
+ReportColumns = Literal["total", "month"]
+# Each provider's report paths (fixed: never built from caller input).
+_REPORT_PATHS: dict[str, dict[str, str]] = {
+    "quickbooks": {"profit_and_loss": "/reports/ProfitAndLoss", "cash_flow": "/reports/CashFlow"},
+    "zoho_books": {"profit_and_loss": "/reports/profitandloss", "cash_flow": "/reports/cashflow"},
+}
 CallFailure = Literal[
     "timeout", "network", "auth", "rate_limited", "unavailable", "rejected", "invalid_response"
 ]
@@ -121,6 +134,27 @@ def exact_json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [exact_json_value(item) for item in value]
     return value
+
+
+def exact_text(value: Any) -> Any:
+    """A provider report made safe to pass on: every number becomes exact decimal text.
+
+    Reports are read with Decimal (never a double), so "1234.50" stays "1234.50". Booleans and text
+    are left as they are.
+    """
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError("A report amount is not a finite number")
+        return format(value, "f")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): exact_text(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [exact_text(item) for item in value]
+    raise ValueError("A report holds a value that is not JSON")
 
 
 def _call_error_facts(
@@ -400,6 +434,76 @@ class ProviderClient:
         if failed:
             raise ProviderCallError("rejected", status=status, provider_code=code, hint=hint)
         return data
+
+    async def books_report(
+        self,
+        credential: ProviderCredential,
+        report: ReportKind,
+        periods: list[tuple[CalendarDate, CalendarDate]],
+        *,
+        basis: ReportBasis = "accrual",
+        columns: ReportColumns = "total",
+    ) -> dict[str, Any]:
+        """A company's Profit and Loss or Cash Flow report, exactly as the provider computed it.
+
+        QuickBooks reads the whole span in one call (by month when asked); Zoho Books reads one
+        call per period. Amounts come back as exact decimal text and the currency is the provider
+        company's own. Business Core maps the rows into its statement shape; nothing is logged.
+        """
+        provider = credential.provider
+        if provider != "quickbooks" and provider != "zoho_books":
+            raise ValueError("Reports are read from QuickBooks and Zoho Books only")
+        if not periods:
+            raise ValueError("A report needs at least one period")
+        path = _REPORT_PATHS[provider][report]
+        if provider == "quickbooks":
+            start, end = periods[0][0], periods[-1][1]
+            params: dict[str, Any] = {
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "summarize_column_by": "Month" if columns == "month" else "Total",
+            }
+            if report == "profit_and_loss":
+                params["accounting_method"] = "Cash" if basis == "cash" else "Accrual"
+            data = await self.books_request(credential, "GET", path, params=params)
+            header = data.get("Header")
+            currency = header.get("Currency") if isinstance(header, dict) else None
+            if not isinstance(currency, str) or not currency:
+                preferences = await self.books_request(credential, "GET", "/preferences")
+                home = (
+                    preferences.get("Preferences", {}).get("CurrencyPrefs", {}).get("HomeCurrency")
+                )
+                currency = home.get("value") if isinstance(home, dict) else None
+            return {
+                "provider": provider,
+                "currency": currency if isinstance(currency, str) else None,
+                "reports": [
+                    {"from": start.isoformat(), "to": end.isoformat(), "data": exact_text(data)}
+                ],
+            }
+        organization = await self.books_request(
+            credential, "GET", f"/organizations/{quote(credential.account_id, safe='')}"
+        )
+        details = organization.get("organization")
+        currency = details.get("currency_code") if isinstance(details, dict) else None
+        reports: list[dict[str, Any]] = []
+        for start, end in periods:
+            params = {
+                "from_date": start.isoformat(),
+                "to_date": end.isoformat(),
+                "filter_by": "TransactionDate.CustomDate",
+            }
+            if report == "profit_and_loss":
+                params["cash_based"] = "true" if basis == "cash" else "false"
+            data = await self.books_request(credential, "GET", path, params=params)
+            reports.append(
+                {"from": start.isoformat(), "to": end.isoformat(), "data": exact_text(data)}
+            )
+        return {
+            "provider": provider,
+            "currency": currency if isinstance(currency, str) else None,
+            "reports": reports,
+        }
 
     async def list_records(
         self, credential: ProviderCredential, kind: str, page: int = 1

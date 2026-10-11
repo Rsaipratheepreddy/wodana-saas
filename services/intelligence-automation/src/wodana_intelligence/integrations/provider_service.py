@@ -5,7 +5,7 @@ import logging
 import secrets
 from collections.abc import Mapping
 from contextlib import suppress
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -15,7 +15,17 @@ from wodana_intelligence.config import Settings
 from wodana_intelligence.integrations.business_core import BusinessCoreClient, BusinessCoreError
 from wodana_intelligence.integrations.delivery_allowlist import NOT_ALLOWLISTED
 from wodana_intelligence.integrations.google_service import IntegrationFlowError
-from wodana_intelligence.integrations.provider_client import SCOPES, ZOHO_REGIONS, ProviderClient
+from wodana_intelligence.integrations.provider_client import (
+    SCOPES,
+    ZOHO_REGIONS,
+    ZOHO_REPORT_SCOPES,
+    AccountingProvider,
+    ProviderCallError,
+    ProviderClient,
+    ReportBasis,
+    ReportColumns,
+    ReportKind,
+)
 from wodana_intelligence.integrations.provider_models import (
     InvoiceRequest,
     OperationRequest,
@@ -42,6 +52,25 @@ def guard_delivery(
         raise IntegrationFlowError(
             NOT_ALLOWLISTED, "This recipient isn't on DELIVERY_ALLOWLIST in this environment", 403
         )
+
+
+def report_failure(error: ProviderCallError) -> IntegrationFlowError:
+    """A failed report read as a fixed code and sentence: expired access asks for a reconnect."""
+    if error.failure == "auth":
+        return IntegrationFlowError(
+            "reconnect_required", "Reconnect the accounting connection to read its reports", 409
+        )
+    if error.failure == "rate_limited":
+        return IntegrationFlowError(
+            "provider_rate_limited", "The accounting system is busy. Try again in a minute.", 429
+        )
+    if error.failure in ("timeout", "network", "unavailable"):
+        return IntegrationFlowError(
+            "provider_unavailable", "The accounting system didn't answer. Try again shortly.", 502
+        )
+    return IntegrationFlowError(
+        "provider_request_failed", "The accounting system refused the report request.", 502
+    )
 
 
 class ProviderService:
@@ -614,6 +643,53 @@ class ProviderService:
         try:
             _, credential = await self.runtime(workspace, connection, headers)
             result = await self.client.list_records(credential, kind, page)
+            await self.core.record_health(connection, workspace, operation, True)
+            return result
+        except Exception as error:
+            with suppress(Exception):
+                await self.core.record_health(
+                    connection, workspace, operation, False,
+                    (
+                        error.code
+                        if isinstance(error, IntegrationFlowError)
+                        else "provider_unavailable"
+                    ),
+                )
+            raise
+
+    async def accounting_report_internal(
+        self,
+        workspace: str,
+        connection: str,
+        provider: AccountingProvider,
+        report: ReportKind,
+        periods: list[tuple[date, date]],
+        *,
+        basis: ReportBasis = "accrual",
+        columns: ReportColumns = "total",
+    ) -> dict[str, Any]:
+        """Business Core's statements read a company's report (Business Core checked who asked).
+
+        Failures leave here as fixed codes and sentences: never the provider's text, the request
+        URL or a token. Each read records the connection's health like any other provider use.
+        """
+        operation = f"provider.reports.{report}"
+        try:
+            _, credential = await self.runtime_internal(workspace, provider, connection)
+            if (
+                provider == "zoho_books"
+                and credential.scopes
+                and not set(ZOHO_REPORT_SCOPES).issubset(credential.scopes)
+            ):
+                raise IntegrationFlowError(
+                    "reconnect_required", "Reconnect Zoho Books so Wodana can read its reports", 409
+                )
+            try:
+                result = await self.client.books_report(
+                    credential, report, periods, basis=basis, columns=columns
+                )
+            except ProviderCallError as error:
+                raise report_failure(error) from None
             await self.core.record_health(connection, workspace, operation, True)
             return result
         except Exception as error:

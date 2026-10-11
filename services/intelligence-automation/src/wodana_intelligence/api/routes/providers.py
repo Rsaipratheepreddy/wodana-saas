@@ -2,13 +2,14 @@ import base64
 import hashlib
 import hmac
 import json
-from typing import Annotated, Any
+from datetime import date
+from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse, Response
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from wodana_intelligence.api.routes.google_workspace import actor_headers
 from wodana_intelligence.container import get_google_integration_service, get_provider_service
@@ -479,6 +480,48 @@ async def test_platform_credentials(
     if not result.ok and not app.versions:
         return {"ok": False, "reason": "store_unavailable", "version": None}
     return {"ok": result.ok, "reason": result.reason, "version": app.versions.get(vendor)}
+
+
+class ReportPeriod(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    start: date = Field(alias="from")
+    end: date = Field(alias="to")
+
+
+class AccountingReportRequest(BaseModel):
+    workspaceId: UUID
+    connectionId: UUID
+    provider: Literal["quickbooks", "zoho_books"]
+    report: Literal["profit_and_loss", "cash_flow"]
+    basis: Literal["accrual", "cash"] = "accrual"
+    columns: Literal["total", "month"] = "total"
+    periods: list[ReportPeriod] = Field(min_length=1, max_length=24)
+
+    @model_validator(mode="after")
+    def periods_in_order(self) -> "AccountingReportRequest":
+        previous: date | None = None
+        for period in self.periods:
+            if period.end < period.start or (previous is not None and period.start <= previous):
+                raise ValueError("Periods must run forward without overlapping")
+            previous = period.end
+        return self
+
+
+@router.post("/internal/accounting/reports", include_in_schema=False)
+async def accounting_report(
+    payload: AccountingReportRequest, request: Request, service: Service
+) -> dict[str, Any]:
+    """Business Core's financial statements read a connected company's P&L or cash flow."""
+    require_internal(request, service)
+    return await service.accounting_report_internal(
+        str(payload.workspaceId),
+        str(payload.connectionId),
+        payload.provider,
+        payload.report,
+        [(period.start, period.end) for period in payload.periods],
+        basis=payload.basis,
+        columns=payload.columns,
+    )
 
 
 class PortalOtpDelivery(BaseModel):
