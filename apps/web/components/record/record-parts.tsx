@@ -22,18 +22,19 @@ export type TimelineStep = {
 
 /**
  * The stages of a record as steps (✓ done · ● now · ○ next): side by side when there is room, one under the
- * other on a phone. Each step names its people (avatars) and its date.
+ * other on a phone. Each step names its people (avatars) and its date. `layout="list"` keeps them one under
+ * the other at every width (a full list opened from a compact summary).
  */
-export function RecordTimeline({ label, steps }: { label: string; steps: TimelineStep[] }) {
+export function RecordTimeline({ label, steps, layout = "steps" }: { label: string; steps: TimelineStep[]; layout?: "steps" | "list" }) {
   const t = useT();
   if (!steps.length) return null;
-  return <div className={styles.timelineFrame} data-many={steps.length > 6 || undefined}><ol className={styles.timeline} aria-label={label} style={{ "--steps": steps.length } as CSSProperties}>
+  return <div className={styles.timelineFrame} data-many={steps.length > 6 || undefined} data-layout={layout === "list" ? "list" : undefined}><ol className={styles.timeline} aria-label={label} style={{ "--steps": steps.length } as CSSProperties}>
     {steps.map((step) => {
       const Mark = step.state === "done" ? Check : step.state === "current" ? CircleDot : step.state === "skipped" ? Minus : Circle;
       return <li key={step.id} data-state={step.state} aria-current={step.state === "current" ? "step" : undefined}>
         <span className={styles.mark} aria-hidden="true"><Mark size={step.state === "done" ? 12 : 14} strokeWidth={step.state === "done" ? 3 : 2} /></span>
         <span className={styles.stepBody}>
-          <span className={styles.stepLabel}>{step.label}<span className="wd-visually-hidden"> · {step.state === "done" ? t("Done") : step.state === "current" ? t("Now") : step.state === "skipped" ? t("Skipped") : t("Not started")}</span></span>
+          <span className={styles.stepLabel} title={step.label}>{step.label}<span className="wd-visually-hidden"> · {step.state === "done" ? t("Done") : step.state === "current" ? t("Now") : step.state === "skipped" ? t("Skipped") : t("Not started")}</span></span>
           {step.date ? <span className={styles.stepDate}>{step.date}</span> : null}
           {step.late ? <span className={styles.stepLate}>{step.late}</span> : step.detail ? <span className={styles.stepDate}>{step.detail}</span> : null}
           {step.people?.length ? <span className={styles.stepPeople}>{step.people.map((person) => <span key={person.id} title={person.name}><Avatar name={person.name} seed={person.id} size="sm" /></span>)}</span> : null}
@@ -65,9 +66,9 @@ export function PersonChip({ id, name }: { id: string; name: string }) {
   return <span className={styles.chip}><span aria-hidden="true"><Avatar name={name} seed={id} size="sm" /></span><span>{name}</span></span>;
 }
 
-/** The people on a record, one row each. */
-export function PeopleList({ label, children }: { label: string; children: ReactNode }) {
-  return <ul className={styles.people} aria-label={label}>{children}</ul>;
+/** The people on a record, one row each. `compact`: shorter rows, the ways to reach someone on hover or focus. */
+export function PeopleList({ label, children, compact = false }: { label: string; children: ReactNode; compact?: boolean }) {
+  return <ul className={styles.people} aria-label={label} data-compact={compact || undefined}>{children}</ul>;
 }
 
 export type Fact = { label: string; value: ReactNode; tone?: "danger" | "success" };

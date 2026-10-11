@@ -78,8 +78,10 @@ export function ProjectStages({ detail, run, onTeam, plan, today, api }: {
   </>;
 }
 
-export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, running }: {
+export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, running, showFix = true }: {
   check: EvaluatedCheck; stage: ProjectStage; run: Run; projectId: string; onTeam: () => void; roleLabel: (key: string | null) => string; running: boolean;
+  /** False when the next-step card's own button already does this check's fix, so it isn't offered twice. */
+  showFix?: boolean;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -112,7 +114,7 @@ export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, runn
     : check.kind === "permit_collected" ? t("Building permit collected")
     : t("Production payment verified");
   // Each fix opens where it's done, filtered to this project.
-  const fix = check.passed || !live ? null
+  const fix = check.passed || !live || !showFix ? null
     : check.kind === "payment_verified" ? <Link href={`${projectHref}/money?view=client`}>{t("Open payments")}</Link>
     : check.kind === "material_list_signed_off" ? <Link href={`${projectHref}/scope?view=materials`}>{t("Open the material list")}</Link>
     : check.kind === "everything_ordered" ? <Link href={`/workspace/purchasing?project=${projectId}`}>{t("Open what to order")}</Link>

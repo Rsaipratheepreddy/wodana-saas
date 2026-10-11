@@ -256,10 +256,12 @@ describe("projects", () => {
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
     const heading = await screen.findByRole("heading", { level: 1, name: "Villa 12" });
     expect(heading.closest("header")!).toHaveTextContent("PRJ-0007");
-    // The strip: health from the records (a task is late), the stage, the handover.
+    // The strip: the stage and the handover; the health from the records (a task is late) is the header's badge, once.
     const strip = await screen.findByLabelText("Where the project stands");
     expect(strip).toHaveTextContent("Kickoff · 1 of 2");
-    await waitFor(() => expect(strip).toHaveTextContent("At risk"));
+    await waitFor(() => expect(heading.closest("header")!).toHaveTextContent("At risk"));
+    expect(strip).not.toHaveTextContent("At risk");
+    expect(screen.getAllByText("At risk")).toHaveLength(1);
     // The one next step lives in its card, not twice in the header.
     expect(screen.getAllByRole("button", { name: "Confirm: Kickoff meeting held" })).toHaveLength(1);
     // Seven tabs, in the order work happens.
@@ -278,9 +280,10 @@ describe("projects", () => {
     expect(within(blockers).getByRole("link", { name: /1 task late/ })).toHaveAttribute("href", `/workspace/projects/${PID}/plan?filter=late`);
     expect(screen.getByRole("heading", { level: 3, name: "Kickoff meeting held" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Recent activity" })).toHaveTextContent("Omar Haddad added #4 Measure the kitchen");
-    // Kickoff's planned work ended on the 25th and is still open.
-    expect(screen.getByText("3 days late")).toBeInTheDocument();
+    // Kickoff's planned work ended on the 25th and is still open: on the next step, and in the full list of stages.
     expect(screen.getByText("3 days past its plan")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "All stages" }));
+    expect(within(screen.getByRole("list", { name: "Stages" })).getByText("3 days late")).toBeVisible();
   });
 
   it("resumes a held project, offering to move the dates by the working days lost", async () => {

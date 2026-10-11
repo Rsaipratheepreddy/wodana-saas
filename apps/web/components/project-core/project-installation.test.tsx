@@ -94,9 +94,10 @@ describe("production and installation on a project (PLM-063, PLM-069)", () => {
     expect(within(installation).getByText("Driver: Omar Driver")).toBeInTheDocument();
     expect(within(installation).getByText("Missing")).toBeInTheDocument();
     expect(within(installation).getByRole("button", { name: "Delivery crew and vehicle" })).toBeInTheDocument();
-    // The stage's next step is the permit; it opens where the permit is recorded.
+    // The stage's next step is the permit; its card's button opens where the permit is recorded, and the sidebar doesn't offer it twice.
     expect(screen.getAllByText("Building permit collected").length).toBeGreaterThan(0);
-    await userEvent.click(within(installation).getByRole("button", { name: "Record the building permit" }));
+    expect(within(installation).queryByRole("button", { name: "Record the building permit" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Record the building permit" }));
     const dialog = await screen.findByRole("dialog", { name: "Record the building permit" });
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
   });

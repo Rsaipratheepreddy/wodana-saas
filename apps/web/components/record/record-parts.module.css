@@ -20,24 +20,25 @@
 .stepLate { color: var(--wd-color-danger); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
 .stepPeople { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
 
-/* Side by side once each step has about 5.5rem: up to six steps from 32rem, more from 44rem. */
+/* Side by side once each step has about 5.5rem: up to six steps from 32rem, more from 44rem (never in the list layout).
+   A name wraps only between words; a word too long for its column ends in an ellipsis, the whole name in its tooltip. */
 @container (min-width: 32rem) {
-  .timelineFrame:not([data-many]) .timeline { grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); }
-  .timelineFrame:not([data-many]) .timeline > li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-2); padding-block-end: 0; padding-inline-end: var(--wd-space-2); }
-  .timelineFrame:not([data-many]) .timeline > li:not(:last-child)::after { inset-block: var(--wd-space-3) auto; inset-inline: calc(var(--wd-space-6) + var(--wd-space-1)) var(--wd-space-1); border-inline-start: 0; border-block-start: 1px solid var(--wd-color-border); }
-  .timelineFrame:not([data-many]) .timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
-  .timelineFrame:not([data-many]) .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-0-5); padding-block-start: var(--wd-space-0-5); }
-  .timelineFrame:not([data-many]) .stepPeople { padding-block-start: var(--wd-space-1); }
-  .timelineFrame:not([data-many]) .stepLabel { font-size: var(--wd-text-xs); overflow-wrap: break-word; hyphens: auto; }
+  .timelineFrame:not([data-many], [data-layout="list"]) .timeline { grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); }
+  .timelineFrame:not([data-many], [data-layout="list"]) .timeline > li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-2); padding-block-end: 0; padding-inline-end: var(--wd-space-2); }
+  .timelineFrame:not([data-many], [data-layout="list"]) .timeline > li:not(:last-child)::after { inset-block: var(--wd-space-3) auto; inset-inline: calc(var(--wd-space-6) + var(--wd-space-1)) var(--wd-space-1); border-inline-start: 0; border-block-start: 1px solid var(--wd-color-border); }
+  .timelineFrame:not([data-many], [data-layout="list"]) .timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
+  .timelineFrame:not([data-many], [data-layout="list"]) .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-0-5); padding-block-start: var(--wd-space-0-5); }
+  .timelineFrame:not([data-many], [data-layout="list"]) .stepPeople { padding-block-start: var(--wd-space-1); }
+  .timelineFrame:not([data-many], [data-layout="list"]) .stepLabel { overflow: hidden; font-size: var(--wd-text-xs); overflow-wrap: normal; hyphens: manual; text-overflow: ellipsis; }
 }
 @container (min-width: 44rem) {
-  .timelineFrame[data-many] .timeline { grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); }
-  .timelineFrame[data-many] .timeline > li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-2); padding-block-end: 0; padding-inline-end: var(--wd-space-2); }
-  .timelineFrame[data-many] .timeline > li:not(:last-child)::after { inset-block: var(--wd-space-3) auto; inset-inline: calc(var(--wd-space-6) + var(--wd-space-1)) var(--wd-space-1); border-inline-start: 0; border-block-start: 1px solid var(--wd-color-border); }
-  .timelineFrame[data-many] .timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
-  .timelineFrame[data-many] .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-0-5); padding-block-start: var(--wd-space-0-5); }
-  .timelineFrame[data-many] .stepPeople { padding-block-start: var(--wd-space-1); }
-  .timelineFrame[data-many] .stepLabel { font-size: var(--wd-text-xs); overflow-wrap: break-word; hyphens: auto; }
+  .timelineFrame[data-many]:not([data-layout="list"]) .timeline { grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); }
+  .timelineFrame[data-many]:not([data-layout="list"]) .timeline > li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-2); padding-block-end: 0; padding-inline-end: var(--wd-space-2); }
+  .timelineFrame[data-many]:not([data-layout="list"]) .timeline > li:not(:last-child)::after { inset-block: var(--wd-space-3) auto; inset-inline: calc(var(--wd-space-6) + var(--wd-space-1)) var(--wd-space-1); border-inline-start: 0; border-block-start: 1px solid var(--wd-color-border); }
+  .timelineFrame[data-many]:not([data-layout="list"]) .timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
+  .timelineFrame[data-many]:not([data-layout="list"]) .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-0-5); padding-block-start: var(--wd-space-0-5); }
+  .timelineFrame[data-many]:not([data-layout="list"]) .stepPeople { padding-block-start: var(--wd-space-1); }
+  .timelineFrame[data-many]:not([data-layout="list"]) .stepLabel { overflow: hidden; font-size: var(--wd-text-xs); overflow-wrap: normal; hyphens: manual; text-overflow: ellipsis; }
 }
 
 /* People: avatar, name and role, then call / WhatsApp / email at the end. */
@@ -47,6 +48,13 @@
 .personName { color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
 .personRole { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .contact { display: flex; flex: none; align-items: center; gap: var(--wd-space-0-5); }
+/* Compact: shorter rows; with a mouse, call / WhatsApp / email show on the row's hover or keyboard focus. */
+.people[data-compact] { gap: 0; }
+.people[data-compact] .person { min-block-size: var(--wd-control-sm); }
+@media (hover: hover) {
+  .people[data-compact] .contact { opacity: 0; transition: opacity var(--wd-duration-fast) var(--wd-ease-standard); }
+  .people[data-compact] .person:hover .contact, .people[data-compact] .person:focus-within .contact { opacity: 1; }
+}
 
 /* Facts: the label at the start, the value at the end. */
 .facts { display: grid; gap: var(--wd-space-2); margin: 0; }
