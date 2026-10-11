@@ -48,9 +48,10 @@ ZOHO_POSTING_SCOPES = (
     "ZohoBooks.vendorpayments.DELETE",
     "ZohoBooks.expenses.CREATE",
 )
-# What financial statements read from Zoho Books: the Profit and Loss and Cash Flow reports.
-# Connections made before statements existed lack it and must reconnect to read them.
-ZOHO_REPORT_SCOPES = ("ZohoBooks.reports.READ",)
+# Zoho Books publishes no reports scope (its OAuth scope list has none), so statements ask for
+# nothing extra: the Profit and Loss and Cash Flow reports are read with the scopes above, and a
+# refusal shows as "refused" on the page.
+ZOHO_REPORT_SCOPES: tuple[str, ...] = ()
 SCOPES = {
     "quickbooks": ["com.intuit.quickbooks.accounting"],
     "zoho_books": [

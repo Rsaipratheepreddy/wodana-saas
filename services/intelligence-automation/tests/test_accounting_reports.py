@@ -59,9 +59,10 @@ def requests_of(seen: list[httpx.Request], path: str) -> list[httpx.Request]:
     return [request for request in seen if request.url.path.endswith(path)]
 
 
-def test_zoho_asks_for_the_reports_scope_with_its_other_scopes() -> None:
-    assert set(ZOHO_REPORT_SCOPES) == {"ZohoBooks.reports.READ"}
-    assert set(ZOHO_REPORT_SCOPES).issubset(SCOPES["zoho_books"])
+def test_zoho_asks_for_no_scope_zoho_does_not_publish() -> None:
+    # Zoho Books' OAuth scope list has no reports scope; asking for one would break new connections.
+    assert ZOHO_REPORT_SCOPES == ()
+    assert not any(scope.startswith("ZohoBooks.reports") for scope in SCOPES["zoho_books"])
     # QuickBooks' one accounting scope already covers the Reports API.
     assert SCOPES["quickbooks"] == ["com.intuit.quickbooks.accounting"]
 
@@ -214,31 +215,6 @@ async def test_zoho_profit_and_loss_asks_for_the_basis() -> None:
     assert [
         call.url.params["cash_based"] for call in requests_of(seen, "/reports/profitandloss")
     ] == ["true", "false"]
-
-
-@pytest.mark.asyncio
-async def test_zoho_connection_without_the_reports_scope_must_reconnect_before_any_call() -> None:
-    seen: list[httpx.Request] = []
-    instance, core, redis = service(lambda request: seen.append(request), "zoho_books")
-    credential = await connect_fake(instance, core, redis, "zoho_books")
-    credential.scopes = [scope for scope in SCOPES["zoho_books"] if scope not in ZOHO_REPORT_SCOPES]
-    await redis.set(
-        core.runtime["secretReference"], instance.seal(credential.model_dump(mode="json"))
-    )
-    with pytest.raises(IntegrationFlowError) as raised:
-        await instance.accounting_report_internal(
-            WORKSPACE, CONNECTION, "zoho_books", "profit_and_loss", OCTOBER
-        )
-    assert (raised.value.code, raised.value.status_code) == ("reconnect_required", 409)
-    assert seen == []
-    assert (
-        "health",
-        CONNECTION,
-        WORKSPACE,
-        "provider.reports.profit_and_loss",
-        False,
-        "reconnect_required",
-    ) in core.activities
 
 
 @pytest.mark.asyncio
