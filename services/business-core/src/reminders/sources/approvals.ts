@@ -41,6 +41,20 @@ async function selfEscalating(db: Db, workspaceId: string, rows: readonly Approv
 }
 
 /**
+ * What an approval row's `project` really is: a delivery project, or (design reviews) the planning case it belongs to.
+ * The feed uses the field for display; a reminder links only to what exists, so neither foreign key can fail.
+ */
+export async function jobLinks(db: Db, workspaceId: string, rows: readonly ApprovalRow[]) {
+  const ids = [...new Set(rows.map((row) => row.project?.id).filter((id): id is string => Boolean(id && UUID.test(id))))];
+  if (!ids.length) return { projects: new Set<string>(), cases: new Set<string>() };
+  const projects = new Set((await db.query<{ id: string }>(
+    `SELECT id FROM delivery_projects WHERE workspace_id = $1 AND id = ANY($2::uuid[])`, [workspaceId, ids])).rows.map((row) => row.id));
+  const cases = new Set((await db.query<{ id: string }>(
+    `SELECT id FROM pre_project_cases WHERE workspace_id = $1 AND id = ANY($2::uuid[])`, [workspaceId, ids])).rows.map((row) => row.id));
+  return { projects, cases };
+}
+
+/**
  * approval.waiting (critical; replaces the sends of chaseApprovals): one subject per approval and per person who may
  * decide it, from the central approvals feed. Reminded after 24 and 48 hours (the firm's approval reminder hours,
  * copied into its rule), then the owners hear it, unless the E3 policy escalates by itself (its escalation still runs
@@ -56,10 +70,13 @@ export const approvalWaitingSource: ReminderSource = {
       if (items.length >= limit) break;
       const rows = await decidable(db, workspaceId, person, currency);
       const own = await selfEscalating(db, workspaceId, rows);
+      const links = await jobLinks(db, workspaceId, rows);
       for (const row of rows) {
+        const projectId = row.project && links.projects.has(row.project.id) ? row.project.id : null;
+        const caseId = !projectId && row.project && links.cases.has(row.project.id) ? row.project.id : null;
         items.push({
           key: keyOf(row, person.membershipId), sourceType: "approval", sourceId: row.id,
-          jobSource: row.project ? { type: "project", id: row.project.id } : null, projectId: row.project?.id ?? null, caseId: null, partyId: null,
+          jobSource: projectId ? { type: "project", id: projectId } : null, projectId, caseId, partyId: null,
           ownerMembershipId: person.membershipId, ccMembershipIds: [], dueAt: new Date(row.since), title: row.title,
           context: row.subject ?? (row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : ""),
           href: row.href?.startsWith("/workspace") ? row.href : "/workspace/approvals",
