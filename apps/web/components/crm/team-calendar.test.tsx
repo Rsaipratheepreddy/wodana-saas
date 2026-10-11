@@ -1,11 +1,15 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { crmRequest } from "@/lib/crm/client";
 import { CrmCalendar } from "./crm-calendar";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }), usePathname: () => "/workspace/crm/calendar", useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/lib/crm/client", async (original) => ({ ...await original<object>(), crmRequest: vi.fn() }));
+// A fixed mid-week day: "yesterday" and "three days ago" stay in the week the calendar opens on, whatever today is.
+vi.useFakeTimers({ toFake: ["Date"] });
+vi.setSystemTime(new Date(2026, 9, 14, 10, 0, 0));
+afterAll(() => vi.useRealTimers());
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const bookingId = "00000000-0000-4000-8000-000000000009";
 const day = (offset: number) => { const date = new Date(); date.setDate(date.getDate() + offset); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
