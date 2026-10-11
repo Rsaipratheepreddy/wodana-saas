@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../../database/database.service";
+import { sweepEmailCap } from "../delivery/email-pace";
 import { ReminderSourceRegistryService } from "../sources/registry.service";
 import { sweepWorkspace, type SweepResult } from "./sweep";
 
@@ -12,7 +13,8 @@ export const SCAN_EVERY_MS = 5 * 60_000;
 /**
  * The reminder engine's timer (plan §6.24a "Sweep"): every 60 seconds (REMINDERS_SWEEP_ENABLED), each active workspace
  * (listed through the SECURITY DEFINER `list_reminder_engine_workspaces()`) is swept in its own tenant transaction.
- * One workspace failing never stops the others. `runNow` sweeps one workspace on demand (the internal endpoint).
+ * One workspace failing never stops the others. `runNow` sweeps one workspace on demand (the internal endpoint). Each
+ * sweep hands at most REMINDERS_SWEEP_EMAIL_CAP emails per workspace to delivery (default 20); the rest carry over.
  */
 @Injectable()
 export class RemindersEngineService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -70,7 +72,8 @@ export class RemindersEngineService implements OnApplicationBootstrap, OnModuleD
 
   private async sweep(workspaceId: string, options: { scan: boolean; now: Date }) {
     const result = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) =>
-      sweepWorkspace(client, workspaceId, { sources: this.sources.registry(), scan: options.scan, now: options.now }));
+      sweepWorkspace(client, workspaceId, { sources: this.sources.registry(), scan: options.scan, now: options.now, emailCap: sweepEmailCap(this.config) }));
+    if (result.pace?.carried) this.logger.log(`Reminder sweep of ${workspaceId}: ${result.pace.carried} emails carried to the next sweeps (email cap)`);
     if (options.scan && !result.busy && result.scan) this.scannedAt.set(workspaceId, options.now.getTime());
     if (result.errors.length) this.logger.warn(`Reminder sweep of ${workspaceId}: ${result.errors.slice(0, 5).join("; ")}`);
     return result;

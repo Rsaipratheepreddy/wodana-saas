@@ -1,3 +1,4 @@
+import { DEFAULT_SWEEP_EMAIL_CAP, paceReminderEmails, type PaceResult } from "../delivery/email-pace";
 import { runFallbacks, type FallbackResult } from "../delivery/fallback";
 import { runDigests, type DigestResult } from "../digest/digest";
 import { runHealthAlerts, type HealthAlertResult } from "../digest/health-alerts";
@@ -17,6 +18,8 @@ export type SweepOptions = {
   limit?: number;
   digests?: boolean;
   health?: boolean;
+  /** Emails this sweep may hand to delivery (REMINDERS_SWEEP_EMAIL_CAP); the rest carry over to the next minutes. */
+  emailCap?: number;
 };
 
 export type SweepResult = {
@@ -28,17 +31,19 @@ export type SweepResult = {
   fallback: FallbackResult | null;
   digest: DigestResult | null;
   health: HealthAlertResult | null;
+  /** Emails carried over to the next sweeps by the email cap. */
+  pace: PaceResult | null;
   errors: string[];
 };
 
 /**
  * One sweep of one workspace, inside the caller's tenant transaction (plan §6.24a "Sweep"): scan the sources, plan the
  * steps of what changed, fire what is due, fall back from failed client messages, send the digests that are due and
- * raise delivery alerts. Only one sweep per workspace runs at a time (a transaction-level advisory lock); a second
+ * raise delivery alerts, then hold the emails past the sweep's email cap for the next sweeps. Only one sweep per workspace runs at a time (a transaction-level advisory lock); a second
  * returns busy, so two sweeps never send twice. Each phase runs in a savepoint: one failing never undoes the others.
  */
 export async function sweepWorkspace(db: Db, workspaceId: string, options: SweepOptions): Promise<SweepResult> {
-  const result: SweepResult = { busy: false, scan: null, plan: null, fire: null, fallback: null, digest: null, health: null, errors: [] };
+  const result: SweepResult = { busy: false, scan: null, plan: null, fire: null, fallback: null, digest: null, health: null, pace: null, errors: [] };
   const locked = (await db.query<{ locked: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtextextended('reminders_sweep:' || $1::text, 0)) AS locked`, [workspaceId])).rows[0].locked;
   if (!locked) return { ...result, busy: true };
   const now = options.now ?? new Date();
@@ -57,6 +62,8 @@ export async function sweepWorkspace(db: Db, workspaceId: string, options: Sweep
   result.fallback = await phase("fallback", () => runFallbacks(db, ctx));
   if (options.digests !== false) result.digest = await phase("digest", () => runDigests(db, ctx));
   if (options.health !== false) result.health = await phase("health", () => runHealthAlerts(db, ctx));
+  // Last, as every phase above may queue emails: past the cap they move to the next minutes (a catch-up sweep).
+  result.pace = await phase("pace", () => paceReminderEmails(db, ctx, options.emailCap ?? DEFAULT_SWEEP_EMAIL_CAP));
   for (const part of [result.scan, result.fire, result.fallback, result.digest]) if (part && "errors" in part) result.errors.push(...part.errors);
   const changed = (result.scan ? result.scan.opened + result.scan.changed + result.scan.closed : 0) + (result.fire ? result.fire.fired + result.fire.closed : 0);
   if (changed) await phase("live", () => emitRemindersChanged(db, workspaceId, now));

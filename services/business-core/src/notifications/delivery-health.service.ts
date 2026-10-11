@@ -90,6 +90,8 @@ export class DeliveryHealthService {
          FROM notification_delivery_attempts attempt
          JOIN notifications notification ON notification.workspace_id=attempt.workspace_id AND notification.id=attempt.notification_id
          WHERE attempt.workspace_id=$1 AND attempt.status IN ('retry','permanent_failure') AND attempt.started_at>=now()-interval '30 days'
+           -- A retry that will be tried again (a throttled email) isn't a failure; the last one of a failed notice is.
+           AND (attempt.status='permanent_failure' OR notification.status='failed')
            AND notification.channel=ANY($2)
          ORDER BY notification.channel, COALESCE(attempt.completed_at,attempt.started_at) DESC`,
         [workspaceId, channels]),

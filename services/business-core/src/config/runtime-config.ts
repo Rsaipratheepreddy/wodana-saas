@@ -112,6 +112,13 @@ export function validateRuntimeConfig(
   if (emailProvider === "ses" && !sesFrom.trim()) {
     throw new Error("EMAIL_PROVIDER=ses requires SES_FROM");
   }
+  // The outbound email limit (every send of this process takes a slot) and the reminder sweep's email cap.
+  for (const key of ["EMAIL_SEND_PER_SECOND", "EMAIL_SEND_PER_MINUTE", "REMINDERS_SWEEP_EMAIL_CAP"] as const) {
+    const text = String(config[key] ?? "").trim();
+    if (text && !(/^\d+$/.test(text) && Number(text) > 0)) {
+      throw new Error(`${key} must be a positive whole number`);
+    }
+  }
 
   // The delivery guard is for local and UAT only: in production it would silently drop real messages.
   const allowlist = DeliveryAllowlist.parse(String(config.DELIVERY_ALLOWLIST ?? ""));

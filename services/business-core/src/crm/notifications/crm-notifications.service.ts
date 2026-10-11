@@ -1,4 +1,5 @@
-import { TransactionalEmailService } from "../../email/transactional-email.service";
+import { TransactionalEmailService, type EmailDeliveryResult } from "../../email/transactional-email.service";
+import { CLAIMED_EMAIL_COLUMNS, EMAIL_DISPATCH_BUDGET_MS, emailDisposition, expiredRetry, recordEmailDisposition, releaseClaimedEmails, type ClaimedEmail } from "../../notifications/email-dispatch-outcome";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { deliveryAllowlist, NOT_ALLOWLISTED } from "../../notifications/delivery-allowlist";
@@ -261,12 +262,26 @@ export class CrmNotificationsService {
   /**
    * Staff emails go out through the platform mailer in the tenant's brand, not a tenant connector,
    * so they work before any integration is connected. Claim, send, record; one bad address never
-   * blocks the rest.
+   * blocks the rest. Sends share the process-wide send limit: what doesn't fit in this call's time
+   * (EMAIL_DISPATCH_BUDGET_MS) goes back to the queue untried, and a throttled or transient failure
+   * stays scheduled for its retry.
    */
   async dispatchStaffEmailsInternal(input: ClaimNotificationJobsDto) {
+    const notAfter = Date.now() + EMAIL_DISPATCH_BUDGET_MS;
+    // Replies in email conversations first, as someone waits on them; they go out the same way, with the inbound
+    // address as Reply-To (PLM-025).
+    const chat = await dispatchChatEmails({ database: this.database, mailer: this.mailer, storage: this.storage, receipts: this.receipts,
+      inboundDomain: this.config?.get<string>("INBOUND_EMAIL_DOMAIN") ?? process.env.INBOUND_EMAIL_DOMAIN ?? null }, input.workspaceId, input.limit ?? 50, { notAfter });
+    // No slot left in this call: the staff emails wait for the next one, unclaimed.
+    const staff = chat.deferred ? { claimed: 0, delivered: 0 } : await this.sendStaffEmails(input, notAfter);
+    return { claimed: staff.claimed + chat.claimed, delivered: staff.delivered + chat.delivered };
+  }
+
+  /** Team members, client portal contacts and the finance inbox: claimed, sent through the platform mailer, recorded. */
+  private async sendStaffEmails(input: ClaimNotificationJobsDto, notAfter: number) {
     // Team members (users) and client portal contacts: both are sent by the platform mailer in the tenant's brand.
     const claimed = await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
-      const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string; recipientType: string }>(
+      const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string; recipientType: string } & ClaimedEmail>(
         `WITH due AS (
            SELECT notification.id, CASE WHEN notification.recipient_type='user' THEN person.primary_email
                   WHEN notification.recipient_type='finance_inbox' THEN inbox.finance_inbox ELSE ${contactEmailSql("contact")} END AS email
@@ -283,39 +298,36 @@ export class CrmNotificationsService {
          UPDATE notifications notification SET status='processing', processing_started_at=now(), version=version+1
          FROM due WHERE notification.id=due.id
          RETURNING notification.id, notification.subject, notification.body, notification.deep_link AS "deepLink", due.email, notification.event_type AS "eventType",
-                   notification.recipient_type AS "recipientType"`,
+                   notification.recipient_type AS "recipientType", ${CLAIMED_EMAIL_COLUMNS}`,
         [input.workspaceId, Math.min(input.limit ?? 50, 100)],
       );
       return result.rows;
     });
     let delivered = 0;
-    for (const row of claimed) {
+    for (const [index, row] of claimed.entries()) {
       const actionLabel = staffEmailAction(row.eventType, row.recipientType);
-      type Outcome = { status: "sent" | "not_configured" | "failed"; provider: string | null; messageId: string | null; suppressedReason?: string; errorCode?: string };
-      const outcome: Outcome = row.email
-        ? await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel }) : Promise.resolve<Outcome>({ status: "not_configured", provider: null, messageId: null })).catch((): Outcome => ({ status: "failed", provider: null, messageId: null, errorCode: "MAILER_ERROR" }))
-        : { status: "failed", provider: null, messageId: null };
-      const status = outcome.status === "sent" ? "delivered" : outcome.status === "not_configured" ? "suppressed" : "failed";
-      const suppressedReason = outcome.suppressedReason ?? "email_not_configured";
-      if (status === "delivered") delivered += 1;
-      await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
-        await client.query(
-          `UPDATE notifications SET status=$1::notification_status, delivered_at=CASE WHEN $1='delivered' THEN now() ELSE delivered_at END,
-             suppressed_reason=CASE WHEN $1='suppressed' THEN $5 WHEN $2::boolean THEN 'destination_missing' ELSE suppressed_reason END,
-             processing_started_at=NULL, version=version+1 WHERE workspace_id=$3 AND id=$4`,
-          [status, !row.email, input.workspaceId, row.id, suppressedReason]);
-        // A real send attempt is recorded like the worker's, so delivery health can show when email last
-        // worked and why it last failed.
-        if (outcome.status !== "not_configured" && row.email) await client.query(
-          `INSERT INTO notification_delivery_attempts (workspace_id,notification_id,attempt,provider,status,provider_message_id,error_code,completed_at)
-           SELECT $1,$2,COALESCE(max(attempt),0)+1,$3,$4,$5,$6,now() FROM notification_delivery_attempts WHERE workspace_id=$1 AND notification_id=$2`,
-          [input.workspaceId, row.id, outcome.provider ?? "mailgun", status === "delivered" ? "delivered" : "permanent_failure", outcome.messageId, status === "delivered" ? null : outcome.errorCode ?? "EMAIL_SEND_FAILED"]);
-      });
+      // A retry found more than a day after the notice was raised fails instead of going out late.
+      const expired = row.email ? expiredRetry(row) : null;
+      const outcome: EmailDeliveryResult = !row.email || expired
+        ? { status: "failed", provider: expired ? this.mailer?.provider() ?? null : null, messageId: null }
+        : await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel }, { notAfter })
+          : Promise.resolve<EmailDeliveryResult>({ status: "not_configured", provider: null, messageId: null }))
+          .catch((): EmailDeliveryResult => ({ status: "failed", provider: null, messageId: null, errorCode: "MAILER_ERROR" }));
+      const disposition = expired ?? emailDisposition(outcome, row);
+      if (disposition.kind === "deferred") {
+        // Out of time or slots: this one and the rest of the batch go back to the queue, untried.
+        await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) =>
+          releaseClaimedEmails(client, input.workspaceId, claimed.slice(index).map((item) => item.id), disposition.until));
+        break;
+      }
+      if (disposition.kind === "delivered") delivered += 1;
+      // A real send attempt is recorded like the worker's, so delivery health can show when email last
+      // worked and why it last failed.
+      await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) => recordEmailDisposition(client, {
+        workspaceId: input.workspaceId, notificationId: row.id, disposition, provider: outcome.provider, messageId: outcome.messageId,
+        attempted: Boolean(row.email) && (Boolean(expired) || outcome.status !== "not_configured"), destinationMissing: !row.email }));
     }
-    // Replies in email conversations go out the same way, with the inbound address as Reply-To (PLM-025).
-    const chat = await dispatchChatEmails({ database: this.database, mailer: this.mailer, storage: this.storage, receipts: this.receipts,
-      inboundDomain: this.config?.get<string>("INBOUND_EMAIL_DOMAIN") ?? process.env.INBOUND_EMAIL_DOMAIN ?? null }, input.workspaceId, input.limit ?? 50);
-    return { claimed: claimed.length + chat.claimed, delivered: delivered + chat.delivered };
+    return { claimed: claimed.length, delivered };
   }
 
   claimInternal(input: ClaimNotificationJobsDto) {

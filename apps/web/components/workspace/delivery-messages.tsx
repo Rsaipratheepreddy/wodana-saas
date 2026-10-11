@@ -22,6 +22,7 @@ const PAGE = 50;
 /** Why a message was held, suppressed or failed, in plain words (provider codes fall back to their own message). */
 const REASONS: Record<string, MessageKey> = {
   quiet_hours: tKey("Quiet hours"),
+  retrying: tKey("Retrying"),
   client_cap: tKey("One reminder a day to this client"),
   cap_reached: tKey("One reminder a day to this client"),
   client_window: tKey("Outside client hours"),

@@ -172,13 +172,22 @@ integration("inbound email (PLM-025)", () => {
       // The worker's connector never claims it: the platform mailer sends it.
       const claimed = (await notifications.claimInternal({ workspaceId: a, limit: 50 } as never)).items as Array<{ idempotencyKey: string }>;
       expect(claimed.filter((item) => item.idempotencyKey === `message:${reply.id}`)).toEqual([]);
-      const mailer = { sendConversationReply: vi.fn(async (input: { headers: Record<string, string> }) => ({ status: "sent" as const, provider: "mailgun" as const, messageId: input.headers["Message-Id"] })) };
-      expect(await dispatchChatEmails({ database: world.database as never, mailer: mailer as never, receipts: world.receipts, inboundDomain: DOMAIN }, a)).toEqual({ claimed: 1, delivered: 1 });
+      const mailer = { sendConversationReply: vi.fn<(input: { headers: Record<string, string> }) => Promise<Record<string, unknown>>>(async (input) => ({ status: "sent", provider: "mailgun", messageId: input.headers["Message-Id"] })) };
+      const deps = { database: world.database as never, mailer: mailer as never, receipts: world.receipts, inboundDomain: DOMAIN };
+      // Mailgun throttles the first try: the reply waits for its retry, still queued in the chat, never failed.
+      mailer.sendConversationReply.mockResolvedValueOnce({ status: "failed", provider: "mailgun", messageId: null, errorCode: "MAILGUN_HTTP_429", retryable: true, retryAfterMs: 1_000 });
+      expect(await dispatchChatEmails(deps, a)).toEqual({ claimed: 1, delivered: 0 });
+      const waiting = await tenant<{ status: string; attempts: string[] }>(world, a, `SELECT notice.status::text AS status, array(SELECT attempt.status FROM notification_delivery_attempts attempt
+        WHERE attempt.notification_id = notice.id ORDER BY attempt.attempt)::text[] AS attempts FROM notifications notice WHERE notice.idempotency_key = $1`, [`message:${reply.id}`]);
+      expect(waiting).toEqual([{ status: "scheduled", attempts: ["retry"] }]);
+      expect((await tenant<{ status: string }>(world, a, "SELECT status FROM crm_messages WHERE id = $1", [reply.id]))[0].status).toBe("queued");
+      await tenant(world, a, "UPDATE notifications SET scheduled_for = now() - interval '1 minute' WHERE idempotency_key = $1", [`message:${reply.id}`]);
+      expect(await dispatchChatEmails(deps, a)).toEqual({ claimed: 1, delivered: 1 });
       const ownId = `<m.${reply.id}@${DOMAIN}>`;
       expect(mailer.sendConversationReply).toHaveBeenCalledWith(expect.objectContaining({
         workspaceId: a, to: "noura@example.com", subject: "Re: Villa kitchen", body: "Yes, 4 pm works.", replyTo: world.addressA,
         headers: { "Message-Id": ownId, "In-Reply-To": "<n1@example.com>", References: "<n1@example.com>" },
-      }));
+      }), {});
       const [sent] = await tenant<{ status: string }>(world, a, "SELECT status FROM crm_messages WHERE id = $1", [reply.id]);
       expect(sent.status).toBe("sent");
 
@@ -194,8 +203,8 @@ integration("inbound email (PLM-025)", () => {
       expect(other.conversationId).not.toBe(first.conversationId);
       // The next reply in the first thread answers the client's latest email.
       const second = await conversations.addMessage(actor, a, first.conversationId!, { direction: "outbound", bodyText: "Noted.", clientMessageId: randomUUID() } as never) as { id: string };
-      await dispatchChatEmails({ database: world.database as never, mailer: mailer as never, receipts: world.receipts, inboundDomain: DOMAIN }, a);
-      expect(mailer.sendConversationReply).toHaveBeenLastCalledWith(expect.objectContaining({ headers: { "Message-Id": `<m.${second.id}@${DOMAIN}>`, "In-Reply-To": "<n3@example.com>", References: "<n3@example.com>" } }));
+      await dispatchChatEmails(deps, a);
+      expect(mailer.sendConversationReply).toHaveBeenLastCalledWith(expect.objectContaining({ headers: { "Message-Id": `<m.${second.id}@${DOMAIN}>`, "In-Reply-To": "<n3@example.com>", References: "<n3@example.com>" } }), {});
     });
   });
 

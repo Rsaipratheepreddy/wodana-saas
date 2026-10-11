@@ -1110,7 +1110,7 @@ integration("client portal (plan §6.22)", () => {
       const result = await notices.dispatchStaffEmailsInternal({ workspaceId: w.workspaceId, limit: 50 });
       expect(result.delivered).toBeGreaterThanOrEqual(2);
       expect(mailer.sendStaffNotice).toHaveBeenCalledWith(expect.objectContaining({ to: "maya@example.com", subject: "Main quote (V1) is ready for you", actionLabel: "Open your project",
-        deepLink: `/portal/${w.slug}?project=${w.caseId}&open=decisions` }));
+        deepLink: `/portal/${w.slug}?project=${w.caseId}&open=decisions` }), { notAfter: expect.any(Number) });
       expect(await count("portal.quote_issued")).toBe(1);
     });
   });
@@ -1168,7 +1168,7 @@ integration("client portal (plan §6.22)", () => {
       const notices = new CrmNotificationsService({ tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => Promise<unknown>) => w.savepoint(() => fn(w.client)) } as never,
         {} as never, {} as never, undefined, undefined, mailer as never);
       await notices.dispatchStaffEmailsInternal({ workspaceId: w.workspaceId, limit: 50 });
-      expect(mailer.sendStaffNotice).toHaveBeenCalledWith(expect.objectContaining({ to: "maya.client@example.com", subject: "Main quote (V1) is ready for you" }));
+      expect(mailer.sendStaffNotice).toHaveBeenCalledWith(expect.objectContaining({ to: "maya.client@example.com", subject: "Main quote (V1) is ready for you" }), { notAfter: expect.any(Number) });
     });
   });
 

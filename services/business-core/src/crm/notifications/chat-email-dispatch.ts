@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { DatabaseService } from "../../database/database.service";
-import type { EmailAttachment, EmailDeliveryResult, TransactionalEmailService } from "../../email/transactional-email.service";
+import type { EmailAttachment, EmailDeliveryResult, EmailSendOptions, TransactionalEmailService } from "../../email/transactional-email.service";
+import { CLAIMED_EMAIL_COLUMNS, emailDisposition, expiredRetry, recordEmailDisposition, releaseClaimedEmails, type ClaimedEmail } from "../../notifications/email-dispatch-outcome";
 import type { CrmMessageReceiptService } from "../conversations/crm-message-receipt.service";
 import { baseSubject, replySubject, subjectKey } from "../conversations/email/email-content";
 import { inboundDomain } from "../conversations/email/mailgun-inbound";
@@ -21,7 +22,7 @@ type Storage = { read(objectKey: string): Promise<{ body: Buffer }> };
 type Receipts = Pick<CrmMessageReceiptService, "record">;
 export type ChatEmailDeps = { database: DatabaseService; mailer?: TransactionalEmailService; storage?: Storage; receipts: Receipts; inboundDomain?: string | null };
 
-type Claimed = { id: string; messageId: string };
+type Claimed = { id: string; messageId: string } & ClaimedEmail;
 type Reply = {
   conversationId: string; bodyText: string | null; subject: string | null; localPart: string | null; to: string | null;
   lastSubject: string | null; parentId: string | null; parentReferences: string[] | null;
@@ -59,9 +60,10 @@ async function load(client: PoolClient, workspaceId: string, messageId: string) 
 /**
  * Claim the due chat email replies, send each through the platform mailer with Reply-To on the inbound address and
  * the threading headers, then record the outcome on the notification, its delivery attempts and the chat message.
- * One bad reply never holds up the rest.
+ * One bad reply never holds up the rest. A throttled or transiently failed reply stays scheduled for its retry (the
+ * chat message keeps waiting); one the send limit can't fit before `notAfter` goes back with the rest, untried.
  */
-export async function dispatchChatEmails(deps: ChatEmailDeps, workspaceId: string, limit = 50) {
+export async function dispatchChatEmails(deps: ChatEmailDeps, workspaceId: string, limit = 50, options: EmailSendOptions = {}) {
   const domain = inboundDomain(deps.inboundDomain);
   const claimed = await deps.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => (await client.query<Claimed>(
     `WITH due AS (
@@ -72,9 +74,18 @@ export async function dispatchChatEmails(deps: ChatEmailDeps, workspaceId: strin
         ORDER BY notification.scheduled_for FOR UPDATE OF notification SKIP LOCKED LIMIT $2)
      UPDATE notifications notification SET status = 'processing', processing_started_at = now(), version = version + 1
        FROM due WHERE notification.id = due.id
-     RETURNING notification.id, substring(notification.idempotency_key FROM 9) AS "messageId"`, [workspaceId, Math.min(Math.max(limit, 1), 100)])).rows);
+     RETURNING notification.id, substring(notification.idempotency_key FROM 9) AS "messageId", ${CLAIMED_EMAIL_COLUMNS}`, [workspaceId, Math.min(Math.max(limit, 1), 100)])).rows);
   let delivered = 0;
-  for (const row of claimed) {
+  let deferred = false;
+  for (const [index, row] of claimed.entries()) {
+    const expired = expiredRetry(row);
+    if (expired) {
+      await deps.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => {
+        await recordEmailDisposition(client, { workspaceId, notificationId: row.id, disposition: expired, provider: deps.mailer?.provider() ?? null, messageId: null, attempted: true });
+        await deps.receipts.record(client, row.messageId, { workspaceId, status: "failed", failureCode: "EMAIL_RETRY_EXPIRED" }, { ignoreMissing: true, ignoreNonOutbound: true });
+      });
+      continue;
+    }
     const reply = await deps.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) => load(client, workspaceId, row.messageId));
     const ownId = domain ? replyMessageId(row.messageId, domain) : null;
     const headers = ownId ? threadHeaders(ownId, { id: reply?.parentId ?? null, references: reply?.parentReferences ?? null }) : null;
@@ -91,23 +102,25 @@ export async function dispatchChatEmails(deps: ChatEmailDeps, workspaceId: strin
           const stored = await deps.storage.read(reply.attachmentKey);
           attachments = [{ filename: reply.attachmentName ?? "file", contentType: reply.attachmentType ?? "application/octet-stream", content: stored.body }];
         }
-        outcome = await deps.mailer.sendConversationReply({ workspaceId, to: reply.to, subject, body: reply.bodyText ?? "", replyTo: `${reply.localPart}@${domain}`, headers, attachments });
+        outcome = await deps.mailer.sendConversationReply({ workspaceId, to: reply.to, subject, body: reply.bodyText ?? "", replyTo: `${reply.localPart}@${domain}`, headers, attachments }, options);
       } catch (error) {
         outcome = { status: "failed", provider: null, messageId: null, errorCode: error instanceof Error && error.message === "EMAIL_FILE_UNAVAILABLE" ? "EMAIL_FILE_UNAVAILABLE" : "MAILER_ERROR" };
       }
     }
-    const status = outcome.status === "sent" ? "delivered" : outcome.status === "not_configured" ? "suppressed" : "failed";
+    const disposition = emailDisposition(outcome, row);
+    if (disposition.kind === "deferred") {
+      // Out of time or slots: this reply and the rest go back to the queue, untried.
+      deferred = true;
+      await deps.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) =>
+        releaseClaimedEmails(client, workspaceId, claimed.slice(index).map((item) => item.id), disposition.until));
+      break;
+    }
+    const status = disposition.kind === "delivered" ? "delivered" : disposition.kind === "suppressed" ? "suppressed" : disposition.kind === "retry" ? "retry" : "failed";
     if (status === "delivered") delivered += 1;
     await deps.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => {
-      await client.query(
-        `UPDATE notifications SET status = $1::notification_status, delivered_at = CASE WHEN $1 = 'delivered' THEN now() ELSE delivered_at END,
-           suppressed_reason = CASE WHEN $1 = 'suppressed' THEN $4 ELSE suppressed_reason END, processing_started_at = NULL, version = version + 1
-         WHERE workspace_id = $2 AND id = $3`,
-        [status, workspaceId, row.id, outcome.suppressedReason ?? "email_not_configured"]);
-      if (outcome.status !== "not_configured") await client.query(
-        `INSERT INTO notification_delivery_attempts (workspace_id, notification_id, attempt, provider, status, provider_message_id, error_code, completed_at)
-         SELECT $1, $2, COALESCE(max(attempt), 0) + 1, $3, $4, $5, $6, now() FROM notification_delivery_attempts WHERE workspace_id = $1 AND notification_id = $2`,
-        [workspaceId, row.id, outcome.provider ?? "mailgun", status === "delivered" ? "delivered" : "permanent_failure", outcome.messageId, status === "delivered" ? null : outcome.errorCode ?? "EMAIL_SEND_FAILED"]);
+      await recordEmailDisposition(client, { workspaceId, notificationId: row.id, disposition, provider: outcome.provider, messageId: outcome.messageId, attempted: outcome.status !== "not_configured" });
+      // A reply waiting for its retry stays queued in the chat; only its final outcome is recorded there.
+      if (status === "retry") return;
       if (status === "delivered" && reply && ownId) {
         // The reply's email facts: the client's answer names this Message-Id (or the provider's) and threads back here.
         await client.query(
@@ -124,5 +137,5 @@ export async function dispatchChatEmails(deps: ChatEmailDeps, workspaceId: strin
       }, { ignoreMissing: true, ignoreNonOutbound: true });
     });
   }
-  return { claimed: claimed.length, delivered };
+  return { claimed: claimed.length, delivered, ...(deferred ? { deferred: true } : {}) };
 }

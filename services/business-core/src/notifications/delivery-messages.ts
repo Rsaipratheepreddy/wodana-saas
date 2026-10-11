@@ -51,7 +51,7 @@ export async function readDeliveryMessages(db: Db, workspaceId: string, query: D
     cursor = { at, id };
   }
   const rows = (await db.query<{ id: string; createdAt: Date; updatedAt: Date; channel: string; eventType: string; recipientType: string; recipientId: string; label: string | null;
-    status: DeliveryMessageStatus; suppressedReason: string | null; errorCode: string | null; attempts: number; providerMessageId: string | null; critical: boolean;
+    status: DeliveryMessageStatus; suppressedReason: string | null; errorCode: string | null; attempts: number; providerMessageId: string | null; lastAttemptStatus: string | null; critical: boolean;
     reminderStepId: string | null; fallbackOf: string | null; href: string | null; scheduledFor: Date; updatedKey: string }>(
     `SELECT * FROM (
        SELECT notification.id, notification.created_at AS "createdAt", notification.updated_at AS "updatedAt", notification.channel, notification.event_type AS "eventType",
@@ -62,12 +62,13 @@ export async function readDeliveryMessages(db: Db, workspaceId: string, query: D
                 WHEN 'party' THEN (SELECT party.display_name FROM crm_parties party WHERE party.workspace_id = notification.workspace_id AND party.id = notification.recipient_id)
                 WHEN 'finance_inbox' THEN 'Finance inbox' END AS label,
               ${STATUS_SQL} AS status, notification.suppressed_reason AS "suppressedReason", attempt.code AS "errorCode", coalesce(attempt.count, 0) AS attempts,
-              attempt.provider_id AS "providerMessageId", notification.critical, notification.reminder_step_id AS "reminderStepId", notification.fallback_of AS "fallbackOf",
+              attempt.provider_id AS "providerMessageId", attempt.last_status AS "lastAttemptStatus", notification.critical, notification.reminder_step_id AS "reminderStepId", notification.fallback_of AS "fallbackOf",
               notification.deep_link AS href, notification.scheduled_for AS "scheduledFor", notification.updated_at::text AS "updatedKey"
          FROM notifications notification
          LEFT JOIN LATERAL (SELECT count(*)::int AS count,
                                    (array_agg(attempt.error_code ORDER BY attempt.attempt DESC) FILTER (WHERE attempt.error_code IS NOT NULL))[1] AS code,
-                                   (array_agg(attempt.provider_message_id ORDER BY attempt.attempt DESC) FILTER (WHERE attempt.provider_message_id IS NOT NULL))[1] AS provider_id
+                                   (array_agg(attempt.provider_message_id ORDER BY attempt.attempt DESC) FILTER (WHERE attempt.provider_message_id IS NOT NULL))[1] AS provider_id,
+                                   (array_agg(attempt.status ORDER BY attempt.attempt DESC))[1] AS last_status
                               FROM notification_delivery_attempts attempt
                              WHERE attempt.workspace_id = notification.workspace_id AND attempt.notification_id = notification.id) attempt ON true
         WHERE notification.workspace_id = $1
@@ -84,7 +85,8 @@ export async function readDeliveryMessages(db: Db, workspaceId: string, query: D
   const items = page.map((row): DeliveryHealthMessage => ({
     id: row.id, createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt), channel: row.channel, eventType: row.eventType,
     recipient: { type: row.recipientType, id: row.recipientId, label: row.label ?? "" }, status: row.status,
-    reason: row.status === "held" ? (row.reminderStepId ? "quiet_hours" : "scheduled") : row.status === "failed" ? row.errorCode ?? row.suppressedReason ?? "DELIVERY_FAILED"
+    // Held after a throttled or transient failure: waiting for its retry, not for quiet hours.
+    reason: row.status === "held" ? (row.lastAttemptStatus === "retry" ? "retrying" : row.reminderStepId ? "quiet_hours" : "scheduled") : row.status === "failed" ? row.errorCode ?? row.suppressedReason ?? "DELIVERY_FAILED"
       : row.status === "suppressed" ? row.suppressedReason ?? "cancelled" : null,
     attempts: Number(row.attempts), providerMessageId: row.providerMessageId, critical: row.critical, reminderStepId: row.reminderStepId, fallbackOf: row.fallbackOf,
     href: row.href?.startsWith("/workspace") ? row.href : null,

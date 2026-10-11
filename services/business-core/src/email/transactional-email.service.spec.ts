@@ -1,5 +1,6 @@
 import { ConfigService } from "@nestjs/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EmailSendLimiter } from "./email-send-limiter";
 import { TransactionalEmailService } from "./transactional-email.service";
 
 afterEach(() => {
@@ -166,6 +167,59 @@ describe("TransactionalEmailService", () => {
       messageId: null,
       // Delivery health shows why, without the recipient.
       errorCode: "MAILGUN_HTTP_401",
+    });
+  });
+  describe("send limit, throttling and retries", () => {
+    const mailgun = { MAILGUN_API_KEY: "test-api-key", MAILGUN_DOMAIN: "mg.example.com" };
+    const message = { to: "member@example.com", subject: "Notice", text: "Notice", html: "<p>Notice</p>" };
+    const answer = (status: number, headers: Record<string, string> = {}) => ({ ok: status < 300, status, headers: new Headers(headers), json: async () => ({ id: "m" }) });
+
+    it("marks a Mailgun 429 retryable with its Retry-After, and holds every send of the process back meanwhile", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(answer(429, { "Retry-After": "20" })));
+      const limiter = new EmailSendLimiter({ perSecond: 5, perMinute: 120 });
+      const service = new TransactionalEmailService(new ConfigService(mailgun), undefined, undefined, limiter);
+      const before = Date.now();
+      await expect(service.send(message)).resolves.toEqual({ status: "failed", provider: "mailgun", messageId: null, errorCode: "MAILGUN_HTTP_429", retryable: true, retryAfterMs: 20_000 });
+      expect(limiter.nextSlotAt()).toBeGreaterThanOrEqual(before + 20_000);
+    });
+
+    it("retries a 5xx and a network error; a 4xx other than 429 stays permanent", async () => {
+      const service = new TransactionalEmailService(new ConfigService(mailgun), undefined, undefined, new EmailSendLimiter({ perSecond: 50, perMinute: 500 }));
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(answer(503)));
+      await expect(service.send(message)).resolves.toEqual({ status: "failed", provider: "mailgun", messageId: null, errorCode: "MAILGUN_HTTP_503", retryable: true });
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+      await expect(service.send(message)).resolves.toEqual({ status: "failed", provider: "mailgun", messageId: null, errorCode: "MAILGUN_UNREACHABLE", retryable: true });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(answer(400, { "Retry-After": "20" })));
+      await expect(service.send(message)).resolves.toEqual({ status: "failed", provider: "mailgun", messageId: null, errorCode: "MAILGUN_HTTP_400" });
+    });
+
+    it("defers, without calling the provider, a send the limit can't fit before the caller's deadline", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(answer(200));
+      vi.stubGlobal("fetch", fetchMock);
+      const service = new TransactionalEmailService(new ConfigService(mailgun), undefined, undefined, new EmailSendLimiter({ perSecond: 2, perMinute: 120 }));
+      const notAfter = Date.now() + 100;
+      await service.send(message, { notAfter });
+      await service.send(message, { notAfter });
+      const third = await service.send(message, { notAfter });
+      expect(third).toMatchObject({ status: "failed", provider: "mailgun", errorCode: "EMAIL_RATE_LIMITED", retryable: true, deferred: true });
+      expect(third.retryAfterMs).toBeGreaterThan(800);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries an SES throttle and pauses the process", async () => {
+      const throttle = Object.assign(new Error("Maximum sending rate exceeded."), { name: "TooManyRequestsException", $metadata: { httpStatusCode: 429 } });
+      const limiter = new EmailSendLimiter();
+      const service = new TransactionalEmailService(new ConfigService({ SES_FROM: "no-reply@mail.example" }), undefined, vi.fn().mockRejectedValue(throttle), limiter);
+      const before = Date.now();
+      await expect(service.send(message)).resolves.toEqual({ status: "failed", provider: "ses", messageId: null, errorCode: "SES_TooManyRequestsException", retryable: true });
+      expect(limiter.nextSlotAt()).toBeGreaterThanOrEqual(before + 1_000);
+    });
+
+    it("takes no slot for a message that isn't sent (email not set up, or not allowlisted)", async () => {
+      const limiter = new EmailSendLimiter({ perSecond: 1, perMinute: 1 });
+      const service = new TransactionalEmailService(new ConfigService({}), undefined, undefined, limiter);
+      for (let index = 0; index < 3; index++) await expect(service.send(message)).resolves.toMatchObject({ status: "not_configured" });
+      expect(limiter.nextSlotAt()).toBeLessThanOrEqual(Date.now());
     });
   });
   describe("Amazon SES", () => {

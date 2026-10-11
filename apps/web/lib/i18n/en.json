@@ -14307,5 +14307,6 @@
   "1 day before": "1 day before",
   "1 day after": "1 day after",
   "Snoozed until {date}": "Snoozed until {date}",
-  "Later today": "Later today"
+  "Later today": "Later today",
+  "Retrying": "Retrying"
 }

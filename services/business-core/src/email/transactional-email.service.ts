@@ -5,6 +5,8 @@ import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../database/database.service";
 import { deliveryAllowlist, NOT_ALLOWLISTED } from "../notifications/delivery-allowlist";
 import { renderBrandedEmail, WODANA_BRAND, type EmailBrand } from "./branded-email";
+import { mailgunFailure, mailgunTransportFailure, PROVIDER_THROTTLE_PAUSE_CAP_MS, PROVIDER_THROTTLE_PAUSE_MS, sesFailure, type ProviderFailure } from "./email-retry";
+import { emailSendRate, EmailSendLimiter, processEmailSendLimiter } from "./email-send-limiter";
 
 export type EmailDeliveryStatus = "sent" | "not_configured" | "failed";
 export type EmailProvider = "mailgun" | "ses";
@@ -23,7 +25,18 @@ export interface EmailDeliveryResult {
   suppressedReason?: typeof NOT_ALLOWLISTED;
   /** Why a send failed, without recipient data (e.g. MAILGUN_HTTP_401, MAILGUN_TIMEOUT, SES_MessageRejected). */
   errorCode?: string;
+  /** Worth trying again later: provider throttling (HTTP 429), a provider error (5xx), a timeout or the network. */
+  retryable?: boolean;
+  /** How long to wait first: the provider's Retry-After, or when the send limit frees a slot. */
+  retryAfterMs?: number;
+  /** Nothing left this process: the send limit had no slot before the caller's deadline. Not an attempt. */
+  deferred?: boolean;
 }
+
+/** How long a send may wait for a slot; a dispatch loop passes its own deadline. */
+export type EmailSendOptions = { notAfter?: number };
+/** An interactive send (a sign-in code, an invitation) waits at most this long for a slot, then fails as rate limited. */
+export const EMAIL_SEND_MAX_WAIT_MS = 30_000;
 
 interface TransactionalMessage {
   to: string;
@@ -111,12 +124,17 @@ export class TransactionalEmailService {
 
   private readonly sesSender: SesSender;
 
+  /** The process-wide send limit (EMAIL_SEND_PER_SECOND, EMAIL_SEND_PER_MINUTE); a test passes its own. */
+  readonly limiter: EmailSendLimiter;
+
   constructor(
     private readonly config: ConfigService,
     @Optional() private readonly database?: DatabaseService,
     @Optional() sesSender?: SesSender,
+    @Optional() limiter?: EmailSendLimiter,
   ) {
     this.sesSender = sesSender ?? sendThroughSes;
+    this.limiter = limiter ?? processEmailSendLimiter(emailSendRate(config));
   }
 
   private origin() {
@@ -231,7 +249,7 @@ export class TransactionalEmailService {
   }
 
   /** A notification for a team member (e.g. a new enquiry assigned), in the tenant's brand. */
-  async sendStaffNotice(input: { workspaceId: string; to: string; subject: string; body: string; deepLink?: string | null; actionLabel?: string }): Promise<EmailDeliveryResult> {
+  async sendStaffNotice(input: { workspaceId: string; to: string; subject: string; body: string; deepLink?: string | null; actionLabel?: string }, options: EmailSendOptions = {}): Promise<EmailDeliveryResult> {
     const brand = await this.brand({ workspaceId: input.workspaceId });
     const paragraphs = input.body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
     const url = input.deepLink ? new URL(input.deepLink, this.origin()).toString() : null;
@@ -242,7 +260,7 @@ export class TransactionalEmailService {
       paragraphs,
       ...(url ? { action: { label: input.actionLabel ?? "Open in workspace", url } } : {}),
     });
-    return this.send({ to: input.to, subject: input.subject, text, html, fromName: brand.name });
+    return this.send({ to: input.to, subject: input.subject, text, html, fromName: brand.name }, options);
   }
 
   /**
@@ -353,25 +371,47 @@ export class TransactionalEmailService {
    * sending address, with Reply-To on the workspace's inbound address and the threading headers, so the client's
    * answer lands back in the same conversation.
    */
-  async sendConversationReply(input: { workspaceId: string; to: string; subject: string; body: string; replyTo: string; headers: NonNullable<TransactionalMessage["headers"]>; attachments?: EmailAttachment[] }): Promise<EmailDeliveryResult> {
+  async sendConversationReply(input: { workspaceId: string; to: string; subject: string; body: string; replyTo: string; headers: NonNullable<TransactionalMessage["headers"]>; attachments?: EmailAttachment[] }, options: EmailSendOptions = {}): Promise<EmailDeliveryResult> {
     const brand = await this.brand({ workspaceId: input.workspaceId });
     const paragraphs = input.body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
     const { html, text } = renderBrandedEmail({ brand, preheader: paragraphs[0]?.slice(0, 140) ?? input.subject, paragraphs });
     return this.send({ to: input.to, subject: input.subject, text, html, fromName: brand.name, replyTo: fromHeader(brand.name.replace(/["<>\r\n]/g, "").trim() || "Inbox", input.replyTo),
-      headers: input.headers, ...(input.attachments?.length ? { attachments: input.attachments } : {}) });
+      headers: input.headers, ...(input.attachments?.length ? { attachments: input.attachments } : {}) }, options);
   }
 
-  async send(message: TransactionalMessage): Promise<EmailDeliveryResult> {
+  /**
+   * Sends one message through the configured provider, after taking a slot of the process-wide send limit. A send
+   * that can't get a slot before `options.notAfter` (default: 30 seconds from now) isn't attempted (`deferred`).
+   * Provider throttling, provider errors, timeouts and network errors come back `retryable`; a throttle also pauses
+   * every send of this process for the provider's Retry-After (at most a minute).
+   */
+  async send(message: TransactionalMessage, options: EmailSendOptions = {}): Promise<EmailDeliveryResult> {
     // Local and UAT: nothing leaves for a recipient who isn't on DELIVERY_ALLOWLIST.
     if (!deliveryAllowlist(this.config).allowsEmail(message.to)) {
       this.logger.warn(`Transactional email suppressed (${NOT_ALLOWLISTED}) for a recipient at ${message.to.split("@").pop() ?? "unknown"}`);
       return { status: "not_configured", provider: null, messageId: null, suppressedReason: NOT_ALLOWLISTED };
     }
     const provider = this.provider();
-    if (provider === "ses") return this.sendWithSes(message);
-    if (provider !== "mailgun") {
-      return { status: "not_configured", provider: null, messageId: null };
+    if (!provider) return { status: "not_configured", provider: null, messageId: null };
+    const slot = await this.limiter.acquire(options.notAfter ?? Date.now() + EMAIL_SEND_MAX_WAIT_MS);
+    if (!slot.granted) {
+      this.logger.warn(`Transactional email deferred: the send limit has no slot for ${Math.ceil(slot.retryAfterMs / 1000)}s`);
+      return { status: "failed", provider, messageId: null, errorCode: "EMAIL_RATE_LIMITED", retryable: true, retryAfterMs: slot.retryAfterMs, deferred: true };
     }
+    return provider === "ses" ? this.sendWithSes(message) : this.sendWithMailgun(message);
+  }
+
+  /** A provider failure as a result; a throttle also holds every send of this process back for a moment. */
+  private failed(provider: EmailProvider, failure: ProviderFailure): EmailDeliveryResult {
+    if (failure.throttled) this.limiter.pause(Math.min(failure.retryAfterMs ?? PROVIDER_THROTTLE_PAUSE_MS, PROVIDER_THROTTLE_PAUSE_CAP_MS));
+    return {
+      status: "failed", provider, messageId: null, errorCode: failure.errorCode,
+      ...(failure.retryable ? { retryable: true } : {}),
+      ...(failure.retryable && failure.retryAfterMs !== undefined ? { retryAfterMs: failure.retryAfterMs } : {}),
+    };
+  }
+
+  private async sendWithMailgun(message: TransactionalMessage): Promise<EmailDeliveryResult> {
     const apiKey = this.config.get<string>("MAILGUN_API_KEY", "").trim();
     const domain = this.config.get<string>("MAILGUN_DOMAIN", "").trim();
 
@@ -392,8 +432,9 @@ export class TransactionalEmailService {
     if (message.replyTo) form.set("h:Reply-To", headerValue(message.replyTo));
     for (const [name, value] of Object.entries(threadingHeaders(message.headers))) form.set(`h:${name}`, value);
 
+    let response: Response;
     try {
-      const response = await fetch(`${baseUrl}/v3/${encodeURIComponent(domain)}/messages`, {
+      response = await fetch(`${baseUrl}/v3/${encodeURIComponent(domain)}/messages`, {
         method: "POST",
         headers: {
           authorization: `Basic ${Buffer.from(`api:${apiKey}`).toString("base64")}`,
@@ -401,23 +442,26 @@ export class TransactionalEmailService {
         body: form,
         signal: AbortSignal.timeout(30_000),
       });
-      if (!response.ok) {
-        this.logger.error(`Mailgun rejected a transactional email with HTTP ${response.status}`);
-        return { status: "failed", provider: "mailgun", messageId: null, errorCode: `MAILGUN_HTTP_${response.status}` };
-      }
-
-      const payload = await response.json().catch(() => ({})) as { id?: unknown };
-      const messageId = typeof payload.id === "string" && payload.id.length
-        ? payload.id
-        : null;
-      this.logger.log(`Transactional email accepted by Mailgun${messageId ? ` (${messageId})` : ""}`);
-      return { status: "sent", provider: "mailgun", messageId };
     } catch (error) {
-      const reason = error instanceof Error ? error.name : "UnknownError";
-      this.logger.error(`Mailgun transactional email delivery failed (${reason})`);
-      return { status: "failed", provider: "mailgun", messageId: null, errorCode: reason === "TimeoutError" ? "MAILGUN_TIMEOUT" : "MAILGUN_UNREACHABLE" };
+      this.logger.error(`Mailgun transactional email delivery failed (${error instanceof Error ? error.name : "UnknownError"}); it will be retried`);
+      return this.failed("mailgun", mailgunTransportFailure(error));
     }
+    if (!response.ok) {
+      const failure = mailgunFailure(response.status, response.headers?.get?.("retry-after") ?? null);
+      const retry = failure.retryable ? `; it will be retried${failure.retryAfterMs !== undefined ? ` (Retry-After ${Math.ceil(failure.retryAfterMs / 1000)}s)` : ""}` : "";
+      if (failure.throttled) this.logger.warn(`Mailgun throttled a transactional email with HTTP ${response.status}${retry}`);
+      else this.logger.error(`Mailgun rejected a transactional email with HTTP ${response.status}${retry}`);
+      return this.failed("mailgun", failure);
+    }
+
+    const payload = await response.json().catch(() => ({})) as { id?: unknown };
+    const messageId = typeof payload.id === "string" && payload.id.length
+      ? payload.id
+      : null;
+    this.logger.log(`Transactional email accepted by Mailgun${messageId ? ` (${messageId})` : ""}`);
+    return { status: "sent", provider: "mailgun", messageId };
   }
+
   /** Amazon SES: the address is SES_FROM's (a verified domain); the display name is the tenant's. */
   private async sendWithSes(message: TransactionalMessage): Promise<EmailDeliveryResult> {
     const configured = this.config.get<string>("SES_FROM", "").trim();
@@ -441,10 +485,9 @@ export class TransactionalEmailService {
       this.logger.log(`Transactional email accepted by SES${messageId ? ` (${messageId})` : ""}`);
       return { status: "sent", provider: "ses", messageId };
     } catch (error) {
-      const name = error instanceof Error ? error.name : "UnknownError";
-      this.logger.error(`SES transactional email delivery failed (${name})`);
-      const errorCode = name === "TimeoutError" || name === "AbortError" ? "SES_TIMEOUT" : `SES_${name.replace(/[^A-Za-z0-9]/g, "")}`;
-      return { status: "failed", provider: "ses", messageId: null, errorCode };
+      const failure = sesFailure(error);
+      this.logger.error(`SES transactional email delivery failed (${error instanceof Error ? error.name : "UnknownError"})${failure.retryable ? "; it will be retried" : ""}`);
+      return this.failed("ses", failure);
     }
   }
 }
