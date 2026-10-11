@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ConfigService } from "@nestjs/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { externalStatementProvider, MAX_MONTHS } from "./external-statements";
+import { ExternalStatementSources, externalStatementProvider, MAX_MONTHS } from "./external-statements";
 import { parseReportResponse, ProviderReportsClient, sourceErrorFor, StatementSourceError, statementSourceHttpError, type ProviderReportRequest,
   type ProviderReportResponse } from "./provider-reports.client";
 
@@ -66,6 +66,20 @@ describe("QuickBooks and Zoho Books as statement sources", () => {
       data: { Columns: { Column: [{ ColType: "Account" }, { ColType: "Money" }] }, Rows: { Row: [{ group: "Income", Rows: { Row: [{ ColData: [{ value: "Sales" }, { value: "lots" }] }] } }] } } }] }));
     const provider = externalStatementProvider("quickbooks", { db: fakeDb(LINK).db, workspaceId: WORKSPACE, reports: reports.client });
     await expect(provider.profitAndLoss({ legalEntityId: ENTITY, from: "2026-10-01", to: "2026-10-31", basis: "accrual" })).rejects.toMatchObject({ code: "refused" });
+  });
+});
+
+describe("registering the sources with the statements page", () => {
+  it("offers QuickBooks and Zoho Books only to a company that posts to them, named after the company", async () => {
+    const sources = new ExternalStatementSources(fakeReports(() => { throw new Error("not called"); }).client);
+    const [zoho, quickbooks] = sources.adapters();
+    expect([zoho.source, quickbooks.source]).toEqual(["zoho_books", "quickbooks"]);
+    const connected = fakeDb(LINK);
+    expect(await quickbooks.availability({ db: connected.db, workspaceId: WORKSPACE, legalEntityId: ENTITY, currency: "AED" }))
+      .toEqual({ available: true, label: "QuickBooks · Palm Interiors LLC" });
+    expect(connected.queries[0]).toEqual([WORKSPACE, ENTITY, "quickbooks"]);
+    expect(await zoho.availability({ db: fakeDb(null).db, workspaceId: WORKSPACE, legalEntityId: ENTITY })).toEqual({ available: false, label: null });
+    expect(quickbooks.provider({ db: connected.db, workspaceId: WORKSPACE, legalEntityId: ENTITY }).source).toBe("quickbooks");
   });
 });
 

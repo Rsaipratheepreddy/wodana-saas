@@ -91,18 +91,44 @@ export function externalStatementProvider(source: AccountingProviderKind, contex
   };
 }
 
-/** Hands the Ledger's statements page a provider for QuickBooks or Zoho Books, inside the caller's tenant transaction. */
+/**
+ * What the Ledger's statements page hands a source (its StatementSourceContext, structurally): the member's tenant
+ * transaction and the company it reads. Only the fields these sources use are named; the rest pass through.
+ */
+export type SourceContext = { db: Db; workspaceId: string; legalEntityId: string } & Record<string, unknown>;
+/** One registrable statement source (the Ledger's StatementSourceAdapter, structurally). */
+export type StatementSourceAdapterLike = {
+  readonly source: AccountingProviderKind;
+  availability(context: SourceContext): Promise<{ available: boolean; label: string | null }>;
+  provider(context: SourceContext): FinancialStatementProvider;
+};
+
+/** QuickBooks or Zoho Books as a source the statements page registers: offered when the company posts to it. */
+export function externalSourceAdapter(source: AccountingProviderKind, reports: ProviderReportsClient): StatementSourceAdapterLike {
+  return {
+    source,
+    async availability(context) {
+      const link = await companyLink(context.db, context.workspaceId, context.legalEntityId, source);
+      return { available: Boolean(link), label: link ? `${PROVIDER_NAMES[source]} · ${link.companyName}` : null };
+    },
+    provider: (context) => externalStatementProvider(source, { db: context.db, workspaceId: context.workspaceId, reports }),
+  };
+}
+
+/**
+ * Hands the Ledger's statements page its QuickBooks and Zoho Books sources. The statements module registers them
+ * (`for (const adapter of sources.adapters()) registry.register(adapter)` on module init); a caller holding a tenant
+ * transaction can also ask for one provider directly.
+ */
 @Injectable()
 export class ExternalStatementSources {
   constructor(private readonly reports: ProviderReportsClient) {}
 
-  forWorkspace(db: Db, workspaceId: string, source: AccountingProviderKind): FinancialStatementProvider {
-    return externalStatementProvider(source, { db, workspaceId, reports: this.reports });
+  adapters(): StatementSourceAdapterLike[] {
+    return [externalSourceAdapter("zoho_books", this.reports), externalSourceAdapter("quickbooks", this.reports)];
   }
 
-  /** Whether this company posts to the accounting system now (the statements source picker offers it only then). */
-  async available(db: Db, workspaceId: string, legalEntityId: string, source: AccountingProviderKind) {
-    const link = await companyLink(db, workspaceId, legalEntityId, source);
-    return { available: Boolean(link), label: link ? `${PROVIDER_NAMES[source]} · ${link.companyName}` : null, capabilities: EXTERNAL_CAPABILITIES };
+  forWorkspace(db: Db, workspaceId: string, source: AccountingProviderKind): FinancialStatementProvider {
+    return externalStatementProvider(source, { db, workspaceId, reports: this.reports });
   }
 }
