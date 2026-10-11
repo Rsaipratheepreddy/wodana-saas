@@ -22,6 +22,7 @@ import { processTeamCalendarDeadlines } from "../team-calendars/team-calendars.s
 import { processFulfilmentDeadlines } from "../fulfilment/fulfilment-reminders";
 import { processClientCalls } from "../client-calls/client-calls.store";
 import { processLogisticsAlerts } from "../logistics/logistics.store";
+import { processChangeDecisions } from "../change-requests/change-request-reminders";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Tenant = Pick<PoolClient, "query">;
@@ -43,7 +44,7 @@ export class ProjectRemindersService {
     );
     const totals = { created: 0, decisionReminders: 0, clientDecisions: 0, quotesExpiring: 0, quotesExpired: 0, quietChatsResolved: 0, approvalReminders: 0, approvalEscalations: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
       workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, dailyProgressSent: 0, weeklyRollups: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
-      receivablesOverdue: 0, stageInvoiceRequests: 0, checkoutReminders: 0, documentReminders: 0, teamCalendarAlerts: 0, permitAlerts: 0, clientCallsBooked: 0, lateDeliveries: 0, failedWorkspaces: 0 };
+      receivablesOverdue: 0, stageInvoiceRequests: 0, changeDecisions: 0, checkoutReminders: 0, documentReminders: 0, teamCalendarAlerts: 0, permitAlerts: 0, clientCallsBooked: 0, lateDeliveries: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
@@ -52,6 +53,8 @@ export class ProjectRemindersService {
           // Quotes running out are flagged, and those that ran out are Expired, before the client is chased (Q-6).
           quotes: await processQuoteExpiry(client, workspaceId),
           clientDecisions: await processClientDecisions(client, workspaceId),
+          // Changes sent to the client and not decided: the client and the project manager on the firm's days (§6.20).
+          changeDecisions: await processChangeDecisions(client, workspaceId),
           // Chats quiet since our last message resolve themselves, unless something is pending (AU-2).
           quietChats: await resolveQuietChats(client, workspaceId),
           // Approvals that have waited remind their approver, then the owners (AU-3).
@@ -93,6 +96,7 @@ export class ProjectRemindersService {
         }));
         totals.decisionReminders += run.decisions;
         totals.clientDecisions += run.clientDecisions?.sent ?? 0;
+        totals.changeDecisions += run.changeDecisions?.sent ?? 0;
         totals.quotesExpiring += run.quotes?.warned ?? 0;
         totals.quotesExpired += run.quotes?.expired ?? 0;
         totals.quietChatsResolved += run.quietChats?.resolved ?? 0;

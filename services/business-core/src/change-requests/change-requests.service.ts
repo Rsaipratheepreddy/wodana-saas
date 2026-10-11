@@ -19,6 +19,7 @@ import {
 } from "./change-request.store";
 
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
+export type PdfLine = { action: string; title: string; room: string | null; quantity: string | null; unit: string; unitPrice: string | null; amount: string };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -114,8 +115,11 @@ export class ChangeRequestsService {
     });
   }
 
-  /** The change's PDF, issued once per change version (sending again reuses the same file). */
-  private async document(client: PoolClient, workspaceId: string, change: ChangeRow, userId: string) {
+  /**
+   * The change's PDF, issued once per change version (sending again reuses the same file). A change on a project prints
+   * its variation's priced lines and the time impact it was sent with (`priced`).
+   */
+  async document(client: PoolClient, workspaceId: string, change: ChangeRow, userId: string, priced?: { lines: PdfLine[]; priceImpact: string }) {
     let documentId = change.documentId;
     if (!documentId) {
       documentId = randomUUID();
@@ -141,8 +145,8 @@ export class ChangeRequestsService {
       brandName: brand.name, letterhead: await pdfLetterhead(client, this.storage, workspaceId, (await quotingEntity(client, workspaceId, change.caseId))?.id),
       reference: change.reference, title: change.title, description: change.description, designImpact: change.designImpact,
       project: facts?.project ?? "", clientName: facts?.clientName ?? "", issuedOn: facts?.today ?? "", currency: change.currency, decimals: currencyDecimals(change.currency),
-      lines: change.lines.map((line) => ({ action: line.action, title: line.title, room: line.roomName, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, amount: line.amount })),
-      priceImpact: change.priceImpact, timeImpactDays: change.timeImpactDays, handoverBefore: change.handoverBefore, handoverAfter: change.handoverAfter,
+      lines: priced?.lines ?? change.lines.map((line) => ({ action: line.action, title: line.title, room: line.roomName, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, amount: line.amount })),
+      priceImpact: priced?.priceImpact ?? change.priceImpact, timeImpactDays: change.timeImpactDays, handoverBefore: change.handoverBefore, handoverAfter: change.handoverAfter,
     }));
     const version = await addDocumentVersion(client, this.storage, { workspaceId, caseId: change.caseId, documentId, purpose: "issued", bytes,
       fileName: `${change.reference} ${change.title}.pdf`.replace(/[\\/:*?"<>|]/g, "-").slice(0, 200), mimeType: "application/pdf", quoteHash: marker, actorUserId: userId });

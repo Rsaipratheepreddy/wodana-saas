@@ -1,3 +1,4 @@
+import { variationHolds } from "../change-requests/variation-holds";
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
@@ -208,12 +209,19 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
   const paid = new Map<string, boolean>();
   if (requirePayment) for (const projectId of new Set(rows.map((row) => row.projectId))) paid.set(projectId, await orderPaymentIn(db, workspaceId, projectId));
   const fromStock = await givenFromStock(db, workspaceId, rows);
+  // §6.20: scope a variation added waits for that variation's payment before the work, where the firm asks.
+  const held = await variationHolds(db, workspaceId, [...new Set(rows.map((row) => row.projectId))]);
+  const materialLines = held.size ? new Map((await db.query<{ id: string; lines: string[] }>(
+    `SELECT id, boq_line_ids::text[] AS lines FROM project_material_items WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
+    [workspaceId, rows.filter((row) => row.source === "material").map((row) => row.sourceId)])).rows.map((row) => [row.id, row.lines ?? []])) : new Map<string, string[]>();
+  const variationUnpaid = (row: { source: string; sourceId: string }) => row.source === "line" ? held.has(row.sourceId)
+    : (materialLines.get(row.sourceId) ?? []).length > 0 && (materialLines.get(row.sourceId) ?? []).every((lineId) => held.has(lineId));
   const orderBy = (neededBy: string | null, days: number) => (neededBy ? new Date(Date.parse(`${neededBy}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10) : null);
   return rows.map(({ scopeInstalled, siteFinished, ...row }) => {
     const stock = fromStock.get(row.key) ?? Dec.ZERO;
     return { ...row, fromStock: stock.toString(), remaining: row.remaining === null ? null : Dec.of(row.remaining).sub(stock).toFixed(4), orderBy: orderBy(row.neededBy, row.leadDays),
       blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const
-        : requirePayment && !paid.get(row.projectId) ? "client_payment" as const : null,
+        : (requirePayment && !paid.get(row.projectId)) || variationUnpaid(row) ? "client_payment" as const : null,
       status: lineStatus({ required: row.required, placed: row.placed, received: row.received, fromStock: stock.toString(), scopeInstalled, siteFinished }) };
   });
 }

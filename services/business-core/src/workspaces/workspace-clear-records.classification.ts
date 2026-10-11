@@ -349,8 +349,10 @@ const clear = [
   // Projects and everything under them
   "building_permits",
   "change_request_events",
+  "change_request_files",
   "change_request_lines",
   "change_request_po_impacts",
+  "change_request_stage_impacts",
   "change_requests",
   "delivery_projects",
   "handover_documents",
@@ -594,6 +596,7 @@ export const WORKSPACE_CLEARED_FILE_COLUMNS: Readonly<Record<string, readonly st
   books_bill_captures: ["storage_key"],
   building_permits: ["file_key"],
   catalog_item_images: ["object_key", "preview_key"],
+  change_request_files: ["object_key", "preview_key"],
   crm_message_attachments: ["object_key"],
   crm_opportunity_payment_proofs: ["storage_key"],
   finance_request_files: ["storage_key"],

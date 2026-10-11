@@ -45,7 +45,7 @@ export class QsReviewService {
     const note = typeof input.note === "string" ? input.note.trim().slice(0, 2000) : "";
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
       const quote = await this.quote(client, workspaceId, caseId, quoteId, true);
-      if (quote.kind !== "quotation") throw new ConflictException("Only a quotation goes to the QS.");
+      if (quote.kind !== "quotation" && !(await qsRequirement(client, workspaceId, caseId, quoteId)).required) throw new ConflictException("Only a quotation, or a variation the QS rules name, goes to the QS.");
       if (quote.status !== "draft") throw new ConflictException("This quotation was already sent. Start a new revision to price it again.");
       if (assignee === user.userId) throw new ForbiddenException("Send it to another QS: nobody confirms their own quotation.");
       if (!(await this.access.hasPermission(client, workspaceId, assignee, QS))) throw new BadRequestException("Choose someone who prices quotations (QS).");
@@ -136,7 +136,7 @@ export class QsReviewService {
       review: review ? { ...review, approvalId: undefined, approval: approval ? { id: approval.id, status: approval.status, waitingFor: approval.waitingFor, steps: approval.steps } : null } : null,
       reference: (await quotationReference(client, workspaceId, caseId, quote.familyId ?? quoteId))?.reference ?? null,
       // Who can do what next: Sales sends (or moves it to another QS); a QS other than the requester decides.
-      canSend: quote.kind === "quotation" && quote.status === "draft" && await this.access.hasPermission(client, workspaceId, userId, EDIT),
+      canSend: (quote.kind === "quotation" || required) && quote.status === "draft" && await this.access.hasPermission(client, workspaceId, userId, EDIT),
       canDecide: Boolean(review && review.status === "with_qs" && isQs && review.requestedBy !== userId),
       people: (await client.query<{ userId: string; name: string }>(
         `SELECT DISTINCT membership.user_id AS "userId", account.display_name AS name

@@ -5,9 +5,23 @@ const main = { kind: "quotation", round: "main" };
 const base: QsInputs = { qsReview: true, scope: "rules", quote: main, boqRequired: null, workPackages: [], itemTypes: [] };
 
 describe("QS review only where it applies (PLM-082/083/084)", () => {
-  it("keeps the firm's switch as the master switch, and never reviews a variation", () => {
+  it("keeps the firm's switch as the master switch, and keeps variations away from the QS where the firm says so", () => {
     expect(decideQsRequirement({ ...base, qsReview: false, workPackages: ["Joinery"], boqRequired: true })).toEqual({ required: false, reason: { code: "off" } });
     expect(decideQsRequirement({ ...base, quote: { kind: "variation", round: null }, workPackages: ["Joinery"] })).toEqual({ required: false, reason: { code: "not_quotation" } });
+    const never = { rule: "never" as const, threshold: "10000", total: "50000" };
+    expect(decideQsRequirement({ ...base, quote: { kind: "variation", round: null }, workPackages: ["Joinery"], variation: never })).toEqual({ required: false, reason: { code: "not_quotation" } });
+  });
+
+  it("sends a variation to the QS by the same rules: its size, every quotation, or joinery and marked kinds", () => {
+    const variation = { kind: "variation", round: null };
+    const rules = (total: string, threshold: string | null = "10000") => ({ rule: "rules" as const, threshold, total });
+    // A credit counts by its size too.
+    expect(decideQsRequirement({ ...base, quote: variation, variation: rules("-10000.00") })).toEqual({ required: true, reason: { code: "variation_amount" } });
+    expect(decideQsRequirement({ ...base, quote: variation, variation: rules("9999.99") })).toEqual({ required: false, reason: { code: "standard_only" } });
+    expect(decideQsRequirement({ ...base, quote: variation, workPackages: ["Joinery"], variation: rules("800", null) }))
+      .toEqual({ required: true, reason: { code: "lines", workPackages: ["Joinery"], itemTypes: [] } });
+    expect(decideQsRequirement({ ...base, scope: "all", quote: variation, variation: rules("10", null) })).toEqual({ required: true, reason: { code: "every_quotation" } });
+    expect(decideQsRequirement({ ...base, qsReview: false, quote: variation, variation: rules("90000") })).toEqual({ required: false, reason: { code: "off" } });
   });
 
   it("reviews every quotation when the firm prices everything with the QS, unless the order needs no BOQ (as before)", () => {

@@ -162,6 +162,11 @@ projects[].changes[].timeImpactDays projects[].changes[].handoverBefore projects
 projects[].changes[].lines[] projects[].changes[].lines[].id projects[].changes[].lines[].action projects[].changes[].lines[].title projects[].changes[].lines[].room
 projects[].changes[].lines[].quantity projects[].changes[].lines[].unit projects[].changes[].lines[].unitPrice projects[].changes[].lines[].amount projects[].changes[].decidedAt
 projects[].changes[].decidedBy projects[].changes[].method projects[].changes[].declineNote projects[].changes[].version projects[].changes[].signed projects[].changes[].canDecide
+projects[].changes[].price projects[].changes[].price.net projects[].changes[].price.tax projects[].changes[].price.total projects[].changes[].price.lines projects[].changes[].price.lines[]
+projects[].changes[].price.lines[].id projects[].changes[].price.lines[].op projects[].changes[].price.lines[].title projects[].changes[].price.lines[].area
+projects[].changes[].price.lines[].quantity projects[].changes[].price.lines[].unit projects[].changes[].price.lines[].total projects[].changes[].time
+projects[].changes[].time.handoverBefore projects[].changes[].time.handoverAfter projects[].changes[].time.stages projects[].changes[].time.stages[]
+projects[].changes[].time.stages[].name projects[].changes[].time.stages[].delay
 projects[].budget projects[].budget.currency projects[].budget.agreed projects[].budget.changes projects[].budget.changes[] projects[].budget.changes[].kind projects[].budget.changes[].id
 projects[].budget.changes[].reference projects[].budget.changes[].title projects[].budget.changes[].amount projects[].budget.changes[].decidedAt projects[].budget.changes[].method
 projects[].budget.changesTotal projects[].budget.allowances projects[].budget.allowances[] projects[].budget.allowances[].lineId projects[].budget.allowances[].title

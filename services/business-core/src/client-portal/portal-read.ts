@@ -309,7 +309,8 @@ async function readDailyCards(db: Db, workspaceId: string, projectId: string, gr
 async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: CaseRow, commercial: CommercialData, today: string, definitions: DefinitionSource,
   files: FilePresence) {
   const approver = grant.role === "approver";
-  const issuedQuotes = commercial.quotes.filter((quote) => quote.issuedAt);
+  // A change request's variation is decided as the change (Changes), not as a quotation of its own.
+  const issuedQuotes = commercial.quotes.filter((quote) => quote.issuedAt && !quote.changeRequestId);
   // The quotation number and the markup disclosure the client was sent (R3).
   const extras = await portalQuoteExtras(db, workspaceId, row.caseId, issuedQuotes);
   const quotes = issuedQuotes.map((quote) => ({ ...portalQuote(quote, grant.id, grant.role), reference: extras.get(quote.id)?.reference ?? null, disclosure: extras.get(quote.id)?.disclosure ?? null }));

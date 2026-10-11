@@ -51,6 +51,10 @@ const EVENT_ACTIONS: Record<string, string> = {
   "books.journal_decided": "Open journal",
   "books.lock_date_changed": "Open Ledger settings",
   "books.statement_source_changed": "Open statements",
+  "change_request.project_raised": "Price the change",
+  "change_request.ready": "Send to client",
+  "change_request.apply_blocked": "Apply the change",
+  "change_request.schedule_moved": "Open the change",
 };
 
 const MODULE_ACTIONS: Record<string, string> = {
@@ -72,6 +76,7 @@ const MODULE_ACTIONS: Record<string, string> = {
   account: "Open workspace",
   ai: "Open AI credits",
   books: "Open Ledger",
+  change_request: "Open the change",
 };
 
 export function staffEmailAction(eventType: string | null | undefined, recipientType?: string | null) {

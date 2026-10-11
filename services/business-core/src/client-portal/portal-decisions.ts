@@ -130,6 +130,7 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
   const data = await ctx.commercial.load(ctx.db, ctx.workspaceId, row.caseId);
   const q = data.quotes.find((item) => item.id === body.quoteId);
   if (!q || q.approverId !== grant.id) throw new ForbiddenException("This quotation was sent to another decision-maker.");
+  if (q.changeRequestId) throw new ConflictException("Decide this change under Changes.");
   const decision = body.decision;
   if (decision !== "accept" && decision !== "changes" && decision !== "decline") throw new BadRequestException("Choose accept, ask for changes or decline.");
   const note = words(body.note, 6000, decision === "changes" ? "Say what you'd like changed." : "Say why you're declining.", decision !== "accept");

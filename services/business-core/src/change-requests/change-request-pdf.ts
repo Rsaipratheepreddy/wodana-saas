@@ -31,7 +31,7 @@ export type ChangeDocument = {
 const A4 = PageSizes.A4 as [number, number];
 const MARGIN = 48;
 const INK = rgb(0.13, 0.14, 0.16), MUTED = rgb(0.42, 0.44, 0.48), RULE = rgb(0.86, 0.87, 0.89);
-const ACTION: Record<string, string> = { add: "Add", omit: "Omit", replace: "Replace", draw: "Allowance" };
+const ACTION: Record<string, string> = { add: "Add", omit: "Omit", replace: "Replace", draw: "Allowance", move: "Move" };
 
 export async function composeChangeDocument(data: ChangeDocument): Promise<Uint8Array> {
   const document = await PDFDocument.create();

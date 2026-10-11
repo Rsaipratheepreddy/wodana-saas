@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { createChange, decideChange, readChanges, type ChangeRow } from "../change-requests/change-request.store";
+import { priceOf, projectForChanges, raiseProjectChange } from "../change-requests/project-changes.store";
 import type { Grant } from "./portal-auth";
 import { grantFor, type DecisionContext } from "./portal-decisions";
 
@@ -15,21 +16,31 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export type PortalChange = ReturnType<typeof portalChange>;
 
-const SHOWN_TO_CLIENT = new Set(["with_client", "approved", "declined"]);
+const SHOWN_TO_CLIENT = new Set(["with_client", "approved", "applied", "declined"]);
 
-function portalChange(change: ChangeRow & { sharedAt: string | null }, grant: Grant, caseOpen: boolean) {
+/** A project change as priced (its variation) and the time impact it was sent with: what the client decides on. */
+export type PortalPrice = { net: string; tax: string; total: string; lines: Array<{ id: string; op: "add" | "omit" | "move"; title: string; area: string | null; quantity: string; unit: string; total: string }> };
+type PortalTime = { handoverBefore: string | null; handoverAfter: string | null; stages: Array<{ name: string; delay: number }> };
+
+function portalChange(change: ChangeRow & { sharedAt: string | null; price: PortalPrice | null }, grant: Grant, caseOpen: boolean) {
   const assessed = SHOWN_TO_CLIENT.has(change.status) || (change.status === "withdrawn" && Boolean(change.sharedAt));
   // What the client reads as its state: with the team (being assessed), waiting for them, approved, declined, withdrawn.
-  const status = change.status === "draft" || change.status === "pending_approval" ? "with_team" as const
-    : change.status === "with_client" ? "waiting" as const : change.status as "approved" | "declined" | "withdrawn";
+  const status = ["draft", "pricing", "pending_approval", "to_send"].includes(change.status) ? "with_team" as const
+    : change.status === "with_client" ? "waiting" as const : change.status === "applied" ? "approved" as const : change.status as "approved" | "declined" | "withdrawn";
+  // A project change: the stages it moves and the handover, as frozen when it was sent (never the plan's internals).
+  const sent = change.scheduleSnapshot as { handoverBefore?: string | null; handoverAfter?: string | null; stages?: Array<{ name: string; delay: number }> } | null;
+  const time: PortalTime | null = change.projectId && assessed && sent
+    ? { handoverBefore: sent.handoverBefore ?? null, handoverAfter: sent.handoverAfter ?? null, stages: (sent.stages ?? []).filter((stage) => stage.delay > 0).map((stage) => ({ name: stage.name, delay: stage.delay })) }
+    : null;
   return {
     id: change.id, reference: change.reference, title: change.title, description: change.description, status,
     raisedByClient: change.raisedByClient, mine: change.raisedByGrantId === grant.id,
     createdAt: change.createdAt, sharedAt: change.sharedAt,
     // The assessment once the team sent it: what changes, at what price, and the handover it gives.
-    currency: assessed ? change.currency : null, priceImpact: assessed ? change.priceImpact : null, timeImpactDays: assessed ? change.timeImpactDays : null,
+    currency: assessed ? change.currency : null, priceImpact: assessed ? (change.price?.total ?? change.priceImpact) : null, timeImpactDays: assessed ? change.timeImpactDays : null,
+    price: assessed ? change.price : null, time,
     handoverBefore: assessed ? change.handoverBefore : null, handoverAfter: assessed ? change.handoverAfter : null, designImpact: assessed ? change.designImpact : "",
-    lines: assessed ? change.lines.map((line) => ({ id: line.id, action: line.action, title: line.title, room: line.roomName, quantity: line.quantity, unit: line.unit,
+    lines: assessed && !change.projectId ? change.lines.map((line) => ({ id: line.id, action: line.action, title: line.title, room: line.roomName, quantity: line.quantity, unit: line.unit,
       unitPrice: line.unitPrice, amount: line.amount })) : [],
     decidedAt: change.decidedAt, decidedBy: change.decidedByName, method: change.decisionMethod, declineNote: change.status === "declined" ? change.declineNote : null,
     version: change.version,
@@ -45,10 +56,17 @@ export async function readPortalChanges(db: Db, workspaceId: string, grant: Gran
   const shared = new Map((await db.query<{ id: string; at: string }>(
     `SELECT change_request_id AS id, min(at) AS at FROM change_request_events WHERE workspace_id = $1 AND change_request_id = ANY($2::uuid[]) AND event = 'approved_internal'
       GROUP BY change_request_id`, [workspaceId, changes.map((change) => change.id)])).rows.map((row) => [row.id, new Date(row.at).toISOString()]));
-  return changes
-    .map((change) => ({ ...change, sharedAt: shared.get(change.id) ?? null }))
-    .filter((change) => change.raisedByClient || SHOWN_TO_CLIENT.has(change.status) || (change.status === "withdrawn" && change.sharedAt))
-    .map((change) => portalChange(change, grant, caseOpen));
+  const visible = changes
+    .map((change) => ({ ...change, sharedAt: change.projectId ? change.sentAt : shared.get(change.id) ?? null }))
+    .filter((change) => change.raisedByClient || SHOWN_TO_CLIENT.has(change.status) || (change.status === "withdrawn" && change.sharedAt));
+  const priced = [];
+  for (const change of visible) {
+    // A project change is priced by its variation: its lines (what each does) and totals, client prices only.
+    const price = change.projectId && change.quoteId && (SHOWN_TO_CLIENT.has(change.status) || change.sharedAt) ? await priceOf(db, workspaceId, change.caseId, change.quoteId) : null;
+    priced.push(portalChange({ ...change, price: price ? { net: price.net, tax: price.tax, total: price.total,
+      lines: price.lines.map((line) => ({ id: line.id, op: line.op, title: line.title, area: line.area, quantity: line.quantity, unit: line.unit, total: line.total })) } : null }, grant, caseOpen));
+  }
+  return priced;
 }
 
 function decider(grant: Grant) {
@@ -66,7 +84,11 @@ export async function raiseChange(ctx: DecisionContext, body: Record<string, unk
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!title) throw new BadRequestException("Say what you'd like to change.");
   const detail = typeof body.description === "string" ? body.description.trim().slice(0, 4000) : "";
-  const result = await createChange(ctx.db, ctx.workspaceId, row.caseId, { id: body.id, title, description: detail }, { grantId: grant.id, name: grant.name });
+  // On a started project the request lands on the project's changes, for the team to price and send back.
+  const projectId = await projectForChanges(ctx.db, ctx.workspaceId, row.caseId);
+  const result = projectId
+    ? await raiseProjectChange(ctx.db, ctx.workspaceId, projectId, { id: body.id, title, description: detail }, { grantId: grant.id, name: grant.name })
+    : await createChange(ctx.db, ctx.workspaceId, row.caseId, { id: body.id, title, description: detail }, { grantId: grant.id, name: grant.name });
   return { ok: true, changeId: result.change.id, entity: { type: "change_request", id: result.change.id }, audit: { title, replayed: result.replayed } };
 }
 

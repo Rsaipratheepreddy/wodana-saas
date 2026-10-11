@@ -8,11 +8,16 @@ import { Dec } from "../catalog-core/decimal";
  */
 export const CHANGE_KINDS = ["addition", "deduction", "replacement", "move", "schedule", "price_correction"] as const;
 export type ChangeKind = (typeof CHANGE_KINDS)[number];
-export const CHANGE_STATUSES = ["draft", "pending_approval", "with_client", "approved", "declined", "withdrawn"] as const;
+/**
+ * draft → pending_approval → with_client → approved for a change on a planning record (no project yet). On a started
+ * project the change is priced as a variation quotation and applied: draft → pricing → pending_approval → to_send →
+ * with_client → approved → applied. Declined and withdrawn are final.
+ */
+export const CHANGE_STATUSES = ["draft", "pricing", "pending_approval", "to_send", "with_client", "approved", "applied", "declined", "withdrawn"] as const;
 export type ChangeStatus = (typeof CHANGE_STATUSES)[number];
-export const LINE_SOURCES = ["quote_line", "ledger", "allowance", "custom"] as const;
+export const LINE_SOURCES = ["quote_line", "ledger", "allowance", "custom", "catalog", "boq_line"] as const;
 export type LineSource = (typeof LINE_SOURCES)[number];
-export const LINE_ACTIONS = ["add", "omit", "replace", "draw"] as const;
+export const LINE_ACTIONS = ["add", "omit", "replace", "draw", "move"] as const;
 export type LineAction = (typeof LINE_ACTIONS)[number];
 
 export type LineInput = {
@@ -22,6 +27,8 @@ export type LineInput = {
 export type CleanLine = {
   id: string; source: LineSource; action: LineAction; quoteId: string | null; quoteLineId: string | null; ledgerEntryId: string | null; ledgerVersionId: string | null;
   roomId: string | null; title: string; quantity: string | null; unit: string; unitPrice: string | null; amount: string;
+  /** On a project: the catalogue item added, or the live-scope line removed, replaced or moved. */
+  catalogItemId?: string | null; boqLineId?: string | null;
 };
 
 export class ChangeRuleError extends Error {
@@ -41,10 +48,10 @@ const ref = (value: unknown) => (typeof value === "string" && value.trim() && va
  * replacement states its net amount; a ledger line's amount is the price impact of its version (set by the store).
  */
 export function cleanLine(input: LineInput, position: number): CleanLine {
-  const source = LINE_SOURCES.includes(input.source as LineSource) ? input.source as LineSource : null;
+  const source = (["quote_line", "ledger", "allowance", "custom"] as const).includes(input.source as never) ? input.source as LineSource : null;
   if (!source) throw new ChangeRuleError(`Line ${position + 1}: say what it changes`);
   const action = LINE_ACTIONS.includes(input.action as LineAction) ? input.action as LineAction : null;
-  if (!action) throw new ChangeRuleError(`Line ${position + 1}: add, omit, replace or draw`);
+  if (!action || action === "move") throw new ChangeRuleError(`Line ${position + 1}: add, omit, replace or draw`);
   if ((source === "allowance") !== (action === "draw")) throw new ChangeRuleError(`Line ${position + 1}: only an allowance is drawn down`);
   const lineId = id(input.id);
   if (!lineId) throw new ChangeRuleError(`Line ${position + 1} has no id`);
@@ -108,8 +115,11 @@ export function submitProblem(draft: { title: string; timeImpactDays: number; de
   return null;
 }
 
-type Event = "edit" | "submit" | "internal_approved" | "returned" | "rejected" | "send" | "client_approved" | "client_declined" | "withdraw";
-const MOVES: Record<Event, { from: ChangeStatus[]; to: ChangeStatus }> = {
+type Event = "edit" | "price" | "submit" | "internal_approved" | "returned" | "rejected" | "send" | "client_approved" | "client_declined" | "apply" | "withdraw";
+/** `to: null`: the event keeps the status (an edit, a resend). */
+type Move = { from: ChangeStatus[]; to: ChangeStatus | null };
+/** A change on a planning record (no project yet): assessed with its own lines, decided by the client. */
+const CASE_MOVES: Partial<Record<Event, Move>> = {
   edit: { from: ["draft"], to: "draft" },
   submit: { from: ["draft"], to: "pending_approval" },
   internal_approved: { from: ["pending_approval"], to: "with_client" },
@@ -120,22 +130,40 @@ const MOVES: Record<Event, { from: ChangeStatus[]; to: ChangeStatus }> = {
   client_declined: { from: ["with_client"], to: "declined" },
   withdraw: { from: ["draft", "pending_approval", "with_client"], to: "withdrawn" },
 };
+/** A change on a started project: priced as a variation quotation, sent when approved, applied once the client agrees. */
+const PROJECT_MOVES: Partial<Record<Event, Move>> = {
+  edit: { from: ["draft", "pricing"], to: null },
+  price: { from: ["draft"], to: "pricing" },
+  submit: { from: ["pricing"], to: "pending_approval" },
+  internal_approved: { from: ["pending_approval"], to: "to_send" },
+  returned: { from: ["pending_approval"], to: "pricing" },
+  rejected: { from: ["pending_approval"], to: "withdrawn" },
+  send: { from: ["to_send"], to: "with_client" },
+  client_approved: { from: ["with_client"], to: "approved" },
+  client_declined: { from: ["with_client"], to: "declined" },
+  apply: { from: ["approved"], to: "applied" },
+  withdraw: { from: ["draft", "pricing", "pending_approval", "to_send", "with_client"], to: "withdrawn" },
+};
 
 const WHY: Record<ChangeStatus, string> = {
   draft: "This change is still being assessed.",
+  pricing: "This change is being priced.",
   pending_approval: "This change is waiting for approval inside the firm.",
+  to_send: "This change is approved and waiting to be sent to the client.",
   with_client: "This change is with the client.",
   approved: "This change was already approved.",
+  applied: "This change was already approved and applied to the project.",
   declined: "This change was declined. Raise a new one with a fresh assessment.",
   withdrawn: "This change was withdrawn.",
 };
 
 /** The status after an event, or why it can't happen now. */
-export function nextStatus(status: ChangeStatus, event: Event): ChangeStatus {
-  const move = MOVES[event];
-  if (!move.from.includes(status)) throw new ChangeRuleError(WHY[status], "conflict");
-  return move.to;
+export function nextStatus(status: ChangeStatus, event: Event, mode: "case" | "project" = "case"): ChangeStatus {
+  const move = (mode === "project" ? PROJECT_MOVES : CASE_MOVES)[event];
+  if (!move || !move.from.includes(status)) throw new ChangeRuleError(WHY[status], "conflict");
+  return move.to ?? status;
 }
+export type ChangeEvent = Event;
 
 /** "CR-007": how a change is named to people. */
 export const changeReference = (number: number) => `CR-${String(number).padStart(3, "0")}`;

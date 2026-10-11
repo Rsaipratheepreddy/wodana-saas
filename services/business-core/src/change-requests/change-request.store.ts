@@ -12,6 +12,7 @@ import {
   type ChangeKind, type ChangeStatus, type CleanLine, type DraftInput,
 } from "./change-request.domain";
 import { noticeChangeDecided, noticeChangeRaised, noticeChangeToClient } from "./change-request-notices";
+import { decideProjectChange, projectApprovalOutcome, withdrawProjectChange } from "./project-changes.store";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -25,6 +26,10 @@ export type ChangeRow = {
   raisedByClient: boolean; raisedByName: string | null; raisedByGrantId: string | null; submittedAt: string | null; sentAt: string | null; documentId: string | null; esignRequestId: string | null;
   decidedAt: string | null; decidedByName: string | null; decidedByGrantId: string | null; decisionMethod: "portal" | "signed_link" | null; declineNote: string | null;
   lockNumber: number | null; withdrawnAt: string | null; withdrawReason: string | null; version: number; createdAt: string; updatedAt: string;
+  /** On a started project (null on a planning record): why it was raised, its variation quotation and what applying it did. */
+  projectId: string | null; reason: "client_request" | "site_condition" | "design_change" | "error"; quoteId: string | null; paymentRule: "before_work" | "next_milestone" | null;
+  scheduleSnapshot: unknown; issuedHash: string | null; appliedAt: string | null; appliedSealId: string | null; appliedSchedule: unknown; applyProblem: string | null;
+  submittedBy: string | null; raisedBy: string | null;
   lines: ChangeLineRow[];
 };
 
@@ -43,7 +48,10 @@ const CHANGE_SELECT = `SELECT change.id, change.case_id AS "caseId", change.numb
   COALESCE(raiser.display_name, grant_row.name) AS "raisedByName", change.raised_by_grant_id AS "raisedByGrantId", change.submitted_at AS "submittedAt", change.sent_at AS "sentAt",
   change.document_id AS "documentId", change.esign_request_id AS "esignRequestId", change.decided_at AS "decidedAt", change.decided_by_name AS "decidedByName",
   change.decided_by_grant_id AS "decidedByGrantId", change.decision_method AS "decisionMethod", change.decline_note AS "declineNote", change.lock_number AS "lockNumber",
-  change.withdrawn_at AS "withdrawnAt", change.withdraw_reason AS "withdrawReason", change.version, change.created_at AS "createdAt", change.updated_at AS "updatedAt"
+  change.withdrawn_at AS "withdrawnAt", change.withdraw_reason AS "withdrawReason", change.version, change.created_at AS "createdAt", change.updated_at AS "updatedAt",
+  change.project_id AS "projectId", change.reason, change.quote_id AS "quoteId", change.payment_rule AS "paymentRule", change.schedule_snapshot AS "scheduleSnapshot",
+  change.issued_hash AS "issuedHash", change.applied_at AS "appliedAt", change.applied_seal_id AS "appliedSealId", change.applied_schedule AS "appliedSchedule",
+  change.apply_problem AS "applyProblem", change.submitted_by AS "submittedBy", change.raised_by AS "raisedBy"
   FROM change_requests change
   LEFT JOIN users raiser ON raiser.id = change.raised_by
   LEFT JOIN client_portal_grants grant_row ON grant_row.workspace_id = change.workspace_id AND grant_row.id = change.raised_by_grant_id`;
@@ -55,7 +63,8 @@ async function withLines(db: Db, workspaceId: string, rows: Raw[]): Promise<Chan
   const lines = (await db.query<ChangeLineRow & { changeId: string }>(
     `SELECT line.change_request_id AS "changeId", line.id, line.position, line.source, line.action, line.quote_id AS "quoteId", line.quote_line_id AS "quoteLineId",
             line.ledger_entry_id AS "ledgerEntryId", line.ledger_version_id AS "ledgerVersionId", line.room_id AS "roomId", room.name AS "roomName", line.title,
-            line.quantity::text AS quantity, line.unit, line.unit_price::text AS "unitPrice", line.amount::text AS amount
+            line.quantity::text AS quantity, line.unit, line.unit_price::text AS "unitPrice", line.amount::text AS amount,
+            line.catalog_item_id AS "catalogItemId", line.boq_line_id AS "boqLineId"
        FROM change_request_lines line LEFT JOIN pre_project_rooms room ON room.id = line.room_id
       WHERE line.workspace_id = $1 AND line.change_request_id = ANY($2::uuid[]) ORDER BY line.position`, [workspaceId, rows.map((row) => row.id)])).rows;
   return rows.map((row) => {
@@ -63,14 +72,27 @@ async function withLines(db: Db, workspaceId: string, rows: Raw[]): Promise<Chan
     return {
       ...row, reference: changeReference(row.number), allowanceDraw: allowanceDraw(own), lines: own,
       submittedAt: iso(row.submittedAt), sentAt: iso(row.sentAt), decidedAt: iso(row.decidedAt), withdrawnAt: iso(row.withdrawnAt), createdAt: iso(row.createdAt)!, updatedAt: iso(row.updatedAt)!,
+      appliedAt: iso(row.appliedAt),
     };
   });
 }
 
-/** A case's change requests, newest first, each with its lines. */
+/** A case's change requests, newest first, each with its lines (a project's changes too: the client sees them all in one place). */
 export async function readChanges(db: Db, workspaceId: string, caseId: string) {
   return withLines(db, workspaceId, (await db.query<Raw>(`${CHANGE_SELECT} WHERE change.workspace_id = $1 AND change.case_id = $2 ORDER BY change.number DESC`,
     [workspaceId, caseId])).rows);
+}
+
+/** A project's change requests, newest first, each with its lines. */
+export async function readProjectChangeRows(db: Db, workspaceId: string, projectId: string) {
+  return withLines(db, workspaceId, (await db.query<Raw>(`${CHANGE_SELECT} WHERE change.workspace_id = $1 AND change.project_id = $2 ORDER BY change.number DESC`,
+    [workspaceId, projectId])).rows);
+}
+
+/** One change by its id (whatever case it's on), for the commands that find it from elsewhere (the approvals inbox, a signed link). */
+export async function readChangeById(db: Db, workspaceId: string, id: string, lock = false) {
+  const row = (await db.query<Raw>(`${CHANGE_SELECT} WHERE change.workspace_id = $1 AND change.id = $2${lock ? " FOR UPDATE OF change" : ""}`, [workspaceId, id])).rows[0];
+  return row ? (await withLines(db, workspaceId, [row]))[0] : null;
 }
 
 export async function readChange(db: Db, workspaceId: string, caseId: string, id: string, lock = false) {
@@ -98,7 +120,7 @@ export async function readPoImpacts(db: Db, workspaceId: string, changeId: strin
       WHERE workspace_id = $1 AND change_request_id = $2 ORDER BY number`, [workspaceId, changeId])).rows;
 }
 
-async function event(db: Db, workspaceId: string, changeId: string, name: string, actor: ChangeActor | null, note: string | null = null) {
+export async function event(db: Db, workspaceId: string, changeId: string, name: string, actor: ChangeActor | null, note: string | null = null) {
   await db.query(`INSERT INTO change_request_events (id, workspace_id, change_request_id, event, actor_user_id, actor_grant_id, note) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [randomUUID(), workspaceId, changeId, name, actor && "userId" in actor ? actor.userId : null, actor && "grantId" in actor ? actor.grantId : null, note]);
 }
@@ -158,15 +180,15 @@ async function resolveLines(db: Db, workspaceId: string, caseId: string, lines: 
   return resolved;
 }
 
-async function writeLines(db: Db, workspaceId: string, changeId: string, lines: CleanLine[]) {
+export async function writeLines(db: Db, workspaceId: string, changeId: string, lines: CleanLine[]) {
   await db.query(`DELETE FROM change_request_lines WHERE workspace_id = $1 AND change_request_id = $2`, [workspaceId, changeId]);
   for (const [position, line] of lines.entries())
     await db.query(
       `INSERT INTO change_request_lines (id, workspace_id, change_request_id, position, source, action, quote_id, quote_line_id, ledger_entry_id, ledger_version_id, room_id,
-                                         title, quantity, unit, unit_price, amount)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::numeric, $14, $15::numeric, $16::numeric)`,
+                                         title, quantity, unit, unit_price, amount, catalog_item_id, boq_line_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::numeric, $14, $15::numeric, $16::numeric, $17, $18)`,
       [line.id, workspaceId, changeId, position, line.source, line.action, line.quoteId, line.quoteLineId, line.ledgerEntryId, line.ledgerVersionId, line.roomId,
-        line.title, line.quantity, line.unit, line.unitPrice, line.amount]);
+        line.title, line.quantity, line.unit, line.unitPrice, line.amount, line.catalogItemId ?? null, line.boqLineId ?? null]);
 }
 
 export type CreateInput = DraftInput & { id: string };
@@ -206,6 +228,7 @@ export async function createChange(db: Db, workspaceId: string, caseId: string, 
 /** Saves a draft's assessment (fields and lines) against the version the editor saw. */
 export async function saveDraft(db: Db, workspaceId: string, caseId: string, id: string, input: DraftInput & { version?: unknown }, userId: string) {
   const current = await readChange(db, workspaceId, caseId, id, true);
+  if (current.projectId) throw new ConflictException("This change is on its project. Open it there.");
   rule(() => nextStatus(current.status, "edit"));
   if (Number(input.version) !== current.version) throw new ConflictException("This change was edited in another window. Reload and try again.");
   const draft = rule(() => cleanDraft(input));
@@ -229,6 +252,7 @@ const changeHref = (caseId: string, id: string) => `/workspace/pre-projects/case
 /** Sends a draft for approval inside the firm on E3 (kind change_request), at its price impact. */
 export async function submitChange(db: Db, workspaceId: string, caseId: string, id: string, input: { version?: unknown }, userId: string) {
   const current = await readChange(db, workspaceId, caseId, id, true);
+  if (current.projectId) throw new ConflictException("This change is on its project. Open it there.");
   rule(() => nextStatus(current.status, "submit"));
   if (Number(input.version) !== current.version) throw new ConflictException("This change was edited in another window. Reload and try again.");
   const problem = submitProblem(current);
@@ -253,6 +277,8 @@ export async function applyChangeApproval(db: Db, workspaceId: string, approval:
   const row = (await db.query<{ caseId: string }>(`SELECT case_id AS "caseId" FROM change_requests WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, approval.subjectId])).rows[0];
   if (!row) return;
   const current = await readChange(db, workspaceId, row.caseId, approval.subjectId);
+  // A change on a started project: its variation moves with the decision too.
+  if (current.projectId) return projectApprovalOutcome(db, workspaceId, current, approval, decision, userId, note);
   if (current.status !== "pending_approval") return;
   if (decision === "approve" && approval.status !== "approved") return;
   const event_ = decision === "approve" ? "internal_approved" as const : decision === "return" ? "returned" as const : "rejected" as const;
@@ -289,11 +315,14 @@ export type ClientDecision = {
  */
 export async function decideChange(db: Db, workspaceId: string, caseId: string, id: string, input: ClientDecision) {
   const current = await readChange(db, workspaceId, caseId, id, true);
-  if (current.status === "approved" || current.status === "declined") {
-    const same = (current.status === "approved") === (input.decision === "approve") && (current.decidedByGrantId ?? null) === (input.grantId ?? null);
+  if (current.status === "approved" || current.status === "applied" || current.status === "declined") {
+    const approved = current.status !== "declined";
+    const same = approved === (input.decision === "approve") && (current.decidedByGrantId ?? null) === (input.grantId ?? null);
     if (same) return { replayed: true, change: current };
-    throw new ConflictException(`This change was already ${current.status} by ${current.decidedByName ?? "someone else"}.`);
+    throw new ConflictException(`This change was already ${approved ? "approved" : "declined"} by ${current.decidedByName ?? "someone else"}.`);
   }
+  // A change on a started project: priced as a variation, accepted with it and applied to the project.
+  if (current.projectId) return decideProjectChange(db, workspaceId, current, input);
   rule(() => nextStatus(current.status, input.decision === "approve" ? "client_approved" : "client_declined"));
   if (input.version !== undefined && input.version !== null && input.version !== current.version) throw new ConflictException("This change was updated. Reload to see the latest.");
   const note = (input.note ?? "").trim().slice(0, 2000);
@@ -331,7 +360,7 @@ export async function decideChange(db: Db, workspaceId: string, caseId: string, 
 }
 
 /** Closes the open signing links of a change (the decision was made); the one that signed is already closed. */
-async function closeLinks(db: Db, workspaceId: string, changeId: string, except: string | null = null) {
+export async function closeLinks(db: Db, workspaceId: string, changeId: string, except: string | null = null) {
   const document = (await db.query<{ documentId: string | null }>(`SELECT document_id AS "documentId" FROM change_requests WHERE workspace_id = $1 AND id = $2`, [workspaceId, changeId])).rows[0]?.documentId;
   if (!document) return;
   await db.query(`UPDATE esign_requests SET status = 'revoked', revoked_at = now(), version = version + 1
@@ -422,6 +451,7 @@ async function listPurchaseOrders(db: Db, workspaceId: string, change: ChangeRow
 /** Withdraws a change that isn't decided: its approval request is cancelled and open signing links close. */
 export async function withdrawChange(db: Db, workspaceId: string, caseId: string, id: string, input: { version?: unknown; reason?: unknown }, userId: string) {
   const current = await readChange(db, workspaceId, caseId, id, true);
+  if (current.projectId) return withdrawProjectChange(db, workspaceId, current, input, userId);
   rule(() => nextStatus(current.status, "withdraw"));
   if (Number(input.version) !== current.version) throw new ConflictException("This change was updated in another window. Reload and try again.");
   const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 2000) : "";
@@ -437,5 +467,5 @@ export async function withdrawChange(db: Db, workspaceId: string, caseId: string
 
 /** What the client has approved on a case: approved changes in order, for the budget tracker (R1). */
 export async function approvedChanges(db: Db, workspaceId: string, caseId: string) {
-  return (await readChanges(db, workspaceId, caseId)).filter((change) => change.status === "approved");
+  return (await readChanges(db, workspaceId, caseId)).filter((change) => change.status === "approved" || change.status === "applied");
 }

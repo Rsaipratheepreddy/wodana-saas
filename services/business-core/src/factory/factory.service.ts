@@ -1,3 +1,4 @@
+import { variationHolds } from "../change-requests/variation-holds";
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -595,6 +596,9 @@ export class FactoryService {
           : drawing.project && drawing.project.status !== "approved" ? `the client hasn't approved drawings R${drawing.project.number}` : "the drawing isn't approved" });
     }
     if (settings.requirePayment) checks.push({ key: "payment", passed: project ? await productionPaid(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the payment before production isn't verified" });
+    // A line a variation added waits for that variation's payment before the work, where the firm asks (§6.20).
+    const heldBy = (await variationHolds(client, workspaceId, [order.projectId])).get(order.boqLineId);
+    if (heldBy) checks.push({ key: "variation_payment", passed: false, missing: `the client hasn't paid ${heldBy} yet` });
     if (settings.requireMaterials) {
       // Its own materials when it lists them (issued, or covered by the project's stock); otherwise its package's.
       const materials = (await readWorkOrderMaterials(client, workspaceId, order.id)).filter((row) => row.status === "active");

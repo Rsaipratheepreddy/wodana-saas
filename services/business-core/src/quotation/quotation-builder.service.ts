@@ -268,109 +268,118 @@ export class QuotationBuilderService {
    */
   apply(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { ops?: unknown }) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      const { quote } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
-      if (!Array.isArray(input.ops) || !input.ops.length || input.ops.length > 200) throw new BadRequestException("Send 1 to 200 changes.");
-      const canEditCosts = await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.manage");
-      const settings = await readSettings(client, workspaceId);
-      // PLM-082: where the QS prices quotations, the price fields are theirs (a catalog pick still fills them).
-      // Only where this quotation needs the QS (the firm's rules, qs-requirement.ts); others read the QS's lines.
-      const qsPrices = quote.kind === "quotation" && (await qsRequirement(client, workspaceId, caseId, quoteId)).required
-        && !(await this.access.hasPermission(client, workspaceId, user.userId, QS_PERMISSION));
-      const decimals = currencyDecimals(quote.currency);
-      const areas = new Map((await caseAreas(client, workspaceId, caseId)).map((area) => [area.id, area.name]));
-      const trades = new Set((await workPackages(client, workspaceId, false)).map((trade) => trade.id));
-      const codes = await taxCodes(client, workspaceId, caseId);
-      const taxes = new Map(codes.map((tax) => [tax.code, tax.rate]));
-      const requirements = new Set((await caseRequirements(client, workspaceId, caseId)).filter((item) => item.status === "included").map((item) => item.id));
-      const columns = new Map((await quoteColumns(client, workspaceId)).map((column) => [column.id, column.kind]));
-      // New lines take the firm's default tax; without tax codes the quote's own rate applies.
-      const standard = codes.find((tax) => tax.isDefault);
-      const defaultTax = standard ? { taxCode: standard.code, taxRate: standard.rate } : {};
-      const changed: string[] = [];
-      for (const raw of input.ops) {
-        const op = object(raw);
-        const kind = String(op.op ?? "");
-        if (kind === "delete") {
-          const id = lineId(op.id);
-          const current = await readLine(client, workspaceId, caseId, quoteId, id, true);
-          if (!current) continue; // already gone: the same delete again
-          if (Number(op.version) !== current.version) throw conflict(current);
-          await client.query(`DELETE FROM commercial_quote_lines WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND id = $4`, [workspaceId, caseId, quoteId, id]);
-          changed.push(id);
-        } else if (kind === "reorder") {
-          if (!Array.isArray(op.ids) || op.ids.length > 500) throw new BadRequestException("Send the lines in their new order.");
-          const ids = op.ids.map(lineId);
-          await client.query(
-            `UPDATE commercial_quote_lines line SET sort_order = ordered.position - 1
-               FROM unnest($4::text[]) WITH ORDINALITY AS ordered(id, position)
-              WHERE line.workspace_id = $1 AND line.case_id = $2 AND line.quote_id = $3 AND line.id = ordered.id`, [workspaceId, caseId, quoteId, ids]);
-        } else if (kind === "change") {
-          // A variation's change to one live BOQ line: remove some or all of it, move it, or replace it.
-          if (quote.kind !== "variation") throw new BadRequestException("Only a variation changes the agreed scope.");
-          const change = oneOf(op.change, ["omit", "move", "replace"] as const, "change");
-          const boq = await projectBoqLine(client, workspaceId, caseId, uuid(op.boqLineId, "Item"));
-          const id = lineId(op.id);
-          if (await readLine(client, workspaceId, caseId, quoteId, id)) continue; // the same change again
-          const base = { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), boqLineId: boq.id };
-          if (change === "move") {
-            const target = area(op.areaId, areas);
-            if (target === boq.areaId) throw new BadRequestException("Choose a different area to move it to.");
-            await this.saveLine(client, workspaceId, caseId, quoteId, {
-              ...base, kind: boq.areaId ? "relocate" : "service", title: `Move ${boq.title}`.slice(0, 240), unit: "", quantity: "1", rate: "0",
-              areaId: target, fromAreaId: boq.areaId, workPackageId: boq.workPackageId, changeOp: "move",
-            }, null, areas, decimals, user.userId);
-          } else {
-            const quantity = decimal(op.quantity ?? boq.quantity, "Quantity", { max: "1000000000" })!;
-            await assertRemovable(client, workspaceId, caseId, quoteId, boq, quantity, id);
-            await this.saveLine(client, workspaceId, caseId, quoteId, {
-              ...base, kind: boq.kind, title: boq.title, description: boq.description, unit: boq.unit, quantity, rate: boq.unitNet,
-              areaId: boq.areaId, workPackageId: boq.workPackageId, taxRate: boq.taxRate, changeOp: "omit",
-            }, null, areas, decimals, user.userId);
-            if (change === "replace") {
-              const replacement = lineId(op.replacementId);
-              if (!(await readLine(client, workspaceId, caseId, quoteId, replacement)))
-                await this.saveLine(client, workspaceId, caseId, quoteId, {
-                  ...blankLine(replacement), position: await nextPosition(client, workspaceId, caseId, quoteId), ...defaultTax,
-                  kind: boq.kind, title: `${boq.title} (replacement)`.slice(0, 240), unit: boq.unit, quantity, rate: "0",
-                  areaId: boq.areaId, workPackageId: boq.workPackageId, changeOp: "add", markupPercent: settings.defaultMarkupPercent,
-                }, null, areas, decimals, user.userId);
-              changed.push(replacement);
-            }
-          }
-          changed.push(id);
-        } else if (kind === "upsert" || kind === "catalog") {
-          const fields = object(op.line);
-          const id = lineId(fields.id);
-          const current = await readLine(client, workspaceId, caseId, quoteId, id, true);
-          if (qsPrices && priceChanged(current, fields))
-            throw new ForbiddenException("The QS sets the prices on this quotation. Change the items and quantities; the QS prices them.");
-          if (current && fields.version === undefined) throw new BadRequestException("Send the version of the line you edited.");
-          if (current && Number(fields.version) !== current.version) {
-            if (Number(fields.version) + 1 === current.version && sameChange(current, fields)) continue; // a replay of the change just saved
-            throw conflict(current);
-          }
-          let next: LineRow & { components?: ComponentRow[] | null } = current
-            ? { ...current, components: null }
-            : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null, ...defaultTax };
-          if (kind === "catalog") next = await this.fromCatalog(client, workspaceId, quote, settings, decimals, next, uuid(op.itemId, "Catalog item"));
-          next = applyFields(next, fields, { canEditCosts, areas, trades, taxes, requirements, columns });
-          if (current?.changeOp === "omit") {
-            // A removal keeps what it removes; only how much (and its note) can change.
-            next = { ...current, components: null, quantity: next.quantity, note: next.note };
-            const boq = await projectBoqLine(client, workspaceId, caseId, current.boqLineId!);
-            await assertRemovable(client, workspaceId, caseId, quoteId, boq, next.quantity, id);
-          } else if (current?.changeOp === "move") {
-            next = { ...next, boqLineId: current.boqLineId, fromAreaId: current.fromAreaId, changeOp: "move" };
-            if (!next.areaId || next.areaId === next.fromAreaId) throw new BadRequestException("Choose a different area to move it to.");
-          } else if (!current && quote.kind === "variation") next.changeOp = "add";
-          await this.saveLine(client, workspaceId, caseId, quoteId, next, current, areas, decimals, user.userId);
-          changed.push(id);
-        } else throw new BadRequestException(`Unknown change "${kind}".`);
-      }
-      await this.reprice(client, workspaceId, caseId, quote, settings);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.lines_changed.v1", entityType: "commercial_case", entityId: caseId, after: { quoteId, lines: changed, ops: input.ops.length } });
+      await this.applyOps(client, workspaceId, caseId, quoteId, user.userId, input.ops);
       return this.state(client, workspaceId, caseId, quoteId, user.userId);
     });
+  }
+
+  /**
+   * The same line commands in the caller's transaction, for a module that owns the quotation it fills (a change
+   * request prices its variation here). The caller has checked who may; the quotation must still be a draft.
+   */
+  async applyOps(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string, ops: unknown) {
+    const { quote } = await this.editable(client, workspaceId, caseId, quoteId, userId);
+    if (!Array.isArray(ops) || !ops.length || ops.length > 200) throw new BadRequestException("Send 1 to 200 changes.");
+    const canEditCosts = await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.manage");
+    const settings = await readSettings(client, workspaceId);
+    // PLM-082: where the QS prices quotations, the price fields are theirs (a catalog pick still fills them).
+    // Only where this quotation needs the QS (the firm's rules, qs-requirement.ts); others read the QS's lines.
+    const qsPrices = quote.kind === "quotation" && (await qsRequirement(client, workspaceId, caseId, quoteId)).required
+      && !(await this.access.hasPermission(client, workspaceId, userId, QS_PERMISSION));
+    const decimals = currencyDecimals(quote.currency);
+    const areas = new Map((await caseAreas(client, workspaceId, caseId)).map((area) => [area.id, area.name]));
+    const trades = new Set((await workPackages(client, workspaceId, false)).map((trade) => trade.id));
+    const codes = await taxCodes(client, workspaceId, caseId);
+    const taxes = new Map(codes.map((tax) => [tax.code, tax.rate]));
+    const requirements = new Set((await caseRequirements(client, workspaceId, caseId)).filter((item) => item.status === "included").map((item) => item.id));
+    const columns = new Map((await quoteColumns(client, workspaceId)).map((column) => [column.id, column.kind]));
+    // New lines take the firm's default tax; without tax codes the quote's own rate applies.
+    const standard = codes.find((tax) => tax.isDefault);
+    const defaultTax = standard ? { taxCode: standard.code, taxRate: standard.rate } : {};
+    const changed: string[] = [];
+    for (const raw of ops) {
+      const op = object(raw);
+      const kind = String(op.op ?? "");
+      if (kind === "delete") {
+        const id = lineId(op.id);
+        const current = await readLine(client, workspaceId, caseId, quoteId, id, true);
+        if (!current) continue; // already gone: the same delete again
+        if (Number(op.version) !== current.version) throw conflict(current);
+        await client.query(`DELETE FROM commercial_quote_lines WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND id = $4`, [workspaceId, caseId, quoteId, id]);
+        changed.push(id);
+      } else if (kind === "reorder") {
+        if (!Array.isArray(op.ids) || op.ids.length > 500) throw new BadRequestException("Send the lines in their new order.");
+        const ids = op.ids.map(lineId);
+        await client.query(
+          `UPDATE commercial_quote_lines line SET sort_order = ordered.position - 1
+             FROM unnest($4::text[]) WITH ORDINALITY AS ordered(id, position)
+            WHERE line.workspace_id = $1 AND line.case_id = $2 AND line.quote_id = $3 AND line.id = ordered.id`, [workspaceId, caseId, quoteId, ids]);
+      } else if (kind === "change") {
+        // A variation's change to one live BOQ line: remove some or all of it, move it, or replace it.
+        if (quote.kind !== "variation") throw new BadRequestException("Only a variation changes the agreed scope.");
+        const change = oneOf(op.change, ["omit", "move", "replace"] as const, "change");
+        const boq = await projectBoqLine(client, workspaceId, caseId, uuid(op.boqLineId, "Item"));
+        const id = lineId(op.id);
+        if (await readLine(client, workspaceId, caseId, quoteId, id)) continue; // the same change again
+        const base = { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), boqLineId: boq.id };
+        if (change === "move") {
+          const target = area(op.areaId, areas);
+          if (target === boq.areaId) throw new BadRequestException("Choose a different area to move it to.");
+          await this.saveLine(client, workspaceId, caseId, quoteId, {
+            ...base, kind: boq.areaId ? "relocate" : "service", title: `Move ${boq.title}`.slice(0, 240), unit: "", quantity: "1", rate: "0",
+            areaId: target, fromAreaId: boq.areaId, workPackageId: boq.workPackageId, changeOp: "move",
+          }, null, areas, decimals, userId);
+        } else {
+          const quantity = decimal(op.quantity ?? boq.quantity, "Quantity", { max: "1000000000" })!;
+          await assertRemovable(client, workspaceId, caseId, quoteId, boq, quantity, id);
+          await this.saveLine(client, workspaceId, caseId, quoteId, {
+            ...base, kind: boq.kind, title: boq.title, description: boq.description, unit: boq.unit, quantity, rate: boq.unitNet,
+            areaId: boq.areaId, workPackageId: boq.workPackageId, taxRate: boq.taxRate, changeOp: "omit",
+          }, null, areas, decimals, userId);
+          if (change === "replace") {
+            const replacement = lineId(op.replacementId);
+            if (!(await readLine(client, workspaceId, caseId, quoteId, replacement)))
+              await this.saveLine(client, workspaceId, caseId, quoteId, {
+                ...blankLine(replacement), position: await nextPosition(client, workspaceId, caseId, quoteId), ...defaultTax,
+                kind: boq.kind, title: `${boq.title} (replacement)`.slice(0, 240), unit: boq.unit, quantity, rate: "0",
+                areaId: boq.areaId, workPackageId: boq.workPackageId, changeOp: "add", markupPercent: settings.defaultMarkupPercent,
+              }, null, areas, decimals, userId);
+            changed.push(replacement);
+          }
+        }
+        changed.push(id);
+      } else if (kind === "upsert" || kind === "catalog") {
+        const fields = object(op.line);
+        const id = lineId(fields.id);
+        const current = await readLine(client, workspaceId, caseId, quoteId, id, true);
+        if (qsPrices && priceChanged(current, fields))
+          throw new ForbiddenException("The QS sets the prices on this quotation. Change the items and quantities; the QS prices them.");
+        if (current && fields.version === undefined) throw new BadRequestException("Send the version of the line you edited.");
+        if (current && Number(fields.version) !== current.version) {
+          if (Number(fields.version) + 1 === current.version && sameChange(current, fields)) continue; // a replay of the change just saved
+          throw conflict(current);
+        }
+        let next: LineRow & { components?: ComponentRow[] | null } = current
+          ? { ...current, components: null }
+          : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null, ...defaultTax };
+        if (kind === "catalog") next = await this.fromCatalog(client, workspaceId, quote, settings, decimals, next, uuid(op.itemId, "Catalog item"));
+        next = applyFields(next, fields, { canEditCosts, areas, trades, taxes, requirements, columns });
+        if (current?.changeOp === "omit") {
+          // A removal keeps what it removes; only how much (and its note) can change.
+          next = { ...current, components: null, quantity: next.quantity, note: next.note };
+          const boq = await projectBoqLine(client, workspaceId, caseId, current.boqLineId!);
+          await assertRemovable(client, workspaceId, caseId, quoteId, boq, next.quantity, id);
+        } else if (current?.changeOp === "move") {
+          next = { ...next, boqLineId: current.boqLineId, fromAreaId: current.fromAreaId, changeOp: "move" };
+          if (!next.areaId || next.areaId === next.fromAreaId) throw new BadRequestException("Choose a different area to move it to.");
+        } else if (!current && quote.kind === "variation") next.changeOp = "add";
+        await this.saveLine(client, workspaceId, caseId, quoteId, next, current, areas, decimals, userId);
+        changed.push(id);
+      } else throw new BadRequestException(`Unknown change "${kind}".`);
+    }
+    await this.reprice(client, workspaceId, caseId, quote, settings);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "quotation.lines_changed.v1", entityType: "commercial_case", entityId: caseId, after: { quoteId, lines: changed, ops: ops.length } });
+    return changed;
   }
 
   /** Sets (or clears, with value 0) a discount on the quote, an area or a trade. */
@@ -806,6 +815,10 @@ export class QuotationBuilderService {
       // Extending a sent or expired quote's validity is the sender's step (Q-7).
       canEditValidity: ["issued", "expired"].includes(quote.status) && await this.access.hasPermission(client, workspaceId, userId, EDIT),
       requirements: await caseRequirements(client, workspaceId, caseId),
+      // A change request's variation: the change moves it on (review, sending, the client's decision), not the builder.
+      changeRequest: quote.kind === "variation" ? (await client.query<{ id: string; number: number; status: string; projectId: string | null }>(
+        `SELECT id, number, status, project_id AS "projectId" FROM change_requests WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3`, [workspaceId, caseId, quoteId])).rows
+        .map((row) => ({ id: row.id, reference: `CR-${String(row.number).padStart(3, "0")}`, status: row.status, projectId: row.projectId }))[0] ?? null : null,
       // The project this quote belongs to (once started), and the sealed name a variation got when applied.
       project: (await client.query<{ id: string; reference: string; appliedAs: string | null }>(
         `SELECT project.id, project.reference,

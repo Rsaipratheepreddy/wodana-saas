@@ -4,27 +4,23 @@ import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { tellClients } from "../client-portal/portal-notices";
-import { Dec } from "../catalog-core/decimal";
-import { acceptedQuoteValue } from "../commercial/commercial.domain";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
 import { financeGatePaymentsReady } from "../commercial/release-integrity";
 import { canonicalHash } from "../crm/shared/crm-types";
-import { acceptedScope } from "../quotation/quotation-builder.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { HARD_CHECKS, LEAD_ROLE, parseRoles, parseStages } from "./project-checks";
 import {
   activeMembers, ensureSettings, ensureTemplates, evaluateStages, membershipOf, readProject, readProjects, readStages, readTeam,
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
-import { tellScopeChanges } from "../factory/factory-changes";
-import { tellOverOrdered } from "../purchasing/purchasing-changes";
 import { readNeeds } from "../purchasing/orders";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, setMaterialDetails, suggestMaterials } from "./project-materials";
-import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, SUPPLY, type Supply } from "./project-scope";
+import { assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, SUPPLY, type Supply } from "./project-scope";
+import { sealVariation } from "./variation-seal";
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
 import { readReadyCases, readStartState, startProject } from "./project-start";
 import { moneyAccess } from "./project-access";
@@ -517,30 +513,10 @@ export class ProjectCoreService {
         if (applied) throw new ConflictException(`This variation is already applied as ${applied.label}.`);
         if (settings.requireVariationPayment && !financeGatePaymentsReady(data, "release", quote.id))
           throw new ConflictException("The variation's payment before the work starts isn't verified yet.");
-        const scope = await acceptedScope(client, workspaceId, project.caseId, quote.id);
-        const tolerance = Dec.of(Math.min(2, scope.quote.decimals) === 0 ? "1" : Math.min(2, scope.quote.decimals) === 1 ? "0.1" : "0.01");
-        if (Dec.of(scope.pricing.total).sub(Dec.of(String(acceptedQuoteValue(quote)))).abs().cmp(tolerance) > 0)
-          throw new ConflictException("The variation's lines no longer add up to the total the client accepted. Issue a new revision and record the client's decision again.");
-        const count = (await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND kind = 'variation'`, [workspaceId, projectId])).rows[0].count;
-        const label = `VO-${count + 1}`;
-        const decision = quote.clientDecision;
-        const snapshot = { ...scope, revisionLabel: label,
-          acceptance: { decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, method: decision.method ?? "portal", recordedBy: decision.recordedBy ?? null,
-            note: decision.note ?? "", quoteHash: decision.quoteHash, acceptedTotal: String(decision.acceptedTotal ?? quote.total) }, agreement: null };
-        const sealId = randomUUID();
-        await client.query(
-          `INSERT INTO project_scope_seals (id, workspace_id, project_id, kind, quote_id, quote_number, revision_label, quote_hash, snapshot, content_hash, currency, total,
-             accepted_at, accepted_by_name, acceptance_method, recorded_by_name, agreement_reference, sealed_by)
-           VALUES ($1, $2, $3, 'variation', $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, NULL, $16)`,
-          [sealId, workspaceId, projectId, quote.id, quote.number, label, decision.quoteHash, JSON.stringify(snapshot), canonicalHash(snapshot), scope.quote.currency,
-            scope.pricing.total, decision.decidedAt, decision.decidedBy, decision.method ?? "portal", decision.recordedBy ?? null, user.userId]);
-        await applyVariation(client, workspaceId, projectId, { id: sealId, label }, scope.lines, user.userId);
-        // Work orders the variation removed or reduced stop; the factory hears which.
-        await tellScopeChanges(client, workspaceId, projectId, user.userId, sealId);
-        // Orders it leaves past what the project needs: the people who buy hear which (D-41).
-        await tellOverOrdered(client, workspaceId, projectId, user.userId, { id: sealId, label });
-        notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
-        audit = { quoteId: quote.id, label, total: scope.pricing.total };
+        if (quote.changeRequestId) throw new ConflictException("This variation is applied from its change request.");
+        const { label, total, currency } = await sealVariation(client, { workspaceId, projectId, caseId: project.caseId, quote, actorUserId: user.userId });
+        notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${currency} ${total}`, memberships: teamIds() } });
+        audit = { quoteId: quote.id, label, total };
       } else if (action === "set_drawing_need") {
         // PLM-057: whether an item needs technical drawings, decided by the project manager or the technical team against
         // the rule (bespoke and made-to-order always; standard only without a catalogue drawing), with the reason.

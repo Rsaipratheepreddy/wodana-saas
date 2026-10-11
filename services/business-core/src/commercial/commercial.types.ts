@@ -313,6 +313,8 @@ export type Quote = {
   brand?: PortalBrand;
   /** The issuing business's letterhead, frozen with the brand when the quote is issued (PLM-112). */
   letterhead?: DocumentLetterhead | null;
+  /** The change request a variation prices (plan §6.20): the change moves it through review, sending and the decision. */
+  changeRequestId?: string;
 };
 export type CommercialComment = {
   id: string;

@@ -1482,6 +1482,9 @@ export class CommercialService {
         let q = b.quoteId
           ? data.quotes.find((q) => q.id === b.quoteId)
           : undefined;
+        // A change request's variation moves with its change (priced in the builder, approved, sent and decided there).
+        if (q?.changeRequestId && ["save", "submit", "approve", "qs_approve", "return", "issue", "withdraw", "record_decision", "revise"].includes(action))
+          throw new ConflictException("This variation belongs to a change request. Open the change request to move it on.");
         const now = new Date().toISOString();
         /** What issuing a quote actually delivered (Q-22): always the portal, and the emails that were queued. */
         let sent: IssueDelivery | undefined;
@@ -1856,8 +1859,9 @@ export class CommercialService {
           data.quotes.push(...variations);
           q = variations[0];
         } else if (["create", "revise", "variation"].includes(action)) {
+          // A change request's variation is its own working document; it never holds up the case's next version.
           if (
-            data.quotes.some((q) =>
+            data.quotes.some((q) => !q.changeRequestId &&
               ["draft", "internal_review", "internal_approved"].includes(
                 q.status,
               ),

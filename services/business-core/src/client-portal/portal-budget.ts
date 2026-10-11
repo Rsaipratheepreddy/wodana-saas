@@ -13,10 +13,11 @@ type Db = Pick<PoolClient, "query">;
  * quotation is accepted yet.
  */
 export async function readBudget(db: Db, workspaceId: string, caseId: string, currency: string | null, changes: PortalChange[]) {
+  // A change request's variation counts once, as the approved change it prices.
   const quotes = (await db.query<{ id: string; number: number; title: string; kind: string; direction: string | null; total: string; accepted: string | null; decidedAt: string | null; currency: string }>(
     `SELECT id, number, title, kind, direction, total::text AS total, detail->'clientDecision'->>'acceptedTotal' AS accepted,
             detail->'clientDecision'->>'decidedAt' AS "decidedAt", currency
-       FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND status = 'accepted' ORDER BY number`, [workspaceId, caseId])).rows;
+       FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND status = 'accepted' AND NOT (detail ? 'changeRequestId') ORDER BY number`, [workspaceId, caseId])).rows;
   const contract = quotes.filter((quote) => quote.kind === "quotation" && quote.direction !== "deduction");
   if (!contract.length) return null;
   const amount = (quote: (typeof quotes)[number]) => (quote.accepted && /^-?\d+(\.\d+)?$/.test(quote.accepted) ? quote.accepted : quote.total);
@@ -27,7 +28,7 @@ export async function readBudget(db: Db, workspaceId: string, caseId: string, cu
       ORDER BY line.sort_order`, [workspaceId, caseId, contract.map((quote) => quote.id)])).rows;
   const draws = (await db.query<{ lineId: string; spent: string }>(
     `SELECT line.quote_line_id AS "lineId", sum(line.amount)::text AS spent FROM change_request_lines line
-       JOIN change_requests change ON change.workspace_id = line.workspace_id AND change.id = line.change_request_id AND change.status = 'approved'
+       JOIN change_requests change ON change.workspace_id = line.workspace_id AND change.id = line.change_request_id AND change.status IN ('approved', 'applied')
       WHERE line.workspace_id = $1 AND change.case_id = $2 AND line.source = 'allowance' GROUP BY line.quote_line_id`, [workspaceId, caseId])).rows;
   const approved = changes.filter((change) => change.status === "approved" && change.priceImpact !== null);
   const drawOf = (change: PortalChange) => change.lines.filter((line) => line.action === "draw").reduce((sum, line) => sum.add(line.amount), Dec.ZERO).toFixed(2);
