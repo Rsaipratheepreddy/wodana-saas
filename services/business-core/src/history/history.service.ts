@@ -22,7 +22,7 @@ export type HistoryPage = { items: HistoryItem[]; next: string | null; timeZone:
 export class HistoryService {
   constructor(private readonly access: WorkspaceAccessService) {}
 
-  read(actor: RequestActor, workspaceId: string, type: string, recordId: string, query: { filter?: unknown; before?: unknown }) {
+  async read(actor: RequestActor, workspaceId: string, type: string, recordId: string, query: { filter?: unknown; before?: unknown }): Promise<HistoryPage> {
     const recordType = this.type(type);
     const filter = this.filter(query.filter);
     const before = this.cursor(query.before);
