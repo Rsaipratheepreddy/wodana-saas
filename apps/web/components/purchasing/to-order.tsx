@@ -6,6 +6,7 @@ import { Button, EmptyState, ErrorState, GroupedTable, ListTabs, NoAccessState, 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { inventoryApi } from "@/lib/inventory/client";
 import { restockQuantity } from "@/lib/inventory/levels";
+import { readableCode } from "@/lib/workspace/catalog-v2";
 import type { ReorderPoint } from "@/lib/inventory/types";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { Need, NeedsState } from "@/lib/purchasing/types";
@@ -82,17 +83,18 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
     if (need.blocked === "client_payment") return <Link className={styles.rowLink} href={projectHref(need.projectId, "money")}>{t("Open payments")}</Link>;
     if (need.blocked) return <Link className={styles.rowLink} href={projectHref(need.projectId, "scope")}>{t("Get sign-off")}</Link>;
     if (over(need)) return <Button size="compact" variant="quiet" onPress={onOrders}>{t("Open orders")}</Button>;
-    if (onHold(need)) return <Button size="compact" variant="quiet" aria-label={t("Order {name} anyway", { name: need.title })} onPress={() => openOrder([need])}>{t("Order anyway")}</Button>;
-    if (orderable(need)) return <Button size="compact" variant="quiet" aria-label={t("Order {name}", { name: need.title })} onPress={() => openOrder([need])}>{t("Order")}</Button>;
+    if (onHold(need)) return <Button size="compact" aria-label={t("Order {name} anyway", { name: need.title })} onPress={() => openOrder([need])}>{t("Order anyway")}</Button>;
+    if (orderable(need)) return <Button size="compact" aria-label={t("Order {name}", { name: need.title })} onPress={() => openOrder([need])}>{t("Order")}</Button>;
     return null;
   };
   const columns: GroupedTableColumn<Need>[] = [
     { id: "item", label: t("Material"), render: (need) => <Cell title={need.title}
       meta={[need.detail, need.packageName, need.scopeLines?.length ? t("For {line}", { line: need.scopeLines.join(", ") }) : "", need.changedBy ? t("Changed by {variation}", { variation: need.changedBy }) : ""]
         .filter(Boolean).join(" · ") || null} /> },
-    { id: "needed", label: t("Needed by"), width: "9.5rem", mobileHidden: true, render: (need) => need.neededBy ? <span className={styles.nameCell}>
+    // "Needed by" shows only when a line has a date: a column of dashes says nothing (UX-052).
+    ...(shown.some((need) => need.neededBy) ? [{ id: "needed", label: t("Needed by"), width: "9.5rem", mobileHidden: true, render: (need: Need) => need.neededBy ? <span className={styles.nameCell}>
       <DueText date={need.neededBy} done={!orderable(need)} />
-      {need.orderBy && orderable(need) ? <small className={need.orderBy < today ? styles.lateText : undefined}>{t("Order by {date}", { date: format.short(need.orderBy) })}</small> : null}</span> : "—" },
+      {need.orderBy && orderable(need) ? <small className={need.orderBy < today ? styles.lateText : undefined}>{t("Order by {date}", { date: format.short(need.orderBy) })}</small> : null}</span> : "—" }] : []),
     { id: "left", label: t("Left"), width: "12rem", align: "end", render: (need) => {
       const parts = [Number(need.placed) ? t("{quantity} ordered", { quantity: unit(need.placed, need.unit) }) : "", Number(need.drafted) ? t("{quantity} in draft", { quantity: unit(need.drafted, need.unit) }) : "",
         Number(need.fromStock) ? t("{quantity} from stock", { quantity: unit(need.fromStock, need.unit) }) : ""].filter(Boolean).join(" · ");
@@ -114,13 +116,13 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
     return { id, label: `${rows[0].projectReference} · ${rows[0].projectName}${held ? ` · ${t("On hold")}` : ""}`, rows, emptyMessage: "" };
   });
   const restockColumns: GroupedTableColumn<ReorderPoint>[] = [
-    { id: "item", label: t("Item"), render: (point) => <Cell title={point.itemName} meta={[point.itemCode, point.locationName ?? t("Every place")].filter(Boolean).join(" · ")} /> },
+    { id: "item", label: t("Item"), render: (point) => <Cell title={point.itemName} meta={[readableCode(point.itemCode), point.locationName ?? t("Every place")].filter(Boolean).join(" · ")} /> },
     { id: "free", label: t("Free now"), width: "9rem", align: "end", render: (point) => <span className={styles.nameCell}><span className={styles.lateText}>{unit(point.free, point.unit)}</span>
       <small>{t("Reorder at {quantity}", { quantity: unit(point.reorderAt, point.unit) })}</small></span> },
     { id: "order", label: t("To order"), width: "10rem", align: "end", render: (point) => <span className={styles.nameCell}><strong className={styles.money}>{unit(restockQuantity(point), point.unit)}</strong>
       {point.vendorName ? <small>{point.vendorName}</small> : null}</span> },
     ...(canBuy ? [{ id: "action", label: "", width: "8.5rem", align: "end" as const, render: (point: ReorderPoint) =>
-      <Button size="compact" variant="quiet" aria-label={t("Restock {name}", { name: point.itemName })} onPress={() => setOrdering({ needs: [], restock: [point] })}>{t("Order")}</Button> }] : []),
+      <Button size="compact" aria-label={t("Restock {name}", { name: point.itemName })} onPress={() => setOrdering({ needs: [], restock: [point] })}>{t("Order")}</Button> }] : []),
   ];
 
   if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;

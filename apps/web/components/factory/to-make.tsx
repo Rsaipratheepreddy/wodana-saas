@@ -19,9 +19,11 @@ const numeric = (value: string) => value.replace(/[^\d.]/g, "");
  * What running projects make in the factory, one project at a time: each line, when the work needs it, how
  * much is on work orders and what's left. A line plans a work order; several selected plan one each.
  */
-export function ToMake({ api, state, error, onReload, onPlanned, projectId = null, onProject = () => undefined }: {
+export function ToMake({ api, state, error, onReload, onPlanned, projectId = null, onProject = () => undefined, onOrders }: {
   api: FactoryApi; state: FactoryState | null; error: string; onReload: () => void; onPlanned: (orderId: string | null) => void;
   projectId?: string | null; onProject?: (projectId: string | null) => void;
+  /** The next step when nothing is left to plan: the work orders already made. */
+  onOrders?: () => void;
 }) {
   const t = useT();
   const [view, setView] = useState<View>("left");
@@ -74,7 +76,8 @@ export function ToMake({ api, state, error, onReload, onPlanned, projectId = nul
     </div>
     {!sections.length ? (needle ? <NoResultsState onClear={() => setSearch("")} />
       : <EmptyState illustration={null} title={view === "left" ? t("Nothing left to plan") : view === "hold" ? t("No project is on hold") : t("Nothing to make yet")}
-        description={view === "all" ? t("Scope lines of packages made in our factory appear here once their project starts.") : null} />)
+        description={view === "all" ? t("Scope lines of packages made in our factory appear here once their project starts.") : null}
+        action={view === "left" && onOrders ? <Button size="compact" onPress={onOrders}>{t("Open work orders")}</Button> : null} />)
       : <GroupedTable<MakeLine> ariaLabel={t("To make")} columns={columns} sections={sections} getRowId={(line) => line.lineId} getRowLabel={(line) => `${line.projectReference} ${line.title}`}
           selectable={Boolean(state.canManage)} selectedIds={selected}
           onSelectionChange={(ids) => setSelected(new Set([...ids].filter((id) => state.toMake.some((line) => line.lineId === id && plannable(line)))))}

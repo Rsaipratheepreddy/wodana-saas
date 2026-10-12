@@ -57,7 +57,7 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
     const record = open ? `${base}?${key ?? (next === "price-requests" ? "request" : next === "deliveries" ? "receipt" : "order")}=${open}${then ? `&do=${then}` : ""}` : base;
     move(next, withProject(record, projectId));
   };
-  const action = section === "orders" ? <Button variant="primary" onPress={() => setNewOrder(true)}><Plus aria-hidden="true" size={15} />{t("New order")}</Button>
+  const action = section === "orders" || section === "to-order" ? <Button variant="primary" onPress={() => setNewOrder(true)}><Plus aria-hidden="true" size={15} />{t("New order")}</Button>
     : section === "suppliers" ? <Button variant="primary" onPress={() => setAddingSupplier(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button>
     // Deliveries: receive by scanning the code on the printed order or move (D-46).
     : section === "deliveries" ? <Button variant="primary" onPress={() => router.push(RECEIVE_PATH)}><ScanLine aria-hidden="true" size={15} />{t("Scan to receive")}</Button> : null;

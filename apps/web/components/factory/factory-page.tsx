@@ -54,7 +54,8 @@ export function FactoryPage({ workspaceId, section: initialSection }: { workspac
   const left = (state?.toMake ?? []).filter((line) => (!projectId || line.projectId === projectId) && Number(line.left) > 0 && line.projectStatus !== "on_hold").length;
   const { tabs, content } = moduleTabs<FactorySection>({ t, tour: "factory-tab", value: section, onChange: (key) => go(key), items: [
       { id: "to-make", label: t("To make"), count: left || undefined,
-        panel: <ToMake api={api} state={state} error={error} onReload={() => void load()} onPlanned={(id) => { void load(); go("orders", id); }} projectId={projectId} onProject={setProjectId} /> },
+        panel: <ToMake api={api} state={state} error={error} onReload={() => void load()} onPlanned={(id) => { void load(); go("orders", id); }} projectId={projectId} onProject={setProjectId}
+          onOrders={() => go("orders")} /> },
       { id: "orders", label: t("Work orders"), count: mine || undefined,
         panel: <WorkOrders api={api} state={state} error={error} openId={openId} intent={intent} onReload={() => void load()} onOpen={(id, action) => go("orders", id, action ?? undefined)}
           onBatched={(id) => { void load(); go("batches", id); }} projectId={projectId} onProject={setProjectId} /> },

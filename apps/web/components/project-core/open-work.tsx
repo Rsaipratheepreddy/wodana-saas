@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar, EmptyState, ErrorState, GroupedTable, isNoAccessError, ListTabs, NoAccessState, MenuButton, NoResultsState, PageShell, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -85,7 +86,8 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
     {view === "team" ? <TeamInsights api={api} days={days} onPerson={(id, name) => { setWho({ id, name }); setView("all"); setData(null); }} />
       : !data ? <Skeleton lines={6} shape="rows" />
       : !data.items.length ? <EmptyState illustration={null} title={view === "mine" ? t("Nothing on your plate") : t("No open work")}
-          description={view === "mine" ? t("Work given to you on any project shows here.") : undefined} />
+          description={view === "mine" ? t("Work given to you on any project shows here.") : undefined}
+          action={<Link className="wd-button" data-size="compact" data-variant="secondary" href="/workspace/projects">{t("Open projects")}</Link>} />
       : !items.length ? <NoResultsState onClear={() => { setSearch(""); setWho(null); }} />
       : <GroupedTable<OpenWorkItem> ariaLabel={t("Open work")} columns={columns} sections={sections} selectable={false} getRowId={(item) => item.id}
           getRowLabel={(item) => `#${item.number} ${item.title}`} onRowAction={(item) => void open(item)} />}
