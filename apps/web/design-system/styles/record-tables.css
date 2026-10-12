@@ -131,7 +131,9 @@
   .wd-data-grid .wd-table[data-virtual] > thead { display: table; table-layout: fixed; inline-size: 100%; }
   .wd-data-grid .wd-table[data-virtual] > tbody { inline-size: 100%; }
   .wd-row-index { position: relative; display: grid; place-items: center; min-block-size: var(--wd-control-sm); inline-size: 100%; color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; }
-  .wd-row-index[data-selectable] > .wd-checkbox { position: absolute; inset: 0; justify-content: center; min-block-size: 0; padding: 0; opacity: 0; }
+  .wd-row-index[data-selectable] > .wd-checkbox { position: absolute; inset: 0; justify-content: center; min-block-size: 0; padding: 0; }
+  /* With a row number the checkbox takes its place on hover; without one it always shows, as the header's does (UX-061). */
+  .wd-row-index[data-selectable][data-numbered] > .wd-checkbox { opacity: 0; }
   .wd-table-row:is(:hover, :focus-within, [data-selected="true"]) .wd-row-index[data-selectable] > .wd-checkbox { opacity: 1; }
   .wd-table-row:is(:hover, :focus-within, [data-selected="true"]) .wd-row-index[data-selectable] > span { opacity: 0; }
   .wd-data-grid .wd-table th .wd-checkbox { justify-content: center; padding-block: 0; }

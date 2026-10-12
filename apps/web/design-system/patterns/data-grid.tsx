@@ -304,7 +304,7 @@ export function DataGrid<T>({
   const leadingColumns = useMemo<DataGridColumn<T>[]>(() => selectable || rowNumbers ? [
     { id: "__select", size: 44, enableHiding: false, enableSorting: false, enableResizing: false,
       header: ({ table }) => selectable ? <Checkbox aria-label={t("Select all visible rows")} isIndeterminate={table.getIsSomePageRowsSelected()} isSelected={table.getIsAllPageRowsSelected()} onChange={table.toggleAllPageRowsSelected} /> : <Hash aria-label={t("Row number")} size={13} />,
-      cell: ({ row, table }) => <span className="wd-row-index" data-selectable={selectable || undefined}>
+      cell: ({ row, table }) => <span className="wd-row-index" data-selectable={selectable || undefined} data-numbered={rowNumbers || undefined}>
         {rowNumbers && <span aria-hidden={selectable || undefined}>{(manualPagination ? table.getState().pagination.pageIndex * table.getState().pagination.pageSize : 0) + table.getPrePaginationRowModel().rows.findIndex(item => item.id === row.id) + 1}</span>}
         {selectable && <Checkbox aria-label={t("Select row {number}", { number: row.index + 1 })} isSelected={row.getIsSelected()} onChange={row.toggleSelected} />}
       </span> },

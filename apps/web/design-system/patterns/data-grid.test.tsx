@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -156,5 +158,13 @@ describe("DataGrid", () => {
     expect(container.querySelector(".wd-data-grid")).toHaveAttribute("data-grid-lines", "true");
     expect(screen.getByRole("table", { name: "Compact projects" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("shows each row's checkbox when there is no row number in its place, as the header's is (UX-061)", () => {
+    render(<DesignSystemProvider><DataGrid ariaLabel="Supplier invoices" columns={columns} data={rows} getRowId={(row) => row.id} rowNumbers={false} /></DesignSystemProvider>);
+    expect(screen.getByRole("checkbox", { name: "Select row 1" }).closest(".wd-row-index")).not.toHaveAttribute("data-numbered");
+    const css = readFileSync(join(__dirname, "../styles/record-tables.css"), "utf8");
+    // Only a numbered cell hides its checkbox until hover.
+    expect(css).toContain(".wd-row-index[data-selectable][data-numbered] > .wd-checkbox { opacity: 0; }");
   });
 });
