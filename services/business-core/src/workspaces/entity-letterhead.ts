@@ -13,6 +13,8 @@ export type DocumentLetterhead = {
   legalName: string;
   /** The country's name for its tax registration number ("TRN", "GSTIN"), from its region pack. */
   taxLabel: string | null;
+  /** The country's name for the tax itself ("VAT", "GST"), from its region pack; null where there is none. */
+  taxName: string | null;
   taxNumber: string | null;
   licenceNumber: string | null;
   address: string | null;
@@ -28,6 +30,8 @@ export type DocumentLetterhead = {
 const LETTERHEAD_SELECT = `SELECT entity.id AS "entityId", coalesce(nullif(btrim(entity.registered_name), ''), entity.display_name) AS "legalName",
     (SELECT profile.configuration->'tax'->>'registrationLabel' FROM tenant_setup_profiles profile
       WHERE profile.kind = 'region' AND profile.code = entity.country_code ORDER BY profile.version DESC LIMIT 1) AS "taxLabel",
+    (SELECT profile.configuration->'tax'->>'label' FROM tenant_setup_profiles profile
+      WHERE profile.kind = 'region' AND profile.code = entity.country_code ORDER BY profile.version DESC LIMIT 1) AS "taxName",
     nullif(btrim(entity.tax_registration_number), '') AS "taxNumber", nullif(btrim(entity.registration_number), '') AS "licenceNumber",
     nullif(concat_ws(', ', nullif(btrim(entity.address->>'line1'), ''), nullif(btrim(entity.address->>'line2'), ''), nullif(btrim(entity.address->>'city'), ''),
       nullif(btrim(entity.address->>'region'), ''), nullif(btrim(entity.address->>'postalCode'), '')), '') AS address,

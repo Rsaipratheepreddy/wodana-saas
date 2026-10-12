@@ -14485,5 +14485,10 @@
   "{actor} couldn't email {subject}": "{actor} couldn't email {subject}",
   "the client's details": "the client's details",
   "client {reference}": "client {reference}",
-  "{actor} credited {subject}": "{actor} credited {subject}"
+  "{actor} credited {subject}": "{actor} credited {subject}",
+  "Page {page} of {pages}": "Page {page} of {pages}",
+  "Accepted by the supplier": "Accepted by the supplier",
+  "Delivered by": "Delivered by",
+  "Bill to": "Bill to",
+  "{tax} rate": "{tax} rate"
 }

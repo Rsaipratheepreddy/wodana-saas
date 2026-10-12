@@ -18,21 +18,19 @@ const OWN_TITLE = new Set([
   // The full-height Inbox keeps its title for screen readers only (bare mode).
   "components/crm/crm-product-shell.tsx",
   "components/esign/signing-page.tsx",
-  "components/pre-project/material-list-print.tsx",
-  "components/client-portal/portal-document-print.tsx",
   "components/client-portal/project-profile.tsx",
   "components/client-portal/sign-in.tsx",
   "components/commercial/quotation-cover.tsx",
   "components/commercial/quotation-rich-text.tsx",
   "components/crm/public-enquiry-form.tsx",
   "components/gallery/gallery-view.tsx",
-  "components/inventory/move-print.tsx",
   "components/landing/landing-page.tsx",
   "components/landing/marketing-frame.tsx",
   "components/oauth/consent-screen.tsx",
   "components/projects/vendor-order-form.tsx",
-  "components/purchasing/order-print.tsx",
   "components/site/progress-print.tsx",
+  // Every printed document (order, delivery note, material list, invoice, receipt) titles itself through this shell.
+  "components/documents/print-document.tsx",
 ]);
 
 /** Staff screens still drawing their own header; each moves to PageShell when its module is rebuilt. */

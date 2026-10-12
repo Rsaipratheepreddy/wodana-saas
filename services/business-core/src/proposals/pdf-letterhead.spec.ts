@@ -13,7 +13,7 @@ const images = async (bytes: Uint8Array) => (Buffer.from(bytes).toString("latin1
 
 describe("the issuing business's letterhead on server-made PDFs (PLM-112)", () => {
   it("prints the licence, tax number, address and contact lines under the legal name", () => {
-    expect(letterheadLines({ entityId: "e", legalName: "Studio Interiors LLC", taxLabel: "TRN", taxNumber: "100123456700003", licenceNumber: "TL-55", address: "Office 4, Dubai",
+    expect(letterheadLines({ entityId: "e", legalName: "Studio Interiors LLC", taxLabel: "TRN", taxName: "VAT", taxNumber: "100123456700003", licenceNumber: "TL-55", address: "Office 4, Dubai",
       phone: "+97141234567", email: null, footer: null, logoUrl: null, headerUrl: null, logoAssetId: null, headerAssetId: null }, { licence: "Licence", tax: "Tax no." }))
       .toEqual(["Licence TL-55 · TRN 100123456700003", "Office 4, Dubai", "+97141234567"]);
   });

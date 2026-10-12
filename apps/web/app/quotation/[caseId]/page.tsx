@@ -1,4 +1,7 @@
 import { notFound } from "next/navigation";
+import { WorkspaceRegionProvider } from "@/design-system";
+import { getAuthenticatedProfile } from "@/lib/auth/server";
+import { getWorkspaceRegion } from "@/lib/workspace/region.server";
 import { getCommercial } from "@/lib/commercial/server";
 import { QuotationPrint } from "@/components/commercial/quotation-print";
 import { quotationLineVariant, quotationMaterialText } from "@/lib/commercial/presentation";
@@ -38,5 +41,8 @@ export default async function Page({
       };
     }),
   };
-  return <QuotationPrint quote={safe} customer={data.customerName} />;
+  // Money, dates and numbers as the workspace writes them (its region), not the browser's.
+  const membership = (await getAuthenticatedProfile().catch(() => null))?.memberships[0];
+  const print = <QuotationPrint quote={safe} customer={data.customerName} />;
+  return membership ? <WorkspaceRegionProvider {...await getWorkspaceRegion(membership.workspaceId, membership)}>{print}</WorkspaceRegionProvider> : print;
 }

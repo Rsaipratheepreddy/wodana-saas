@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the shared printed document > prints the letterhead, the document's name and number, its facts and parties, totals, signatures and footer 1`] = `"Studio Meridian Interiors LLCLicence 1234567 · TRN 100123456700003Office 1204, Business Bay, Dubai+971 4 123 4567Purchase orderPO-2026-00011Order date12 Oct 2026SupplierNile TimberSara HaddadVATAED 900.00TotalAED 18,900.00Authorised byOlivia OwnerRegistered in DubaiPowered by Wodana"`;

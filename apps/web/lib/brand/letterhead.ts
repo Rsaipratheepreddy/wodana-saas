@@ -7,6 +7,8 @@ export type DocumentLetterhead = {
   entityId?: string;
   legalName: string;
   taxLabel: string | null;
+  /** The tax's own name in the business's country ("VAT", "GST"), from its region pack. */
+  taxName?: string | null;
   taxNumber: string | null;
   licenceNumber: string | null;
   address: string | null;
