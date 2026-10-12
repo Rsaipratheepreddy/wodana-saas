@@ -8,6 +8,7 @@ import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState,
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectRow, ReadyCase } from "@/lib/project-core/types";
+import { effectiveHealth, nextStepText } from "@/lib/project-core/next-step";
 import { useProjectFormat, useStatusLabel } from "./format";
 import { StartProjectDialog } from "./start-project-dialog";
 import styles from "./project-core.module.css";
@@ -48,7 +49,7 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
     if (filter === "closed" && !["completed", "cancelled", "archived"].includes(row.status)) return false;
     if (health) {
       const late = row.health === "off_track" || Boolean(row.promiseDate && format.until(row.promiseDate)?.late);
-      if (row.status !== "active" || (late ? "late" : row.health === "at_risk" ? "at-risk" : "on-track") !== health) return false;
+      if (row.status !== "active" || (late ? "late" : effectiveHealth(row) === "at_risk" ? "at-risk" : "on-track") !== health) return false;
     }
     const query = search.trim().toLocaleLowerCase();
     return !query || [row.name, row.reference, row.clientName, row.lead ?? ""].some((value) => value.toLocaleLowerCase().includes(query));
@@ -57,14 +58,15 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
   const columns = useMemo<DataGridColumn<ProjectRow>[]>(() => [
     { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference} ${row.clientName}`, size: 260, meta: { primary: true, interactive: true, renderCell: (row) =>
       <RecordName detail={[row.clientName, row.reference].filter(Boolean).join(" · ")} title={<Link className={styles.open} data-tour="project-open" href={`/workspace/projects/${row.id}`}>{row.name}</Link>} /> } },
-    { id: "status", header: t("Status"), accessorFn: (row) => status(row.status, row.health).label, size: 120, meta: { renderCell: (row) => {
-      const value = status(row.status, row.health);
+    { id: "status", header: t("Status"), accessorFn: (row) => status(row.status, effectiveHealth(row)).label, size: 120, meta: { renderCell: (row) => {
+      // Late work makes a running project at risk even when nobody flagged it, so Status agrees with "Needs a look".
+      const value = status(row.status, effectiveHealth(row));
       return <Badge tone={STATUS_TONE[value.tone] ?? "success"}>{value.label}</Badge>;
     } } },
     { id: "stage", header: t("Stage"), accessorFn: (row) => row.stage?.name ?? "", size: 170, meta: { renderCell: (row) => row.stage
       ? <RecordName title={row.stage.name} detail={t("{position} of {count}", { position: row.stage.position, count: row.stage.count })} /> : null } },
-    { id: "next", header: t("Next step"), accessorFn: (row) => row.next?.text ?? "", size: 230, meta: { priority: "medium", renderCell: (row) => row.status === "active" && row.next
-      ? <RecordName title={row.next.text} detail={row.next.owner} /> : null } },
+    { id: "next", header: t("Next step"), accessorFn: (row) => (row.next ? nextStepText(t, row.next) : ""), size: 230, meta: { priority: "medium", renderCell: (row) => row.status === "active" && row.next
+      ? <RecordName title={nextStepText(t, row.next)} detail={row.next.owner} /> : null } },
     { id: "attention", header: t("Needs a look"), accessorFn: (row) => (row.attention?.late ?? 0) * 1000 + (row.attention?.blocked ?? 0), size: 130, meta: { priority: "low", renderCell: (row) => {
       const parts = [row.attention?.late ? t("{count} late", { count: row.attention.late }) : "", row.attention?.blocked ? t("{count} blocked", { count: row.attention.blocked }) : ""].filter(Boolean);
       return row.status === "active" && parts.length ? <Link className={styles.attention} data-late={row.attention?.late ? true : undefined}

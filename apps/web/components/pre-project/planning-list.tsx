@@ -77,7 +77,7 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
       owner: personDisplayName(item.managerName) || null, amount: origin?.amount ?? null, currency: origin?.currencyCode ?? null, onHold: item.onHold,
       // Planning opens the planning case; a project without one opens its plan.
       caseId: item.caseId, projectId: item.id, href: item.caseId
-        ? `/workspace/pre-projects/cases/${item.caseId}/overview` : `/workspace/projects/${item.id}/plan?${new URLSearchParams({ projectName: projectDisplayName(item.name) })}`,
+        ? `/workspace/pre-projects/cases/${item.caseId}/overview` : `/workspace/projects/${item.id}/plan?${new URLSearchParams({ projectName: projectDisplayName(item.name, origin?.customerName ?? listed?.customer) })}`,
     }];
   });
   return [...caseRows, ...projectRows];
@@ -133,9 +133,9 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
 
   const columns = useMemo<DataGridColumn<PlanningRow>[]>(() => [
     { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""} ${row.customer}`, size: 320, meta: { primary: true, interactive: true, renderCell: (row) => <span title={row.description}>
-      <RecordName detail={[row.customer, row.reference].filter(Boolean).join(" · ")} title={row.href ? <Link className={styles.open} data-tour="case-open" href={row.href}><CaseLinkLabel title={projectDisplayName(row.title)} /></Link>
+      <RecordName detail={[row.customer, row.reference].filter(Boolean).join(" · ")} title={row.href ? <Link className={styles.open} data-tour="case-open" href={row.href}><CaseLinkLabel title={projectDisplayName(row.title, row.customer)} /></Link>
         : <button type="button" className={styles.open} disabled={Boolean(busy) || !(row.source?.opportunityId ? planning.canCreate : planning.canStartLead)}
-            onClick={(event) => { event.stopPropagation(); void open(row); }}>{busy === row.id ? t("Opening…") : projectDisplayName(row.title)}</button>} />
+            onClick={(event) => { event.stopPropagation(); void open(row); }}>{busy === row.id ? t("Opening…") : projectDisplayName(row.title, row.customer)}</button>} />
     </span> } },
     { id: "stage", header: t("Stage"), accessorFn: (row) => (row.onHold ? t("On hold") : translateKnown(t, row.stage)), size: 150, meta: { renderCell: (row) => row.onHold
       ? <Badge tone="warning">{t("On hold")}</Badge> : <Badge tone={row.group === "in_design" ? "info" : "neutral"}>{translateKnown(t, row.stage)}</Badge> } },

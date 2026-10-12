@@ -110,7 +110,7 @@ describe("project overview, each fact once", () => {
   it("names the stage once and keeps the next step to its one action, without the stage or the unnamed owner", async () => {
     await open();
     expect(exactly("Permit collection · 6 of 9")).toHaveLength(1);
-    const card = screen.getByRole("heading", { level: 3, name: "Building permit collected" }).closest("section")!;
+    const card = screen.getByRole("heading", { level: 3, name: "Collect the building permit" }).closest("section")!;
     expect(card).not.toHaveTextContent(/6 of 9|Permit collection|not named/);
     expect(within(card).getByRole("button", { name: "Record the building permit" })).toBeInTheDocument();
     // The same action isn't offered again in the sidebar.

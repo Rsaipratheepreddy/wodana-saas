@@ -2,6 +2,7 @@ import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { fromMinor, minorUnits, toMinor } from "@/lib/money-exact";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { ProjectDetail } from "@/lib/project-core/types";
+import { nextStepPhrase } from "@/lib/project-core/next-step";
 import type { JourneyStageKey, JourneyStageView, JourneyView } from "./design-workspace";
 import { caseHref, type CaseCommercialFacts, type CasePlan, type PreProjectCase } from "./types";
 
@@ -168,7 +169,7 @@ export function caseNextStep({ record, commercial, journey, project, today }: Ca
     if (project && project.project.status === "active") {
       const current = project.stages.find((stage) => stage.status === "current");
       return {
-        title: project.next ? { key: project.next.text as MessageKey } : { key: tKey("Open the project") },
+        title: project.next ? nextStepPhrase(project.next) : { key: tKey("Open the project") },
         why: current ? { key: tKey("{project} · {stage} · {position} of {count}"), values: { project: project.project.reference, stage: current.name, position: current.position + 1, count: project.stages.length } } : null,
         owner: project.next?.owner ?? null, due: project.project.promiseDate, overdue: Boolean(project.project.promiseDate && project.project.promiseDate < today), action: open,
       };

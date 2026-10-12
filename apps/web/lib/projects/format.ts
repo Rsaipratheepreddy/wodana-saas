@@ -1,6 +1,11 @@
-export function projectDisplayName(title: string) {
-  const separator = title.indexOf(" · ");
-  return (separator > 0 ? title.slice(separator + 3).trim() : title) || title;
+/**
+ * A project or case title without its client's name in front ("Mariam Al Suwaidi · Villa 27 furniture" → "Villa 27
+ * furniture"). Only the client's own name is dropped: a title that merely contains " · " ("Business Bay office ·
+ * reception and boardroom") is kept whole.
+ */
+export function projectDisplayName(title: string, client?: string | null) {
+  const prefix = client?.trim() ? `${client.trim()} · ` : null;
+  return (prefix && title.startsWith(prefix) ? title.slice(prefix.length).trim() : title) || title;
 }
 
 export const initials = (name: string) =>

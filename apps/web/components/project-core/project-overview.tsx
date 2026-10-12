@@ -9,6 +9,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { BlockerKey, HealthReason, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
 import { projectPeople, projectStrip, projectTimeline, stageLateDays, type ProjectStep } from "@/lib/project-core/project-record";
+import { nextStepText } from "@/lib/project-core/next-step";
 import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
@@ -272,7 +273,7 @@ function ProjectNextStep({ api, detail, overview, next, run, onTeam }: {
   const last = detail.stages.at(-1);
   return <>
     <NextStepCard tour="project-next" status={late ? "attention" : undefined}
-      title={t(detail.next.text as never)}
+      title={nextStepText(t, detail.next)}
       meta={<>
         {owner ? <PersonChip id={current.owner?.membershipId ?? `owner-${owner}`} name={owner} /> : detail.next.kind === "payment_verified" ? <span className={styles.muted}>{t("Finance")}</span> : null}
         {late ? <Badge tone="danger">{late === 1 ? t("1 day past its plan") : t("{count} days past its plan", { count: late })}</Badge> : null}
