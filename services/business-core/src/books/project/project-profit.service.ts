@@ -65,14 +65,17 @@ export class ProjectProfitService {
   constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly posting?: BooksPostingService) {}
 
   /** Brings the Ledger up to date before it is read, so profit includes what happened a moment ago; a busy or failed sweep never blocks the read. */
-  private async fresh(workspaceId: string) {
-    await this.posting?.runSweepNow(workspaceId).catch(() => undefined);
+  private async fresh(actor: RequestActor, workspaceId: string) {
+    if (!this.posting) return;
+    // Only a member may make a workspace post its pending events; each read still checks its own permission.
+    await this.access.asMember(actor, workspaceId, async () => undefined);
+    await this.posting.runSweepNow(workspaceId).catch(() => undefined);
   }
 
   /** One project's P&L so far, for people who see its costs; margin only for those who see margins. */
   async pnl(actor: RequestActor, workspaceId: string, projectId: string): Promise<ProjectPnlView> {
     if (!UUID.test(projectId)) throw new BadRequestException("Project is not valid.");
-    await this.fresh(workspaceId);
+    await this.fresh(actor, workspaceId);
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const rights = await this.projectRights(client, workspaceId, projectId, user.userId);
       return this.projectPnl(client, workspaceId, projectId, rights);
@@ -81,7 +84,7 @@ export class ProjectProfitService {
 
   /** Every project with Ledger postings in one company and period: revenue, costs by type, profit, margin against the quote, committed spend. */
   async projectsProfit(actor: RequestActor, workspaceId: string, query: { entity?: unknown; from?: unknown; to?: unknown }) {
-    await this.fresh(workspaceId);
+    await this.fresh(actor, workspaceId);
     return this.access.withAnyPermission(actor, workspaceId, PROJECT_PROFIT_PERMISSIONS, async (client, user) => {
       const companies = await ledgerCompanies(client, workspaceId);
       const choices = companies.map((item) => ({ id: item.legalEntityId, name: item.name }));
@@ -143,7 +146,7 @@ export class ProjectProfitService {
 
   /** The Ledger at a glance for one company and period (Woddy's `books_report`): P&L, cash, receivables, payables, VAT due and ageing. */
   async summary(actor: RequestActor, workspaceId: string, query: { entity?: unknown; from?: unknown; to?: unknown }) {
-    await this.fresh(workspaceId);
+    await this.fresh(actor, workspaceId);
     return this.access.withPermission(actor, workspaceId, BOOKS_VIEW, async (client) => {
       const companies = await ledgerCompanies(client, workspaceId);
       if (!companies.length) return { enabled: false as const, companies: [] };

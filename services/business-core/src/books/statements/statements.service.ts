@@ -31,15 +31,17 @@ export class BooksStatementsService {
     registry.register(operationalStatementSource);
   }
 
-  private async sweepFirst(workspaceId: string) {
+  private async sweepFirst(actor: RequestActor, workspaceId: string) {
     if (!this.sweep) return;
+    // Only a member may make a workspace post its pending events; the read still checks the Ledger permission.
+    await this.access.asMember(actor, workspaceId, async () => undefined);
     try { await this.sweep.runSweepNow(workspaceId); } catch (error) {
       this.logger.warn(`Ledger sweep before a statement failed for ${workspaceId}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   async profitAndLoss(actor: RequestActor, workspaceId: string, query: Record<string, unknown>) {
-    await this.sweepFirst(workspaceId);
+    await this.sweepFirst(actor, workspaceId);
     return this.access.withPermission(actor, workspaceId, BOOKS_PERMISSIONS.view, (client, user) => readProfitAndLoss(this.registry, client, workspaceId, user.userId, query));
   }
 
@@ -49,7 +51,7 @@ export class BooksStatementsService {
   }
 
   async cashFlow(actor: RequestActor, workspaceId: string, query: Record<string, unknown>) {
-    await this.sweepFirst(workspaceId);
+    await this.sweepFirst(actor, workspaceId);
     return this.access.withPermission(actor, workspaceId, BOOKS_PERMISSIONS.view, (client, user) => readCashFlow(this.registry, client, workspaceId, user.userId, query));
   }
 

@@ -23,8 +23,10 @@ export class BooksReportsService {
    * Call site of the on-demand sweep (plan §6.21b "it also runs on demand before any Ledger read"). A sweep that fails
    * never blocks a read: the 30-second sweep retries, and the attention list shows what could not post.
    */
-  private async sweepBeforeRead(workspaceId: string) {
+  private async sweepBeforeRead(actor: RequestActor, workspaceId: string) {
     if (!this.sweep) return;
+    // Only a member may make a workspace post its pending events; the read below still checks the Ledger permission.
+    await this.access.asMember(actor, workspaceId, async () => undefined);
     try {
       await this.sweep.runSweepNow(workspaceId);
     } catch (error) {
@@ -33,7 +35,7 @@ export class BooksReportsService {
   }
 
   private async read<T>(actor: RequestActor, workspaceId: string, work: (client: PoolClient, user: ActorUser) => Promise<T>): Promise<T> {
-    await this.sweepBeforeRead(workspaceId);
+    await this.sweepBeforeRead(actor, workspaceId);
     return this.access.withPermission(actor, workspaceId, BOOKS_PERMISSIONS.view, work);
   }
 
