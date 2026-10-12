@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { HomeMetrics, HomeSummary, MyDayItem, MyDayResponse } from "@wodana/contracts";
 import { WorkspaceHome, inPlaceTarget } from "./workspace-home";
@@ -11,7 +12,6 @@ vi.mock("@/components/crm/follow-up-editor", () => ({
 }));
 vi.mock("@/components/project-core/work-sheet", () => ({ WorkSheet: ({ itemId }: { itemId: string }) => <div>Work item {itemId}</div> }));
 vi.mock("@/lib/project-core/client", () => ({ projectApi: () => ({ work: vi.fn(async () => ({ items: [] })) }) }));
-vi.mock("./home-attendance", () => ({ HomeAttendance: () => <span>Attendance chip</span> }));
 afterEach(() => { vi.unstubAllGlobals(); push.mockReset(); });
 
 const base = { workspaceId: "00000000-0000-4000-8000-000000000001", userId: "user", workspaceName: "Palm Living", modules: ["crm", "pre-project", "projects", "hrms"] };
@@ -81,9 +81,10 @@ const myDay: MyDayResponse = {
   ],
 };
 
-function api({ home = summary as HomeSummary | null, figures = metrics as HomeMetrics | null, day = myDay as MyDayResponse | null } = {}) {
+function api({ home = summary as HomeSummary | null, figures = metrics as HomeMetrics | null, day = myDay as MyDayResponse | null, site = null as unknown } = {}) {
   const fetcher = vi.fn(async (url: string) => {
-    const body = url.includes("home-summary") ? home : url.includes("home-metrics") ? figures : url.includes("/api/workspace/my-day") ? day : { items: [], truncated: false };
+    const body = url.includes("home-summary") ? home : url.includes("home-metrics") ? figures : url.includes("/api/workspace/my-day") ? day
+      : url.includes("/api/site/attention") && site ? site : { items: [], truncated: false };
     return { ok: body !== null, status: body === null ? 500 : 200, json: async () => body };
   });
   vi.stubGlobal("fetch", fetcher);
@@ -91,15 +92,23 @@ function api({ home = summary as HomeSummary | null, figures = metrics as HomeMe
 }
 const owner = ["crm.leads.manage", "crm.leads.view", "crm.activities.manage", "crm.activities.view", "pre_projects.view", "pre_projects.create", "projects.view", "projects.manage", "projects.report", "receivables.view", "purchasing.view", "purchasing.manage", "audit.view", "workspace.settings.manage"];
 
-it("keeps the page anatomy: one title, one primary action, search in reach and the product-tour anchors", async () => {
+it("keeps Home calm: one greeting line, one primary action with the rest under +, no second search, no attendance", async () => {
   api(); render(<WorkspaceHome {...base} firstName="Maya" permissions={owner} />);
   expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Maya/);
-  expect(screen.getByRole("link", { name: "New enquiry" })).toHaveAttribute("data-variant", "primary");
-  expect(screen.getByRole("searchbox", { name: "Search workspace" }).closest("[data-tour]")).toHaveAttribute("data-tour", "home-edit");
+  const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
+  expect(header).toHaveTextContent(/^Good (morning|afternoon|evening), Maya/);
+  expect(within(header).getByRole("link", { name: "New enquiry" })).toHaveAttribute("data-variant", "primary");
+  expect(within(header).getAllByRole("link")).toHaveLength(1);
+  // ⌘K is the search; check-in lives in the person menu.
+  expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Quick actions" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Check (in|out)/ })).not.toBeInTheDocument();
   expect(screen.getByRole("region", { name: /^Today/ })).toHaveAttribute("data-tour", "home-widget-attention");
-  expect(screen.queryByRole("button", { name: "Edit Home" })).not.toBeInTheDocument();
-  expect(screen.getByText("Attendance chip").closest("header")).toHaveClass("wd-page-header");
+  // The other actions wait under "+".
+  await userEvent.click(within(header).getByRole("button", { name: "More actions" }));
+  expect((await screen.findAllByRole("menuitem")).map((item) => item.textContent)).toEqual(["Plan follow-up", "Open quotes", "New task", "Client invoices", "Order materials", "Receive delivery", "Site report"]);
+  // Nothing repeats a number: the pipeline, coming up, jump back in and recent activity are gone from Home.
+  for (const name of ["Pipeline", /^Coming up/, "Jump back in", "Recent activity"]) expect(screen.queryByRole("region", { name })).not.toBeInTheDocument();
 });
 
 it("lists the six most urgent My day items, late first, each with one action; follow-ups and work open in place", async () => {
@@ -142,89 +151,71 @@ it("says the person is all caught up and still shows what's next", async () => {
   expect(screen.getByText("Create follow-up in place")).toBeVisible();
 });
 
-it("shows the pipeline the person can see with counts, and marks the stages that have stalled", async () => {
-  api(); render(<WorkspaceHome {...base} permissions={owner} />);
-  const pipeline = await screen.findByRole("region", { name: "Pipeline" });
-  const stages = await within(pipeline).findAllByRole("link");
-  expect(stages.map((stage) => stage.getAttribute("aria-label"))).toEqual(["Enquiries, 11, 5 stalled", "Planning, 6", "Quotes, 3", "Projects, 3, 1 stalled", "Handover, 0"]);
-  expect(stages[0]).toHaveAttribute("data-stalled", "true");
-  expect(stages[1]).not.toHaveAttribute("data-stalled");
-});
-
-it("hides the pipeline when the person can see none of its stages", async () => {
-  api({ home: { ...summary, funnel: [] } }); render(<WorkspaceHome {...base} permissions={["factory.report"]} />);
-  await screen.findByRole("region", { name: /^Coming up/ });
-  expect(screen.queryByRole("region", { name: "Pipeline" })).not.toBeInTheDocument();
-});
-
-it("shows one or two numbers for the role, each linking to its list", async () => {
+it("shows at most four numbers for the role, money compact, each linking to its list", async () => {
   api(); const { unmount } = render(<WorkspaceHome {...base} canManage permissions={owner} />);
   let numbers = await screen.findByRole("navigation", { name: "Key numbers" });
-  expect(within(numbers).getAllByRole("link").map((link) => link.getAttribute("data-figure"))).toEqual(["money-in", "projects"]);
+  expect(within(numbers).getAllByRole("link").map((link) => link.getAttribute("data-figure"))).toEqual(["money-in", "projects", "enquiries", "quoted"]);
   expect(within(numbers).getByRole("link", { name: /Money in this month/ })).toHaveTextContent("50% down on last month");
   expect(within(numbers).getByRole("link", { name: /Projects on track/ })).toHaveTextContent("2 of 4");
   unmount();
   api(); render(<WorkspaceHome {...base} permissions={["crm.leads.view", "crm.leads.manage", "pre_projects.view", "projects.view"]} />);
   numbers = await screen.findByRole("navigation", { name: "Key numbers" });
-  expect(within(numbers).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/workspace/crm/leads", "/workspace/pre-projects?section=quotations"]);
+  expect(within(numbers).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/workspace/crm/leads", "/workspace/pre-projects?section=quotations", "/workspace/pre-projects?section=quotations", "/workspace/projects"]);
   expect(within(numbers).getByRole("link", { name: /New enquiries this month/ })).toHaveTextContent("20% up on last month");
 });
 
-it("offers only the quick actions the role can do, with project actions choosing the project", async () => {
+it("makes the role's first action the primary one, and a project action asks which project", async () => {
   api(); const { unmount } = render(<WorkspaceHome {...base} permissions={["factory.report", "projects.view", "projects.report"]} />);
-  const actions = await screen.findByRole("group", { name: "Quick actions" });
-  await waitFor(() => expect(within(actions).getByRole("button", { name: /Site report/ })).toBeInTheDocument());
-  expect(within(actions).getAllByRole("button").map((button) => button.textContent)).toEqual(["New task", "Site report"]);
-  expect(within(actions).getByRole("link", { name: "Report output" })).toHaveAttribute("href", "/workspace/factory");
+  const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
+  const primary = await within(header).findByRole("button", { name: "New task" });
   expect(screen.queryByRole("link", { name: "New enquiry" })).not.toBeInTheDocument();
+  await userEvent.click(within(header).getByRole("button", { name: "More actions" }));
+  expect((await screen.findAllByRole("menuitem")).map((item) => item.textContent)).toEqual(["Site report", "Report output"]);
+  await userEvent.keyboard("{Escape}");
+  // Two projects: the person picks one, then lands on its new task.
+  await userEvent.click(primary);
+  const dialog = await screen.findByRole("dialog", { name: "New task" });
+  expect(within(dialog).getByRole("button", { name: "Continue" })).toBeDisabled();
   unmount();
   api(); render(<WorkspaceHome {...base} modules={["workspace"]} permissions={["receivables.view", "payables.manage"]} />);
-  const finance = await screen.findByRole("group", { name: "Quick actions" });
-  expect(within(finance).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/workspace/finance/client-invoices", "/workspace/finance/payments"]);
+  const finance = screen.getByRole("heading", { level: 1 }).closest("header")!;
+  expect(within(finance).getByRole("link", { name: "Client invoices" })).toHaveAttribute("href", "/workspace/finance/client-invoices");
+  await userEvent.click(within(finance).getByRole("button", { name: "More actions" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "Pay bills" }));
+  expect(push).toHaveBeenCalledWith("/workspace/finance/payments");
 });
 
 it("links a project action straight to the project when the person has one", async () => {
   api({ home: { ...summary, projects: [{ id: "p-1", name: "Villa 12" }] } }); render(<WorkspaceHome {...base} permissions={["projects.view", "projects.report"]} />);
-  expect(await screen.findByRole("link", { name: "Site report" })).toHaveAttribute("href", "/workspace/projects/p-1/site?new=report");
-  expect(screen.getByRole("link", { name: "New task" })).toHaveAttribute("href", "/workspace/projects/p-1/plan?new=task");
-});
-
-it("lists what's coming up on the workspace calendar and the records to jump back into", async () => {
-  api(); render(<WorkspaceHome {...base} permissions={owner} />);
-  const upcoming = await screen.findByRole("region", { name: /^Coming up/ });
-  expect(await within(upcoming).findByRole("link", { name: /Site visit - Dubai Hills/ })).toHaveAttribute("href", "/workspace/crm/follow-ups?record=a-1");
-  expect(within(upcoming).getByText("Next 7 days")).toBeVisible();
-  const recent = screen.getByRole("region", { name: "Jump back in" });
-  expect(within(recent).getByRole("link", { name: /Villa 12/ })).toHaveAttribute("href", "/workspace/projects/p-1");
-  expect(within(recent).getByRole("link", { name: /Amira/ })).toHaveTextContent("Enquiry · Kitchen");
-});
-
-it("keeps recent activity for people who read the audit log", async () => {
-  api(); const { unmount } = render(<WorkspaceHome {...base} permissions={owner} />);
-  expect(await screen.findByRole("region", { name: "Recent activity" })).toHaveTextContent("Villa 12");
-  unmount();
-  api(); render(<WorkspaceHome {...base} permissions={["projects.view"]} />);
-  await screen.findByRole("region", { name: /^Today/ });
-  expect(screen.queryByRole("region", { name: "Recent activity" })).not.toBeInTheDocument();
-});
-
-it("shows friendly empty states with the next step", async () => {
-  api({ home: { ...summary, focus: { items: [], total: 0 }, upcoming: [], recent: [] } }); render(<WorkspaceHome {...base} permissions={["projects.view"]} />);
-  const upcoming = await screen.findByRole("region", { name: /^Coming up/ });
-  expect(await within(upcoming).findByText("Nothing scheduled")).toBeVisible();
-  expect(within(upcoming).getByRole("link", { name: "Open tasks" })).toHaveAttribute("href", "/workspace/tasks");
-  expect(within(screen.getByRole("region", { name: "Jump back in" })).getByRole("link", { name: "Open projects" })).toHaveAttribute("href", "/workspace/projects");
+  expect(await screen.findByRole("link", { name: "New task" })).toHaveAttribute("href", "/workspace/projects/p-1/plan?new=task");
+  await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "Site report" }));
+  expect(push).toHaveBeenCalledWith("/workspace/projects/p-1/site?new=report");
 });
 
 it("keeps Home usable when a source fails and retries it", async () => {
   const request = api({ day: null }); render(<WorkspaceHome {...base} permissions={owner} />);
   const region = await screen.findByRole("region", { name: /^Today/ });
   expect(await within(region).findByText("Today's work could not be loaded")).toBeVisible();
-  // The numbers and the pipeline come from their own sources and still show.
+  // The numbers come from their own source and still show.
   expect(await screen.findByRole("navigation", { name: "Key numbers" })).toBeInTheDocument();
-  expect(screen.getByRole("region", { name: "Pipeline" })).toBeInTheDocument();
   fireEvent.click(within(region).getByRole("button", { name: "Try again" }));
   await waitFor(() => expect(request.mock.calls.filter(([url]) => String(url).includes("/api/workspace/my-day")).length).toBe(2));
+});
+
+it("keeps one short attention block, and Today doesn't list its reports again", async () => {
+  const report = (index: number) => ({ reportId: `r-${index}`, projectId: "p-1", reference: "PRJ-0001", name: "Villa 12", reportDate: "2026-09-27", authorName: "Sam",
+    summary: "", submittedAt: "2026-09-27T16:00:00Z", photos: 0, photoId: null });
+  const site = { today: "2026-09-28", dueTime: "18:00", pastDue: true, toReview: [1, 2, 3, 4].map(report), missing: [{ projectId: "p-2", reference: "PRJ-0002", name: "Ranches", supervisor: null }] };
+  const reviewItem = due({ id: "s-site", variant: "site_report", title: "2026-09-27", context: "Sam", dueAt: "2026-09-27T16:00:00Z", href: "/workspace/projects/p-1/site?report=r-1" });
+  api({ site, day: { ...myDay, groups: [...myDay.groups, { jobId: null, jobReference: null, title: "", href: null, items: [reviewItem] }] } });
+  render(<WorkspaceHome {...base} permissions={owner} />);
+  const block = await screen.findByRole("region", { name: "Reports to review" });
+  expect(within(block).getAllByRole("listitem")).toHaveLength(3);
+  expect(screen.queryByRole("region", { name: "Sites without today's report" })).not.toBeInTheDocument();
+  const today = screen.getByRole("region", { name: /^Today/ });
+  await within(today).findByText("Shop drawings");
+  expect(within(today).queryByText(/Review site report/)).not.toBeInTheDocument();
 });
 
 it("reads Home only from the person's workspace-scoped sources", async () => {

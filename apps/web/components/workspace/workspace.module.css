@@ -1868,3 +1868,9 @@
 .shell .navigationItemGroup[data-destination] .navigationItem .navigationMark svg { inline-size: var(--wd-navigation-icon-size); block-size: var(--wd-navigation-icon-size); color: var(--wd-color-text-secondary); }
 .shell .navigationItemGroup[data-destination] .navigationItemRow[data-active] .navigationMark svg { color: var(--wd-color-text); }
 .shell .sectionToggle { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); }
+
+/* Today's attendance in the person menu (UX-013): a small chip line with its one action. */
+.attendance { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5) var(--wd-space-2); padding: var(--wd-space-1-5) var(--wd-space-2); border-block-end: 1px solid var(--wd-color-border); margin-block-end: var(--wd-space-1-5); }
+.attendance small { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); unicode-bidi: plaintext; }
+.attendance > :global(.wd-button) { margin-inline-start: auto; }
+.attendanceSlot:empty { display: none; }

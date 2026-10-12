@@ -5,9 +5,28 @@ import { DesignSystemProvider } from "@/design-system";
 import { WorkspaceAccountMenu } from "./workspace-account-menu";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/workspace", useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }) }));
+// The chip itself is tested in my-attendance.test.tsx: here, only where it shows and that it closes the menu.
+vi.mock("./my-attendance", async () => {
+  const { createPortal } = await import("react-dom");
+  return { MyAttendance: ({ slot, onCapture }: { slot?: HTMLElement | null; onCapture?: () => void }) =>
+    (slot ? createPortal(<button type="button" onClick={onCapture}>Check in</button>, slot) : null) };
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("WorkspaceAccountMenu", () => {
+  it("carries today's check-in where attendance is on, and closes for the capture (UX-013)", async () => {
+    const interaction = userEvent.setup();
+    const { unmount } = render(<DesignSystemProvider><WorkspaceAccountMenu attendance={{ workspaceId: "w" }} user={{ email: "sam@palmliving.test", name: "Sam" }} /></DesignSystemProvider>);
+    await interaction.click(screen.getByRole("button", { name: "Account menu for Sam" }));
+    await interaction.click(await screen.findByRole("button", { name: "Check in" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Sign-in security" })).not.toBeInTheDocument());
+    unmount();
+    render(<DesignSystemProvider><WorkspaceAccountMenu user={{ email: "sam@palmliving.test", name: "Sam" }} /></DesignSystemProvider>);
+    await interaction.click(screen.getByRole("button", { name: "Account menu for Sam" }));
+    expect(screen.getByRole("link", { name: "Sign-in security" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check in" })).not.toBeInTheDocument();
+  });
+
   it("does not expose the internal portal to a tenant user", async () => {
     const interaction = userEvent.setup();
     render(<DesignSystemProvider><WorkspaceAccountMenu user={{ email: "admin@igloarchitects.com", name: "Iglo Administrator" }} /></DesignSystemProvider>);

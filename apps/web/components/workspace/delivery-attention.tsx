@@ -11,7 +11,7 @@ import styles from "./delivery-health.module.css";
  * The owner's Home banner: shown only when messages aren't going out (the delivery service silent for two
  * minutes) or more than 20 notices wait. Anyone without delivery health gets nothing.
  */
-export function DeliveryAttention({ workspaceId }: { workspaceId: string }) {
+export function DeliveryAttention({ workspaceId, onShown }: { workspaceId: string; /** Told whether the banner shows (Home keeps one attention block). */ onShown?: (shown: boolean) => void }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const [health, setHealth] = useState<DeliveryHealth | null>(null);
@@ -23,6 +23,8 @@ export function DeliveryAttention({ workspaceId }: { workspaceId: string }) {
       .catch(() => undefined);
     return () => controller.abort();
   }, [workspaceId]);
+  const shown = Boolean(health?.attention.reason);
+  useEffect(() => { onShown?.(shown); }, [onShown, shown]);
   if (!health?.attention.reason) return null;
   const waiting = health.channels.reduce((sum, channel) => sum + channel.waiting, 0);
   const since = health.attention.since ? formatDate(health.attention.since, { locale, timeZone }, { dateStyle: "medium", timeStyle: "short" }) : null;

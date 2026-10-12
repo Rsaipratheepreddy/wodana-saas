@@ -66,7 +66,7 @@ export function CommandPalette({ workspaceId, modules, access }: { workspaceId: 
   }, []);
   const shortcut = mac ? "⌘K" : "Ctrl K";
   return <>
-    <button type="button" className={styles.trigger} onClick={() => setOpen(true)} aria-keyshortcuts={mac ? "Meta+K" : "Control+K"} aria-label={t("Search and act ({shortcut})", { shortcut })}>
+    <button type="button" className={styles.trigger} data-tour="global-search" onClick={() => setOpen(true)} aria-keyshortcuts={mac ? "Meta+K" : "Control+K"} aria-label={t("Search and act ({shortcut})", { shortcut })}>
       <Search aria-hidden="true" size={15} /><span className={styles.triggerLabel}>{t("Search")}</span><kbd className={styles.kbd} dir="ltr">{shortcut}</kbd>
     </button>
     {open ? <Palette workspaceId={workspaceId} modules={modules} access={access} onClose={() => setOpen(false)} /> : null}

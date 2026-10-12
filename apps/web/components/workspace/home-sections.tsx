@@ -2,17 +2,17 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import type { HomeActivityEvent, HomeFunnelStage, HomeMetricWeek, HomeMetrics, HomeRecentRecord, HomeSummary, HomeUpcomingItem, MyDayItem, MyDayResponse, ReminderKind } from "@wodana/contracts";
+import type { HomeMetricWeek, HomeMetrics, HomeUpcomingItem, MyDayItem, MyDayResponse, ReminderKind } from "@wodana/contracts";
 import {
-  AlertCircle, Banknote, CalendarClock, ChevronRight, CircleCheck, ClipboardCheck, ClipboardList, Clock3, Factory, FileText, FolderKanban,
-  History, MessageSquare, Palette, Receipt, Truck, UserCheck, UserPlus, Users, Wallet, type LucideIcon,
+  AlertCircle, Banknote, CalendarClock, CircleCheck, ClipboardCheck, ClipboardList, Clock3, Factory, FileText,
+  MessageSquare, Palette, Receipt, Truck, UserCheck, UserPlus, Wallet, type LucideIcon,
 } from "lucide-react";
 import { Badge, Button, EmptyState, ErrorState, SkeletonBlock, Sparkline, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { MY_DAY_ROUTE } from "@/lib/reminders/contract";
 import { REMINDER_KIND_LABELS } from "@/lib/reminders/labels";
-import { dueLabel, myDayRow, openCount, showCritical, topMyDayItems } from "@/lib/reminders/my-day";
-import { changeBetween, formatCount, formatMoneyText, relativeTime, weekLabel, weekValue } from "./home-format";
+import { dueLabel, myDayRow, openCount, showCritical, topMyDayItems, withoutItems } from "@/lib/reminders/my-day";
+import { changeBetween, formatCount, formatMoneyText, weekLabel, weekValue } from "./home-format";
 import s from "./workspace-home.module.css";
 
 type T = ReturnType<typeof useT>;
@@ -89,7 +89,7 @@ const VISIBLE = 6;
  * What needs the person now (My day, plan §6.24a): the six most urgent items (late first, then today's, then what
  * waits on them, then what is coming), each with the one action that deals with it, and "See all".
  */
-export function TodayList({ myDay, next, nextZone, inPlace, allClear }: {
+export function TodayList({ myDay, next, nextZone, inPlace, allClear, hide }: {
   myDay: Load<MyDayResponse>;
   /** The next thing coming up, shown under "all caught up". */
   next?: HomeUpcomingItem | null;
@@ -98,12 +98,16 @@ export function TodayList({ myDay, next, nextZone, inPlace, allClear }: {
   inPlace: (item: MyDayItem) => (() => void) | null;
   /** The next step when nothing is waiting (a quick action), shown under "all caught up". */
   allClear: ReactNode;
+  /** Items another block on Home already shows (left out of the rows and the count). */
+  hide?: (item: MyDayItem) => boolean;
 }) {
   const t = useT();
   const locale = useLocale();
   const data = myDay.data;
-  const items = data ? topMyDayItems(data, VISIBLE) : [];
-  const total = data ? openCount(data.counts) : undefined;
+  const hidden = data && hide ? new Set(data.groups.flatMap((group) => group.items).filter(hide).map((item) => item.id)) : null;
+  const shown = data && hidden?.size ? withoutItems(data, hidden) : data;
+  const items = shown ? topMyDayItems(shown, VISIBLE) : [];
+  const total = shown ? openCount(shown.counts) : undefined;
   const body = !data && !myDay.failed ? <Rows rows={4} />
     : !data ? <div className={s.state}><ErrorState title={t("Today's work could not be loaded")} description="" onRetry={myDay.retry} /></div>
     : !items.length ? <div className={s.state} data-state="clear"><EmptyState illustration={null} icon={<CircleCheck size={18} aria-hidden="true" />} title={t("You're all caught up")}
@@ -133,74 +137,10 @@ export function TodayList({ myDay, next, nextZone, inPlace, allClear }: {
 /** "Next: …" under the all-caught-up state, so a clear day still says what's coming. */
 function NextUp({ item, timeZone }: { item: HomeUpcomingItem; timeZone: string }) {
   const t = useT();
-  const when = useWhen(timeZone);
-  return <Link className={s.nextUp} href={item.href}>{t("Next: {title}", { title: item.title })}<span> · {when(item).long}</span></Link>;
-}
-
-// ---------------------------------------------------------------- Coming up
-
-function useWhen(timeZone: string) {
   const locale = useLocale();
-  return (item: HomeUpcomingItem) => {
-    const at = item.allDay ? new Date(`${item.at.slice(0, 10)}T12:00:00Z`) : new Date(item.at);
-    const zone = item.allDay ? "UTC" : timeZone;
-    return {
-      weekday: new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: zone }).format(at),
-      day: new Intl.DateTimeFormat(locale, { day: "numeric", timeZone: zone }).format(at),
-      time: item.allDay ? "" : new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone: zone }).format(at),
-      long: new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", ...(item.allDay ? {} : { hour: "numeric", minute: "2-digit" }), timeZone: zone }).format(at),
-    };
-  };
-}
-
-const UPCOMING_ICONS: Record<HomeUpcomingItem["kind"], LucideIcon> = { meeting: Users, follow_up: CalendarClock, work: ClipboardList, delivery: Truck, payment: Banknote, production: Factory };
-
-/** Meetings, visits, deliveries, payments and work coming up, on the workspace's calendar. */
-export function UpcomingList({ summary, empty }: { summary: Load<HomeSummary>; empty: ReactNode }) {
-  const t = useT();
-  const data = summary.data;
-  const when = useWhen(data?.timeZone ?? "UTC");
-  const kinds: Record<HomeUpcomingItem["kind"], string> = { meeting: t("Meeting"), follow_up: t("Follow-up"), work: t("Task"), delivery: t("Delivery"), payment: t("Payment due"), production: t("Production") };
-  const title = data?.horizonDays === 30 ? t("Next 30 days") : t("Next 7 days");
-  const body = !data && !summary.failed ? <Rows rows={3} />
-    : !data ? <InlineError retry={summary.retry} />
-    : !data.upcoming.length ? <div className={s.state}><EmptyState illustration={null} icon={<CalendarClock size={18} aria-hidden="true" />} title={t("Nothing scheduled")} action={empty} /></div>
-    : <ul className={s.list}>{data.upcoming.map((item) => {
-      const date = when(item);
-      const Icon = UPCOMING_ICONS[item.kind];
-      return <li key={item.id}><Link className={s.upcomingRow} href={item.href}>
-        <span className={s.dateBlock} aria-hidden="true"><small>{date.weekday}</small><strong>{date.day}</strong></span>
-        <span className={s.copy}>
-          <strong>{item.title}</strong>
-          <small className={s.metaLine}><Icon size={12} aria-hidden="true" /><span>{[date.time, kinds[item.kind], item.context].filter(Boolean).join(" · ")}</span></small>
-        </span>
-        <span className="wd-visually-hidden">{date.long}</span>
-        <ChevronRight className={s.chevron} size={16} aria-hidden="true" />
-      </Link></li>;
-    })}</ul>;
-  return <Section id="upcoming" title={t("Coming up")} link={data ? <span className={s.quiet}>{title}</span> : null}>{body}</Section>;
-}
-
-// ---------------------------------------------------------------- Pipeline
-
-/** The business flow the person can see: a count per stage and a gentle mark where work has stalled. */
-export function Pipeline({ summary }: { summary: Load<HomeSummary> }) {
-  const t = useT();
-  const locale = useLocale();
-  const data = summary.data;
-  const labels: Record<HomeFunnelStage["id"], string> = { enquiries: t("Enquiries"), planning: t("Planning"), quotes: t("Quotes"), projects: t("Projects"), handover: t("Handover") };
-  if (data && !data.funnel.length) return null;
-  const body = !data && !summary.failed ? <div className={s.pulse} role="status" aria-label={t("Loading")}>{Array.from({ length: 5 }, (_, index) => <span key={index} className={s.stage}><SkeletonBlock width={4} height={0.625} /><SkeletonBlock width={2} height={1.5} /></span>)}</div>
-    : !data ? <InlineError retry={summary.retry} />
-    : <ol className={s.pulse}>{data.funnel.map((stage) => <li key={stage.id}>
-      <Link className={s.stage} href={stage.href} data-stalled={stage.stuck > 0 || undefined}
-        aria-label={[labels[stage.id], formatCount(stage.count, locale), stage.stuck ? t("{count} stalled", { count: formatCount(stage.stuck, locale) }) : ""].filter(Boolean).join(", ")}>
-        <span className={s.stageLabel}>{labels[stage.id]}</span>
-        <strong className={s.stageCount}>{formatCount(stage.count, locale)}</strong>
-        <small className={s.stageNote}>{stage.stuck ? t("{count} stalled", { count: formatCount(stage.stuck, locale) }) : null}</small>
-      </Link>
-    </li>)}</ol>;
-  return <Section id="pipeline" title={t("Pipeline")}>{body}</Section>;
+  const at = item.allDay ? new Date(`${item.at.slice(0, 10)}T12:00:00Z`) : new Date(item.at);
+  const when = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", ...(item.allDay ? {} : { hour: "numeric", minute: "2-digit" }), timeZone: item.allDay ? "UTC" : timeZone }).format(at);
+  return <Link className={s.nextUp} href={item.href}>{t("Next: {title}", { title: item.title })}<span> · {when}</span></Link>;
 }
 
 // ---------------------------------------------------------------- Key numbers
@@ -237,24 +177,27 @@ function figures(data: HomeMetrics, lens: NumbersLens, t: T, locale: string): Fi
     awaiting: data.quotes ? { id: "awaiting", label: t("Quotes with clients"), value: count(data.quotes.awaiting), href: "/workspace/pre-projects?section=quotations" } : null,
     orders: data.orders ? { id: "orders", label: t("Orders to receive"), value: count(data.orders.toReceive), href: "/workspace/purchasing/orders" } : null,
   };
-  const order: Record<NumbersLens, string[]> = {
-    business: ["moneyIn", "projects", "enquiries", "quoted"],
-    finance: ["moneyIn", "due", "projects"],
-    sales: ["enquiries", "quoted", "awaiting", "projects"],
-    estimating: ["quoted", "awaiting", "projects"],
-    purchasing: ["orders", "projects", "overdue"],
-    projects: ["projects", "overdue", "orders"],
-  };
-  return order[lens].map((key) => all[key]).filter((figure): figure is Figure => Boolean(figure)).slice(0, 2);
+  return LENS_FIGURES[lens].map((key) => all[key]).filter((figure): figure is Figure => Boolean(figure)).slice(0, MAX_FIGURES);
 }
 
-/** One or two figures that matter for the person's role, each with a tiny trend and a link to its list. */
+/** Home shows at most four figures, chosen by the person's role, in this order. */
+const MAX_FIGURES = 4;
+const LENS_FIGURES: Record<NumbersLens, string[]> = {
+  business: ["moneyIn", "projects", "enquiries", "quoted"],
+  finance: ["moneyIn", "due", "projects"],
+  sales: ["enquiries", "quoted", "awaiting", "projects"],
+  estimating: ["quoted", "awaiting", "projects"],
+  purchasing: ["orders", "projects", "overdue"],
+  projects: ["projects", "overdue", "orders"],
+};
+
+/** Up to four figures that matter for the person's role (money compact), each with a tiny trend and a link to its list. */
 export function KeyNumbers({ metrics, lens, expected }: { metrics: Load<HomeMetrics>; lens: NumbersLens; expected: boolean }) {
   const t = useT();
   const locale = useLocale();
   const data = metrics.data;
   if (!expected) return null;
-  if (!data && !metrics.failed) return <div className={s.numbers} role="status" aria-label={t("Loading")}>{[0, 1].map((index) => <span key={index} className={s.number}><SkeletonBlock width={7} height={0.75} /><SkeletonBlock width={5} height={1.75} /><SkeletonBlock width="60%" height={0.625} /></span>)}</div>;
+  if (!data && !metrics.failed) return <div className={s.numbers} role="status" aria-label={t("Loading")}>{LENS_FIGURES[lens].slice(0, MAX_FIGURES).map((_, index) => <span key={index} className={s.number}><SkeletonBlock width={7} height={0.75} /><SkeletonBlock width={5} height={1.75} /><SkeletonBlock width="60%" height={0.625} /></span>)}</div>;
   if (!data) return <InlineError retry={metrics.retry} />;
   const shown = figures(data, lens, t, locale);
   if (!shown.length) return null;
@@ -268,59 +211,4 @@ export function KeyNumbers({ metrics, lens, expected }: { metrics: Load<HomeMetr
       </span>
     </Link>
   </li>)}</ul></nav>;
-}
-
-// ---------------------------------------------------------------- Jump back in
-
-const RECENT_ICONS: Record<HomeRecentRecord["kind"], LucideIcon> = { enquiry: Users, case: ClipboardCheck, project: FolderKanban, order: Truck, work_order: Factory };
-
-/** The records the person worked on last, then the ones in their care. */
-export function JumpBackIn({ summary, empty }: { summary: Load<HomeSummary>; empty: ReactNode }) {
-  const t = useT();
-  const locale = useLocale();
-  const data = summary.data;
-  const kinds: Record<HomeRecentRecord["kind"], string> = { enquiry: t("Enquiry"), case: t("Planning"), project: t("Project"), order: t("Order"), work_order: t("Work order") };
-  const body = !data && !summary.failed ? <Rows rows={3} />
-    : !data ? <InlineError retry={summary.retry} />
-    : !data.recent.length ? <div className={s.state}><EmptyState illustration={null} icon={<History size={18} aria-hidden="true" />} title={t("Nothing to pick up yet")} action={empty} /></div>
-    : <ul className={s.list}>{data.recent.map((record) => {
-      const Icon = RECENT_ICONS[record.kind];
-      return <li key={`${record.kind}:${record.id}`}><Link className={s.recentRow} href={record.href}>
-        <span className={s.recentIcon} aria-hidden="true"><Icon size={15} /></span>
-        <span className={s.copy}><strong>{record.title || kinds[record.kind]}</strong><small>{[kinds[record.kind], record.context].filter(Boolean).join(" · ")}</small></span>
-        <time dateTime={record.at}>{relativeTime(record.at, locale)}</time>
-      </Link></li>;
-    })}</ul>;
-  return <Section id="recent" title={t("Jump back in")}>{body}</Section>;
-}
-
-// ---------------------------------------------------------------- Recent activity
-
-/** What an HR record is (leave, a crew day), named before the verb since its subject is the person or crew. */
-function activityKind(action: string, t: T) {
-  return action.startsWith("hrms.leave") ? t("Leave") : action.startsWith("hrms.crew_day") ? t("Crew day") : null;
-}
-
-function activityVerb(action: string, t: T) {
-  const verb = action.split(/[._]/).at(-1) ?? "";
-  const verbs: Record<string, string> = { created: t("Created"), updated: t("Updated"), sent: t("Sent"), approved: t("Approved"), accepted: t("Accepted"), rejected: t("Declined"), archived: t("Archived"), deleted: t("Removed"), verified: t("Verified"), assigned: t("Assigned"), completed: t("Completed"), converted: t("Converted"), published: t("Published"), joined: t("Joined"), recorded: t("Recorded"), decided: t("Decided"), requested: t("Requested"), submitted: t("Submitted"), marked: t("Marked") };
-  return verbs[verb] ?? t("Updated");
-}
-
-/** The latest audited changes in the workspace, for people who can read the audit log. */
-export function RecentActivity({ metrics }: { metrics: Load<HomeMetrics> }) {
-  const t = useT();
-  const locale = useLocale();
-  const data = metrics.data;
-  if (data && !data.activity) return null;
-  const events: HomeActivityEvent[] = data?.activity?.slice(0, 5) ?? [];
-  const body = !data && !metrics.failed ? <Rows rows={3} />
-    : !data ? <InlineError retry={metrics.retry} />
-    : !events.length ? <div className={s.state}><EmptyState illustration={null} icon={<History size={18} aria-hidden="true" />} title={t("No recent activity")} /></div>
-    : <ul className={s.activity}>{events.map((event) => {
-      const line = <><span className={s.copy}><strong>{event.subject || t("Workspace")}</strong><small>{[activityKind(event.action, t), activityVerb(event.action, t), event.actorName].filter(Boolean).join(" · ")}</small></span>
-        <time dateTime={event.at}>{relativeTime(event.at, locale)}</time></>;
-      return <li key={event.id}>{event.href ? <Link className={s.activityRow} href={event.href}>{line}</Link> : <span className={s.activityRow}>{line}</span>}</li>;
-    })}</ul>;
-  return <Section id="activity" title={t("Recent activity")} link={<Link className={s.textLink} href="/workspace/settings/audit-logs">{t("View all")}</Link>}>{body}</Section>;
 }

@@ -17,7 +17,11 @@ const SCOPES = ["projects", "approvals"] as const;
  * client's card beside it), and — once the workspace's end-of-day time has passed — the running sites that have
  * no report for today. Nothing shows when there's nothing to do.
  */
-export function SiteProgressAttention({ workspaceId }: { workspaceId: string }) {
+export function SiteProgressAttention({ workspaceId, limit, onShown }: { workspaceId: string;
+  /** At most this many rows, of one kind: the reports to review, else the sites without today's report (Home keeps it short). */
+  limit?: number;
+  /** Told whether anything shows, so Home's Today doesn't list the same reports again. */
+  onShown?: (shown: boolean) => void }) {
   const t = useT();
   const format = useProjectFormat();
   const [data, setData] = useState<SiteAttention | null>(null);
@@ -26,11 +30,15 @@ export function SiteProgressAttention({ workspaceId }: { workspaceId: string }) 
   }, [workspaceId]);
   useEffect(() => { queueMicrotask(load); }, [load]);
   useLiveInvalidate(workspaceId, SCOPES, load, 5_000);
-  if (!data || (!data.toReview.length && !data.missing.length)) return null;
+  const toReview = data ? (limit ? data.toReview.slice(0, limit) : data.toReview) : [];
+  const missing = data?.pastDue && !(limit && toReview.length) ? (limit ? data.missing.slice(0, limit) : data.missing) : [];
+  const shown = toReview.length + missing.length > 0;
+  useEffect(() => { onShown?.(shown); }, [onShown, shown]);
+  if (!data || !shown) return null;
   return <>
-    {data.toReview.length ? <section className={s.section} aria-labelledby="home-reports-to-review">
+    {toReview.length ? <section className={s.section} aria-labelledby="home-reports-to-review">
       <div className={s.sectionHeader}><h2 id="home-reports-to-review">{t("Reports to review")}</h2><span className={s.count}>{data.toReview.length}</span></div>
-      <ul className={s.list}>{data.toReview.map((row) => <li key={row.reportId} className={s.focusRow}>
+      <ul className={s.list}>{toReview.map((row) => <li key={row.reportId} className={s.focusRow}>
         {row.photoId ? <img className={s.reportThumb} src={siteApi(workspaceId, row.projectId).photoUrl(row.photoId)} alt="" loading="lazy" />
           : <span className={s.mark} aria-hidden="true"><ClipboardCheck size={15} /></span>}
         <span className={s.copy}>
@@ -41,9 +49,9 @@ export function SiteProgressAttention({ workspaceId }: { workspaceId: string }) 
         <Link className="wd-button" data-size="compact" data-variant="primary" href={`/workspace/projects/${row.projectId}/site?report=${row.reportId}`}>{t("Review")}</Link>
       </li>)}</ul>
     </section> : null}
-    {data.pastDue && data.missing.length ? <section className={s.section} aria-labelledby="home-sites-missing">
+    {missing.length ? <section className={s.section} aria-labelledby="home-sites-missing">
       <div className={s.sectionHeader}><h2 id="home-sites-missing">{t("Sites without today's report")}</h2><span className={s.count}>{data.missing.length}</span></div>
-      <ul className={s.list}>{data.missing.map((row) => <li key={row.projectId} className={s.focusRow} data-urgency="overdue">
+      <ul className={s.list}>{missing.map((row) => <li key={row.projectId} className={s.focusRow} data-urgency="overdue">
         <span className={s.mark} aria-hidden="true"><HardHat size={15} /></span>
         <span className={s.copy}>
           <strong>{`${row.reference} · ${row.name}`}</strong>

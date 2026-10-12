@@ -11,18 +11,24 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkspaceUser } from "./workspace-navigation";
 import { sharedRequest } from "@/lib/workspace/shared-request";
 import { useWorkspaceSetupSteps, WorkspaceSetupChecklist, type ReadinessData } from "./workspace-readiness";
+import { MyAttendance } from "./my-attendance";
 import styles from "./workspace.module.css";
 
 /** Given only to people who can set the workspace up; the menu then shows setup progress around the avatar. */
 export type WorkspaceSetupSource = { workspaceId: string; modules: string[] };
 
-export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; setup?: WorkspaceSetupSource }) {
+export function WorkspaceAccountMenu({ user, setup, attendance }: { user: WorkspaceUser; setup?: WorkspaceSetupSource;
+  /** Attendance is on in this workspace: the menu carries today's check-in or check-out (read once the menu is first opened). */
+  attendance?: { workspaceId: string } }) {
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
   const [readiness, setReadiness] = useState<ReadinessData | undefined>();
   const [readinessReload, setReadinessReload] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [attendanceAsked, setAttendanceAsked] = useState(false);
+  const [attendanceSlot, setAttendanceSlot] = useState<HTMLDivElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const t = useT();
   const { direction: _direction, ...inherited } = useDesignSystem();
   const { completed, total } = useWorkspaceSetupSteps(readiness, setup?.modules ?? []);
@@ -63,7 +69,7 @@ export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; set
   const menuLabel = t("Account menu for {name}", { name: user.name });
   return (
     <div className={styles.accountMenu}>
-      <DialogTrigger onOpenChange={(open) => { if (open && workspaceId) setReadinessReload((value) => value + 1); }}>
+      <DialogTrigger isOpen={menuOpen} onOpenChange={(open) => { setMenuOpen(open); if (open && workspaceId) setReadinessReload((value) => value + 1); if (open && attendance) setAttendanceAsked(true); }}>
         <AriaButton
           aria-label={pending ? `${menuLabel}. ${t("Setup {completed} of {total} done", { completed, total })}` : menuLabel}
           className={styles.accountButton}
@@ -86,6 +92,7 @@ export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; set
                     <small dir="ltr">{user.email}</small>
                   </span>
                 </div>
+                {attendance ? <div ref={setAttendanceSlot} className={styles.attendanceSlot} /> : null}
                 {pending ? <button className={`${styles.accountAction} ${styles.setupItem}`} onClick={() => { close(); setSetupOpen(true); }} type="button">
                   <ListChecks aria-hidden="true" size={16} /> {t("Set up your workspace")}{" · "}<small>{t("{completed} of {total}", { completed, total })}</small>
                 </button> : null}
@@ -110,6 +117,8 @@ export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; set
           </Dialog>
         </Popover>
       </DialogTrigger>
+      {/* Mounted outside the menu, so its capture dialog stays open when the menu closes. */}
+      {attendance && attendanceAsked ? <MyAttendance workspaceId={attendance.workspaceId} slot={attendanceSlot} onCapture={() => setMenuOpen(false)} /> : null}
       {setup ? <DesignSystemProvider {...inherited} className={styles.setupDialogHost}>
         <ControlledModalDialog isOpen={setupOpen} onOpenChange={setSetupOpen} title={t("Set up your workspace")} description={t("{completed} of {total} complete", { completed, total })} size="lg">
           <WorkspaceSetupChecklist modules={setup.modules} readiness={readiness} onNavigate={() => setSetupOpen(false)} />

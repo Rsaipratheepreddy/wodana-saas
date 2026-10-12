@@ -353,7 +353,7 @@ export const tours: Tour[] = [
       },
       {
         id: "edit-home",
-        target: "home-edit",
+        target: "global-search",
         action: "point",
         woddy: "hello",
         narration: "And search is always here: type a client, a quote or a project and jump straight to it. Home follows your role, so an owner and a site supervisor each see their own day.",

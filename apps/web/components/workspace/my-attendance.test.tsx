@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttendanceSession, HrmsBootstrap, WorkCalendar } from "@wodana/contracts";
 import { DesignSystemProvider } from "@/design-system";
-import { HomeAttendance } from "./home-attendance";
+import { MyAttendance } from "./my-attendance";
 
 const device = vi.hoisted(() => new Map<string, unknown>());
 vi.mock("@/lib/hrms/pending", () => ({
@@ -25,9 +25,9 @@ const mount = (bootstrap: HrmsBootstrap, current: AttendanceSession | null) => v
   const value = path.endsWith("/bootstrap") ? bootstrap : path.endsWith("/attendance/current") ? current : [];
   return { ok: true, status: 200, json: async () => value };
 }));
-const home = () => render(<DesignSystemProvider locale="en-GB" timeZone="UTC"><HomeAttendance workspaceId="w" /></DesignSystemProvider>);
+const home = () => render(<DesignSystemProvider locale="en-GB" timeZone="UTC"><MyAttendance workspaceId="w" /></DesignSystemProvider>);
 
-describe("Home attendance chip", () => {
+describe("My attendance chip", () => {
   afterEach(() => { vi.unstubAllGlobals(); device.clear(); });
 
   it("shows nothing when attendance isn't on for the person", async () => {
@@ -48,7 +48,7 @@ describe("Home attendance chip", () => {
     await waitFor(() => expect(fetcher.mock.calls.filter(([url]) => String(url).includes("bootstrap")).length).toBe(2));
   });
 
-  it("checks in from Home with the same capture as People", async () => {
+  it("checks in with the same capture as People", async () => {
     mount(boot(true), null);
     home();
     await waitFor(() => expect(screen.getByRole("button", { name: "Check in" })).toBeEnabled());

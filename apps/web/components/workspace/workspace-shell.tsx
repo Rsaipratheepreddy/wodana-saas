@@ -211,7 +211,8 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
             >
               {theme === "light" ? <Moon aria-hidden="true" size={16} /> : <Sun aria-hidden="true" size={16} />}
             </button>
-            <WorkspaceAccountMenu setup={canManageWorkspace && workspaceId ? { workspaceId, modules: modules.map((module) => module.id) } : undefined} user={user} />
+            <WorkspaceAccountMenu setup={canManageWorkspace && workspaceId ? { workspaceId, modules: modules.map((module) => module.id) } : undefined} user={user}
+              attendance={workspaceId && modules.some((module) => module.id === "hrms") ? { workspaceId } : undefined} />
           </div>
         </header>
         <main className={styles.workspaceContent} data-tour="page-content" data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{banner}{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : route.settings && settingsModule ? <SettingsLayout module={settingsModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>

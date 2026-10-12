@@ -115,17 +115,22 @@ export function IconMenuButton({
   icon = <Ellipsis aria-hidden="true" size={16} />,
   items,
   onAction,
+  size = "compact",
+  variant = "quiet",
 }: {
   ariaLabel: string;
   icon?: ReactNode;
   items: ActionItem[];
   onAction?: (id: string) => void;
+  /** A row's "⋯" is compact and quiet; beside a page's primary action it takes that action's size, as a secondary. */
+  size?: ButtonSize;
+  variant?: ButtonVariant;
 }) {
   const { direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   return (
     <MenuTrigger>
-      <IconButton aria-label={ariaLabel} size="compact">{icon}</IconButton>
+      <IconButton aria-label={ariaLabel} size={size} variant={variant}>{icon}</IconButton>
       <Popover {...portalTheme} className="wd-popover" dir={direction} placement="bottom end">
         <Menu aria-label={ariaLabel} className="wd-menu" items={items}>
           {(item) => <ActionMenuItem item={item} onAction={onAction} />}
