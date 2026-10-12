@@ -1,4 +1,5 @@
 "use client";
+import { RecordHistory } from "../history/record-history";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
 import { ClientCredits } from "./client-credits";
@@ -710,6 +711,7 @@ export function ApprovalRelease({
             {/* PLM-066 / PLM-102 / PLM-123: money, closing and contents; E3: the approval's steps and who holds the current one. */}
             {state.dealInsight ? <DealFileInsight insight={state.dealInsight} /> : null}
             {state.dealApproval && (state.dealApproval.status === "pending" || d.ownerReview?.status === "approved") ? <DealApprovalSteps approval={state.dealApproval} /> : null}
+            {d.dealFile ? <MoreDetails label={t("History")}><RecordHistory workspaceId={state.workspaceId} recordType="deal_file" recordId={d.dealFile.id} /></MoreDetails> : null}
             {d.ownerReview?.status === "pending_finance" ? <Form className={s.ownerForm} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void run("review_deal_finance", { decision: "confirm", note: decisionNote, paymentVerified, commissionLines: editableFinanceLines.map(sent) }); }}>
               <h2>{t("2 · Finance verification")}</h2>
               <p className={s.muted}>{t("Submitted by {name}", { name: d.ownerReview.submittedBy })}</p>

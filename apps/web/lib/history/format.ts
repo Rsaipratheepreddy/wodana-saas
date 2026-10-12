@@ -94,6 +94,7 @@ const VERBS: Record<HistoryVerb, MessageKey> = {
   advanced: tKey("{actor} moved {subject} forward"),
   followed_up: tKey("{actor} followed up on {subject}"),
   not_sent: tKey("{actor} couldn't email {subject}"),
+  credited: tKey("{actor} credited {subject}"),
 };
 
 /** Field names the audit keeps, as people say them; other fields aren't listed (no raw names). */

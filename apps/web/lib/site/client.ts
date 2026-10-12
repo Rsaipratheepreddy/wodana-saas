@@ -15,6 +15,8 @@ async function send<T>(url: string, init: RequestInit, fallback: string): Promis
 export function siteApi(workspaceId: string, projectId: string) {
   const at = (value = "") => `/api/site/projects/${projectId}${value ? `/${value}` : ""}?${new URLSearchParams({ workspaceId })}`;
   return {
+    /** The workspace these calls act in (for the shared History beside them). */
+    workspaceId,
     state: () => send<SiteState>(at(), {}, "The site didn't load."),
     command: (action: string, input: Record<string, unknown> = {}) =>
       send<SiteState>(at(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action }) }, "Could not save."),

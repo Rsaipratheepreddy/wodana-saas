@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, CircleCheck, CircleDashed, Folder, Plus, Upload } from "lucide-react";
@@ -41,7 +42,7 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const [journey, setJourney] = useState<JourneyView | null>(null);
   const [journeyError, setJourneyError] = useState("");
   // A notice or a link can open a stage, the approval or the materials and decisions list (?stage=…).
-  const [picked, setPicked] = useState<JourneyStageKey | "other" | "ledger" | null>(() => (params.get("stage") as JourneyStageKey | "ledger" | null) ?? null);
+  const [picked, setPicked] = useState<JourneyStageKey | "other" | "ledger" | "history" | null>(() => (params.get("stage") as JourneyStageKey | "ledger" | "history" | null) ?? null);
   const [view, setView] = useState<"folders" | "all">("folders");
   const [folder, setFolder] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -85,7 +86,7 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const stages = (journey?.stages ?? []).filter((stage) => isDeliverableStage(stage.stage) || stage.stage === "approval");
   const activeStage = stages.find((stage) => stage.status === "active")?.stage;
   const unstaged = current.filter((design) => !isDeliverableStage(design.stage));
-  const shown: JourneyStageKey | "other" | "ledger" = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
+  const shown: JourneyStageKey | "other" | "ledger" | "history" = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
   const stageView = stages.find((stage) => stage.stage === shown);
   const inStage = shown === "other" ? unstaged : shown === "ledger" ? [] : current.filter((design) => design.stage === shown);
   const roomName = (id: string | null) => id ? data.rooms.find((room) => room.id === id)?.name ?? t("Room") : t("General");
@@ -119,13 +120,14 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
     {!journey.journey ? <div className={styles.notStarted}>
       <EmptyState illustration="calendar" title={t("Design hasn't started")} description={t("It starts when the design fee is paid.")}
         action={journey.canStart ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void stageAction("design-journey/start", {})}>{t("Start design")}</Button> : undefined} />
-    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as JourneyStageKey | "other" | "ledger"); setFolder(null); }}
+    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as JourneyStageKey | "other" | "ledger" | "history"); setFolder(null); }}
       items={[...stages.map((stage) => ({ id: stage.stage, label: t(stage.label as never), done: stage.status === "done" })), ...(unstaged.length ? [{ id: "other", label: t("Other") }] : []),
-        { id: "ledger", label: t("Materials & decisions") }]} />}
+        { id: "ledger", label: t("Materials & decisions") }, { id: "history", label: t("History") }]} />}
 
     {error ? <InlineNotice tone="error" message={error} /> : null}
 
-    {shown === "ledger" ? <DesignLedger workspaceId={workspaceId} caseId={caseId} rooms={data.rooms} />
+    {shown === "history" ? <RecordHistory workspaceId={workspaceId} recordType="design" recordId={caseId} />
+    : shown === "ledger" ? <DesignLedger workspaceId={workspaceId} caseId={caseId} rooms={data.rooms} />
     : shown === "approval" ? <SignOff data={data} designs={current} journey={journey} canReview={review.canReview} busy={busy}
       onSignOff={(input) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, ...input })} /> : <>
       {shown === "concepts" && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage="concepts" designs={current} canEdit={data.canEdit}

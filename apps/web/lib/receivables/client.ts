@@ -15,6 +15,8 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
 export function receivablesApi(workspaceId: string) {
   const at = (value: string) => `/api/receivables/${value}?${new URLSearchParams({ workspaceId })}`;
   return {
+    /** The workspace these calls act in (for the shared History beside them). */
+    workspaceId,
     state: () => request<ReceivablesState>(at("state")),
     invoice: (id: string) => request<InvoiceState>(at(`invoices/${id}`)),
     preview: (caseId: string, paymentId: string) => request<InvoicePreview>(at(`milestones/${caseId}/${encodeURIComponent(paymentId)}`)),

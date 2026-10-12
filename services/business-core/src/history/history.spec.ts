@@ -42,6 +42,7 @@ const UNVERSIONED = [
     "return_cancelled", "return_emailed", "return_raised", "return_sent", "returned", "sent", "shipment_added", "shipment_updated", "submitted", "under_threshold"].map((kind) => `purchase_order.${kind}`),
   ...["planned", "approve_drawing", "start", "release", "report", "check", "decide_report", "dispatch", "add_material", "issue_material"].map((kind) => `work_order.${kind}`),
   ...["submitted", "approval", "file", "needs_info", "rejected"].map((kind) => `finance_request.${kind}`),
+  "client_invoice.credited",
 ];
 
 describe("history: every action reads as a sentence", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { parseDate } from "@internationalized/date";
@@ -315,7 +316,9 @@ function Activity({ workspaceId, detail, board, run }: { workspaceId: string; de
   // "@Woddy …" in the comment box asks Woddy about this task; the answer is private and nothing is posted.
   const woddy = useWoddyPrivateAsk(workspaceId, { surface: "comment", context: { type: "work_item", id: detail.id } });
   const instruction = woddyInstruction(comment);
-  const items: ActivityItem[] = [...detail.activity].reverse().map((entry) => ({
+  // A snag's changes are its History (below); its Activity keeps the conversation.
+  const snag = detail.type === "snag";
+  const items: ActivityItem[] = [...detail.activity].reverse().filter((entry) => !snag || entry.kind === "comment").map((entry) => ({
     id: entry.id, actor: entry.by, occurredAt: format.when(entry.at),
     ...(entry.kind === "comment" ? { kind: "comment" as const, action: t("commented"), detail: (entry as { body: string }).body } : { kind: "change" as const, action: describe(entry) }),
   }));
@@ -337,6 +340,10 @@ function Activity({ workspaceId, detail, board, run }: { workspaceId: string; de
     </form> : null}
     <WoddyPrivateReplies workspaceId={workspaceId} turns={woddy.turns} onDismiss={woddy.dismiss} />
     <ActivityFeed items={items} />
+    {snag ? <>
+      <h3>{t("History")}</h3>
+      <RecordHistory workspaceId={workspaceId} recordType="snag" recordId={detail.id} />
+    </> : null}
   </section>;
 }
 

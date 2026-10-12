@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Button, DataGrid, DateField, EmptyState, ErrorState, FormDialog, FormRow, InlineNotice, InspectorSheet, MoreDetails, NoResultsState, ListTabs, RecordName, Skeleton, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
@@ -188,6 +189,10 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
           <div><dt>{t("Tax")}</dt><dd>{money(invoice.tax)}</dd></div>
           <div><dt>{t("Total")}</dt><dd><strong>{money(invoice.total)}</strong></dd></div>
         </dl>
+      </section>
+      <section className={styles.part} aria-label={t("History")}>
+        <h3>{t("History")}</h3>
+        <RecordHistory workspaceId={api.workspaceId} recordType="invoice" recordId={invoice.id} />
       </section>
     </div>}
     {crediting && invoice ? <FormDialog size="md" title={t("Credit invoice")} onClose={() => setCrediting(false)} cancelLabel={t("Back")}

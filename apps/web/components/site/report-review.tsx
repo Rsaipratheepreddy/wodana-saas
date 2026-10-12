@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useState } from "react";
 import { Download, Sparkles, Star } from "lucide-react";
 import { Badge, Button, Checkbox, ControlledModalDialog, EditableField, EditableFieldList, ErrorState, FactRow, IconButton, InlineNotice, MoreDetails, Skeleton, Switch, TextAreaField } from "@/design-system";
@@ -150,6 +151,9 @@ export function ReportReview({ api, state, reportId, onState, onClose, onReject 
             {report.weather ? <FactRow label={t("Weather")}>{report.weather}</FactRow> : null}
             {report.notes ? <FactRow label={t("Notes for the team")}>{report.notes}</FactRow> : null}
           </EditableFieldList>
+        </MoreDetails>
+        <MoreDetails label={t("History")}>
+          <RecordHistory workspaceId={api.workspaceId} recordType="site_report" recordId={report.id} />
         </MoreDetails>
       </section>
 

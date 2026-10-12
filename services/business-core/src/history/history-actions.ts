@@ -9,7 +9,7 @@ export const HISTORY_VERBS = [
   "created", "updated", "removed", "sent", "submitted", "approved", "declined", "decided", "verified", "signed", "requested_approval",
   "requested_signature", "sent_for_review", "returned", "cancelled", "closed", "completed", "started", "issued", "raised", "assigned", "reassigned",
   "numbered", "uploaded", "commented", "messaged", "logged_contact", "posted_update", "paid", "received", "scheduled", "priced", "applied", "won",
-  "lost", "qualified", "held", "reopened", "released", "dispatched", "checked", "confirmed", "escalated", "expired", "reacted", "advanced", "followed_up", "not_sent",
+  "lost", "qualified", "held", "reopened", "released", "dispatched", "checked", "confirmed", "escalated", "expired", "reacted", "advanced", "followed_up", "not_sent", "credited",
 ] as const;
 export type HistoryVerb = (typeof HISTORY_VERBS)[number];
 export type HistoryCategory = "change" | "message" | "approval";
@@ -40,6 +40,7 @@ const RULES: Array<[RegExp, HistoryVerb]> = [
   [/(^|[._])issue_[a-z_]+$/, "issued"],
   [/(^|[._])confirm_[a-z_]+$/, "confirmed"],
   [/email_not_sent$/, "not_sent"],
+  [/(^|[._])credited$/, "credited"],
   [/(^|[._])chased$/, "followed_up"],
   [/(^|[._])changing$/, "reopened"],
   [/(hold|funds)_override$|continued_on_hold$/, "approved"],

@@ -14484,5 +14484,6 @@
   "{actor} followed up on {subject}": "{actor} followed up on {subject}",
   "{actor} couldn't email {subject}": "{actor} couldn't email {subject}",
   "the client's details": "the client's details",
-  "client {reference}": "client {reference}"
+  "client {reference}": "client {reference}",
+  "{actor} credited {subject}": "{actor} credited {subject}"
 }
