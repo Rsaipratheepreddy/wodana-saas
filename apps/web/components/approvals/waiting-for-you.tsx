@@ -3,9 +3,9 @@
 import { useId, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, TypeChip, useDesignSystem, usePageToolbarSlot, type DataGridColumn, FormDialog } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, usePageToolbarSlot, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { APPROVAL_FILTERS, KIND_HUE, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
+import { APPROVAL_FILTERS, OTHER_LABEL, approvalsApi, approveLabel, approvalHeading, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import { playFeedback } from "@/lib/feedback/sounds";
 import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
@@ -72,14 +72,15 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     if (!row.currency) return row.amount;
     try { return new Intl.NumberFormat(locale, { style: "currency", currency: row.currency }).format(Number(row.amount)); } catch { return `${row.currency} ${row.amount}`; }
   };
-  // A row whose title is a sentence (an AI app's change) reads in the person's language.
-  const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : approvalTitle(row, locale);
+  // A row says what deciding it does, then the record ("Verify payment · On handover"); a server phrase (an AI app's
+  // change, a milestone to invoice) reads in the person's language.
+  const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : approvalHeading(t, row, locale);
   const columns: DataGridColumn<ApprovalRow>[] = [
     { id: "what", header: t("Waiting"), size: 280, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what} data-preview={row.preview ? "" : undefined}>
       {/* A daily report shows its lead photo and the client's words, so it can be approved and sent from here. */}
-      {row.preview?.photoId && row.parentId ? <img className={styles.thumb} src={siteApi(workspaceId, row.parentId).photoUrl(row.preview.photoId)} alt="" loading="lazy" /> : null}
+      {row.preview?.photoId && row.parentId ? <img className={styles.thumb} src={siteApi(workspaceId, row.parentId).photoUrl(row.preview.photoId)} alt="" loading="lazy"
+        onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
       <span className={styles.whatText}>
-        <span className={styles.kind}><TypeChip hue={KIND_HUE[row.kind]}>{t(KIND_LABEL[row.kind])}</TypeChip></span>
         <span>{title(row)}</span>
         {/* E3: decided as cover for someone away, or after it waited past the escalation time; a changed amount shows old → new. */}
         {row.cover ? <span className={styles.muted}>{row.cover.via === "delegate" ? t("Covering for someone away") : t("Escalated to you")}</span> : null}

@@ -1,4 +1,4 @@
-import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import type { ApprovalGroup, ApprovalKind, ApprovalRow } from "../../../../services/business-core/src/approvals/approval-sources";
 
 export type { ApprovalGroup, ApprovalKind, ApprovalRow };
@@ -19,36 +19,37 @@ export const APPROVAL_FILTERS: Array<{ id: "all" | ApprovalGroup; label: Message
   { id: "ai", label: tKey("AI apps") },
 ];
 
-/** What the row asks for, in a word or two. */
-export const KIND_LABEL: Record<ApprovalKind, MessageKey> = {
-  quote_review: tKey("Quote to review"),
-  receipt: tKey("Payment to verify"),
-  agreement: tKey("Agreement to verify"),
-  deal_finance: tKey("Deal to check"),
-  deal_approval: tKey("Deal to approve"),
-  order: tKey("Order to approve"),
-  output: tKey("Output to approve"),
-  material_swap: tKey("Material swap"),
-  site_report: tKey("Daily progress"),
-  petty_cash: tKey("Petty cash"),
-  snag: tKey("Snag to close"),
-  warranty: tKey("Warranty claim"),
-  stock_correction: tKey("Stock correction"),
-  bill: tKey("Held bill"),
-  payment_run: tKey("Payment run"),
-  reimbursement: tKey("To reimburse"),
-  invoice: tKey("To invoice"),
-  ai_action: tKey("AI app change"),
-  approval: tKey("To approve"),
-  qs_review: tKey("QS to confirm"),
-  design_review: tKey("Design to review"),
+/** A row's title: what deciding it does, then the record ("Verify payment · On handover", "Review site report · 28 Sep 2026"). */
+export const APPROVAL_ACTION: Record<ApprovalKind, MessageKey> = {
+  quote_review: tKey("Review quote · {subject}"),
+  receipt: tKey("Verify payment · {subject}"),
+  agreement: tKey("Verify agreement · {subject}"),
+  deal_finance: tKey("Check deal · {subject}"),
+  deal_approval: tKey("Approve deal · {subject}"),
+  order: tKey("Approve order · {subject}"),
+  output: tKey("Approve output · {subject}"),
+  material_swap: tKey("Approve material swap · {subject}"),
+  site_report: tKey("Review site report · {subject}"),
+  petty_cash: tKey("Approve petty cash · {subject}"),
+  snag: tKey("Close snag · {subject}"),
+  warranty: tKey("Review warranty claim · {subject}"),
+  stock_correction: tKey("Approve stock correction · {subject}"),
+  bill: tKey("Release bill · {subject}"),
+  payment_run: tKey("Approve payment run · {subject}"),
+  reimbursement: tKey("Reimburse · {subject}"),
+  invoice: tKey("Issue invoice · {subject}"),
+  ai_action: tKey("Review AI app change · {subject}"),
+  approval: tKey("Approve · {subject}"),
+  qs_review: tKey("Confirm pricing · {subject}"),
+  design_review: tKey("Review design · {subject}"),
 };
 
-/** The colour of the type chip: sales purple, money in green, spend amber, issues red, site and factory teal, quotes blue. */
-export const KIND_HUE: Record<ApprovalKind, 1 | 2 | 3 | 4 | 5 | 6> = {
-  quote_review: 1, receipt: 3, agreement: 2, deal_finance: 2, deal_approval: 2, order: 4, output: 6, material_swap: 6,
-  site_report: 6, petty_cash: 4, snag: 5, warranty: 5, stock_correction: 6, bill: 4, payment_run: 4, reimbursement: 4, invoice: 3, ai_action: 2, approval: 2, qs_review: 1, design_review: 2,
-};
+/** An approval's title in the person's language: the action, then the record as people read it. */
+export function approvalHeading(t: Translate, row: Pick<ApprovalRow, "kind" | "title">, locale?: string) {
+  const subject = approvalTitle(row, locale);
+  const action = APPROVAL_ACTION[row.kind as ApprovalKind];
+  return action && subject ? t(action, { subject }) : subject;
+}
 
 /** The title of a milestone to invoice (D-14), sent by the server as a phrase to translate. */
 export const INVOICE_PHRASE = tKey("Issue invoice · {milestone}");

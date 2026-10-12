@@ -3,7 +3,7 @@ import { CalendarDate } from "@internationalized/date";
 import type { MyDayItem, MyDayResponse } from "@wodana/contracts";
 import { translatorFor } from "@/lib/i18n/keys";
 import { offsetLabel } from "./labels";
-import { dueLabel, latestSnooze, openCount, snoozePresets, topMyDayItems, withoutItems } from "./my-day";
+import { dueLabel, latestSnooze, myDayRow, openCount, showCritical, snoozePresets, topMyDayItems, withoutItems } from "./my-day";
 
 const t = translatorFor({});
 const item = (id: string, overrides: Partial<MyDayItem> = {}): MyDayItem => ({
@@ -56,6 +56,29 @@ describe("My day helpers", () => {
     expect(snoozePresets({ timeZone: "UTC", morning: "09:00", latest: critical, now }).map((preset) => preset.id)).toEqual(["later", "tomorrow"]);
     // Late in the evening there is no "later today".
     expect(snoozePresets({ timeZone: "UTC", morning: "09:00", latest, now: new Date("2026-10-11T22:00:00Z") }).map((preset) => preset.id)).toEqual(["tomorrow", "next-week"]);
+  });
+
+  it("titles each row with the job and puts the reference in the muted line", () => {
+    const context = { t, locale: "en-GB", timeZone: "Asia/Dubai" };
+    expect(myDayRow(item("i", { kind: "invoice.overdue", title: "PLM-INV-2026-00001 · PRJ-0002", context: "Reem Al Marzouqi · AED 18,963.00" }), context))
+      .toEqual({ title: "Chase invoice · Reem Al Marzouqi · AED 18,963.00", detail: "PLM-INV-2026-00001 · PRJ-0002" });
+    expect(myDayRow(item("p", { kind: "payment.due", title: "On handover", context: "Omar and Layla Haddad · AED 4,359.60" }), context))
+      .toEqual({ title: "Collect payment · Omar and Layla Haddad · AED 4,359.60", detail: "On handover" });
+    expect(myDayRow(item("a", { kind: "approval.waiting", variant: "receipt", title: "On handover", context: "Omar and Layla Haddad" }), context))
+      .toEqual({ title: "Verify payment · On handover", detail: "Omar and Layla Haddad" });
+    expect(myDayRow(item("r", { kind: "approval.waiting", variant: "site_report", title: "2026-09-28", context: "Sam" }), context).title).toBe("Review site report · 28 Sept 2026");
+    expect(myDayRow(item("s", { kind: "site.daily_report", title: "Daily site report", context: "PRJ-0004 · Penthouse", dueAt: "2026-10-09T14:00:00Z" }), context))
+      .toEqual({ title: "Submit site report · 9 Oct", detail: "PRJ-0004 · Penthouse" });
+    // A task already says the job: no action is added and nothing repeats.
+    expect(myDayRow(item("w", { kind: "work.due", title: "#7 Book the lift", context: "PRJ-0002 · Marina" }), context)).toEqual({ title: "#7 Book the lift", detail: "PRJ-0002 · Marina" });
+    expect(myDayRow(item("c", { kind: "crm.first_response", title: "Rashid", context: "Rashid" }), context)).toEqual({ title: "Respond to enquiry · Rashid", detail: "" });
+  });
+
+  it("shows Critical only on a critical item more than a week late", () => {
+    expect(showCritical(item("a", { critical: true, urgency: "overdue", dueAt: "2026-10-03" }), "2026-10-11", "UTC")).toBe(true);
+    expect(showCritical(item("b", { critical: true, urgency: "overdue", dueAt: "2026-10-05" }), "2026-10-11", "UTC")).toBe(false);
+    expect(showCritical(item("c", { critical: false, urgency: "overdue", dueAt: "2026-09-01" }), "2026-10-11", "UTC")).toBe(false);
+    expect(showCritical(item("d", { critical: true, urgency: "today", dueAt: "2026-10-11" }), "2026-10-11", "UTC")).toBe(false);
   });
 
   it("names cadence steps by days or hours", () => {

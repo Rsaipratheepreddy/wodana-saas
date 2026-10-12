@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { APPROVAL_FILTERS, KIND_LABEL, approvalTitle, approveLabel, filterRows, waitingSince, type ApprovalRow } from "./approvals";
+import { translatorFor } from "@/lib/i18n/keys";
+import { APPROVAL_ACTION, APPROVAL_FILTERS, approvalHeading, approvalTitle, approveLabel, filterRows, waitingSince, type ApprovalRow } from "./approvals";
 
 const row = (kind: ApprovalRow["kind"], group: ApprovalRow["group"]): ApprovalRow => ({
   kind, group, id: `${kind}-1`, title: kind, subject: null, project: null, amount: null, currency: null, since: "2026-09-28T08:00:00.000Z",
@@ -14,8 +15,11 @@ describe("waiting for you", () => {
     expect(APPROVAL_FILTERS.map((item) => item.id)).toEqual(["all", "designs", "quotes", "payments", "deals", "orders", "factory", "site", "stock", "finance", "ai"]);
   });
 
-  it("names every kind, and verifies money rather than approving it", () => {
-    for (const kind of Object.keys(KIND_LABEL)) expect(KIND_LABEL[kind as ApprovalRow["kind"]]).toBeTruthy();
+  it("titles every kind with what deciding it does, and verifies money rather than approving it", () => {
+    for (const kind of Object.keys(APPROVAL_ACTION)) expect(APPROVAL_ACTION[kind as ApprovalRow["kind"]]).toContain("{subject}");
+    const t = translatorFor({});
+    expect(approvalHeading(t, { kind: "receipt", title: "On handover" }, "en-GB")).toBe("Verify payment · On handover");
+    expect(approvalHeading(t, { kind: "site_report", title: "2026-09-28" }, "en-GB")).toBe("Review site report · 28 Sept 2026");
     expect(approveLabel("receipt")).toBe("Verify");
     expect(approveLabel("order")).toBe("Approve");
   });

@@ -11,7 +11,7 @@ import { Badge, Button, EmptyState, ErrorState, SkeletonBlock, Sparkline, useDes
 import { useT } from "@/lib/i18n/i18n-provider";
 import { MY_DAY_ROUTE } from "@/lib/reminders/contract";
 import { REMINDER_KIND_LABELS } from "@/lib/reminders/labels";
-import { dueLabel, openCount, topMyDayItems } from "@/lib/reminders/my-day";
+import { dueLabel, myDayRow, openCount, showCritical, topMyDayItems } from "@/lib/reminders/my-day";
 import { changeBetween, formatCount, formatMoneyText, relativeTime, weekLabel, weekValue } from "./home-format";
 import s from "./workspace-home.module.css";
 
@@ -111,15 +111,15 @@ export function TodayList({ myDay, next, nextZone, inPlace, allClear }: {
     : <ul className={s.list}>{items.map((item) => {
       const look = kindLook(item.kind, t);
       const Icon = look.icon;
-      const reason = t(REMINDER_KIND_LABELS[item.kind]);
-      const title = item.title || reason;
+      const row = myDayRow(item, { t, locale, timeZone: data.timeZone });
+      const title = row.title || t(REMINDER_KIND_LABELS[item.kind]);
       const when = dueLabel(item, { today: data.today, timeZone: data.timeZone, locale, t });
       const open = inPlace(item);
       return <li key={item.id} className={s.focusRow} data-urgency={item.urgency}>
         <span className={s.mark} aria-hidden="true"><Icon size={15} /></span>
         <span className={s.copy}>
-          <strong>{title}{item.critical ? <Badge tone="danger">{t("Critical")}</Badge> : null}</strong>
-          <small>{[reason, item.context].filter((part) => part && part !== title).join(" · ")}{when ? <em>{when}</em> : null}</small>
+          <strong>{title}{showCritical(item, data.today, data.timeZone) ? <Badge tone="danger">{t("Critical")}</Badge> : null}</strong>
+          <small>{row.detail}{when ? <em>{when}</em> : null}</small>
         </span>
         {open
           ? <Button size="compact" aria-label={`${look.action}: ${title}`} onPress={open}>{look.action}</Button>

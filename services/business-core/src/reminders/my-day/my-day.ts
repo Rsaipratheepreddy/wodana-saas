@@ -10,7 +10,7 @@ export type MyDayScope = "me" | "team";
 export type MyDayUrgency = "overdue" | "today" | "upcoming" | "waiting" | "snoozed";
 export type MyDayAction = "open" | "snooze" | "complete" | "reassign";
 export type MyDayItem = {
-  id: string; kind: ReminderKind; module: ReminderModule; title: string; context: string; href: string; dueAt: string | null; urgency: MyDayUrgency;
+  id: string; kind: ReminderKind; module: ReminderModule; variant?: string | null; title: string; context: string; href: string; dueAt: string | null; urgency: MyDayUrgency;
   critical: boolean; audience: ReminderAudience; owner: { membershipId: string; name: string } | null;
   reminders: { sent: number; escalationLevel: number; nextAt: string | null }; snoozed: { until: string; reason: string } | null;
   actions: MyDayAction[]; completeLabel: string | null; version: number;
@@ -81,10 +81,26 @@ export function actionsFor(subject: Pick<SubjectRow, "kind" | "ownerMembershipId
   return { actions, completeLabel: actions.includes("complete") ? source!.complete!.label : null };
 }
 
+/** The record's own kind where one reminder kind covers several: an approval's kind ("receipt", "site_report"), from its key. */
+export function variantOf(subject: Pick<SubjectRow, "kind" | "sourceKey">): string | null {
+  if (subject.kind !== "approval.waiting") return null;
+  const [prefix, kind] = subject.sourceKey.split(":");
+  return prefix === "approval" && kind ? kind : null;
+}
+
+/**
+ * One row per record: an invoice that is overdue is chased once ("Invoice overdue"), so the client payment stage it
+ * bills ("Client payment due", the same invoice) is left out of the list and its counts; its client reminders still run.
+ */
+export function withoutDuplicates<T extends Pick<SubjectRow, "kind" | "href">>(rows: readonly T[]): T[] {
+  const overdue = new Set(rows.filter((row) => row.kind === "invoice.overdue").map((row) => row.href));
+  return rows.filter((row) => row.kind !== "payment.due" || !overdue.has(row.href));
+}
+
 export function toItem(row: Row, urgency: MyDayUrgency, viewer: MyDayViewer, sources: ReminderSourceRegistry): MyDayItem {
   const { actions, completeLabel } = actionsFor(row, viewer, sources);
   return {
-    id: row.id, kind: row.kind, module: REMINDER_KIND_INFO[row.kind].module, title: row.title, context: row.context, href: row.href,
+    id: row.id, kind: row.kind, module: REMINDER_KIND_INFO[row.kind].module, variant: variantOf(row), title: row.title, context: row.context, href: row.href,
     dueAt: row.dueAt ? row.dueAt.toISOString() : null, urgency, critical: row.critical, audience: row.audience,
     owner: row.ownerMembershipId ? { membershipId: row.ownerMembershipId, name: row.ownerName ?? "" } : null,
     reminders: { sent: row.remindersSent, escalationLevel: row.escalationLevel, nextAt: row.nextAt ? new Date(row.nextAt).toISOString() : null },
@@ -98,17 +114,21 @@ export async function readVisibleSubjects(db: Db, viewer: MyDayViewer, sources: 
   const seen = visibility(viewer, sources, scope);
   return (await db.query<Row>(
     `SELECT ${SUBJECT_COLUMNS}, coalesce(nullif(btrim(owner_account.display_name), ''), owner_account.primary_email) AS "ownerName",
-            job.reference AS "jobReference", job_title.title AS "jobTitle", next_step.at AS "nextAt"
+            job_title.reference AS "jobReference", job_title.title AS "jobTitle", next_step.at AS "nextAt"
        FROM reminder_subjects subject
        LEFT JOIN workspace_memberships owner ON owner.workspace_id = subject.workspace_id AND owner.id = subject.owner_membership_id
        LEFT JOIN users owner_account ON owner_account.id = owner.user_id
        LEFT JOIN job_identities job ON job.workspace_id = subject.workspace_id AND job.id = subject.job_id
        LEFT JOIN LATERAL (
-         SELECT coalesce(
-           (SELECT project.name FROM job_identity_links link JOIN delivery_projects project ON project.workspace_id = link.workspace_id AND project.id::text = link.record_id
-             WHERE link.workspace_id = job.workspace_id AND link.job_id = job.id AND link.record_type = 'project' AND link.status = 'active' ORDER BY link.attached_at DESC LIMIT 1),
-           (SELECT opportunity.title FROM crm_opportunities opportunity WHERE job.root_type = 'opportunity' AND opportunity.workspace_id = job.workspace_id AND opportunity.id = job.root_id),
-           (SELECT enquiry.title FROM crm_enquiries enquiry WHERE job.root_type = 'enquiry' AND enquiry.workspace_id = job.workspace_id AND enquiry.id = job.root_id)) AS title
+         SELECT named.title, named.reference FROM (
+           (SELECT project.name AS title, nullif(project.reference, '') AS reference, 1 AS rank FROM job_identity_links link
+              JOIN delivery_projects project ON project.workspace_id = link.workspace_id AND project.id::text = link.record_id
+             WHERE link.workspace_id = job.workspace_id AND link.job_id = job.id AND link.record_type = 'project' AND link.status = 'active' ORDER BY link.attached_at DESC LIMIT 1)
+           UNION ALL
+           (SELECT opportunity.title, nullif(opportunity.reference, ''), 2 FROM crm_opportunities opportunity WHERE job.root_type = 'opportunity' AND opportunity.workspace_id = job.workspace_id AND opportunity.id = job.root_id)
+           UNION ALL
+           (SELECT enquiry.title, nullif(enquiry.reference, ''), 3 FROM crm_enquiries enquiry WHERE job.root_type = 'enquiry' AND enquiry.workspace_id = job.workspace_id AND enquiry.id = job.root_id)
+         ) named ORDER BY named.rank LIMIT 1
        ) job_title ON job.id IS NOT NULL
        LEFT JOIN LATERAL (SELECT min(coalesce(step.held_until, step.fire_at)) AS at FROM reminder_steps step
                            WHERE step.workspace_id = subject.workspace_id AND step.subject_id = subject.id AND step.due_revision = subject.due_revision
@@ -130,7 +150,7 @@ export async function readVisibleSubjects(db: Db, viewer: MyDayViewer, sources: 
  */
 export async function readMyDay(db: Db, viewer: MyDayViewer, sources: ReminderSourceRegistry, filter: MyDayFilter, now: Date): Promise<MyDayResponse> {
   const scope = filter.scope ?? "me";
-  const rows = await readVisibleSubjects(db, viewer, sources, scope);
+  const rows = withoutDuplicates(await readVisibleSubjects(db, viewer, sources, scope));
   const counts: MyDayCounts = { overdue: 0, today: 0, upcoming: 0, waiting: 0, snoozed: 0, total: 0 };
   const items: MyDayItem[] = [];
   const groups = new Map<string, MyDayGroup>();
@@ -150,6 +170,7 @@ export async function readMyDay(db: Db, viewer: MyDayViewer, sources: ReminderSo
   for (const { item, row } of shown.slice(0, Math.min(filter.limit ?? MY_DAY_MAX, MY_DAY_MAX))) {
     items.push(item);
     const key = row.jobId ?? "";
+    // The job is named by its project (else its deal or enquiry) and that record's reference; the job's own J- code is internal.
     const group = groups.get(key) ?? { jobId: row.jobId, jobReference: row.jobReference, title: row.jobId ? row.jobTitle ?? row.jobReference ?? "" : "", href: row.jobId ? `/workspace/jobs/${row.jobId}` : null, items: [] };
     group.items.push(item);
     groups.set(key, group);

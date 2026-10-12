@@ -21,8 +21,7 @@ describe("Waiting for you: changes AI apps prepared", () => {
     render(<DesignSystemProvider><WaitingForYouList workspaceId="00000000-0000-4000-8000-000000000001" initial={waiting} /></DesignSystemProvider>);
     expect(screen.getByRole("radio", { name: /AI apps/ })).toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Waiting for you" });
-    expect(within(table).getByText("AI app change")).toBeInTheDocument();
-    // The phrase (translated), not the plain summary.
+    // The phrase (translated) is the title, not the plain summary.
     expect(within(table).getByText("Update ENQ-118")).toBeInTheDocument();
     expect(within(table).queryByText("Plain summary of the change")).not.toBeInTheDocument();
     expect(within(table).getByText("Claude")).toBeInTheDocument();
@@ -38,7 +37,7 @@ describe("Waiting for you: what a decision says (m25)", () => {
     const empty: WaitingForYou = { rows: [], count: 0, counts: { ...waiting.counts, ai: 0 } };
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 201, json: async () => empty })));
     render(<DesignSystemProvider><WaitingForYouList workspaceId="00000000-0000-4000-8000-000000000001" initial={{ rows: [receipt], count: 1, counts: { ...waiting.counts, ai: 0, payments: 1 } }} /></DesignSystemProvider>);
-    await userEvent.click(screen.getByRole("button", { name: /^Verify/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Verify" }));
     expect(await screen.findByText("Advance on signing verified.")).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
@@ -53,8 +52,8 @@ describe("Waiting for you: E3 rows", () => {
     render(<DesignSystemProvider locale="en-US"><WaitingForYouList workspaceId="00000000-0000-4000-8000-000000000001"
       initial={{ rows: [qs, value], count: 2, counts: { ...waiting.counts, ai: 0, quotes: 1, deals: 1 } }} /></DesignSystemProvider>);
     const table = screen.getByRole("table", { name: "Waiting for you" });
-    expect(within(table).getByText("QS to confirm")).toBeInTheDocument();
-    expect(within(table).getByText("Q-7 · Amira")).toBeInTheDocument();
+    // The title says what deciding does, then the record.
+    expect(within(table).getByText("Confirm pricing · Q-7 · Amira")).toBeInTheDocument();
     expect(within(table).getByText("Changed from AED 45,000.00 to AED 52,000.00")).toBeInTheDocument();
     expect(within(table).getByText("Covering for someone away")).toBeInTheDocument();
     await userEvent.click(within(table).getAllByRole("button", { name: "Open" })[0]);
@@ -77,10 +76,9 @@ describe("Waiting for you: design reviews", () => {
       initial={{ rows: [review], count: 1, counts: { ...waiting.counts, ai: 0, designs: 1 } }} /></DesignSystemProvider>);
     expect(screen.getByRole("radio", { name: /Designs/ })).toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Waiting for you" });
-    expect(within(table).getByText("Design to review")).toBeInTheDocument();
-    expect(within(table).getByText("Majlis concept · V2")).toBeInTheDocument();
+    expect(within(table).getByText("Review design · Majlis concept · V2")).toBeInTheDocument();
     expect(within(table).getByText("D-0012 · Majlis design")).toBeInTheDocument();
-    await userEvent.click(within(table).getByText("Majlis concept · V2"));
+    await userEvent.click(within(table).getByText("Review design · Majlis concept · V2"));
     expect(push).toHaveBeenCalledWith(`/workspace/pre-projects/cases/${CASE}/designs?file=${DESIGN}`);
     await userEvent.click(within(table).getByRole("button", { name: "Return" }));
     const dialog = screen.getByRole("dialog");

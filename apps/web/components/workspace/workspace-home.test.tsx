@@ -67,7 +67,7 @@ const myDay: MyDayResponse = {
   groups: [
     { jobId: "j-1", jobReference: "JOB-1", title: "Villa 12", href: null, items: [
       due({ id: "s-wardrobe", kind: "work.due", module: "projects", title: "Fit wardrobe", urgency: "upcoming", dueAt: "2026-09-30", href: "/workspace/projects/p-1/plan?item=w-2" }),
-      due({ id: "s-penthouse", title: "The Penthouse", context: "Layla Haddad", dueAt: "2026-09-20T08:00:00Z", critical: true, href: "/workspace/pre-projects/cases/c-1/quotations?quote=q-1" }),
+      due({ id: "s-penthouse", variant: "quote_review", title: "The Penthouse", context: "Layla Haddad", dueAt: "2026-09-20T08:00:00Z", critical: true, href: "/workspace/pre-projects/cases/c-1/quotations?quote=q-1" }),
       due({ id: "s-drawings", kind: "work.due", module: "projects", title: "Shop drawings", context: "Villa 12", urgency: "overdue", dueAt: "2026-09-25", href: "/workspace/projects/p-1/plan?item=w-1" }),
     ] },
     { jobId: null, jobReference: null, title: "", href: null, items: [
@@ -111,10 +111,11 @@ it("lists the six most urgent My day items, late first, each with one action; fo
   expect(rows.map((row) => row.getAttribute("data-urgency"))).toEqual(["overdue", "overdue", "today", "waiting", "waiting", "waiting"]);
   expect(rows[0]).toHaveTextContent("3 days late");
   expect(rows[1]).toHaveTextContent("Call Amira back");
-  // Waiting items: the oldest first; the critical one says so.
-  expect(rows[3]).toHaveTextContent("Approvals waiting · Layla Haddad");
-  expect(rows[3]).toHaveTextContent("Critical");
-  expect(within(rows[3]).getByRole("link", { name: "Review: The Penthouse" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c-1/quotations?quote=q-1");
+  // Waiting items: the oldest first, titled with the job; "Critical" is kept for a critical item over a week late.
+  expect(rows[3]).toHaveTextContent("Review quote · The Penthouse");
+  expect(rows[3]).toHaveTextContent("Layla Haddad");
+  expect(rows[3]).not.toHaveTextContent("Critical");
+  expect(within(rows[3]).getByRole("link", { name: "Review: Review quote · The Penthouse" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c-1/quotations?quote=q-1");
   // Everything due or coming counts (the snoozed item waits), and "See all" opens My day.
   expect(within(region).getByRole("heading", { name: "Today" }).parentElement).toHaveTextContent("8");
   expect(within(region).getByRole("link", { name: "See all" })).toHaveAttribute("href", "/workspace/my-day");

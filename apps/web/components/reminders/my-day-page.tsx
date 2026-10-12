@@ -16,7 +16,7 @@ import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { remindersApi, type RemindersApi } from "@/lib/reminders/client";
 import { MAX_SNOOZE_DAYS, REMINDER_MODULES, myDayHref } from "@/lib/reminders/contract";
 import { REMINDER_KIND_LABELS, REMINDER_MODULE_LABELS } from "@/lib/reminders/labels";
-import { MY_DAY_CHIPS, MY_DAY_URGENCY_LABELS, dueLabel, latestSnooze, snoozePresets, withoutItems } from "@/lib/reminders/my-day";
+import { MY_DAY_CHIPS, MY_DAY_URGENCY_LABELS, dueLabel, latestSnooze, myDayRow, showCritical, snoozePresets, withoutItems } from "@/lib/reminders/my-day";
 import styles from "./my-day.module.css";
 
 export type MyDayFilter = { scope: MyDayScope; urgency?: MyDayUrgency; module?: ReminderModule };
@@ -130,7 +130,8 @@ export function MyDayPage({ workspaceId, canTeam, initialFilter }: { workspaceId
 
   const view = useMemo(() => (data ? withoutItems(data, new Set(pending.map((entry) => entry.item.id))) : null), [data, pending]);
   const team = filter.scope === "team";
-  const label = (item: MyDayItem) => item.title || t(REMINDER_KIND_LABELS[item.kind]);
+  const row = (item: MyDayItem) => myDayRow(item, { t, locale, timeZone: view?.timeZone ?? "UTC" });
+  const label = (item: MyDayItem) => row(item).title || t(REMINDER_KIND_LABELS[item.kind]);
   const completeLabel = (item: MyDayItem) => (item.completeLabel ? translateKnown(t, item.completeLabel) : t("Mark done"));
   const when = (value: string) => new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: view?.timeZone }).format(new Date(value));
 
@@ -148,12 +149,11 @@ export function MyDayPage({ workspaceId, canTeam, initialFilter }: { workspaceId
   };
 
   const columns: GroupedTableColumn<MyDayItem>[] = [
-    { id: "what", label: t("What"), width: team ? "34%" : "42%", render: (item) => <RecordName title={label(item)}
-      detail={[t(REMINDER_KIND_LABELS[item.kind]), item.context].filter((part) => part && part !== label(item)).join(" · ")} /> },
+    { id: "what", label: t("What"), width: team ? "34%" : "42%", render: (item) => <RecordName title={label(item)} detail={row(item).detail} /> },
     { id: "due", label: t("Due"), width: "18%", render: (item) => view ? <time className={styles.due} data-urgency={item.urgency} dateTime={item.snoozed?.until ?? item.dueAt ?? undefined}>
       {dueLabel(item, { today: view.today, timeZone: view.timeZone, locale, t })}</time> : null },
     { id: "reminders", label: t("Reminders"), width: "20%", mobileHidden: true, render: (item) => <span className={styles.flags}>
-      {item.critical ? <Badge tone="danger">{t("Critical")}</Badge> : null}
+      {view && showCritical(item, view.today, view.timeZone) ? <Badge tone="danger">{t("Critical")}</Badge> : null}
       {item.reminders.sent || item.reminders.escalationLevel ? <Badge tone={item.reminders.escalationLevel ? "warning" : "neutral"}>
         {[item.reminders.sent ? t("Reminded {count}×", { count: item.reminders.sent }) : "", item.reminders.escalationLevel ? t("escalated") : ""].filter(Boolean).join(" · ")}</Badge> : null}
     </span> },

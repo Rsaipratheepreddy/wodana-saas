@@ -101,7 +101,9 @@ export const invoiceOverdueSource: ReminderSource = {
       return {
         key: `invoice:${invoice.id}`, sourceType: "client_invoice", sourceId: invoice.id, jobSource: { type: "project", id: invoice.projectId },
         projectId: invoice.projectId, caseId: invoice.caseId, partyId: null, ownerMembershipId: owner, ccMembershipIds: finance.filter((id) => id !== owner),
-        dueAt: dayStart(invoice.dueDate, clock), title: invoice.number, context: `${invoice.customerName} · ${invoice.projectReference} · ${money(invoice.currency, invoice.balance)}`,
+        // The record (the invoice and its project) as the title; whom to chase and how much as the context, which My day leads with.
+        dueAt: dayStart(invoice.dueDate, clock), title: [invoice.number, invoice.projectReference].filter(Boolean).join(" · "),
+        context: [invoice.customerName, money(invoice.currency, invoice.balance)].filter(Boolean).join(" · "),
         href: `/workspace/finance/client-invoices?invoice=${encode(invoice.id)}`, variables: { client: invoice.customerName },
       };
     });
@@ -140,7 +142,8 @@ export const payablesDueSource: ReminderSource = {
     const payers = await readPermissionHolders(db, workspaceId, ["payables.manage"]);
     return rows.map((row): DueItem => ({
       key: `bill:${row.id}`, sourceType: "supplier_invoice", sourceId: row.id, jobSource: null, projectId: row.projectId, caseId: null, partyId: null,
-      ownerMembershipId: null, ccMembershipIds: payers, dueAt: dayStart(row.dueDate, clock), title: `${row.number} · ${row.supplier}`,
+      // The bill's number as the title; the supplier and what is left to pay as the context (the supplier once).
+      ownerMembershipId: null, ccMembershipIds: payers, dueAt: dayStart(row.dueDate, clock), title: row.number || row.supplier,
       context: `${row.supplier} · ${money(row.currency, row.balance)}`, href: `/workspace/finance/suppliers/${encode(row.vendorId)}`, variables: { supplier: row.supplier },
     }));
   },

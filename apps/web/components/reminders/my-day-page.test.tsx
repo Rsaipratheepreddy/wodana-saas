@@ -22,8 +22,8 @@ const myDay = (overrides: Partial<MyDayResponse> = {}): MyDayResponse => ({
   generatedAt: "2026-10-11T06:00:00Z", scope: "me", timeZone: "UTC", today: "2026-10-11",
   counts: { overdue: 1, today: 0, upcoming: 0, waiting: 1, snoozed: 2, total: 2 },
   groups: [
-    { jobId: "j-1", jobReference: "JOB-12", title: "Villa 12", href: "/workspace/jobs/j-1", items: [item({ reminders: { sent: 2, escalationLevel: 1, nextAt: null } })] },
-    { jobId: null, jobReference: null, title: "", href: null, items: [item({ id: APPROVAL, kind: "approval.waiting", module: "approvals", title: "PALM-PO-17", context: "Oak & Co",
+    { jobId: "j-1", jobReference: "PRJ-0012", title: "Villa 12", href: "/workspace/jobs/j-1", items: [item({ reminders: { sent: 2, escalationLevel: 1, nextAt: null } })] },
+    { jobId: null, jobReference: null, title: "", href: null, items: [item({ id: APPROVAL, kind: "approval.waiting", module: "approvals", variant: "order", title: "PALM-PO-17", context: "Oak & Co",
       href: "/workspace/purchasing/orders?order=o-1", urgency: "waiting", dueAt: "2026-10-09T08:00:00Z", critical: true, actions: ["open", "snooze"] })] },
   ],
   ...overrides,
@@ -53,14 +53,16 @@ describe("My day", () => {
     render(<MyDayPage workspaceId={workspaceId} canTeam initialFilter={{ scope: "me" }} />);
     expect(screen.getByRole("heading", { level: 1, name: "My day" })).toBeInTheDocument();
     const table = await screen.findByRole("table", { name: "My day" });
-    expect(within(table).getByText("Villa 12 · JOB-12")).toBeInTheDocument();
+    expect(within(table).getByText("Villa 12 · PRJ-0012")).toBeInTheDocument();
     expect(within(table).getByText("Other")).toBeInTheDocument();
     const work = within(table).getByText("Shop drawings").closest("tr")!;
     expect(work).toHaveTextContent("3 days late");
     expect(work).toHaveTextContent("Reminded 2× · escalated");
     expect(within(work).getByRole("link", { name: "Open Shop drawings" })).toHaveAttribute("href", "/workspace/projects/p-1/plan?item=w-1");
-    const approval = within(table).getByText("PALM-PO-17").closest("tr")!;
-    expect(approval).toHaveTextContent("Critical");
+    // The row says the job (the approval's action) with the record; "Critical" is kept for a critical item over a week late.
+    const approval = within(table).getByText("Approve order · PALM-PO-17").closest("tr")!;
+    expect(approval).toHaveTextContent("Oak & Co");
+    expect(approval).not.toHaveTextContent("Critical");
     expect(approval).toHaveTextContent("Since");
     const chips = within(screen.getByRole("group", { name: "When" }));
     expect(chips.getByRole("button", { name: /Overdue/ })).toHaveTextContent("1");
@@ -121,7 +123,7 @@ describe("My day", () => {
     const calls = api({ commandStatus: 422, commandMessage: "A critical item snoozes only to the next working day." });
     render(<MyDayPage workspaceId={workspaceId} canTeam={false} initialFilter={{ scope: "me" }} />);
     const table = await screen.findByRole("table", { name: "My day" });
-    await user().click(within(table).getByRole("button", { name: "More for PALM-PO-17" }));
+    await user().click(within(table).getByRole("button", { name: "More for Approve order · PALM-PO-17" }));
     await user().click(await screen.findByRole("menuitem", { name: "Snooze…" }));
     const dialog = await screen.findByRole("dialog", { name: "Snooze" });
     await user().click(within(dialog).getByRole("button", { name: "Tomorrow" }));
@@ -130,14 +132,14 @@ describe("My day", () => {
     await user().type(within(dialog).getByRole("textbox", { name: /Reason/ }), "Waiting for the supplier");
     await user().click(within(dialog).getByRole("button", { name: "Snooze" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Snooze" })).not.toBeInTheDocument());
-    expect(within(table).queryByText("PALM-PO-17")).not.toBeInTheDocument();
+    expect(within(table).queryByText("Approve order · PALM-PO-17")).not.toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(UNDO_MS + 100); });
     await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(1));
     const post = calls.find((call) => call.method === "POST")!;
     expect(post.url).toBe(`/api/workspace/my-day/${APPROVAL}/snooze?workspaceId=${workspaceId}`);
     expect(post.body).toMatchObject({ reason: "Waiting for the supplier", version: 3, until: expect.stringMatching(/T09:00:00\.000Z$/) });
     expect(await screen.findByText("A critical item snoozes only to the next working day.")).toBeInTheDocument();
-    expect(await within(table).findByText("PALM-PO-17")).toBeInTheDocument();
+    expect(await within(table).findByText("Approve order · PALM-PO-17")).toBeInTheDocument();
   });
 
   it("hands an item to someone else after the undo window", async () => {

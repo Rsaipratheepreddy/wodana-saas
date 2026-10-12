@@ -1,7 +1,8 @@
 import { fromDate, parseTime, toCalendarDate, toCalendarDateTime, toZoned, type CalendarDate } from "@internationalized/date";
-import type { MyDayCounts, MyDayItem, MyDayResponse, MyDayUrgency } from "@wodana/contracts";
+import type { MyDayCounts, MyDayItem, MyDayResponse, MyDayUrgency, ReminderKind } from "@wodana/contracts";
 import type { MessageKey, Translate } from "@/lib/i18n/keys";
 import { tKey } from "@/lib/i18n/keys";
+import { APPROVAL_ACTION, approvalHeading, type ApprovalKind } from "@/lib/approvals/approvals";
 import { MAX_SNOOZE_DAYS } from "./contract";
 
 /** Home's order: what is late, then today's, then what waits on the person, then what comes up; snoozed last. */
@@ -14,6 +15,67 @@ export const MY_DAY_URGENCY_LABELS: Record<MyDayUrgency, MessageKey> = {
 export const MY_DAY_CHIPS: MyDayUrgency[] = ["overdue", "today", "waiting", "upcoming", "snoozed"];
 
 const due = (item: MyDayItem) => (item.dueAt ? Date.parse(item.dueAt) : Number.POSITIVE_INFINITY);
+
+/**
+ * A row says the job first: what to do, then whom or what it is about ("Chase invoice · Reem Al Marzouqi · AED 18,963.00");
+ * the record's reference goes in the muted line. `lead` names which of the server's fields is the subject: the
+ * record kinds (invoices, payment stages, supplier bills) lead with their context, the rest with their title. A kind
+ * whose title already says the job (a task, a follow-up, a permit) has no action.
+ */
+const MY_DAY_ROWS: Record<ReminderKind, { action: MessageKey | null; lead: "title" | "context" }> = {
+  "work.due": { action: null, lead: "title" },
+  "crm.follow_up": { action: null, lead: "title" },
+  "approval.waiting": { action: tKey("Approve · {subject}"), lead: "title" },
+  "client.quote_decision": { action: tKey("Chase quotation · {subject}"), lead: "title" },
+  "client.design_decision": { action: tKey("Chase design approval · {subject}"), lead: "title" },
+  "change_request.client_decision": { action: tKey("Chase change approval · {subject}"), lead: "title" },
+  "quote.expiring": { action: tKey("Follow up quotation · {subject}"), lead: "title" },
+  "payment.due": { action: tKey("Collect payment · {subject}"), lead: "context" },
+  "invoice.overdue": { action: tKey("Chase invoice · {subject}"), lead: "context" },
+  "payables.due": { action: tKey("Pay supplier bill · {subject}"), lead: "context" },
+  "purchase.order_late": { action: tKey("Chase supplier · {subject}"), lead: "title" },
+  "design.stage_due": { action: tKey("Finish design stage · {subject}"), lead: "title" },
+  "permit.expiry": { action: null, lead: "title" },
+  "finance_request.waiting": { action: null, lead: "title" },
+  "crm.first_response": { action: tKey("Respond to enquiry · {subject}"), lead: "title" },
+  "crm.unowned": { action: tKey("Assign enquiry · {subject}"), lead: "title" },
+  "crm.confirm_client": { action: tKey("Confirm the client · {subject}"), lead: "title" },
+  "crm.reply_waiting": { action: tKey("Reply to {subject}"), lead: "title" },
+  "site.daily_report": { action: tKey("Submit site report · {subject}"), lead: "title" },
+  "factory.production_due": { action: tKey("Finish production · {subject}"), lead: "title" },
+  "books.posting_issue": { action: tKey("Fix posting · {subject}"), lead: "title" },
+};
+
+type RowContext = { t: Translate; locale: string; timeZone: string };
+
+/** An item's row: the job as its title, and the reference or whom it belongs to as the muted detail (never a repeat). */
+export function myDayRow(item: Pick<MyDayItem, "kind" | "variant" | "title" | "context" | "dueAt">, { t, locale, timeZone }: RowContext): { title: string; detail: string } {
+  const shape = MY_DAY_ROWS[item.kind] ?? { action: null, lead: "title" as const };
+  // An approval reads like the Approvals list ("Verify payment · On handover"); a missed site report names its day.
+  if (item.kind === "approval.waiting" && item.variant && item.variant in APPROVAL_ACTION) {
+    return { title: approvalHeading(t, { kind: item.variant as ApprovalKind, title: item.title }, locale), detail: item.context };
+  }
+  if (item.kind === "site.daily_report" && item.dueAt) {
+    const day = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone }).format(new Date(item.dueAt));
+    return { title: t(shape.action!, { subject: day }), detail: item.context };
+  }
+  const subject = (shape.lead === "context" ? item.context : item.title) || item.title || item.context;
+  const detail = shape.lead === "context" ? item.title : item.context;
+  return { title: shape.action && subject ? t(shape.action, { subject }) : subject, detail: detail === subject ? "" : detail };
+}
+
+/** Days an overdue item is late in the person's zone (0 when it isn't overdue). */
+function daysLate(item: Pick<MyDayItem, "dueAt" | "urgency">, today: string, timeZone: string) {
+  if (item.urgency !== "overdue" || !item.dueAt) return 0;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(item.dueAt) ? item.dueAt : localDay(item.dueAt, timeZone);
+  return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86_400_000);
+}
+
+/** "Critical" is shown only where it tells something: a critical kind more than a week late. */
+export const CRITICAL_AFTER_DAYS = 7;
+export function showCritical(item: Pick<MyDayItem, "critical" | "dueAt" | "urgency">, today: string, timeZone: string) {
+  return item.critical && daysLate(item, today, timeZone) > CRITICAL_AFTER_DAYS;
+}
 
 /** Everything due on the person, most urgent first (snoozed items left out), for Home's Today list. */
 export function topMyDayItems(response: MyDayResponse, limit: number): MyDayItem[] {

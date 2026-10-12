@@ -449,7 +449,7 @@ integration("reminder engine on real Postgres (sweep, delivery, escalation, clie
     await tenant(ws, SERVICE, (client) => sweepWorkspace(client, ws, { sources, now: today, scan: true, digests: false, health: false }));
     as = users.planner;
     const list = await myDay.myDay(actor, ws, { scope: "me" }) as Awaited<ReturnType<MyDayService["myDay"]>>;
-    const mine = list.groups.flatMap((group) => group.items.map((item) => [group.jobReference ? "job" : "none", item.title]));
+    const mine = list.groups.flatMap((group) => group.items.map((item) => [group.jobId ? "job" : "none", item.title]));
     expect(mine).toEqual(expect.arrayContaining([["job", "#7 Order tiles"], ["none", "INV-0007"]]));
     expect(mine.map((row) => row[1])).not.toContain("#8 Someone else's");
     expect(list.groups.find((group) => group.jobId === job)?.title).toBe("Palm villa fit-out");
