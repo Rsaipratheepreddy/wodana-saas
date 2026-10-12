@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,7 +12,7 @@ import {
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest } from "@/lib/pre-project/content";
 import {
-  ACTION_LABEL, EVENT_LABEL, KIND_LABEL, STATUS_LABEL, STATUS_TONE,
+  ACTION_LABEL, KIND_LABEL, STATUS_LABEL, STATUS_TONE,
   type ChangeKind, type ChangeLine, type ChangeRequest, type ChangeRequestsView, type ChangeSources, type LineAction, type LineSource,
 } from "@/lib/change-requests/types";
 import { CaseModal } from "../pre-project/case-controls";
@@ -70,7 +71,7 @@ export function ChangeRequestsPanel({ workspaceId, caseId }: { workspaceId: stri
       onRowAction={(row) => (row.projectId ? router.push(`/workspace/projects/${row.projectId}/changes/${row.id}`) : setOpenId(row.id))} />
       : <EmptyState illustration="empty" title={t("No change requests")} description={t("A change after the contract is priced here, approved, and signed by the client.")}
         action={view.canEdit && !view.projectId ? <Button variant="primary" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New change")}</Button> : undefined} />}
-    {open ? <ChangeDetail change={open} canEdit={Boolean(view.canEdit)} day={day} money={money} onClose={() => setOpenId(null)} onEdit={() => setEditing(open)}
+    {open ? <ChangeDetail workspaceId={workspaceId} change={open} canEdit={Boolean(view.canEdit)} day={day} money={money} onClose={() => setOpenId(null)} onEdit={() => setEditing(open)}
       run={async (path, body, message) => { const next = await caseRequest<ChangeRequestsView>(workspaceId, caseId, `change-requests/${open.id}/${path}`, "POST", body); saved(message)(next); return next; }} /> : null}
     {editing ? <ChangeEditor change={editing === "new" ? null : editing} sources={view.sources} onClose={() => setEditing(null)}
       onSubmit={async (body) => {
@@ -84,7 +85,8 @@ export function ChangeRequestsPanel({ workspaceId, caseId }: { workspaceId: stri
 
 type Run = (path: string, body: Record<string, unknown>, message: string) => Promise<ChangeRequestsView>;
 
-function ChangeDetail({ change, canEdit, day, money, onClose, onEdit, run }: {
+function ChangeDetail({ workspaceId, change, canEdit, day, money, onClose, onEdit, run }: {
+  workspaceId: string;
   change: ChangeRequest; canEdit: boolean; day: (iso: string | null) => string; money: (value: string, currency: string) => string; onClose: () => void; onEdit: () => void; run: Run;
 }) {
   const t = useT();
@@ -151,10 +153,7 @@ function ChangeDetail({ change, canEdit, day, money, onClose, onEdit, run }: {
     {change.purchaseOrders.length ? <InlineNotice tone="info" title={t("Open orders to check")} message={change.purchaseOrders.map((order) => `${order.number} (${order.matchedOn})`).join(", ")} /> : null}
     {link ? <div className={styles.inline}><TextInput label={t("Signing link")} value={link} isReadOnly /><IconButton aria-label={t("Copy")} onPress={() => void navigator.clipboard?.writeText(link)}><Copy size={14} /></IconButton></div> : null}
     {["draft", "pending_approval", "with_client"].includes(change.status) ? <TextAreaField label={t("Note")} description={t("Needed to return or withdraw it.")} maxLength={2000} value={note} onChange={setNote} /> : null}
-    <ol className={styles.history} aria-label={t("History")}>{change.events.map((item, index) => <li key={`${item.event}-${index}`}>
-      <span className={styles.cell}><span>{t(EVENT_LABEL[item.event] ?? item.event as never)}</span>
-        <small>{[item.actorName, day(item.at)].filter(Boolean).join(" · ")}</small>{item.note ? <small>{item.note}</small> : null}</span>
-    </li>)}</ol>
+    <RecordHistory workspaceId={workspaceId} recordType="change_request" recordId={change.id} />
   </CaseModal>;
 }
 

@@ -1,6 +1,7 @@
 "use client";
+import { RecordHistory } from "../history/record-history";
 import { useState } from "react";
-import { ArrowRight, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
@@ -331,11 +332,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     })() : null}
     {blocked ? <StageBlockedSheet stageName={blocked.stage} items={blocked.items} onAction={act} onClose={() => setBlocked(null)} /> : null}
     {askingFinance ? <RaiseFinanceRequest workspaceId={workspaceId} origin={{ opportunityId: row.id }} onClose={() => setAskingFinance(false)} /> : null}
-    {historyOpen ? <ControlledModalDialog isOpen size="md" title={t("History")} onOpenChange={setHistoryOpen}>
-      {stageHistory.length ? <ol className={screen.history}>{stageHistory.map((entry, index) => <li key={entry.id ?? index}>
-        <strong>{entry.fromStageName ?? t("Start")}<ArrowRight aria-hidden="true" size={12} />{entry.toStatus === "won" ? t("Won") : entry.toStatus === "lost" ? t("Lost") : entry.toStageName ?? t("Not set")}</strong>
-        <small>{[entry.changedByName, entry.changedAt ? shortDay(entry.changedAt) : null, entry.reason].filter(Boolean).join(" · ")}</small>
-      </li>)}</ol> : <p className={styles.empty}>{t("No changes yet.")}</p>}
+    {historyOpen ? <ControlledModalDialog isOpen size="lg" title={t("History")} onOpenChange={setHistoryOpen}>
+      <RecordHistory workspaceId={workspaceId} recordType="opportunity" recordId={row.id} />
     </ControlledModalDialog> : null}
     {editing ? <OpportunityEditDialog workspaceId={workspaceId} opportunity={{ ...live, version: Math.max(Number(live.version ?? 0), savedVersion) }} members={owners} onClose={() => setEditing(false)} onSaved={saved} /> : null}</RecordFrame>;
 }

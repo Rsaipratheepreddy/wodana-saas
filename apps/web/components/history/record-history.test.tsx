@@ -25,9 +25,10 @@ describe("the shared History of a record", () => {
       older: { timeZone: "Asia/Dubai", next: null, items: [item({ verb: "created", subject: "opportunity", reference: "O-0009", occurredAt: "2026-09-01T08:00:00.000Z" })] },
     };
     const load = vi.fn(async (_w: string, _type: string, _id: string, filter: string, before: string | null) => pages[before ? "older" : filter] ?? { timeZone: "UTC", next: null, items: [] });
-    render(<DesignSystemProvider locale="en-GB"><RecordHistory load={load as never} recordId="22222222-2222-4222-8222-222222222222" recordType="opportunity" workspaceId="w" /></DesignSystemProvider>);
+    const { container } = render(<DesignSystemProvider locale="en-GB"><RecordHistory load={load as never} recordId="22222222-2222-4222-8222-222222222222" recordType="opportunity" workspaceId="w" /></DesignSystemProvider>);
 
-    const history = await screen.findByRole("region", { name: "History" });
+    await screen.findByText("Sara sent quotation Q-0012 V2 to Aisha Rahman");
+    const history = container.querySelector<HTMLElement>("[data-history]")!;
     const today = within(history).getByRole("region", { name: "Today" });
     expect(within(today).getByText("Sara sent quotation Q-0012 V2 to Aisha Rahman")).toBeInTheDocument();
     expect(within(today).getByText("Sara moved opportunity O-0009 forward")).toBeInTheDocument();

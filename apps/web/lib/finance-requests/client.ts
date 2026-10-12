@@ -20,6 +20,8 @@ export function financeRequestsApi(workspaceId: string) {
   const post = <T>(url: string, input: Record<string, unknown>) =>
     send<T>(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, commandId: crypto.randomUUID() }) }, "Could not save.");
   return {
+    /** The workspace these calls act in (for the shared History beside them). */
+    workspaceId,
     board: () => send<FinanceRequestsBoard>(at("board"), {}, "Requests didn't load."),
     detail: (id: string) => send<FinanceRequestDetail>(at(`requests/${id}`), {}, "The request didn't load."),
     /** submit · resubmit · start · ask · done · reject · update · decide (by id; version when it exists). */

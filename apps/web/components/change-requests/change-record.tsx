@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -11,15 +12,15 @@ import {
 import { useWorkspaceBreadcrumb } from "@/components/workspace/workspace-breadcrumb";
 import { useT } from "@/lib/i18n/i18n-provider";
 import {
-  CHANGE_STATUS_LABEL, CHANGE_STATUS_TONE, EVENT_LABEL, LINE_OP_LABEL, NEXT_STEP_LABEL, REASON_LABEL, projectChangesApi, signedMoney,
+  CHANGE_STATUS_LABEL, CHANGE_STATUS_TONE, LINE_OP_LABEL, NEXT_STEP_LABEL, REASON_LABEL, projectChangesApi, signedMoney,
   type ChangeRecord as Record_, type PricedLine, type ProjectChangesApi, type RaisedLine, type SchedulePreview,
 } from "@/lib/change-requests/project";
 import { useProjectFormat } from "../project-core/format";
 import { RaiseChangeDialog } from "./raise-change-dialog";
 import styles from "./project-changes.module.css";
 
-type Tab = "scope" | "price" | "timeline" | "approvals" | "activity";
-const TABS: Tab[] = ["scope", "price", "timeline", "approvals", "activity"];
+type Tab = "scope" | "price" | "timeline" | "approvals" | "history";
+const TABS: Tab[] = ["scope", "price", "timeline", "approvals", "history"];
 type Dialog = "edit" | "withdraw" | "return" | null;
 
 /**
@@ -105,7 +106,7 @@ export function ChangeRecord({ workspaceId, projectId, changeId, initial }: { wo
       { id: "price", label: t("Price"), panel: <PriceTab record={record} priceHref={priceHref} /> },
       { id: "timeline", label: t("Timeline impact"), panel: <TimelineTab api={api} record={record} onSaved={(next) => { setRecord(next); setNotice({ tone: "success", message: t("Days saved.") }); }} /> },
       { id: "approvals", label: t("Approvals"), panel: <ApprovalsTab record={record} /> },
-      { id: "activity", label: t("Activity"), panel: <ActivityTab record={record} /> },
+      { id: "history", label: t("History"), panel: <RecordHistory workspaceId={workspaceId} recordType="change_request" recordId={changeId} /> },
     ]} />
     {dialog === "edit" ? <RaiseChangeDialog api={api} change={change} onClose={() => setDialog(null)} onSaved={(next) => { setRecord(next); setDialog(null); setNotice({ tone: "success", message: t("Change saved.") }); }} /> : null}
     {dialog === "withdraw" || dialog === "return" ? <NoteDialog title={dialog === "withdraw" ? t("Withdraw {reference}", { reference: change.reference }) : t("Return {reference}", { reference: change.reference })}
@@ -286,13 +287,3 @@ function ApprovalsTab({ record }: { record: Record_ }) {
   </div>;
 }
 
-function ActivityTab({ record }: { record: Record_ }) {
-  const t = useT();
-  const format = useProjectFormat();
-  return <div className={styles.tab}>
-    <ol className={styles.steps} aria-label={t("Activity")}>{record.events.map((item, index) => <li key={`${item.event}-${index}`}>
-      <span className={styles.cell}><span>{t(EVENT_LABEL[item.event] ?? (item.event as never))}</span>{item.note ? <small>{item.note}</small> : null}</span>
-      <span className={styles.muted}>{[item.actorName, format.when(item.at)].filter(Boolean).join(" · ")}</span>
-    </li>)}</ol>
-  </div>;
-}

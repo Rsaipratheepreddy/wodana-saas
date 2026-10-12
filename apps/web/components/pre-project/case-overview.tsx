@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CalendarClock, CircleDollarSign, Flag, UserRound, UserRoundCheck } from "lucide-react";
@@ -14,14 +15,14 @@ import type { DefinitionPageData } from "@/lib/pre-project/definition";
 import type { JourneyView } from "@/lib/pre-project/design-workspace";
 import { caseHref, type PreProjectCase } from "@/lib/pre-project/types";
 import {
-  casePhases, casePhaseText, effectivePhase, caseActivity, caseFiles, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline,
+  casePhases, casePhaseText, effectivePhase, caseFiles, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline,
   type CaseCommand, type CaseNextStep, type Message,
 } from "@/lib/pre-project/case-record";
 import type { CommercialState } from "@/lib/commercial/types";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
-import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
+import { FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
 import { useProjectFormat } from "@/components/project-core/format";
 import { DesignJourney } from "./design-journey";
@@ -152,6 +153,7 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
     <CaseRecordView record={record} commercial={commercial} journey={journey ?? null} project={project ?? null} members={members} today={format.today()} loading={loading}
+      historySlot={<RecordHistory workspaceId={workspaceId} recordType="planning_case" recordId={record.id} />}
       busy={starting} onCommand={(id) => void command(id)} actions={<>{portal}{menu}</>} details={details} journeySlot={journeySlot}
       callsSlot={<ClientCallsSection workspaceId={workspaceId} caseId={record.id} />}
       assetHref={(assetId) => caseApi(workspaceId, record.id, `assets/${assetId}`)} />
@@ -165,11 +167,13 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
 }
 
 /** The case record itself, from data only: header, strip, next step, stages, activity and the sidebar. */
-export function CaseRecordView({ record, commercial, journey, project, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, assetHref }: {
+export function CaseRecordView({ record, commercial, journey, project, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, historySlot, assetHref }: {
   record: PreProjectCase; commercial?: CommercialState | null; journey: JourneyView | null; project: ProjectDetail | null; members: Member[]; today: string;
   loading?: boolean; busy?: boolean; onCommand?: (command: CaseCommand) => void; actions?: ReactNode; details?: ReactNode; journeySlot?: ReactNode;
   /** The recurring client update call (PLM-046), in the sidebar. */
   callsSlot?: ReactNode;
+  /** The case's History (the shared component), in the sidebar. */
+  historySlot?: ReactNode;
   assetHref: (assetId: string) => string;
 }) {
   const t = useT();
@@ -179,7 +183,6 @@ export function CaseRecordView({ record, commercial, journey, project, members, 
   const money = useMemo(() => caseMoney(commercial), [commercial]);
   const overdue = caseOverdue(input);
   const steps = caseTimeline(input);
-  const activity = caseActivity(commercial);
   const people = caseTeam(input, members);
   const files = caseFiles(record, commercial, assetHref);
   const day = (value?: string | null) => (value ? format.short(value.length > 10 ? format.dayOf(value) : value) : "");
@@ -274,9 +277,7 @@ export function CaseRecordView({ record, commercial, journey, project, members, 
         </SideSection>
         {journeySlot}
       </>}
-      activity={activity.length ? <SideSection title={t("Recent activity")}>
-        <ActivityList label={t("Recent activity")} items={activity.map((entry) => ({ id: entry.id, text: say(t, entry.text), meta: entry.note || null, at: format.when(entry.at) }))} />
-      </SideSection> : null} />
+      activity={historySlot ? <SideSection title={t("History")}>{historySlot}</SideSection> : null} />
   </RecordFrame>;
 }
 

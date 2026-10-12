@@ -12,7 +12,7 @@ import { SavedPhotos } from "../purchasing/delivery-photos";
 import { quantityText } from "../purchasing/order-labels";
 import { WorkOrderStatusLabel, orderNumber, useFactoryLabels } from "./factory-labels";
 import { CheckDialog, DispatchDialog, DrawingDialog, QuantityDialog, ReportDialog, ScheduleDialog, SendOutDialog, TextDialog } from "./work-order-dialogs";
-import { WorkOrderHistory } from "./work-order-history";
+import { RecordHistory } from "../history/record-history";
 import { WorkOrderMaterials } from "./work-order-materials";
 import styles from "./factory.module.css";
 
@@ -325,7 +325,7 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         { id: "work", label: t("Work"), count: failing.length || undefined, panel: workPanel },
         { id: "output", label: t("Output"), count: outputCount || undefined, panel: outputPanel },
         { id: "site", label: t("To site"), count: state.dispatches.length || undefined, panel: sitePanel },
-        { id: "history", label: t("History"), panel: <WorkOrderHistory state={state} /> },
+        { id: "history", label: t("History"), panel: <RecordHistory workspaceId={api.workspaceId} recordType="work_order" recordId={orderId} /> },
       ]} />
     </div>}
 

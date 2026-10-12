@@ -68,7 +68,7 @@ integration("Record history on real Postgres (who did what; only for those who m
           VALUES($1,$2,'user',$3,$4,$5,$6::jsonb,$7::jsonb,gen_random_uuid(),now() - make_interval(mins => $8))`,
         [event.workspaceId, event.actorUserId, event.action, event.entityType, event.entityId, event.before ? JSON.stringify(event.before) : null, event.after ? JSON.stringify(event.after) : null, minutes--]);
       await recordAudit(client, { workspaceId, actorUserId: people.sales, action: "crm.opportunity.created.v1", entityType: "crm_opportunity", entityId: opportunityId,
-        after: { id: opportunityId, title: "Villa 14 fit-out", status: "open" } });
+        after: { id: opportunityId, title: "Villa 14 fit-out", status: "open", amount: "250000.0000", currency_code: "AED" } });
       await recordAudit(client, { workspaceId, actorUserId: people.sales, action: "crm.opportunity.stage_changed.v1", entityType: "crm_opportunity", entityId: opportunityId,
         before: { status: "open", probability: "20.00", version: 1 }, after: { status: "open", probability: "50.00", version: 2 } });
       await recordAudit(client, { workspaceId, actorUserId: people.sales, action: "crm.lead.contact_logged.v1", entityType: "crm_activity", entityId: randomUUID(),
@@ -117,6 +117,9 @@ integration("Record history on real Postgres (who did what; only for those who m
       expect(page.items[2]).toMatchObject({ reference: "O-0009", actor: { id: people.sales, name: "Sara Sales", kind: "person", roles: ["sales"] },
         changes: [{ field: "probability", before: "20.00", after: "50.00" }] });
       expect(JSON.stringify(page.items)).not.toMatch(/crm\.opportunity|\.v1/);
+      // Sales without the value permission don't see the opportunity's value in its history either.
+      expect(page.items[3].amount).toBeNull();
+      expect(JSON.stringify(page.items)).not.toContain("250000");
       expect((await as("sales").read(actor, workspaceId, "opportunity", opportunityId, { filter: "approvals" })).items.map((item) => item.verb)).toEqual(["approved"]);
       expect((await as("sales").read(actor, workspaceId, "opportunity", opportunityId, { filter: "messages" })).items.map((item) => item.verb)).toEqual(["logged_contact"]);
       expect((await as("sales").read(actor, workspaceId, "opportunity", opportunityId, { filter: "changes" })).items).toHaveLength(2);

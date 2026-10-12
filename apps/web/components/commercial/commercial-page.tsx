@@ -1,4 +1,5 @@
 "use client";
+import { RecordHistory } from "../history/record-history";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { useWoddyRecord } from "@/components/crm/woddy-chat";
@@ -544,21 +545,8 @@ export function CommercialPage({
                 </li>
               ))}
           </ul>
-          <h3>{t("Activity")}</h3>
-          <ul className={s.history}>
-            {state.data.audit
-              .slice()
-              .reverse()
-              .map((a) => (
-                <li key={a.id}>
-                  <strong>{a.action.replaceAll("_", " ")}</strong>
-                  <p className={s.muted}>
-                    {a.actor} · {new Date(a.at).toLocaleString()}
-                  </p>
-                  {a.note && <p>{a.note}</p>}
-                </li>
-              ))}
-          </ul>
+          <h3>{t("History")}</h3>
+          <RecordHistory workspaceId={state.workspaceId} recordType="quotation" recordId={state.caseId} />
         </ControlledModalDialog>
         <FormDialog
           isOpen={dialog === "issue"}

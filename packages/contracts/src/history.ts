@@ -24,7 +24,7 @@ export type HistoryCategory = "change" | "message" | "approval";
 export const HISTORY_SUBJECTS = [
   "enquiry", "opportunity", "planning_case", "brief", "site_visit", "design", "material_list", "quotation", "deal_file", "project", "stage", "drawing", "material",
   "change_request", "purchase_order", "delivery", "work_order", "invoice", "payment", "finance_request", "petty_cash_claim", "supplier_invoice", "price_request", "snag",
-  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "record",
+  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "record",
 ] as const;
 export type HistorySubject = (typeof HISTORY_SUBJECTS)[number];
 

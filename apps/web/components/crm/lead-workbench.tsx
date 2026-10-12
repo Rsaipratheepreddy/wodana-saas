@@ -24,7 +24,7 @@ import { RequirementNotes } from "./requirement-notes";
 import { useWoddyRecord } from "./woddy-chat";
 import styles from "./crm-workbench.module.css";
 import { LogContactDialog } from "./log-contact-dialog";
-import { ChangeHistory } from "./change-history";
+import { RecordHistory } from "../history/record-history";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
@@ -269,7 +269,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
               <FactRow label={t("Last updated")}>{dateText(live.updatedAt, zoned)}</FactRow>
             </EditableFieldList>
           </SideSection>
-          <SideSection title={t("History")}><ChangeHistory workspaceId={workspaceId} leadId={lead.id} members={initialData.members} /></SideSection>
+          <SideSection title={t("History")}><RecordHistory workspaceId={workspaceId} recordType="lead" recordId={lead.id} /></SideSection>
         </RecordPanel> },
         { id: "files", label: t("Files"), panel: <RecordAttachments workspaceId={workspaceId} leadId={lead.id} /> },
       ]} />

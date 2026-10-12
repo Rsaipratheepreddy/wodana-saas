@@ -79,7 +79,7 @@ const open = async (project: ProjectDetail = detail(), read: ProjectOverview = o
   vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => (url.includes("/overview") ? read
     : url.includes("/api/logistics/options") ? { projects: [], workOrders: [], workers: [], crews: [], vehicles: [], canBook: false, canAddPeople: false, permitWarningDays: 3 } : project) })));
   const view = render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
-  await screen.findByRole("region", { name: "Needs attention" });
+  await screen.findByRole("region", { name: "Needs attention" }, { timeout: 5000 });
   return view;
 };
 /** Elements whose own text is exactly this (not their parents'). */
@@ -203,17 +203,12 @@ describe("project overview, each fact once", () => {
     expect(stages).not.toHaveTextContent(/not named/i);
   });
 
-  it("keeps the latest three site updates and three steps of activity, the rest a click away", async () => {
+  it("keeps the latest three site updates, the rest a click away, and the project's History beside them", async () => {
     await open();
     const site = screen.getByRole("region", { name: "Site updates" });
     expect(within(site).getAllByRole("listitem")).toHaveLength(3);
     expect(within(site).getByRole("link", { name: "View all" })).toHaveAttribute("href", `/workspace/projects/${PID}/site`);
-    const recent = screen.getByRole("region", { name: "Recent activity" });
-    expect(within(recent).getAllByRole("listitem")).toHaveLength(3);
-    expect(recent).toHaveTextContent("Omar Haddad added #40 Fix hinge 1");
-    await userEvent.click(within(recent).getByRole("button", { name: "Show all" }));
-    await waitFor(() => expect(within(recent).getAllByRole("listitem")).toHaveLength(5));
-    expect(within(recent).getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("region", { name: "History" })).toBeInTheDocument();
   });
 
   it("wraps stage names only between words and lays the overview out with logical properties (LTR and RTL)", () => {

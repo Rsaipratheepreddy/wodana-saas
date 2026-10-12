@@ -1,5 +1,6 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, ErrorState, FileUploader, InlineNotice, InspectorSheet, MoneyField, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
@@ -154,9 +155,7 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
 
       <section className={styles.part}>
         <h3 className={styles.subhead}>{t("History")}</h3>
-        <ul className={styles.list}>{detail.events.map((event) => <li key={event.id}>
-          <span>{event.toStatus && event.kind !== "file" ? statuses[event.toStatus as keyof typeof statuses] ?? event.kind : event.kind === "file" ? t("File added") : event.kind === "approval" ? t("Approved") : event.kind}</span>
-          <small>{[event.actorName ?? t("Automatic"), format.when(event.occurredAt), event.note].filter(Boolean).join(" · ")}</small></li>)}</ul>
+        <RecordHistory workspaceId={api.workspaceId} recordType="finance_request" recordId={id} />
       </section>
     </div>}
     {answering && detail ? <RequestForm api={api} existing={detail} onClose={() => setAnswering(false)} onSaved={(next) => { setAnswering(false); show(next); onChanged(); }} /> : null}

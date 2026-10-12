@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as shared from "../../../../packages/contracts/src/history";
 import { HISTORY_VERBS, describeAction } from "./history-actions";
-import { HISTORY_SUBJECTS, fieldChanges, historySubject, toHistoryItem, type AuditRow } from "./history-items";
+import { HISTORY_SUBJECTS, fieldChanges, historySubject, redactItem, toHistoryItem, type AuditRow } from "./history-items";
 import { HISTORY_RECORD_TYPES } from "./history-records";
 import { HISTORY_FILTERS } from "./history.service";
 
@@ -113,6 +113,17 @@ describe("history: items", () => {
     expect(item.links).toEqual([{ type: "site_report", id: reportId, projectId }]);
     const own = toHistoryItem(row({ action: "site.approve_send", entityType: "project", entityId: projectId, after: { reportId, projectId } }), "site_report", reportId, { ...facts, projectId }, ["site_report"]);
     expect(own.links).toEqual([{ type: "project", id: projectId }]);
+  });
+
+  it("never shows costs, and values and internal notes only to those who may see them", () => {
+    const base = toHistoryItem(row({ action: "crm.opportunity.updated.v1", entityType: "crm_lead", after: { amount: "90000", currency_code: "AED", note: "Budget is tight" },
+      before: { amount: "80000", margin: "30", internalNotes: "x" } }), "lead", "22222222-2222-4222-8222-222222222222", facts, ["crm_lead"]);
+    const withAll = { ...base, changes: [{ field: "amount", before: "80000", after: "90000" }, { field: "margin", before: "30", after: "35" }, { field: "internalNotes", before: "a", after: "b" }, { field: "status", before: "new", after: "open" }] };
+    expect(redactItem(withAll, { values: true, notes: true }).changes.map((change) => change.field)).toEqual(["amount", "internalNotes", "status"]);
+    const hidden = redactItem(withAll, { values: false, notes: false });
+    expect(hidden.changes.map((change) => change.field)).toEqual(["status"]);
+    expect(hidden.amount).toBeNull();
+    expect(hidden.note).toBeNull();
   });
 
   it("knows the subject of every kind of event", () => {

@@ -16,7 +16,7 @@ import { useProjectFormat } from "../project-core/format";
 import {
   CancelLineDialog, ChaseDialog, ConfirmDialog, OfferAlternateDialog, ReasonDialog, RefuseAlternateDialog, SendDialog, ShipmentDialog,
 } from "./order-dialogs";
-import { OrderHistory } from "./order-history";
+import { RecordHistory } from "../history/record-history";
 import { OrderStatusLabel, quantityText, useOrderLabels } from "./order-labels";
 import { ReceiptResult } from "./receipt-sheet";
 import { ReceiveDialog } from "./receive-dialog";
@@ -410,7 +410,7 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
         { id: "order", label: t("Lines"), panel: linesPanel },
         { id: "deliveries", label: t("Deliveries"), count: deliveriesCount || undefined, panel: deliveriesPanel },
         ...(billsPanel ? [{ id: "bills", label: t("Invoices"), count: state.bills?.length || undefined, panel: billsPanel }] : []),
-        { id: "history", label: t("History"), panel: <OrderHistory state={state} /> },
+        { id: "history", label: t("History"), panel: <RecordHistory workspaceId={api.workspaceId} recordType="purchase_order" recordId={orderId} /> },
       ]} />
     </div>}
     {dialog === "cancel" || dialog === "change" || dialog === "return" || dialog === "close" ? <ReasonDialog kind={dialog} optional={dialog === "close" && !short} onClose={() => setDialog(null)}

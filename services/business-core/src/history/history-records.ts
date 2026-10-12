@@ -31,6 +31,23 @@ export type RecordSpec = {
   own: string[];
 };
 
+/**
+ * The commercial case's own log (every quotation, payment, agreement and deal step since the case began, kept with
+ * the case): its staff entries carry the person's name, its portal entries the client's. A staff command now also
+ * writes an audit row (with the amount of a verified payment); a log entry with that row beside it is left out, so
+ * nothing shows twice and older entries still show.
+ */
+const commercialLog = (only = "") => `SELECT (entry->>'id')::uuid,
+    'commercial.' || regexp_replace(lower(btrim(regexp_replace(entry->>'action', '\\s*\\(portal\\)|\\s+CR-\\d+', '', 'g'))), '\\s+', '_', 'g'),
+    'commercial_case', commercial.case_id, CASE WHEN entry->>'action' LIKE '%(portal)%' THEN 'client_portal' ELSE 'user' END, (entry->>'at')::timestamptz, NULL::jsonb,
+    jsonb_strip_nulls(jsonb_build_object('quoteId', entry->>'quoteId', 'note', nullif(entry->>'note', ''), 'by', nullif(entry->>'actor', ''),
+      'number', substring(entry->>'action' from 'CR-[0-9]+'))), NULL::uuid
+  FROM commercial_cases commercial CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(commercial.content->'audit') = 'array' THEN commercial.content->'audit' ELSE '[]'::jsonb END) entry
+  WHERE commercial.workspace_id = $1 AND commercial.case_id = %CASE%
+    AND entry->>'id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' AND entry->>'at' ~ '^[0-9]{4}-'${only}
+    AND NOT EXISTS (SELECT 1 FROM audit_events audited WHERE audited.workspace_id = $1 AND audited.entity_type = 'commercial_case' AND audited.entity_id = commercial.case_id
+      AND audited.action = 'commercial.' || (entry->>'action') || '.v1' AND audited.occurred_at BETWEEN (entry->>'at')::timestamptz - interval '5 seconds' AND (entry->>'at')::timestamptz + interval '5 seconds')`;
+
 const one = async (db: Db, sql: string, params: unknown[]) => (await db.query<RecordFacts>(sql, params)).rows[0] ?? null;
 const approvalOf = (id = "$2::text") => `(e.entity_type = 'approval_request' AND e.after->>'subjectId' = ${id})`;
 
@@ -40,7 +57,11 @@ export const RECORD_SPECS: Record<HistoryRecordType, RecordSpec> = {
     own: ["crm_lead"],
     record: (db, workspaceId, id) => one(db, `SELECT NULL::text AS reference, party.display_name AS title, NULL::uuid AS "caseId", NULL::uuid AS "projectId"
       FROM crm_leads lead LEFT JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id WHERE lead.workspace_id = $1 AND lead.id = $2`, [workspaceId, id]),
-    where: `((e.entity_type = 'crm_lead' AND e.entity_id = $2) OR (e.entity_type = 'crm_activity' AND e.after->>'leadId' = $2::text))`,
+    // PLM-094: the enquiry, its lead and its client, and the follow-ups on it.
+    where: `((e.entity_type = 'crm_lead' AND e.entity_id = $2)
+      OR (e.entity_type = 'crm_enquiry' AND e.entity_id = (SELECT enquiry_id FROM crm_leads WHERE workspace_id = $1 AND id = $2))
+      OR (e.entity_type = 'crm_party' AND e.entity_id = (SELECT party_id FROM crm_leads WHERE workspace_id = $1 AND id = $2))
+      OR (e.entity_type = 'crm_activity' AND e.after->>'leadId' = $2::text))`,
   },
   opportunity: {
     permissions: ["crm.opportunities.view"],
@@ -53,6 +74,7 @@ export const RECORD_SPECS: Record<HistoryRecordType, RecordSpec> = {
     permissions: ["pre_projects.view"],
     own: ["pre_project_case"],
     record: caseFacts,
+    events: commercialLog().replace("%CASE%", "$2::uuid"),
     where: `((e.entity_id = $2 AND e.entity_type IN ('pre_project_case', 'commercial_case', 'pre_project_brief'))
       OR (e.entity_type IN ('pre_project_design', 'pre_project_site_record', 'pre_project_brief', 'pre_project_item_specification', 'design_ledger_entry', 'design_package', 'pre_project_definition_baseline', 'change_request') AND e.after->>'caseId' = $2::text))`,
   },
@@ -67,6 +89,7 @@ export const RECORD_SPECS: Record<HistoryRecordType, RecordSpec> = {
     permissions: ["pre_projects.view"],
     own: [],
     record: caseFacts,
+    events: commercialLog().replace("%CASE%", "$2::uuid"),
     where: `((e.entity_type = 'commercial_case' AND e.entity_id = $2)
       OR (e.entity_type = 'pre_project_case' AND e.entity_id = $2 AND (e.action LIKE 'quotation.%' OR e.action LIKE 'commercial.%' OR e.action = 'client_portal.quote_decision'))
       OR (e.entity_type = 'approval_request' AND e.after->>'subjectId' IN (SELECT id::text FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2)))`,
@@ -79,6 +102,8 @@ export const RECORD_SPECS: Record<HistoryRecordType, RecordSpec> = {
       OR (e.entity_type = 'approval_request' AND e.after->>'subjectId' IN (SELECT detail->>'ownerReviewId' FROM commercial_deal_files WHERE workspace_id = $1 AND id = $2::text))
       OR (e.entity_type IN ('commercial_case', 'pre_project_case') AND e.entity_id = (SELECT case_id FROM commercial_deal_files WHERE workspace_id = $1 AND id = $2::text)
           AND e.action ~ '(owner_review|deal_finance|deal_file|payment|agreement|release|quote_decision)'))`,
+    events: commercialLog(" AND entry->>'action' ~ '(owner_review|deal_finance|payment|agreement|release|record_decision|Client accept)'")
+      .replace("%CASE%", "(SELECT case_id FROM commercial_deal_files WHERE workspace_id = $1 AND id = $2::text)"),
   },
   project: {
     permissions: ["projects.view"],

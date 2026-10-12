@@ -91,7 +91,7 @@ describe("one change's record", () => {
     const fetcher = mount((url) => (url.includes("/submit") ? record({ change: { ...record().change, status: "pending_approval", version: 5 }, next: null, actions: [] }) : record()));
     render(<DesignSystemProvider><ChangeRecord workspaceId="w" projectId="p1" changeId={ID} initial={record()} /></DesignSystemProvider>);
     expect(screen.getByRole("heading", { level: 1, name: "CR-001 · Study wardrobe" })).toBeInTheDocument();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Scope", "Price", "Timeline impact", "Approvals", "Activity"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Scope", "Price", "Timeline impact", "Approvals", "History"]);
     // Scope: what and why, the raised lines.
     expect(screen.getByText("Client asked on site.")).toBeInTheDocument();
     expect(screen.getByText("Add: Oak wardrobe")).toBeInTheDocument();

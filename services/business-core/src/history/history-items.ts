@@ -9,7 +9,7 @@ import type { HistoryRecordType, RecordFacts } from "./history-records";
 export const HISTORY_SUBJECTS = [
   "enquiry", "opportunity", "planning_case", "brief", "site_visit", "design", "material_list", "quotation", "deal_file", "project", "stage", "drawing", "material",
   "change_request", "purchase_order", "delivery", "work_order", "invoice", "payment", "finance_request", "petty_cash_claim", "supplier_invoice", "price_request", "snag",
-  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "record",
+  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "record",
 ] as const;
 export type HistorySubject = (typeof HISTORY_SUBJECTS)[number];
 
@@ -44,7 +44,8 @@ export function historySubject(entityType: string, action: string, after: Record
   const code = action.replace(/\.v\d+$/, "");
   const kind = text(after.kind);
   switch (entityType) {
-    case "crm_lead": return "enquiry";
+    case "crm_lead": case "crm_enquiry": return "enquiry";
+    case "crm_party": return "client";
     case "crm_opportunity":
       if (code === "finance_request_raised") return "finance_request";
       if (/payment_proof/.test(code)) return "payment";
@@ -53,6 +54,8 @@ export function historySubject(entityType: string, action: string, after: Record
     case "crm_activity": return /appointment/.test(code) || ["meeting", "appointment", "site_visit", "call"].includes(text(after.type) ?? "") ? "appointment" : "task";
     case "crm_conversation": case "crm_message": case "crm_client_message": return "message";
     case "commercial_case":
+      if (/^CR-/.test(text(after.number) ?? "")) return "change_request";
+      if (/client_message$|client_question/.test(code)) return "message";
       if (/owner_review|deal_finance/.test(code)) return "deal_file";
       if (/payment|verify_credit/.test(code)) return "payment";
       if (/agreement/.test(code)) return "agreement";
@@ -157,21 +160,35 @@ function linksOf(after: Record<string, unknown>, entityType: string, recordType:
   return links;
 }
 
+const COSTS = /cost|margin|markup|commission/i, VALUES = /amount|value|price|total|budget/i, NOTES = /(^|\.)internalNotes$|^notes?$/i;
+
+/**
+ * What a reader may not see taken out: costs and margins never show in a history; values only with `values` (the
+ * opportunity value permission); internal notes only with `notes` (PLM-024).
+ */
+export function redactItem(item: HistoryItem, may: { values: boolean; notes: boolean }): HistoryItem {
+  const changes = item.changes.filter((change) => !COSTS.test(change.field) && (may.values || !VALUES.test(change.field)) && (may.notes || !NOTES.test(change.field)));
+  return { ...item, amount: may.values ? item.amount : null, note: may.notes || !["enquiry", "client"].includes(item.subject) ? item.note : null, changes };
+}
+
 export function toHistoryItem(row: AuditRow, recordType: HistoryRecordType, recordId: string, facts: RecordFacts, own: string[]): HistoryItem {
   const after = record(row.after), before = record(row.before);
   const { verb, category } = describeAction(row.action);
   const isOwn = own.includes(row.entityType) && row.entityId === recordId;
-  const reference = isOwn ? facts.reference : text(after.number) ?? (row.entityType === "approval_request" && text(after.subjectId) === recordId ? facts.reference : null);
-  const actorKind = row.source === "client_portal" ? "client" : row.actorId ? "person" : "system";
+  const subject = historySubject(row.entityType, row.action, after, recordType);
+  const stage = subject === "stage" && text(after.stage) ? text(after.stage)!.replace(/[_-]+/g, " ").replace(/^\w/, (first) => first.toUpperCase()) : null;
+  const reference = stage ?? (isOwn ? facts.reference : text(after.number) ?? (row.entityType === "approval_request" && text(after.subjectId) === recordId ? facts.reference : null));
+  // A log entry kept by name (the commercial case's) is a person's when it names one.
+  const actorKind = row.source === "client_portal" ? "client" : row.actorId || text(after.by) ? "person" : "system";
   const decision = text(after.decision);
   return {
     id: row.id,
     occurredAt: row.occurredAt,
     verb: verb === "decided" && decision ? (/^(approved?|accept(ed)?)$/i.test(decision) ? "approved" : /^(declined?|reject(ed)?)$/i.test(decision) ? "declined" : verb) : verb,
     category,
-    subject: historySubject(row.entityType, row.action, after, recordType),
+    subject,
     reference,
-    actor: { id: row.actorId, name: actorKind === "person" ? row.actorName : text(after.by) ?? text(after.signer) ?? null, roles: row.actorRoles ?? [], preset: row.actorPreset, kind: actorKind },
+    actor: { id: row.actorId, name: row.actorName ?? text(after.by) ?? text(after.signer) ?? null, roles: row.actorRoles ?? [], preset: row.actorPreset, kind: actorKind },
     amount: amountOf(after),
     note: text(after.note) ?? text(after.reason) ?? text(after.declineNote) ?? null,
     to: verb === "sent" ? text(after.signer) ?? text(after.to) : null,

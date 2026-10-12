@@ -13,7 +13,7 @@ export async function fetchHistory(workspaceId: string, recordType: HistoryRecor
   const query = new URLSearchParams({ workspaceId, filter, ...(before ? { before } : {}) });
   const response = await fetch(`/api/history/${recordType}/${recordId}?${query}`, { cache: "no-store" });
   const body = await response.json().catch(() => null) as (HistoryPage & { message?: string }) | null;
-  if (!response.ok || !body) throw new Error(body?.message || t("The history didn't load."));
+  if (!response.ok || !body || !Array.isArray(body.items)) throw new Error(body?.message || t("The history didn't load."));
   return body;
 }
 
@@ -74,13 +74,15 @@ export function RecordHistory({ workspaceId, recordType, recordId, load = fetchH
   const [loadingMore, setLoadingMore] = useState(false);
   const request = useRef(0);
   const format = useHistoryFormat(state?.timeZone ?? "UTC");
-  const now = useMemo(() => Date.now(), [state]);
+  // "Now" for relative times is taken when a page arrives, not while rendering.
+  const [now, setNow] = useState(0);
 
   const read = useCallback(async (before: string | null) => {
     const ticket = ++request.current;
     try {
       const page = await load(workspaceId, recordType, recordId, filter, before, t);
       if (ticket !== request.current) return;
+      setNow(Date.now());
       setState((current) => ({ items: before && current ? [...current.items, ...page.items] : page.items, next: page.next, timeZone: page.timeZone }));
       setError("");
     } catch (cause) {
@@ -105,7 +107,7 @@ export function RecordHistory({ workspaceId, recordType, recordId, load = fetchH
   const yesterday = format.dayKey(new Date(now - 86_400_000).toISOString());
 
   const labels: Record<HistoryFilter, string> = { all: t("All"), changes: t("Changes"), messages: t("Messages"), approvals: t("Approvals") };
-  return <section aria-label={t("History")} className={styles.history} data-history={recordType}>
+  return <div className={styles.history} data-history={recordType}>
     <div className={styles.toolbar}>
       <SegmentedControl label={t("Show")} onChange={(value) => setFilter(value as HistoryFilter)} options={FILTERS.map((id) => ({ id, label: labels[id] }))} value={filter} />
     </div>
@@ -142,5 +144,5 @@ export function RecordHistory({ workspaceId, recordType, recordId, load = fetchH
         {error ? <ErrorState description={error} onRetry={() => void read(state.next)} /> : null}
         {state.next ? <div className={styles.more}><Button isDisabled={loadingMore} onPress={() => { setLoadingMore(true); void read(state.next); }}>{t("Show older")}</Button></div> : null}
       </div>}
-  </section>;
+  </div>;
 }

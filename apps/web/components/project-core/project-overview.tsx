@@ -1,12 +1,13 @@
 "use client";
 
+import { RecordHistory } from "../history/record-history";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarClock, CircleCheck, Flag, ListChecks, Wallet } from "lucide-react";
 import { Badge, Button, EmptyState, ErrorState, IconMenuButton, MoreDetails, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
-import type { ActivityRow, BlockerKey, HealthReason, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
+import type { BlockerKey, HealthReason, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
 import { projectPeople, projectStrip, projectTimeline, stageLateDays, type ProjectStep } from "@/lib/project-core/project-record";
 import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
@@ -67,8 +68,6 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
   const t = useT();
   const format = useProjectFormat();
   const attentionRows = useAttentionRows();
-  const activityText = useActivityText();
-  const [allActivity, setAllActivity] = useState(false);
   const { project } = detail;
   const projectId = project.id;
   const running = project.status === "active";
@@ -208,7 +207,6 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
 
   // The latest only: three site updates (every one on the Site tab) and three steps of activity (the rest on request).
   const reports = overview?.siteReports?.slice(0, LATEST) ?? [];
-  const activity = overview?.activity ?? [];
 
   return <div className={styles.overview}>
     <RecordFrame tour="project-record">
@@ -223,17 +221,16 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
           <ProjectNextStep api={api} detail={detail} overview={overview} next={next} run={run} onTeam={onTeam} />
           {attention}
         </>}
-        activity={reports.length || activity.length ? <>
+        activity={<>
           {reports.length ? <SideSection title={t("Site updates")} action={<Link className={styles.sideLink} href={`/workspace/projects/${projectId}/site`}>{t("View all")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link>}>
             {/* The same day cards as the Site tab (compact); the summary lines until they load. */}
             <SiteUpdates workspaceId={api.workspaceId} projectId={projectId} latest={LATEST}
               fallback={<ActivityList label={t("Site updates")} items={reports.map((report) => ({ id: report.id, text: report.text || t("Site report"), meta: report.byName, at: format.short(report.date) }))} />} />
           </SideSection> : null}
-          {activity.length ? <SideSection title={t("Recent activity")} action={activity.length > LATEST
-            ? <Button size="compact" variant="quiet" aria-expanded={allActivity} onPress={() => setAllActivity((value) => !value)}>{allActivity ? t("Show less") : t("Show all")}</Button> : null}>
-            <ActivityList label={t("Recent activity")} items={(allActivity ? activity : activity.slice(0, LATEST)).map((row) => ({ id: row.id, text: activityText(row), at: format.when(row.at) }))} />
-          </SideSection> : null}
-        </> : null} />
+          <SideSection title={t("History")}>
+            <RecordHistory workspaceId={api.workspaceId} recordType="project" recordId={projectId} />
+          </SideSection>
+        </>} />
     </RecordFrame>
   </div>;
 }
@@ -365,48 +362,3 @@ function useBlockerLabels() {
   };
 }
 
-/** One line of activity: who did what, in words. The client appears as "The client". */
-function useActivityText() {
-  const t = useT();
-  return (row: ActivityRow) => {
-    const who = row.source === "client_portal" || !row.actor ? t("The client") : row.actor;
-    const subject = row.subject;
-    // Steps the system took by itself (Settings → Projects → Finish by itself).
-    if (row.source === "internal" && row.action === "project.complete_stage") return t("{subject} finished by itself", { subject: t(subject as never) });
-    if (row.source === "internal" && row.action === "project.completed") return t("The project finished by itself");
-    switch (row.action) {
-      case "project.started": return t("{who} started the project", { who });
-      case "project.complete_stage": return t("{who} finished {subject}", { who, subject: t(subject as never) });
-      case "project.skip_stage": return t("{who} skipped {subject}", { who, subject: t(subject as never) });
-      case "project.reopen_stage": return t("{who} went back to {subject}", { who, subject: t(subject as never) });
-      case "project.hold": return t("{who} put the project on hold", { who });
-      case "project.resume": return t("{who} resumed the project", { who });
-      case "project.cancel": return t("{who} cancelled the project", { who });
-      case "project.completed": return t("{who} completed the project", { who });
-      case "project.reopen": return t("{who} reopened the project", { who });
-      case "project.post_update": return subject ? t("{who}: {note}", { who, note: subject }) : t("{who} posted an update", { who });
-      case "project.set_member": return subject ? t("{who} named {person}", { who, person: subject }) : t("{who} changed the team", { who });
-      case "project.send_materials": return t("{who} sent the material list to the client", { who });
-      case "project.record_materials_decision": case "client_portal.materials_decision": return t("{who} decided on the material list", { who });
-      case "project.apply_variation": return t("{who} applied a variation", { who });
-      case "project.approve_client_update": return t("{who} sent the client update", { who });
-      case "client_portal.handover_decision": return t("{who} decided on the handover", { who });
-      case "client_portal.warranty_claim": return t("{who} raised a warranty claim", { who });
-      case "client_portal.issue": return t("{who} reported an issue", { who });
-      case "work.create": return t("{who} added {subject}", { who, subject });
-      case "work.update": return t("{who} finished {subject}", { who, subject });
-      case "work.plan_package": return t("{who} planned a package", { who });
-      case "work.start_sprint": return t("{who} started a sprint", { who });
-      case "work.close_sprint": return t("{who} closed a sprint", { who });
-      case "site.submit": return t("{who} submitted the site report", { who });
-      case "site.approve": return t("{who} approved a site report", { who });
-      case "site.return": return t("{who} sent back a site report", { who });
-      case "handover.issue": return t("{who} issued {subject}", { who, subject });
-      case "handover.accept": return t("{who} recorded the handover accepted", { who });
-      case "handover.refuse": return t("{who} recorded the handover refused", { who });
-      case "warranty.record_claim": return t("{who} recorded a warranty claim", { who });
-      case "warranty.decide_claim": return t("{who} decided a warranty claim", { who });
-      default: return `${who} · ${row.action}`;
-    }
-  };
-}

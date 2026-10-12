@@ -24,6 +24,8 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
 export function factoryApi(workspaceId: string) {
   const at = (value: string, query: Record<string, string> = {}) => `/api/factory/${value}?${new URLSearchParams({ workspaceId, ...query })}`;
   return {
+    /** The workspace these calls act in (for the shared History beside them). */
+    workspaceId,
     state: () => request<FactoryState>(at("state")),
     order: (id: string) => request<WorkOrderState>(at(`orders/${id}`)),
     /** Plans a work order for all or part of a scope line; replayed safely by its id. */

@@ -2,8 +2,9 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { canReadNotes, notesReader } from "../crm/leads/internal-notes";
 import { describeAction } from "./history-actions";
-import { toHistoryItem, type AuditRow, type HistoryItem } from "./history-items";
+import { redactItem, toHistoryItem, type AuditRow, type HistoryItem } from "./history-items";
 import { HISTORY_RECORD_TYPES, RECORD_SPECS, type HistoryRecordType } from "./history-records";
 
 export const HISTORY_FILTERS = ["all", "changes", "messages", "approvals"] as const;
@@ -31,7 +32,17 @@ export class HistoryService {
       const granted = await this.access.grantedPermissions(client, workspaceId, user.userId, spec.permissions);
       const facts = await spec.record(client, workspaceId, recordId, { userId: user.userId, granted });
       if (!facts) throw new NotFoundException("Record not found");
-      return readHistory(client, workspaceId, recordType, recordId, facts, filter, before);
+      const page = await readHistory(client, workspaceId, recordType, recordId, facts, filter, before);
+      // An opportunity's or enquiry's value is history only for those who may see it (crm.opportunities.sensitive_values);
+      // an enquiry's internal notes only for those who may read them (PLM-024).
+      const values = !["lead", "opportunity"].includes(recordType) || await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.sensitive_values");
+      let notes = true;
+      if (recordType === "lead") {
+        const owner = (await client.query<{ ownerMembershipId: string | null }>(`SELECT owner_membership_id AS "ownerMembershipId" FROM crm_leads WHERE workspace_id = $1 AND id = $2`, [workspaceId, recordId])).rows[0];
+        const reader = await notesReader(client, workspaceId, user.userId, await this.access.hasPermission(client, workspaceId, user.userId, "crm.leads.assign"), [recordId]);
+        notes = canReadNotes(reader, { id: recordId, ownerMembershipId: owner?.ownerMembershipId ?? null });
+      }
+      return { ...page, items: page.items.map((item) => redactItem(item, { values, notes })) };
     });
   }
 

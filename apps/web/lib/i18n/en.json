@@ -14482,5 +14482,7 @@
   "Open the invoice": "Open the invoice",
   "Open the finance request": "Open the finance request",
   "{actor} followed up on {subject}": "{actor} followed up on {subject}",
-  "{actor} couldn't email {subject}": "{actor} couldn't email {subject}"
+  "{actor} couldn't email {subject}": "{actor} couldn't email {subject}",
+  "the client's details": "the client's details",
+  "client {reference}": "client {reference}"
 }

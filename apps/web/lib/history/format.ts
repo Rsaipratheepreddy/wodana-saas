@@ -41,6 +41,7 @@ const SUBJECTS: Record<HistorySubject, { the: MessageKey; named: MessageKey }> =
   file: { the: tKey("a file"), named: tKey("file {reference}") },
   agreement: { the: tKey("the agreement"), named: tKey("agreement {reference}") },
   client_request: { the: tKey("a client request"), named: tKey("client request {reference}") },
+  client: { the: tKey("the client's details"), named: tKey("client {reference}") },
   record: { the: tKey("the record"), named: tKey("record {reference}") },
 };
 
@@ -104,7 +105,9 @@ const FIELDS: Record<string, MessageKey> = {
   expected_close_at: tKey("Expected close"), startDate: tKey("Start date"), start_date: tKey("Start date"), endDate: tKey("End date"), promise_date: tKey("Promised date"),
   handover: tKey("Handover"), handoverBefore: tKey("Handover"), handoverAfter: tKey("New handover"), deliverTo: tKey("Deliver to"), reference: tKey("Reference"),
   furniturePath: tKey("Furniture path"), materialsChange: tKey("Materials change"), severity: tKey("Severity"), progress: tKey("Progress"), owner: tKey("Owner"),
-  location: tKey("Location"), reason: tKey("Reason"), decision: tKey("Decision"), step: tKey("Step"), percent: tKey("Share"), phase: tKey("Phase"), stage: tKey("Stage"),
+  location: tKey("Location"), nextActionAt: tKey("Next follow-up"), serviceType: tKey("Enquiry type"), source: tKey("Source"), channel: tKey("Channel"),
+  summary: tKey("Description"), disqualificationReason: tKey("Reason"), displayName: tKey("Name"), primaryEmail: tKey("Email"), primaryMobile: tKey("Mobile"),
+  primaryPhone: tKey("Phone"), reason: tKey("Reason"), decision: tKey("Decision"), step: tKey("Step"), percent: tKey("Share"), phase: tKey("Phase"), stage: tKey("Stage"),
 };
 
 export type HistoryFormat = { money: (value: string, currency: string) => string; date: (value: string) => string };
