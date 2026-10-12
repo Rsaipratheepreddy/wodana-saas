@@ -38,7 +38,7 @@ export const DASHBOARDS: Record<string, KpiSpec[]> = {
 export type Layout = { tiles: string[]; charts: string[]; attention: string | null };
 export const LAYOUTS: Record<string, Layout> = {
   "owner-overview": { tiles: ["sales_won", "revenue_collected", "deals_closed", "profit_margin"], charts: ["sales_won", "active_projects"], attention: "delayed_items" },
-  "sales-pipeline": { tiles: ["new_leads", "conversion_funnel", "response_rate", "lost"], charts: ["new_leads", "won_by_source"], attention: "follow_ups" },
+  "sales-pipeline": { tiles: ["new_leads", "conversion_funnel", "response_rate", "lost"], charts: ["new_leads", "won_by_source"], attention: "sales_attention" },
   "design-projects": { tiles: ["package_mix", "designs_approved", "design_to_proposal2_days", "design_to_proposal2_rate"], charts: ["design_stage", "designer_workload"],
     attention: "design_overdue" },
   "production-delivery": { tiles: ["work_orders_made", "on_time_rate", "work_orders_delivered", "installations_done"], charts: ["work_orders_status", "factory_load"],

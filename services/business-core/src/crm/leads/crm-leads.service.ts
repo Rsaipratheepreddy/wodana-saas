@@ -871,7 +871,7 @@ export class CrmLeadsService {
   }
 
   /** The Sales rules the timers read (S-1, S-2, S-3, S-10): one row per workspace, version-checked and audited. */
-  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null; internalNotesVisibility?: "team" | "sales"; opportunityReferencePrefix?: string }) {
+  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null; internalNotesVisibility?: "team" | "sales"; opportunityReferencePrefix?: string; stuckDealDays?: number }) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       const before = await loadSalesSettings(client, workspaceId);
       if (before.version !== input.version) throw new ConflictException("Sales settings changed; reload and try again");
@@ -887,18 +887,19 @@ export class CrmLeadsService {
         salesAdminMembershipId: input.salesAdminMembershipId === undefined ? before.salesAdminMembershipId : input.salesAdminMembershipId,
         internalNotesVisibility: input.internalNotesVisibility ?? before.internalNotesVisibility,
         opportunityReferencePrefix: input.opportunityReferencePrefix ?? before.opportunityReferencePrefix,
+        stuckDealDays: input.stuckDealDays ?? before.stuckDealDays,
       };
       if (!/^[A-Z][A-Z0-9]{0,5}-?$/.test(next.opportunityReferencePrefix)) throw new UnprocessableEntityException("Use capital letters and digits, for example O-");
       const saved = await client.query(
-        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by, internal_notes_visibility, opportunity_reference_prefix)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$10)
+        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by, internal_notes_visibility, opportunity_reference_prefix, stuck_deal_days)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$10,$11)
          ON CONFLICT (workspace_id) DO UPDATE SET takeover_cap=EXCLUDED.takeover_cap, unowned_escalation_minutes=EXCLUDED.unowned_escalation_minutes,
            client_review_minutes=EXCLUDED.client_review_minutes, duplicate_window_days=EXCLUDED.duplicate_window_days,
            sales_admin_membership_id=EXCLUDED.sales_admin_membership_id, updated_by=EXCLUDED.updated_by, internal_notes_visibility=EXCLUDED.internal_notes_visibility,
-           opportunity_reference_prefix=EXCLUDED.opportunity_reference_prefix, version=workspace_sales_settings.version+1, updated_at=now()
+           opportunity_reference_prefix=EXCLUDED.opportunity_reference_prefix, stuck_deal_days=EXCLUDED.stuck_deal_days, version=workspace_sales_settings.version+1, updated_at=now()
          WHERE workspace_sales_settings.version=$8
          RETURNING version`,
-        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version, next.internalNotesVisibility, next.opportunityReferencePrefix]);
+        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version, next.internalNotesVisibility, next.opportunityReferencePrefix, next.stuckDealDays]);
       if (!saved.rowCount) throw new ConflictException("Sales settings changed; reload and try again");
       const after = await loadSalesSettings(client, workspaceId);
       await this.events.record(client, {

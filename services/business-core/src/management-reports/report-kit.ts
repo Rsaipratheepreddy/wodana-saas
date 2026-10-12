@@ -117,6 +117,11 @@ export const mean = (values: string[], places: number) => (values.length ? sum(v
 
 export function inPeriod(fact: Fact) { return fact.dims.period === "1"; }
 
+/** A needs-attention list's order: most days late first; things not late yet (expiring, waiting) after them, soonest first. */
+export function byUrgency(facts: Fact[]) {
+  return facts.sort((a, b) => Number(b.measure ?? "-1e9") - Number(a.measure ?? "-1e9") || (a.at ?? "").localeCompare(b.at ?? ""));
+}
+
 // ------------------------------------------------------------------ calendar categories
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);

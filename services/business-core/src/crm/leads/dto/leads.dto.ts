@@ -163,6 +163,8 @@ export class UpdateSalesSettingsDto {
   @IsOptional() @IsInt() @Min(1) @Max(1440) unownedEscalationMinutes?: number;
   @IsOptional() @IsInt() @Min(1) @Max(1440) clientReviewMinutes?: number;
   @IsOptional() @IsInt() @Min(1) @Max(730) duplicateWindowDays?: number;
+  /** Days an open opportunity may keep its stage before Reports lists it as stuck. */
+  @IsOptional() @IsInt() @Min(1) @Max(365) stuckDealDays?: number;
   @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
   /** PLM-024: who reads internal notes. */
   @IsOptional() @IsIn(["team", "sales"]) internalNotesVisibility?: "team" | "sales";

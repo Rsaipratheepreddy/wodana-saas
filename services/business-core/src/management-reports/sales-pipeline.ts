@@ -1,6 +1,6 @@
-import { type KpiSpec, moneyNotes, readFacts } from "./report-context";
-import { type Fact, FACT_COLUMNS, categories, grid, groupBy, inPeriod, monthKeys, percent, sum } from "./report-kit";
-import { LEADS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, dealCancelledAt, month, moneyDims, netMoney, netRatio } from "./report-scope";
+import { type KpiSpec, type ReportContext, moneyNotes, readFacts } from "./report-context";
+import { type Fact, FACT_COLUMNS, byUrgency, categories, grid, groupBy, inPeriod, monthKeys, percent, sum } from "./report-kit";
+import { LEADS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, dealCancelledAt, localDate, month, moneyDims, netMoney, netRatio } from "./report-scope";
 import { targetFor } from "./report-targets";
 import { WON_SQL } from "./owner-overview";
 
@@ -291,6 +291,48 @@ const quotesExpiring: KpiSpec = {
   }),
 };
 
-export const SALES_PIPELINE: KpiSpec[] = [newLeads, conversion, pipeline, wonByAccountManager, lost, notInterested, repeatKpi("duplicates", "duplicate"),
+/**
+ * Stuck deals, live: open opportunities whose stage hasn't changed (their last stage change, else when they were
+ * opened) for the firm's Sales rule (Settings › Sales, 14 days unless changed), longest first; days are local.
+ */
+const STUCK_SQL = `WITH ${P}, ${OPPORTUNITIES},
+rule AS (SELECT COALESCE((SELECT settings.stuck_deal_days FROM workspace_sales_settings settings WHERE settings.workspace_id = p.ws), 14) AS days FROM p)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT oc.opportunity_id::text AS id, 'opportunity' AS kind, oc.case_id::text AS parent_id, oc.reference, oc.title, oc.client, oc.owner, oc.am::text AS owner_id,
+         moved.at, NULL::text AS amount, (p.today - (moved.at AT TIME ZONE p.tz)::date)::text AS measure, 'stuck_deal' AS detail,
+         jsonb_build_object('period', '1', 'reason', 'stuck_deal') AS dims
+    FROM oc CROSS JOIN p CROSS JOIN rule
+    CROSS JOIN LATERAL (SELECT COALESCE((SELECT max(history.changed_at) FROM crm_stage_history history
+                                          WHERE history.workspace_id = p.ws AND history.opportunity_id = oc.opportunity_id), oc.created_at) AS at) moved
+   WHERE oc.status = 'open' AND ${OPPORTUNITY_ENTITY} AND p.today - (moved.at AT TIME ZONE p.tz)::date >= rule.days
+) facts ORDER BY at`;
+
+const stuck: KpiSpec = {
+  code: "stuck_deals",
+  facts: (ctx) => readFacts(ctx, STUCK_SQL),
+  build: (_ctx, facts) => ({ code: "stuck_deals", unit: "count", value: String(facts.length), count: facts.length, targetable: false, chart: { type: "list", bucket: "period=1" } }),
+};
+
+const dayOf = (at: string, timeZone: string) => Date.parse(`${localDate(new Date(at), timeZone)}T00:00:00Z`);
+
+/**
+ * Needs attention on Sales, live, most days first: follow-ups past their date (days overdue) and stuck deals (days
+ * without a stage change). Each opens its enquiry or opportunity.
+ */
+export async function salesAttention(ctx: ReportContext): Promise<Fact[]> {
+  const today = dayOf(ctx.now.toISOString(), ctx.timeZone);
+  const late = (await followUps.facts(ctx)).filter((fact) => fact.dims.state === "overdue" && fact.at)
+    .map((fact) => ({ ...fact, measure: String(Math.round((today - dayOf(fact.at!, ctx.timeZone)) / 86_400_000)), detail: "follow_up_overdue",
+      dims: { ...fact.dims, reason: "follow_up_overdue" } }));
+  return byUrgency([...late, ...(await stuck.facts(ctx))]);
+}
+
+const attention: KpiSpec = {
+  code: "sales_attention",
+  facts: salesAttention,
+  build: (_ctx, facts) => ({ code: "sales_attention", unit: "count", value: String(facts.length), count: facts.length, targetable: false, chart: { type: "list", bucket: "period=1" } }),
+};
+
+export const SALES_PIPELINE: KpiSpec[] = [attention, stuck, newLeads, conversion, pipeline, wonByAccountManager, lost, notInterested, repeatKpi("duplicates", "duplicate"),
   repeatKpi("returning_customers", "returning"), followUps, quotesExpiring];
 

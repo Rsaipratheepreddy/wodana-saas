@@ -4,7 +4,7 @@ import { DEFAULT_PRODUCTION_STEPS, normaliseProductionSteps } from "../factory/p
 import { readCalendar, workdays } from "../project-core/work-calendar";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
 import { type KpiSpec, type ReportContext, readFacts } from "./report-context";
-import { type Fact, FACT_COLUMNS, categories, grid, inPeriod, monthKeys, percent } from "./report-kit";
+import { type Fact, FACT_COLUMNS, byUrgency, categories, grid, inPeriod, monthKeys, percent } from "./report-kit";
 import { OPPORTUNITIES, OPPORTUNITY_ENTITY, P, localDate } from "./report-scope";
 import { targetFor } from "./report-targets";
 
@@ -545,11 +545,6 @@ export async function productionAttention(ctx: ReportContext): Promise<Fact[]> {
   const handing = (await handovers.facts(ctx)).filter((fact) => fact.dims.due === "overdue")
     .map((fact) => ({ ...fact, kind: "project" as const, measure: String(-Number(fact.measure ?? "0")), detail: "late_handover", dims: { ...fact.dims, reason: "late_handover" } }));
   return byUrgency([...late, ...waiting, ...installing, ...permitted, ...handing]);
-}
-
-/** Most days late first; things not late yet (expiring, waiting on materials) after them, soonest first. */
-export function byUrgency(facts: Fact[]) {
-  return facts.sort((a, b) => Number(b.measure ?? "-1e9") - Number(a.measure ?? "-1e9") || (a.at ?? "").localeCompare(b.at ?? ""));
 }
 
 const attention: KpiSpec = {

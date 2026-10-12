@@ -293,6 +293,15 @@ integration("management dashboards with PostgreSQL", () => {
       expect(kpi(kpis, "returning_customers").value).toBe("1");
       expect(kpi(kpis, "follow_ups")).toMatchObject({ value: "2", extra: { overdue: 1, due: 1 } });
       expect(kpi(kpis, "quotes_expiring")).toMatchObject({ value: "1", amount: "1000.00" });
+
+      // Needs attention: O5 has kept its stage since it was opened on the 2nd (18 days, past the 14-day rule), and its
+      // follow-up was due yesterday. L8's come-back date is still ahead.
+      const page = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW);
+      expect(page.attention?.records.map((record) => [record.reference, record.detail, record.measure, record.href])).toEqual([
+        ["O-O5", "stuck_deal", "18", `/workspace/crm/opportunities?record=${ids.O5}`], ["O-O5", "follow_up_overdue", "1", `/workspace/crm/opportunities?record=${ids.O5}`]]);
+      // The firm's own rule: with 30 days, O5 isn't stuck yet.
+      await client.query("INSERT INTO workspace_sales_settings(workspace_id,stuck_deal_days) VALUES($1,30)", [ids.ws]);
+      expect((await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW)).attention?.records.map((record) => record.detail)).toEqual(["follow_up_overdue"]);
     });
   });
 

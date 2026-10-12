@@ -92,12 +92,14 @@ export type SalesSettings = {
   internalNotesVisibility: "team" | "sales";
   /** PLM-099: the prefix of new opportunity references (product default O-); existing references never change. */
   opportunityReferencePrefix: string;
+  /** Days an open opportunity may keep its stage before Reports lists it as stuck (product default 14). */
+  stuckDealDays: number;
   version: number;
 };
 
 export const DEFAULT_SALES_SETTINGS: SalesSettings = {
   takeoverCap: 2, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90,
-  salesAdminMembershipId: null, internalNotesVisibility: "team", opportunityReferencePrefix: "O-", version: 0,
+  salesAdminMembershipId: null, internalNotesVisibility: "team", opportunityReferencePrefix: "O-", stuckDealDays: 14, version: 0,
 };
 
 export async function loadSalesSettings(db: Db, workspaceId: string): Promise<SalesSettings> {
@@ -105,7 +107,7 @@ export async function loadSalesSettings(db: Db, workspaceId: string): Promise<Sa
     `SELECT takeover_cap AS "takeoverCap", unowned_escalation_minutes AS "unownedEscalationMinutes",
             client_review_minutes AS "clientReviewMinutes", duplicate_window_days AS "duplicateWindowDays",
             sales_admin_membership_id AS "salesAdminMembershipId", internal_notes_visibility AS "internalNotesVisibility",
-            opportunity_reference_prefix AS "opportunityReferencePrefix", version
+            opportunity_reference_prefix AS "opportunityReferencePrefix", stuck_deal_days AS "stuckDealDays", version
        FROM workspace_sales_settings WHERE workspace_id = $1`, [workspaceId]);
   return row.rows[0] ? { ...row.rows[0], internalNotesVisibility: row.rows[0].internalNotesVisibility === "sales" ? "sales" : "team", version: Number(row.rows[0].version) } : { ...DEFAULT_SALES_SETTINGS };
 }
