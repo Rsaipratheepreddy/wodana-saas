@@ -1,0 +1,23 @@
+/* The shared History of a record: a filter, then days, each a list of who did what. */
+.history { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: var(--wd-space-2); }
+.days { display: grid; gap: var(--wd-space-6); }
+.day { display: grid; gap: var(--wd-space-2); }
+.dayTitle { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.list { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.item:last-child { border-block-end: 0; }
+.body { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.sentence { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.amount { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; }
+.note { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.changes { display: grid; gap: var(--wd-space-1); margin: 0; font-size: var(--wd-text-xs); }
+.changes > div { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.changes dt { color: var(--wd-color-text-tertiary); }
+.changes dd { margin: 0; color: var(--wd-color-text); }
+.before { color: var(--wd-color-text-secondary); text-decoration: line-through; }
+.arrow { color: var(--wd-color-text-tertiary); }
+.meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-3); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.more { display: flex; justify-content: center; }
+.visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.arrow:dir(rtl) { display: inline-block; transform: scaleX(-1); }

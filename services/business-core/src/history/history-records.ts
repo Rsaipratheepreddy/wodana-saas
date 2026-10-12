@@ -21,6 +21,12 @@ export type RecordSpec = {
   /** The record itself (null when it isn't in the workspace); `userId` narrows records a member may only see when they are theirs. */
   record: (db: Db, workspaceId: string, id: string, scope: { userId: string; granted: Set<string> }) => Promise<RecordFacts | null>;
   where: string;
+  /**
+   * The module's own event log, when it is richer than the audit trail for this record (a purchase order's chases and
+   * shipments): rows shaped as audit rows (id, action, entity_type, entity_id, source, occurred_at, before, after,
+   * actor_user_id) for $1 = workspace, $2 = record. The audit rows it replaces are left out of `where`.
+   */
+  events?: string;
   /** Audit entity types that are this record itself (their events take the record's own reference). */
   own: string[];
 };
@@ -91,14 +97,18 @@ export const RECORD_SPECS: Record<HistoryRecordType, RecordSpec> = {
     permissions: ["purchasing.view"],
     own: ["purchase_order"],
     record: (db, workspaceId, id) => one(db, `SELECT number AS reference, NULL::text AS title, NULL::uuid AS "caseId", NULL::uuid AS "projectId" FROM purchase_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]),
-    where: `((e.entity_type = 'purchase_order' AND e.entity_id = $2) OR ${approvalOf()}
-      OR (e.entity_type = 'goods_receipt' AND e.entity_id IN (SELECT id FROM goods_receipts WHERE workspace_id = $1 AND order_id = $2)))`,
+    // The order's own log has every step (approval, sending, chasing, shipments, deliveries and inspections).
+    where: "FALSE",
+    events: `SELECT event.id, 'purchase_order.' || event.kind, 'purchase_order', event.order_id, 'user', event.at, NULL::jsonb, event.detail, event.actor_id
+      FROM purchase_order_events event WHERE event.workspace_id = $1 AND event.order_id = $2::uuid`,
   },
   work_order: {
     permissions: ["factory.view"],
     own: ["work_order"],
     record: (db, workspaceId, id) => one(db, `SELECT 'WO-' || lpad(number::text, 4, '0') AS reference, title, NULL::uuid AS "caseId", project_id AS "projectId" FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]),
-    where: `(e.entity_type = 'work_order' AND e.entity_id = $2)`,
+    where: "FALSE",
+    events: `SELECT event.id, 'work_order.' || event.kind, 'work_order', event.work_order_id, 'user', event.at, NULL::jsonb, event.detail, event.actor_id
+      FROM work_order_events event WHERE event.workspace_id = $1 AND event.work_order_id = $2::uuid`,
   },
   invoice: {
     permissions: ["receivables.view"],
@@ -112,7 +122,11 @@ export const RECORD_SPECS: Record<HistoryRecordType, RecordSpec> = {
     // Whoever only raises requests sees the history of their own.
     record: (db, workspaceId, id, scope) => one(db, `SELECT 'FR-' || lpad(number::text, 4, '0') AS reference, NULL::text AS title, case_id AS "caseId", project_id AS "projectId" FROM finance_requests
       WHERE workspace_id = $1 AND id = $2 AND ($3::boolean OR requested_by = $4)`, [workspaceId, id, scope.granted.has("finance_requests.manage"), scope.userId]),
-    where: `((e.entity_type = 'finance_request' AND e.entity_id = $2) OR ${approvalOf()} OR e.after->>'financeRequestId' = $2::text)`,
+    where: `(${approvalOf()} OR (e.entity_type <> 'finance_request' AND e.after->>'financeRequestId' = $2::text))`,
+    events: `SELECT event.id, 'finance_request.' || event.kind, 'finance_request', event.request_id, 'user', event.occurred_at,
+        CASE WHEN event.from_status IS NULL THEN NULL ELSE jsonb_build_object('status', event.from_status) END,
+        jsonb_strip_nulls(jsonb_build_object('status', event.to_status, 'note', nullif(event.note, ''))), event.actor_id
+      FROM finance_request_events event WHERE event.workspace_id = $1 AND event.request_id = $2::uuid`,
   },
   snag: {
     permissions: ["projects.view"],

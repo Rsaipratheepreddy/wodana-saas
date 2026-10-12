@@ -36,6 +36,12 @@ const UNVERSIONED = [
   "petty_cash.approve", "petty_cash.reimburse", "supplier_invoice.entered", "supplier_invoice.submitted", "supplier_payment.recorded", "price_request.created",
   "work.create", "work.update", "commercial.issue.v1", "commercial.verify_payment.v1", "commercial.approve.v1", "commercial.submit_owner_review.v1",
   "commercial.decide_owner_review.v1", "commercial.execute_agreement.v1", "commercial.release.v1", "commercial.return.v1", "commercial.payment.v1",
+  // The order, work order and finance request logs the history reads alongside the audit trail.
+  ...["accepted", "alternate_accepted", "alternate_offered", "alternate_rejected", "approved", "cancelled", "changing", "chased", "closed", "confirmed", "continued_on_hold",
+    "created", "email_not_sent", "emailed", "funds_asked", "funds_override", "hold_override", "inspected", "line_cancelled", "over_funds", "receipt_reversed", "received",
+    "return_cancelled", "return_emailed", "return_raised", "return_sent", "returned", "sent", "shipment_added", "shipment_updated", "submitted", "under_threshold"].map((kind) => `purchase_order.${kind}`),
+  ...["planned", "approve_drawing", "start", "release", "report", "check", "decide_report", "dispatch", "add_material", "issue_material"].map((kind) => `work_order.${kind}`),
+  ...["submitted", "approval", "file", "needs_info", "rejected"].map((kind) => `finance_request.${kind}`),
 ];
 
 describe("history: every action reads as a sentence", () => {

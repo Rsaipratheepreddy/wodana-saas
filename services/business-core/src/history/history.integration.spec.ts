@@ -75,10 +75,9 @@ integration("Record history on real Postgres (who did what; only for those who m
         after: { opportunityId, note: "Called about the kitchen" } });
       await recordAudit(client, { workspaceId, actorUserId: people.finance, action: "approvals.approved.v1", entityType: "approval_request", entityId: randomUUID(),
         after: { subjectId: opportunityId, kind: "deal_file", note: "Receipt checked." } });
-      await recordAudit(client, { workspaceId, actorUserId: people.raiser, action: "finance_request.submitted", entityType: "finance_request", entityId: ownRequest,
-        after: { total: "1500.0000", currency: "AED", kind: "refund" } });
-      await recordAudit(client, { workspaceId, actorUserId: people.finance, action: "finance_request.submitted", entityType: "finance_request", entityId: theirRequest,
-        after: { total: "800.0000", currency: "AED", kind: "refund" } });
+      // A finance request's own log (the history reads it in place of its audit rows).
+      for (const [id, by] of [[ownRequest, people.raiser], [theirRequest, people.finance]])
+        await client.query("INSERT INTO finance_request_events(id,workspace_id,request_id,kind,from_status,to_status,note,actor_id) VALUES(gen_random_uuid(),$1,$2,'submitted',NULL,'new','',$3)", [workspaceId, id, by]);
       await recordAudit(client, { workspaceId: otherWorkspaceId, actorUserId: people.outsider, action: "crm.opportunity.created.v1", entityType: "crm_opportunity", entityId: otherOpportunityId,
         after: { id: otherOpportunityId, title: "Other firm's villa" } });
       await client.query("SET LOCAL session_replication_role = origin");
@@ -141,8 +140,8 @@ integration("Record history on real Postgres (who did what; only for those who m
       // Purchasing can't read opportunities, so not their history either.
       await expect(as("buyer").read(actor, workspaceId, "opportunity", opportunityId, {})).rejects.toBeInstanceOf(ForbiddenException);
       // Someone who only raises finance requests sees the history of their own, not of others'.
-      expect((await as("raiser").read(actor, workspaceId, "finance_request", ownRequest, {})).items.map((item) => [item.verb, item.reference, item.amount]))
-        .toEqual([["submitted", "FR-0001", { value: "1500.0000", currency: "AED" }]]);
+      expect((await as("raiser").read(actor, workspaceId, "finance_request", ownRequest, {})).items.map((item) => [item.verb, item.reference, item.actor.name]))
+        .toEqual([["submitted", "FR-0001", "Raiser"]]);
       await expect(as("raiser").read(actor, workspaceId, "finance_request", theirRequest, {})).rejects.toBeInstanceOf(NotFoundException);
       expect((await as("finance").read(actor, workspaceId, "finance_request", theirRequest, {})).items).toHaveLength(1);
     });

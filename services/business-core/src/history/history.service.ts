@@ -59,17 +59,20 @@ export class HistoryService {
 export async function readHistory(client: Pick<PoolClient, "query">, workspaceId: string, recordType: HistoryRecordType, recordId: string,
   facts: Awaited<ReturnType<(typeof RECORD_SPECS)[HistoryRecordType]["record"]>> & object, filter: HistoryFilter, before: { at: string; id: string } | null): Promise<HistoryPage> {
   const spec = RECORD_SPECS[recordType];
+  const sources = `SELECT e.id, e.action, e.entity_type, e.entity_id, e.source, e.occurred_at, e.before, e.after, e.actor_user_id
+      FROM audit_events e WHERE e.workspace_id = $1 AND ${spec.where}${spec.events ? `
+     UNION ALL ${spec.events}` : ""}`;
   const rows = (await client.query<AuditRow>(
-    `SELECT e.id, e.action, e.entity_type AS "entityType", e.entity_id AS "entityId", e.source, e.occurred_at AS "occurredAt", e.before, e.after,
+    `WITH source (id, action, entity_type, entity_id, source, occurred_at, before, after, actor_user_id) AS (${sources})
+     SELECT e.id, e.action, e.entity_type AS "entityType", e.entity_id AS "entityId", e.source, e.occurred_at AS "occurredAt", e.before, e.after,
             e.actor_user_id AS "actorId", actor.display_name AS "actorName", profile.avatar_preset AS "actorPreset",
             (SELECT array_agg(DISTINCT role.code ORDER BY role.code) FROM workspace_memberships membership
                JOIN effective_member_roles assigned ON assigned.membership_id = membership.id JOIN roles role ON role.id = assigned.role_id
-              WHERE membership.workspace_id = e.workspace_id AND membership.user_id = e.actor_user_id) AS "actorRoles"
-       FROM audit_events e
+              WHERE membership.workspace_id = $1 AND membership.user_id = e.actor_user_id) AS "actorRoles"
+       FROM source e
        LEFT JOIN users actor ON actor.id = e.actor_user_id
-       LEFT JOIN workspace_member_profiles profile ON profile.workspace_id = e.workspace_id AND profile.user_id = e.actor_user_id
-      WHERE e.workspace_id = $1 AND ${spec.where}
-        AND ($3::timestamptz IS NULL OR (e.occurred_at, e.id) < ($3::timestamptz, $4::uuid))
+       LEFT JOIN workspace_member_profiles profile ON profile.workspace_id = $1 AND profile.user_id = e.actor_user_id
+      WHERE ($3::timestamptz IS NULL OR (e.occurred_at, e.id) < ($3::timestamptz, $4::uuid))
       ORDER BY e.occurred_at DESC, e.id DESC
       LIMIT ${filter === "all" ? PAGE + 1 : 500}`,
     [workspaceId, recordId, before?.at ?? null, before?.id ?? null])).rows;
