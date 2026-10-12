@@ -39,6 +39,7 @@ export * from "./patterns/table-cells";
 export * from "./patterns/stage-header";
 export * from "./patterns/month-calendar";
 export * from "./patterns/grouped-table";
+export * from "./patterns/scroll-edges";
 export * from "./patterns/document-table";
 export * from "./patterns/comments";
 export * from "./patterns/documents";

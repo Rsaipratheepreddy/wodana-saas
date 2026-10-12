@@ -25,12 +25,20 @@
     border-radius: var(--wd-table-frame-radius);
     background: var(--wd-color-surface);
     outline: 0;
-    /* A thin, visible scrollbar tells a phone user the table continues sideways. */
-    scrollbar-width: thin;
+    /* A thin, visible scrollbar tells a person the table continues sideways: the one exception to the app's
+       "no scrollbars" rule (globals.css), so it overrides that rule's !important. */
+    scrollbar-width: thin !important;
     scrollbar-color: var(--wd-color-border-strong) transparent;
   }
+  /* The side that hides columns fades out (UX-030), set by useTableViewportRef as the frame scrolls. */
+  :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll], .wd-scroll-fade)[data-overflow="end"] { mask-image: linear-gradient(to right, black calc(100% - var(--wd-space-10)), transparent); }
+  :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll], .wd-scroll-fade)[data-overflow="start"] { mask-image: linear-gradient(to left, black calc(100% - var(--wd-space-10)), transparent); }
+  :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll], .wd-scroll-fade)[data-overflow="both"] { mask-image: linear-gradient(to right, transparent, black var(--wd-space-10), black calc(100% - var(--wd-space-10)), transparent); }
+  [dir="rtl"] :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll], .wd-scroll-fade)[data-overflow="end"] { mask-image: linear-gradient(to left, black calc(100% - var(--wd-space-10)), transparent); }
+  [dir="rtl"] :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll], .wd-scroll-fade)[data-overflow="start"] { mask-image: linear-gradient(to right, black calc(100% - var(--wd-space-10)), transparent); }
+  .wd-scroll-edge-buttons { display: inline-flex; align-items: center; gap: var(--wd-space-0-5); }
   :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll]):focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-  :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll])::-webkit-scrollbar { inline-size: var(--wd-space-2); block-size: var(--wd-space-2); }
+  :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll])::-webkit-scrollbar { display: block; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); }
   :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll])::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--wd-radius-pill); background: var(--wd-color-border-strong) padding-box; }
   :is(.wd-table-scroll, .wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll])::-webkit-scrollbar-track { background: transparent; }
 

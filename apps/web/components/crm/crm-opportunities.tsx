@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Plus, Columns3, Filter, List, X } from "lucide-react";
-import { Avatar, Badge, Button, Callout, Card, DataGrid, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, NoResultsState, OwnerCell, personDisplayName, RecordName, ToolbarSearch, TextAreaField, ToggleButton, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { Avatar, Badge, Button, Callout, Card, DataGrid, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, NoResultsState, OwnerCell, personDisplayName, RecordName, ScrollEdgeButtons, ToolbarSearch, TextAreaField, ToggleButton, useDesignSystem, useScrollEdges, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type Translate } from "@/lib/i18n/keys";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
@@ -129,6 +129,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     return () => { cancelled = true; };
   }, [items, initialData.workspaceId]);
   const [layout, setLayout] = useState<"board" | "list">("board");
+  const board = useScrollEdges<HTMLDivElement>();
   const [search, setSearch] = useState("");
   const [assignee, setAssignee] = useState("");
   const [view, setView] = useState<"all" | "open" | "closed">("all");
@@ -220,6 +221,8 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
   ];
   const filtered = Boolean(search || assignee || pipelineFilter !== "all");
   const clearFilters = () => { setSearch(""); setAssignee(""); setPipelineFilter("all"); };
+  const boardStages: BoardStage[] = [...boardColumns, ...(unplaced.length ? [{ id: "unplaced", name: t("Needs a stage"), code: "", pipelineId: "", pipelineName: "", canCreate: false }] : [])];
+  const cardsOf = (column: BoardStage) => (column.id === "unplaced" ? unplaced : boardItems.filter((item) => String(item.stageId ?? item.stage_id) === column.id));
   const toolbar = <div className={styles.boardToolbar}>
     <div role="group" aria-label={t("Pipeline view")} className={styles.viewSwitch}>
       <ToggleButton size="compact" variant="quiet" isSelected={layout === "board"} onPress={() => setLayout("board")}><Columns3 aria-hidden="true" size={14} />{t("Board")}</ToggleButton>
@@ -228,6 +231,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     {chips.length ? <div aria-label={t("Filters in use")} className="wd-filter-chips" role="group">{chips.map(chip => <span className="wd-filter-chip" key={chip.id}>
       <span>{chip.label}</span><IconButton aria-label={t("Remove filter {name}", { name: chip.label })} onPress={chip.clear} size="compact"><X size={12} /></IconButton></span>)}</div> : null}
     <div className={styles.toolbarActions}>
+      {layout === "board" ? <ScrollEdgeButtons edges={board.edges} onScroll={board.scroll} startLabel={t("Earlier stages")} endLabel={t("Later stages")} /> : null}
       <ToolbarSearch label={t("Search opportunities")} value={search} onChange={setSearch} />
       <IconMenuButton ariaLabel={t("Filter")} icon={<Filter aria-hidden="true" size={15} />} items={filterItems} onAction={(id) => { const [kind, value] = id.split(":"); if (kind === "owner") setAssignee(value); else setPipelineFilter(value); }} />
       <IconMenuButton ariaLabel={t("Pipeline options")} items={[{ id: "refresh", label: t("Refresh") }]} onAction={() => void reload()} />
@@ -246,8 +250,10 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       : <p className={styles.emptyNotice}>{view === "closed" ? t("No closed opportunities yet.") : view === "open" ? t("No open opportunities yet. Convert one from an enquiry.") : t("No opportunities yet. Convert one from an enquiry.")}</p> : null}
     {layout === "board" ? <>
       <span id="pipeline-drag-hint" className={styles.srOnly}>{t("Open opportunity. Drag to move stage, or use Alt and the left or right arrow keys.")}</span>
-      <div className={`${styles.salesBoard} wd-scroll-quiet`} role="region" tabIndex={0} aria-label={t("Sales pipeline board")} style={{ "--stage-count": boardColumns.length + (unplaced.length ? 1 : 0) } as CSSProperties}>{[...boardColumns, ...(unplaced.length ? [{id:"unplaced",name:t("Needs a stage"),code:"",pipelineId:"",pipelineName:"",canCreate:false}] : [])].map((column, columnIndex) => {
-        const cards = column.id === "unplaced" ? unplaced : boardItems.filter(item => String(item.stageId ?? item.stage_id) === column.id);
+      {/* Every stage keeps a readable width; an empty one is narrower so the board fits, and what doesn't fit fades at the edge with buttons to page across (UX-031). */}
+      <div ref={board.ref} className={`${styles.salesBoard} wd-scroll-quiet wd-scroll-fade`} role="region" tabIndex={0} aria-label={t("Sales pipeline board")}
+        style={{ "--stage-template": boardStages.map((column) => (cardsOf(column).length ? "var(--board-track)" : "var(--board-empty-track)")).join(" ") } as CSSProperties}>{boardStages.map((column, columnIndex) => {
+        const cards = cardsOf(column);
         return <section className={styles.boardColumn} key={column.id} aria-label={column.name} data-empty={!cards.length || undefined} data-tone={column.code === "won" ? "won" : column.code === "lost" ? "lost" : columnIndex % 5} data-drop-target={dropTarget === column.id || undefined}
           onDragOver={event => { const item = items.find(record => record.id === dragged); if (item && column.canCreate && column.pipelineId === String(item.pipelineId ?? item.pipeline_id)) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(column.id); } }}
           onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); }}
@@ -258,6 +264,8 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
             const owner = personDisplayName(item.ownerName as string | null);
             const title = opportunityTitle(item, t);
             const customer = String(item.partyName ?? "").trim();
+            // The client's line only when the title doesn't already name them ("Farah Nasser (Dubai Hills Estate)").
+            const showCustomer = Boolean(customer) && !title.toLocaleLowerCase().includes(customer.toLocaleLowerCase());
             const value = moneyLabel(item, locale);
             const outcomeMismatch = (column.code === "won" || column.code === "lost") && item.status !== column.code;
             const now = item.status === "open" ? nowSteps[item.id]?.step ?? null : null;
@@ -265,12 +273,12 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
             return <div className={styles.boardCard} key={item.id} draggable={item.status === "open" && !moving} aria-busy={moving === item.id} data-dragging={dragged === item.id || undefined}
               onDragStart={event => { setDragged(item.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }}
               onDragEnd={() => { setDragged(null); setDropTarget(null); }}>
-              <Card as="article" title={<button type="button" className={styles.cardOpen} aria-describedby="pipeline-drag-hint" aria-label={[title, customer !== title ? customer : "", value ?? ""].filter(Boolean).join(" · ")}
+              <Card as="article" title={<button type="button" className={styles.cardOpen} aria-describedby="pipeline-drag-hint" aria-label={[title, showCustomer ? customer : "", value ?? ""].filter(Boolean).join(" · ")}
                 onKeyDown={event => { if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) { event.preventDefault(); const stages = boardColumns.filter(stage => stage.pipelineId === String(item.pipelineId ?? item.pipeline_id)); const index = stages.findIndex(stage => stage.id === String(item.stageId ?? item.stage_id)); const next = stages[index + (event.key === "ArrowRight" ? 1 : -1)]; if (next) requestMove(item.id, next.id); } }} onClick={() => setSelectedRecord(item.id)}>{title}</button>}
                 footer={<><span className={styles.cardDue}>{item.status === "open" ? (typeof item.nextActionAt === "string" ? <DueChip at={item.nextActionAt} /> : <span className={styles.cardNoDue}>{t("No follow-up")}</span>) : item.status === "won" && item.dealClosed === true ? <Badge tone="success">{t("Deal closed")}</Badge> : null}</span>
                   <span className={styles.owner} title={owner || t("Unassigned")}><span aria-hidden="true"><Avatar name={owner || t("Unassigned")} seed={owner ? String(item.ownerMembershipId ?? owner) : undefined} size="sm" /></span><span className={styles.srOnly}>{owner || t("Unassigned")}</span></span></>}>
                 {outcomeMismatch && <span className={styles.cardWarning}>{t("Status is {status}. Review the outcome.", { status: String(item.status).replaceAll("_", " ") })}</span>}
-                {(customer && customer !== title) || value ? <span className={styles.cardMeta}>{customer && customer !== title ? <span>{customer}</span> : null}{value ? <b>{value}</b> : null}</span> : null}
+                {showCustomer || value ? <span className={styles.cardMeta}>{showCustomer ? <span>{customer}</span> : null}{value ? <b>{value}</b> : null}</span> : null}
                 {now ? <span className={styles.cardNow}>{stepText(now, "short")}</span> : null}
               </Card>
             </div>;

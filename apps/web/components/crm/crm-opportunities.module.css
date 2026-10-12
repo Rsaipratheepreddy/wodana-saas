@@ -11,7 +11,7 @@
 .toolbarActions { margin-inline-start:auto; }
 
 /* Stages keep a readable width and the board scrolls sideways (quiet scrollbars); each column scrolls its own cards. */
-.salesBoard { display:grid; grid-template-columns:repeat(var(--stage-count),minmax(15rem,1fr)); gap:var(--wd-space-2); flex:1; min-inline-size:0; min-block-size:20rem; overflow:auto; overscroll-behavior-x:contain; padding-block:var(--wd-space-0-5) var(--wd-space-2); }
+.salesBoard { --board-track:minmax(14rem,1fr); --board-empty-track:minmax(8rem,.5fr); display:grid; grid-template-columns:var(--stage-template); gap:var(--wd-space-2); flex:1; min-inline-size:0; min-block-size:20rem; overflow:auto; overscroll-behavior-x:contain; padding-block:var(--wd-space-0-5) var(--wd-space-2); }
 .boardColumn { --column-accent:var(--wd-color-text-tertiary); display:flex; flex-direction:column; min-inline-size:0; min-block-size:0; padding:var(--wd-space-1); border-radius:var(--wd-radius-md); background:var(--wd-color-surface-muted); }
 .boardColumn[data-tone="1"] { --column-accent:var(--wd-color-warning); }
 .boardColumn[data-tone="2"] { --column-accent:var(--wd-color-info); }
@@ -20,9 +20,11 @@
 .boardColumn[data-tone="lost"] { --column-accent:var(--wd-color-danger); }
 .boardColumn[data-drop-target] { box-shadow:inset 0 0 0 2px var(--wd-color-focus); }
 .boardColumn > header { display:flex; align-items:center; justify-content:space-between; gap:var(--wd-space-1-5); min-block-size:2.8rem; padding:var(--wd-space-2) var(--wd-space-2); color:var(--wd-color-text); }
-.boardColumn > header h2 { display:flex; align-items:center; gap:var(--wd-space-2); min-inline-size:0; margin:0; overflow-wrap:anywhere; font-family:var(--wd-font-sans); font-size:var(--wd-text-sm); font-weight:var(--wd-weight-semibold); letter-spacing:0; text-transform:none; }
+.boardColumn > header h2 { display:flex; align-items:center; gap:var(--wd-space-2); min-inline-size:0; margin:0; overflow-wrap:break-word; hyphens:auto; font-family:var(--wd-font-sans); font-size:var(--wd-text-sm); font-weight:var(--wd-weight-semibold); letter-spacing:0; text-transform:none; }
 .boardColumn > header i { flex:none; inline-size:7px; block-size:7px; border-radius:50%; background:var(--column-accent); }
 .count { display:grid; place-items:center; flex:none; min-inline-size:1.5rem; block-size:1.5rem; padding-inline:var(--wd-space-1-5); border-radius:var(--wd-radius-xs); background:var(--wd-color-surface); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-variant-numeric:tabular-nums; }
+/* An empty stage is narrow: its name keeps the room and "0" is said by the empty column itself. */
+.boardColumn[data-empty] > header .count { display:none; }
 .pipelineName { display:block; padding:var(--wd-space-1-5) var(--wd-space-3) 0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }
 .cardStack { display:grid; grid-auto-rows:max-content; grid-template-columns:minmax(0, 1fr); align-content:start; gap:var(--wd-space-2); min-block-size:0; overflow-x:hidden; overflow-y:auto; padding:var(--wd-space-0-5); }
 /* Each card is the shared Card; the wrapper only carries dragging, and the title button opens the whole card. */
@@ -49,8 +51,8 @@
 .moveNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }
 .emptyNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); }
 
-@media (max-width:1000px) { .salesBoard { grid-template-columns:repeat(var(--stage-count),minmax(13rem,1fr)); } }
-@media (max-width:600px) { .toolbarActions { margin-inline-start:0; } .salesBoard { grid-template-columns:repeat(var(--stage-count),minmax(calc(100vw - 4rem),1fr)); scroll-snap-type:inline mandatory; } .boardColumn { scroll-snap-align:start; } }
+@media (max-width:1000px) { .salesBoard { --board-track:minmax(13rem,1fr); } }
+@media (max-width:600px) { .toolbarActions { margin-inline-start:0; } .salesBoard { --board-track:minmax(calc(100vw - 4rem),1fr); --board-empty-track:minmax(calc(100vw - 4rem),1fr); scroll-snap-type:inline mandatory; } .boardColumn { scroll-snap-align:start; } }
 .opportunityModal { block-size: min(56rem, calc(100dvh - 4rem)); }
 .opportunityModal :global(.wd-dialog) { position: relative; block-size: 100%; }
 .opportunityModal :global(.wd-dialog-minimal-header) { position: absolute; z-index: 1; inset-block-start: .4rem; inset-inline-end: .4rem; padding: 0; }
