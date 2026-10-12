@@ -327,6 +327,9 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "site.installation_owed", channel: "in_app", subject: "Installation signed off with money owed · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.installation_owed", channel: "email", subject: "Installation signed off with money owed · {{title}}", body: "{{actor}} signed off the installation on {{title}} before it was paid.\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.material_requested", channel: "in_app", subject: "Material needed on site · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
+  // A day card's issue: given to its owner, and resolved (to whoever reported it and its owner).
+  { code: "site.issue_assigned", channel: "in_app", subject: "A site issue is yours · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.issue_resolved", channel: "in_app", subject: "Site issue resolved · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.client_reacted", channel: "in_app", subject: "{{actor}} reacted to the daily progress · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.client_question", channel: "in_app", subject: "{{actor}} asked about the daily progress · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.client_question", channel: "email", subject: "{{actor}} asked about the daily progress · {{title}}", body: "{{actor}} asked about the daily progress on {{title}}:\n\n{{note}}\n\nAnswer in the conversation on the project.", variables: ["title", "clientName", "actor", "note"] },
@@ -784,7 +787,7 @@ export async function wakeDelivery(db: Db, workspaceId: string, notificationId: 
  */
 export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "site.report_missing", "site.report_returned", "site.incident", "site.blocked", "site.access_move_asked", "site.delivery_moved",
-  "site.report_waiting", "site.report_late", "site.material_requested", "site.client_question",
+  "site.report_waiting", "site.report_late", "site.material_requested", "site.client_question", "site.issue_assigned",
   "work.assigned", "work.overdue", "work.snag_reopened",
   "factory.released", "factory.check_failed", "factory.material_short", "factory.rework", "factory.sample_requested",
   "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work", "purchasing.materials_ready",

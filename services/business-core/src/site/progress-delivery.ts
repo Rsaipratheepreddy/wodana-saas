@@ -122,13 +122,13 @@ export async function processWeeklyRollups(db: Db, workspaceId: string) {
     `SELECT project.id, project.case_id AS "caseId", project.name FROM delivery_projects project
       WHERE project.workspace_id = $1 AND project.status = 'active'
         AND EXISTS (SELECT 1 FROM site_reports report WHERE report.workspace_id = project.workspace_id AND report.project_id = project.id AND report.delivery = 'sent'
-                     AND report.report_date BETWEEN $2::date AND $3::date)
+                     AND report.client_hidden_at IS NULL AND report.report_date BETWEEN $2::date AND $3::date)
         AND NOT EXISTS (SELECT 1 FROM site_report_rollups rollup WHERE rollup.workspace_id = project.workspace_id AND rollup.project_id = project.id AND rollup.week_ending = $3::date)`,
     [workspaceId, from, clock.today])).rows;
   let sent = 0;
   for (const project of projects) {
     const days = (await db.query<{ view: { completed?: string[]; next?: string[]; project?: { progress?: number | null } } }>(
-      `SELECT client_view AS view FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND delivery = 'sent' AND report_date BETWEEN $3::date AND $4::date ORDER BY report_date`,
+      `SELECT client_view AS view FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND delivery = 'sent' AND client_hidden_at IS NULL AND report_date BETWEEN $3::date AND $4::date ORDER BY report_date`,
       [workspaceId, project.id, from, clock.today])).rows.map((row) => row.view);
     const completed = [...new Set(days.flatMap((day) => day.completed ?? []))];
     const next = days.at(-1)?.next ?? [];

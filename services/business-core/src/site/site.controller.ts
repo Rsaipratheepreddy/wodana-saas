@@ -55,6 +55,13 @@ export class SiteController {
     return sendMedia(file, request, response);
   }
 
+  /** The day cards for a range of days (or the latest days with a report), with the working days that have none. */
+  @Get("days")
+  days(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Query("from") from?: string, @Query("to") to?: string, @Query("latest") latest?: string) {
+    return this.site.days(actor, workspaceId, projectId, { from, to, latest });
+  }
+
   @Get()
   state(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.site.state(actor, workspaceId, projectId);

@@ -271,7 +271,7 @@ type StoredView = { date: string; summary: string; noWork?: boolean; hero: CardP
 async function readDailyCards(db: Db, workspaceId: string, projectId: string, grantId: string, settings: PortalSettings, files: FilePresence) {
   if (!settings.progress.updates && !settings.progress.photos) return { cards: [], weeks: [] };
   const sent = (await db.query<{ id: string; sentAt: string; view: StoredView }>(
-    `SELECT id, sent_at AS "sentAt", client_view AS view FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND delivery = 'sent' ORDER BY report_date DESC, sent_at DESC LIMIT 60`,
+    `SELECT id, sent_at AS "sentAt", client_view AS view FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND delivery = 'sent' AND client_hidden_at IS NULL ORDER BY report_date DESC, sent_at DESC LIMIT 60`,
     [workspaceId, projectId])).rows;
   const ids = sent.map((row) => row.id);
   const reactions = (await db.query<{ reportId: string; reaction: "like" | "love"; count: number; mine: boolean }>(

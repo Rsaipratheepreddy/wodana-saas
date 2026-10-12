@@ -785,6 +785,14 @@ integration("client portal (plan §6.22)", () => {
         expect(text, secret).not.toContain(secret);
       expect(view.projects[0].progress!.cards).toEqual([expect.objectContaining({ id: day, date: "2026-09-26", noWork: false, notes: ["Handles arrive Thursday"],
         hero: { id: cardPhoto, area: "Kitchen", phase: "after", pairId: null }, photos: [], reactions: { like: 0, love: 1 }, mine: { like: false, love: true } })]);
+      // The manager takes the day off the client's page: the card, its reactions and its photo go with it; putting it back shows it as it went.
+      const teamState = await pmSite.state(actor, w.workspaceId, projectId);
+      const hiddenDay = await pmSite.command(actor, w.workspaceId, projectId, { action: "set_client_visibility", reportId: day, visible: false,
+        version: teamState.reports.find((row) => row.id === day)!.version });
+      expect((await w.portal.view(w.slug, token)).projects[0].progress!.cards).toEqual([]);
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "progress_react", caseId: w.caseId, reportId: day, reaction: "like" })).rejects.toThrow(/isn't there/);
+      await pmSite.command(actor, w.workspaceId, projectId, { action: "set_client_visibility", reportId: day, visible: true, version: hiddenDay.reports.find((row) => row.id === day)!.version });
+      expect((await w.portal.view(w.slug, token)).projects[0].progress!.cards.map((card) => card.id)).toEqual([day]);
 
       const project = view.projects[0];
       // The team: the lead as project manager and the deal's owner as the sales contact; the site supervisor role stays internal.

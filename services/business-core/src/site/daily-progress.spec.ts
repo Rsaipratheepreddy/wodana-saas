@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { renderBrandedEmail } from "../email/branded-email";
 import { clientEmailNote, joinList, templateSummary, validateSummary, type ClientView, type SummaryFacts } from "./daily-progress";
 
 const facts = (overrides: Partial<SummaryFacts> = {}): SummaryFacts => ({
@@ -24,8 +25,21 @@ describe("daily progress words", () => {
     expect(() => validateSummary({ summary: "x".repeat(901) })).toThrow();
   });
 
-  it("emails the summary, what was done and what's next", () => {
-    const view = { summary: "Carcasses are in.", completed: ["Carcasses"], next: ["Worktop"] } as ClientView;
-    expect(clientEmailNote(view)).toBe("Carcasses are in.\n\nDone today: Carcasses.\n\nNext up: Worktop.");
+  it("emails the day as its card reads: the summary, then a block per part", () => {
+    const view = { summary: "Carcasses are in.", completed: ["Carcasses"], advanced: [{ title: "Wardrobe doors", progress: 50 }], next: ["Worktop"], notes: [] } as unknown as ClientView;
+    expect(clientEmailNote(view)).toBe("Carcasses are in.\n\nDone today\n• Carcasses\n\nMoving forward\n• Wardrobe doors · 50%\n\nNext up\n• Worktop");
+  });
+
+  it("renders the day card through the tenant's branded email, each part a paragraph with its lines", () => {
+    const view = { summary: "Carcasses are in.", completed: ["Carcasses", "Plinths"], advanced: [], next: ["Worktop"], notes: ["Water is off on Sunday"] } as unknown as ClientView;
+    const note = clientEmailNote(view);
+    const { html, text } = renderBrandedEmail({ brand: { name: "Palm Studio", logoUrl: null, accentColor: "#336699" }, preheader: "Progress on 12 October 2026",
+      heading: "Progress on 12 October 2026", paragraphs: note.split(/\n{2,}/), action: { label: "Open your project", url: "https://example.test/portal" } });
+    expect(html).toContain("white-space:pre-line;\">Done today\n• Carcasses\n• Plinths</p>");
+    expect(html).toContain("Good to know\n• Water is off on Sunday");
+    expect(html).toContain("Powered by Wodana");
+    expect(text).toContain("Palm Studio");
+    // Nothing internal is in the client's words.
+    expect(note).not.toMatch(/crew|cost|issue/i);
   });
 });

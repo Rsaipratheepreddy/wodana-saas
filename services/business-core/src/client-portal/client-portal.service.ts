@@ -310,7 +310,10 @@ export class ClientPortalService {
            FROM site_report_photos photo
            JOIN site_reports report ON report.workspace_id = photo.workspace_id AND report.id = photo.report_id AND (report.status = 'approved' OR report.delivery = 'sent')
            JOIN delivery_projects project ON project.workspace_id = report.workspace_id AND project.id = report.project_id
-          WHERE photo.workspace_id = $1 AND photo.id = $2 AND photo.shared_at IS NOT NULL`, [workspaceId, id])).rows[0];
+          WHERE photo.workspace_id = $1 AND photo.id = $2 AND photo.shared_at IS NOT NULL
+            -- A day taken off the client's page takes its photos with it (unless a shared update still shows one).
+            AND (report.client_hidden_at IS NULL OR EXISTS (SELECT 1 FROM project_update_photos used WHERE used.workspace_id = photo.workspace_id AND used.photo_id = photo.id))`,
+        [workspaceId, id])).rows[0];
       const settings = await readPortalSettings(client, workspaceId);
       return row && settings.progress.photos ? { ...row, sections: ["progress" as const] } : null;
     }

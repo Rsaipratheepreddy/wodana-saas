@@ -201,12 +201,19 @@ export async function composeClientView(db: Db, workspaceId: string, reportId: s
   };
 }
 
-/** The email words of a sent day: the summary, then what was done and what's next (paragraphs). */
+/**
+ * The email words of a sent day, as the day's card reads: the summary, then one block per part (a heading line and
+ * one line per item) — done today, moving forward, next up and anything the team chose to tell. The branded email
+ * (renderBrandedEmail) makes each block a paragraph and keeps its lines.
+ */
 export function clientEmailNote(view: ClientView) {
+  const block = (title: string, items: string[]) => (items.length ? [title, ...items.map((item) => `• ${item}`)].join("\n") : "");
   return [
     view.summary,
-    view.completed.length ? `Done today: ${joinList(view.completed.slice(0, 6))}.` : "",
-    view.next.length ? `Next up: ${joinList(view.next.slice(0, 4))}.` : "",
+    block("Done today", view.completed.slice(0, 8)),
+    block("Moving forward", (view.advanced ?? []).slice(0, 6).map((item) => `${item.title} · ${item.progress}%`)),
+    block("Next up", view.next.slice(0, 5)),
+    block("Good to know", (view.notes ?? []).slice(0, 3)),
   ].filter(Boolean).join("\n\n");
 }
 

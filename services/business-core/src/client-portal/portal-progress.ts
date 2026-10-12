@@ -15,7 +15,7 @@ async function sentDay(ctx: DecisionContext, caseId: unknown, reportId: unknown)
   const { grant, row } = await grantFor(ctx, caseId, "progress");
   if (typeof reportId !== "string" || !row.projectId) throw new NotFoundException("This day isn't there any more.");
   const day = (await ctx.db.query<{ id: string; reportDate: string }>(
-    `SELECT id, report_date::text AS "reportDate" FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND id = $3::uuid AND delivery = 'sent'`,
+    `SELECT id, report_date::text AS "reportDate" FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND id = $3::uuid AND delivery = 'sent' AND client_hidden_at IS NULL`,
     [ctx.workspaceId, row.projectId, /^[0-9a-f-]{36}$/i.test(reportId) ? reportId : null])).rows[0];
   if (!day) throw new NotFoundException("This day isn't there any more.");
   return { grant, row, day };

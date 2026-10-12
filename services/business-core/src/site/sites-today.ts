@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { readDayFeed } from "./day-cards";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -39,5 +40,8 @@ export async function readSitesToday(db: Db, workspaceId: string, userId: string
        JOIN project_assignments assignment ON assignment.workspace_id = project.workspace_id AND assignment.project_id = project.id AND assignment.membership_id = membership.id AND assignment.active
       WHERE project.workspace_id = $1 AND project.status = 'active' AND project.site_started_on <= $3::date AND (project.site_finished_on IS NULL OR project.site_finished_on >= $3::date)
       ORDER BY project.reference`, [workspaceId, userId, clock.today])).rows;
-  return { today: clock.today, hour: clock.hour, dueTime: clock.dueTime, sites };
+  // Today's day card on each site (Home → My day shows it, or "Add today's report" when there's none yet).
+  const withCards = [];
+  for (const site of sites) withCards.push({ ...site, card: (await readDayFeed(db, workspaceId, site.projectId, { from: clock.today, to: clock.today })).cards[0] ?? null });
+  return { today: clock.today, hour: clock.hour, dueTime: clock.dueTime, sites: withCards };
 }

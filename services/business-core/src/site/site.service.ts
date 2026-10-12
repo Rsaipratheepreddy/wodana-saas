@@ -22,6 +22,8 @@ import { arrangeSiteAccess } from "./site-access";
 import { publishReport, readProgressSettings } from "./progress-delivery";
 import { readSitesToday } from "./sites-today";
 import { formatCalendarDay, workspaceLocale } from "../common/calendar-day";
+import { raiseProjectChange } from "../change-requests/project-changes.store";
+import { readDayFeed } from "./day-cards";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -48,6 +50,8 @@ type Report = {
   clientSummary: string; summarySource: "none" | "template" | "ai" | "edited"; heroPhotoId: string | null;
   /** How the day reached the client: still to send, kept internal, or sent (with when, by whom, and whether by itself). */
   delivery: "pending" | "internal" | "sent"; sentAt: string | null; sentByName: string | null; sentAutomatically: boolean;
+  /** Sent, then taken off the client's page. */
+  clientHidden: boolean;
   /** While submitted: the names of the people who can approve it. */
   waitingFor: string[];
   workforce: Array<{ trade: string; people: number; hours: string | null }>;
@@ -55,7 +59,8 @@ type Report = {
   tasks: Array<{ id: string; workItemId: string; number: number; title: string; progress: number; previous: number | null; note: string; hidden: boolean }>;
   next: Array<{ id: string; workItemId: string | null; title: string; hidden: boolean }>;
   materials: Array<{ id: string; direction: "received" | "used"; description: string; quantity: string | null; unit: string; purchaseOrderId: string | null; stockTransferId: string | null }>;
-  issues: Array<{ id: string; severity: (typeof SEVERITIES)[number]; description: string; internal: boolean; raised: "snag" | "material" | null; workItemId: string | null; workItemNumber: number | null }>;
+  issues: Array<{ id: string; severity: (typeof SEVERITIES)[number]; description: string; internal: boolean; raised: "snag" | "material" | "change_request" | null; workItemId: string | null;
+    workItemNumber: number | null; changeRequestId: string | null; status: "open" | "resolved"; ownerId: string | null; ownerName: string | null; dueOn: string | null; version: number }>;
   photos: Array<{ id: string; name: string; shared: boolean; areaId: string | null; phase: "before" | "after" | null; pairId: string | null; forClient: boolean }>;
   /** The client's reactions once it was sent, and which client contacts gave them (for the team). */
   reactions: { like: number; love: number };
@@ -131,6 +136,21 @@ export class SiteService {
 
   state(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => this.read(client, workspaceId, projectId, user.userId));
+  }
+
+  /**
+   * The project's day cards for a range (`from`–`to`, newest first, at most a quarter), or its latest `latest` days with
+   * a report (the Overview's site updates); with the working days that have no report, and what the feed filters by.
+   */
+  async days(actor: RequestActor, workspaceId: string, projectId: string, query: { from?: string; to?: string; latest?: string }) {
+    const from = optionalDate(query.from, "From");
+    const to = optionalDate(query.to, "To");
+    const latest = query.latest ? Number(query.latest) : null;
+    if (latest !== null && !(Number.isInteger(latest) && latest > 0 && latest <= 31)) throw new BadRequestException("Latest is a number of days from 1 to 31.");
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      await this.who(client, workspaceId, projectId, user.userId);
+      return readDayFeed(client, workspaceId, projectId, { from, to, latest, approvers: await this.approvers(client, workspaceId, projectId) });
+    });
   }
 
   /** The client's card for a report exactly as it would go now (or as it went, once sent), for the manager's review. */
@@ -289,6 +309,41 @@ export class SiteService {
       await client.query(`UPDATE site_report_photos SET shared_at = CASE WHEN $3::boolean THEN coalesce(shared_at, now()) END,
         shared_by = CASE WHEN $3::boolean THEN coalesce(shared_by, $4::uuid) END, for_client = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, photo.id, shared, userId]);
       audit = { photoId: photo.id, shared };
+    } else if (action === "update_issue") {
+      audit = await this.updateIssue(client, workspaceId, projectId, userId, who.onTeam, body);
+    } else if (action === "set_client_visibility") {
+      // The day card's "client sees this": an approved day goes to the client (or comes back to their page); off keeps
+      // it internal, or takes a day already sent off the client's page (the email that went stays sent).
+      const id = uuid(body.reportId, "Report");
+      const report = await this.one(client, workspaceId, projectId, id, body.version);
+      if (!who.manager) throw new ForbiddenException("Only the project manager decides what the client sees.");
+      if (typeof body.visible !== "boolean") throw new BadRequestException("Say whether the client sees this day.");
+      const visible = body.visible;
+      let sent: Awaited<ReturnType<typeof publishReport>> = null;
+      if (report.delivery === "sent") {
+        if (report.clientHidden === !visible) throw new ConflictException(visible ? "The client already sees this day." : "This day is already off the client's page.");
+        await client.query(`UPDATE site_reports SET client_hidden_at = CASE WHEN $3 THEN NULL ELSE now() END, client_hidden_by = CASE WHEN $3 THEN NULL ELSE $4::uuid END,
+          version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, visible, userId]);
+      } else {
+        if (report.status !== "approved") throw new ConflictException("Approve the report first, then choose whether the client sees it.");
+        if (visible) sent = await publishReport(client, workspaceId, { reportId: id, userId, automatic: false });
+        else {
+          if (report.delivery === "internal") throw new ConflictException("This day is already internal.");
+          await client.query(`UPDATE site_reports SET delivery = 'internal', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+        }
+      }
+      audit = { reportId: id, visible, ...(sent ? { photos: sent.photos, told: sent.told } : {}) };
+    } else if (action === "remove_photo") {
+      // A photo taken by mistake comes off a report while its author is still writing it.
+      const id = uuid(body.reportId, "Report");
+      const report = await this.one(client, workspaceId, projectId, id, body.version);
+      if (report.authorId !== userId) throw new ForbiddenException("Only its author removes a photo from a report.");
+      if (!["draft", "returned"].includes(report.status)) throw new ConflictException("A submitted report doesn't change.");
+      const photoId = uuid(body.photoId, "Photo");
+      if (!report.photos.some((photo) => photo.id === photoId)) throw new NotFoundException("Photo not found.");
+      await client.query(`DELETE FROM site_report_photos WHERE workspace_id = $1 AND report_id = $2 AND id = $3`, [workspaceId, id, photoId]);
+      await client.query(`UPDATE site_reports SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+      audit = { reportId: id, photoId };
     } else throw new BadRequestException("Unknown action.");
     await recordAudit(client, { workspaceId, actorUserId: userId, action: `site.${action}`, entityType: "project", entityId: projectId, after: { projectId, ...audit } });
     return this.read(client, workspaceId, projectId, userId);
@@ -395,11 +450,14 @@ export class SiteService {
       const known = new Map((await client.query<{ id: string; reportId: string }>(`SELECT id, report_id AS "reportId" FROM site_report_issues WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
         [workspaceId, issues.map((issue) => issue.id)])).rows.map((row) => [row.id, row.reportId]));
       if ([...known.values()].some((reportId) => reportId !== id)) throw new ConflictException("This issue belongs to another report.");
+      const members = new Set((await activeMembers(client, workspaceId)).map((member) => member.membershipId));
+      if (issues.some((issue) => issue.ownerId && !members.has(issue.ownerId))) throw new BadRequestException("Choose someone from your team.");
       await client.query(`DELETE FROM site_report_issues WHERE workspace_id = $1 AND report_id = $2 AND NOT (id = ANY($3::uuid[]))`, [workspaceId, id, issues.map((issue) => issue.id)]);
       for (const [position, issue] of issues.entries())
-        await client.query(`INSERT INTO site_report_issues (id, workspace_id, report_id, severity, description, internal, position) VALUES ($1, $2, $3, $4, $5, $6, $7)
-          ON CONFLICT (id) DO UPDATE SET severity = EXCLUDED.severity, description = EXCLUDED.description, internal = EXCLUDED.internal, position = EXCLUDED.position`,
-          [issue.id, workspaceId, id, issue.severity, issue.description, issue.internal, position]);
+        await client.query(`INSERT INTO site_report_issues (id, workspace_id, report_id, severity, description, internal, position, owner_membership_id, due_on) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (id) DO UPDATE SET severity = EXCLUDED.severity, description = EXCLUDED.description, internal = EXCLUDED.internal, position = EXCLUDED.position,
+            owner_membership_id = EXCLUDED.owner_membership_id, due_on = EXCLUDED.due_on`,
+          [issue.id, workspaceId, id, issue.severity, issue.description, issue.internal, position, issue.ownerId, issue.dueOn]);
     }
     if (Array.isArray(body.photos)) for (const photo of body.photos as Array<Record<string, unknown>>) await this.tagPhoto(client, workspaceId, projectId, id, photo);
     return { reportId: id, reportDate, lines: entries.length, tasks: tasks?.length ?? null, issues: issues?.length ?? null };
@@ -545,6 +603,54 @@ export class SiteService {
     return { reportId: id, changed };
   }
 
+  /**
+   * An issue on the day card, once its report is submitted: who owns it and by when, and its state (resolved with how,
+   * or open again). Version-checked on the issue itself; the new owner hears it's theirs, and the reporter and owner
+   * hear when it's resolved.
+   */
+  private async updateIssue(client: Db, workspaceId: string, projectId: string, userId: string, onTeam: boolean, body: Record<string, unknown>) {
+    if (!onTeam) throw new ForbiddenException("Only the project's team works on site issues.");
+    const issueId = uuid(body.issueId, "Issue");
+    const issue = (await client.query<{ reportId: string; reportDate: string; authorId: string; reportStatus: string; status: "open" | "resolved"; version: number;
+      ownerId: string | null; dueOn: string | null; description: string }>(
+      `SELECT issue.report_id AS "reportId", report.report_date::text AS "reportDate", report.author_id AS "authorId", report.status AS "reportStatus", issue.status, issue.version,
+              issue.owner_membership_id AS "ownerId", issue.due_on::text AS "dueOn", issue.description
+         FROM site_report_issues issue JOIN site_reports report ON report.workspace_id = issue.workspace_id AND report.id = issue.report_id
+        WHERE issue.workspace_id = $1 AND issue.id = $2 AND report.project_id = $3 FOR UPDATE OF issue`, [workspaceId, issueId, projectId])).rows[0];
+    if (!issue) throw new NotFoundException("Issue not found.");
+    if (body.version !== issue.version) throw new ConflictException("This issue changed elsewhere. Reload to see it.");
+    if (["draft", "returned"].includes(issue.reportStatus)) throw new ConflictException("Change this issue in its report until the report is submitted.");
+    const changed: Record<string, unknown> = {};
+    let ownerId = issue.ownerId, dueOn = issue.dueOn, status = issue.status;
+    if (body.ownerId !== undefined) {
+      ownerId = body.ownerId ? uuid(body.ownerId, "Owner") : null;
+      if (ownerId && !(await activeMembers(client, workspaceId)).some((member) => member.membershipId === ownerId)) throw new BadRequestException("Choose someone from your team.");
+      changed.ownerId = ownerId;
+    }
+    if (body.dueOn !== undefined) { dueOn = optionalDate(body.dueOn, "Due date"); changed.dueOn = dueOn; }
+    if (body.status !== undefined) { status = oneOf(body.status, ["open", "resolved"] as const, "State"); changed.status = status; }
+    if (!Object.keys(changed).length) throw new BadRequestException("Nothing to change.");
+    const resolution = status === "resolved" ? text(body.resolution, 500) : "";
+    await client.query(
+      `UPDATE site_report_issues SET owner_membership_id = $3::uuid, due_on = $4::date, status = $5::varchar,
+              resolved_at = CASE WHEN $5::varchar = 'resolved' THEN coalesce(resolved_at, now()) END,
+              resolved_by = CASE WHEN $5::varchar = 'resolved' THEN coalesce(resolved_by, $6::uuid) END,
+              resolution = CASE WHEN $5::varchar = 'resolved' THEN CASE WHEN $7::varchar <> '' THEN $7::varchar ELSE resolution END ELSE '' END, version = version + 1
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, issueId, ownerId, dueOn, status, userId, resolution]);
+    const ownerUser = async (membershipId: string | null) => membershipId ? (await client.query<{ userId: string }>(
+      `SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, membershipId])).rows[0]?.userId ?? null : null;
+    const query = `?day=${issue.reportDate}`;
+    if (ownerId && ownerId !== issue.ownerId) {
+      const owner = await ownerUser(ownerId);
+      if (owner) await this.tell(client, workspaceId, projectId, "site.issue_assigned", [owner], userId, dueOn ? `${issue.description} (by ${dueOn})` : issue.description,
+        `issue:${issueId}:${issue.version}`, false, query);
+    }
+    if (status === "resolved" && issue.status !== "resolved")
+      await this.tell(client, workspaceId, projectId, "site.issue_resolved", [issue.authorId, ...[await ownerUser(ownerId)].filter((id): id is string => Boolean(id))], userId,
+        resolution ? `${issue.description}: ${resolution}` : issue.description, `resolved:${issueId}:${issue.version}`, false, query);
+    return { issueId, reportId: issue.reportId, ...changed };
+  }
+
   /** A report of this project at the version the person saw. */
   private async one(client: Db, workspaceId: string, projectId: string, id: string, version: unknown) {
     const report = (await this.reports(client, workspaceId, projectId, id))[0];
@@ -554,13 +660,14 @@ export class SiteService {
   }
 
   /**
-   * Raises the real record from a day's issue: a snag (the plan's snag, in its room) or a material request (a blocker
-   * on the plan for whoever buys, holding up the task it names). Created through the plan's own command with the
-   * issue's id, so a retry never makes two; the manager (and the buyer) hear about material needed.
+   * Raises the real record from a day's issue: a snag (the plan's snag, in its room), a material request (a blocker
+   * on the plan for whoever buys, holding up the task it names) or a change request (a project change for a site
+   * condition). Created with the issue's id, so a retry never makes two; the manager (and the buyer) hear about
+   * material needed, and the change flow tells whoever prices changes.
    */
   private async raiseIssue(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
     const issueId = uuid(body.issueId, "Issue");
-    const kind = oneOf(body.kind, ["snag", "material"] as const, "What to raise");
+    const kind = oneOf(body.kind, ["snag", "material", "change_request"] as const, "What to raise");
     const found = await this.access.asMember(actor, workspaceId, async (client, user) => {
       const who = await this.who(client, workspaceId, projectId, user.userId);
       if (!who.onTeam) throw new ForbiddenException("Only the project's team raises work from a report.");
@@ -580,9 +687,21 @@ export class SiteService {
     if (found.issue.raised) return this.state(actor, workspaceId, projectId);
     const blocks = kind === "material" && body.blocks ? uuid(body.blocks, "Task") : null;
     const areaId = kind === "snag" && body.areaId ? uuid(body.areaId, "Area") : null;
-    const title = (kind === "snag" ? found.issue.description : `Material needed: ${found.issue.description}`).split("\n")[0].slice(0, 300);
+    const title = (kind === "material" ? `Material needed: ${found.issue.description}` : found.issue.description).split("\n")[0].slice(0, kind === "change_request" ? 240 : 300);
     // The report's day as the workspace writes dates (its region's locale), never ISO.
     const description = `From the site report of ${formatCalendarDay(found.issue.reportDate, found.locale)}:\n${found.issue.description}`;
+    if (kind === "change_request") {
+      // A change found on site (a column behind the wall, a pipe in the way): a project change with the issue's id, so a
+      // retry finds it; the project's change flow prices, approves and sends it from there.
+      return this.access.asMember(actor, workspaceId, async (client, user) => {
+        await raiseProjectChange(client, workspaceId, projectId, { id: issueId, title, description, reason: "site_condition" }, { userId: user.userId });
+        await client.query(`UPDATE site_report_issues SET raised = 'change_request', change_request_id = $2, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND raised IS NULL`,
+          [workspaceId, issueId]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "site.raise_issue", entityType: "project", entityId: projectId,
+          after: { projectId, issueId, kind, changeRequestId: issueId } });
+        return this.read(client, workspaceId, projectId, user.userId);
+      });
+    }
     if (this.work) {
       await this.work.command(actor, workspaceId, projectId, kind === "snag"
         ? { action: "create", id: issueId, type: "snag", title, description, severity: found.issue.severity, source: "inspection", ...(areaId ? { areaId } : {}) }
@@ -593,7 +712,7 @@ export class SiteService {
       const itemId = this.work ? issueId : kind === "snag"
         ? (await raiseSnag(client, workspaceId, { projectId, title, description, severity: found.issue.severity, source: "inspection", actorId: user.userId })).id
         : (await raiseBlocker(client, workspaceId, { projectId, title, description, assigneeMembershipId: found.buyer?.membershipId ?? null, blocks: blocks ? [blocks] : [], actorId: user.userId })).id;
-      await client.query(`UPDATE site_report_issues SET raised = $3, work_item_id = $4 WHERE workspace_id = $1 AND id = $2 AND raised IS NULL`, [workspaceId, issueId, kind, itemId]);
+      await client.query(`UPDATE site_report_issues SET raised = $3, work_item_id = $4, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND raised IS NULL`, [workspaceId, issueId, kind, itemId]);
       if (kind === "material") await this.tell(client, workspaceId, projectId, "site.material_requested",
         [...new Set([...(await this.leads(client, workspaceId, projectId)), ...(found.buyer ? [found.buyer.userId] : [])])], user.userId, found.issue.description, `material:${issueId}`);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "site.raise_issue", entityType: "project", entityId: projectId, after: { projectId, issueId, kind, workItemId: itemId } });
@@ -758,6 +877,8 @@ export class SiteService {
       crew: reports.find((report) => report.reportDate < today && report.workforce.length)?.workforce ?? [],
       // Worked days since site work started without a submitted report (the last two weeks), for the timeline's late markers.
       missing: await this.missingDays(client, workspaceId, projectId, today, dates.started, dates.finished, dueTime),
+      // The day cards of the last four weeks (earlier ones through `days`), with the missing working days.
+      days: await readDayFeed(client, workspaceId, projectId, { approvers: await this.approvers(client, workspaceId, projectId) }),
       // Nothing new is reported while the project is on hold; reports already submitted can still be decided.
       me: userId, canReport: who.onTeam && who.project.status === "active", canApprove: who.manager, canManage: who.manager && who.project.status === "active",
       // PLM-065: what the client still owes before installation is signed off (finishing site work), and who may sign it off anyway.
@@ -829,7 +950,7 @@ export class SiteService {
               coalesce(report.submitted_at > ((report.report_date + settings.due) AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC')),
                        report.status = 'draft' AND now() > ((report.report_date + settings.due) AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))) AS late,
               report.client_summary AS "clientSummary", report.summary_source AS "summarySource", report.hero_photo_id AS "heroPhotoId", report.delivery, report.sent_at AS "sentAt",
-              sender.display_name AS "sentByName", report.sent_automatically AS "sentAutomatically"
+              sender.display_name AS "sentByName", report.sent_automatically AS "sentAutomatically", (report.client_hidden_at IS NOT NULL) AS "clientHidden"
          FROM site_reports report
          JOIN workspaces workspace ON workspace.id = report.workspace_id
          CROSS JOIN LATERAL (SELECT coalesce((SELECT report_due_time FROM workspace_project_settings WHERE workspace_id = report.workspace_id), time '18:00') AS due) settings
@@ -863,8 +984,12 @@ export class SiteService {
       `SELECT report_id AS "reportId", id, direction, description, quantity::text AS quantity, unit, purchase_order_id AS "purchaseOrderId", stock_transfer_id AS "stockTransferId"
          FROM site_report_materials WHERE workspace_id = $1 AND report_id = ANY($2::uuid[]) ORDER BY position`, [workspaceId, ids])).rows;
     const issues = (await client.query<{ reportId: string } & Report["issues"][number]>(
-      `SELECT issue.report_id AS "reportId", issue.id, issue.severity, issue.description, issue.internal, issue.raised, issue.work_item_id AS "workItemId", item.number AS "workItemNumber"
+      `SELECT issue.report_id AS "reportId", issue.id, issue.severity, issue.description, issue.internal, issue.raised, issue.work_item_id AS "workItemId", item.number AS "workItemNumber",
+              issue.change_request_id AS "changeRequestId", issue.status, issue.owner_membership_id AS "ownerId", owner_user.display_name AS "ownerName", issue.due_on::text AS "dueOn",
+              issue.version
          FROM site_report_issues issue LEFT JOIN work_items item ON item.workspace_id = issue.workspace_id AND item.id = issue.work_item_id
+         LEFT JOIN workspace_memberships owner ON owner.workspace_id = issue.workspace_id AND owner.id = issue.owner_membership_id
+         LEFT JOIN users owner_user ON owner_user.id = owner.user_id
         WHERE issue.workspace_id = $1 AND issue.report_id = ANY($2::uuid[]) ORDER BY issue.position`, [workspaceId, ids])).rows;
     const reactions = (await client.query<{ reportId: string; reaction: "like" | "love"; count: number; names: string[] }>(
       `SELECT reaction.report_id AS "reportId", reaction.reaction, count(*)::int AS count,
@@ -997,14 +1122,18 @@ function optionalDate(value: unknown, label: string) {
   return value;
 }
 
-/** A day's issues: each with its own id (kept across saves), a severity, what it is and whether the client may read it. */
+/**
+ * A day's issues: each with its own id (kept across saves), a severity, what it is, whether the client may read it,
+ * and (optionally) who owns it and by when (a member of the workspace).
+ */
 function parseIssues(value: unknown) {
   const rows = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
   if (rows.length > 20) throw new BadRequestException("Up to 20 issues in a day's report.");
   const issues = rows.map((row, index) => {
     const description = text(row?.description, 1000);
     if (!description) throw new BadRequestException(`Say what the issue is on row ${index + 1}.`);
-    return { id: uuid(row?.id, "Issue"), severity: oneOf(row?.severity ?? "minor", SEVERITIES, "Severity"), description, internal: row?.internal !== false };
+    return { id: uuid(row?.id, "Issue"), severity: oneOf(row?.severity ?? "minor", SEVERITIES, "Severity"), description, internal: row?.internal !== false,
+      ownerId: row?.ownerId ? uuid(row.ownerId, "Owner") : null, dueOn: optionalDate(row?.dueOn, "Due date") };
   });
   if (new Set(issues.map((issue) => issue.id)).size !== issues.length) throw new BadRequestException("Each issue once per report.");
   return issues;
