@@ -36,6 +36,9 @@ export const TARGET_KPIS: Record<string, TargetDefinition> = {
   cash_in: { unit: "money", direction: "higher", additive: true, perMember: false },
 };
 
+/** Targets no dashboard shows any more (the calm layouts): kept for what was saved, not offered in Settings. */
+export const UNSHOWN_TARGETS = new Set(["sales_won_count", "net_revenue", "first_response_hours"]);
+
 export type TargetRow = { id: string; kpi: string; month: string; membershipId: string | null; target: string; version: number };
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -123,7 +126,8 @@ export async function readTargets(db: Db, workspaceId: string, year: number) {
     `SELECT id, kpi_code AS kpi, to_char(month, 'YYYY-MM') AS month, membership_id AS "membershipId", target::text AS target, version
        FROM management_report_targets WHERE workspace_id = $1 AND month >= make_date($2, 1, 1) AND month < make_date($2 + 1, 1, 1)
       ORDER BY kpi_code, month, membership_id NULLS FIRST`, [workspaceId, year])).rows;
-  return { year, kpis: Object.entries(TARGET_KPIS).map(([code, definition]) => ({ code, ...definition })), targets: rows.map((row) => ({ ...row, target: trimAmount(row.target) })) };
+  return { year, kpis: Object.entries(TARGET_KPIS).filter(([code]) => !UNSHOWN_TARGETS.has(code)).map(([code, definition]) => ({ code, ...definition })),
+    targets: rows.map((row) => ({ ...row, target: trimAmount(row.target) })) };
 }
 
 const trimAmount = (value: string) => (value.includes(".") ? value.replace(/\.?0+$/, "") : value);

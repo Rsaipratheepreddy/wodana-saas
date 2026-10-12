@@ -64,6 +64,7 @@ function policyNote(facts: Fact[]) {
 
 const responseRateKpi: KpiSpec = {
   code: "response_rate",
+  compare: "higher",
   facts: (ctx) => readFacts(ctx, SLA_SQL),
   build: (ctx, facts) => {
     const period = facts.filter(inPeriod);

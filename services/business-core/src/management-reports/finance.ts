@@ -486,4 +486,41 @@ const pettyCash: KpiSpec = {
   },
 };
 
-export const FINANCE: KpiSpec[] = [cashInOut, revenueMix, invoicesCollected, receivables, payables, projectMargins, requests, refunds, pettyCash];
+// ------------------------------------------------------------------ tiles and needs attention
+
+/** Cash in and Cash out as figures of their own: the period's side of the cash statement above (out as a positive amount). */
+const cashSide = (code: "cash_in" | "cash_out", series: "in" | "out", better: "higher" | "lower"): KpiSpec => ({
+  code,
+  compare: better,
+  facts: async (ctx) => (await readFacts(ctx, CASH_SQL)).filter((fact) => inPeriod(fact) && fact.dims.series === series),
+  build: async (ctx, facts) => {
+    const total = sum(facts.map((fact) => fact.amount));
+    const amount = (series === "out" ? total.neg() : total).toFixed(ctx.places);
+    return {
+      code, unit: "money", value: amount, count: facts.length, amount, targetable: series === "in",
+      ...(series === "in" ? targetFor(ctx.targets, "cash_in", ctx.filters, amount) : {}),
+      notes: { ...moneyNotes(facts, true), ...((await ledgerOn(ctx)) ? { basis: "records" as const } : {}) },
+    };
+  },
+});
+
+/**
+ * Needs attention, live, biggest first: client payments overdue (what clients owe past the due date, tax included),
+ * supplier bills overdue, and Finance requests waiting more than a week. Each opens its record.
+ */
+export async function financeAttention(ctx: ReportContext): Promise<Fact[]> {
+  const owed = (await receivables.facts(ctx)).filter((fact) => fact.dims.overdue === "1").map((fact) => ({ ...fact, detail: "client_overdue", dims: { ...fact.dims, reason: "client_overdue" } }));
+  const bills = (await payables.facts(ctx)).filter((fact) => fact.dims.due === "overdue").map((fact) => ({ ...fact, detail: "bill_overdue", dims: { ...fact.dims, reason: "bill_overdue" } }));
+  const waiting = (await requests.facts(ctx)).filter((fact) => fact.dims.wait === "days_8_plus").map((fact) => ({ ...fact, detail: "request_waiting", dims: { ...fact.dims, reason: "request_waiting" } }));
+  return [...owed, ...bills, ...waiting].sort((a, b) => Dec.of(b.amount ?? "0").cmp(a.amount ?? "0") || Number(b.measure ?? "0") - Number(a.measure ?? "0"));
+}
+
+const attention: KpiSpec = {
+  code: "finance_attention",
+  facts: financeAttention,
+  build: (ctx, facts) => ({ code: "finance_attention", unit: "count", value: String(facts.length), count: facts.length, amount: sum(facts.map((fact) => fact.amount)).toFixed(ctx.places),
+    targetable: false, chart: { type: "list", bucket: "period=1" } }),
+};
+
+export const FINANCE: KpiSpec[] = [cashSide("cash_in", "in", "higher"), cashSide("cash_out", "out", "lower"), revenueMix, refunds, cashInOut, receivables, attention,
+  invoicesCollected, payables, projectMargins, requests, pettyCash];

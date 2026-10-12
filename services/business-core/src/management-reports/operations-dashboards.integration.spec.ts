@@ -155,14 +155,17 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
       await client.query(`INSERT INTO stock_reservations(id,workspace_id,source,source_key,opportunity_id,item_id,quantity,status,deducted,returned,reason,reserved_at)
         VALUES($1,$2,'quote_line','x',$3,$4,2,'reserved',0,0,'','2026-09-10T14:00:00Z')`, [randomUUID(), ids.ws, ids.O3, ids.S1]);
       await client.query(`INSERT INTO stock_reorder_points(id,workspace_id,item_id,reorder_at,updated_by) VALUES($1,$2,$3,12,$5),($4,$2,$6,5,$5)`, [randomUUID(), ids.ws, ids.S1, randomUUID(), ids.owner, ids.S2]);
-      // Movements: S1 went out on 1 Sep; S2 came in on 10 Jan and never went out; S3 last sold on 1 Aug 2025.
-      const movement = (item: string, kind: string, quantity: string, on: string) => client.query(
-        `INSERT INTO stock_movements(id,workspace_id,batch_id,item_id,location_id,kind,quantity,reason,moved_on,actor_id,receipt_line_id,for_project_id,reservation_id)
-         VALUES($1,$2,$3,$4,$5,$6,$7,'',$8,$9,$10,$11,$12)`,
-        [randomUUID(), ids.ws, randomUUID(), item, ids.warehouse, kind, quantity, on, ids.owner, kind === "receive" ? randomUUID() : null, kind === "issue" ? ids.P1 : null,
+      // Movements, all at 100 each (the balances above are what they leave): S1 came in on 1 Aug, 5 went out to P1 on 1 Sep and 5 were
+      // allocated to P1 on 2 Sep; S2 came in on 10 Jan and never went out; S3 last sold on 1 Aug 2025.
+      const movement = (item: string, kind: string, quantity: string, on: string, owner: string | null = null) => client.query(
+        `INSERT INTO stock_movements(id,workspace_id,batch_id,item_id,location_id,project_id,kind,quantity,reason,moved_on,actor_id,receipt_line_id,for_project_id,reservation_id,unit_cost,currency)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'',$9,$10,$11,$12,$13,100,'USD')`,
+        [randomUUID(), ids.ws, randomUUID(), item, ids.warehouse, owner, kind, quantity, on, ids.owner, kind === "receive" ? randomUUID() : null, kind === "issue" ? ids.P1 : null,
           kind === "sale" ? randomUUID() : null]);
       await movement(ids.S1, "receive", "20", "2026-08-01");
       await movement(ids.S1, "issue", "-5", "2026-09-01");
+      await movement(ids.S1, "allocate", "-5", "2026-09-02");
+      await movement(ids.S1, "allocate", "5", "2026-09-02", ids.P1);
       await movement(ids.S2, "receive", "20", "2026-01-10");
       await movement(ids.S3, "receive", "6", "2025-06-01");
       await movement(ids.S3, "sale", "-2", "2025-08-01");
@@ -282,24 +285,40 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
   it("reads Production and delivery from the factory, the projects and logistics", async () => {
     await scenario(async (client, ids) => {
       await saveTargets(client, ids.ws, ids.owner, { commandId: randomUUID(), changes: [{ kpi: "on_time_rate", month: "2026-09", membershipId: null, target: "80", version: null }] });
-      const { kpis } = await readDashboard(client, ids.ws, "production-delivery", PERIOD, NOW);
-      // Open: WO1 scheduled, WO2 in production, WO8 all made (quality check), WO3/WO4/WO5 ready; WO6 arrived on site in the period; WO7 cancelled.
-      const status = kpi(kpis, "work_orders_status");
-      expect(status).toMatchObject({ value: "6", extra: { delivered: 1 } });
-      expect(bars(status)).toEqual({ scheduled: 1, in_production: 1, quality_check: 1, ready: 3, delivered: 1 });
+      // The page: four figures against August 1–20, two charts, one list.
+      const page = await readDashboard(client, ids.ws, "production-delivery", PERIOD, NOW);
+      expect(page.layout).toEqual({ tiles: ["work_orders_made", "on_time_rate", "work_orders_delivered", "installations_done"], charts: ["work_orders_status", "factory_load"],
+        attention: "production_attention" });
+      expect(page.kpis.map((item) => item.code).sort()).toEqual(["factory_load", "installations_done", "on_time_rate", "production_attention", "work_orders_delivered", "work_orders_made", "work_orders_status"]);
       // Made ready in the period: WO3 on time, WO4 4 days late, WO6 without a planned end. August (1–20): WO5 on time.
-      const onTime = kpi(kpis, "on_time_rate");
+      expect(kpi(page.kpis, "work_orders_made")).toMatchObject({ value: "3", previous: { from: "2026-08-01", to: "2026-08-20", value: "1", change: "200.0", better: "higher" } });
+      const onTime = kpi(page.kpis, "on_time_rate");
       expect(onTime).toMatchObject({ value: "50.0", count: 3, extra: { onTime: 1, late: 1, noDate: 1 } });
       expect(onTime.previous).toEqual({ from: "2026-08-01", to: "2026-08-20", value: "100.0", change: "-50.0", better: "higher" });
       expect(onTime.target).toMatchObject({ target: "80.0000", percent: "62.5", tone: "danger" });
-      expect(kpi(kpis, "late_work_orders")).toMatchObject({ value: "1" });
+      // WO6 arrived on P2's site on the 17th; nothing was installed yet.
+      expect(kpi(page.kpis, "work_orders_delivered")).toMatchObject({ value: "1", previous: expect.objectContaining({ value: "0", change: null }) });
+      expect(kpi(page.kpis, "installations_done")).toMatchObject({ value: "0" });
+      // Open work orders by step (delivered is its own figure): WO1 scheduled, WO2 in production, WO8 all made, WO3/WO4/WO5 ready.
+      const status = kpi(page.kpis, "work_orders_status");
+      expect(status).toMatchObject({ value: "6", extra: { delivered: 1 } });
+      expect(bars(status)).toEqual({ scheduled: 1, in_production: 1, quality_check: 1, ready: 3 });
       // WO2's 16 hours this week, WO1's 50 next week; Joinery's 8 h × 5 days × 8 weeks = 320 h; next week (50 h > 40 h) is over.
-      const load = kpi(kpis, "factory_load");
+      const load = kpi(page.kpis, "factory_load");
       expect(load).toMatchObject({ value: "66.0", count: 2, extra: { capacity: "320.0", percent: "20.6", overloaded: 1 } });
       expect((load.chart as Extract<Kpi["chart"], { type: "columns" }>).values).toEqual([["16.0", "50.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"]]);
+      // Needs attention, most days late first: P2's permit (10 days), WO2 (5), P2's handover (5), P1's installation (2), P1's permit (in 5 days);
+      // WO1 waiting on materials is the sixth.
+      expect(page.attention?.total).toBe(6);
+      expect(page.attention?.records.map((record) => [record.detail, record.measure])).toEqual([
+        ["permit_expired", "10"], ["late_work_order", "5"], ["late_handover", "5"], ["late_installation", "2"], ["permit_expiring", "-5"]]);
+      expect(page.attention?.records[1].href).toBe(`/workspace/factory/orders?order=${ids.WO2}`);
+
+      // Everything the dashboard knows is still read the same way (and opens its records).
+      const { kpis } = await readDashboard(client, ids.ws, "production-delivery", PERIOD, NOW, undefined, "all");
+      expect(kpi(kpis, "late_work_orders")).toMatchObject({ value: "1" });
       expect(kpi(kpis, "material_shortages")).toMatchObject({ value: "1" });
-      const deliveries = kpi(kpis, "deliveries_upcoming");
-      expect(deliveries).toMatchObject({ value: "3", extra: { thisWeek: 2, nextWeek: 1 } });
+      expect(kpi(kpis, "deliveries_upcoming")).toMatchObject({ value: "3", extra: { thisWeek: 2, nextWeek: 1 } });
       expect(bars(kpi(kpis, "installations_scheduled"))).toEqual({ late: 1, this_week: 0, next_week: 1, later: 0 });
       expect(bars(kpi(kpis, "permits_expiring"))).toEqual({ expired: 1, within_7: 1, within_30: 0 });
       const stages = kpi(kpis, "projects_by_stage");
@@ -308,7 +327,6 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
       expect((stages.chart as Extract<Kpi["chart"], { type: "columns" }>).values).toEqual([["1", "0"], ["1", "1"]]);
       expect(bars(kpi(kpis, "handovers_due"))).toEqual({ overdue: 1, within_7: 0, within_30: 1 });
 
-      // Drill-down: the late work order opens the factory's own record; the overdue handover opens the project's Handover.
       const late = await readRecords(client, ids.ws, "production-delivery", { ...PERIOD, kpi: "late_work_orders" }, NOW);
       expect(late.records.map((record) => [record.reference, record.measure, record.href])).toEqual([["WO-0002", "5", `/workspace/factory/orders?order=${ids.WO2}`]]);
       const short = await readRecords(client, ids.ws, "production-delivery", { ...PERIOD, kpi: "material_shortages" }, NOW);
@@ -317,10 +335,13 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
       expect(overdue.records.map((record) => record.href)).toEqual([`/workspace/projects/${ids.P2}/handover`]);
       const nextWeek = await readRecords(client, ids.ws, "production-delivery", { ...PERIOD, kpi: "factory_load", bucket: `week=2026-09-21;centre=${ids.W1}` }, NOW);
       expect(nextWeek.records.map((record) => [record.reference, record.measure, record.href])).toEqual([["WO-0001", "50.0", `/workspace/factory/orders?order=${ids.WO1}`]]);
+      const everything = await readRecords(client, ids.ws, "production-delivery", { ...PERIOD, kpi: "production_attention" }, NOW);
+      expect(everything.total).toBe(6);
 
       // Sara's records only: P2's work orders and the deal she delivers.
-      const sara = await readDashboard(client, ids.ws, "production-delivery", { ...PERIOD, accountManager: ids.mSara }, NOW);
-      expect(bars(kpi(sara.kpis, "work_orders_status"))).toEqual({ scheduled: 0, in_production: 0, quality_check: 1, ready: 2, delivered: 1 });
+      const sara = await readDashboard(client, ids.ws, "production-delivery", { ...PERIOD, accountManager: ids.mSara }, NOW, undefined, "all");
+      expect(bars(kpi(sara.kpis, "work_orders_status"))).toEqual({ scheduled: 0, in_production: 0, quality_check: 1, ready: 2 });
+      expect(kpi(sara.kpis, "work_orders_delivered").value).toBe("1");
       expect(kpi(sara.kpis, "deliveries_upcoming")).toMatchObject({ value: "2", extra: { thisWeek: 1, nextWeek: 1 } });
     });
   });
@@ -328,22 +349,33 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
   it("reads Finance from the money records, with the project P&L for margins", async () => {
     await scenario(async (client, ids) => {
       await saveTargets(client, ids.ws, ids.owner, { commandId: randomUUID(), changes: [{ kpi: "cash_in", month: "2026-09", membershipId: null, target: "45000", version: null }] });
-      const { kpis } = await readDashboard(client, ids.ws, "finance", PERIOD, NOW);
-      // In: 10,500 + 21,000 − 1,050 rejected (EUR left out); out: 5,000 paid (not the reversed one) + 300 petty cash reimbursed.
-      const cash = kpi(kpis, "cash_in_out");
-      expect(cash).toMatchObject({ value: "30450.00", extra: { out: "5300.00", net: "25150.00" }, notes: { otherCurrency: 1 } });
-      expect(cash.notes?.basis).toBeUndefined();
-      // August 1–20: 1,050 verified in; 45,000 × 20/30 = 30,000 target, reached.
-      expect(cash.previous).toMatchObject({ from: "2026-08-01", to: "2026-08-20", value: "1050.00", change: "2800.0" });
-      expect(cash.target).toMatchObject({ target: "30000.0000", tone: "success" });
+      const page = await readDashboard(client, ids.ws, "finance", PERIOD, NOW);
+      expect(page.layout).toEqual({ tiles: ["cash_in", "cash_out", "revenue_mix", "refunds"], charts: ["cash_in_out", "receivables_ageing"], attention: "finance_attention" });
+      // In: 10,500 + 21,000 − 1,050 rejected (EUR left out); August 1–20: 1,050 verified. 45,000 × 20/30 = 30,000 target, reached.
+      const cashIn = kpi(page.kpis, "cash_in");
+      expect(cashIn).toMatchObject({ value: "30450.00", notes: { otherCurrency: 1 }, previous: expect.objectContaining({ value: "1050.00", change: "2800.0" }) });
+      expect(cashIn.notes?.basis).toBeUndefined();
+      expect(cashIn.target).toMatchObject({ target: "30000.0000", tone: "success" });
+      // Out: 5,000 paid (not the reversed one) + 300 petty cash reimbursed; August: 1,000.
+      expect(kpi(page.kpis, "cash_out")).toMatchObject({ value: "5300.00", previous: expect.objectContaining({ value: "1000.00", change: "430.0", better: "lower" }) });
+      // Revenue before tax: design fee 10,000; production 20,000 less the 1,000 rejected. August: the 1,000 later rejected.
+      expect(kpi(page.kpis, "revenue_mix")).toMatchObject({ value: "29000.00", extra: { design_fees: "10000.00", production: "19000.00", variations: "0.00" },
+        previous: expect.objectContaining({ value: "1000.00" }) });
+      // Refunds done in the period: 1,050 on O1 (1,000 before tax) and 300 without a deal; one in August.
+      expect(kpi(page.kpis, "refunds")).toMatchObject({ value: "2", amount: "1300.00", previous: expect.objectContaining({ value: "1", change: "100.0", better: "lower" }) });
+      const cash = kpi(page.kpis, "cash_in_out");
       expect((cash.chart as Extract<Kpi["chart"], { type: "lines" }>).values.map((row) => row.slice(-2))).toEqual([["1050.00", "30450.00"], ["1000.00", "5300.00"], ["50.00", "25150.00"]]);
-      // Revenue before tax: design fee 10,000; production 20,000 less the 1,000 rejected.
-      expect(kpi(kpis, "revenue_mix")).toMatchObject({ value: "29000.00", extra: { design_fees: "10000.00", production: "19000.00", variations: "0.00" } });
+      // Owed: Deposit 11,000 overdue, Balance 5,000 not due.
+      expect(kpi(page.kpis, "receivables_ageing")).toMatchObject({ value: "16000.00", extra: { overdue: "11000.00", overdueCount: 1 } });
+      // Needs attention, biggest first: the overdue Deposit, B1's 2,000 overdue, the supplier payment request waiting 15 days.
+      expect(page.attention?.total).toBe(3);
+      expect(page.attention?.records.map((record) => [record.detail, record.amount, record.href])).toEqual([
+        ["client_overdue", "11000.000000", `/workspace/pre-projects/cases/${ids.C1}`], ["bill_overdue", "2000.000000", `/workspace/finance/bills?bill=${ids.B1}`],
+        ["request_waiting", "800.000000", expect.stringMatching(/^\/workspace\/finance\/requests\?request=/)]]);
+
+      const { kpis } = await readDashboard(client, ids.ws, "finance", PERIOD, NOW, undefined, "all");
       // Issued 31,500; collected 10,500 + 10,000; INV-2 is overdue since the 15th.
       expect(kpi(kpis, "invoices_collected")).toMatchObject({ value: "31500.00", count: 2, extra: { collected: "20500.00", rate: "65.1", overdue: 1 } });
-      // Owed: Deposit 11,000 overdue, Balance 5,000 not due.
-      const owed = kpi(kpis, "receivables_ageing");
-      expect(owed).toMatchObject({ value: "16000.00", extra: { overdue: "11000.00", overdueCount: 1 } });
       // Bills: B1's 2,000 overdue, B2's 4,000 due within a week; B3 is later and B4 a draft. The other tenant's payment never counts.
       const bills = kpi(kpis, "payables_due");
       expect(bills).toMatchObject({ value: "6000.00", count: 2, extra: { overdue: "2000.00", overdueCount: 1 } });
@@ -353,13 +385,10 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
       expect(bars(margins)).toMatchObject({ no_revenue: 2 });
       expect(kpi(kpis, "finance_requests_open")).toMatchObject({ value: "2", amount: "6050.00" });
       expect((kpi(kpis, "finance_requests_open").chart as Extract<Kpi["chart"], { type: "columns" }>).values).toEqual([["1", "0", "0"], ["0", "0", "0"], ["0", "0", "1"]]);
-      // Refunds done in the period: 1,050 on O1 (1,000 before tax) and 300 without a deal; one in August.
-      const refunds = kpi(kpis, "refunds");
-      expect(refunds).toMatchObject({ value: "2", amount: "1300.00", previous: expect.objectContaining({ value: "1", change: "100.0", better: "lower" }) });
       expect(kpi(kpis, "petty_cash")).toMatchObject({ value: "450.00", count: 2, extra: { waiting: 1, waitingValue: "200.00", toPay: 1, toPayValue: "150.00" } });
 
       // Drill-down opens each record where it lives.
-      const out = await readRecords(client, ids.ws, "finance", { ...PERIOD, kpi: "cash_in_out", bucket: "period=1;series=out" }, NOW);
+      const out = await readRecords(client, ids.ws, "finance", { ...PERIOD, kpi: "cash_out" }, NOW);
       expect(out.records.map((record) => [record.kind, record.amount, record.href]).sort()).toEqual([
         ["petty_cash", "-300.000000", expect.stringMatching(/^\/workspace\/finance\/petty-cash\?claim=/)], ["supplier_payment", "-5000.000000", `/workspace/finance/payments?payment=${ids.SP1}`]]);
       const overdueBills = await readRecords(client, ids.ws, "finance", { ...PERIOD, kpi: "payables_due", bucket: "period=1;due=overdue" }, NOW);
@@ -367,34 +396,54 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
 
       // Company records (supplier payments, bills, requests without a deal) drop out under a sales filter.
       const ali = await readDashboard(client, ids.ws, "finance", { ...PERIOD, accountManager: ids.mAli }, NOW);
-      expect(kpi(ali.kpis, "cash_in_out")).toMatchObject({ value: "30450.00", extra: { out: "300.00" } });
-      expect(kpi(ali.kpis, "payables_due").value).toBe("0.00");
-      expect(kpi(ali.kpis, "finance_requests_open").value).toBe("1");
+      expect(kpi(ali.kpis, "cash_in").value).toBe("30450.00");
+      expect(kpi(ali.kpis, "cash_out").value).toBe("300.00");
+      expect(ali.attention?.records.map((record) => record.detail)).toEqual(["client_overdue"]);
       // Who doesn't see margins doesn't get the margins figure, nor its records.
-      const noMargins = await readDashboard(client, ids.ws, "finance", PERIOD, NOW, (code) => code !== "commercial.costs.view");
+      const noMargins = await readDashboard(client, ids.ws, "finance", PERIOD, NOW, (code) => code !== "commercial.costs.view", "all");
       expect(noMargins.kpis.map((item) => item.code)).not.toContain("project_margins");
       await expect(readRecords(client, ids.ws, "finance", { ...PERIOD, kpi: "project_margins" }, NOW, (code) => code !== "commercial.costs.view")).rejects.toThrow("Unknown KPI");
     });
   });
 
-  it("reads Stock and marketing", async () => {
+  it("reads Stock, and the marketing figures on Sales and marketing", async () => {
     await scenario(async (client, ids) => {
-      const { kpis } = await readDashboard(client, ids.ws, "stock-marketing", PERIOD, NOW);
-      const value = kpi(kpis, "stock_value");
-      expect(value).toMatchObject({ value: "3900.00", count: 3 });
-      expect((value.chart as Extract<Kpi["chart"], { type: "bars" }>).items.map((item) => [item.key, item.label, item.value])).toEqual([
-        ["fabric", "Fabric", "2000.00"], ["hardware", "Hardware", "1500.00"], ["none", "", "400.00"]]);
-      // S1: 10 free less 2 held for O3 = 8, at or below 12 with nothing on order.
-      expect(kpi(kpis, "low_stock")).toMatchObject({ value: "1", extra: { short: 1 } });
+      const page = await readDashboard(client, ids.ws, "stock", PERIOD, NOW);
+      expect(page.layout).toEqual({ tiles: ["stock_value", "purchases", "stock_used"], charts: ["reserved_available", "slow_moving"], attention: "low_stock" });
+      // At 20 September: S1 10 free + 5 P1's, S2 20, S3 4, at 100 each; at 20 August S1 still had 20.
+      expect(kpi(page.kpis, "stock_value")).toMatchObject({ value: "3900.00", count: 3, previous: expect.objectContaining({ value: "4400.00", change: "-11.4", better: "neutral" }) });
+      expect(kpi(page.kpis, "purchases")).toMatchObject({ value: "3000.00", count: 2, previous: expect.objectContaining({ value: "500.00", change: "500.0", better: "neutral" }) });
+      // 5 of S1 issued to P1 on 1 September; nothing used in August.
+      expect(kpi(page.kpis, "stock_used")).toMatchObject({ value: "500.00", previous: expect.objectContaining({ value: "0.00", change: null }) });
+      // At S1's average cost (1,500 ÷ 15 = 100): reserved 5 owned by P1 + 2 held = 700; available 8 + S2 2,000 + S3 400.
+      expect(kpi(page.kpis, "reserved_available")).toMatchObject({ value: "700.00", extra: { available: "3200.00" } });
       // S2 never went out since 10 Jan (253 days); S3 last sold 1 Aug 2025 (415 days). S1 went out on 1 Sep.
-      const slow = kpi(kpis, "slow_moving");
+      const slow = kpi(page.kpis, "slow_moving");
       expect(slow).toMatchObject({ value: "2", amount: "2400.00" });
       expect(bars(slow)).toEqual({ days_90_180: 0, days_181_365: 1, over_365: 1 });
-      // At S1's average cost (1,500 ÷ 15 = 100): reserved 5 owned by P1 + 2 held = 700; available 8 + S2 2,000 + S3 400.
-      expect(kpi(kpis, "reserved_available")).toMatchObject({ value: "700.00", extra: { available: "3200.00" } });
-      const purchases = kpi(kpis, "purchases");
-      expect(purchases).toMatchObject({ value: "3000.00", count: 2, previous: expect.objectContaining({ value: "500.00", change: "500.0", better: "neutral" }) });
+      // S1: 10 free less 2 held for O3 = 8, at or below 12 with nothing on order.
+      expect(page.attention).toMatchObject({ kpi: "low_stock", total: 1, records: [expect.objectContaining({ title: "Hinge", measure: "8.0000", href: `/workspace/inventory/history?item=${ids.S1}` })] });
 
+      const linen = await readRecords(client, ids.ws, "stock", { ...PERIOD, kpi: "slow_moving", bucket: "period=1;idle=days_181_365" }, NOW);
+      expect(linen.records.map((record) => [record.title, record.measure, record.href])).toEqual([["Linen", "253", `/workspace/inventory/history?item=${ids.S2}`]]);
+      const orders = await readRecords(client, ids.ws, "stock", { ...PERIOD, kpi: "purchases" }, NOW);
+      expect(orders.records.map((record) => record.reference)).toEqual(["PO-2", "PO-1"]);
+      // The old address opens the dashboard it moved into.
+      expect((await readDashboard(client, ids.ws, "stock-marketing", PERIOD, NOW)).dashboard).toBe("stock");
+
+      // A sales filter keeps what its deals and projects own: P1's 500 of S1 and its order; free stock and stock orders drop out.
+      const ali = await readDashboard(client, ids.ws, "stock", { ...PERIOD, accountManager: ids.mAli }, NOW);
+      expect(kpi(ali.kpis, "stock_value").value).toBe("500.00");
+      expect(kpi(ali.kpis, "stock_used").value).toBe("500.00");
+      expect(kpi(ali.kpis, "purchases").value).toBe("1000.00");
+      expect(ali.attention?.total).toBe(0);
+      // A member who reads purchasing but not stock sees only purchases.
+      const buyer = await readDashboard(client, ids.ws, "stock", PERIOD, NOW, (code) => code === "purchasing.view");
+      expect(buyer.layout).toEqual({ tiles: ["purchases"], charts: [], attention: null });
+
+      const sales = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW);
+      expect(sales.layout).toEqual({ tiles: ["new_leads", "conversion_funnel", "response_rate", "lost"], charts: ["new_leads", "won_by_source"], attention: "follow_ups" });
+      const { kpis } = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW, undefined, "all");
       const bySource = kpi(kpis, "enquiries_by_source");
       expect(bySource).toMatchObject({ value: "3", previous: expect.objectContaining({ value: "1", change: "200.0" }) });
       expect((bySource.chart as Extract<Kpi["chart"], { type: "columns" }>).series.map((item) => item.id)).toEqual(["website/form", "instagram/dm", "website/whatsapp"]);
@@ -406,24 +455,11 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
       // O1's two proposals, won from a website enquiry (10,000 + 20,000 before tax), and O3, won without an enquiry before proposals existed (4,000 as entered).
       const won = kpi(kpis, "won_by_source");
       expect(won).toMatchObject({ value: "34000.00", count: 3 });
-      expect((won.chart as Extract<Kpi["chart"], { type: "bars" }>).items).toEqual([expect.objectContaining({ key: "website", label: "Website", value: "30000.00", extra: { leads: 2 } }), expect.objectContaining({ key: "none", value: "4000.00", extra: { leads: 0 } })]);
+      expect((won.chart as Extract<Kpi["chart"], { type: "bars" }>).items).toEqual([expect.objectContaining({ key: "website", label: "Website", value: "30000.00", extra: { leads: 2 } }),
+        expect.objectContaining({ key: "none", value: "4000.00", extra: { leads: 0 } })]);
       const response = kpi(kpis, "response_by_source");
       expect(response).toMatchObject({ value: "1.00", extra: { rate: "50.0" } });
       expect((response.chart as Extract<Kpi["chart"], { type: "bars" }>).items.map((item) => [item.key, item.value])).toEqual([["website", "0.50"], ["instagram", "1.50"]]);
-
-      const linen = await readRecords(client, ids.ws, "stock-marketing", { ...PERIOD, kpi: "slow_moving", bucket: "period=1;idle=days_181_365" }, NOW);
-      expect(linen.records.map((record) => [record.title, record.measure, record.href])).toEqual([["Linen", "253", `/workspace/inventory/history?item=${ids.S2}`]]);
-      const orders = await readRecords(client, ids.ws, "stock-marketing", { ...PERIOD, kpi: "purchases" }, NOW);
-      expect(orders.records.map((record) => record.reference)).toEqual(["PO-2", "PO-1"]);
-
-      // A sales filter keeps what its deals and projects own: P1's 500 of S1 and its order; free stock and stock orders drop out.
-      const ali = await readDashboard(client, ids.ws, "stock-marketing", { ...PERIOD, accountManager: ids.mAli }, NOW);
-      expect(kpi(ali.kpis, "stock_value").value).toBe("500.00");
-      expect(kpi(ali.kpis, "low_stock").value).toBe("0");
-      expect(kpi(ali.kpis, "purchases").value).toBe("1000.00");
-      // A member who reads enquiries but not stock sees only the marketing half.
-      const marketing = await readDashboard(client, ids.ws, "stock-marketing", PERIOD, NOW, (code) => code === "crm.leads.view");
-      expect(marketing.kpis.map((item) => item.code)).toEqual(["enquiries_by_source", "enquiries_by_type", "conversion_by_source", "won_by_source", "response_by_source"]);
     });
   });
 
@@ -431,13 +467,13 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
     await scenario(async (client, ids) => {
       const known = (await client.query<{ code: string }>("SELECT code FROM permissions WHERE code = ANY($1)", [REPORT_PERMISSIONS])).rows.map((row) => row.code);
       expect(known.sort()).toEqual([...REPORT_PERMISSIONS].sort());
-      expect(Object.keys(DASHBOARD_ACCESS).sort()).toEqual(["finance", "production-delivery", "stock-marketing"]);
+      expect(Object.keys(DASHBOARD_ACCESS).sort()).toEqual(["finance", "production-delivery", "stock"]);
       const july = { from: "2026-07-01", to: "2026-07-31" };
       const production = await readDashboard(client, ids.ws, "production-delivery", july, NOW);
       expect(kpi(production.kpis, "on_time_rate")).toMatchObject({ value: null, previous: expect.objectContaining({ value: null, change: null }) });
-      const marketing = await readDashboard(client, ids.ws, "stock-marketing", july, NOW);
-      expect(kpi(marketing.kpis, "conversion_by_source").value).toBeNull();
-      expect(kpi(marketing.kpis, "response_by_source").value).toBeNull();
+      const sales = await readDashboard(client, ids.ws, "sales-pipeline", july, NOW, undefined, "all");
+      expect(kpi(sales.kpis, "conversion_by_source").value).toBeNull();
+      expect(kpi(sales.kpis, "response_by_source").value).toBeNull();
     });
   });
 });

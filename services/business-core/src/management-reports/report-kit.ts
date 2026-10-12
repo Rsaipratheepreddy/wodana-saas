@@ -88,7 +88,12 @@ export type Kpi = {
 /** Which way a figure is good news, for its comparison with the period before. */
 export type Better = "higher" | "lower" | "neutral";
 
-export type Dashboard = { dashboard: string; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[] };
+export type Dashboard = {
+  dashboard: string; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[];
+  /** Which KPIs the page shows as figures and charts, and its "needs attention" list (its first rows). */
+  layout?: { tiles: string[]; charts: string[]; attention: string | null };
+  attention?: { kpi: string; total: number; records: RecordRow[] } | null;
+};
 
 /** (now − before) ÷ |before| × 100, one decimal; null when there's no figure before or it was zero. */
 export function change(now: string | null, before: string | null): string | null {

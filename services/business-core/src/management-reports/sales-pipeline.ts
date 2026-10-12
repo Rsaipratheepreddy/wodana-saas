@@ -34,6 +34,7 @@ export function groupSources(facts: Fact[], keep = 5) {
 
 const newLeads: KpiSpec = {
   code: "new_leads",
+  compare: "higher",
   facts: async (ctx) => { const facts = await readFacts(ctx, NEW_LEADS_SQL); groupSources(facts); return facts; },
   build: (ctx, facts) => {
     const period = facts.filter(inPeriod);
@@ -79,6 +80,7 @@ export const FUNNEL_STEPS = ["lead", "opportunity", "qualified", "proposal", "wo
 
 const conversion: KpiSpec = {
   code: "conversion_funnel",
+  compare: "higher",
   facts: (ctx) => readFacts(ctx, FUNNEL_SQL),
   build: (ctx, facts) => {
     const counts = FUNNEL_STEPS.map((step) => facts.filter((fact) => fact.dims[step] === "1").length);
@@ -166,6 +168,7 @@ SELECT ${FACT_COLUMNS} FROM (
 
 const lost: KpiSpec = {
   code: "lost",
+  compare: "lower",
   facts: (ctx) => readFacts(ctx, LOST_SQL),
   build: (ctx, facts) => {
     const groups = groupBy(facts, "reason", (fact) => fact.detail ?? "", ctx.places).sort((a, b) => b.count - a.count || b.amount.cmp(a.amount));

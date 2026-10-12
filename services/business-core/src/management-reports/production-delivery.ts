@@ -91,7 +91,8 @@ const workOrderStatus: KpiSpec = {
   build: async (ctx, facts) => {
     const steps = await productionSteps(ctx);
     const open = facts.filter((fact) => fact.dims.step !== DELIVERED);
-    const items = [...steps.map((step) => ({ key: step.kind, label: step.label })), { key: DELIVERED, label: "" }].map((step) => {
+    // Delivered is its own figure (Delivered to site); the chart shows the open work orders by step.
+    const items = steps.map((step) => ({ key: step.kind, label: step.label })).map((step) => {
       const count = facts.filter((fact) => fact.dims.step === step.key).length;
       return { ...step, value: String(count), count };
     });
@@ -484,4 +485,78 @@ const handovers: KpiSpec = {
   }),
 };
 
-export const PRODUCTION_DELIVERY: KpiSpec[] = [workOrderStatus, onTime, lateOrders, factoryLoad, shortages, deliveries, installations, permits, projectStages, handovers];
+// ------------------------------------------------------------------ the period's output (tiles)
+
+/** Made ready: work orders the factory made ready in the period (as On time counts them, with or without a planned end). */
+const made: KpiSpec = {
+  code: "work_orders_made",
+  compare: "higher",
+  facts: async (ctx) => (await readFacts(ctx, ON_TIME_SQL)).filter(inPeriod),
+  build: (_ctx, facts) => ({ code: "work_orders_made", unit: "count", value: String(facts.length), count: facts.length, targetable: false }),
+};
+
+/** Delivered to site: work orders whose dispatches all arrived on the project's site, counted on the day the last arrived. */
+const delivered: KpiSpec = {
+  code: "work_orders_delivered",
+  compare: "higher",
+  facts: async (ctx) => (await readFacts(ctx, STATUS_SQL)).filter((fact) => fact.dims.step === DELIVERED),
+  build: (_ctx, facts) => ({ code: "work_orders_delivered", unit: "count", value: String(facts.length), count: facts.length, targetable: false }),
+};
+
+/**
+ * Installations done: projects whose installation was signed off (site finished) in the period, on time against the
+ * installation day they were booked for (late after it; without one, counted as on time).
+ */
+const INSTALLED_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${PROJECTS}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT pj.project_id::text AS id, 'project' AS kind, pj.project_id::text AS parent_id, pj.reference, pj.name AS title, pj.client, pj.owner, pj.am::text AS owner_id,
+         ${local("pj.site_finished_on")} AS at, NULL::text AS amount,
+         CASE WHEN pj.site_finished_on > pj.installation_on THEN (pj.site_finished_on - pj.installation_on)::text END AS measure, NULL::text AS detail,
+         jsonb_build_object('period', '1', 'timing', CASE WHEN pj.site_finished_on > pj.installation_on THEN 'late' ELSE 'on_time' END) AS dims
+    FROM pj CROSS JOIN p
+   WHERE pj.site_finished_on IS NOT NULL AND ${inChosen("pj.site_finished_on")}
+) facts ORDER BY at DESC, reference`;
+
+const installed: KpiSpec = {
+  code: "installations_done",
+  compare: "higher",
+  facts: (ctx) => readFacts(ctx, INSTALLED_SQL),
+  build: (_ctx, facts) => ({
+    code: "installations_done", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+    extra: { late: facts.filter((fact) => fact.dims.timing === "late").length },
+  }),
+};
+
+// ------------------------------------------------------------------ needs attention
+
+/**
+ * Needs attention, live: what is late or about to block delivery, most days late first — work orders past their
+ * planned end, work orders waiting on materials, installations past their day, permits expired or expiring within a
+ * week, and handovers past their promised date. One line per thing; each opens its record.
+ */
+export async function productionAttention(ctx: ReportContext): Promise<Fact[]> {
+  const late = (await lateOrders.facts(ctx)).map((fact) => ({ ...fact, detail: "late_work_order", dims: { ...fact.dims, reason: "late_work_order" } }));
+  const waiting = (await shortages.facts(ctx)).map((fact) => ({ ...fact, measure: null, detail: "materials", dims: { ...fact.dims, reason: "materials" } }));
+  const installing = (await installations.facts(ctx)).filter((fact) => fact.dims.when === "late")
+    .map((fact) => ({ ...fact, measure: String(-Number(fact.measure ?? "0")), detail: "late_installation", dims: { ...fact.dims, reason: "late_installation" } }));
+  const permitted = (await permits.facts(ctx)).filter((fact) => fact.dims.expiry !== "within_30")
+    .map((fact) => ({ ...fact, measure: String(-Number(fact.measure ?? "0")), detail: fact.dims.expiry === "expired" ? "permit_expired" : "permit_expiring",
+      dims: { ...fact.dims, reason: fact.dims.expiry === "expired" ? "permit_expired" : "permit_expiring" } }));
+  const handing = (await handovers.facts(ctx)).filter((fact) => fact.dims.due === "overdue")
+    .map((fact) => ({ ...fact, kind: "project" as const, measure: String(-Number(fact.measure ?? "0")), detail: "late_handover", dims: { ...fact.dims, reason: "late_handover" } }));
+  return byUrgency([...late, ...waiting, ...installing, ...permitted, ...handing]);
+}
+
+/** Most days late first; things not late yet (expiring, waiting on materials) after them, soonest first. */
+export function byUrgency(facts: Fact[]) {
+  return facts.sort((a, b) => Number(b.measure ?? "-1e9") - Number(a.measure ?? "-1e9") || (a.at ?? "").localeCompare(b.at ?? ""));
+}
+
+const attention: KpiSpec = {
+  code: "production_attention",
+  facts: productionAttention,
+  build: (_ctx, facts) => ({ code: "production_attention", unit: "count", value: String(facts.length), count: facts.length, targetable: false, chart: { type: "list", bucket: "period=1" } }),
+};
+
+export const PRODUCTION_DELIVERY: KpiSpec[] = [made, onTime, delivered, installed, workOrderStatus, factoryLoad, attention, lateOrders, shortages, deliveries, installations, permits,
+  projectStages, handovers];

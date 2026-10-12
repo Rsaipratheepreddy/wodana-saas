@@ -71,6 +71,7 @@ SELECT ${FACT_COLUMNS} FROM (
 
 const packageMix: KpiSpec = {
   code: "package_mix",
+  compare: "higher",
   facts: (ctx) => readFacts(ctx, MIX_SQL),
   build: (ctx, facts) => ({
     code: "package_mix", unit: "count", value: String(facts.length), count: facts.length, amount: sum(facts.map((fact) => fact.amount)).toFixed(ctx.places), targetable: false,
@@ -196,6 +197,7 @@ SELECT ${FACT_COLUMNS} FROM (
 
 const proposal2Days: KpiSpec = {
   code: "design_to_proposal2_days",
+  compare: "lower",
   facts: (ctx) => readFacts(ctx, PROPOSAL2_SQL),
   build: (ctx, facts) => {
     const days = mean(facts.filter((fact) => fact.dims.issued === "1" && fact.measure !== null).map((fact) => fact.measure!), 1);
@@ -209,6 +211,7 @@ const proposal2Days: KpiSpec = {
 
 const proposal2Rate: KpiSpec = {
   code: "design_to_proposal2_rate",
+  compare: "higher",
   facts: (ctx) => readFacts(ctx, PROPOSAL2_SQL),
   build: (ctx, facts: Fact[]) => {
     const won = facts.filter((fact) => fact.dims.won === "1").length;
@@ -221,6 +224,14 @@ const proposal2Rate: KpiSpec = {
   },
 };
 
-export const DESIGN_PROJECTS: KpiSpec[] = [byStage, packageMix, overdue, revisions, workload("designer_workload", "designer"), workload("visualiser_workload", "visualiser"),
-  proposal2Days, proposal2Rate];
+/** Designs approved: design projects whose design the client approved in the period (the approval's signed date). */
+const approved: KpiSpec = {
+  code: "designs_approved",
+  compare: "higher",
+  facts: (ctx) => readFacts(ctx, PROPOSAL2_SQL),
+  build: (_ctx, facts) => ({ code: "designs_approved", unit: "count", value: String(facts.length), count: facts.length, targetable: false }),
+};
+
+export const DESIGN_PROJECTS: KpiSpec[] = [packageMix, approved, proposal2Days, proposal2Rate, byStage, workload("designer_workload", "designer"), overdue, revisions,
+  workload("visualiser_workload", "visualiser")];
 

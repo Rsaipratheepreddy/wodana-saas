@@ -3,7 +3,7 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { viewAsPermissionsFor } from "../auth/view-as/view-as.context";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { DASHBOARD_ACCESS, REPORT_PERMISSIONS, readDashboard, readFilterOptions, readRecords } from "./management-reports";
+import { DASHBOARD_ACCESS, REPORT_PERMISSIONS, dashboardName, readDashboard, readFilterOptions, readRecords } from "./management-reports";
 import { readTargets, saveTargets } from "./report-targets";
 
 /** Management dashboards are for the System Owner for now (owner/admin); managers get the permission later, per dashboard and team. */
@@ -23,7 +23,7 @@ export class ManagementReportsService {
     const granted = await this.access.grantedPermissions(client, workspaceId, userId, REPORT_PERMISSIONS);
     const viewing = viewAsPermissionsFor(workspaceId, userId);
     const can = (permission: string) => granted.has(permission) && (!viewing || viewing.has(permission));
-    const needs = DASHBOARD_ACCESS[dashboard];
+    const needs = DASHBOARD_ACCESS[dashboardName(dashboard)];
     if (needs && !needs.some(can)) throw new ForbiddenException("You don't have access to this dashboard.");
     return can;
   }

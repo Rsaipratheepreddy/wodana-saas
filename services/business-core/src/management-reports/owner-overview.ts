@@ -46,6 +46,7 @@ SELECT ${FACT_COLUMNS} FROM (
 
 const salesWon: KpiSpec = {
   code: "sales_won",
+  compare: "higher",
   facts: (ctx) => readFacts(ctx, WON_SQL),
   build: (ctx, facts) => {
     const period = facts.filter(inPeriod);
@@ -137,6 +138,7 @@ SELECT ${FACT_COLUMNS} FROM (
 
 const revenueCollected: KpiSpec = {
   code: "revenue_collected",
+  compare: "higher",
   facts: (ctx) => readFacts(ctx, COLLECTED_SQL),
   build: (ctx, facts) => {
     const collected = facts.filter((fact) => fact.dims.series === "collected");
@@ -381,6 +383,7 @@ export async function closedFacts(ctx: ReportContext): Promise<Fact[]> {
 
 const dealsClosed: KpiSpec = {
   code: "deals_closed",
+  compare: "higher",
   facts: closedFacts,
   build: (ctx, facts) => {
     const period = facts.filter(inPeriod);
@@ -436,6 +439,7 @@ export function weightedMargin(facts: Fact[]) {
 
 const profitMargin: KpiSpec = {
   code: "profit_margin",
+  compare: "higher",
   facts: (ctx) => readFacts(ctx, MARGIN_SQL),
   build: (ctx, facts) => {
     const period = facts.filter(inPeriod);

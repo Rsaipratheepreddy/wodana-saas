@@ -40,16 +40,21 @@ const byCategory = (ctx: ReportContext, facts: Fact[]) => groupBy(facts, "catego
 
 // ------------------------------------------------------------------ stock value
 
-/** Stock value, live: what is in stock now (free stock and stock projects own), at its average cost, by category. */
+/**
+ * Stock value at the end of the period: every stock movement up to that day at the cost it moved at (the stock
+ * ledger's moving average), free stock and stock projects own, by item. Read the same way for the period before, so the
+ * comparison is like for like.
+ */
 const VALUE_SQL = `WITH ${P}, ${OPPORTUNITIES},
 held AS (
-  SELECT balance.item_id, sum(balance.on_hand) AS on_hand, sum(balance.value) AS value
-    FROM stock_balances balance CROSS JOIN p
-    LEFT JOIN delivery_projects dp ON dp.workspace_id = balance.workspace_id AND dp.id = balance.project_id
+  SELECT movement.item_id, sum(movement.quantity) AS on_hand, sum(movement.quantity * COALESCE(movement.unit_cost, 0)) AS value
+    FROM stock_movements movement CROSS JOIN p
+    LEFT JOIN delivery_projects dp ON dp.workspace_id = movement.workspace_id AND dp.id = movement.project_id
     LEFT JOIN oc ON oc.case_id = dp.case_id
-   WHERE balance.workspace_id = p.ws AND balance.on_hand > 0
-     AND ((balance.project_id IS NULL AND ${COMPANY_STOCK}) OR (balance.project_id IS NOT NULL AND oc.opportunity_id IS NOT NULL AND ${OPPORTUNITY_ENTITY}))
-   GROUP BY balance.item_id
+   WHERE movement.workspace_id = p.ws AND movement.moved_on < (p.to_at AT TIME ZONE p.tz)::date
+     AND ((movement.project_id IS NULL AND ${COMPANY_STOCK}) OR (movement.project_id IS NOT NULL AND oc.opportunity_id IS NOT NULL AND ${OPPORTUNITY_ENTITY}))
+   GROUP BY movement.item_id
+  HAVING sum(movement.quantity) > 0
 )
 SELECT ${FACT_COLUMNS} FROM (
   SELECT item.id::text AS id, 'stock_item' AS kind, NULL::text AS parent_id, NULLIF(btrim(item.code), '') AS reference, item.name AS title, NULL::text AS client,
@@ -62,11 +67,47 @@ SELECT ${FACT_COLUMNS} FROM (
 const stockValue: KpiSpec = {
   code: "stock_value",
   requires: STOCK_READ,
+  compare: "neutral",
   facts: (ctx) => readFacts(ctx, VALUE_SQL),
   build: (ctx, facts) => {
     const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
-    return { code: "stock_value", unit: "money", value: amount, count: facts.length, amount, targetable: false,
-      chart: { type: "bars", dimension: "category", unit: "money", items: byCategory(ctx, facts) } };
+    return { code: "stock_value", unit: "money", value: amount, count: facts.length, amount, targetable: false };
+  },
+};
+
+/**
+ * Stock used: what left stock for the work in the period — issued to projects and work orders, or sold — at the cost
+ * it left at. Stock issued to a project (or from its own) follows the project through the filter bar; a sale belongs
+ * to the company.
+ */
+const USED_SQL = `WITH ${P}, ${OPPORTUNITIES},
+used AS (
+  SELECT movement.item_id, -sum(movement.quantity) AS quantity, -sum(movement.quantity * COALESCE(movement.unit_cost, 0)) AS value
+    FROM stock_movements movement CROSS JOIN p
+    LEFT JOIN delivery_projects dp ON dp.workspace_id = movement.workspace_id AND dp.id = COALESCE(movement.for_project_id, movement.project_id)
+    LEFT JOIN oc ON oc.case_id = dp.case_id
+   WHERE movement.workspace_id = p.ws AND movement.kind IN ('issue', 'sale')
+     AND (movement.moved_on::timestamp AT TIME ZONE p.tz) >= p.from_at AND (movement.moved_on::timestamp AT TIME ZONE p.tz) < p.to_at
+     AND ((dp.id IS NULL AND ${COMPANY_STOCK}) OR (dp.id IS NOT NULL AND oc.opportunity_id IS NOT NULL AND ${OPPORTUNITY_ENTITY}))
+   GROUP BY movement.item_id
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT item.id::text AS id, 'stock_item' AS kind, NULL::text AS parent_id, NULLIF(btrim(item.code), '') AS reference, item.name AS title, NULL::text AS client,
+         NULL::text AS owner, NULL::text AS owner_id, NULL::timestamptz AS at, round(used.value, 6)::text AS amount, round(used.quantity, 4)::text AS measure,
+         NULLIF(btrim(item.category), '') AS detail, jsonb_build_object('period', '1', 'category', ${CATEGORY("item.category")}, 'currency', 'base', 'tax', 'net') AS dims,
+         used.value AS sort
+    FROM used CROSS JOIN p JOIN stock_items item ON item.workspace_id = p.ws AND item.id = used.item_id
+   WHERE used.quantity > 0
+) facts ORDER BY sort DESC, title`;
+
+const stockUsed: KpiSpec = {
+  code: "stock_used",
+  requires: STOCK_READ,
+  compare: "neutral",
+  facts: (ctx) => readFacts(ctx, USED_SQL),
+  build: (ctx, facts) => {
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    return { code: "stock_used", unit: "money", value: amount, count: facts.length, amount, targetable: false };
   },
 };
 
@@ -85,7 +126,7 @@ const lowStock: KpiSpec = {
       id: `${point.itemId}:${point.id}`, kind: "stock_item", parentId: null, reference: point.itemCode || null, title: point.itemName, client: null, owner: point.vendorName ?? null,
       ownerId: null, at: point.lowSince ? new Date(point.lowSince).toISOString() : null, amount: null, measure: Dec.of(point.free).toFixed(4),
       detail: point.locationName ?? null, dims: { period: "1", level: point.short ? "short" : "low" },
-    } satisfies Fact));
+    } satisfies Fact)).sort((a, b) => (a.dims.level === b.dims.level ? 0 : a.dims.level === "short" ? -1 : 1) || Dec.of(a.measure).cmp(b.measure));
   },
   build: (_ctx, facts) => ({
     code: "low_stock", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
@@ -391,4 +432,5 @@ const responseBySource: KpiSpec = {
   },
 };
 
-export const STOCK_MARKETING: KpiSpec[] = [stockValue, lowStock, slowMoving, reserved, purchases, bySource, byType, conversion, wonBySource, responseBySource];
+export const STOCK: KpiSpec[] = [stockValue, purchases, stockUsed, reserved, slowMoving, lowStock];
+export const MARKETING: KpiSpec[] = [bySource, byType, conversion, wonBySource, responseBySource];

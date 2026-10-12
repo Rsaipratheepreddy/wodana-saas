@@ -224,7 +224,7 @@ integration("management dashboards with PostgreSQL", () => {
         { kpi: "sales_won_value", month: "2026-09", membershipId: null, target: "60000", version: null },
         { kpi: "sales_won_count", month: "2026-09", membershipId: null, target: "3", version: null },
       ] });
-      const { kpis, currency } = await readDashboard(client, ids.ws, "owner-overview", PERIOD, NOW);
+      const { kpis, currency } = await readDashboard(client, ids.ws, "owner-overview", PERIOD, NOW, undefined, "all");
       expect(currency).toBe("USD");
 
       // Won: O1's Design Fee (10,500 → 10,000 net) and Proposal 2 (21,000 → 20,000 net), and O4's Design Fee (8,400 → 8,000).
@@ -270,7 +270,7 @@ integration("management dashboards with PostgreSQL", () => {
 
   it("reads Sales and pipeline", async () => {
     await scenario(async (client, ids) => {
-      const { kpis } = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW);
+      const { kpis } = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW, undefined, "all");
       // L1, L2, L3, L5, L8 — not the duplicate, the spam, August's L6, nor L9 (31 August locally).
       expect(kpi(kpis, "new_leads")).toMatchObject({ value: "5", count: 5 });
       const funnel = kpi(kpis, "conversion_funnel");
@@ -300,7 +300,7 @@ integration("management dashboards with PostgreSQL", () => {
     await scenario(async (client, ids) => {
       await saveTargets(client, ids.ws, ids.owner, { commandId: randomUUID(), changes: [
         { kpi: "first_response_hours", month: "2026-09", membershipId: null, target: "1", version: null }] });
-      const { kpis } = await readDashboard(client, ids.ws, "lead-response", PERIOD, NOW);
+      const { kpis } = await readDashboard(client, ids.ws, "lead-response", PERIOD, NOW, undefined, "all");
       // Met: L1. Missed: L2 (late) and L3 (no response past due). L5 closed before needing one.
       expect(kpi(kpis, "response_rate")).toMatchObject({ value: "33.3", count: 3, extra: { met: 1, missed: 2, mode: "business" }, notes: { target: "60" } });
       const hours = kpi(kpis, "first_response_hours");
@@ -311,7 +311,7 @@ integration("management dashboards with PostgreSQL", () => {
       expect((kpi(kpis, "reassignments").chart as Extract<Kpi["chart"], { type: "bars" }>).items).toEqual([expect.objectContaining({ label: "Ali Manager", count: 1 })]);
       expect(kpi(kpis, "unassigned_leads").value).toBe("1");
       // The Account Manager filter follows who held the clock.
-      const ali = await readDashboard(client, ids.ws, "lead-response", { ...PERIOD, accountManager: ids.mAli }, NOW);
+      const ali = await readDashboard(client, ids.ws, "lead-response", { ...PERIOD, accountManager: ids.mAli }, NOW, undefined, "all");
       expect(kpi(ali.kpis, "response_rate")).toMatchObject({ value: "100.0", count: 1 });
       expect(kpi(ali.kpis, "reassignments").value).toBe("1");
     });
@@ -319,7 +319,7 @@ integration("management dashboards with PostgreSQL", () => {
 
   it("reads Design projects", async () => {
     await scenario(async (client, ids) => {
-      const { kpis } = await readDashboard(client, ids.ws, "design-projects", PERIOD, NOW);
+      const { kpis } = await readDashboard(client, ids.ws, "design-projects", PERIOD, NOW, undefined, "all");
       expect(Object.fromEntries((kpi(kpis, "design_stage").chart as Extract<Kpi["chart"], { type: "bars" }>).items.map((item) => [item.key, item.count])))
         .toEqual({ inspiration: 0, site_visit: 1, development: 0, materials: 0, renders: 0, approval: 0 });
       const mix = kpi(kpis, "package_mix");
@@ -338,23 +338,23 @@ integration("management dashboards with PostgreSQL", () => {
 
   it("applies the filter bar server-side and opens the records behind a bar", async () => {
     await scenario(async (client, ids) => {
-      const furniture = await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, enquiryType: "furniture_only" }, NOW);
+      const furniture = await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, enquiryType: "furniture_only" }, NOW, undefined, "all");
       expect(kpi(furniture.kpis, "new_leads").value).toBe("2");
       expect(kpi(furniture.kpis, "lost").value).toBe("1");
-      const company = await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, clientType: "company", region: "abu_dhabi" }, NOW);
+      const company = await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, clientType: "company", region: "abu_dhabi" }, NOW, undefined, "all");
       expect(kpi(company.kpis, "new_leads").value).toBe("1");
-      const sara = await readDashboard(client, ids.ws, "owner-overview", { ...PERIOD, accountManager: ids.mSara }, NOW);
+      const sara = await readDashboard(client, ids.ws, "owner-overview", { ...PERIOD, accountManager: ids.mSara }, NOW, undefined, "all");
       expect(kpi(sara.kpis, "sales_won")).toMatchObject({ value: "8000.00", count: 1 });
       // Sara's cancelled deal (O6); the refund without a deal drops out once a sales filter is on.
       expect(kpi(sara.kpis, "cancellations_refunds")).toMatchObject({ value: "1", amount: "4200.00", extra: { refundCount: 0 } });
       expect(kpi(sara.kpis, "net_revenue").value).toBe("0.00");
-      expect(kpi((await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, accountManager: ids.mAli }, NOW)).kpis, "not_interested").value).toBe("1");
-      const concept = await readDashboard(client, ids.ws, "design-projects", { ...PERIOD, package: ids.pkConcept }, NOW);
+      expect(kpi((await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, accountManager: ids.mAli }, NOW, undefined, "all")).kpis, "not_interested").value).toBe("1");
+      const concept = await readDashboard(client, ids.ws, "design-projects", { ...PERIOD, package: ids.pkConcept }, NOW, undefined, "all");
       expect(kpi(concept.kpis, "package_mix").value).toBe("1");
       // Targets aren't compared while a filter other than the period and Account Manager is on.
       await saveTargets(client, ids.ws, ids.owner, { commandId: randomUUID(), changes: [{ kpi: "new_leads", month: "2026-09", membershipId: null, target: "10", version: null }] });
-      expect(kpi((await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW)).kpis, "new_leads").target).toMatchObject({ target: "6.6667", tone: "danger" });
-      expect(kpi((await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, source: "website" }, NOW)).kpis, "new_leads")).toMatchObject({ target: null, targetHidden: true });
+      expect(kpi((await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW, undefined, "all")).kpis, "new_leads").target).toMatchObject({ target: "6.6667", tone: "danger" });
+      expect(kpi((await readDashboard(client, ids.ws, "sales-pipeline", { ...PERIOD, source: "website" }, NOW, undefined, "all")).kpis, "new_leads")).toMatchObject({ target: null, targetHidden: true });
 
       const design = await readRecords(client, ids.ws, "owner-overview", { ...PERIOD, kpi: "sales_won", bucket: "month=2026-09;series=design" }, NOW);
       expect(design.records.map((record) => [record.reference, record.amount, record.href])).toEqual([
@@ -371,8 +371,8 @@ integration("management dashboards with PostgreSQL", () => {
       const missed = await readRecords(client, ids.ws, "lead-response", { ...PERIOD, kpi: "response_rate", bucket: "period=1;outcome=missed" }, NOW);
       expect(missed.records.map((record) => record.reference).sort()).toEqual(["E-L2", "E-L3"]);
       await expect(readRecords(client, ids.ws, "owner-overview", { ...PERIOD, kpi: "nope" }, NOW)).rejects.toThrow("Unknown KPI");
-      await expect(readDashboard(client, ids.ws, "owner-overview", { from: "2026-09-10", to: "2026-09-01" }, NOW)).rejects.toThrow("The period starts after it ends");
-      await expect(readDashboard(client, ids.ws, "owner-overview", { ...PERIOD, accountManager: "x' OR 1=1" }, NOW)).rejects.toThrow("Invalid accountManager filter");
+      await expect(readDashboard(client, ids.ws, "owner-overview", { from: "2026-09-10", to: "2026-09-01" }, NOW, undefined, "all")).rejects.toThrow("The period starts after it ends");
+      await expect(readDashboard(client, ids.ws, "owner-overview", { ...PERIOD, accountManager: "x' OR 1=1" }, NOW, undefined, "all")).rejects.toThrow("Invalid accountManager filter");
 
       const options = await readFilterOptions(client, ids.ws);
       expect(options.enquiryTypes.map((item) => item.id)).toEqual(expect.arrayContaining(["full_id", "furniture_only"]));
@@ -382,12 +382,12 @@ integration("management dashboards with PostgreSQL", () => {
 
   it("shows 'not enough data' rather than a zero where nothing is recorded", async () => {
     await scenario(async (client, ids) => {
-      const { kpis } = await readDashboard(client, ids.ws, "owner-overview", { from: "2026-07-01", to: "2026-07-31" }, NOW);
+      const { kpis } = await readDashboard(client, ids.ws, "owner-overview", { from: "2026-07-01", to: "2026-07-31" }, NOW, undefined, "all");
       expect(kpi(kpis, "profit_margin").value).toBeNull();
-      const lead = await readDashboard(client, ids.ws, "lead-response", { from: "2026-07-01", to: "2026-07-31" }, NOW);
+      const lead = await readDashboard(client, ids.ws, "lead-response", { from: "2026-07-01", to: "2026-07-31" }, NOW, undefined, "all");
       expect(kpi(lead.kpis, "response_rate").value).toBeNull();
       expect(kpi(lead.kpis, "first_response_hours").value).toBeNull();
-      const design = await readDashboard(client, ids.ws, "design-projects", { from: "2026-07-01", to: "2026-07-31" }, NOW);
+      const design = await readDashboard(client, ids.ws, "design-projects", { from: "2026-07-01", to: "2026-07-31" }, NOW, undefined, "all");
       expect(kpi(design.kpis, "design_to_proposal2_days").value).toBeNull();
       expect(kpi(design.kpis, "design_to_proposal2_rate").value).toBeNull();
     });
@@ -410,7 +410,7 @@ integration("management dashboards with PostgreSQL", () => {
       expect(await saveTargets(client, ids.ws, ids.owner, { commandId: randomUUID(), changes: [{ kpi: "sales_won_value", month: "2026-09", membershipId: ids.mAli, target: "30000", version: 1 }] }))
         .toEqual({ applied: true, changed: 1 });
       // Ali's own target drives his row and his figure when filtered: 30,000 × 20/30 = 20,000 against 30,000 won.
-      const ali = await readDashboard(client, ids.ws, "owner-overview", { ...PERIOD, accountManager: ids.mAli }, NOW);
+      const ali = await readDashboard(client, ids.ws, "owner-overview", { ...PERIOD, accountManager: ids.mAli }, NOW, undefined, "all");
       expect(kpi(ali.kpis, "sales_won").target).toMatchObject({ target: "20000.0000", percent: "150.0", tone: "success" });
       const audits = await client.query("SELECT action FROM audit_events WHERE workspace_id=$1 AND entity_type='management_report_target' ORDER BY occurred_at", [ids.ws]);
       expect(audits.rows.map((row) => row.action)).toEqual(["reports.target.set", "reports.target.changed"]);

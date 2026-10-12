@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { matchBucket, monthKeys, parseBucket, weekKeys, type Fact } from "./report-kit";
-import { localDate, parseFilters } from "./report-scope";
+import { marginBand, portfolioMargin, salesFiltered } from "./finance";
+import { LOAD_WEEKS, byUrgency, foldSteps, groupCentres, loadWeeks, onTimeRate, spreadLoad } from "./production-delivery";
+import { change, matchBucket, monthKeys, parseBucket, weekKeys, type Fact } from "./report-kit";
+import { localDate, parseFilters, previousPeriod } from "./report-scope";
+import { sourceRates, topFive } from "./stock-marketing";
 import { TARGET_KPIS, achievement, parseTargetChanges, periodMonths, periodTarget, targetsComparable } from "./report-targets";
 import { groupSources } from "./sales-pipeline";
 import { weightedMargin } from "./owner-overview";
@@ -97,5 +100,84 @@ describe("KPI arithmetic", () => {
   it("rates responses over the clocks that have an outcome", () => {
     expect(responseRate([fact({ outcome: "met" }), fact({ outcome: "missed" }), fact({ outcome: "open" }), fact({ outcome: "met" })])).toBe("66.7");
     expect(responseRate([fact({ outcome: "open" })])).toBeNull();
+  });
+});
+
+describe("comparison with the period before", () => {
+  it("sets a month to date against the same days of the month before, other spans against the days just before", () => {
+    expect(previousPeriod("2026-10-01", "2026-10-12")).toEqual({ from: "2026-09-01", to: "2026-09-12" });
+    expect(previousPeriod("2026-09-01", "2026-09-30")).toEqual({ from: "2026-08-01", to: "2026-08-31" });
+    expect(previousPeriod("2026-03-01", "2026-03-31")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(previousPeriod("2026-03-01", "2026-03-30")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(previousPeriod("2026-07-01", "2026-08-15")).toEqual({ from: "2026-05-01", to: "2026-06-15" });
+    expect(previousPeriod("2025-11-01", "2026-10-12")).toEqual({ from: "2024-11-01", to: "2025-10-12" });
+    expect(previousPeriod("2026-09-10", "2026-09-19")).toEqual({ from: "2026-08-31", to: "2026-09-09" });
+  });
+
+  it("works out the change in exact decimals, with nothing to compare against a zero or a missing figure", () => {
+    expect(change("30450.00", "1050.00")).toBe("2800.0");
+    expect(change("50.0", "100.0")).toBe("-50.0");
+    expect(change("-5", "-10")).toBe("50.0");
+    expect(change("1", "0")).toBeNull();
+    expect(change(null, "1")).toBeNull();
+  });
+});
+
+describe("operations KPI arithmetic", () => {
+  it("rates on time over the work orders with a planned end", () => {
+    expect(onTimeRate([fact({ timing: "on_time" }), fact({ timing: "late" }), fact({ timing: "no_date" })])).toBe("50.0");
+    expect(onTimeRate([fact({ timing: "no_date" })])).toBeNull();
+  });
+
+  it("folds a production step the firm doesn't keep into the one before", () => {
+    const facts = foldSteps([fact({ step: "quality_check" }), fact({ step: "delivered" }), fact({ step: "ready" })], ["scheduled", "in_production", "ready"]);
+    expect(facts.map((item) => item.dims.step)).toEqual(["in_production", "delivered", "ready"]);
+  });
+
+  it("spreads a work order's hours over its working days and weeks, from this week on the workspace's week start", () => {
+    // 20 Sep 2026 is a Sunday: on a Monday week this week starts on the 14th.
+    const weeks = loadWeeks("2026-09-20", 1);
+    expect(weeks).toHaveLength(LOAD_WEEKS);
+    expect(weeks.slice(0, 2)).toEqual(["2026-09-14", "2026-09-21"]);
+    const weekday = (day: string) => ![0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay());
+    const order = { id: "o1", number: 1, title: "Cabinet", projectId: "p", projectReference: "PRJ-1", client: null, owner: null, am: null, workcenterId: "w", workcenterName: "Joinery",
+      hoursPerDay: "8", plannedStart: "2026-09-17", plannedEnd: "2026-09-22", plannedHours: "40" };
+    // Thu, Fri (this week) and Mon, Tue (next): 10 hours a day.
+    expect(spreadLoad([order], weeks, weekday, () => null).map((item) => [item.dims.week, item.measure])).toEqual([["2026-09-14", "20.0"], ["2026-09-21", "20.0"]]);
+    expect(spreadLoad([{ ...order, plannedHours: null }], weeks, weekday, () => "32").map((item) => item.measure)).toEqual(["16.0", "16.0"]);
+    const facts = spreadLoad(["a", "b", "c", "d", "e", "f"].map((id, index) => ({ ...order, id, workcenterId: id, plannedHours: String(10 + index) })), weeks, weekday, () => null);
+    expect(groupCentres(facts)).toEqual({ top: ["f", "e", "d", "c", "b"], hasOther: true });
+  });
+
+  it("puts the most days late first in a needs-attention list", () => {
+    const sorted = byUrgency([fact({}, { id: "a", measure: null }), fact({}, { id: "b", measure: "2" }), fact({}, { id: "c", measure: "10" }), fact({}, { id: "d", measure: "-5" })]);
+    expect(sorted.map((item) => item.id)).toEqual(["c", "b", "d", "a"]);
+  });
+
+  it("bands project margins and weights them by revenue", () => {
+    expect(marginBand("0", "0", "20")).toBe("no_revenue");
+    expect(marginBand("1000", "-1", "20")).toBe("loss");
+    expect(marginBand("1000", "150", "20.0")).toBe("below_target");
+    expect(marginBand("1000", "200", "20.0")).toBe("on_target");
+    expect(marginBand("1000", "100", null)).toBe("on_target");
+    expect(portfolioMargin([fact({ currency: "base", profit: "250" }, { amount: "1000" }), fact({ currency: "base", profit: "-100" }, { amount: "1000" }),
+      fact({ currency: "other", profit: "999" }, { amount: "1" }), fact({ currency: "base", profit: "0" }, { amount: "0" })])).toBe("7.5");
+    expect(portfolioMargin([])).toBeNull();
+  });
+
+  it("keeps company records out under a sales filter only", () => {
+    const base = parseFilters({}, "2026-09-20");
+    expect(salesFiltered(base)).toBe(false);
+    expect(salesFiltered({ ...base, entity: "00000000-0000-4000-8000-000000000001" })).toBe(false);
+    expect(salesFiltered({ ...base, source: "website" })).toBe(true);
+  });
+
+  it("rates each source's enquiries through the funnel and keeps the five biggest groups", () => {
+    expect(sourceRates([fact({ qualified: "1", proposal: "1", won: "1" }), fact({ qualified: "1", proposal: "0", won: "0" }), fact({ qualified: "0", proposal: "0", won: "0" })]))
+      .toEqual({ qualified: "66.7", proposal: "33.3", won: "33.3" });
+    expect(sourceRates([])).toEqual({ qualified: null, proposal: null, won: null });
+    const facts = ["a", "a", "b", "c", "d", "e", "f", "f"].map((type) => fact({ type }));
+    expect(topFive(facts, "type", "typeGroup")).toEqual({ top: ["a", "f", "b", "c", "d"], hasOther: true });
+    expect(facts.filter((item) => item.dims.typeGroup === "other").map((item) => item.dims.type)).toEqual(["e"]);
   });
 });
