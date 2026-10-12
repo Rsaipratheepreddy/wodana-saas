@@ -121,7 +121,7 @@ services:
     image: wodana-web:${RELEASE}
     network_mode: host
     env_file: [./web.env]
-    environment: {NODE_ENV: production, NODE_OPTIONS: --max-old-space-size=640, HOSTNAME: 127.0.0.1, PORT: "3000"}
+    environment: {NODE_ENV: production, NODE_OPTIONS: --max-old-space-size=640, HOSTNAME: 127.0.0.1, PORT: "3000", WODANA_RELEASE_ID: "${RELEASE}"}
     init: true
     restart: unless-stopped
     mem_limit: 896m
