@@ -6,7 +6,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { stageName } from "@/lib/client-portal/stage-names";
 import { siteApi, SiteRequestError } from "@/lib/site/client";
 import { clientViewPrint } from "@/lib/site/progress-print";
-import type { CardPhoto, ClientView, ProgressPrintData } from "@/lib/site/types";
+import type { CardPhoto, ClientView, ProgressPrintData, ProgressReport } from "@/lib/site/types";
 import ops from "../operations/print.module.css";
 import { useProjectFormat } from "../project-core/format";
 import styles from "./progress-print.module.css";
@@ -105,4 +105,80 @@ export function DailyReportPrint({ workspaceId, projectId, reportId }: { workspa
   if (error && !view) return <main className={ops.page}>{error.denied ? <NoAccessState /> : <ErrorState description={error.message} onRetry={() => void load()} />}</main>;
   if (!view) return <main className={ops.page}><Skeleton lines={10} shape="rows" /></main>;
   return <ProgressPrint kind="day" data={clientViewPrint(view)} photoUrl={(id) => api.photoUrl(id, false)} formatDay={(value) => format.day(value)} />;
+}
+
+/**
+ * The "Progress report" for a period on A4, in the firm's name: a cover (the project, the period, where it stands and
+ * how many days were reported), then one section per day — the team's words, what was finished, what moved forward,
+ * what's next and the day's photos. Only the client's card of each approved day is printed, so nothing internal can be.
+ */
+export function ProgressReportPrint({ report, photoUrl, formatDay }: { report: ProgressReport; photoUrl: (id: string) => string; formatDay: (day: string) => string }) {
+  const t = useT();
+  const period = t("{from} – {to}", { from: formatDay(report.from), to: formatDay(report.to) });
+  useDocumentTitle([t("Progress report"), report.project.reference || report.project.name, period]);
+  const phase = (photo: CardPhoto) => (photo.phase === "before" ? t("Before") : photo.phase === "after" ? t("After") : null);
+  const list = (title: string, items: string[]) => (items.length ? <section className={styles.part} aria-label={title}>
+    <h3 className={styles.partTitle}>{title}</h3>
+    <ul className={styles.items}>{items.map((item, at) => <li key={at} dir="auto">{item}</li>)}</ul>
+  </section> : null);
+  const { project } = report;
+  return <main className={ops.page}>
+    <div className={ops.actions}><Button variant="primary" onPress={() => window.print()}>{t("Download PDF")}</Button></div>
+    <article className={`${ops.document} ${styles.sheet}`} aria-label={t("Progress report")}>
+      <header className={styles.cover}>
+        <div className={styles.brand}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- the tenant's own logo */}
+          {report.brand.logoUrl ? <img className={styles.logo} alt={report.brand.name} src={report.brand.logoUrl} /> : <strong>{report.brand.name}</strong>}
+        </div>
+        <h1 className={ops.title}>{t("Progress report")}</h1>
+        <dl className={ops.facts}>
+          <div><dt>{t("Project")}</dt><dd dir="auto">{[project.reference, project.name].filter(Boolean).join(" · ")}</dd></div>
+          <div><dt>{t("Period")}</dt><dd>{period}</dd></div>
+          {project.stageNumber && project.stageCount ? <div><dt>{t("Stage")}</dt><dd dir="auto">{[t("Stage {number} of {total}", { number: project.stageNumber, total: project.stageCount }),
+            project.stage ? stageName(t, project.stage) : ""].filter(Boolean).join(" · ")}</dd></div> : null}
+          {project.progress !== null ? <div><dt>{t("Progress")}</dt><dd>{t("{percent}% complete", { percent: project.progress })}</dd></div> : null}
+          {project.handoverDate ? <div><dt>{t("Handover")}</dt><dd>{formatDay(project.handoverDate)}</dd></div> : null}
+          <div><dt>{t("Days reported")}</dt><dd>{report.days.length}</dd></div>
+        </dl>
+      </header>
+      {report.days.length ? report.days.map((day) => <section key={day.date} className={styles.day} aria-label={formatDay(day.date)}>
+        <h2 className={styles.dayTitle}><time dateTime={day.date}>{formatDay(day.date)}</time></h2>
+        {day.summary || day.noWork ? <p className={styles.summary} dir="auto">{day.summary || t("No work on site this day.")}</p> : null}
+        {list(t("Completed"), day.completed)}
+        {list(t("Moving forward"), day.advanced.map((item) => t("{name}: {percent}%", { name: item.title, percent: item.progress })))}
+        {list(t("Next up"), day.next)}
+        {list(t("Good to know"), day.notes)}
+        {day.photos.length ? <div className={styles.photos}>{day.photos.map((photo, at) => {
+          const caption = [photo.area, phase(photo)].filter(Boolean).join(" · ");
+          return <figure key={photo.id} className={styles.photo}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- private photos streamed through an authenticated route */}
+            <img src={photoUrl(photo.id)} alt={caption || t("Site photo {number}, {date}", { number: at + 1, date: formatDay(day.date) })} />
+            {caption ? <figcaption dir="auto">{caption}</figcaption> : null}
+          </figure>;
+        })}</div> : null}
+      </section>) : <p className={styles.summary}>{t("No approved days in this period.")}</p>}
+    </article>
+  </main>;
+}
+
+/** The team's printout of a period: the progress report, loaded for the project. */
+export function PeriodReportPrint({ workspaceId, projectId, from, to }: { workspaceId: string; projectId: string; from: string; to: string }) {
+  const t = useT();
+  const format = useProjectFormat();
+  const api = useMemo(() => siteApi(workspaceId, projectId), [workspaceId, projectId]);
+  const [report, setReport] = useState<ProgressReport | null>(null);
+  const [error, setError] = useState<{ message: string; denied: boolean } | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const loaded = await api.progressReport(from, to);
+      if (!Array.isArray(loaded?.days)) throw new Error(t("The progress report didn't load."));
+      setReport(loaded); setError(null);
+    } catch (cause) {
+      setError({ message: cause instanceof Error ? cause.message : t("The progress report didn't load."), denied: cause instanceof SiteRequestError && cause.status === 403 });
+    }
+  }, [api, from, to, t]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  if (error && !report) return <main className={ops.page}>{error.denied ? <NoAccessState /> : <ErrorState description={error.message} onRetry={() => void load()} />}</main>;
+  if (!report) return <main className={ops.page}><Skeleton lines={10} shape="rows" /></main>;
+  return <ProgressReportPrint report={report} photoUrl={(id) => api.photoUrl(id, false)} formatDay={(value) => format.day(value)} />;
 }

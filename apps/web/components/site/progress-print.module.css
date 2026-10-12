@@ -15,11 +15,18 @@
 
 @media (max-width: 480px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+/* The period's progress report: a cover, then one section per day. */
+.cover { display: grid; gap: var(--wd-space-4); padding-block-end: var(--wd-space-5); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.day { display: grid; gap: var(--wd-space-3); padding-block-start: var(--wd-space-4); }
+.dayTitle { margin: 0; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); }
+.photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); break-inside: avoid; }
+@media (max-width: 480px) { .photos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 @page { size: A4; margin: 14mm 12mm; }
 
 @media print {
   .sheet { max-inline-size: none; }
   .part, .room { break-inside: auto; }
-  .partTitle, .roomTitle { break-after: avoid; page-break-after: avoid; }
+  .partTitle, .roomTitle, .dayTitle { break-after: avoid; page-break-after: avoid; }
   .photo img { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }

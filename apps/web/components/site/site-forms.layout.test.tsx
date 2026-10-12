@@ -73,7 +73,7 @@ describe("Site form dialogs", () => {
       // A before/after photo pair in the client's progress card.
       "progress-card.module.css": /^\.strip li\[data-pair\]$/,
       // The printed report's photo rows.
-      "progress-print.module.css": /^\.row$/,
+      "progress-print.module.css": /^\.(row|photos)$/,
     };
     for (const sheet of readdirSync(__dirname).filter((name) => name.endsWith(".module.css"))) {
       const css = readFileSync(join(__dirname, sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");

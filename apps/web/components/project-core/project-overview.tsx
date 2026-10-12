@@ -11,6 +11,7 @@ import { projectPeople, projectStrip, projectTimeline, stageLateDays, type Proje
 import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
+import { SiteUpdates } from "@/components/site/site-updates";
 import { PRODUCTION_TONE, useProductionStepLabel } from "../factory/factory-labels";
 import { useWindowText } from "../factory/production-schedule";
 import { useProjectFormat } from "./format";
@@ -224,7 +225,9 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
         </>}
         activity={reports.length || activity.length ? <>
           {reports.length ? <SideSection title={t("Site updates")} action={<Link className={styles.sideLink} href={`/workspace/projects/${projectId}/site`}>{t("View all")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link>}>
-            <ActivityList label={t("Site updates")} items={reports.map((report) => ({ id: report.id, text: report.text || t("Site report"), meta: report.byName, at: format.short(report.date) }))} />
+            {/* The same day cards as the Site tab (compact); the summary lines until they load. */}
+            <SiteUpdates workspaceId={api.workspaceId} projectId={projectId} latest={LATEST}
+              fallback={<ActivityList label={t("Site updates")} items={reports.map((report) => ({ id: report.id, text: report.text || t("Site report"), meta: report.byName, at: format.short(report.date) }))} />} />
           </SideSection> : null}
           {activity.length ? <SideSection title={t("Recent activity")} action={activity.length > LATEST
             ? <Button size="compact" variant="quiet" aria-expanded={allActivity} onPress={() => setAllActivity((value) => !value)}>{allActivity ? t("Show less") : t("Show all")}</Button> : null}>

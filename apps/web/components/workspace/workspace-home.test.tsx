@@ -233,6 +233,8 @@ it("reads Home only from the person's workspace-scoped sources", async () => {
   expect(urls).toEqual([
     // Daily reports to review and sites without today's report (projects are on).
     `/api/site/attention?workspaceId=${base.workspaceId}`,
+    // Today's day card on each site I'm on.
+    `/api/site/today?workspaceId=${base.workspaceId}`,
     `/api/workspace/home-metrics?workspaceId=${base.workspaceId}`,
     `/api/workspace/home-summary?workspaceId=${base.workspaceId}`,
     // Today: the person's own My day.

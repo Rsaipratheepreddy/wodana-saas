@@ -14336,5 +14336,10 @@
   "No days match": "No days match",
   "Earlier days": "Earlier days",
   "Progress report": "Progress report",
-  "Open PDF": "Open PDF"
+  "Open PDF": "Open PDF",
+  "Days reported": "Days reported",
+  "No approved days in this period.": "No approved days in this period.",
+  "The progress report didn't load.": "The progress report didn't load.",
+  "Today on site": "Today on site",
+  "No report yet · due by {time}": "No report yet · due by {time}"
 }

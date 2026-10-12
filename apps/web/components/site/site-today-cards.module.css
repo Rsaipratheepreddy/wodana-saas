@@ -1,0 +1,10 @@
+/* Home → My day: today's card on each site I'm on. The cards carry the tone; the section is only a title and space. */
+.section { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
+.title { margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.list { display: grid; gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.site { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
+.head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
+.project { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; }
+.project:hover { text-decoration: underline; }
+.empty { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; padding: var(--wd-space-3) var(--wd-space-4); border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
