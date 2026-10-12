@@ -24,6 +24,7 @@ import { readSitesToday } from "./sites-today";
 import { formatCalendarDay, workspaceLocale } from "../common/calendar-day";
 import { raiseProjectChange } from "../change-requests/project-changes.store";
 import { readDayFeed } from "./day-cards";
+import { readProgressReport } from "./progress-report";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -150,6 +151,19 @@ export class SiteService {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       await this.who(client, workspaceId, projectId, user.userId);
       return readDayFeed(client, workspaceId, projectId, { from, to, latest, approvers: await this.approvers(client, workspaceId, projectId) });
+    });
+  }
+
+  /** The "Progress report" for a period: the client's card of each approved day, merged per day, for the PDF. */
+  async progressReport(actor: RequestActor, workspaceId: string, projectId: string, query: { from?: string; to?: string }) {
+    const to = optionalDate(query.to, "To");
+    const from = optionalDate(query.from, "From");
+    if (!from || !to) throw new BadRequestException("Choose the period.");
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      await this.who(client, workspaceId, projectId, user.userId);
+      const report = await readProgressReport(client, workspaceId, projectId, { from, to });
+      if (!report) throw new NotFoundException("Project not found.");
+      return report;
     });
   }
 

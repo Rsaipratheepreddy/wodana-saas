@@ -194,6 +194,14 @@ integration("daily progress as day cards (real database)", () => {
       expect(snag.workItemNumber).toBeGreaterThan(0);
       expect((await w.client.query("SELECT type FROM work_items WHERE workspace_id=$1 AND id=$2", [w.workspaceId, snag.workItemId])).rows[0].type).toBe("snag");
 
+      // The progress report (PDF) for the period: the client's card of the approved day, never the crew, internal issues or materials.
+      const printed = await manager.progressReport(actor, w.workspaceId, w.projectId, { from: day(w.today, -6), to: w.today });
+      expect(printed).toMatchObject({ project: { name: expect.any(String) }, from: day(w.today, -6), to: w.today });
+      expect(printed.days.map((entry) => entry.date)).toEqual([w.today]);
+      expect(printed.days[0].completed).toEqual(["Fit kitchen carcasses"]);
+      expect(JSON.stringify(printed)).not.toMatch(/Carpenters|Socket|Plywood|Column behind/);
+      await expect(manager.progressReport(actor, w.workspaceId, w.projectId, { to: w.today })).rejects.toThrow(/period/);
+
       const audit = (await w.client.query("SELECT action FROM audit_events WHERE workspace_id=$1 AND action LIKE 'site.%' ORDER BY occurred_at", [w.workspaceId])).rows.map((row) => row.action);
       expect(audit).toEqual(expect.arrayContaining(["site.update_issue", "site.set_client_visibility", "site.remove_photo", "site.raise_issue"]));
     });

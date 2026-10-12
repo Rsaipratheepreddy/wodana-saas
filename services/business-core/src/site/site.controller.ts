@@ -62,6 +62,13 @@ export class SiteController {
     return this.site.days(actor, workspaceId, projectId, { from, to, latest });
   }
 
+  /** The "Progress report" for a period (the PDF): the client's card of each approved day, nothing internal. */
+  @Get("progress-report")
+  progressReport(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Query("from") from?: string, @Query("to") to?: string) {
+    return this.site.progressReport(actor, workspaceId, projectId, { from, to });
+  }
+
   @Get()
   state(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.site.state(actor, workspaceId, projectId);
