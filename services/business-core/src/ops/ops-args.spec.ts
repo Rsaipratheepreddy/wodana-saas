@@ -92,6 +92,33 @@ describe("operator CLI arguments", () => {
     expect(() => parseArgs(argv as string[])).toThrow(message as string);
   });
 
+  it("parses --retire and --restore: the sandbox's slug only, a dry run unless --apply", () => {
+    expect(parseArgs(["sandbox", "--slug", "Iglo", "--retire"])).toEqual({ command: "sandbox", lifecycle: "retire", slug: "iglo", apply: false, json: false });
+    expect(parseArgs(["sandbox", "--retire", "--slug", "igolo", "--apply", "--json"])).toEqual({ command: "sandbox", lifecycle: "retire", slug: "igolo", apply: true, json: true });
+    expect(parseArgs(["sandbox", "--slug", "igolo", "--restore", "--dry-run"])).toEqual({ command: "sandbox", lifecycle: "restore", slug: "igolo", apply: false, json: false });
+    // Without --retire or --restore, the sandbox command is unchanged.
+    expect(parseArgs(sandbox)).not.toHaveProperty("lifecycle");
+    expect(USAGE).toContain("--retire|--restore");
+  });
+
+  it.each([
+    [["sandbox", "--slug", "iglo", "--retire", "--restore"], "Choose either --retire or --restore"],
+    [["sandbox", "--retire"], "--slug is required"],
+    [["sandbox", "--slug", "iglo test", "--retire"], "--slug is the sandbox's login name"],
+    [["sandbox", "--slug", "admin", "--restore"], "reserved"],
+    [["sandbox", "--slug", "iglo", "--retire", "--apply", "--dry-run"], "either --apply or --dry-run"],
+    [[...sandbox, "--retire"], "--name does not apply to --retire"],
+    [["sandbox", "--slug", "iglo-india", "--retire", "--organization-of", "iglo"], "--organization-of does not apply to --retire"],
+    [["sandbox", "--slug", "iglo", "--restore", "--email-pattern", "a+{role}@x.com"], "--email-pattern does not apply to --restore"],
+    [["sandbox", "--slug", "iglo", "--retire", "--password-env", "SANDBOX_PASSWORD"], "--password-env does not apply to --retire"],
+    [["sandbox", "--slug", "iglo", "--retire", "--scenarios"], "--scenarios does not apply to --retire"],
+    [["import", ...base, "--target", "stock", "--file", "a.csv", "--retire"], "--retire does not apply to --target stock"],
+    [["configure", ...base, "--profile", "p.json", "--restore"], "--restore does not apply to configure"],
+  ])("refuses --retire/--restore %j", (argv, message) => {
+    expect(() => parseArgs(argv as string[])).toThrow(UsageError);
+    expect(() => parseArgs(argv as string[])).toThrow(message as string);
+  });
+
   it("parses --email-pattern: each test member's sign-in address, with or without --organization-of", () => {
     expect(parseArgs([...sandbox, "--email-pattern", "wodanatechnology+{role}@gmail.com"])).toMatchObject({ emailPattern: "wodanatechnology+{role}@gmail.com", apply: false });
     expect(parseArgs([...sandbox, "--email-pattern", "  WodanaTechnology+{ROLE}@Gmail.com "])).toMatchObject({ emailPattern: "wodanatechnology+{role}@gmail.com" });

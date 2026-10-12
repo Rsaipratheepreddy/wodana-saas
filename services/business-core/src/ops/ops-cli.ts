@@ -6,7 +6,7 @@ import { parseArgs, USAGE, UsageError, type OpsArgs } from "./ops-args";
 import { runConfigure } from "./ops-configure";
 import { openContext, OpsError, Report } from "./ops-context";
 import { runImport } from "./ops-import";
-import { runSandbox } from "./ops-sandbox";
+import { runSandbox, runSandboxLifecycle } from "./ops-sandbox";
 import { ProfileError, validateProfile } from "./ops-profile";
 
 /**
@@ -28,9 +28,11 @@ export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs
     return await runWithCommandOrigin({ via: "operator_cli", dryRun: !args.apply }, async () => {
       if (args.command === "sandbox") {
         // No member to act as yet: the sandbox's own test owner acts once the workspace is made (ops-sandbox.ts).
-        report.note(`sandbox ${args.slug}: ${args.apply ? "APPLY" : "dry run"}`);
-        await runSandbox(app, args, report);
-        report.finish({ command: args.command, workspace: args.slug, mode: args.apply ? "apply" : "dry-run" });
+        const lifecycle = "lifecycle" in args ? args.lifecycle : null;
+        report.note(`sandbox ${args.slug}${lifecycle ? ` --${lifecycle}` : ""}: ${args.apply ? "APPLY" : "dry run"}`);
+        if ("lifecycle" in args) await runSandboxLifecycle(app, args, report);
+        else await runSandbox(app, args, report);
+        report.finish({ command: args.command, workspace: args.slug, ...(lifecycle ? { lifecycle } : {}), mode: args.apply ? "apply" : "dry-run" });
         return report.failed ? 1 : 0;
       }
       const profile = args.command === "configure" ? await readProfile(args.profile) : null;

@@ -45,6 +45,7 @@ const EXPORT_EXCLUDED_TABLES = new Set([
   "webhook_inbox", "workspace_domains", "workspace_invitation_delivery_commands",
 ]);
 const SAFE_IDENTIFIER = /^[a-z][a-z0-9_]*$/;
+const RETIRED_ACCOUNT = "This account is retired: nothing is billed or measured for it. Restore it before changing its billing.";
 
 @Injectable()
 export class TenantOperationsService {
@@ -329,7 +330,7 @@ export class TenantOperationsService {
         FROM customer_account_organizations WHERE workspace_id=$1`, [registry.workspaceId]);
       if (!linked.rowCount) throw new ConflictException("The organization is not linked to a customer account.");
       const accountId = linked.rows[0].accountId;
-      await client.query(`SELECT id FROM customer_accounts WHERE id=$1 FOR UPDATE`, [accountId]);
+      await this.billableAccount(client, accountId, true);
       const current = await client.query<{ version: number }>(`SELECT * FROM account_contract_versions
         WHERE account_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE`, [accountId]);
       const currentVersion = Number(current.rows[0]?.version ?? 0);
@@ -411,7 +412,7 @@ export class TenantOperationsService {
         JOIN effective_account_contracts contract ON contract.account_id=linked.account_id
         WHERE linked.workspace_id=$1`, [registry.workspaceId]);
       if (!contract.rowCount) throw new ConflictException("Configure the account contract before allocating an organization.");
-      await client.query(`SELECT id FROM customer_accounts WHERE id=$1 FOR UPDATE`, [contract.rows[0].accountId]);
+      await this.billableAccount(client, contract.rows[0].accountId, true);
       const current = await client.query<{ version: number }>(`SELECT * FROM organization_billing_allocation_versions
         WHERE workspace_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE`, [registry.workspaceId]);
       const currentVersion = Number(current.rows[0]?.version ?? 0);
@@ -492,6 +493,8 @@ export class TenantOperationsService {
           total_amount::text AS "totalAmount",balance_amount::text AS "balanceAmount",version
         FROM account_billing_documents WHERE account_id=$1 AND document_type=$2 AND provider=$3 AND external_reference=$4
         FOR UPDATE`, [accountId, input.documentType, input.provider, input.externalReference]);
+      // A retired account gets no new billing document; an event on one it already has (a refund, a void) is recorded.
+      if (!current.rowCount) await this.billableAccount(client, accountId);
       let planned: ReturnType<typeof validateBillingDocumentEvent>;
       try {
         planned = validateBillingDocumentEvent({ ...input, previousStatus: current.rows[0]?.status ?? null });
@@ -550,7 +553,7 @@ export class TenantOperationsService {
         FROM customer_account_organizations WHERE workspace_id=$1`, [registry.workspaceId]);
       if (!linked.rowCount) throw new ConflictException("The organization is not linked to a customer account.");
       const accountId = linked.rows[0].accountId;
-      await client.query(`SELECT id FROM customer_accounts WHERE id=$1 FOR UPDATE`, [accountId]);
+      await this.billableAccount(client, accountId, true);
       const current = await client.query<{ version: number }>(`SELECT * FROM account_collection_state_versions
         WHERE account_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE`, [accountId]);
       const currentVersion = Number(current.rows[0]?.version ?? 0);
@@ -597,6 +600,7 @@ export class TenantOperationsService {
         JOIN workspaces workspace ON workspace.id=linked.workspace_id
         WHERE source.workspace_id=$1 ORDER BY linked.is_default DESC,workspace.name`, [registry.workspaceId]);
       if (!result.rowCount) throw new ConflictException("The organization is not linked to a customer account.");
+      await this.billableAccount(client, result.rows[0].accountId);
       return { accountId: result.rows[0].accountId, organizations: result.rows };
     });
     const organizationUsage = await Promise.all(account.organizations.map(async (organization) => ({
@@ -1148,6 +1152,16 @@ export class TenantOperationsService {
 
   private registry(externalTenantId: string): Promise<Registry> {
     return resolveTenantRegistry(this.database, externalTenantId);
+  }
+
+  /**
+   * A retired account (status archived: a retired sandbox, src/ops/ops-sandbox-retire.ts) is out of Wodana's billing:
+   * no contract, allocation, collection state, new billing document or usage snapshot is recorded for it until it is
+   * restored. With `lock`, the account row is locked as the versioned billing commands lock it.
+   */
+  private async billableAccount(client: PoolClient, accountId: string, lock = false) {
+    const account = await client.query<{ status: string }>(`SELECT status FROM customer_accounts WHERE id=$1${lock ? " FOR UPDATE" : ""}`, [accountId]);
+    if (account.rows[0]?.status === "archived") throw new ConflictException(RETIRED_ACCOUNT);
   }
 
   private async registryByWorkspace(workspaceId: string): Promise<Registry> {

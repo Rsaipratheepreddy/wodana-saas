@@ -99,7 +99,7 @@ export class LocalAuthService {
                    ELSE logo_url END AS "logoUrl",
               primary_color AS "primaryColor", secondary_color AS "secondaryColor",
               heading_font AS "headingFont", body_font AS "bodyFont"
-       FROM tenant_login_branding WHERE login_slug = $1`,
+       FROM tenant_login_branding WHERE login_slug = $1 AND tenant_login_open(workspace_id)`,
       [loginSlug.toLowerCase()],
     );
     if (!result.rowCount) throw new NotFoundException("Tenant login was not found");
@@ -110,8 +110,8 @@ export class LocalAuthService {
     const value = identifier.trim().toLowerCase();
     if (!value || value.length > 160) throw new NotFoundException("Organization was not found");
     const slug = value.replace(/\s+/g, "-");
-    // Public branding is readable without an actor; workspace rows are RLS-protected.
-    // The login flow independently enforces active workspace membership.
+    // Public branding is readable without an actor; workspace rows are RLS-protected. An archived organization's
+    // login address is closed (tenant_login_open). The login flow independently enforces active workspace membership.
     const fields = `SELECT branding.display_name AS "displayName", branding.login_slug AS "loginSlug",
               CASE WHEN branding.logo_asset_id IS NOT NULL
                    THEN '/api/auth/tenant-logo/' || branding.login_slug || '?v=' || branding.logo_asset_id::text
@@ -119,7 +119,7 @@ export class LocalAuthService {
               branding.primary_color AS "primaryColor", branding.secondary_color AS "secondaryColor",
               branding.heading_font AS "headingFont", branding.body_font AS "bodyFont"
        FROM tenant_login_branding branding
-       WHERE `;
+       WHERE tenant_login_open(branding.workspace_id) AND `;
     const direct = await this.database.query<{
       displayName: string; loginSlug: string; logoUrl: string | null;
       primaryColor: string | null; secondaryColor: string | null;

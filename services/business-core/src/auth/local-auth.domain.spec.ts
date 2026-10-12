@@ -55,4 +55,13 @@ describe("public organization sign-in lookup", () => {
     const service = new LocalAuthService({ query } as never, {} as never, {} as never, {} as never, {} as never);
     await expect(service.resolveOrganization("Unknown Company")).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it("keeps an archived organization's login address closed, by slug and by name", async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 0, rows: [] });
+    const service = new LocalAuthService({ query } as never, {} as never, {} as never, {} as never, {} as never);
+    await expect(service.getTenantBranding("retired-studio")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.resolveOrganization("Retired Studio")).rejects.toBeInstanceOf(NotFoundException);
+    for (const [sql] of query.mock.calls) expect(sql).toContain("tenant_login_open(");
+    expect(query).toHaveBeenCalledTimes(3);
+  });
 });

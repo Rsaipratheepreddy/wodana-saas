@@ -29,11 +29,12 @@ import { parseRoleTemplateCodes } from "../workspaces/role-templates";
 import { TaxNumberingService } from "../workspaces/tax-numbering.service";
 import { TenantOperationsService } from "../workspaces/tenant-operations.service";
 import { SYSTEM_ROLE_CODES, WorkspacesService } from "../workspaces/workspaces.service";
-import type { SandboxArgs } from "./ops-args";
+import type { SandboxArgs, SandboxLifecycleArgs } from "./ops-args";
 import { runConfigure } from "./ops-configure";
-import { openContext, OpsError, type Report } from "./ops-context";
+import { openContext, OpsError, type Report, type Status } from "./ops-context";
 import { ProfileError, validateProfile, type Profile } from "./ops-profile";
 import { changeSandboxAddresses, SANDBOX_EMAIL_CHANGED } from "./ops-sandbox-email";
+import { adoptionVerdicts, changeSandboxLifecycle, SANDBOX_RETIRED, type AdoptionVerdict, type SandboxLifecycleResult } from "./ops-sandbox-retire";
 import { DeliveryHold, describeDeliveries, SANDBOX_SEED } from "./scenarios/scenario-delivery";
 import { runScenarios } from "./scenarios/scenario-run";
 import {
@@ -61,6 +62,10 @@ import {
  * With --email-pattern, members at another address are moved to the pattern's (ops-sandbox-email.ts) before anything
  * else, and a new sandbox's members get them from the start. A later run, with the pattern or without, finds the same
  * people and makes nobody new.
+ *
+ * A sandbox no longer wanted is retired (--retire, ops-sandbox-retire.ts): every organization of its account archived,
+ * nothing deleted, reversible with --restore. A new sandbox whose --email-pattern addresses belong to a retired
+ * sandbox's people adopts them: the same people join it with their own passwords, and nobody new is made for them.
  */
 
 type SetupProfile = { code: string; version: number; configuration: Record<string, unknown> };
@@ -103,11 +108,11 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   const leadOptions = args.crm ? await readCrm(args.crm, report) : null;
   // The sandbox whose people (and, with --organization-of, whose account) this run is for.
   const people = args.organizationOf ?? args.slug;
-  const base = args.organizationOf ? await resolveBase(app, db, args.organizationOf, args.emailPattern) : null;
+  const base = args.organizationOf ? await resolveBase(db, args.organizationOf, args.emailPattern) : null;
   const setup = await resolveSetup(db, args, base?.pinned ?? null);
   const externalTenantId = sandboxExternalTenantId(people);
   // The sandbox itself once provisioned, recognized as this command's before anything of it is read.
-  const own = base ? null : await findSandbox(app, db, args.slug, args.emailPattern, notOurs(args.slug));
+  const own = base ? null : await findSandbox(db, args.slug, args.emailPattern, notOurs(args.slug));
   const sandbox: Sandbox | null = base ?? own;
   // Each member's address: the pattern given, else the one the sandbox keeps, else <role>@<slug>.test.
   const scheme = args.emailPattern ?? sandbox?.emailPattern ?? null;
@@ -124,14 +129,33 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   const knownPeople = await sandboxPeople(db, sandbox, people, args.emailPattern);
   const before: People = new Map(knownPeople);
   const emailOf = (key: string) => knownPeople.get(key)?.email ?? address(key);
+  // People of a retired sandbox whom a new sandbox adopts (by user id), and whether each has a password already.
+  const adopted = new Map<string, { from: string[]; hasPassword: boolean }>();
   if (!sandbox && args.emailPattern) {
-    // A new sandbox's test members are new people: an address someone already signs in with is never taken over.
+    // A new sandbox's test members are new people, or the people of a retired sandbox (--retire) who hold its addresses:
+    // they join it as they are. An address anyone else signs in with is never taken over.
     const wanted = SANDBOX_PERSONAS.map((persona) => address(persona.key));
-    const taken = (await db.query<{ email: string }>(`SELECT lower(primary_email::text) AS email FROM users WHERE lower(primary_email::text) = ANY($1::text[]) ORDER BY 1`,
-      [wanted])).rows.map((row) => row.email);
-    if (taken.length) throw new OpsError(`${taken.join(", ")} already sign${taken.length === 1 ? "s" : ""} in to Wodana: a new sandbox's test members are new people. `
-      + "Choose another --email-pattern, or add an organization to their sandbox with --organization-of.");
+    const taken = (await db.query<{ id: string; email: string }>(
+      `SELECT id, lower(primary_email::text) AS email FROM users WHERE lower(primary_email::text) = ANY($1::text[]) ORDER BY 2`, [wanted])).rows;
+    const verdicts = taken.length ? await adoptionVerdicts(db, taken.map((row) => row.id)) : new Map<string, AdoptionVerdict>();
+    const refused = taken.flatMap((row) => {
+      const verdict = verdicts.get(row.id);
+      return verdict?.adoptable ? [] : [`${row.email} (${verdict && !verdict.adoptable ? verdict.reason : "unknown"})`];
+    });
+    if (refused.length) throw new OpsError(`${refused.join(", ")} already sign${refused.length === 1 ? "s" : ""} in to Wodana: a new sandbox's test members are new people `
+      + "or people of a retired sandbox. Choose another --email-pattern, retire their sandbox first (sandbox --slug <it> --retire), or add an organization to their "
+      + "sandbox with --organization-of.");
+    for (const row of taken) {
+      const verdict = verdicts.get(row.id) as Extract<AdoptionVerdict, { adoptable: true }>;
+      adopted.set(row.id, { from: verdict.from, hasPassword: verdict.hasPassword });
+      report.add("members", "info", row.email, `adopted from retired sandbox ${verdict.from.join(", ")}: the same person (user ${row.id}), `
+        + (verdict.hasPassword ? "password unchanged" : "no password yet"));
+    }
   }
+  /** Whether --password-env sets this person's password: an adopted person who has one keeps it. */
+  const passwordFor = (userId: string | undefined) => !userId || !adopted.get(userId)?.hasPassword;
+  // A new sandbox needs a password for anyone who has none: everyone new, and an adopted person without one.
+  const passwordsNeeded = !password && !base && SANDBOX_PERSONAS.some((persona) => passwordFor(knownPeople.get(persona.key)?.userId));
 
   // Every email the run would send (invitations, notices, the showcase's) is held back and counted.
   const mailer = get(TransactionalEmailService) as unknown as { send: (message: unknown) => Promise<unknown> };
@@ -140,7 +164,7 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   let hold: DeliveryHold | null = null;
   mailer.send = async () => { held += 1; return { status: "not_configured", provider: null, messageId: null, suppressedReason: "sandbox_setup" }; };
   try {
-    if (own && own.workspace.status !== "active") throw new OpsError(`The sandbox ${args.slug} is ${own.workspace.status}; reactivate it in Wodana Control first.`);
+    if (own && own.workspace.status !== "active") throw notInUse(args.slug, own.workspace.status);
     // ---------- the test members' addresses ----------
     // First, so everything after finds, invites and tells them at the addresses they sign in with.
     if (sandbox) await ensureAddresses(sandbox);
@@ -155,12 +179,12 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     } else {
       // ---------- the workspace ----------
       if (!own && await slugIsTaken(db, args.slug)) throw notOurs(args.slug);
-      if (!own && args.apply && !password) throw new OpsError("The test members need a password: put it in an environment variable and name it with --password-env.");
+      if (!own && args.apply && passwordsNeeded) throw new OpsError("The test members need a password: put it in an environment variable and name it with --password-env.");
       if (!own && !args.apply) {
         report.add("workspace", "would change", args.slug, `provisioned: ${provisioned}`);
         report.add("members", "would change", address(ownerPersona.key), "owner: accepts the owner invitation");
         if (args.emailPattern) report.add("email", "would change", "address pattern", `the test members sign in as ${args.emailPattern}`);
-        planRemainder(args, setup, { teams, leadOptions, profile }, report, password, scheme);
+        planRemainder(args, setup, { teams, leadOptions, profile }, report, password, scheme, adopted.size ? knownPeople : null, passwordsNeeded);
         return;
       }
 
@@ -203,7 +227,9 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       const without: string[] = [];
       for (const persona of SANDBOX_PERSONAS) {
         const person = knownPeople.get(persona.key);
-        if (!person || !await auth.hasLocalPassword(workspaceId, person.userId)) without.push(persona.key);
+        // An adopted person is not a member yet: their own password counts.
+        const has = person ? (adopted.has(person.userId) ? adopted.get(person.userId)!.hasPassword : await auth.hasLocalPassword(workspaceId, person.userId)) : false;
+        if (!has) without.push(persona.key);
       }
       if (without.length && args.apply) throw new OpsError(`${without.length} test members have no password yet (${without.join(", ")}): name the environment variable that holds it with --password-env.`);
       for (const key of without) report.add("members", "manual", emailOf(key), "no password yet: --apply needs --password-env");
@@ -352,7 +378,7 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
         if (found.loginSlug !== args.slug) throw new OpsError(`The organization made for ${args.slug} signs in at ${found.loginSlug ?? "no login name"} now; a sandbox never changes its slug.`);
         const status = (await db.tenantTransaction(request.workspaceId, request.workspaceId, (client) => client.query<{ status: string; name: string; currency: string }>(
           `SELECT status, name, default_currency AS currency FROM workspaces WHERE id = $1`, [request.workspaceId]))).rows[0];
-        if (status?.status !== "active") throw new OpsError(`The organization ${args.slug} is ${status?.status ?? "missing"}; reactivate it in Wodana Control first.`);
+        if (status?.status !== "active") throw notInUse(args.slug, status?.status ?? "missing", sandbox.slug);
         report.add("organization", "unchanged", args.slug, `${status.name} · ${status.currency} · in the account of sandbox ${sandbox.slug}`);
         return request.workspaceId;
       }
@@ -399,10 +425,10 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
         await workspaces.acceptInvitation(person.actor, token);
         report.add("members", "changed", ownerEmail, "owner: invitation accepted");
       }
-      if (password) {
+      if (password && passwordFor(person!.userId)) {
         const { changed } = await auth.setMemberPassword(workspaceId, person!.userId, password);
         report.add("members", changed ? "changed" : "unchanged", `${ownerEmail} password`, changed ? "set" : "as given");
-      }
+      } else if (adopted.has(person!.userId)) report.add("members", "unchanged", `${ownerEmail} password`, "their own (adopted)");
       return person!;
     }
 
@@ -596,10 +622,10 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
           report.add("members", "changed", plan.email, `${plan.displayName}: ${label}`);
         }
       }
-      if (password) {
+      if (password && passwordFor(member.userId)) {
         const { changed } = await auth.setMemberPassword(workspaceId, member.userId, password);
         report.add("members", changed ? "changed" : "unchanged", `${plan.email} password`, changed ? "set" : "as given");
-      }
+      } else if (adopted.has(member.userId)) report.add("members", "unchanged", `${plan.email} password`, "their own (adopted)");
       return member.userId;
     }
 
@@ -645,6 +671,99 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     if (hold) await (hold as DeliveryHold).finish(args.apply).catch(() => (hold as DeliveryHold).release());
     mailer.send = send;
   }
+}
+
+/**
+ * `sandbox --slug <slug> --retire|--restore`: a sandbox this command made, with every organization of its customer
+ * account, archived (kept, out of use and out of Wodana's billing) or made active again (ops-sandbox-retire.ts).
+ * Refused for anything else: a slug this command didn't make, an organization added to a sandbox (its sandbox's slug
+ * covers it), and a sandbox whose account holds an organization the command didn't make. Retiring first revokes the
+ * organizations' integration connections through the integration command, as the sandbox's test owner, while they are
+ * still in use. Dry run unless --apply; a second run changes nothing.
+ */
+export async function runSandboxLifecycle(app: INestApplicationContext, args: SandboxLifecycleArgs, report: Report): Promise<void> {
+  const db = app.get(DatabaseService, { strict: false });
+  const retire = args.lifecycle === "retire";
+  const found = await findSandbox(db, args.slug, null, notOurs(args.slug));
+  if (!found) {
+    const base = await sandboxOfOrganization(db, args.slug);
+    throw new OpsError(base
+      ? `${args.slug} is an organization in the account of sandbox ${base}: sandbox --slug ${base} --${args.lifecycle} covers every organization of its account. Nothing was changed.`
+      : `${args.slug} is not a sandbox this command made: --${args.lifecycle} changes only a sandbox made with sandbox --slug ${args.slug}. Nothing was changed.`);
+  }
+  const organizations = await accountOrganizations(db, found.accountId, args.slug);
+  if (organizations.some((organization) => !organization.madeHere))
+    throw new OpsError(`The account of sandbox ${args.slug} has organizations this command didn't make; a sandbox never changes another organization. Nothing was changed.`);
+  const label = (workspaceId: string) => organizations.find((organization) => organization.workspaceId === workspaceId)?.loginSlug ?? workspaceId;
+  report.add("sandbox", "info", args.slug, `${organizations.length} organization${organizations.length === 1 ? "" : "s"} in its account (${organizations.map((organization) =>
+    organization.loginSlug ?? organization.workspaceId).join(", ")}), all made by this command`);
+
+  if (retire) {
+    // ---------- integration connections: revoked while the organizations are still in use ----------
+    const owner = (await db.query<{ userId: string; email: string; displayName: string }>(
+      `SELECT id AS "userId", lower(primary_email::text) AS email, display_name AS "displayName" FROM users WHERE id = $1`, [found.ownerUserId])).rows[0];
+    for (const organization of organizations) {
+      const { status, connections } = await db.tenantTransaction(organization.workspaceId, found.ownerUserId, async (client) => ({
+        status: (await client.query<{ status: string }>(`SELECT status::text AS status FROM workspaces WHERE id = $1`, [organization.workspaceId])).rows[0]?.status,
+        connections: (await client.query<{ id: string; provider: string; version: number }>(
+          `SELECT id, provider::text AS provider, version FROM integration_connections WHERE workspace_id = $1 AND status <> 'revoked' ORDER BY provider, id`,
+          [organization.workspaceId])).rows,
+      }));
+      const where = label(organization.workspaceId);
+      if (!connections.length) { report.add("integrations", "unchanged", where, "no connections"); continue; }
+      const providers = connections.map((connection) => connection.provider).join(", ");
+      if (status === "archived") { report.add("integrations", "manual", where, `${providers}: the organization is archived already; revoke them in Wodana Control`); continue; }
+      if (!args.apply) { report.add("integrations", "would change", where, `${providers}: revoked`); continue; }
+      if (!owner) throw new OpsError(`The test owner of sandbox ${args.slug} was not found; nothing was retired.`);
+      for (const connection of connections) {
+        await app.get(WorkspacesService, { strict: false }).revokeIntegrationConnection(operatorActor(owner), organization.workspaceId, connection.id, connection.version);
+      }
+      report.add("integrations", "changed", where, `${providers}: revoked`);
+    }
+  }
+
+  // ---------- the organizations, their messages and billing, and the account: one transaction ----------
+  const result = await changeSandboxLifecycle(db, { action: args.lifecycle, apply: args.apply,
+    sandbox: { slug: args.slug, accountId: found.accountId, ownerUserId: found.ownerUserId }, organizationIds: organizations.map((organization) => organization.workspaceId) });
+  reportLifecycle(report, result, args);
+}
+
+function reportLifecycle(report: Report, result: SandboxLifecycleResult, args: SandboxLifecycleArgs) {
+  const retire = args.lifecycle === "retire";
+  const status = (from: string | null, to: string | null): Status => (from === to ? "unchanged" : args.apply ? "changed" : "would change");
+  const shown = (from: string | null, to: string | null) => (from === to ? `${to ?? "none"}` : `${from ?? "none"} → ${to ?? "none"}`);
+  for (const organization of result.organizations) {
+    const where = organization.slug;
+    report.add("organization", status(organization.status.from, organization.status.to), where, `${shown(organization.status.from, organization.status.to)} ("${organization.name}")`);
+    if (retire) {
+      const channels = Object.entries(organization.deliveries).map(([channel, count]) => `${count} ${channel}`).join(", ");
+      report.add("notifications", channels ? status("waiting", "suppressed") : "unchanged", where, channels
+        ? `${channels} waiting: suppressed (${SANDBOX_RETIRED}), never sent; in-app notices kept` : "nothing waiting to be sent");
+      if (organization.outboxHandled) report.add("notifications", status("queued", "handled"), where, `${organization.outboxHandled} queued event${organization.outboxHandled === 1 ? "" : "s"} handled, never published`);
+      if (organization.supportSessionsEnded) report.add("support", status("open", "ended"), where, `${organization.supportSessionsEnded} support session${organization.supportSessionsEnded === 1 ? "" : "s"} ended`);
+    }
+    report.add("billing", status(organization.subscription.from, organization.subscription.to), `${where} subscription`, shown(organization.subscription.from, organization.subscription.to));
+    if (organization.allocation) {
+      report.add("billing", status(organization.allocation.from, organization.allocation.to), `${where} allocation`, shown(organization.allocation.from, organization.allocation.to));
+    }
+    if (retire && organization.aiCredits !== null) report.add("billing", "info", `${where} AI credits`, `${organization.aiCredits} kept; no AI runs while it is retired`);
+  }
+  const account = result.account;
+  report.add("billing", status(account.collection.from, account.collection.to), "collection", shown(account.collection.from, account.collection.to));
+  report.add("billing", "info", "contract", account.contract ? `${account.contract.status} (${account.contract.plan}), kept` : "none");
+  report.add("billing", "info", "billing documents", `${account.billingDocuments.total} kept (${account.billingDocuments.open} open), ${account.usageSnapshots} usage snapshots kept`
+    + (retire ? "; nothing new is billed or measured while it is retired" : ""));
+  report.add("account", status(account.status.from, account.status.to), account.externalId ?? "customer account", shown(account.status.from, account.status.to));
+  const slugs = result.organizations.map((organization) => organization.slug).join(", ");
+  if (retire) {
+    report.add("access", "info", "sign-in", `${slugs}: closed ("This login address is not active"), out of the organization switcher; the people keep their `
+      + "accounts and a new sandbox's --email-pattern can adopt them");
+    report.add("jobs", "info", "schedulers", "reminders, the Ledger, CRM timers, linked imports, the outbox and the control-plane sweep skip archived organizations");
+    report.add("data", "info", "kept", "nothing deleted: every record, person, file and audit row stays; --restore makes the sandbox active again");
+  } else {
+    report.add("access", "info", "sign-in", `${slugs}: open again; integration connections stay revoked (reconnect them in Integrations)`);
+  }
+  report.facts.lifecycle = result;
 }
 
 /** Runs a step; a refusal is reported as failed and the run goes on with the rest. */
@@ -731,23 +850,47 @@ async function resolveSetup(db: DatabaseService, args: SandboxArgs, pinned: Pinn
  * it was made with) or it keeps an address pattern (which only this command writes). Anything else under that id is
  * refused: an organization merely given such an id is never touched. Null when nothing was provisioned for it.
  */
-async function findSandbox(app: INestApplicationContext, db: DatabaseService, slug: string, emailPattern: string | null, refused: OpsError): Promise<Sandbox | null> {
+async function findSandbox(db: DatabaseService, slug: string, emailPattern: string | null, refused: OpsError): Promise<Sandbox | null> {
   const externalTenantId = sandboxExternalTenantId(slug);
-  const known = (await db.query<{ workspaceId: string }>(`SELECT workspace_id AS "workspaceId" FROM tenant_provisioning_requests WHERE external_tenant_id = $1`, [externalTenantId])).rows[0];
+  const known = (await db.query<{ workspaceId: string; invitationId: string | null }>(
+    `SELECT workspace_id AS "workspaceId", response_body->'ownerInvitation'->>'id' AS "invitationId" FROM tenant_provisioning_requests WHERE external_tenant_id = $1`,
+    [externalTenantId])).rows[0];
   if (!known) return null;
-  const tenant = await app.get(WorkspacesService, { strict: false }).getProvisionedTenant(externalTenantId) as unknown as {
-    workspace: Sandbox["workspace"]; ownerInvitation: { email: string }; account: { id: string; organizationLimit: number } | null };
+  // Read as the organization itself, whatever its status (a retired sandbox's is archived).
+  const tenant = await db.tenantTransaction(known.workspaceId, known.workspaceId, async (client) => ({
+    workspace: (await client.query<Sandbox["workspace"]>(
+      `SELECT name, slug, status::text AS status, default_currency AS "defaultCurrency" FROM workspaces WHERE id = $1`, [known.workspaceId])).rows[0],
+    invited: (await client.query<{ email: string }>(
+      `SELECT lower(email::text) AS email FROM workspace_invitations WHERE id = $1::uuid AND workspace_id = $2`, [known.invitationId, known.workspaceId])).rows[0]?.email ?? null,
+  }));
   const kept = await keptPattern(db, known.workspaceId);
   const owner = SANDBOX_PERSONAS[0].key;
-  const invited = tenant.ownerInvitation.email.toLowerCase();
-  const ownerInvited = invited === sandboxEmail(owner, slug) || kept !== null || (emailPattern !== null && invited === patternEmail(emailPattern, owner));
-  if (tenant.workspace.slug !== slug || !ownerInvited || !tenant.account) throw refused;
-  const account = (await db.query<{ externalId: string | null; status: string; createdBy: string }>(
-    `SELECT external_customer_id AS "externalId", status, created_by AS "createdBy" FROM customer_accounts WHERE id = $1`, [tenant.account.id])).rows[0];
-  if (account?.externalId !== externalTenantId) throw refused;
-  return { slug, workspaceId: known.workspaceId, accountId: tenant.account.id, accountActive: account.status === "active", organizationLimit: tenant.account.organizationLimit,
+  const invited = tenant.invited;
+  const ownerInvited = invited !== null && (invited === sandboxEmail(owner, slug) || kept !== null || (emailPattern !== null && invited === patternEmail(emailPattern, owner)));
+  if (!tenant.workspace || tenant.workspace.slug !== slug || !ownerInvited) throw refused;
+  const account = (await db.query<{ id: string; externalId: string | null; status: string; createdBy: string; organizationLimit: number }>(
+    `SELECT account.id, account.external_customer_id AS "externalId", account.status, account.created_by AS "createdBy", account.organization_limit AS "organizationLimit"
+       FROM customer_account_organizations linked JOIN customer_accounts account ON account.id = linked.account_id WHERE linked.workspace_id = $1`,
+    [known.workspaceId])).rows[0];
+  if (!account || account.externalId !== externalTenantId) throw refused;
+  return { slug, workspaceId: known.workspaceId, accountId: account.id, accountActive: account.status === "active", organizationLimit: account.organizationLimit,
     ownerUserId: account.createdBy, emailPattern: kept, workspace: tenant.workspace };
 }
+
+/** The sandbox whose account an organization added with --organization-of belongs to (its request's key names the slug); null for anything else. */
+async function sandboxOfOrganization(db: DatabaseService, slug: string): Promise<string | null> {
+  return (await db.query<{ sandbox: string }>(
+    `SELECT substr(account.external_customer_id, 9) AS sandbox
+       FROM tenant_login_branding branding
+       JOIN organization_requests request ON request.approved_workspace_id = branding.workspace_id AND request.status = 'approved' AND request.idempotency_key = $2
+       JOIN customer_accounts account ON account.id = request.account_id AND account.external_customer_id LIKE 'sandbox-%' AND request.requested_by = account.created_by
+      WHERE branding.login_slug = $1`, [slug, sandboxOrganizationKey(slug)])).rows[0]?.sandbox ?? null;
+}
+
+/** What a sandbox in another state than active needs before a run can use it. */
+const notInUse = (slug: string, status: string, sandbox = slug) => new OpsError(status === "archived"
+  ? `The ${sandbox === slug ? "sandbox" : "organization"} ${slug} is retired; bring it back with sandbox --slug ${sandbox} --restore first.`
+  : `The ${sandbox === slug ? "sandbox" : "organization"} ${slug} is ${status}; reactivate it in Wodana Control first.`);
 
 /** The address pattern a sandbox keeps for its test members (operator_sandbox_settings); null: <role>@<slug>.test. */
 async function keptPattern(db: DatabaseService, workspaceId: string): Promise<string | null> {
@@ -756,11 +899,11 @@ async function keptPattern(db: DatabaseService, workspaceId: string): Promise<st
 }
 
 /** The sandbox --organization-of names: made by this command and active, with its customer account and pinned kit and plan. */
-async function resolveBase(app: INestApplicationContext, db: DatabaseService, slug: string, emailPattern: string | null): Promise<Base> {
+async function resolveBase(db: DatabaseService, slug: string, emailPattern: string | null): Promise<Base> {
   const refused = new OpsError(`${slug} is not a sandbox this command made: --organization-of names one (made with sandbox --slug ${slug}).`);
-  const found = await findSandbox(app, db, slug, emailPattern, refused);
+  const found = await findSandbox(db, slug, emailPattern, refused);
   if (!found) throw refused;
-  if (found.workspace.status !== "active" || !found.accountActive) throw new OpsError(`The sandbox ${slug} is not active; reactivate it in Wodana Control first.`);
+  if (found.workspace.status !== "active" || !found.accountActive) throw notInUse(slug, found.workspace.status === "active" ? "not active" : found.workspace.status);
   const pinned = (await db.tenantTransaction(found.workspaceId, found.workspaceId, (client) => client.query<{ kit: string; kitVersion: number; plan: string; planVersion: number }>(
     `SELECT firm_kit_code AS kit, firm_kit_version AS "kitVersion", plan_code AS plan, plan_version AS "planVersion" FROM workspace_setup_versions WHERE workspace_id = $1`,
     [found.workspaceId]))).rows[0];
@@ -868,7 +1011,8 @@ type Files = { teams: TeamSpec[] | null; leadOptions: TaxonomySpec[] | null; pro
  * A dry run before the owner is in (the workspace isn't made yet, or an earlier run stopped first): what --apply would
  * do after the owner accepts, from the kit's roles and the files given.
  */
-function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Report, password: string | null, scheme: string | null, known: People | null = null) {
+function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Report, password: string | null, scheme: string | null, known: People | null = null,
+  passwordsNeeded = !password && !args.organizationOf) {
   const { teams, leadOptions, profile } = files;
   const people = args.organizationOf ?? args.slug;
   // An added organization is covered by the account's policy, which the sandbox already set.
@@ -881,9 +1025,10 @@ function planRemainder(args: SandboxArgs, setup: Setup, files: Files, report: Re
   const roles = new Set([...SYSTEM_ROLE_CODES, ...parseRoleTemplateCodes(setup.kit.configuration.roleTemplates)]);
   const plans = planMembers(people, roles, teams ?? [], scheme).map((plan) => ({ ...plan, email: known?.get(plan.key)?.email ?? plan.email }));
   for (const plan of plans.slice(1)) {
-    report.add("members", "would change", plan.email, `${plan.displayName}: ${args.organizationOf ? "joins" : "invited and active"} as ${[...plan.roleCodes, ...plan.teamCodes.map((code) => `team ${code}`)].join(", ")}`);
+    const joins = args.organizationOf ? "joins" : known?.has(plan.key) ? "joins (adopted)" : "invited and active";
+    report.add("members", "would change", plan.email, `${plan.displayName}: ${joins} as ${[...plan.roleCodes, ...plan.teamCodes.map((code) => `team ${code}`)].join(", ")}`);
   }
-  if (!password && !args.organizationOf) report.add("members", "manual", "passwords", "--apply needs --password-env");
+  if (passwordsNeeded) report.add("members", "manual", "passwords", "--apply needs --password-env");
   if (profile) report.add("profile", "would change", "profile", `${Object.keys(profile).length} sections, applied as configure once the workspace exists`);
   if (args.seed) report.add("seed", "would change", "showcase", "records for every section, made by the test members");
   if (args.scenarios) report.add("scenarios", "would change", "scenarios", "an example of every main scenario, in the organization's own country and currency");
@@ -908,7 +1053,10 @@ function printMembers(report: Report, members: Outcome[], passwordEnv: string | 
   }
   if (before?.size) {
     // People the sandbox had already: only someone new needs adding to the exemption.
-    report.note(made.length ? `New people${organizationOf ? " (unexpected)" : ""}: ${made.join(",")}` : "No new people: the device-limit exemption needs no change.");
+    // A dry run of a new sandbox that adopts some people: the rest are made with --apply.
+    const pending = organizationOf ? 0 : members.filter((member) => !member.userId).length;
+    report.note(made.length ? `New people${organizationOf ? " (unexpected)" : ""}: ${made.join(",")}`
+      : pending ? `${pending} new people are made with --apply; the others are already in Wodana.` : "No new people: the device-limit exemption needs no change.");
     if (made.length) report.note(`User ids for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS (add to the list already there): ${made.join(",")}`);
   } else if (ids.length) report.note(`User ids for AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS (add to the list already there): ${ids.join(",")}`);
 }

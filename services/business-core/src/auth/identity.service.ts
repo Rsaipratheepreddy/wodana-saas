@@ -158,6 +158,7 @@ export class IdentityService {
         accountId: string | null;
         accountName: string | null;
         accountRole: string | null;
+        accountStatus: string | null;
         isDefaultOrganization: boolean;
         status: string;
       }>(
@@ -165,7 +166,7 @@ export class IdentityService {
                 workspace.name AS "workspaceName", workspace.slug AS "workspaceSlug",
                 workspace.status AS "workspaceStatus", membership.status,
                 linked.account_id AS "accountId", account.display_name AS "accountName",
-                account_member.role AS "accountRole",
+                account.status AS "accountStatus", account_member.role AS "accountRole",
                 COALESCE(linked.is_default, false) AS "isDefaultOrganization",
                 CASE WHEN branding.logo_asset_id IS NOT NULL
                      THEN '/api/auth/tenant-logo/' || workspace.slug || '?v=' || branding.logo_asset_id::text
@@ -192,10 +193,11 @@ export class IdentityService {
         [actorUser.userId],
       ),
     );
-    // A suspended organization stays readable (changes are refused by the write-block guard).
+    // A suspended organization stays readable (changes are refused by the write-block guard). An archived one is shown as
+    // unavailable, except one of a retired account (a retired sandbox, src/ops/ops-sandbox-retire.ts): that one is gone.
     const readable = (status: string) => status === "active" || status === "suspended";
     const unavailableOrganizations = memberships.rows
-      .filter((membership) => !viewAs && !readable(membership.workspaceStatus))
+      .filter((membership) => !viewAs && !readable(membership.workspaceStatus) && membership.accountStatus !== "archived")
       .map((membership) => ({
         workspaceId: membership.workspaceId,
         workspaceName: membership.workspaceName,

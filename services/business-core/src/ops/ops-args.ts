@@ -39,7 +39,12 @@ export type SandboxArgs = {
   scenarios: boolean;
   apply: boolean; json: boolean;
 };
-export type OpsArgs = ImportArgs | ConfigureArgs | SandboxArgs | { command: "help" };
+/**
+ * `sandbox --slug <slug> --retire|--restore` (ops-sandbox.ts): a sandbox this command made, with every organization of
+ * its customer account, archived (kept, out of use and billing) or made active again.
+ */
+export type SandboxLifecycleArgs = { command: "sandbox"; lifecycle: "retire" | "restore"; slug: string; apply: boolean; json: boolean };
+export type OpsArgs = ImportArgs | ConfigureArgs | SandboxArgs | SandboxLifecycleArgs | { command: "help" };
 
 export const USAGE = `Wodana operator CLI: a workspace's go-live import and configuration, run on the server through the app's own
 services as a named workspace member, and test sandboxes. Every command is a dry run unless --apply is given.
@@ -56,6 +61,7 @@ Usage:
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> --organization-of <sandbox slug>
       [--profile <profile.json>] [--teams <teams-access.json>] [--crm <crm-intake-profile.json>]
       [--email-pattern "<local>+{role}@<domain>"] [--seed] [--scenarios] [--apply] [--json]
+  node dist/ops/ops-cli.js sandbox --slug <sandbox slug> --retire|--restore [--apply] [--json]
   node dist/ops/ops-cli.js --help
 
 import
@@ -131,10 +137,26 @@ sandbox
                   for anyone who also belongs to an organization the sandbox didn't make, and for an address someone
                   else signs in with. With --organization-of it is the sandbox's people's addresses (one run covers
                   every organization they belong to).
+                  A new sandbox adopts the people of a retired sandbox (--retire) who hold its addresses: the same
+                  people (user ids, passwords, sessions) join it with its roles and teams, and nobody new is made for
+                  them, so --password-env is needed only for anyone new. Anyone with an active membership in an
+                  organization that is not a retired sandbox's is still refused.
+  --retire        retires a sandbox this command made with every organization of its customer account (those added
+                  with --organization-of too; name the sandbox's own --slug). Each organization is archived: nobody
+                  signs in to it, its login address answers "This login address is not active", it leaves the
+                  organization switcher, and no reminder, Ledger, CRM, import, outbox or control-plane job runs for it.
+                  Its waiting emails, WhatsApp and push messages are suppressed (sandbox_retired), its integration
+                  connections revoked, and its account leaves Wodana's billing: collection state closed, subscriptions
+                  cancelled, allocations ended, and no usage snapshot, billing document, contract or allocation is
+                  recorded for it while it is retired. Nothing is deleted: every record, person, file and audit row
+                  stays. Refused for anything this command didn't make. Takes only --slug, --apply and --json.
+  --restore       makes a retired sandbox active again: its organizations and account active, its billing as it was
+                  before (connections stay revoked: reconnect them in Integrations). Messages suppressed stay so.
 
 Output is counts and messages only. Exit code 0 when everything succeeded, 1 when anything failed, 2 for usage errors.`;
 
-const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--scenarios", "--help", "-h"]);
+const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--scenarios", "--retire",
+  "--restore", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
   "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -216,12 +238,28 @@ const STORED_ADDRESS = /^[^@\s{}]+@[^@\s{}]+\.[^@\s{}]+$/;
 /** A login slug that is also a DNS label and makes valid test addresses (<role>@<slug>.test). */
 const LOGIN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function parseSandbox(values: Map<string, string>, flags: Set<string>, required: (name: string) => string): SandboxArgs {
-  for (const name of [...values.keys(), ...flags]) if (!SANDBOX_OPTIONS.includes(name)) throw new UsageError(`${name} does not apply to sandbox.`);
+const LIFECYCLE_OPTIONS = ["--slug", "--retire", "--restore", "--apply", "--dry-run", "--json"];
+
+function sandboxSlug(required: (name: string) => string) {
   const slug = required("--slug").toLowerCase();
   if (!LOGIN_SLUG.test(slug) || slug.length < 2 || slug.length > 40)
     throw new UsageError("--slug is the sandbox's login name: 2 to 40 lowercase letters and digits, single dashes between them (e.g. iglo).");
   if (RESERVED_SLUGS.has(slug)) throw new UsageError(`--slug ${slug} is reserved for the platform; choose another.`);
+  return slug;
+}
+
+function parseSandbox(values: Map<string, string>, flags: Set<string>, required: (name: string) => string): SandboxArgs | SandboxLifecycleArgs {
+  if (flags.has("--retire") || flags.has("--restore")) {
+    if (flags.has("--retire") && flags.has("--restore")) throw new UsageError("Choose either --retire or --restore.");
+    const lifecycle = flags.has("--retire") ? "retire" : "restore";
+    // The sandbox is found by its slug and covers every organization of its account: nothing else to say.
+    for (const name of [...values.keys(), ...flags]) {
+      if (!LIFECYCLE_OPTIONS.includes(name)) throw new UsageError(`${name} does not apply to --${lifecycle}: it takes the sandbox's --slug (every organization of its account is covered).`);
+    }
+    return { command: "sandbox", lifecycle, slug: sandboxSlug(required), apply: flags.has("--apply"), json: flags.has("--json") };
+  }
+  for (const name of [...values.keys(), ...flags]) if (!SANDBOX_OPTIONS.includes(name)) throw new UsageError(`${name} does not apply to sandbox.`);
+  const slug = sandboxSlug(required);
   const name = required("--name");
   if (name.length < 2 || name.length > 160) throw new UsageError("--name is 2 to 160 characters.");
   const region = required("--region").toUpperCase();
