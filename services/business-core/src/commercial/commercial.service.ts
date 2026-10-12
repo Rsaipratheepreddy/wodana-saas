@@ -377,6 +377,16 @@ export class CommercialService {
     await commercialRepository.save(client, workspaceId, caseId, data);
     // A payment verified in this save: the client gets the receipt on WhatsApp (once per payment).
     const received = data.payments.filter((payment) => payment.status === "verified" && !verifiedBefore.has(payment.id));
+    // A staff command (a coded action) is in the audit trail too, so the record's history reads it: who sent the
+    // quotation, who verified which payment of how much. Portal and e-sign saves are audited where they happen.
+    if (/^[a-z_]+$/.test(action)) {
+      const quote = quoteId ? data.quotes.find((item) => item.id === quoteId) : undefined;
+      const verified = received[0];
+      await recordAudit(client, { workspaceId, actorUserId, action: `commercial.${action}.v1`, entityType: "commercial_case", entityId: caseId, after: {
+        quoteId: quoteId ?? null, number: quote ? `V${quote.number}` : null, note: note || null,
+        ...(verified ? { amount: String(verified.amount), currency: verified.currency ?? quote?.currency ?? data.quotes[0]?.currency ?? null, payment: verified.title } : {}),
+      } });
+    }
     if (received.length) {
       const owner = await partyOfCase(client, workspaceId, caseId);
       for (const payment of received) {

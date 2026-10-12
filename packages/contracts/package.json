@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./brand": "./src/brand.ts",
     "./financial-statements": "./src/financial-statements.ts",
-    "./access-levels.json": "./access-levels.json"
+    "./access-levels.json": "./access-levels.json",
+    "./history": "./src/history.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

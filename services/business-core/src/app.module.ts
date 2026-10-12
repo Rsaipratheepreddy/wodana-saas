@@ -1,6 +1,7 @@
 import { CommercialModule } from "./commercial/commercial.module";
 import { ClientPortalModule } from "./client-portal/client-portal.module";
 import { ChangeRequestsModule } from "./change-requests/change-requests.module";
+import { HistoryModule } from "./history/history.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { resolve } from "node:path";
@@ -108,6 +109,7 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     CommercialModule,
     ClientPortalModule,
     ChangeRequestsModule,
+    HistoryModule,
     CatalogModule,
     SourcingModule,
     ProductSourcingModule,
