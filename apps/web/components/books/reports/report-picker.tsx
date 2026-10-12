@@ -1,5 +1,6 @@
 "use client";
 
+import { PrintPageRules } from "../../documents/print-document";
 import type { ReactNode } from "react";
 import { parseDate } from "@internationalized/date";
 import { Button, DateField, DateRangeField, SelectField } from "@/design-system";
@@ -71,5 +72,7 @@ export function ReportActions({ csvHref }: { csvHref?: string | null }) {
   return <>
     {csvHref ? <a className="wd-button" data-size="compact" data-variant="quiet" href={csvHref} download>{t("Export CSV")}</a> : null}
     <Button size="compact" variant="quiet" onPress={() => window.print()}>{t("Print")}</Button>
+    {/* A4 with "Page x of y", like every other printed document. */}
+    <PrintPageRules />
   </>;
 }
