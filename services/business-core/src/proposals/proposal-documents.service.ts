@@ -8,6 +8,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { currentTemplate, quotationPageData } from "./proposal-data";
 import { acceptFile, readBytes, type ObjectStore, type UploadedFile } from "./proposal-files";
 import { composeProposal, sha256, templatePageCount, type TemplatePage } from "./proposal-pdf";
+import { documentFileName } from "../documents/pdf-layout";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -79,7 +80,7 @@ export async function issueProposalVersion(db: Db, store: ObjectStore, input: { 
   if (latest) return { documentId: document.id, number: latest.number, sha256: latest.sha256, reference: data.reference, title: quote.title, reused: true };
   const bytes = Buffer.from(await composeProposal(template.pages, data));
   const version = await addDocumentVersion(db, store, { workspaceId: input.workspaceId, caseId: input.caseId, documentId: document.id, purpose: "issued", bytes,
-    fileName: `${data.reference} ${quote.title}.pdf`.replace(/[\\/:*?"<>|]/g, "-").slice(0, 200), mimeType: "application/pdf", quoteHash: quote.hash, templateVersion: template.version, actorUserId: input.actorUserId });
+    fileName: documentFileName(data.reference, data.client.name || quote.title), mimeType: "application/pdf", quoteHash: quote.hash, templateVersion: template.version, actorUserId: input.actorUserId });
   await recordAudit(db, { workspaceId: input.workspaceId, actorUserId: input.actorUserId, action: "quotation.proposal_pdf_issued.v1", entityType: "pre_project_case", entityId: input.caseId,
     after: { quoteId: input.quoteId, documentId: document.id, version: version.number, sha256: version.sha256, templateVersion: template.version, reference: data.reference } });
   return { documentId: document.id, number: version.number, sha256: version.sha256, reference: data.reference, title: quote.title, reused: false };
@@ -177,7 +178,7 @@ export class ProposalDocumentsService {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
       const data = await quotationPageData(client, workspaceId, caseId, quoteId, this.storage);
       const template = await templatePages(client, this.storage, workspaceId);
-      return { body: Buffer.from(await composeProposal(template.pages, data)), contentType: "application/pdf", name: `${data.reference} ${data.title}.pdf` };
+      return { body: Buffer.from(await composeProposal(template.pages, data)), contentType: "application/pdf", name: documentFileName(data.reference, data.client.name || data.title) };
     });
   }
 

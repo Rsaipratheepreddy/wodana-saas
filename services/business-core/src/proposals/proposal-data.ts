@@ -42,15 +42,15 @@ export async function quotationPageData(db: Db, workspaceId: string, caseId: str
   const family = (await db.query<{ position: number }>(
     `SELECT count(*)::int AS position FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND kind = $3 AND coalesce(family_id, id) = $4 AND number <= $5`,
     [workspaceId, caseId, quote.kind, quote.familyId ?? quote.id, quote.number])).rows[0]?.position ?? 1;
-  const client = (await db.query<{ name: string; project: string; address: string | null; zone: string }>(
-    `SELECT coalesce(party.display_name, opportunity.title) AS name, opportunity.title AS project, workspace.default_timezone AS zone,
+  const client = (await db.query<{ name: string; project: string; address: string | null; zone: string; locale: string | null }>(
+    `SELECT coalesce(party.display_name, opportunity.title) AS name, opportunity.title AS project, workspace.default_timezone AS zone, workspace.default_locale AS locale,
             (SELECT concat_ws(', ', NULLIF(address.line1, ''), NULLIF(address.locality, ''), NULLIF(address.region, '')) FROM crm_addresses address
               WHERE address.workspace_id = party.workspace_id AND address.party_id = party.id ORDER BY address.is_primary DESC, address.created_at LIMIT 1) AS address
        FROM pre_project_cases pre_case
        JOIN workspaces workspace ON workspace.id = pre_case.workspace_id
        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
-      WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null, zone: "UTC" };
+      WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null, zone: "UTC", locale: null };
   const issuedAt = typeof quote.detail.issuedAt === "string" ? new Date(quote.detail.issuedAt) : new Date();
   const issuedOn = new Intl.DateTimeFormat("en-CA", { timeZone: client.zone || "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(issuedAt);
   // Lines grouped by area, in the order they appear; lines without an area last, as "General".
@@ -76,6 +76,10 @@ export async function quotationPageData(db: Db, workspaceId: string, caseId: str
     groups: ordered.map(([name, lineIds]) => ({ name, lineIds })),
     paymentTerms: ((quote.detail.paymentTerms as Array<{ title: string; percent: number | string; trigger: string }> | undefined) ?? [])
       .map((term) => ({ title: String(term.title ?? ""), percent: term.percent, trigger: String(term.trigger ?? "") })),
+    locale: client.locale,
+    descriptions: Object.fromEntries(snapshot.lines.filter((line) => typeof line.description === "string" && line.description.trim()).map((line) => [line.id, String(line.description).trim()])),
+    terms: typeof quote.detail.terms === "string" ? quote.detail.terms : "",
+    exclusions: typeof quote.detail.exclusions === "string" ? quote.detail.exclusions : "",
     quoteHash: (await db.query<{ hash: string | null }>(`SELECT hash FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, quoteId])).rows[0]?.hash ?? null,
   };
 }

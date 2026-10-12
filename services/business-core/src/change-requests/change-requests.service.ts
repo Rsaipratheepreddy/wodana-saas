@@ -13,6 +13,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { pdfLetterhead } from "../proposals/pdf-letterhead";
 import { quotingEntity } from "../proposals/quote-issue";
 import { composeChangeDocument } from "./change-request-pdf";
+import { documentFileName } from "../documents/pdf-layout";
 import { projectForChanges } from "./project-changes.store";
 import {
   applyChangeApproval, createChange, readChange, readChangeEvents, readChanges, readPoImpacts, recordSent, saveDraft, submitChange, withdrawChange,
@@ -133,9 +134,9 @@ export class ChangeRequestsService {
       `SELECT number, sha256 FROM quote_document_versions WHERE workspace_id = $1 AND document_id = $2 AND purpose = 'issued' AND quote_hash = $3 ORDER BY number DESC LIMIT 1`,
       [workspaceId, documentId, marker])).rows[0];
     if (existing) return { documentId, number: existing.number, sha256: existing.sha256 };
-    const facts = (await client.query<{ project: string; clientName: string; today: string; decimals: number | null }>(
+    const facts = (await client.query<{ project: string; clientName: string; today: string; decimals: number | null; locale: string | null }>(
       `SELECT coalesce(project.reference || ' · ' || project.name, opportunity.title) AS project, coalesce(party.display_name, opportunity.title) AS "clientName",
-              (now() AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS today, NULL::int AS decimals
+              (now() AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS today, NULL::int AS decimals, workspace.default_locale AS locale
          FROM pre_project_cases pre_case JOIN workspaces workspace ON workspace.id = pre_case.workspace_id
          JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
          LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
@@ -143,14 +144,14 @@ export class ChangeRequestsService {
         WHERE pre_case.workspace_id = $1 AND pre_case.id = $2 LIMIT 1`, [workspaceId, change.caseId])).rows[0];
     const brand = await effectivePortalBrand(client, workspaceId);
     const bytes = Buffer.from(await composeChangeDocument({
-      brandName: brand.name, letterhead: await pdfLetterhead(client, this.storage, workspaceId, (await quotingEntity(client, workspaceId, change.caseId))?.id),
+      brandName: brand.name, accent: brand.primaryColor ?? null, locale: facts?.locale ?? null, letterhead: await pdfLetterhead(client, this.storage, workspaceId, (await quotingEntity(client, workspaceId, change.caseId))?.id),
       reference: change.reference, title: change.title, description: change.description, designImpact: change.designImpact,
       project: facts?.project ?? "", clientName: facts?.clientName ?? "", issuedOn: facts?.today ?? "", currency: change.currency, decimals: currencyDecimals(change.currency),
       lines: priced?.lines ?? change.lines.map((line) => ({ action: line.action, title: line.title, room: line.roomName, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, amount: line.amount })),
       priceImpact: priced?.priceImpact ?? change.priceImpact, timeImpactDays: change.timeImpactDays, handoverBefore: change.handoverBefore, handoverAfter: change.handoverAfter,
     }));
     const version = await addDocumentVersion(client, this.storage, { workspaceId, caseId: change.caseId, documentId, purpose: "issued", bytes,
-      fileName: `${change.reference} ${change.title}.pdf`.replace(/[\\/:*?"<>|]/g, "-").slice(0, 200), mimeType: "application/pdf", quoteHash: marker, actorUserId: userId });
+      fileName: documentFileName(change.reference, facts?.clientName || change.title), mimeType: "application/pdf", quoteHash: marker, actorUserId: userId });
     return { documentId, number: version.number, sha256: version.sha256 };
   }
 

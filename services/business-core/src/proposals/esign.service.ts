@@ -236,7 +236,7 @@ export class EsignService {
       const brand = await effectivePortalBrand(client, row.workspaceId);
       const signedBytes = Buffer.from(await appendCertificate(original, {
         requestId: row.id, documentTitle: document?.title ?? "", reference: document?.reference ?? "", documentSha256: row.documentSha256,
-        signer: identity, signedAt, ip: where.ip, userAgent: where.userAgent, signature: signature.kind === "typed" ? signature : { kind: "drawn", png: signature.png }, brandName: brand.name,
+        signer: identity, signedAt, ip: where.ip, userAgent: where.userAgent, signature: signature.kind === "typed" ? signature : { kind: "drawn", png: signature.png }, brandName: brand.name, brandAccent: brand.primaryColor ?? null,
       }));
       // The signature's effect first: if the quote can't be accepted any more, nothing is signed.
       await this.effects[row.subjectKind](client, { request: row, signedName: identity.name, signedAt });
