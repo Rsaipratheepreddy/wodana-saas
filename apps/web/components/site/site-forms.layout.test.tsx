@@ -58,7 +58,7 @@ describe("Site form dialogs", () => {
     };
     respond(state);
     render(<DesignSystemProvider timeZone="UTC"><ProjectSite workspaceId="w" projectId={PID} /></DesignSystemProvider>);
-    await userEvent.click((await screen.findAllByRole("button", { name: "Today's report" }))[0]);
+    await userEvent.click((await screen.findAllByRole("button", { name: "Add today's report" }))[0]);
     const dialog = await screen.findByRole("dialog", { name: "Today's report" });
     expect(sectionTitles(dialog)).toEqual(["Today's work", "Photos", "Crew", "Issues", "Tomorrow", "Materials", "Installed", "Conditions"]);
     expect(rows(dialog)).toBe(0);

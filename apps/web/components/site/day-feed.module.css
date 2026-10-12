@@ -1,0 +1,12 @@
+/* The daily progress feed: filters, then one card per day, newest first, with missed working days marked. */
+.feed { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-3); }
+.filters > :global(.wd-field) { min-inline-size: 10rem; }
+.list { display: grid; gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.list > li { min-inline-size: 0; }
+/* A working day that ended without a report: one quiet line. */
+.missing { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-4); border-radius: var(--wd-radius-md);
+  background: var(--wd-color-danger-subtle); color: var(--wd-color-text); font-size: var(--wd-text-sm); scroll-margin-block-start: var(--wd-space-16); }
+.missing time { font-weight: var(--wd-weight-medium); }
+.earlier { justify-self: center; }
+.problem { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }

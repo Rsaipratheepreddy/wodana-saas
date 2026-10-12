@@ -9,7 +9,9 @@
 .taskSteps { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .taskSteps :global(.wd-segmented) { flex-wrap: wrap; }
 .photos { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); }
-.photo { display: grid; gap: var(--wd-space-2); align-content: start; min-inline-size: 0; }
+.photo { position: relative; display: grid; gap: var(--wd-space-2); align-content: start; min-inline-size: 0; }
+/* Takes a photo taken by mistake off the report. */
+.photoRemove { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); }
 .photo img { display: block; inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
 .photo[data-busy] img { opacity: 0.6; }
 .photoTags { display: grid; gap: var(--wd-space-1-5); }
@@ -17,6 +19,8 @@
 .crew > :nth-child(5) { grid-column: 1 / -1; }
 .issue { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
 .issueHead, .issueFoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
+.issueOwner { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.issueOwner > * { flex: 1 1 12rem; min-inline-size: 0; }
 .next li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); font-size: var(--wd-text-sm); }
 .next li > :first-child { flex: 1; min-inline-size: 0; }
 .material { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--wd-space-2); align-items: end; }

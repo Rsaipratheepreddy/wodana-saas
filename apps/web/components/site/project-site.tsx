@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Download, Plus } from "lucide-react";
 import Link from "next/link";
-import { Badge, Button, ControlledModalDialog, EmptyState, ErrorState, FormDialog, InlineNotice, SegmentedControl, Skeleton, TextAreaField, type StatusTone } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { Button, ControlledModalDialog, DateRangeField, ErrorState, FormDialog, InlineNotice, SegmentedControl, Skeleton, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -15,6 +16,7 @@ import { useProjectFormat } from "../project-core/format";
 import { ProjectArrivals } from "../purchasing/project-arrivals";
 import { ClientIssues, useClientIssues } from "./client-issues";
 import { DailyCapture } from "./daily-capture";
+import { DayFeed } from "./day-feed";
 import { ReportReview } from "./report-review";
 import styles from "./site.module.css";
 
@@ -47,6 +49,9 @@ export function ProjectSite({ workspaceId, projectId, projectName = "", showDeli
   const [rejecting, setRejecting] = useState<{ report: SiteReport; lineId: string; title: string } | null>(null);
   // PLM-065: finishing site work signs the installation off; with money owed before installation it asks first.
   const [finishing, setFinishing] = useState(false);
+  // A new report for a missed day (a "No report" marker), and the progress report's period.
+  const [newDay, setNewDay] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The site didn't load.")); }
   }, [api, t]);
@@ -86,54 +91,22 @@ export function ProjectSite({ workspaceId, projectId, projectName = "", showDeli
     <ProjectSiteAccess workspaceId={workspaceId} projectId={projectId} projectName={projectName} members={state.members} switcher={switcher} />
   </div>;
   const running = Boolean(state.site.startedOn && !state.site.finishedOn);
-  const reviewable = (report: SiteReport) => state.canApprove && report.authorId !== state.me && report.status === "submitted";
-  const waiting = state.reports.filter(reviewable);
-  // The timeline: every report, and the worked days that ended without one, newest first.
-  const entries: Array<{ day: string; report: SiteReport | null }> = [...state.reports.filter((report) => !waiting.includes(report)).map((report) => ({ day: report.reportDate, report })),
-    ...(state.missing ?? []).map((day) => ({ day, report: null }))].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
-  const chip = (report: SiteReport): { label: string; tone: StatusTone } => report.delivery === "sent" ? { label: t("Sent"), tone: "success" }
-    : report.status === "approved" ? { label: report.delivery === "internal" ? t("Approved · internal") : t("Approved"), tone: "info" }
-      : report.status === "submitted" ? { label: t("Submitted"), tone: "warning" } : report.status === "returned" ? { label: t("Returned"), tone: "danger" } : { label: t("Draft"), tone: "neutral" };
-  const open = (report: SiteReport) => {
-    if (report.authorId === state.me && ["draft", "returned"].includes(report.status) && state.canReport) setEditing(report);
+  const own = (report: { authorId: string; status: string }) => report.authorId === state.me && ["draft", "returned"].includes(report.status) && state.canReport;
+  // A report from a card: its author continues a draft; anyone else opens its review (or reads it as it is).
+  const open = (report: { id: string; authorId: string; status: string }) => {
+    const full = state.reports.find((item) => item.id === report.id);
+    if (full && own(full)) setEditing(full);
     else setReviewing(report.id);
   };
-  const action = (report: SiteReport) => report.authorId === state.me && ["draft", "returned"].includes(report.status) && state.canReport ? t("Continue")
-    : reviewable(report) ? t("Review") : t("Open");
-
-  const row = (entry: { day: string; report: SiteReport | null }) => {
-    const report = entry.report;
-    if (!report) return <li key={`missing-${entry.day}`} className={styles.entry} data-missing>
-      <span className={styles.entryDate}>{format.day(entry.day)}</span>
-      <span className={styles.entryBody}><Badge tone="danger">{t("No report")}</Badge></span>
-    </li>;
-    const status = chip(report);
-    const moved = report.tasks?.length ?? 0;
-    const text = report.clientSummary || (report.noWorkReason ? t("No work: {reason}", { reason: report.noWorkReason }) : "");
-    return <li key={report.id} className={styles.entry} data-selected={reviewing === report.id || undefined}>
-      <span className={styles.entryDate}>{format.day(report.reportDate)}</span>
-      <button type="button" className={styles.entryBody} onClick={() => open(report)} aria-label={t("{date} · {name}", { date: format.day(report.reportDate), name: report.authorName })}>
-        <span className={styles.entryHead}>
-          <Badge tone={status.tone}>{status.label}</Badge>
-          {report.late ? <Badge tone="warning">{t("Late")}</Badge> : null}
-          <span className={styles.muted}>{report.authorName}</span>
-          {report.status === "submitted" && report.waitingFor?.length ? <span className={styles.muted}>{t("Waiting for {who}", { who: report.waitingFor.join(", ") })}</span> : null}
-        </span>
-        {text ? <span className={styles.entryText} dir="auto">{text}</span> : null}
-        <span className={styles.entryMeta}>
-          {report.photos.slice(0, 4).map((photo) => <img key={photo.id} src={api.photoUrl(photo.id)} alt="" loading="lazy" />)}
-          {[moved ? (moved === 1 ? t("1 task moved") : t("{count} tasks moved", { count: moved })) : null, report.photos.length ? (report.photos.length === 1 ? t("1 photo") : t("{count} photos", { count: report.photos.length })) : null,
-            report.reactions?.love || report.reactions?.like ? `👍 ${report.reactions.like} · ❤️ ${report.reactions.love}` : null].filter(Boolean).join(" · ")}
-        </span>
-        {report.status === "returned" && report.decisionNote ? <span className={styles.entryReturned}>{t("Sent back by {name}: {note}", { name: report.decidedByName ?? "", note: report.decisionNote })}</span> : null}
-      </button>
-      <span className={styles.entryActions}>
-        {report.status === "approved" ? <a className="wd-button wd-icon-button" data-size="compact" data-variant="quiet" href={api.printUrl(report.id)} target="_blank" rel="noopener"
-          aria-label={t("Download PDF")} title={t("Download PDF")}><Download aria-hidden="true" size={15} /></a> : null}
-        <Button size="compact" variant={reviewable(report) ? "primary" : "secondary"} onPress={() => open(report)}>{action(report)}</Button>
-      </span>
-    </li>;
+  // "Add today's report" (or a missed day's): the draft I already have for that day, else a new one.
+  const add = (day: string | null) => {
+    const date = day ?? state.today;
+    const mine = state.reports.find((report) => report.authorId === state.me && report.reportDate === date);
+    if (mine && own(mine)) setEditing(mine);
+    else if (mine) setReviewing(mine.id);
+    else { setNewDay(day); setEditing("new"); }
   };
+  const feed = state.days ?? { from: state.today, to: state.today, today: state.today, cards: [], missing: state.missing ?? [], stages: [], trades: [] };
 
   return <div className={styles.site}>
     <div className={styles.toolbar}>
@@ -143,19 +116,17 @@ export function ProjectSite({ workspaceId, projectId, projectName = "", showDeli
       <span className={styles.spacer} />
       {state.canManage ? <Button size="compact" onPress={() => running && state.installationOwed?.stages.length ? setFinishing(true)
         : void run(running ? "finish_site" : "start_site", { on: state.today })}>{running ? t("Finish site work") : t("Start site work")}</Button> : null}
-      {state.canReport ? <Button size="compact" variant="primary" onPress={() => setEditing(state.reports.find((report) => report.authorId === state.me && report.reportDate === state.today
-        && ["draft", "returned"].includes(report.status)) ?? "new")}><Plus aria-hidden="true" size={14} />{t("Today's report")}</Button> : null}
+      {feed.cards.length || state.site.startedOn ? <Button size="compact" onPress={() => setPrinting(true)}><Download aria-hidden="true" size={14} />{t("Progress report")}</Button> : null}
+      {state.canReport ? <Button size="compact" variant="primary" onPress={() => add(null)}><Plus aria-hidden="true" size={14} />{t("Add today's report")}</Button> : null}
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
-    {waiting.length ? <section className={styles.stack} aria-label={t("Waiting for your review")}>
-      <h3 className={styles.subhead}>{t("Waiting for your review")}</h3>
-      <ul className={styles.timeline}>{waiting.map((report) => row({ day: report.reportDate, report }))}</ul>
-    </section> : null}
-    {!entries.length && !waiting.length ? <EmptyState illustration={null} title={t("No daily progress yet")} description={t("Each day on site: today's work, photos by room and what's next.")}
-      action={state.canReport ? <Button variant="primary" onPress={() => setEditing("new")}>{t("Today's report")}</Button> : undefined} />
-      : entries.length ? <section className={styles.stack} aria-label={t("Daily progress")}><ul className={styles.timeline}>{entries.map(row)}</ul></section> : null}
+    <DayFeed api={api} projectId={projectId} feed={feed} startedOn={state.site.startedOn} me={state.me} canReport={state.canReport} canApprove={state.canApprove}
+      canManage={state.canManage} onTeam={onTeam} members={state.members} highlight={params?.get("day") ?? null} onAdd={add} onOpenReport={open}
+      onCommand={(action, input) => run(action, input)} />
     {editing && (editing !== "new" || state.canReport) ? <DailyCapture workspaceId={workspaceId} projectId={projectId} api={api} state={state} report={editing === "new" ? null : editing}
-      onState={setState} onClose={() => { setEditing(null); void load(); }} /> : null}
+      day={editing === "new" ? newDay : null} onState={setState} onClose={() => { setEditing(null); setNewDay(null); void load(); }} /> : null}
+    {printing ? <ProgressReportDialog today={state.today} startedOn={state.site.startedOn} onClose={() => setPrinting(false)}
+      onOpen={(from, to) => { window.open(api.progressPrintUrl(from, to), "_blank", "noopener"); setPrinting(false); }} /> : null}
     {reviewing ? <ReportReview api={api} state={state} reportId={reviewing} onState={setState} onClose={() => setReviewing(null)}
       onReject={(report, lineId, title) => setRejecting({ report, lineId, title })} /> : null}
     {finishing && state.installationOwed ? <FinishSiteDialog owed={state.installationOwed} canSignOff={Boolean(state.canSignOffOwed)} paymentsHref={`/workspace/projects/${projectId}/money?view=client`}
@@ -163,6 +134,18 @@ export function ProjectSite({ workspaceId, projectId, projectName = "", showDeli
     {rejecting ? <ReasonDialog title={t("{item} not accepted", { item: rejecting.title })} label={t("What isn't right")} action={t("Raise a snag")} onClose={() => setRejecting(null)}
       onSave={async (reason) => { if (await run("reject_installation", { reportId: rejecting.report.id, lineId: rejecting.lineId, reason })) setRejecting(null); }} /> : null}
   </div>;
+}
+
+/** The progress report's period (the last two weeks by default, never before site work started), then its printout. */
+function ProgressReportDialog({ today, startedOn, onClose, onOpen }: { today: string; startedOn: string | null; onClose: () => void; onOpen: (from: string, to: string) => void }) {
+  const t = useT();
+  const twoWeeks = new Date(Date.parse(`${today}T00:00:00Z`) - 13 * 86_400_000).toISOString().slice(0, 10);
+  const [range, setRange] = useState({ from: startedOn && startedOn > twoWeeks ? startedOn : twoWeeks, to: today });
+  const valid = range.from <= range.to && range.to <= today;
+  return <FormDialog size="md" title={t("Progress report")} onClose={onClose} submitLabel={t("Open PDF")} isSubmitDisabled={!valid} onSubmit={() => onOpen(range.from, range.to)}>
+    <DateRangeField label={t("Period")} value={{ start: parseDate(range.from), end: parseDate(range.to) }} maxValue={parseDate(today)}
+      onChange={(value) => { if (value) setRange({ from: value.start.toString(), to: value.end.toString() }); }} />
+  </FormDialog>;
 }
 
 /** Why something isn't right: one required line of text, then the action. */

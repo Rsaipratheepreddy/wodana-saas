@@ -5,7 +5,9 @@ import { getServerT } from "@/lib/i18n/server";
 
 /** A project's site: its state and changes, report photos up and down. */
 function allowed(path: string[], method: string) {
-  if (path.length === 1 && path[0] === "attention") return method === "GET";
+  if (path.length === 1 && ["attention", "today"].includes(path[0])) return method === "GET";
+  // The day cards for a range, and the progress report (PDF) for a period.
+  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["days", "progress-report"].includes(path[2])) return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "reports" && UUID.test(path[3]) && path[4] === "client-view") return method === "GET";
   if (path.length === 6 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "reports" && UUID.test(path[3]) && path[4] === "photos" && UUID.test(path[5])) return method === "POST";
@@ -51,6 +53,12 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   }
   const body = request.method === "GET" ? undefined : await request.text();
   if (body && body.length > 200_000) return NextResponse.json({ message: t("The request is too large.") }, { status: 413 });
-  return workspaceJsonResponse(`/workspaces/${workspaceId}/site/${path.join("/")}`, { method: request.method, headers: { "content-type": "application/json" }, body }, t("Could not save."));
+  // A range of days: only dates and a count go through.
+  const range = new URLSearchParams(["from", "to", "latest"].flatMap((key) => {
+    const value = search.get(key) ?? "";
+    return (key === "latest" ? /^\d{1,2}$/.test(value) : /^\d{4}-\d{2}-\d{2}$/.test(value)) ? [[key, value]] : [];
+  }));
+  const query = ["days", "progress-report"].includes(path[2] ?? "") && range.size ? `?${range}` : "";
+  return workspaceJsonResponse(`/workspaces/${workspaceId}/site/${path.join("/")}${query}`, { method: request.method, headers: { "content-type": "application/json" }, body }, t("Could not save."));
 }
 export { handle as GET, handle as POST };

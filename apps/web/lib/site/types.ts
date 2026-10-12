@@ -10,7 +10,9 @@ export type ReportPhoto = { id: string; name: string; shared?: boolean; areaId?:
 export type ReportTask = { id: string; workItemId: string; number: number; title: string; progress: number; previous: number | null; note: string; hidden: boolean };
 export type ReportNext = { id: string; workItemId: string | null; title: string; hidden: boolean };
 export type ReportMaterial = { id: string; direction: "received" | "used"; description: string; quantity: string | null; unit: string; purchaseOrderId: string | null; stockTransferId: string | null };
-export type ReportIssue = { id: string; severity: Severity; description: string; internal: boolean; raised: "snag" | "material" | null; workItemId: string | null; workItemNumber: number | null };
+export type IssueRaised = "snag" | "material" | "change_request";
+export type ReportIssue = { id: string; severity: Severity; description: string; internal: boolean; raised: IssueRaised | null; workItemId: string | null; workItemNumber: number | null;
+  changeRequestId?: string | null; status?: "open" | "resolved"; ownerId?: string | null; ownerName?: string | null; dueOn?: string | null; version?: number };
 
 /** One person's day on a project's site. */
 export type SiteReport = {
@@ -24,6 +26,8 @@ export type SiteReport = {
   late?: boolean;
   clientSummary?: string; summarySource?: "none" | "template" | "ai" | "edited"; heroPhotoId?: string | null;
   delivery?: Delivery; sentAt?: string | null; sentByName?: string | null; sentAutomatically?: boolean;
+  /** Sent, then taken off the client's page. */
+  clientHidden?: boolean;
   tasks?: ReportTask[]; next?: ReportNext[]; materials?: ReportMaterial[]; issues?: ReportIssue[];
   reactions?: { like: number; love: number };
   /** Which client contacts reacted. */
@@ -54,6 +58,8 @@ export type SiteState = {
   crew?: Array<{ trade: string; people: number; hours?: string | null }>;
   /** Worked days (the last two weeks) that ended without a submitted report. */
   missing?: string[];
+  /** The day cards of the last four weeks, with the working days that have no report. */
+  days?: DayFeed;
   /** PLM-065: what the client still owes before installation is signed off (finishing site work), while site work runs. */
   installationOwed?: InstallationOwed | null;
   /** Whoever manages projects may sign installation off while it's owed, with why. */
@@ -137,5 +143,51 @@ export type WarrantySettings = { months: Record<Supply, number>; canManage: bool
 /** The phone's "My sites today": each running project I'm on whose site work runs today. */
 export type SiteToday = {
   projectId: string; reference: string; name: string; report: { id: string; status: SiteReportStatus } | null; arriving: number; snags: number;
+  /** Today's day card, when someone reported today. */
+  card?: DayCard | null;
+};
+
+/** One report of a day, as its card shows it. */
+export type DayReport = {
+  id: string; authorId: string; authorName: string; status: SiteReportStatus; version: number;
+  submittedAt: string | null; decidedAt: string | null; decidedByName: string | null; decisionNote: string;
+  /** Submitted after the day's end-of-day time (or still not by then). */
+  late: boolean;
+  /** Written on a later day than the day it's for. */
+  backdated: boolean;
+  delivery: Delivery; sentAt: string | null; hidden: boolean;
+  noWorkReason: string; notes: string; clientSummary: string;
+  safety: Safety; safetyNote: string; forecast: Outlook; impact: string; recoveryOwnerName: string | null; recoveryOn: string | null;
+  waitingFor: string[]; reactions: { like: number; love: number };
+};
+export type DayWork = {
+  id: string; reportId: string; kind: "task" | "installed"; title: string; workItemId: string | null; number: number | null; progress: number | null; previous: number | null;
+  stageId: string | null; stageName: string | null; packageName: string | null; area: string | null; quantity: string | null; unit: string; note: string; hidden: boolean;
+};
+export type DayPhoto = { id: string; reportId: string; area: string | null; phase: PhotoPhase | null; pairId: string | null; forClient: boolean; shared: boolean };
+export type DayIssue = {
+  id: string; reportId: string; severity: Severity; description: string; internal: boolean; status: "open" | "resolved"; ownerId: string | null; ownerName: string | null;
+  dueOn: string | null; overdue: boolean; resolvedAt: string | null; resolvedByName: string | null; resolution: string; raised: IssueRaised | null; workItemId: string | null;
+  workItemNumber: number | null; changeRequestId: string | null; changeRequestReference: string | null; version: number;
+};
+export type DayMaterial = { id: string; reportId: string | null; direction: "received" | "used"; description: string; quantity: string | null; unit: string;
+  source: "report" | "delivery" | "stock"; reference: string | null };
+/** A project's day on site: every report of the day in one card. */
+export type DayCard = {
+  date: string; status: SiteReportStatus; clientVisible: boolean; reports: DayReport[];
+  crew: Array<{ trade: string; people: number; source: "report" | "crew_day" }>; people: number;
+  work: DayWork[]; photos: DayPhoto[]; issues: DayIssue[]; materials: DayMaterial[];
+  next: Array<{ id: string; reportId: string; title: string; workItemId: string | null; hidden: boolean }>;
+  stageIds: string[]; trades: string[];
+};
+export type DayFeed = { from: string; to: string; today: string; cards: DayCard[]; missing: string[]; stages: Array<{ id: string; name: string }>; trades: string[] };
+
+/** The "Progress report" PDF for a period: the client's card of each approved day, merged per day. */
+export type ProgressReportDay = { date: string; summary: string; noWork: boolean; photos: CardPhoto[]; completed: string[]; advanced: Array<{ title: string; progress: number }>;
+  next: string[]; notes: string[] };
+export type ProgressReport = {
+  brand: { name: string; logoUrl: string | null };
+  project: { name: string; reference: string | null; stage: string | null; stageNumber: number | null; stageCount: number | null; progress: number | null; handoverDate: string | null };
+  from: string; to: string; days: ProgressReportDay[];
 };
 export type SitesToday = { today: string | null; hour: number | null; dueTime?: string | null; sites: SiteToday[] };

@@ -24,7 +24,7 @@ type Draft = {
   tasks: Record<string, { progress: number; note: string }>;
   next: Array<{ workItemId: string | null; title: string }>;
   crew: Array<{ trade: string; people: string; hours: string }>;
-  issues: Array<{ id: string; severity: Severity; description: string; internal: boolean }>;
+  issues: Array<{ id: string; severity: Severity; description: string; internal: boolean; ownerId: string; dueOn: string | null }>;
   materials: Array<{ direction: "received" | "used"; description: string; quantity: string; unit: string; delivery: string }>;
   lines: Array<{ boqLineId: string; installed: string; note: string }>;
   photos: Record<string, { areaId: string | null; phase: PhotoPhase | null; pairId: string | null }>;
@@ -32,15 +32,16 @@ type Draft = {
 };
 
 /** A report as the form edits it: from its saved rows, or (new) from today's plan and the last crew. */
-function draftOf(state: SiteState, report: SiteReport | null): Draft {
+function draftOf(state: SiteState, report: SiteReport | null, day: string | null = null): Draft {
   const done = new Set(Object.values(report?.tasks ?? []).filter((task) => task.progress === 100).map((task) => task.workItemId));
   return {
-    reportDate: report?.reportDate ?? state.today,
+    reportDate: report?.reportDate ?? day ?? state.today,
     tasks: Object.fromEntries((report?.tasks ?? []).map((task) => [task.workItemId, { progress: task.progress, note: task.note }])),
     next: report?.next?.length ? report.next.map((item) => ({ workItemId: item.workItemId, title: item.title }))
       : (state.plan?.tomorrow.tasks ?? []).filter((task) => !done.has(task.id)).map((task) => ({ workItemId: task.id, title: task.title })),
     crew: (report ? report.workforce : state.crew ?? []).map((row) => ({ trade: row.trade, people: String(row.people), hours: row.hours ? String(Number(row.hours)) : "" })),
-    issues: (report?.issues ?? []).map((issue) => ({ id: issue.id, severity: issue.severity, description: issue.description, internal: issue.internal })),
+    issues: (report?.issues ?? []).map((issue) => ({ id: issue.id, severity: issue.severity, description: issue.description, internal: issue.internal, ownerId: issue.ownerId ?? "",
+      dueOn: issue.dueOn ?? null })),
     materials: (report?.materials ?? []).map((item) => ({ direction: item.direction, description: item.description, quantity: item.quantity ? quantityText(item.quantity) : "", unit: item.unit,
       delivery: item.purchaseOrderId ? `order:${item.purchaseOrderId}` : item.stockTransferId ? `transfer:${item.stockTransferId}` : "" })),
     lines: (report?.lines ?? []).map((line) => ({ boqLineId: line.boqLineId, installed: quantityText(line.installed) || line.installed, note: line.note })),
@@ -65,7 +66,7 @@ function payloadOf(draft: Draft) {
     workforce: draft.crew.filter((row) => row.trade.trim() && Number(row.people) > 0).map((row) => ({ trade: row.trade.trim(), people: Number(row.people), hours: row.hours ? Number(row.hours) : null })),
     tasks: Object.entries(draft.tasks).map(([workItemId, entry]) => ({ workItemId, progress: entry.progress, note: entry.note.trim() })),
     next: draft.next.filter((item) => item.title.trim()).map((item) => ({ workItemId: item.workItemId, title: item.title.trim() })),
-    issues: draft.issues.filter((issue) => issue.description.trim()).map((issue) => ({ ...issue, description: issue.description.trim() })),
+    issues: draft.issues.filter((issue) => issue.description.trim()).map((issue) => ({ ...issue, description: issue.description.trim(), ownerId: issue.ownerId || null })),
     materials: draft.materials.filter((item) => item.description.trim()).map((item) => ({ direction: item.direction, description: item.description.trim(), quantity: item.quantity || null, unit: item.unit.trim(),
       purchaseOrderId: item.delivery.startsWith("order:") ? item.delivery.slice(6) : null, stockTransferId: item.delivery.startsWith("transfer:") ? item.delivery.slice(9) : null })),
     lines: draft.lines.filter((line) => line.boqLineId && line.installed && (Number(line.installed) > 0 || line.note.trim())).map((line) => ({ ...line, note: line.note.trim() })),
@@ -81,8 +82,11 @@ type Pending = { id: string; file: File; preview: string; tags: { areaId: string
  * request a tap away, and tomorrow from the plan. It saves itself as a draft while it's written, and keeps what's
  * typed on this device, so a lost connection loses nothing.
  */
-export function DailyCapture({ workspaceId, projectId, api, state, report, onState, onClose }: {
-  workspaceId: string; projectId: string; api: SiteApi; state: SiteState; report: SiteReport | null; onState: (state: SiteState) => void; onClose: () => void;
+export function DailyCapture({ workspaceId, projectId, api, state, report, day = null, onState, onClose }: {
+  workspaceId: string; projectId: string; api: SiteApi; state: SiteState; report: SiteReport | null;
+  /** A new report for a missed day (backdated); today otherwise. */
+  day?: string | null;
+  onState: (state: SiteState) => void; onClose: () => void;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -90,7 +94,7 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
   const [reportId] = useState(() => report?.id ?? crypto.randomUUID());
   const saved = state.reports.find((row) => row.id === reportId) ?? null;
   const version = useRef<number | null>(saved?.version ?? null);
-  const initial = useMemo(() => draftOf(state, report), []); // eslint-disable-line react-hooks/exhaustive-deps -- the form opens once
+  const initial = useMemo(() => draftOf(state, report, day), []); // eslint-disable-line react-hooks/exhaustive-deps -- the form opens once
   const [draft, setDraft] = useState<Draft>(initial);
   const lastSent = useRef(JSON.stringify(payloadOf(initial)));
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -198,7 +202,7 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
     return { ...current, photos: photosDraft };
   });
 
-  const raise = async (issueId: string, kind: "snag" | "material") => {
+  const raise = async (issueId: string, kind: "snag" | "material" | "change_request") => {
     setRaising(`${issueId}:${kind}`); setProblem("");
     try {
       if (await save(true)) {
@@ -208,6 +212,18 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
       }
     } catch (cause) { setProblem(cause instanceof Error ? cause.message : t("Could not save.")); }
     finally { setRaising(null); }
+  };
+
+  /** A photo taken by mistake comes off the report (its tags with it). */
+  const removePhoto = async (photoId: string) => {
+    setProblem("");
+    try {
+      if (!(await save())) return;
+      const next = await api.command("remove_photo", { reportId, photoId, version: version.current });
+      version.current = next.reports.find((row) => row.id === reportId)?.version ?? version.current;
+      onState(next);
+      setDraft((current) => { const photosDraft = { ...current.photos }; delete photosDraft[photoId]; return { ...current, photos: photosDraft }; });
+    } catch (cause) { setProblem(cause instanceof Error ? cause.message : t("Could not save.")); }
   };
 
   const submit = async () => {
@@ -233,11 +249,20 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
         <IconButton aria-label={t("Remove")} size="compact" variant="quiet" onPress={() => set({ issues: draft.issues.filter((_, at) => at !== index) })}><X aria-hidden="true" size={14} /></IconButton>
       </div>
       <TextAreaField aria-label={t("What's wrong")} label={null} placeholder={t("What's wrong")} value={issue.description} onChange={(description) => update({ description })} />
+      <div className={styles.issueOwner}>
+        <SelectField aria-label={t("Owner")} label={null} placeholder={t("Owner")} accent="neutral" selectedKey={issue.ownerId}
+          items={[{ id: "", label: t("No owner") }, ...state.members.map((member) => ({ id: member.membershipId, label: member.name }))]}
+          onSelectionChange={(key) => update({ ownerId: key ? String(key) : "" })} />
+        <DateField aria-label={t("Due")} label={null} value={issue.dueOn ? parseDate(issue.dueOn) : null} onChange={(value) => update({ dueOn: value ? value.toString() : null })} />
+      </div>
       <div className={styles.issueFoot}>
         <Switch isSelected={!issue.internal} onChange={(value) => update({ internal: !value })}>{t("The client can read this")}</Switch>
-        {serverIssue?.raised ? <Badge tone="info">{serverIssue.raised === "snag" ? t("Snag #{number}", { number: serverIssue.workItemNumber ?? "" }) : t("Material requested · #{number}", { number: serverIssue.workItemNumber ?? "" })}</Badge>
+        {serverIssue?.raised ? <Badge tone="info">{serverIssue.raised === "snag" ? t("Snag #{number}", { number: serverIssue.workItemNumber ?? "" })
+          : serverIssue.raised === "change_request" ? t("Change request raised") : t("Material requested · #{number}", { number: serverIssue.workItemNumber ?? "" })}</Badge>
           : <>
             <Button size="compact" variant="quiet" isDisabled={!issue.description.trim() || Boolean(raising)} isLoading={raising === `${issue.id}:snag`} onPress={() => void raise(issue.id, "snag")}>{t("Raise a snag")}</Button>
+            <Button size="compact" variant="quiet" isDisabled={!issue.description.trim() || Boolean(raising)} isLoading={raising === `${issue.id}:change_request`}
+              onPress={() => void raise(issue.id, "change_request")}>{t("Raise a change request")}</Button>
             <Button size="compact" variant="quiet" isDisabled={!issue.description.trim() || Boolean(raising)} isLoading={raising === `${issue.id}:material`} onPress={() => void raise(issue.id, "material")}>{t("Request material")}</Button>
           </>}
       </div>
@@ -250,6 +275,7 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
     return <li key={id} className={styles.photo} data-busy={busy || undefined}>
       {/* eslint-disable-next-line @next/next/no-img-element -- a private report photo, or a local preview before upload */}
       <img src={src} alt={name} />
+      {!busy ? <IconButton className={styles.photoRemove} aria-label={t("Remove photo")} size="compact" variant="quiet" onPress={() => void removePhoto(id)}><X aria-hidden="true" size={14} /></IconButton> : null}
       <div className={styles.photoTags}>
         {areas.length ? <SelectField aria-label={t("Room or area")} label={null} placeholder={t("Room or area")} accent="neutral" selectedKey={tags.areaId ?? ""}
           items={[{ id: "", label: t("No room") }, ...areas.map((area) => ({ id: area.id, label: area.name }))]} onSelectionChange={(key) => tag(id, { areaId: key ? String(key) : null })} /> : null}
@@ -315,7 +341,7 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
 
     <FormSection title={t("Issues")}>
       {draft.issues.length ? <ul className={styles.issues}>{draft.issues.map(issueRow)}</ul> : null}
-      <Button className={styles.addLine} size="compact" variant="quiet" onPress={() => set({ issues: [...draft.issues, { id: crypto.randomUUID(), severity: "minor", description: "", internal: true }] })}>
+      <Button className={styles.addLine} size="compact" variant="quiet" onPress={() => set({ issues: [...draft.issues, { id: crypto.randomUUID(), severity: "minor", description: "", internal: true, ownerId: "", dueOn: null }] })}>
         <Plus aria-hidden="true" size={14} />{t("Add an issue")}</Button>
     </FormSection>
 
