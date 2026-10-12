@@ -32,6 +32,8 @@ export const TARGET_KPIS: Record<string, TargetDefinition> = {
   first_response_hours: { unit: "hours", direction: "lower", additive: false, perMember: true },
   design_to_proposal2_rate: { unit: "percent", direction: "higher", additive: false, perMember: false },
   design_to_proposal2_days: { unit: "days", direction: "lower", additive: false, perMember: false },
+  on_time_rate: { unit: "percent", direction: "higher", additive: false, perMember: false },
+  cash_in: { unit: "money", direction: "higher", additive: true, perMember: false },
 };
 
 export type TargetRow = { id: string; kpi: string; month: string; membershipId: string | null; target: string; version: number };

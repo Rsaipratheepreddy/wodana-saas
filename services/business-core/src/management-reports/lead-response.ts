@@ -19,7 +19,7 @@ import { targetFor } from "./report-targets";
  *     duplicate, converted) — left out of the rate.
  * The Account Manager filter applies to whoever held the clock (its owner), not to the enquiry's owner today.
  */
-const SLA_SQL = `WITH ${P}, ${leadsCte(false)},
+export const SLA_SQL = `WITH ${P}, ${leadsCte(false)},
 clock AS (
   SELECT i.lead_id, i.started_at, i.due_at, i.responded_at, i.response_elapsed_minutes, i.owner_membership_id, i.calculation_mode,
          CASE WHEN (i.policy_snapshot->>'breachAfterMinutes') ~ '^[0-9]+$' THEN (i.policy_snapshot->>'breachAfterMinutes')::int END AS target_minutes,
@@ -43,7 +43,7 @@ SELECT ${FACT_COLUMNS} FROM (
          CASE WHEN clock.responded_at IS NOT NULL AND clock.response_elapsed_minutes IS NOT NULL THEN round(clock.response_elapsed_minutes::numeric / 60, 4)::text END AS measure,
          clock.outcome AS detail,
          jsonb_build_object('period', CASE WHEN clock.started_at >= p.from_at THEN '1' ELSE '0' END, 'week', ${week("clock.started_at")}, 'outcome', clock.outcome,
-           'am', COALESCE(clock.owner_membership_id::text, 'none'), 'mode', clock.calculation_mode, 'target', clock.target_minutes) AS dims
+           'am', COALESCE(clock.owner_membership_id::text, 'none'), 'mode', clock.calculation_mode, 'target', clock.target_minutes, 'source', lc.source) AS dims
     FROM clock CROSS JOIN p JOIN lc ON lc.lead_id = clock.lead_id
     LEFT JOIN workspace_memberships owner_member ON owner_member.workspace_id = p.ws AND owner_member.id = clock.owner_membership_id
     LEFT JOIN users owner_user ON owner_user.id = owner_member.user_id

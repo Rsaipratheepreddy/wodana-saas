@@ -96,7 +96,7 @@ const RECEIPT_FACTS = `SELECT receipt.id AS id, 'receipt' AS kind, receipt.case_
  * without a deal counts only while no sales filter (Account Manager, enquiry type, package…) is on. `sign` is -1 where
  * a refund takes money away (Net revenue).
  */
-const REFUND_CTE = `refund AS (
+export const REFUND_CTE = `refund AS (
   SELECT r.id, r.number, r.total_amount AS amount, btrim(r.currency) AS cur, r.closed_at AS at, r.reason, r.opportunity_id, oc.case_id,
          CASE WHEN oc.case_id IS NOT NULL THEN ${proposalRatio("'main'", "NULL::uuid", "oc.case_id")} END AS ratio,
          party.display_name AS party_name
@@ -161,7 +161,7 @@ const revenueCollected: KpiSpec = {
  * allocations existed count as paid in full), never below zero. These are what clients owe, so they include tax.
  * Ageing by the stage's due date against today: not due yet, 1–30, 31–60 and over 60 days overdue, or no due date.
  */
-const OUTSTANDING_SQL = `WITH ${P}, ${OPPORTUNITIES},
+export const OUTSTANDING_SQL = `WITH ${P}, ${OPPORTUNITIES},
 stage AS (
   SELECT pay.case_id, pay.id, pay.title, pay.amount, COALESCE(NULLIF(btrim(pay.currency), ''), btrim(q.currency)) AS cur, pay.due_date, c.opportunity_id,
          COALESCE((SELECT sum(al.amount) FROM commercial_allocations al

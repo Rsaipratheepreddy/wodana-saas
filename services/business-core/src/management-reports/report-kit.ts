@@ -7,7 +7,8 @@ import { href } from "./report-scope";
  * (a won proposal, a receipt, a lead…) with the dimensions its chart groups by — and the figure, the chart and the
  * drill-down list are all read from the same facts, so a bar always reconciles with the records it opens.
  */
-export type RecordKind = "lead" | "opportunity" | "case" | "project" | "quote" | "approval" | "invoice" | "receipt" | "refund";
+export type RecordKind = "lead" | "opportunity" | "case" | "project" | "quote" | "approval" | "invoice" | "receipt" | "refund"
+  | "project_money" | "handover" | "work_order" | "finance_request" | "bill" | "supplier_payment" | "petty_cash" | "stock_item" | "purchase_order";
 
 export type Fact = {
   id: string;
@@ -38,7 +39,9 @@ export type ChartCategory = { key: string; label: string };
 export type Chart =
   | { type: "columns"; dimension: string; seriesDimension?: string; categories: ChartCategory[]; series: ChartSeries[]; values: string[][]; unit: Unit }
   | { type: "lines"; dimension: string; categories: ChartCategory[]; series: ChartSeries[]; values: Array<Array<string | null>>; unit: Unit }
-  | { type: "bars"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount?: string | null; target?: TargetResult | null }>; unit: Unit }
+  | { type: "bars"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount?: string | null; target?: TargetResult | null;
+      /** Figures shown beside the bar (e.g. a source's step rates), keyed by name. */
+      extra?: Record<string, string | number | null> }>; unit: Unit }
   | { type: "donut"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount: string | null }>; unit: Unit }
   | { type: "funnel"; dimension: string; items: Array<{ key: string; label: string; value: string; rate: string | null }> }
   | { type: "gauge"; percent: string | null; target: string | null }
@@ -68,13 +71,32 @@ export type Kpi = {
   target?: TargetResult | null;
   targetHidden?: boolean;
   chart?: Chart;
-  /** Records left out of money because they are in another currency, and money whose tax could not be separated. */
-  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string };
+  /**
+   * Records left out of money because they are in another currency, and money whose tax could not be separated;
+   * `basis` says what a figure is read from (the Ledger's journals, or Wodana's own records).
+   */
+  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string; basis?: "ledger" | "records" | "mixed" };
   /** Extra figures shown with the main one (e.g. average deal size), decimal text keyed by name. */
   extra?: Record<string, string | number | null>;
+  /**
+   * The same figure for the span just before the period (`previousPeriod`), and the change: (now − before) ÷ |before|
+   * × 100, one decimal; null when there was nothing before. `better` says which way is good news.
+   */
+  previous?: { from: string; to: string; value: string | null; change: string | null; better: Better };
 };
 
+/** Which way a figure is good news, for its comparison with the period before. */
+export type Better = "higher" | "lower" | "neutral";
+
 export type Dashboard = { dashboard: string; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[] };
+
+/** (now − before) ÷ |before| × 100, one decimal; null when there's no figure before or it was zero. */
+export function change(now: string | null, before: string | null): string | null {
+  if (now === null || before === null) return null;
+  const base = Dec.of(before);
+  if (base.isZero()) return null;
+  return Dec.of(now).sub(base).mul(100).div(base.abs()).round(1).toFixed(1);
+}
 
 // ------------------------------------------------------------------ money and numbers
 
@@ -154,17 +176,36 @@ export function matchBucket(facts: Fact[], bucket: Record<string, string>) {
 
 export type RecordRow = Omit<Fact, "dims" | "parentId"> & { href: string };
 
+/**
+ * The page that opens a record: its own record where it has one, else the project or case it belongs to. A fact's id
+ * may carry a suffix after ":" (one record counted in several buckets); `parentId` is then the record itself.
+ */
+export function recordHref(fact: Pick<Fact, "kind" | "id" | "parentId">): string {
+  const { kind, parentId } = fact;
+  const id = fact.id.split(":")[0];
+  switch (kind) {
+    case "lead": return href.lead(id);
+    case "opportunity": return href.opportunity(id);
+    case "project": return href.project(id);
+    case "quote": return href.quote(parentId ?? "", fact.id);
+    case "approval": return href.case(parentId ?? id, "execution-release");
+    case "invoice": return href.invoice(id);
+    case "refund": case "finance_request": return href.financeRequest(id);
+    case "project_money": return href.projectSection(id, "money");
+    case "handover": return href.projectSection(id, "handover");
+    case "work_order": return href.workOrder(id);
+    case "bill": return href.bill(id);
+    case "supplier_payment": return href.supplierPayment(id);
+    case "petty_cash": return href.pettyCash(id);
+    case "stock_item": return href.stockItem(id);
+    case "purchase_order": return href.purchaseOrder(id);
+    default: return href.case(parentId ?? id);
+  }
+}
+
 export function recordRow(fact: Fact): RecordRow {
-  const { dims: _dims, parentId, ...rest } = fact;
-  const link = fact.kind === "lead" ? href.lead(fact.id)
-    : fact.kind === "opportunity" ? href.opportunity(fact.id)
-    : fact.kind === "project" ? href.project(fact.id)
-    : fact.kind === "quote" ? href.quote(parentId ?? "", fact.id)
-    : fact.kind === "approval" ? href.case(parentId ?? fact.id, "execution-release")
-    : fact.kind === "invoice" ? href.invoice(fact.id)
-    : fact.kind === "refund" ? href.financeRequest(fact.id)
-    : href.case(parentId ?? fact.id);
-  return { ...rest, href: link };
+  const { dims: _dims, parentId: _parentId, ...rest } = fact;
+  return { ...rest, href: recordHref(fact) };
 }
 
 // ------------------------------------------------------------------ row mapping

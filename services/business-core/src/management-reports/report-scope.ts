@@ -75,6 +75,29 @@ export function parseFilters(query: Record<string, unknown>, today: string): Rep
   };
 }
 
+/**
+ * The span a period is compared with (the "vs" figure): a period that starts on the 1st of a month is set against the
+ * same days that many months earlier (this month to date against last month's same days, a quarter against the one
+ * before, a whole month against the whole month before); any other period against the same number of days just
+ * before it. Local calendar dates in, local calendar dates out.
+ */
+export function previousPeriod(from: string, to: string): { from: string; to: string } {
+  const day = (text: string) => new Date(`${text}T00:00:00Z`);
+  const iso = (date: Date) => date.toISOString().slice(0, 10);
+  const start = day(from), end = day(to);
+  if (start.getUTCDate() === 1) {
+    const months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth() + 1;
+    const lastOf = (year: number, month: number) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const endIsLast = end.getUTCDate() === lastOf(end.getUTCFullYear(), end.getUTCMonth());
+    const shiftedEnd = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - months, 1));
+    const last = lastOf(shiftedEnd.getUTCFullYear(), shiftedEnd.getUTCMonth());
+    shiftedEnd.setUTCDate(endIsLast ? last : Math.min(end.getUTCDate(), last));
+    return { from: iso(new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - months, 1))), to: iso(shiftedEnd) };
+  }
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  return { from: iso(new Date(start.getTime() - days * 86_400_000)), to: iso(new Date(start.getTime() - 86_400_000)) };
+}
+
 /** The parameter list every KPI query takes (see the module comment for the positions). */
 export function scopeParams(workspaceId: string, filters: ReportFilters, now: Date): unknown[] {
   return [workspaceId, filters.from, filters.to, filters.accountManager, filters.enquiryType, filters.package, filters.clientType,
@@ -225,4 +248,11 @@ export const href = {
   invoice: (id: string) => `/workspace/finance/client-invoices?invoice=${id}`,
   financeRequest: (id: string) => `/workspace/finance/requests?request=${id}`,
   quote: (caseId: string, quoteId: string) => `/workspace/pre-projects/cases/${caseId}/quotations?quote=${encodeURIComponent(quoteId)}`,
+  projectSection: (id: string, section: "money" | "handover" | "site") => `/workspace/projects/${id}/${section}`,
+  workOrder: (id: string) => `/workspace/factory/orders?order=${id}`,
+  bill: (id: string) => `/workspace/finance/bills?bill=${id}`,
+  supplierPayment: (id: string) => `/workspace/finance/payments?payment=${id}`,
+  pettyCash: (id: string) => `/workspace/finance/petty-cash?claim=${id}`,
+  stockItem: (id: string) => `/workspace/inventory/history?item=${id}`,
+  purchaseOrder: (id: string) => `/workspace/purchasing/orders?order=${id}`,
 };

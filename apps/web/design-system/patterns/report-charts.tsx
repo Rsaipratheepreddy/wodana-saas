@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { type CSSProperties, type ReactNode } from "react";
 import { useT } from "@/lib/i18n/i18n-provider";
 
@@ -220,24 +221,47 @@ export function FunnelSteps({ ariaLabel, steps, onSelect }: {
 export type TargetState = { target: string; percent: string | null; gap: string | null; tone: "success" | "warning" | "danger" } | null;
 
 /**
+ * The figure against the same span just before: which way it moved, by how much (already formatted, e.g. "12%"),
+ * whether that is good news, and the earlier period it is measured against (e.g. "1–12 Sep").
+ */
+export type ComparisonState = { direction: "up" | "down" | "flat"; change: string | null; tone?: "success" | "danger"; against: string; previous: string } | null;
+
+function Comparison({ comparison }: { comparison: NonNullable<ComparisonState> }) {
+  const t = useT();
+  const arrow = comparison.direction === "up" ? <ArrowUp aria-hidden="true" size={12} /> : comparison.direction === "down" ? <ArrowDown aria-hidden="true" size={12} /> : null;
+  const text = comparison.change === null ? t("Was {value} in {period}", { value: comparison.previous, period: comparison.against })
+    : comparison.direction === "flat" ? t("Same as {period}", { period: comparison.against })
+    : t("{change} vs {period}", { change: comparison.change, period: comparison.against });
+  return <small className="wd-kpi-figure-change" data-tone={comparison.tone} title={t("Was {value} in {period}", { value: comparison.previous, period: comparison.against })}>
+    {arrow}<span>{text}</span>
+  </small>;
+}
+
+/**
  * A KPI figure with its target (PLM-134): Actual, Target, % achieved and the gap, coloured green at 100 % or more,
  * amber at 80–99 % and red under 80 %; "No target set" when none is entered. `noData` says the figure can't be
- * read yet instead of showing a misleading zero.
+ * read yet instead of showing a misleading zero. `comparison` sets it against the period before; `empty` replaces the
+ * chart when nothing is recorded yet (with the next action).
  */
-export function KpiFigure({ label, value, detail, target, targetable, noData, tone, onOpen, children }: {
+export function KpiFigure({ label, value, detail, target, targetable, noData, tone, onOpen, comparison, note, empty, children }: {
   label: string; value: ReactNode; detail?: ReactNode; target?: TargetState; targetable?: boolean; noData?: boolean;
   /** A figure that is bad news whenever it is above zero (delayed, overdue). */
-  tone?: "danger"; onOpen?: () => void; children?: ReactNode;
+  tone?: "danger"; onOpen?: () => void; comparison?: ComparisonState;
+  /** One muted line under the figure (e.g. what it is read from). */
+  note?: ReactNode;
+  empty?: ReactNode; children?: ReactNode;
 }) {
   const t = useT();
   const figure = noData ? <span className="wd-kpi-figure-empty">{t("Not enough data yet")}</span> : value;
   return <section className="wd-kpi-figure" data-tone={!noData ? target?.tone ?? tone : undefined}>
     <header>
       <h3>{label}</h3>
-      {onOpen && !noData
+      {onOpen && !noData && !empty
         ? <button type="button" className="wd-kpi-figure-value" onClick={onOpen} aria-label={t("{label}. Open the records", { label })}>{figure}</button>
         : <strong className="wd-kpi-figure-value">{figure}</strong>}
+      {comparison && !noData ? <Comparison comparison={comparison} /> : null}
       {detail && !noData ? <small className="wd-kpi-figure-detail">{detail}</small> : null}
+      {note ? <small className="wd-kpi-figure-note">{note}</small> : null}
     </header>
     {targetable && !noData ? target
       ? <dl className="wd-kpi-figure-target">
@@ -246,6 +270,6 @@ export function KpiFigure({ label, value, detail, target, targetable, noData, to
           <div><dt>{t("Gap")}</dt><dd>{target.gap ?? "—"}</dd></div>
         </dl>
       : <small className="wd-kpi-figure-no-target">{t("No target set")}</small> : null}
-    {children ? <div className="wd-kpi-figure-chart">{children}</div> : null}
+    {empty ? <div className="wd-kpi-figure-empty-state">{empty}</div> : children ? <div className="wd-kpi-figure-chart">{children}</div> : null}
   </section>;
 }

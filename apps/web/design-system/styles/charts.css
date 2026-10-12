@@ -163,6 +163,13 @@ button.wd-kpi-figure-value:hover { text-decoration: underline; text-underline-of
 .wd-kpi-figure-target dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-medium); unicode-bidi: plaintext; }
 .wd-kpi-figure-target div:nth-child(2) dd { color: var(--wd-kpi-tone); }
 .wd-kpi-figure-chart { min-inline-size: 0; container-type: inline-size; }
+.wd-kpi-figure-change { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: start; font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; color: var(--wd-color-text-secondary); unicode-bidi: plaintext; }
+.wd-kpi-figure-change[data-tone="success"] { color: var(--wd-color-success); }
+.wd-kpi-figure-change[data-tone="danger"] { color: var(--wd-color-danger); }
+.wd-kpi-figure-change svg { flex: none; }
+.wd-kpi-figure-note { font-size: var(--wd-text-xs); color: var(--wd-color-text-tertiary); unicode-bidi: plaintext; }
+.wd-kpi-figure-empty-state { min-inline-size: 0; }
+.wd-kpi-figure-empty-state .wd-empty-state { min-block-size: 0; padding: var(--wd-space-4) 0; }
 
 @media (prefers-reduced-motion: reduce) { .wd-gauge-value { transition: none; } }
 @media print {

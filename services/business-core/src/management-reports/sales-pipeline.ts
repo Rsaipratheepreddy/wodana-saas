@@ -15,11 +15,11 @@ const OPEN_LEAD = `('new', 'attempting_contact', 'connected', 'nurturing', 'paus
  * counted under Duplicates). The trend stacks the last 12 months by source; the five biggest sources over those
  * months are their own series, the rest are "Other".
  */
-const NEW_LEADS_SQL = `WITH ${P}, ${LEADS}
+export const NEW_LEADS_SQL = `WITH ${P}, ${LEADS}
 SELECT ${FACT_COLUMNS} FROM (
   SELECT lc.lead_id::text AS id, 'lead' AS kind, NULL::text AS parent_id, lc.reference, lc.title, lc.client, lc.owner, lc.am::text AS owner_id,
          lc.created_at AS at, NULL::text AS amount, NULL::text AS measure, lc.source || ' / ' || lc.channel AS detail,
-         jsonb_build_object('period', ${PERIOD("lc.created_at")}, 'month', ${month("lc.created_at")}, 'source', lc.source, 'channel', lc.channel) AS dims
+         jsonb_build_object('period', ${PERIOD("lc.created_at")}, 'month', ${month("lc.created_at")}, 'source', lc.source, 'channel', lc.channel, 'type', COALESCE(lc.enquiry_type, 'none')) AS dims
     FROM lc CROSS JOIN p WHERE lc.status <> 'duplicate' AND lc.created_at >= p.series_from_at AND lc.created_at < p.to_at
 ) facts ORDER BY at DESC`;
 
@@ -59,11 +59,11 @@ const newLeads: KpiSpec = {
 const reached = (codes: string) => `(o.status = 'won' OR EXISTS (SELECT 1 FROM crm_stage_history h JOIN crm_pipeline_stages s ON s.workspace_id = h.workspace_id AND s.id = h.to_stage_id
     WHERE h.workspace_id = o.workspace_id AND h.opportunity_id = o.id AND s.code IN ${codes})
   OR EXISTS (SELECT 1 FROM crm_pipeline_stages s WHERE s.workspace_id = o.workspace_id AND s.id = o.stage_id AND s.code IN ${codes}))`;
-const FUNNEL_SQL = `WITH ${P}, ${LEADS}
+export const FUNNEL_SQL = `WITH ${P}, ${LEADS}
 SELECT ${FACT_COLUMNS} FROM (
   SELECT lc.lead_id::text AS id, 'lead' AS kind, NULL::text AS parent_id, lc.reference, lc.title, lc.client, lc.owner, lc.am::text AS owner_id,
          lc.created_at AS at, NULL::text AS amount, NULL::text AS measure, o.status::text AS detail,
-         jsonb_build_object('period', '1', 'lead', '1',
+         jsonb_build_object('period', '1', 'lead', '1', 'source', lc.source, 'channel', lc.channel,
            'opportunity', CASE WHEN o.id IS NOT NULL THEN '1' ELSE '0' END,
            'qualified', CASE WHEN o.id IS NOT NULL AND ${reached("('qualification', 'proposal', 'negotiation', 'won')")} THEN '1' ELSE '0' END,
            'proposal', CASE WHEN o.id IS NOT NULL AND ${reached("('proposal', 'negotiation', 'won')")} THEN '1' ELSE '0' END,
