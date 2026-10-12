@@ -6,6 +6,7 @@ import redis.asyncio as redis
 
 from wodana_intelligence.config import get_settings
 from wodana_intelligence.container import get_google_integration_service, get_provider_service
+from wodana_intelligence.error_reporting import install_error_reporting
 from wodana_intelligence.integrations.business_core import BusinessCoreClient
 from wodana_intelligence.worker.accounting import (
     poll_accounting,
@@ -33,6 +34,7 @@ async def run() -> None:
     # numbers in the query string, so those URLs must not reach the logs.
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
+    install_error_reporting("intelligence-worker")
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):
