@@ -16,10 +16,26 @@ describe("framing (booking embeds)", () => {
     expect(framable(await headersFor("/book/palm/design-consultation"))).toBe(true);
   });
   it("keeps the signed manage page, the staff app and everything else unframable", async () => {
-    for (const path of ["/book/palm/manage/abc.def", "/workspace/crm/leads", "/login", "/book/palm"]) {
+    for (const path of ["/book/palm/manage/abc.def", "/workspace/crm/leads", "/login", "/book/palm", "/enquiry/abc/extra", "/apifoo"]) {
       const headers = await headersFor(path);
       expect(framable(headers), path).toBe(false);
+      expect(headers.find((header) => header.key === "X-Frame-Options")?.value, path).toBe("DENY");
       expect(headers.some((header) => header.key === "Content-Security-Policy"), path).toBe(true);
     }
+  });
+  it("lets firms embed a lead form with the copied embed code", async () => {
+    expect(framable(await headersFor("/enquiry/form-token-123"))).toBe(true);
+  });
+  it("lets our own pages show files from /api (the signing page's PDF) but no other site", async () => {
+    const headers = await headersFor("/api/esign/token-1/document");
+    expect(headers.filter((header) => header.key === "X-Frame-Options").map((header) => header.value)).toEqual(["SAMEORIGIN"]);
+    const policies = headers.filter((header) => header.key === "Content-Security-Policy").map((header) => header.value);
+    expect(policies).toHaveLength(1);
+    expect(policies[0]).toContain("frame-ancestors 'self'");
+  });
+  it("allows the note video players in frame-src", async () => {
+    const policy = (await headersFor("/workspace/crm/leads")).find((header) => header.key === "Content-Security-Policy")?.value ?? "";
+    expect(policy).toContain("https://www.youtube-nocookie.com");
+    expect(policy).toContain("https://player.vimeo.com");
   });
 });

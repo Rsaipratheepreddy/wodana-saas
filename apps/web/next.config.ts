@@ -36,13 +36,20 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       scriptPolicy,
       // The SDK's own frames for sign-in, on Meta's domains only; the Google Picker's frame.
-      "frame-src 'self' https://www.facebook.com https://web.facebook.com https://staticxx.facebook.com https://docs.google.com",
+      // Reference videos in notes play from YouTube's no-cookie host or Vimeo's player.
+      "frame-src 'self' https://www.facebook.com https://web.facebook.com https://staticxx.facebook.com https://docs.google.com https://www.youtube-nocookie.com https://player.vimeo.com",
       "connect-src 'self' https: wss:",
       "media-src 'self' blob: https:",
       "upgrade-insecure-requests",
     ].join("; "),
   },
 ];
+
+const sameOriginHeaders = securityHeaders.map((header) => header.key === "X-Frame-Options"
+  ? { ...header, value: "SAMEORIGIN" }
+  : header.key === "Content-Security-Policy"
+    ? { ...header, value: header.value.replace("frame-ancestors 'none'", "frame-ancestors 'self'") }
+    : header);
 
 const framableHeaders = securityHeaders.filter((header) => header.key !== "X-Frame-Options")
   .map((header) => header.key === "Content-Security-Policy" ? { ...header, value: header.value.replace("frame-ancestors 'none'", "frame-ancestors *") } : header);
@@ -76,10 +83,13 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      // Only the public booking page (/book/{workspace}/{type}) may be framed on firms' own websites (iframe or popup).
-      // Everything else, including the signed manage page, keeps frame-ancestors 'none'.
-      { source: "/:path((?!book/[^/]+/[^/]+/?$).*)", headers: securityHeaders },
+      // The public booking page (/book/{workspace}/{type}) and a lead form (/enquiry/{token}, the "Embed code" firms
+      // copy) may be framed on firms' own websites. Files under /api may be shown inside our own pages (the signing
+      // page's PDF, a captured bill). Everything else, including the signed manage page, keeps frame-ancestors 'none'.
+      { source: "/:path((?!book/[^/]+/[^/]+/?$|enquiry/[^/]+/?$|api/).*)", headers: securityHeaders },
       { source: "/book/:workspace/:type", headers: framableHeaders },
+      { source: "/enquiry/:token", headers: framableHeaders },
+      { source: "/api/:path*", headers: sameOriginHeaders },
       {
         // Brand characters (role avatars, Woddy) change by file name only, so browsers may keep them.
         source: "/brand/:path*",
