@@ -43,7 +43,8 @@ function moneyLabel(record: CrmRecord, locale: string) {
   const amount = Number(record.amount);
   const currency = String(record.currencyCode ?? record.currency_code ?? "");
   if (!Number.isFinite(amount) || !/^[A-Z]{3}$/.test(currency)) return null;
-  return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+  // A record shows the full amount in the currency's own decimals; compact amounts are for figures and charts (UX-006).
+  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount);
 }
 
 const STATUS_LABELS: Record<string, ReturnType<typeof tKey>> = { open: tKey("Open"), won: tKey("Won"), lost: tKey("Lost"), abandoned: tKey("Abandoned") };
