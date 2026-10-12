@@ -1,0 +1,7 @@
+[Unit]
+Description=Wodana host watchdog (disk, readiness, backup, certificate)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wodana/prod/watchdog.sh

@@ -24,6 +24,9 @@ services:
       - max_connections=80
       - -c
       - log_min_duration_statement=1000
+      # A leaked "idle in transaction" session holds its locks until it ends and would block the next migration.
+      - -c
+      - idle_in_transaction_session_timeout=600000
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./001-create-app-role.sh:/docker-entrypoint-initdb.d/001-create-app-role.sh:ro
@@ -64,6 +67,8 @@ services:
     volumes: [object_data:/app/.data]
     init: true
     restart: unless-stopped
+    # Time for in-flight requests and the current sweep to finish after SIGTERM before the kill.
+    stop_grace_period: 30s
     mem_limit: 896m
     logging: *logging
     depends_on:
@@ -100,10 +105,18 @@ services:
     command: [python, -m, wodana_intelligence.worker]
     init: true
     restart: unless-stopped
+    stop_grace_period: 30s
     mem_limit: 320m
     logging: *logging
     depends_on:
       business-core: {condition: service_healthy}
+    # The worker touches its own heartbeat file every timer pass; stale for two minutes means it has stopped.
+    healthcheck:
+      test: [CMD, python, -m, wodana_intelligence.worker.healthcheck]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
   web:
     image: wodana-web:${RELEASE}
     network_mode: host
