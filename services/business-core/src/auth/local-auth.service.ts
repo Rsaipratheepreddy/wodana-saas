@@ -72,6 +72,14 @@ const ACCESS_TOKEN_SECONDS = 15 * 60;
 const REFRESH_TOKEN_DAYS = 30;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
+const RESET_EMAILS_PER_HOUR = 3;
+
+/** Raised inside the activation transaction; the failed attempt is recorded after its rollback. */
+class ExistingAccountPasswordError extends Error {
+  constructor(readonly userId: string) {
+    super("existing account password mismatch");
+  }
+}
 
 @Injectable()
 export class LocalAuthService {
@@ -258,19 +266,23 @@ export class LocalAuthService {
 
     const validPassword = await verifyPassword(password, user.passwordSalt, user.passwordHash);
     if (!validPassword) {
-      await this.database.query(
-        `UPDATE local_auth_credentials
-         SET failed_attempts = failed_attempts + 1,
-             locked_until = CASE WHEN failed_attempts + 1 >= $2
-               THEN now() + ($3 * interval '1 minute') ELSE NULL END,
-             updated_at = now()
-         WHERE user_id = $1`,
-        [user.id, MAX_FAILED_ATTEMPTS, LOCK_MINUTES],
-      );
+      await this.recordFailedPassword(user.id);
       throw new UnauthorizedException("Email, password, or tenant is incorrect");
     }
 
     return user;
+  }
+
+  private async recordFailedPassword(userId: string) {
+    await this.database.query(
+      `UPDATE local_auth_credentials
+       SET failed_attempts = failed_attempts + 1,
+           locked_until = CASE WHEN failed_attempts + 1 >= $2
+             THEN now() + ($3 * interval '1 minute') ELSE NULL END,
+           updated_at = now()
+       WHERE user_id = $1`,
+      [userId, MAX_FAILED_ATTEMPTS, LOCK_MINUTES],
+    );
   }
 
   private async recordSuccessfulPasswordLogin(userId: string) {
@@ -325,16 +337,41 @@ export class LocalAuthService {
         || locked.rows[0].expiresAt.getTime() <= Date.now()) {
         throw new GoneException("Invitation is no longer active");
       }
-      const encoded = await hashPassword(password);
-      const credential = await client.query<{ passwordChangedAt: Date }>(
-        `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
-           password_salt = EXCLUDED.password_salt, failed_attempts = 0, locked_until = NULL,
-           password_changed_at = now(), updated_at = now()
-         RETURNING password_changed_at AS "passwordChangedAt"`,
-        [row.userId, encoded.hash, encoded.salt],
+      // A person who already has a Wodana password accepts with that password: an invitation link (which the inviter
+      // can see) must never replace an existing account's password, or any inviter could take the account over.
+      const existing = await client.query<{
+        passwordHash: string; passwordSalt: string; lockedUntil: Date | null; passwordChangedAt: Date;
+      }>(
+        `SELECT password_hash AS "passwordHash", password_salt AS "passwordSalt", locked_until AS "lockedUntil",
+                password_changed_at AS "passwordChangedAt"
+         FROM local_auth_credentials WHERE user_id = $1 FOR UPDATE`,
+        [row.userId],
       );
+      let credential: { passwordChangedAt: Date; passwordHash: string };
+      if (existing.rowCount) {
+        const current = existing.rows[0];
+        if (current.lockedUntil && current.lockedUntil.getTime() > Date.now()) {
+          throw new HttpException("Too many sign-in attempts. Try again later", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        if (!(await verifyPassword(password, current.passwordSalt, current.passwordHash))) {
+          throw new ExistingAccountPasswordError(row.userId);
+        }
+        await client.query(
+          `UPDATE local_auth_credentials SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+           WHERE user_id = $1`,
+          [row.userId],
+        );
+        credential = { passwordChangedAt: current.passwordChangedAt, passwordHash: current.passwordHash };
+      } else {
+        const encoded = await hashPassword(password);
+        const created = await client.query<{ passwordChangedAt: Date }>(
+          `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
+           VALUES ($1, $2, $3)
+           RETURNING password_changed_at AS "passwordChangedAt"`,
+          [row.userId, encoded.hash, encoded.salt],
+        );
+        credential = { passwordChangedAt: created.rows[0].passwordChangedAt, passwordHash: encoded.hash };
+      }
       await client.query(
         `INSERT INTO user_identities
           (user_id, provider, provider_subject, email_at_provider, last_login_at)
@@ -349,7 +386,13 @@ export class LocalAuthService {
          VALUES ($1, $2, 'user', 'workspace.invitation_accepted', 'workspace_membership', $3, $4::jsonb, $5)`,
         [row.workspaceId, row.userId, accepted.membershipId, JSON.stringify({ invitationId: row.id, email: row.email }), randomUUID()],
       );
-      return { ...row, passwordChangedAt: credential.rows[0].passwordChangedAt, passwordHash: encoded.hash };
+      return { ...row, passwordChangedAt: credential.passwordChangedAt, passwordHash: credential.passwordHash };
+    }).catch(async (error: unknown) => {
+      if (!(error instanceof ExistingAccountPasswordError)) throw error;
+      await this.recordFailedPassword(error.userId);
+      throw new UnauthorizedException(
+        "You already have a Wodana account. Enter your current password to accept this invitation, or reset it first.",
+      );
     });
 
     return this.completePrimaryAuthentication({
@@ -703,7 +746,16 @@ export class LocalAuthService {
         [branding.rows[0].workspaceId, user.rows[0].id],
       ))
       : null;
-    if (user.rowCount && membership?.rowCount) {
+    // At most RESET_EMAILS_PER_HOUR reset emails per person, with the same answer either way: a flood of requests can
+    // neither fill someone's inbox nor hold up every workspace's email behind the shared send limiter.
+    const recent = user.rowCount && membership?.rowCount
+      ? await this.database.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM password_reset_tokens
+         WHERE user_id = $1 AND created_at > now() - interval '1 hour'`,
+        [user.rows[0].id],
+      )
+      : null;
+    if (user.rowCount && membership?.rowCount && (recent?.rows[0]?.count ?? 0) < RESET_EMAILS_PER_HOUR) {
       const token = randomBytes(32).toString("base64url");
       await this.database.query(
         `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
@@ -743,7 +795,11 @@ export class LocalAuthService {
          WHERE user_id = $1`,
         [row.userId, encoded.hash, encoded.salt],
       );
-      await client.query("UPDATE password_reset_tokens SET used_at = now() WHERE id = $1", [row.id]);
+      // Any other reset link still in the inbox stops working too.
+      await client.query(
+        "UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL",
+        [row.userId],
+      );
       await client.query(
         `UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now())
          WHERE user_id = $1`,
