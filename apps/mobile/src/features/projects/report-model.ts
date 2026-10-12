@@ -3,7 +3,9 @@ import type { Outlook, PhotoPhase, Safety, Severity, SiteReport, SiteState } fro
 /** A daily report being written on the phone. Pure: shared by the screen and its tests. */
 export type Installed = { boqLineId: string; installed: string; note: string };
 export type Crew = { trade: string; people: number; hours?: number | null };
-export type Issue = { id: string; severity: Severity; description: string; internal: boolean; raise?: 'snag' | 'material' | null };
+/** An issue or blocker: how serious, what, whether the client may read it, who owns it by when, and what to raise from it. */
+export type Issue = { id: string; severity: Severity; description: string; internal: boolean; raise?: 'snag' | 'material' | 'change_request' | null;
+  ownerId?: string | null; dueOn?: string | null };
 export type PhotoTags = { areaId: string | null; phase: PhotoPhase | null; pairId: string | null };
 /** A material received on site or used that day; `delivery` is "order:<id>" or "transfer:<id>" when it came on one. */
 export type Material = { direction: 'received' | 'used'; description: string; quantity: string; unit: string; delivery: string };
@@ -42,7 +44,8 @@ export const fromReport = (report: SiteReport): Draft => ({
   lines: report.lines.map((line) => ({ boqLineId: line.boqLineId, installed: line.installed, note: line.note })),
   tasks: Object.fromEntries((report.tasks ?? []).map((task) => [task.workItemId, { progress: task.progress, note: task.note }])),
   next: (report.next ?? []).map((item) => ({ workItemId: item.workItemId, title: item.title })),
-  issues: (report.issues ?? []).map((issue) => ({ id: issue.id, severity: issue.severity, description: issue.description, internal: issue.internal, raise: null })),
+  issues: (report.issues ?? []).map((issue) => ({ id: issue.id, severity: issue.severity, description: issue.description, internal: issue.internal, raise: null,
+    ownerId: issue.ownerId ?? null, dueOn: issue.dueOn ?? null })),
   materials: (report.materials ?? []).map((item) => ({ direction: item.direction, description: item.description, quantity: item.quantity ? String(Number(item.quantity)) : '', unit: item.unit,
     delivery: item.purchaseOrderId ? `order:${item.purchaseOrderId}` : item.stockTransferId ? `transfer:${item.stockTransferId}` : '' })),
   photos: Object.fromEntries(report.photos.map((photo) => [photo.id, { areaId: photo.areaId ?? null, phase: photo.phase ?? null, pairId: photo.pairId ?? null }])),
@@ -82,7 +85,8 @@ export function reportBody(draft: Draft, reportDate: string) {
     lines: draft.lines.map((line) => ({ boqLineId: line.boqLineId, installed: line.installed, note: line.note.trim() })),
     tasks: Object.entries(draft.tasks).map(([workItemId, entry]) => ({ workItemId, progress: entry.progress, note: entry.note.trim() })),
     next: draft.next.filter((item) => item.title.trim()).map((item) => ({ workItemId: item.workItemId, title: item.title.trim() })),
-    issues: draft.issues.filter((issue) => issue.description.trim()).map((issue) => ({ id: issue.id, severity: issue.severity, description: issue.description.trim(), internal: issue.internal })),
+    issues: draft.issues.filter((issue) => issue.description.trim()).map((issue) => ({ id: issue.id, severity: issue.severity, description: issue.description.trim(), internal: issue.internal,
+      ownerId: issue.ownerId ?? null, dueOn: issue.dueOn || null })),
     materials: (draft.materials ?? []).filter((item) => item.description.trim()).map((item) => ({ direction: item.direction, description: item.description.trim(), quantity: item.quantity || null,
       unit: item.unit.trim(), purchaseOrderId: item.delivery.startsWith('order:') ? item.delivery.slice(6) : null, stockTransferId: item.delivery.startsWith('transfer:') ? item.delivery.slice(9) : null })),
     photos: Object.entries(draft.photos).map(([id, tags]) => ({ id, ...tags })),

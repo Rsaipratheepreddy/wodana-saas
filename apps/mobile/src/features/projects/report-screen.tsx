@@ -197,8 +197,11 @@ export function ReportScreen() {
       {draft.issues.length ? draft.issues.map((item, index) => {
         const raised = mine?.issues?.find((entry) => entry.id === item.id)?.raised ?? null;
         return <ListRow key={item.id} first={index === 0} icon={AlertTriangle} iconTone={item.severity === 'critical' ? 'danger' : item.severity === 'major' ? 'warning' : 'neutral'} title={item.description}
-          detail={[item.internal ? t('Internal') : t('The client can read this'), raised === 'snag' ? t('Snag raised') : raised === 'material' ? t('Material requested')
-            : item.raise === 'snag' ? t('Snag to raise') : item.raise === 'material' ? t('Material to request') : null].filter(Boolean).join(' · ')}
+          detail={[item.internal ? t('Internal') : t('The client can read this'), state.members.find((member) => member.membershipId === item.ownerId)?.name ?? null,
+            item.dueOn ? t('Due {date}', { date: format.day(item.dueOn) }) : null,
+            raised === 'snag' ? t('Snag raised') : raised === 'material' ? t('Material requested') : raised === 'change_request' ? t('Change request raised')
+            : item.raise === 'snag' ? t('Snag to raise') : item.raise === 'material' ? t('Material to request') : item.raise === 'change_request' ? t('Change request to raise') : null]
+            .filter(Boolean).join(' · ')}
           onPress={readOnly ? undefined : () => setIssue(item)} />;
       }) : <ListRow first icon={AlertTriangle} title={readOnly ? t('No issues') : t('Add an issue or blocker')} onPress={readOnly ? undefined : () => setIssue('new')} />}
     </Section>
@@ -271,7 +274,7 @@ export function ReportScreen() {
       onSave={(hours) => { set('workforce', draft.workforce.map((entry) => (entry.trade === hoursFor ? { ...entry, hours } : entry))); setHoursFor(null); }} />
     <PhotoTagSheet id={taggingPhoto} tags={taggingPhoto ? draft.photos[taggingPhoto] ?? null : null} photoIds={allPhotoIds} areas={areas} onClose={() => setTaggingPhoto(null)}
       onChange={(patch) => taggingPhoto && setDraft((current) => tagPhoto(current, taggingPhoto, patch))} />
-    <IssueSheet issue={issue} onClose={() => setIssue(null)}
+    <IssueSheet issue={issue} members={state.members} onClose={() => setIssue(null)}
       onSave={(saved) => { set('issues', draft.issues.some((item) => item.id === saved.id) ? draft.issues.map((item) => (item.id === saved.id ? saved : item)) : [...draft.issues, saved]); setIssue(null); }}
       onRemove={(id) => { set('issues', draft.issues.filter((item) => item.id !== id)); setIssue(null); }}
       raised={issue && issue !== 'new' ? mine?.issues?.find((entry) => entry.id === issue.id)?.raised ?? null : null} />
@@ -315,13 +318,15 @@ function PhotoTagSheet({ id, tags, photoIds, areas, onClose, onChange }: {
   </Sheet>;
 }
 
-/** An issue or blocker: how serious, what it is, whether the client may read it, and a snag or material request raised from it. */
-function IssueSheet({ issue, raised, onClose, onSave, onRemove }: {
-  issue: Issue | 'new' | null; raised: 'snag' | 'material' | null; onClose: () => void; onSave: (issue: Issue) => void; onRemove: (id: string) => void;
+/** An issue or blocker: how serious, what it is, whether the client may read it, who owns it by when, and a snag, change request or material request raised from it. */
+function IssueSheet({ issue, raised, members, onClose, onSave, onRemove }: {
+  issue: Issue | 'new' | null; raised: 'snag' | 'material' | 'change_request' | null; members: Array<{ membershipId: string; name: string }>;
+  onClose: () => void; onSave: (issue: Issue) => void; onRemove: (id: string) => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const [value, setValue] = useState<Issue | null>(null);
-  useEffect(() => { if (issue) setValue(issue === 'new' ? { id: Crypto.randomUUID(), severity: 'minor', description: '', internal: true, raise: null } : issue); }, [issue]);
+  useEffect(() => { if (issue) setValue(issue === 'new' ? { id: Crypto.randomUUID(), severity: 'minor', description: '', internal: true, raise: null, ownerId: null, dueOn: null } : issue); }, [issue]);
   if (!issue || !value) return null;
   return <Sheet open={!!issue} onClose={onClose} title={issue === 'new' ? t('Add issue') : t('Issue')} footer={<>
     <Button label={t('Done')} variant="primary" size="lg" full disabled={!value.description.trim()} onPress={() => onSave({ ...value, description: value.description.trim().slice(0, 1000) })} />
@@ -331,8 +336,12 @@ function IssueSheet({ issue, raised, onClose, onSave, onRemove }: {
       options={[{ value: 'minor', label: t('Minor') }, { value: 'major', label: t('Major') }, { value: 'critical', label: t('Critical') }]} />
     <TextField label={t('What’s wrong')} value={value.description} onChangeText={(description) => setValue({ ...value, description })} multiline maxLength={1000} autoFocus={issue === 'new'} />
     <ToggleRow first label={t('The client can read this')} value={!value.internal} onChange={(shown) => setValue({ ...value, internal: !shown })} />
-    {raised ? <Banner tone="info" title={raised === 'snag' ? t('Snag raised') : t('Material requested')} /> : <Row gap={2} wrap>
+    <SelectField label={t('Owner')} value={value.ownerId ?? null} allowClear options={members.map((member) => ({ value: member.membershipId, label: member.name }))}
+      onChange={(ownerId) => setValue({ ...value, ownerId })} />
+    <DateField label={t('Due')} value={value.dueOn ?? ''} onChange={(dueOn) => setValue({ ...value, dueOn: dueOn || null })} min={format.today()} />
+    {raised ? <Banner tone="info" title={raised === 'snag' ? t('Snag raised') : raised === 'change_request' ? t('Change request raised') : t('Material requested')} /> : <Row gap={2} wrap>
       <Chip label={t('Raise a snag')} selected={value.raise === 'snag'} onPress={() => setValue({ ...value, raise: value.raise === 'snag' ? null : 'snag' })} />
+      <Chip label={t('Raise a change request')} selected={value.raise === 'change_request'} onPress={() => setValue({ ...value, raise: value.raise === 'change_request' ? null : 'change_request' })} />
       <Chip label={t('Request material')} selected={value.raise === 'material'} onPress={() => setValue({ ...value, raise: value.raise === 'material' ? null : 'material' })} />
     </Row>}
   </Sheet>;

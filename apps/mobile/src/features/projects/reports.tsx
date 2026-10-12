@@ -1,31 +1,29 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ClipboardList, Image as ImageIcon, Plus, Star } from 'lucide-react-native';
-import type { SiteReport } from '../../../../web/lib/site/types';
+import { CalendarX, ClipboardList, Image as ImageIcon, Plus, Star } from 'lucide-react-native';
+import type { DayCard, SiteReport } from '../../../../web/lib/site/types';
 import { errorMessage } from '../../core/api';
 import { useFormat } from '../../core/format';
 import { useT } from '../../core/i18n';
 import { ReasonSheet } from '../../ui/dialogs';
 import { TextField } from '../../ui/fields';
 import { Banner, Empty, Fact, ListRow, ListScreen, Section } from '../../ui/layout';
-import { AuthImage, PhotoGrid } from '../../ui/photos';
+import { PhotoGrid } from '../../ui/photos';
 import { Button, Chip, Row, Stack, Text } from '../../ui/primitives';
 import { Sheet } from '../../ui/sheet';
 import { StatusChip } from '../../ui/status';
 import { useToast } from '../../ui/toast';
-import { useTheme } from '../../ui/theme';
 import { sitePhotoPath, useSite, useSiteCommand } from './api';
+import { DayCardView } from './day-card';
+import { feedItems, reportToOpen } from './day-card-model';
 
 /** The day's state as one chip: sent to the client wins over approved. */
 const statusOf = (report: SiteReport) => (report.delivery === 'sent' ? 'sent' : report.status);
-/** The day's lead photo, else its first one. */
-const leadPhoto = (report: SiteReport) => report.heroPhotoId ?? report.photos[0]?.id ?? null;
 
 /** The project's daily progress, newest first; the project manager reviews, approves & sends, or sends back here. */
 export function ReportsScreen() {
   const t = useT();
-  const theme = useTheme();
   const router = useRouter();
   const format = useFormat();
   const { id: projectId, report: linked } = useLocalSearchParams<{ id: string; report?: string }>();
@@ -34,26 +32,26 @@ export function ReportsScreen() {
   const state = site.data;
   // A notice or Approvals opens the day it's about.
   useEffect(() => { if (linked && state && !open) setOpen(state.reports.find((report) => report.id === linked) ?? null); }, [linked, state, open]);
-  const people = (report: SiteReport) => report.workforce.reduce((sum, entry) => sum + entry.people, 0);
   const current = open ? state?.reports.find((report) => report.id === open.id) ?? open : null;
+  // A day's card opens its report: mine to continue (the form), any other to read or review (the sheet).
+  const openDay = (card: DayCard) => {
+    const chosen = state ? reportToOpen(card, state.me) : null;
+    const full = chosen ? state?.reports.find((report) => report.id === chosen.id) : null;
+    if (!chosen || !state) return;
+    if (chosen.authorId === state.me && (chosen.status === 'draft' || chosen.status === 'returned') && state.canReport) router.push(`/projects/${projectId}/report?date=${card.date}`);
+    else if (full) setOpen(full);
+  };
+  const toReview = state ? state.reports.filter((report) => report.status === 'submitted' && report.authorId !== state.me).length : 0;
   return <>
-    <ListScreen title={t('Daily progress')} back items={state?.reports} keyExtractor={(report) => report.id} groupBy={(report) => format.weekday(report.reportDate)}
+    <ListScreen title={t('Daily progress')} back items={state ? feedItems(state.days) : undefined} keyExtractor={(item) => item.key} groupBy={(item) => format.weekday(item.date)}
       loading={site.isLoading} error={site.error ? errorMessage(site.error, t('Reports could not be loaded.')) : null} onRetry={() => void site.refetch()}
       onRefresh={() => void site.refetch()} refreshing={site.isRefetching}
-      toolbar={state && state.reports.some((report) => report.status === 'submitted' && report.authorId !== state.me) && state.canApprove
-        ? <Banner tone="warning" title={t('{count} to review', { count: state.reports.filter((report) => report.status === 'submitted' && report.authorId !== state.me).length })} /> : undefined}
-      empty={<Empty icon={ClipboardList} title={t('No reports yet')} />}
-      renderItem={(report, _, first) => <ListRow first={first} title={report.authorName} onPress={() => setOpen(report)}
-        leading={leadPhoto(report) ? <AuthImage path={sitePhotoPath(projectId, leadPhoto(report)!)} accessibilityLabel={t('Lead photo')}
-          style={{ width: 52, height: 52, borderRadius: theme.radius.md }} /> : undefined}
-        detail={report.clientSummary || (report.noWorkReason ? t('No work · {reason}', { reason: report.noWorkReason }) : [t('{count} on site', { count: people(report) }), report.lines.length ? t('{count} lines installed', { count: report.lines.length }) : null].filter(Boolean).join(' · '))}
-        meta={report.late || report.safety !== 'none' || report.forecast !== 'none' ? <Row gap={1} style={{ marginTop: 4 }}>
-          {report.late ? <Chip label={t('Late')} tone="warning" /> : null}
-          {report.safety !== 'none' ? <Chip label={report.safety === 'incident' ? t('Incident') : t('Observation')} tone={report.safety === 'incident' ? 'danger' : 'warning'} /> : null}
-          {report.forecast !== 'none' ? <StatusChip status={report.forecast === 'blocked' ? 'blocked' : 'at_risk'} /> : null}
-        </Row> : undefined}
-        trailing={<StatusChip status={statusOf(report)} />} />}
-      footer={state?.canReport ? <Button label={t('Today’s report')} icon={Plus} variant="primary" size="lg" full onPress={() => router.push(`/projects/${projectId}/report`)} /> : undefined} />
+      toolbar={state && toReview && state.canApprove ? <Banner tone="warning" title={t('{count} to review', { count: toReview })} /> : undefined}
+      empty={<Empty icon={ClipboardList} title={t('No daily progress yet')} action={state?.canReport ? { label: t('Add today’s report'), onPress: () => router.push(`/projects/${projectId}/report`) } : undefined} />}
+      renderItem={(item, _, first) => item.card ? <DayCardView card={item.card} projectId={projectId} onOpen={() => openDay(item.card!)} />
+        : <ListRow first={first} icon={CalendarX} iconTone="danger" title={t('No report')}
+          trailing={state?.canReport ? <Button size="sm" variant="ghost" label={t('Add report')} onPress={() => router.push(`/projects/${projectId}/report?date=${item.date}`)} /> : undefined} />}
+      footer={state?.canReport ? <Button label={t('Add today’s report')} icon={Plus} variant="primary" size="lg" full onPress={() => router.push(`/projects/${projectId}/report`)} /> : undefined} />
     <ReportSheet projectId={projectId} report={current} onClose={() => setOpen(null)} />
   </>;
 }

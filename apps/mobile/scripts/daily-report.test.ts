@@ -32,7 +32,7 @@ test('the server gets complete parts, and a submit needs a photo or why no work 
   const draft = { ...chooseProgress(fromPlan(plan), 't1', 50), issues: [{ id: 'i1', severity: 'major' as const, description: ' Tiles cracked ', internal: true }] };
   const body = reportBody(draft, '2026-09-27');
   assert.deepEqual(body.tasks, [{ workItemId: 't1', progress: 50, note: '' }]);
-  assert.deepEqual(body.issues, [{ id: 'i1', severity: 'major', description: 'Tiles cracked', internal: true }]);
+  assert.deepEqual(body.issues, [{ id: 'i1', severity: 'major', description: 'Tiles cracked', internal: true, ownerId: null, dueOn: null }]);
   assert.deepEqual(body.workforce, [{ trade: 'Carpenters', people: 3, hours: 8 }]);
   assert.deepEqual(reportProblems(draft, 0, true, label), ['Add a photo, or say why no work was done.']);
   assert.deepEqual(reportProblems(draft, 1, true, label), []);
