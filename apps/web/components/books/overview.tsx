@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge, EmptyState, KpiFigure, SelectField, Sparkline, type ChartPoint } from "@/design-system";
 import { ledgerPaths, type LedgerOverview as Overview, type LedgerScope } from "@/lib/books/reports-client";
-import { journalEventLabel } from "./journal-sheet";
+import { journalTitle } from "./journal-sheet";
 import { LedgerRegion, useLedgerFormat, useLedgerT, type LedgerFormat } from "./reports/ledger-format";
 import { MissingRegionNotice } from "./reports/report-views";
 import styles from "./reports/ledger.module.css";
@@ -113,13 +113,14 @@ function Recent({ overview }: { overview: Overview }) {
   return <section className={styles.panel} aria-labelledby="ledger-recent">
     <div className={styles.panelHead}>
       <h2 id="ledger-recent" className={styles.subhead}>{t("Latest journals")}</h2>
-      {recent.length ? <Link className={styles.link} href={ledgerPaths.journals({ entity })}>{t("All journals")}</Link> : null}
+      {recent.length ? <Link className={styles.panelLink} href={ledgerPaths.journals({ entity })}>{t("All journals")}</Link> : null}
     </div>
     {recent.length ? <ul className={styles.list}>
       {recent.map((journal) => <li key={journal.id}>
         <span className={styles.listMain}>
-          <Link className={styles.link} href={ledgerPaths.journal(journal.id, { entity })}>{journal.sourceLabel || journal.number}</Link>
-          <small>{[journalEventLabel(t, journal), journal.number, format.day(journal.journalDate)].join(" · ")}</small>
+          {/* One title shape for every journal: "<event>: <whom>", the references in the muted line (UX-060). */}
+          <Link className={styles.link} href={ledgerPaths.journal(journal.id, { entity })}>{journalTitle(t, journal)}</Link>
+          <small>{[...new Set([journal.sourceLabel, journal.number].filter(Boolean))].concat(format.day(journal.journalDate)).join(" · ")}</small>
         </span>
         <span className={styles.listEnd}>{format.money(journal.total)}</span>
       </li>)}

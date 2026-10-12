@@ -31,7 +31,20 @@ export async function listJournals(db: Db, workspaceId: string, entity: ReportEn
   const journals = (await db.query<JournalSummary>(
     `SELECT ${SUMMARY} FROM books_journals journal WHERE ${where} ORDER BY journal.journal_date DESC, journal.number DESC LIMIT ${limit} OFFSET ${offset}`, params)).rows;
   const total = (await db.query<{ count: number }>(`SELECT count(*)::int AS count FROM books_journals journal WHERE ${where}`, params)).rows[0].count;
-  return { scope, entity, project, journals, total, limit, offset };
+  return { scope, entity, project, journals: await withPartyNames(db, workspaceId, journals), total, limit, offset };
+}
+
+/** Each journal's party: the first line that names a client, supplier, employee or team, by position. */
+async function withPartyNames(db: Db, workspaceId: string, journals: JournalSummary[]): Promise<JournalSummary[]> {
+  if (!journals.length) return journals;
+  const parties = (await db.query<{ journalId: string; partyType: BooksPartyType; partyId: string }>(
+    `SELECT DISTINCT ON (line.journal_id) line.journal_id AS "journalId", line.party_type AS "partyType", line.party_id AS "partyId"
+       FROM books_journal_lines line
+      WHERE line.workspace_id = $1 AND line.journal_id = ANY($2::uuid[]) AND line.party_type IS NOT NULL AND line.party_id IS NOT NULL
+      ORDER BY line.journal_id, line.position`, [workspaceId, journals.map((journal) => journal.id)])).rows;
+  const names = await partyNames(db, workspaceId, parties);
+  const byJournal = new Map(parties.map((party) => [party.journalId, names.get(`${party.partyType}:${party.partyId}`) ?? null]));
+  return journals.map((journal) => ({ ...journal, partyName: byJournal.get(journal.id) ?? null }));
 }
 
 type LineRow = Omit<JournalLineDetail, "partyName" | "partyType"> & { partyType: BooksPartyType | null };

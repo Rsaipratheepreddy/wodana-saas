@@ -83,6 +83,8 @@ export type AccountsList = { scope: ReportScope; entity: ReportEntity; accounts:
 export type JournalSummary = {
   id: string; number: string; journalDate: IsoDay; eventDate: IsoDay; late: boolean; kind: "auto" | "manual" | "opening" | "reversal";
   sourceType: string; sourceEvent: string; sourceLabel: string; sourceHref: string; description: string; currency: string; total: Money;
+  /** Whom it is about (the first party on its lines). */
+  partyName?: string | null;
 };
 export type JournalList = { scope: ReportScope; entity: ReportEntity; project: string | null; journals: JournalSummary[]; total: number; limit: number; offset: number };
 export type JournalLine = {

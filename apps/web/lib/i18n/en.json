@@ -14618,5 +14618,6 @@
   "Later stages": "Later stages",
   "Scroll": "Scroll",
   "Scroll back": "Scroll back",
-  "Scroll on": "Scroll on"
+  "Scroll on": "Scroll on",
+  "{event}: {subject}": "{event}: {subject}"
 }

@@ -8,6 +8,8 @@
 
 /* The Ledger home: figures with their six-month trend, then what needs someone and the latest journals. */
 .figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--wd-space-24) * 2), 1fr)); gap: var(--wd-space-3); }
+/* One tile anatomy: label, value, sub-line, then the chart at the foot, so every chart sits on the same line (UX-060). */
+.figures > :global(.wd-kpi-figure) { align-content: space-between; }
 .home { display: grid; gap: var(--wd-phi-3); }
 .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--wd-space-24) * 3), 1fr)); gap: var(--wd-phi-3); align-items: start; }
 .panel { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
@@ -50,7 +52,9 @@
 .facts > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: baseline; font-size: var(--wd-text-sm); }
 .facts dt { color: var(--wd-color-text-tertiary); }
 .facts dd { margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
-.subhead { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.subhead { margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.panelLink { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); text-decoration: none; }
+.panelLink:hover { color: var(--wd-color-text); text-decoration: underline; }
 .printTitle { display: none; }
 
 @media print {

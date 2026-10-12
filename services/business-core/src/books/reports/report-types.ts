@@ -122,6 +122,8 @@ export type JournalSummary = {
   id: string; number: string; journalDate: IsoDay; eventDate: IsoDay; late: boolean; kind: string;
   sourceType: string; sourceEvent: string; sourceLabel: string; sourceHref: string; description: string;
   currency: string; total: Money;
+  /** Whom it is about: the first client, supplier, employee or team on its lines ("Invoice issued: Omar and Layla Haddad"). */
+  partyName?: string | null;
 };
 export type JournalList = { scope: BooksReportQuery; entity: ReportEntity; project: string | null; journals: JournalSummary[]; total: number; limit: number; offset: number };
 export type JournalLineDetail = {

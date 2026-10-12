@@ -43,6 +43,17 @@ export function journalEventLabel(t: LedgerT, journal: { kind: string; sourceTyp
 }
 
 /**
+ * A journal's title in one shape (UX-060): "<event>: <whom>" ("Invoice issued: Omar and Layla Haddad"). A manual
+ * journal's own words stand for whom; with neither, the event alone. References belong in the muted line.
+ */
+export function journalTitle(t: LedgerT, journal: { kind: string; sourceType: string; sourceEvent: string; partyName?: string | null; description: string; number: string; sourceLabel: string }) {
+  const event = journalEventLabel(t, journal);
+  const own = journal.kind !== "auto" ? journal.description.trim() : "";
+  const subject = journal.partyName?.trim() || (own && own !== journal.number && own !== journal.sourceLabel ? own : "");
+  return subject ? t("{event}: {subject}", { event, subject }) : event;
+}
+
+/**
  * One posted journal: its number, dates, the record it came from (opens that record's own page), its reversal and
  * its lines, each account opening its ledger. Journals never change; a correction is a reversal, linked both ways.
  */

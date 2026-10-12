@@ -129,7 +129,7 @@ describe("the Ledger area", () => {
       trend: { days: ["2026-05-31", "2026-06-30", "2026-07-31", "2026-08-31", "2026-09-30", "2026-10-08"], cash: ["0", "1000", "5000", "9000", "100000", "118500"],
         receivables: ["0", "0", "0", "0", "20000", "63000"], payables: ["0", "0", "0", "0", "0", "11000"], vat: ["0", "0", "0", "0", "100", "7500"] },
       attention: { overdueReceivables: "21000.0000", overduePayables: "0.0000", manualWaiting: 2, unbalanced: false },
-      recent: [journal.journal] } });
+      recent: [{ ...journal.journal, partyName: "Amira Hassan" }] } });
     render(wrap(<LedgerArea workspaceId={WS} section="overview" sub={null} />));
     const cash = (await screen.findByRole("heading", { name: "Cash" })).closest("section") as HTMLElement;
     expect(within(cash).getByRole("img", { name: "Cash, last six months" })).toBeInTheDocument();
@@ -141,8 +141,9 @@ describe("the Ledger area", () => {
     expect(within(todo).getByRole("link", { name: "Chase" })).toHaveAttribute("href", `/workspace/ledger/reports/ar-ageing?entity=${ENTITY}&to=2026-10-08`);
     expect(within(todo).getAllByRole("link", { name: "Review" })[1]).toHaveAttribute("href", `/workspace/ledger/journals?entity=${ENTITY}&view=manual`);
     const recent = screen.getByRole("region", { name: "Latest journals" });
-    expect(within(recent).getByRole("link", { name: "RCPT-1" })).toHaveAttribute("href", `/workspace/ledger/journals/${JOURNAL}?entity=${ENTITY}`);
-    expect(within(recent).getByText(/STUD-JV-000004/)).toBeInTheDocument();
+    // Every journal reads "<event>: <whom>"; its references sit in the muted line.
+    expect(within(recent).getByRole("link", { name: "Client payment received: Amira Hassan" })).toHaveAttribute("href", `/workspace/ledger/journals/${JOURNAL}?entity=${ENTITY}`);
+    expect(within(recent).getByText(/RCPT-1 · STUD-JV-000004/)).toBeInTheDocument();
     expect(within(recent).getByRole("link", { name: "All journals" })).toHaveAttribute("href", `/workspace/ledger/journals?entity=${ENTITY}`);
   });
 
