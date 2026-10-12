@@ -13,8 +13,9 @@ export async function fetchHistory(workspaceId: string, recordType: HistoryRecor
   const query = new URLSearchParams({ workspaceId, filter, ...(before ? { before } : {}) });
   const response = await fetch(`/api/history/${recordType}/${recordId}?${query}`, { cache: "no-store" });
   const body = await response.json().catch(() => null) as (HistoryPage & { message?: string }) | null;
-  if (!response.ok || !body || !Array.isArray(body.items)) throw new Error(body?.message || t("The history didn't load."));
-  return body;
+  // Only a history page is read as one (an unexpected answer is an error, not a crash).
+  if (!response.ok || !body || !Array.isArray(body.items) || typeof body.timeZone !== "string") throw new Error(body?.message || t("The history didn't load."));
+  return { ...body, items: body.items.filter((item) => typeof item?.occurredAt === "string" && typeof item.verb === "string" && Boolean(item.actor)) };
 }
 
 /** Money as an exact decimal string in the workspace's locale, dates in its time zone, and day keys for grouping. */
