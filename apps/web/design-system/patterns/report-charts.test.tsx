@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ColumnChart, DonutChart, FunnelSteps, Gauge, KpiFigure, RankedBars, TrendLines } from "./report-charts";
+import { ColumnChart, DonutChart, FunnelSteps, Gauge, KpiFigure, RankedBars, ReportPanel, TrendLines } from "./report-charts";
 
 const months = [{ key: "2026-08", label: "Aug" }, { key: "2026-09", label: "Sep" }];
 
@@ -66,5 +66,20 @@ describe("KPI figure", () => {
     fireEvent.click(screen.getByRole("button", { name: "New leads. Open the records" }));
     expect(open).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Profit margin. Open the records" })).toBeNull();
+  });
+
+  it("sets the figure against the period before, coloured by whether that is good news", () => {
+    render(<>
+      <KpiFigure label="Cash in" value="$30K" comparison={{ direction: "up", change: "12%", tone: "success", against: "Aug 1 – 20", previous: "$27K" }} note="From Wodana's records" />
+      <KpiFigure label="Refunds" value="2" comparison={{ direction: "flat", change: "0%", against: "Aug 1 – 20", previous: "2" }} />
+      <KpiFigure label="Stock value" value="$3.9K" comparison={{ direction: "down", change: null, against: "Aug 1 – 20", previous: "$0" }} />
+      <ReportPanel title="Needs attention" action={<button type="button">Show all</button>}><p>List</p></ReportPanel>
+    </>);
+    expect(screen.getByText("12% vs Aug 1 – 20").closest("small")).toHaveAttribute("data-tone", "success");
+    expect(screen.getByText("12% vs Aug 1 – 20").closest("small")).toHaveAttribute("title", "Was $27K in Aug 1 – 20");
+    expect(screen.getByText("Same as Aug 1 – 20")).toBeInTheDocument();
+    expect(screen.getAllByText("Was $0 in Aug 1 – 20").length).toBeGreaterThan(0);
+    expect(screen.getByText("From Wodana's records")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Needs attention" }).closest("section")).toHaveTextContent("Show all");
   });
 });

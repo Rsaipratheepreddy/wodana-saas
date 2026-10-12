@@ -99,6 +99,8 @@ export type SalesSettings = {
   unownedEscalationMinutes: number;
   clientReviewMinutes: number;
   duplicateWindowDays: number;
+  /** Days an open opportunity may keep its stage before Reports lists it as stuck (14 unless changed). */
+  stuckDealDays?: number;
   salesAdminMembershipId: string | null;
   /** PLM-024: who reads internal notes, the enquiry team (default) or everyone with Sales access. */
   internalNotesVisibility?: "team" | "sales";

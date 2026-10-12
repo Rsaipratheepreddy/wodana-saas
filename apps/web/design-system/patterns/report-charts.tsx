@@ -218,6 +218,14 @@ export function FunnelSteps({ ariaLabel, steps, onSelect }: {
   </figure>;
 }
 
+/** A report's chart or list on the same quiet surface as its figures: a title, an optional action, the content. */
+export function ReportPanel({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+  return <section className="wd-report-panel">
+    <header><h3>{title}</h3>{action ? <div className="wd-report-panel-action">{action}</div> : null}</header>
+    <div className="wd-report-panel-body">{children}</div>
+  </section>;
+}
+
 export type TargetState = { target: string; percent: string | null; gap: string | null; tone: "success" | "warning" | "danger" } | null;
 
 /**

@@ -2185,10 +2185,20 @@ Edge cases: provider down (queue and retry, visible status); token revoked (conn
 - **Search (`⌘K`):** customers, enquiries, deals, projects, quotes, POs, WOs, items, people; permission-filtered.
 - **Reports** (each reconciles to its list): lead source/channel/owner/SLA; funnel conversion and time per stage; pipeline value; quote win rate; receivables ageing; project portfolio (stage, promise risk, margin); purchasing (open POs, late deliveries, vendor scorecard); factory (throughput, QC rejects); site (reports compliance, snags). All can be exported to CSV.
 
-### 6.27a Management dashboards (PLM-134; PLM-105, PLM-104, PLM-129, PLM-130)
-- **Where:** sidebar → Reports (`/workspace/reports`), tabs Owner overview · Sales and pipeline · Lead response · Design projects. Owner/administrator only for now (`reports.management.view`); managers get it later, per dashboard and team. Targets: Settings → Report targets (`reports.management.targets`).
+### 6.27a Management dashboards (PLM-134; PLM-105, PLM-104, PLM-129, PLM-130, PLM-131, PLM-132, PLM-133)
+- **Where:** sidebar → Reports (`/workspace/reports`), six tabs: Overview (the landing) · Sales and marketing · Design · Production and delivery · Finance · Stock. Lead response and the marketing figures are part of Sales and marketing (one funnel, one tab); old addresses (`lead-response`, `stock-marketing`) open where they moved. Opening Reports needs `reports.management.view` (owner/administrator for now); Production and delivery, Finance and Stock also need one of their area's read permissions (factory/projects/logistics; payables/receivables/accounting; stock/purchasing), and project margins `commercial.costs.view`. Targets: Settings → Report targets (`reports.management.targets`), only for figures a dashboard shows.
+- **One calm page per dashboard:** at most four figures for the period, each against the period before (a period starting on the 1st against the same days that many months earlier, else the same number of days just before; green/red by whether the change is good news) and each opening its records; at most two charts; at most one "Needs attention" list (its first five, most urgent first, "Show all" opens the rest). One toolbar row: the period and at most two filters (Overview, Sales, Production: Account manager · Enquiry type; Design: Account manager · Package; Finance: Company · Account manager; Stock: Company), no region labels. Money is compact in figures and charts, in full in lists. Everything else a dashboard computes stays reachable through the records endpoint.
+
+| Tab | Figures | Charts | Needs attention |
+| --- | --- | --- | --- |
+| Overview | Sales won · Revenue collected · Deals closed · Profit margin | Sales won by month · Projects by stage | Delayed |
+| Sales and marketing | New enquiries · Enquiry to won · Answered within target · Lost | Enquiries by source · Won value by source | Follow-ups |
+| Design | Design projects started · Designs approved · Days to Proposal 2 · Moved on to furniture or joinery | Projects by design stage · Designer workload | Overdue design work |
+| Production and delivery | Work orders made · Made on time · Delivered to site · Installations done | Open work orders · Factory load by week | Late work orders, waiting on materials, late installations, permits expired or expiring within a week, late handovers (most days late first) |
+| Finance | Cash in · Cash out · Revenue (design fees / production / variations) · Refunds | Cash in and out by month · Receivables by age | Client payments overdue, bills overdue, Finance requests waiting over a week (biggest first) |
+| Stock | Stock value (at the period's end) · Purchases · Stock used | Reserved and available · Slow-moving | Low stock (short first) |
 - **How:** one read endpoint per dashboard (`GET /workspaces/:id/reports/management/:dashboard`) computes every KPI server-side in the member's tenant transaction (forced RLS) from the business tables; nothing is copied. A KPI reads *facts* (one row per record behind it) and the figure, its graph and its drill-down (`…/:dashboard/records?kpi=&bucket=`) all come from the same facts, so a bar always reconciles with the records it opens. Export: each figure's records to Excel (CSV); the page to PDF through print.
-- **Filter bar (every dashboard, kept in the address):** period (local days in the workspace time zone; default this month to date), Account Manager, Enquiry type, package, client type, source, channel, region (the region pack's administrative area, e.g. Emirate), entity. A filter applies through the record's opportunity, else its enquiry; a record that can't carry a filtered attribute never matches it. Lead-response KPIs apply the Account Manager filter to whoever held the clock or lost the lead.
+- **Filters (kept in the address):** period (local days in the workspace time zone; default this month to date) and the tab's two filters; the endpoint also takes enquiry type, package, client type, source, channel, region and entity. A filter applies through the record's opportunity, else its enquiry; a record that can't carry a filtered attribute never matches it — company records (supplier payments, bills, free stock, stock orders) count only while no sales filter is on, and free stock under the company filter only when there is one company. Lead-response KPIs apply the Account Manager filter to whoever held the clock or lost the lead.
 - **Money:** base currency of the workspace only (other currencies are counted and noted, never converted); net of tax by the quotation's tax share (the sealed pricing once a project started, else the quotation's rate); a value with no quotation is kept as entered and noted. Outstanding balances include tax (what clients owe) and say so. Won = payment proof received; revenue = payments Finance verified; Design Fee (Proposal 1) and Proposal 2 apart.
 - **Targets:** per KPI per month, for the company or one Account Manager (where the KPI is per person). Counts and money prorate by the days of each month the period covers; a %, hours or days is the day-weighted level. A month without one = "No target set". Actual, Target, % achieved (actual ÷ target; target ÷ actual when lower is better), gap; green ≥ 100 %, amber 80–99 %, red < 80 %. Targets aren't compared while a filter other than period and Account Manager is on.
 - **No misleading zeros:** a rate or average with nothing to measure shows "Not enough data yet".
@@ -2237,6 +2247,39 @@ Edge cases: provider down (queue and retry, visible status); token revoked (conn
 | Chargeable revisions | Open projects with a presentation round beyond the package's included revisions. |
 | Designer / Visualiser workload | Open projects per dedicated designer, and per owner of the renders stage while renders aren't done. |
 | Design approval → Proposal 2 | Designs approved in the period: average calendar days to the first main quotation sent on or after approval; and % whose Proposal 2 is Won (moved on to furniture / joinery). |
+
+**5 · Production and delivery** (started projects; deals delivered without a project for deliveries and permits)
+| KPI | Definition |
+| --- | --- |
+| Work orders made · Made on time | Work orders made ready in the period (their ready day); on time when on or before their planned end, late after it; without a planned end counted apart and out of the rate. Target: on-time %. |
+| Delivered to site | Ready work orders whose dispatches all arrived on the project's site, on the day the last arrived. |
+| Installations done | Projects whose installation was signed off (site finished) in the period; late after their booked installation day. |
+| Open work orders | Live, on running projects, by the factory's own production status (PLM-063: scheduled, in production, quality check, ready; a step the firm doesn't keep folds into the one before; its own words). |
+| Factory load by week | This week and the next seven: each open work order's hours (else its workcenter's hours a day) spread over its working days (work calendar, else the region pack), by workcenter (five busiest + other), against capacity. |
+| Needs attention | Live: work orders past their planned end; planned work orders whose materials aren't in (the factory's release check); installations past their day; collected permits expired or expiring within 7 days (not superseded); projects past their promised handover with no handover accepted. |
+
+**6 · Finance** (base currency; other currencies counted and noted)
+| KPI | Definition |
+| --- | --- |
+| Cash in · Cash out | As the operational cash statement reads it: client payments Finance verified (on the day verified; a later rejection takes it off that day), tax included; supplier payments recorded (not reversed) on the day paid, and petty cash on the day reimbursed. When a company keeps its books in the Ledger, the figure says it is from Wodana's records. Target: cash in. |
+| Revenue | The same client payments before the tax inside them (their quotation's rate), by what they paid for: design fees (design round), production (main quotation), variations. |
+| Refunds | Client refunds Finance completed in the period (as in Net revenue), count and value. |
+| Cash in and out by month | 12 months: in, out, net. |
+| Receivables by age | Live: the Owner overview's Outstanding balances by age past the due date. |
+| Needs attention | Live: client payment stages overdue, approved bills overdue (balance less retention held), Finance requests waiting more than a week; biggest first. |
+| Kept in the records | Invoices issued vs collected, payables due within 30 days, project margins (the Ledger's project figures when the project's company keeps its books in the Ledger, else the project P&L; basis said), petty cash. |
+
+**7 · Stock** (moving average cost in the workspace's currency)
+| KPI | Definition |
+| --- | --- |
+| Stock value | Every movement up to the period's last day at the cost it moved at: free stock and stock projects own. |
+| Purchases | Purchase orders approved in the period (not cancelled), before tax; an order for projects or deals follows them through the filters. |
+| Stock used | Issued to projects and work orders, or sold, in the period, at the cost it left at. |
+| Reserved and available | Live, by category: reserved = owned by projects + held by deals; available = free stock no deal holds. |
+| Slow-moving | Live: free stock nothing has gone out of (issued, sold, returned to the supplier) for more than 90 days, by idle age. |
+| Needs attention | Live: items at or below their reorder point (short first: nothing on order lifts them). |
+
+Marketing figures (on Sales and marketing, in its records): enquiries by source and channel, by type, conversion by source (qualified, quote, won), won value by source, first response by source. Cost per lead waits for marketing spend to be recorded.
 
 ### 6.28 HRMS (kept, narrow)
 Attendance, leave and calendars stay. People appear in planning only as **availability** (leave blocks assignment and bookings). Private personnel data never enters project views.

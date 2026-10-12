@@ -11,22 +11,31 @@ export type ChartSeries = { id: string; label: string };
 export type Chart =
   | { type: "columns"; dimension: string; seriesDimension?: string; categories: ChartCategory[]; series: ChartSeries[]; values: string[][]; unit: Unit }
   | { type: "lines"; dimension: string; categories: ChartCategory[]; series: ChartSeries[]; values: Array<Array<string | null>>; unit: Unit }
-  | { type: "bars"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount?: string | null; target?: TargetResult | null }>; unit: Unit }
+  | { type: "bars"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount?: string | null; target?: TargetResult | null;
+      extra?: Record<string, string | number | null> }>; unit: Unit }
   | { type: "donut"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount: string | null }>; unit: Unit }
   | { type: "funnel"; dimension: string; items: Array<{ key: string; label: string; value: string; rate: string | null }> }
   | { type: "gauge"; percent: string | null; target: string | null }
   | { type: "list"; bucket: string };
 
+export type Better = "higher" | "lower" | "neutral";
 export type Kpi = {
   code: string; unit: Unit; value: string | null; count: number; amount?: string | null; targetable: boolean;
   target?: TargetResult | null; targetHidden?: boolean; chart?: Chart;
-  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string };
+  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string; basis?: "ledger" | "records" | "mixed" };
   extra?: Record<string, string | number | null>;
+  /** The same figure for the span just before the period, and the change in % (null: nothing to compare). */
+  previous?: { from: string; to: string; value: string | null; change: string | null; better: Better };
 };
-export type Dashboard = { dashboard: DashboardId; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[] };
 export type ReportRecord = {
   id: string; kind: string; reference: string | null; title: string; client: string | null; owner: string | null; ownerId: string | null;
   at: string | null; amount: string | null; measure: string | null; detail: string | null; href: string;
+};
+/** What the page shows: up to four figures, two charts and one "needs attention" list (its first rows come with the dashboard). */
+export type Layout = { tiles: string[]; charts: string[]; attention: string | null };
+export type Dashboard = {
+  dashboard: DashboardId; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[];
+  layout?: Layout; attention?: { kpi: string; total: number; records: ReportRecord[] } | null;
 };
 export type Option = { id: string; label: string };
 export type FilterOptions = {
@@ -37,10 +46,21 @@ export type TargetKpi = { code: string; unit: Unit; direction: "higher" | "lower
 export type TargetRow = { id: string; kpi: string; month: string; membershipId: string | null; target: string; version: number };
 export type TargetsPayload = { year: number; kpis: TargetKpi[]; targets: TargetRow[]; accountManagers: Option[] };
 
-export const DASHBOARDS = ["owner-overview", "sales-pipeline", "lead-response", "design-projects"] as const;
+/**
+ * The dashboards, Overview first (the landing). Lead response and the marketing figures are part of Sales and
+ * marketing (one funnel); stock is its own dashboard. Old addresses open where they moved.
+ */
+export const DASHBOARDS = ["owner-overview", "sales-pipeline", "design-projects", "production-delivery", "finance", "stock"] as const;
 export type DashboardId = (typeof DASHBOARDS)[number];
+export const MOVED_DASHBOARDS: Record<string, DashboardId> = { "lead-response": "sales-pipeline", "stock-marketing": "stock" };
 export const DASHBOARD_LABELS: Record<DashboardId, MessageKey> = {
-  "owner-overview": tKey("Owner overview"), "sales-pipeline": tKey("Sales and pipeline"), "lead-response": tKey("Lead response"), "design-projects": tKey("Design projects"),
+  "owner-overview": tKey("Overview"), "sales-pipeline": tKey("Sales and marketing"), "design-projects": tKey("Design"),
+  "production-delivery": tKey("Production and delivery"), finance: tKey("Finance"), stock: tKey("Stock"),
+};
+/** The two filters each dashboard offers beside the period (the rest of a figure's breakdown is in its records). */
+export const DASHBOARD_FILTERS: Record<DashboardId, ReadonlyArray<"accountManager" | "enquiryType" | "package" | "entity">> = {
+  "owner-overview": ["accountManager", "enquiryType"], "sales-pipeline": ["accountManager", "enquiryType"], "design-projects": ["accountManager", "package"],
+  "production-delivery": ["accountManager", "enquiryType"], finance: ["entity", "accountManager"], stock: ["entity"],
 };
 
 /** The filter bar, as kept in the address (so a view can be shared and reloaded). */

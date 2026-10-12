@@ -87,6 +87,16 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   ledger: [LEDGER_VIEW],
 };
 
+/**
+ * Reports tabs → what each dashboard needs beyond opening Reports (the same rule business-core checks): one of its
+ * area's own read permissions. The others need nothing more.
+ */
+export const REPORT_DASHBOARD_ACCESS: Record<string, AccessRule> = {
+  "production-delivery": [["factory.view", "factory.manage", "projects.view", "projects.manage", "logistics.manage"]],
+  finance: [["payables.view", "receivables.view", "accounting.manage"]],
+  stock: [[...STOCK_VIEW, "purchasing.view", "purchasing.manage"]],
+};
+
 /** Sales settings' sections (`?section=`), in their tab order. */
 export const SALES_SETTINGS_SECTIONS = ["assignment", "sla", "options", "automations"] as const;
 export type SalesSettingsSection = (typeof SALES_SETTINGS_SECTIONS)[number];

@@ -163,6 +163,13 @@ button.wd-kpi-figure-value:hover { text-decoration: underline; text-underline-of
 .wd-kpi-figure-target dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-medium); unicode-bidi: plaintext; }
 .wd-kpi-figure-target div:nth-child(2) dd { color: var(--wd-kpi-tone); }
 .wd-kpi-figure-chart { min-inline-size: 0; container-type: inline-size; }
+/* Target, % achieved and gap read as one line under the figure. */
+.wd-kpi-figure .wd-kpi-figure-target div { display: inline-flex; align-items: baseline; gap: var(--wd-space-1); }
+.wd-report-panel { display: grid; align-content: start; gap: var(--wd-space-3); min-inline-size: 0; padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.wd-report-panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-space-6); }
+.wd-report-panel h3 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+.wd-report-panel-body { min-inline-size: 0; container-type: inline-size; }
+.wd-report-panel-body .wd-empty-state { min-block-size: 0; padding-block: var(--wd-space-6); }
 .wd-kpi-figure-change { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: start; font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; color: var(--wd-color-text-secondary); unicode-bidi: plaintext; }
 .wd-kpi-figure-change[data-tone="success"] { color: var(--wd-color-success); }
 .wd-kpi-figure-change[data-tone="danger"] { color: var(--wd-color-danger); }

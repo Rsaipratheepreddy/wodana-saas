@@ -1,8 +1,8 @@
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 
-/** Management dashboards (PLM-134): the filter options, a dashboard, the records behind a figure, and the KPI targets. */
-const DASHBOARDS = new Set(["owner-overview", "sales-pipeline", "lead-response", "design-projects"]);
+/** Management dashboards (PLM-134): the filter options, a dashboard, the records behind a figure, and the KPI targets (old dashboard names still answer). */
+const DASHBOARDS = new Set(["owner-overview", "sales-pipeline", "design-projects", "production-delivery", "finance", "stock", "lead-response", "stock-marketing"]);
 
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "options") return method === "GET";
