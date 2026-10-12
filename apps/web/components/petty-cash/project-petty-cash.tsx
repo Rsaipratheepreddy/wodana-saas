@@ -44,7 +44,7 @@ export function ProjectPettyCash({ workspaceId, projectId, switcher }: { workspa
     { id: "claim", header: t("Claim"), accessorFn: (row) => row.description, size: 320, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{row.description}</span><small>{[row.reference, format.day(row.spentOn), row.claimedByName].join(" · ")}</small></span> } },
     { id: "package", header: t("Package"), accessorFn: (row) => row.packageName ?? "", size: 180, meta: { mobileHidden: true,
-      renderCell: (row) => <span className={styles.nameCell}><span>{row.packageName ?? t("Not in a package")}</span><span><TypeChip typeKey={row.category}>{categories[row.category]}</TypeChip></span></span> } },
+      renderCell: (row) => <span className={styles.nameCell}><span>{row.packageName ?? t("Not in a package")}</span><span><TypeChip>{categories[row.category]}</TypeChip></span></span> } },
     { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 140, meta: { renderCell: (row) => <span className={styles.money}>{format.money(row.amount, row.currency)}</span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 140, meta: { renderCell: (row) => <ClaimStatusLabel status={row.status} /> } },
   ], [t, format, categories]);

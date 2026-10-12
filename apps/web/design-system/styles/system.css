@@ -147,12 +147,6 @@
 .wd-badge[data-tone="warning"], .wd-tag[data-tone="warning"] { background: var(--wd-warning-soft); color: var(--wd-warning); }
 .wd-badge[data-tone="danger"], .wd-tag[data-tone="danger"] { background: var(--wd-danger-soft); color: var(--wd-danger); }
 .wd-badge[data-tone="info"], .wd-tag[data-tone="info"] { background: var(--wd-info-soft); color: var(--wd-info); }
-.wd-type-chip[data-hue="1"] { background: var(--wd-color-viz-1-soft); color: var(--wd-color-viz-1); }
-.wd-type-chip[data-hue="2"] { background: var(--wd-color-viz-2-soft); color: var(--wd-color-viz-2); }
-.wd-type-chip[data-hue="3"] { background: var(--wd-color-viz-3-soft); color: var(--wd-color-viz-3); }
-.wd-type-chip[data-hue="4"] { background: var(--wd-color-viz-4-soft); color: var(--wd-color-viz-4); }
-.wd-type-chip[data-hue="5"] { background: var(--wd-color-viz-5-soft); color: var(--wd-color-viz-5); }
-.wd-type-chip[data-hue="6"] { background: var(--wd-color-viz-6-soft); color: var(--wd-color-viz-6); }
 .wd-tag .wd-icon-button { inline-size: 1.25rem; min-block-size: 1.25rem; margin-inline-end: calc(var(--wd-space-1) * -1); }
 .wd-avatar { inline-size: 2rem; block-size: 2rem; border: 0; border-radius: 50%; display: inline-grid; flex: 0 0 auto; place-items: center; overflow: hidden; background: var(--wd-identity-base); color: var(--wd-identity-ink); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0; }
 /* An avatar is always a circle of its own size, whatever row it sits in (outweighs page rules such as `.row span { flex: 1 }`). */

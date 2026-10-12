@@ -155,7 +155,7 @@ function columnsFor(id: CrmScreenId, referenceTime: number, t: Translate, region
   ];
   if (id === "customers" || id === "organizations") return [
     { accessorKey: "displayName", header: id === "customers" ? t("Customer") : t("Organization"), size: 250, meta: { primary: true }, cell: ({ row }) => <Identity name={text(row.original, "displayName", notSet)} detail={primaryContact(row.original, "email") ?? notAdded} icon={id === "organizations" || row.original.type === "organization" ? <span className={styles.recordIcon}><Building2 size={16} /></span> : undefined} /> },
-    ...(id === "customers" ? [{ accessorKey: "type", header: t("Type"), size: 120, cell: ({ row }: { row: { original: CrmRecord } }) => <TypeChip hue={row.original.type === "organization" ? 1 : 2}>{row.original.type === "organization" ? t("Company") : t("Person")}</TypeChip> }] : []),
+    ...(id === "customers" ? [{ accessorKey: "type", header: t("Type"), size: 120, cell: ({ row }: { row: { original: CrmRecord } }) => <TypeChip>{row.original.type === "organization" ? t("Company") : t("Person")}</TypeChip> }] : []),
     { accessorKey: "lifecycle", header: t("Lifecycle"), size: 130, cell: ({ row }) => <Chip>{humanize(t, value(row.original, "lifecycle"))}</Chip> },
     { id: "email", accessorFn: (row) => primaryContact(row, "email") ?? notAdded, header: t("Email"), size: 220, cell: ({ row }) => <span className={styles.contact}><Mail size={13} />{primaryContact(row.original, "email") ?? notAdded}</span> },
     { id: "phone", accessorFn: (row) => primaryContact(row, "phone") ?? notAdded, header: t("Phone"), size: 155, cell: ({ row }) => primaryContact(row.original, "phone") ?? notAdded },

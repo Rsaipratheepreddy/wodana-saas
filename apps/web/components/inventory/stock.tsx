@@ -6,6 +6,7 @@ import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import { restockQuantity } from "@/lib/inventory/levels";
+import { readableCode } from "@/lib/workspace/catalog-v2";
 import type { PendingAdjustment, ReorderPoint, StockRow, StockState, TransferState } from "@/lib/inventory/types";
 import { Cell, ProjectFilterChip, ProjectLinks } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
@@ -83,7 +84,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
     { id: "item", header: t("Item"), accessorFn: (row) => row.itemName, size: 260, meta: { primary: true, renderCell: (row) => {
       const point = !row.projectId && !row.empty ? pointFor(row) : undefined;
       return <span className={styles.nameCell}><span>{row.itemName}</span>
-        {row.itemCode || point ? <small>{[row.itemCode, point ? t("Low at {quantity}", { quantity: unit(point.reorderAt, row.unit) }) : ""].filter(Boolean).join(" · ")}</small> : null}
+        {readableCode(row.itemCode) || point ? <small>{[readableCode(row.itemCode), point ? t("Low at {quantity}", { quantity: unit(point.reorderAt, row.unit) }) : ""].filter(Boolean).join(" · ")}</small> : null}
         {point?.low ? <span><Badge tone="warning">{t("Low")}</Badge></span> : null}</span>;
     } } },
     ...(categories.length ? [{ id: "category", header: t("Category"), accessorFn: (row: ListRow) => categoryFor(row), size: 160, enableColumnFilter: false,
@@ -116,7 +117,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
   ], [t, state, onHistory, format, points, categories, categoryOf]);
   const lowColumns = useMemo<DataGridColumn<ReorderPoint>[]>(() => [
     { id: "item", header: t("Item"), accessorFn: (point) => point.itemName, size: 240, meta: { primary: true, renderCell: (point) => <Cell title={point.itemName}
-      meta={[point.itemCode, point.locationName ?? t("Every place together")].filter(Boolean).join(" · ")} /> } },
+      meta={[readableCode(point.itemCode), point.locationName ?? t("Every place together")].filter(Boolean).join(" · ")} /> } },
     { id: "free", header: t("Free now"), accessorFn: (point) => Number(point.free), size: 150, meta: { align: "end", renderCell: (point) => <Cell title={<span className={styles.number}>{unit(point.free, point.unit)}</span>}
       meta={t("Low at {quantity}", { quantity: unit(point.reorderAt, point.unit) })} tone={point.low ? "danger" : undefined} /> } },
     { id: "coming", header: t("On order"), accessorFn: (point) => Number(point.onOrder), size: 130, meta: { align: "end", renderCell: (point) => Number(point.onOrder)

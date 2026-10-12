@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileUp, Link2, Plus } from "lucide-react";
+import { FileUp, Plus } from "lucide-react";
 import {
-  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
+  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageShell, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
   type DataGridColumn,
   TypeChip,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { catalogApi, type CatalogItemRow, type CatalogStructure, type CatalogSummary } from "@/lib/workspace/catalog-v2";
+import { catalogApi, readableCode, type CatalogItemRow, type CatalogStructure, type CatalogSummary } from "@/lib/workspace/catalog-v2";
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { LinkedImportDialog } from "../linked-imports/linked-import-dialog";
@@ -65,7 +65,6 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
     setClipUrl(link.slice(0, 2000)); setDialog("clip");
     const url = new URL(window.location.href); url.searchParams.delete("clip"); window.history.replaceState(null, "", url.toString());
   }, [canManage]);
-  const catalog = catalogs.find((entry) => entry.id === catalogId);
   const views = useMemo(() => [{ id: "items", label: t("Items") }, { id: "readiness", label: t("Readiness") }], [t]);
   const changeView = useCallback((next: string) => setView(next === "readiness" ? "readiness" : "items"), []);
   const typeLabel = useCallback((type: string) => typeLabels(t)[type] ?? type, [t]);
@@ -107,7 +106,8 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
     // Width the hidden attribute columns leave goes to the item.
     { id: "name", header: t("Item"), accessorFn: (row) => `${row.name} ${row.code}`, size: 280 + 40 * (3 - attributeColumns.length), meta: { primary: true, renderCell: (row) => {
       const kind = typeLabels(t)[row.itemType] ?? row.itemType;
-      return <span className={styles.itemCell}><strong className={styles.itemName} title={row.name}>{row.name}</strong><small className={styles.itemCode} title={`${row.code} · ${kind}`}><bdi dir="ltr">{row.code}</bdi> · {kind}</small></span>;
+      const code = readableCode(row.code);
+      return <span className={styles.itemCell}><strong className={styles.itemName} title={row.name}>{row.name}</strong><small className={styles.itemCode} title={code ? `${code} · ${kind}` : kind}>{code ? <><bdi dir="ltr">{code}</bdi> · </> : null}{kind}</small></span>;
     } } },
     { id: "category", header: t("Category"), accessorFn: (row) => row.categoryName ?? "", size: 150, cell: ({ row }) => <TypeChip>{row.original.categoryName}</TypeChip> },
     ...attributeColumns.map((attribute): DataGridColumn<CatalogItemRow> => ({ id: `attr-${attribute.code}`, header: attribute.label, accessorFn: (row) => row.values[attribute.code] ?? "", size: 120, meta: { mobileHidden: true } })),
@@ -117,19 +117,16 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   ], [attributeColumns, money, priceWidth, t, workspaceId]);
 
   if (!catalogs.length) {
-    return <div className={styles.page}>
-      <PageHeader title={t("Catalog")} />
+    return <PageShell title={t("Catalog")}>
       <EmptyState title={t("No catalogs yet")} description={t("A catalog holds the items, materials and prices you quote and buy.")}
         action={canManage ? <Button onPress={() => setDialog("catalog")} variant="primary"><Plus aria-hidden="true" size={15} />{t("Create catalog")}</Button> : null} />
       <NewCatalogDialog isOpen={dialog === "catalog"} onClose={() => setDialog(null)} onCreated={(created) => { setCatalogs([created]); setCatalogId(created.id); setDialog(null); }} workspaceId={workspaceId} />
-    </div>;
+    </PageShell>;
   }
 
-  return <div className={styles.page}>
-    <PageHeader title={catalog?.name ?? t("Catalog")} actions={canManage ? <>
-      <Button onPress={() => setDialog("clip")}><Link2 aria-hidden="true" size={15} />{t("Add from link")}</Button>
-      <Button onPress={() => setDialog("item")} variant="primary"><Plus aria-hidden="true" size={15} />{t("Add item")}</Button>
-    </> : null} />
+  // The shared page anatomy (UX-070): the title is the module, one primary action top-end; adding from a link and
+  // importing are under the list's ⋯; several catalogs are chosen beside the categories.
+  return <PageShell title={t("Catalog")} action={canManage ? <Button onPress={() => setDialog("item")} variant="primary"><Plus aria-hidden="true" size={15} />{t("Add item")}</Button> : null}>
     <div className={styles.layout}>
       <nav aria-label={t("Categories")} className={styles.tree}>
         {catalogs.length > 1 ? <SelectField aria-label={t("Catalog")} items={catalogs.map((entry) => ({ id: entry.id, label: entry.name }))} label={t("Catalog")} onSelectionChange={(key) => { setCatalogId(String(key)); setCategoryId(null); }} selectedKey={catalogId} /> : null}
@@ -150,8 +147,8 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
               getInspectorTitle={(row) => row.name}
               getRowId={(row) => row.id}
               isLoading={loading && !items.length}
-              menuActions={canManage ? [{ id: "import", label: t("Import") }] : undefined}
-              onMenuAction={(id) => { if (id === "import") setDialog("import"); }}
+              menuActions={canManage ? [{ id: "clip", label: t("Add from link") }, { id: "import", label: t("Import") }] : undefined}
+              onMenuAction={(id) => { if (id === "import") setDialog("import"); else if (id === "clip") setDialog("clip"); }}
               onSearchChange={setSearch}
               onViewChange={changeView}
               renderInspector={(row) => <CatalogItemInspector canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={row.id} locale={locale} onChanged={() => void loadItems()} structure={structure} workspaceId={workspaceId} />}
@@ -173,7 +170,7 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
       target="catalog" workspaceId={workspaceId} />
     <ProductClipDialog catalogId={catalogId} initialUrl={clipUrl} isOpen={dialog === "clip"} onClose={() => { setDialog(null); setClipUrl(""); }} onSaved={() => { setDialog(null); setClipUrl(""); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
     <NewItemDialog catalogId={catalogId} isOpen={dialog === "item"} onClose={() => setDialog(null)} onCreated={() => { setDialog(null); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
-  </div>;
+  </PageShell>;
 }
 
 function NewCatalogDialog({ isOpen, onClose, onCreated, workspaceId }: { isOpen: boolean; onClose: () => void; onCreated: (catalog: CatalogSummary) => void; workspaceId: string }) {

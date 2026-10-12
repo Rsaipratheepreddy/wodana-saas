@@ -1,3 +1,12 @@
+/**
+ * An item code as people read it, or null when the system made it up on import ("PLM_CHAIRS_ADAM_LOUNGE_CHAIR_C71F28A2":
+ * a prefix, the words of the name and an 8-digit hex tail). Working screens show only codes a person set (UX-050).
+ */
+export function readableCode(code: string | null | undefined): string | null {
+  const value = code?.trim() ?? "";
+  return !value || /^[A-Z0-9]+_[A-Z0-9_]+_[0-9A-F]{8}$/.test(value) ? null : value;
+}
+
 export type CatalogSummary = { id: string; code: string; name: string; purpose: "sell" | "buy" | "reference"; itemCount: number; version: number };
 export type CatalogCategory = {
   id: string; parentId: string | null; code: string; name: string; version?: number;

@@ -74,7 +74,7 @@ export function QuoteList({ initial, baseHref, plan }: { initial: CommercialStat
       columns={[
         { id: "title", header: t("Quote"), size: 320, accessorFn: (quote) => quote.title, meta: { primary: true },
           cell: ({ row: { original: quote } }) => <span className={styles.title}><Link data-tour={quote.kind === "quotation" && quote.round !== "design" ? "quote-open quote-main" : "quote-open"} href={hrefOf(quote.id)}>{quote.title}</Link><small>{name(quote)}</small></span> },
-        { id: "kind", header: t("Type"), size: 130, accessorFn: kind, cell: ({ row: { original: quote } }) => <TypeChip typeKey={`${quote.kind}:${quote.round}`}>{kind(quote)}</TypeChip> },
+        { id: "kind", header: t("Type"), size: 130, accessorFn: kind, cell: ({ row: { original: quote } }) => <TypeChip>{kind(quote)}</TypeChip> },
         { id: "total", header: t("Amount"), size: 150, accessorFn: (quote) => quote.total, meta: { align: "end" },
           cell: ({ row: { original: quote } }) => <span className={styles.amount}>{money(quote.clientDecision?.acceptedTotal ?? quote.total, quote.currency, currencyDigits(quote.currency, locale), locale)}</span> },
         { id: "status", header: t("Status"), size: 170, accessorFn: (quote) => quote.status,

@@ -72,7 +72,7 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
       {!state.claims.length ? <EmptyState illustration={null} title={t("No claims")} /> : <ul className={styles.reports}>{state.claims.map((claim) => <li key={claim.id} className={styles.report}>
         <div className={styles.reportHead}>
           <strong>{t("Claim {number}", { number: claim.number })}</strong>
-          <TypeChip typeKey={claim.channel}>{channels[claim.channel]}</TypeChip>
+          <TypeChip>{channels[claim.channel]}</TypeChip>
           <span className={styles.muted}>{[format.day(claim.raisedOn), claim.raisedByName, claim.lineTitle].filter(Boolean).join(" · ")}</span>
           <span className={styles.status} data-status={claim.status === "open" ? "submitted" : claim.status === "covered" ? "approved" : "returned"}>{statusLabel[claim.status]}</span>
           <span className={styles.spacer} />
