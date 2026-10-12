@@ -107,12 +107,22 @@ set_var intelligence.env INTEGRATION_PUBLIC_URL "$API_ORIGIN/api/v1/integrations
 set_var intelligence.env GOOGLE_REDIRECT_URI "$API_ORIGIN/api/v1/integrations/google/oauth/callback"
 set_var intelligence.env QUICKBOOKS_REDIRECT_URI "$API_ORIGIN/api/v1/integrations/providers/quickbooks/oauth/callback"
 set_var intelligence.env ZOHO_REDIRECT_URI "$API_ORIGIN/api/v1/integrations/providers/zoho_books/oauth/callback"
-set_var intelligence.env QUICKBOOKS_ENVIRONMENT "${QUICKBOOKS_ENVIRONMENT:-sandbox}"
+# QuickBooks mode: the deploy's own variable, else thirdparty.env, else what the file already says; sandbox only
+# when none is set (a deploy must never switch a live QuickBooks connection back to sandbox).
+QB_ENV="${QUICKBOOKS_ENVIRONMENT:-$(third QUICKBOOKS_ENVIRONMENT)}"
+[ -n "$QB_ENV" ] || QB_ENV=$(grep -m1 '^QUICKBOOKS_ENVIRONMENT=' intelligence.env | cut -d= -f2- || true)
+set_var intelligence.env QUICKBOOKS_ENVIRONMENT "${QB_ENV:-sandbox}"
 set_var intelligence.env PORTAL_OTP_TEMPLATE wodana_portal_login
 set_var intelligence.env PORTAL_OTP_LANGUAGE en_US
-for k in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET QUICKBOOKS_CLIENT_ID QUICKBOOKS_CLIENT_SECRET ZOHO_CLIENT_ID ZOHO_CLIENT_SECRET WHATSAPP_APP_ID WHATSAPP_APP_SECRET WHATSAPP_WEBHOOK_VERIFY_TOKEN WHATSAPP_CONFIG_ID; do
+for k in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET QUICKBOOKS_CLIENT_ID QUICKBOOKS_CLIENT_SECRET QUICKBOOKS_WEBHOOK_VERIFIER ZOHO_CLIENT_ID ZOHO_CLIENT_SECRET WHATSAPP_APP_ID WHATSAPP_APP_SECRET WHATSAPP_WEBHOOK_VERIFY_TOKEN WHATSAPP_CONFIG_ID; do
   v=$(third "$k"); [ -n "$v" ] && set_var intelligence.env "$k" "$v"
 done
+
+# Error reporting (optional): a Sentry-compatible DSN (Sentry, GlitchTip) in thirdparty.env reaches every service.
+SENTRY_DSN_VALUE=$(third SENTRY_DSN)
+if [ -n "$SENTRY_DSN_VALUE" ]; then
+  for f in core.env web.env intelligence.env; do set_var "$f" SENTRY_DSN "$SENTRY_DSN_VALUE"; set_var "$f" SENTRY_ENVIRONMENT production; done
+fi
 
 chmod 600 ./*.env internal-token
 echo "env ready: $(ls *.env | tr '\n' ' ')"
