@@ -11,6 +11,7 @@ import { PayablesService } from "../../purchasing/payables.service";
 import { ReceivingService } from "../../purchasing/receiving.service";
 import { QuotationBuilderService } from "../../quotation/quotation-builder.service";
 import { ReceivablesService } from "../../receivables/receivables.service";
+import { ValueEngineeringService } from "../../value-engineering/value-engineering.service";
 import {
   describe, ShowcaseSeed, Skip, type Any, type ShowcaseActor, type ShowcaseCtx, type ShowcaseInput, type ShowcaseStory,
 } from "../../seed/showcase";
@@ -164,6 +165,23 @@ export class ScenarioSeed extends ShowcaseSeed {
     const quotes = (await this.commercialData(caseId)).quotes as Any[];
     const family = quotes.filter((row) => row.kind === "quotation" && (row.id === quoteId || row.familyId === quoteId));
     await this.advance("quotation revised (version 2)", family.length > 1, () => this.commercialCommand(caseId, this.salesAdminSync!, "revise", { quoteId }));
+  }
+
+  /**
+   * PLM-147: the QS-priced estimate the client finds too high goes to value engineering, led by the job's lead designer
+   * (the Account Manager on a design job without one) with the QS. The QS starts it; no budget was recorded on this job.
+   */
+  async valueEngineering() {
+    const ctx = this.storyCtx("quote-approved");
+    if (!ctx?.ids.caseId || !ctx.ids.quoteId) throw new Skip("the priced quotation isn't there");
+    const { caseId, quoteId } = ctx.ids as { caseId: string; quoteId: string };
+    const service = this.get(ValueEngineeringService);
+    const qs = await this.as("estimator");
+    const view = await this.tryAs(qs, (actor) => service.view(actor, this.w, caseId, quoteId));
+    if (view.open) { this.kept("estimate in value engineering"); return; }
+    if (view.quote?.problem) throw new Skip(view.quote.problem);
+    await this.advance("estimate over the client's budget: value engineering started", false, () => this.tryAs(qs, (actor) => service.start(actor, this.w, caseId,
+      { quoteId, note: "The client's budget is about 15% below this price." })));
   }
 
   protected salesAdminSync: Actor | null = null;

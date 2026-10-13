@@ -123,6 +123,7 @@ export async function runScenarios(app: INestApplicationContext, input: Scenario
       await seed.recipe("quotes", () => seed.declineQuote());
       await seed.recipe("quotes", () => seed.reviseQuote());
       await seed.recipe("quotes", () => seed.discountQuote());
+      await seed.recipe("quotes", () => seed.valueEngineering());
       await seed.recipe("quotes", async () => {
         const expiring = await seed.expiringQuote();
         notes.set("quote.expired", expiring

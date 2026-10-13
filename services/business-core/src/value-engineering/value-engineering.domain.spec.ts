@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { describeAction } from "../history/history-actions";
+import { historySubject } from "../history/history-items";
 import { budgetOf, idleSince, overBudgetBy, roundChargeable, startProblem, veLead, veStep } from "./value-engineering.domain";
 
 describe("value engineering (PLM-147)", () => {
@@ -60,5 +62,19 @@ describe("value engineering (PLM-147)", () => {
     expect(idleSince(moved, null)).toBe(moved);
     expect(idleSince(moved, new Date("2026-10-12T12:00:00Z")).toISOString()).toBe("2026-10-12T12:00:00.000Z");
     expect(idleSince(moved, new Date("2026-10-09T12:00:00Z"))).toBe(moved);
+  });
+
+  it("reads each step in the job's history as a business event about value engineering", () => {
+    const line = (action: string) => [describeAction(action).verb, historySubject("pre_project_case", action, {})];
+    expect(line("quotation.value_engineering_started.v1")).toEqual(["started", "value_engineering"]);
+    expect(line("quotation.value_engineering_options_confirmed.v1")).toEqual(["confirmed", "value_engineering"]);
+    expect(line("quotation.value_engineering_meeting_booked.v1")).toEqual(["scheduled", "value_engineering"]);
+    expect(line("quotation.value_engineering_decided.v1")).toEqual(["decided", "value_engineering"]);
+    expect(line("quotation.value_engineering_closed.v1")).toEqual(["closed", "value_engineering"]);
+    expect(line("quotation.value_engineering_withdrawn.v1")).toEqual(["cancelled", "value_engineering"]);
+    expect(line("quotation.value_engineering_reassigned.v1")).toEqual(["reassigned", "value_engineering"]);
+    expect(line("quotation.value_engineering_budget_changed.v1")).toEqual(["updated", "value_engineering"]);
+    // The QS's own steps stay on the quotation.
+    expect(line("quotation.qs_confirmed.v1")).toEqual(["approved", "quotation"]);
   });
 });

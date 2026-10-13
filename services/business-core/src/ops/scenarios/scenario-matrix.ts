@@ -62,6 +62,7 @@ export const FIXED_SCENARIOS: readonly ScenarioSpec[] = [
   spec("quote.expired", "quotations", "Quotation expired", "quotes"),
   spec("quote.discount_pending", "quotations", "Quotation with a discount waiting for approval", "quotes"),
   spec("quote.revision", "quotations", "Quotation revised (a second version)", "quotes"),
+  spec("quote.value_engineering", "quotations", "Estimate over the client's budget in value engineering (lead designer with the QS)", "quotes"),
   // Deal file and planning
   spec("deal.waiting_finance", "deals", "Deal file waiting for Finance", "deals"),
   spec("deal.waiting_approval", "deals", "Deal file waiting for approval", "deals"),

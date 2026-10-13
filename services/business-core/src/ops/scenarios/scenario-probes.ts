@@ -92,6 +92,7 @@ const FIXED: Record<string, string> = {
   "quote.discount_pending": quote(`quote.status = 'internal_review' AND EXISTS (SELECT 1 FROM workspace_quotation_settings settings WHERE settings.workspace_id = quote.workspace_id
     AND settings.discount_approval_percent IS NOT NULL AND quote.discount > 0 AND quote.discount * 100 > settings.discount_approval_percent * (quote.total + quote.discount))`),
   "quote.revision": quote(`quote.number > 1 AND quote.family_id IS NOT NULL`),
+  "quote.value_engineering": quote(`EXISTS (SELECT 1 FROM quote_value_engineering round WHERE round.workspace_id = quote.workspace_id AND round.case_id = quote.case_id AND round.quote_id = quote.id AND round.status = 'open')`),
   "deal.waiting_finance": deal("pending_finance"),
   "deal.waiting_approval": deal("pending_approval"),
   "deal.released": deal("approved"),
