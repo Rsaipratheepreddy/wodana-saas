@@ -5,7 +5,7 @@ import * as shared from "../../../../packages/contracts/src/history";
 import { HISTORY_VERBS, describeAction } from "./history-actions";
 import { HISTORY_SUBJECTS, fieldChanges, historySubject, redactItem, toHistoryItem, type AuditRow } from "./history-items";
 import { HISTORY_RECORD_TYPES } from "./history-records";
-import { HISTORY_FILTERS } from "./history.service";
+import { HISTORY_FILTERS, oneLinePerEvent } from "./history.service";
 
 /** Every versioned action code written anywhere in Business Core ("quotation.sent_to_qs.v1"). */
 function sourceActions() {
@@ -143,5 +143,26 @@ describe("history: the shared contract", () => {
     expect([...HISTORY_SUBJECTS]).toEqual([...shared.HISTORY_SUBJECTS]);
     expect([...HISTORY_RECORD_TYPES]).toEqual([...shared.HISTORY_RECORD_TYPES]);
     expect([...HISTORY_FILTERS]).toEqual([...shared.HISTORY_FILTERS]);
+  });
+
+  it("QA-011: keeps one line per business event: the engine's approval, the signing link and the client's signature fold into the record's own lines", () => {
+    const row = (action: string, entityType: string, second: number, actorId: string | null, source = "user") =>
+      ({ action, entityType, occurredAt: `2026-10-13T08:00:${String(second).padStart(2, "0")}.000Z`, actorId, source });
+    const rows = [
+      row("change_request.applied.v1", "change_request", 50, null, "internal"),
+      row("change_request.approved.v1", "change_request", 41, null, "client_portal"),
+      row("change_request.signed.v1", "pre_project_case", 40, null, "client_portal"),
+      row("change_request.signature_requested.v1", "change_request", 31, "pm"),
+      row("change_request.sent.v1", "change_request", 30, "pm"),
+      row("change_request.internal_approved.v1", "change_request", 21, "ada"),
+      row("approvals.approved.v1", "approval_request", 20, "ada"),
+      row("change_request.submitted.v1", "change_request", 11, "qs"),
+      row("approvals.requested.v1", "approval_request", 10, "qs"),
+      // Someone else's approval, or one long after, stays.
+      row("approvals.approved.v1", "approval_request", 0, "owner"),
+    ];
+    expect(oneLinePerEvent(rows, ["change_request"]).map((kept) => kept.action)).toEqual([
+      "change_request.applied.v1", "change_request.approved.v1", "change_request.sent.v1", "change_request.internal_approved.v1", "change_request.submitted.v1", "approvals.approved.v1",
+    ]);
   });
 });

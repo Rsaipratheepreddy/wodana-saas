@@ -188,7 +188,7 @@ export function toHistoryItem(row: AuditRow, recordType: HistoryRecordType, reco
     category,
     subject,
     reference,
-    actor: { id: row.actorId, name: row.actorName ?? text(after.by) ?? text(after.signer) ?? null, roles: row.actorRoles ?? [], preset: row.actorPreset, kind: actorKind },
+    actor: { id: row.actorId, name: row.actorName ?? text(after.by) ?? text(after.signer) ?? text(record(after.signer).name) ?? null, roles: row.actorRoles ?? [], preset: row.actorPreset, kind: actorKind },
     amount: amountOf(after),
     note: text(after.note) ?? text(after.reason) ?? text(after.declineNote) ?? null,
     to: verb === "sent" ? text(after.signer) ?? text(after.to) : null,

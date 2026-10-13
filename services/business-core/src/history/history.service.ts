@@ -66,6 +66,30 @@ export class HistoryService {
   }
 }
 
+/** Steps one person takes in one go are written by the record and by the engine it uses, a moment apart. */
+const SAME_STEP_MS = 5000;
+/** The approval engine's own lines a record's own line already says ("submitted" is how a record asks for approval). */
+const SAME_AS: Partial<Record<string, readonly string[]>> = { requested_approval: ["requested_approval", "submitted"], approved: ["approved"], returned: ["returned"], declined: ["declined"] };
+
+/**
+ * QA-011: one line per business event. Dropped when the record's own line says the same thing a moment apart:
+ * the approval engine's line beside the record's (same person, same step); "asked to sign" beside "sent" (the
+ * signing link is how it was sent); and the client's signature beside the client's approval it gave.
+ */
+export function oneLinePerEvent<T extends Pick<AuditRow, "action" | "entityType" | "occurredAt" | "actorId" | "source">>(rows: T[], own: readonly string[]) {
+  const at = (row: T) => new Date(row.occurredAt).getTime();
+  const verb = (row: T) => describeAction(row.action).verb;
+  const near = (row: T, test: (other: T) => boolean) => rows.some((other) => other !== row && Math.abs(at(other) - at(row)) <= SAME_STEP_MS && test(other));
+  return rows.filter((row) => {
+    const said = verb(row);
+    if (row.entityType === "approval_request" && SAME_AS[said])
+      return !near(row, (other) => own.includes(other.entityType) && other.actorId === row.actorId && SAME_AS[said]!.includes(verb(other)));
+    if (said === "requested_signature") return !near(row, (other) => other.actorId === row.actorId && verb(other) === "sent");
+    if (said === "signed" && row.source === "client_portal") return !near(row, (other) => other.source === "client_portal" && verb(other) === "approved");
+    return true;
+  });
+}
+
 /** The history page itself, in the caller's tenant transaction (the record already found and allowed). */
 export async function readHistory(client: Pick<PoolClient, "query">, workspaceId: string, recordType: HistoryRecordType, recordId: string,
   facts: Awaited<ReturnType<(typeof RECORD_SPECS)[HistoryRecordType]["record"]>> & object, filter: HistoryFilter, before: { at: string; id: string } | null): Promise<HistoryPage> {
@@ -88,7 +112,8 @@ export async function readHistory(client: Pick<PoolClient, "query">, workspaceId
       LIMIT ${filter === "all" ? PAGE + 1 : 500}`,
     [workspaceId, recordId, before?.at ?? null, before?.id ?? null])).rows;
   // The filter is the action's meaning, decided here (the same rule the web reads), so it is applied after the read.
-  const matching = filter === "all" ? rows : rows.filter((row) => describeAction(row.action).category === CATEGORY[filter]);
+  const events = oneLinePerEvent(rows, spec.own);
+  const matching = filter === "all" ? events : events.filter((row) => describeAction(row.action).category === CATEGORY[filter]);
   const page = matching.slice(0, PAGE);
   const last = page.at(-1);
   const more = matching.length > PAGE || (filter !== "all" && rows.length === 500);

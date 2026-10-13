@@ -31,6 +31,8 @@ import { ChangeRequestsService } from "./change-requests.service";
 import { ProjectChangesService } from "./project-changes.service";
 import { approvedVariations, readProjectChange } from "./project-changes.store";
 import { variationHolds } from "./variation-holds";
+import { readHistory } from "../history/history.service";
+import { RECORD_SPECS } from "../history/history-records";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Fixtures are committed in their own
 // workspaces; every command runs as the app role (wodana_app, forced RLS) in its own committed transaction, so replays,
@@ -376,6 +378,13 @@ integration("changes on a started project: raise → price → QS → approve �
       await readPortalChanges(client, s.workspaceId, { id: s.grantId, caseId: s.caseId, name: "Maya", role: "approver", email: null, confirmed: true, demo: false }, s.caseId, true)));
     expect(budget).toMatchObject({ agreed: "7560.00", changesTotal: "5251.05", forecast: "12811.05" });
 
+    // QA-011: its history has one line per business event (the approval engine's lines and the signing link fold into the change's own).
+    const history = await asApp(s.workspaceId, s.pm, async (client) => readHistory(client, s.workspaceId, "change_request", id,
+      (await RECORD_SPECS.change_request.record(client, s.workspaceId, id, { userId: s.pm, granted: new Set() } as never))!, "all", null));
+    expect(history.items.map((item) => [item.verb, item.actor.name, item.actor.kind]).reverse()).toEqual([
+      ["raised", "Sam Site", "person"], ["priced", "Quinn QS", "person"], ["submitted", "Quinn QS", "person"], ["approved", "Ada Approver", "person"],
+      ["sent", "Pia PM", "person"], ["approved", "Maya Client", "client"], ["applied", null, "system"],
+    ]);
     // Applying again changes nothing; it's VO-1 once.
     record = await pm.apply(actor, s.workspaceId, s.projectId, id, { version: record.change.version });
     expect(record.change.status).toBe("applied");
