@@ -440,6 +440,13 @@
 .wd-search-field[data-focus-within] { border-color: var(--wd-field-focus-border); box-shadow: var(--wd-field-focus-shadow); }
 .wd-search-field .wd-input { block-size: 100%; }
 .wd-search-field input::-webkit-search-cancel-button { display: none; }
+/* Clear (×) sits inside the field at the inline end, centred whatever the field's height; the text gives way to it. */
+.wd-search-field > button { flex: none; align-self: center; inline-size: var(--wd-space-6); min-block-size: 0; block-size: var(--wd-space-6); margin-inline: var(--wd-space-1); padding: 0; border-radius: var(--wd-radius-xs); }
+.wd-search-field > button:focus-visible, .wd-search-field > button[data-focus-visible] { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+@media (pointer: coarse) { .wd-search-field > button { inline-size: var(--wd-control-xs); block-size: var(--wd-control-xs); } }
+/* Filter in a list toolbar: icon, label and, while filters are in use, their count, on one centred line. */
+.wd-filter-button { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); }
+.wd-filter-button .wd-count-chip { min-inline-size: var(--wd-space-4); block-size: var(--wd-space-4); padding-inline: var(--wd-space-1); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
 /* Choice controls: Checkbox, Radio, Switch.
    The whole row (box and label) is the target, at least 32px high (44px on touch). The box is 20px with a
    border of at least 3:1 against the surface; checked is filled with the brand action colour; a partly
