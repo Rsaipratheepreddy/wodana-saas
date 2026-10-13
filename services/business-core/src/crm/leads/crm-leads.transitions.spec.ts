@@ -3,13 +3,14 @@ import { CrmLeadsService } from "./crm-leads.service";
 
 const statuses = ["new", "attempting_contact", "connected", "nurturing", "qualified", "paused", "disqualified"];
 
-function setup(status: string, options: { converted?: boolean; unassigned?: boolean; noAction?: boolean; serviceType?: string | null } = {}) {
+function setup(status: string, options: { converted?: boolean; otherWork?: boolean; unassigned?: boolean; noAction?: boolean; serviceType?: string | null } = {}) {
   const before = { id: "lead", party_id: "party", owner_membership_id: options.unassigned ? null : "owner", queue_id: null, status, version: 5, next_action_at: options.noAction ? null : "2026-09-20T09:30:00Z" };
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     if (sql.includes("SELECT lead.*")) return { rows: [before], rowCount: 1 };
     if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: options.serviceType === undefined ? "interior_design" : options.serviceType }], rowCount: 1 };
     if (sql.includes("FROM crm_qualification_forms")) return { rows: [], rowCount: 0 };
     if (sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
+    if (sql.includes("SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND party_id")) return { rows: options.otherWork ? [{}] : [], rowCount: options.otherWork ? 1 : 0 };
     if (sql.includes("SELECT 1 FROM crm_opportunities")) return { rows: options.converted ? [{}] : [], rowCount: options.converted ? 1 : 0 };
     if (sql.includes("UPDATE crm_leads")) return { rows: [{ ...before, status: params[0], next_action_at: params[2], qualification_evidence: params[6], qualification_evidence_hash: params[7], qualified_by: params[8], version: 6 }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
@@ -146,9 +147,17 @@ describe("CRM lead status moves", () => {
   });
 
   it("does not block a client who has other real work with the firm", async () => {
-    const { service, query } = setup("connected", { converted: true });
-    await service.markSpam({} as never, "workspace", "lead", { version: 5 }).catch(() => undefined);
+    const { service, query } = setup("connected", { otherWork: true });
+    await service.markSpam({} as never, "workspace", "lead", { version: 5 });
+    expect(query.mock.calls.some(([sql]) => sql.includes("SET spam_at = now()"))).toBe(true);
     expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_parties SET blocked_at"))).toBe(false);
+  });
+
+  it("QA-017: refuses to mark a converted enquiry as spam, like every other move of a converted lead", async () => {
+    const { service, query, events } = setup("qualified", { converted: true });
+    await expect(service.markSpam({} as never, "workspace", "lead", { version: 5 })).rejects.toThrow("This lead has been converted. Continue work in its opportunity or create a new enquiry.");
+    expect(query.mock.calls.some(([sql]) => sql.includes("SET spam_at = now()") || sql.includes("UPDATE crm_parties"))).toBe(false);
+    expect(events.record).not.toHaveBeenCalled();
   });
 });
 

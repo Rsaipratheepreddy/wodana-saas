@@ -1405,6 +1405,9 @@ export class CrmLeadsService {
       const before = await this.requireLead(client, workspaceId, leadId, true);
       if (before.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
       if ((before as unknown as Record<string, unknown>).spam_at) return this.mapLead(before);
+      // QA-017: an enquiry that became an opportunity is real work: it isn't spam (and stays in the reports' conversions).
+      if ((await client.query(`SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND lead_id = $2 LIMIT 1`, [workspaceId, leadId])).rowCount)
+        throw new ConflictException("This lead has been converted. Continue work in its opportunity or create a new enquiry.");
       if (!["disqualified", "qualified"].includes(String(before.status)))
         await this.transitionWith(client, workspaceId, leadId, { version: input.version, status: "disqualified", reason: "Spam" } as TransitionLeadDto, actorUser);
       const marked = await client.query(`UPDATE crm_leads SET spam_at = now(), spam_by = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 RETURNING *`, [workspaceId, leadId, actorUser.userId]);
