@@ -63,8 +63,10 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
   // One role vocabulary: the member's roles and teams, lower-case, against the sources' saved limits.
   const leadOptions = withRoleVocabulary(supporting[6] as LeadOptions | undefined);
   return {
-    defaultCurrency: workspace?.workspace?.defaultCurrency,
-    defaultLocale: workspace?.workspace?.defaultLocale,
+    // An Account Manager can't read the workspace's settings: the region every member's profile carries is used, so
+    // the form says "Emirate" (the region pack's word) and checks phones against the right country for them too.
+    defaultCurrency: workspace?.workspace?.defaultCurrency ?? currentMembership?.workspaceCurrency ?? undefined,
+    defaultLocale: workspace?.workspace?.defaultLocale ?? currentMembership?.workspaceLocale ?? undefined,
     canView: true,
     currentRoles: roleVocabularyKeys(currentMembership?.roles, leadOptions?.roleKeys),
     canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
