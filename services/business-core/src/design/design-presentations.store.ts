@@ -177,8 +177,12 @@ export async function decideRound(db: Db, workspaceId: string, caseId: string, i
     [workspaceId, id, input.decision, input.decision === "chosen" ? input.optionId : null, input.userId ?? null, input.grantId ?? null, name, input.source, note]);
   const facts = await caseTitle(db, workspaceId, caseId);
   const chosen = input.decision === "chosen" ? (await db.query<{ title: string }>(`SELECT title FROM design_presentation_options WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.optionId])).rows[0]?.title ?? "" : "";
-  await tellStaff(db, { workspaceId, recipients: await caseTeam(db, workspaceId, caseId, ["design"]), code: "design.concept_chosen", except: input.userId ?? null,
-    variables: { clientName: facts.clientName, title: input.decision === "chosen" ? chosen : "changes", stage: STAGE_LABELS[row.stage], note: note ?? (input.decision === "chosen" ? "Chosen." : "") },
+  // The design team hears the client's answer: "<client> chose <option>", or "<client> wants changes to <stage>" with what (the
+  // client-changes notice every design answer uses), never "chose changes".
+  await tellStaff(db, { workspaceId, recipients: await caseTeam(db, workspaceId, caseId, ["design"]), code: input.decision === "chosen" ? "design.concept_chosen" : "design.client_changes",
+    except: input.userId ?? null,
+    variables: input.decision === "chosen" ? { clientName: facts.clientName, title: chosen, stage: STAGE_LABELS[row.stage], note: note ?? "Chosen." }
+      : { clientName: facts.clientName, title: STAGE_LABELS[row.stage], actor: name, note: note ?? "" },
     deepLink: `/workspace/pre-projects/cases/${caseId}/designs?stage=${row.stage}`, key: `${id}:${input.decision}` });
   let completed = false;
   if (input.decision === "chosen" && row.stage === "concepts") {

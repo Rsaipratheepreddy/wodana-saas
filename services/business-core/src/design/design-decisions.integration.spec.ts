@@ -259,6 +259,12 @@ integration("design decisions: presentations and the materials ledger (plan §6.
     expect(round).toMatchObject({ round: 1, status: "presented", chargeable: false });
     // The client asks for changes, then picks one on the revision.
     await run((ctx) => presentationChoice(ctx, { caseId: ids.caseId, presentationId: round.id, version: round.version, decision: "changes", note: "Lighter floors" }));
+    // The design team hears the client asked for changes (never "chose changes"), with what to change.
+    const answered = (await asApp(ids.workspaceId, ids.opsUser, (client) => client.query<{ eventType: string; subject: string; body: string }>(
+      `SELECT event_type AS "eventType", subject, body FROM notifications WHERE workspace_id = $1 AND event_type::text IN ('design.concept_chosen', 'design.client_changes') AND channel = 'in_app'`,
+      [ids.workspaceId]))).rows;
+    expect(answered.length).toBeGreaterThan(0);
+    expect(answered.every((row) => row.eventType === "design.client_changes" && row.subject.endsWith("wants changes to Concepts") && row.body === "Lighter floors")).toBe(true);
     for (let number = 2; number <= 4; number += 1) {
       const next = { id: randomUUID(), stage: "concepts", options: [{ id: randomUUID(), title: `Warm minimal ${number}`, linkUrl: "https://www.canva.com/design/warm2" }] };
       await decisions.createPresentation(actor, ids.workspaceId, ids.caseId, next);
