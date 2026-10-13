@@ -92,6 +92,60 @@ const vehicles: Section = async (ctx, profile, step) => {
 
 const routesHavePermit = (stages: TemplateStage[][]) => stages.some((route) => route.some((stage) => stage.checks.some((check) => check.kind === "permit_collected")));
 
+type InspectionView = {
+  settings: { inspectionsEnabled: boolean; inspectionStages: Array<{ kind: string; label: string }>; inspectionWorkPackages: string[]; inspectorRole: string; directorRole: string | null;
+    directorPackages: string[]; inspectionDays: number; version: number };
+  inspectionChoices: { roles: Array<{ key: string; label: string }>; workPackages: Array<{ id: string; name: string }>; designPackages: Array<{ code: string; name: string }> };
+};
+
+/**
+ * PLM-150: design inspections. Trades are matched by name to the firm's work packages, roles to its project roles and
+ * packages to its design packages; one it doesn't have is reported, not invented.
+ */
+async function inspections(ctx: OpsContext, wanted: NonNullable<NonNullable<Profile["factory"]>["inspections"]>, step: Step) {
+  const service = ctx.get(FactoryService);
+  const { settings, inspectionChoices: choices } = await service.settings(ctx.actor, ctx.workspace.id) as InspectionView;
+  const patch: Record<string, unknown> = {};
+  const changes: Change[] = [];
+  const compare = (label: string, key: string, before: unknown, value: unknown, shownAs = shown) => {
+    if (value === undefined) return;
+    if (stable(before) === stable(value)) step.same(label, shownAs(before));
+    else { patch[key] = value; changes.push(diff(label, shownAs(before), shownAs(value))); }
+  };
+  compare("design inspections", "inspectionsEnabled", settings.inspectionsEnabled, wanted.enabled);
+  if (wanted.stages) compare("inspection stages", "inspectionStages", settings.inspectionStages.map(({ kind, label }) => ({ kind, label })), wanted.stages,
+    (value) => (value as Array<{ kind: string; label: string }>).map((stage) => stage.label || stage.kind).join(" / "));
+  if (wanted.trades) {
+    const ids = wanted.trades.flatMap((name) => {
+      const found = choices.workPackages.find((entry) => lower(entry.name) === lower(name));
+      if (!found) step.missing(`inspected trade ${name}`, "no active work package with this name; choose it in Settings › Factory once it exists");
+      return found ? [found.id] : [];
+    });
+    const name = (value: unknown) => (value as string[]).map((id) => choices.workPackages.find((entry) => entry.id === id)?.name ?? id).sort().join(", ") || "every made item";
+    compare("inspected trades", "inspectionWorkPackages", [...settings.inspectionWorkPackages].sort(), [...new Set(ids)].sort(), name);
+  }
+  const role = (label: string, key: "inspectorRole" | "directorRole", value: string | null | undefined, before: string | null) => {
+    if (value === undefined) return;
+    if (value !== null && !choices.roles.some((entry) => entry.key === value)) { step.missing(`${label} ${value}`, "no project role with this key; add it in Settings › Projects › Roles"); return; }
+    compare(label, key, before, value);
+  };
+  role("inspecting role", "inspectorRole", wanted.inspectorRole, settings.inspectorRole);
+  role("inspecting role on director packages", "directorRole", wanted.directorRole, settings.directorRole);
+  if (wanted.directorPackages) {
+    const codes = wanted.directorPackages.filter((code) => {
+      const found = choices.designPackages.some((entry) => entry.code === code);
+      if (!found) step.missing(`design package ${code}`, "no design package with this code");
+      return found;
+    });
+    compare("design packages the director inspects", "directorPackages", [...settings.directorPackages].sort(), [...new Set(codes)].sort(), (value) => (value as string[]).join(", ") || "none");
+  }
+  compare("working days to inspect", "inspectionDays", settings.inspectionDays, wanted.workingDays);
+  if (changes.length) await step.change(changes, async () => {
+    const fresh = await service.settings(ctx.actor, ctx.workspace.id) as { settings: { version: number } };
+    return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.settings.version, ...patch });
+  });
+}
+
 const factory: Section = async (ctx, profile, step) => {
   const wanted = profile.factory!;
   const service = ctx.get(FactoryService);
@@ -113,6 +167,7 @@ const factory: Section = async (ctx, profile, step) => {
       return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.settings.version, ...patch });
     });
   }
+  if (wanted.inspections) await inspections(ctx, wanted.inspections, step);
   const permits = wanted.permits;
   if (!permits) return;
   const logistics = ctx.get(LogisticsService);

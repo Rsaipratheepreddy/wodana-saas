@@ -17,6 +17,9 @@ describe("configuration profile", () => {
     expect(palm.vehicles).toHaveLength(9);
     expect(palm.factory?.productionSteps).toEqual([{ kind: "scheduled", label: "" }, { kind: "in_production", label: "" }, { kind: "quality_check", label: "" }, { kind: "ready", label: "" }]);
     expect(palm.factory?.permits).toEqual({ requiredForDeliveriesAndInstallations: true, furnitureDeliveriesNeedOne: true, missingAlertWorkingDays: 3, expiryReminderDays: 7 });
+    // PLM-150: two design inspections on joinery and bespoke furniture; the Creative Director inspects on its own package's projects.
+    expect(palm.factory?.inspections).toEqual({ enabled: true, stages: [{ kind: "raw", label: "Inspection 1 (raw material)" }, { kind: "final", label: "Inspection 2 (finished)" }],
+      trades: ["Joinery", "Bespoke furniture"], inspectorRole: "designer", directorRole: "creative_director", directorPackages: ["creative_director"], workingDays: undefined });
     expect(palm.quotations).toMatchObject({ validityDays: 7, qsReview: true, qsPrices: "rules", qsWorkPackages: ["Joinery", "Bespoke furniture"] });
     expect(palm.firstResponse).toEqual({ minutes: 60, workingCalendar: { days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "18:00" } });
     expect(palm.financeRequests?.inbox).toBe("accounts@palmlivingae.com");
@@ -43,7 +46,7 @@ describe("configuration profile", () => {
   it("lists every problem at once", () => {
     expect(problems({
       vehicle: [],
-      factory: { productionSteps: ["Ready", "Scheduled"], permits: { missingAlertWorkingDays: 40 } },
+      factory: { productionSteps: ["Ready", "Scheduled"], permits: { missingAlertWorkingDays: 40 }, inspections: { stages: [{ kind: "final" }, { kind: "raw" }], inspectorRole: "Lead Designer", workingDays: 0 } },
       quotations: { validityDays: 0, qsPrices: "some" },
       firstResponse: { minutes: 60, warningMinutes: 60, workingCalendar: { days: ["mon", "funday"], start: "18:00", end: "09:00" } },
       financeRequests: { inbox: "not-an-email", paymentMethods: [{ name: "Card" }, { name: "card" }] },
@@ -56,6 +59,9 @@ describe("configuration profile", () => {
       expect.stringContaining("Unknown section \"vehicle\""),
       expect.stringContaining("factory.productionSteps: 2 to 4 steps"),
       expect.stringContaining("factory.permits.missingAlertWorkingDays is a whole number from 0 to 30"),
+      expect.stringContaining("factory.inspections.stages: one or two of raw"),
+      expect.stringContaining("factory.inspections.inspectorRole is a project role key"),
+      expect.stringContaining("factory.inspections.workingDays is a whole number from 1 to 30"),
       expect.stringContaining("quotations.validityDays is a whole number from 1 to 365"),
       expect.stringContaining("quotations.qsPrices is one of all, rules"),
       expect.stringContaining("firstResponse.warningMinutes is less than minutes"),

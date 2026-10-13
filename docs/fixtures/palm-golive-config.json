@@ -116,6 +116,23 @@
       "furnitureDeliveriesNeedOne": true,
       "missingAlertWorkingDays": 3,
       "expiryReminderDays": 7
+    },
+    "inspections": {
+      "_source": "PLM-150 (13 Oct 2026): two design inspections per joinery / bespoke furniture item; the Lead Interior Designer inspects, the Creative Director on Designed by the Creative Director projects. Days to inspect are TBC by Palm (the default of 2 working days applies).",
+      "enabled": true,
+      "stages": [
+        { "kind": "raw", "label": "Inspection 1 (raw material)" },
+        { "kind": "final", "label": "Inspection 2 (finished)" }
+      ],
+      "trades": [
+        "Joinery",
+        "Bespoke furniture"
+      ],
+      "inspectorRole": "designer",
+      "directorRole": "creative_director",
+      "directorPackages": [
+        "creative_director"
+      ]
     }
   },
   "quotations": {

@@ -1,4 +1,5 @@
 import { FURNITURE_PATHS } from "../crm/opportunities/flow-gates";
+import { parseInspectionStages, type InspectionStage } from "../factory/factory-inspections";
 import { PRODUCTION_STEP_KINDS, type ProductionStep } from "../factory/production-status";
 import { DEDUCT_EVENTS, LEAD_FROM, RESERVE_EVENTS } from "../fulfilment/fulfilment-rules";
 import { CHECK_KINDS } from "../project-core/project-checks";
@@ -43,6 +44,13 @@ export type Profile = {
   factory?: {
     productionSteps?: ProductionStep[]; clientPaymentReminderDays?: number;
     permits?: { requiredForDeliveriesAndInstallations?: boolean; furnitureDeliveriesNeedOne?: boolean; missingAlertWorkingDays?: number; expiryReminderDays?: number };
+    /**
+     * PLM-150: design inspections of made items: on or off; the stages kept (raw before the final finish, final after
+     * finishing) with the firm's names; the trades (work package names) whose items need them; the project role that
+     * inspects, the role that inspects instead on projects of the listed design packages (codes); the working days to do it.
+     */
+    inspections?: { enabled?: boolean; stages?: InspectionStage[]; trades?: string[]; inspectorRole?: string; directorRole?: string | null; directorPackages?: string[];
+      workingDays?: number };
   };
   quotations?: { validityDays?: number; qsReview?: boolean; qsPrices?: "all" | "rules"; qsItemTypes?: string[]; qsWorkPackages?: string[] };
   firstResponse?: { minutes: number; warningMinutes?: number; workingCalendar?: { days: string[]; start: string; end: string; timeZone?: string } };
@@ -164,7 +172,7 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.factory !== undefined) {
-    const section = at("factory").object(raw.factory, ["productionSteps", "clientPaymentReminderDays", "permits"]);
+    const section = at("factory").object(raw.factory, ["productionSteps", "clientPaymentReminderDays", "permits", "inspections"]);
     if (section) {
       const factory: NonNullable<Profile["factory"]> = {};
       if (section.productionSteps !== undefined) {
@@ -195,6 +203,30 @@ export function validateProfile(raw: unknown): Profile {
           missingAlertWorkingDays: optional(permits, "missingAlertWorkingDays", (value) => at("factory.permits.missingAlertWorkingDays").int(value, 0, 30)),
           expiryReminderDays: optional(permits, "expiryReminderDays", (value) => at("factory.permits.expiryReminderDays").int(value, 0, 365)),
         };
+      }
+      if (section.inspections !== undefined) {
+        const path = "factory.inspections";
+        const inspections = at(path).object(section.inspections, ["enabled", "stages", "trades", "inspectorRole", "directorRole", "directorPackages", "workingDays"]);
+        const role = (key: string, value: unknown) => {
+          const text = at(`${path}.${key}`).text(value, 60);
+          if (text !== undefined && !/^[a-z][a-z0-9_]{0,59}$/.test(text)) { problems.push(`${path}.${key} is a project role key (lower case letters, digits and _).`); return undefined; }
+          return text;
+        };
+        if (inspections) {
+          let stages: InspectionStage[] | undefined;
+          if (inspections.stages !== undefined) {
+            try { stages = parseInspectionStages(inspections.stages); } catch { problems.push(`${path}.stages: one or two of raw (before the final finish) and final (after finishing), each once, ending with final, names up to 60 characters.`); }
+          }
+          factory.inspections = {
+            enabled: optional(inspections, "enabled", (value) => at(`${path}.enabled`).bool(value)),
+            stages,
+            trades: optional(inspections, "trades", (value) => at(`${path}.trades`).texts(value, 120)),
+            inspectorRole: optional(inspections, "inspectorRole", (value) => role("inspectorRole", value)),
+            directorRole: nullable(inspections, "directorRole", (value) => role("directorRole", value)),
+            directorPackages: optional(inspections, "directorPackages", (value) => at(`${path}.directorPackages`).texts(value, 40)),
+            workingDays: optional(inspections, "workingDays", (value) => at(`${path}.workingDays`).int(value, 1, 30)),
+          };
+        }
       }
       profile.factory = factory;
     }
