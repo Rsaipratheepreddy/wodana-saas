@@ -81,7 +81,8 @@ describe("suppliers", () => {
     expect(grid).toHaveTextContent("FAC, INT");
     expect(grid).not.toHaveTextContent("Old Glass Co");
     const filterBy = async (column: string, option: string) => {
-      await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+      // Once a filter is in use the button reads "Filter (1)".
+      await userEvent.click(screen.getByRole("button", { name: /^Filter( \(\d+\))?$/ }));
       await userEvent.click(await screen.findByRole("button", { name: /Column$/ }));
       await userEvent.click(await screen.findByRole("option", { name: column }));
       await userEvent.click(screen.getByRole("button", { name: new RegExp(`Filter by ${column.toLowerCase()}`) }));
@@ -273,6 +274,16 @@ describe("ordering", () => {
     receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], contracts: [], neededBy: {}, spendingGuard: "off", fundsShort: [], canOverrideFunds: false, me: "u2", supplierHold: null, ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
+
+  it("shows only the views that hold something, so the list never has more than six tabs", async () => {
+    mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({})] } : url.includes("/suppliers") ? state() : ordersList));
+    page("to-order");
+    const tabs = await screen.findByRole("tablist", { name: "What to order" }).catch(() => screen.findByRole("group", { name: "What to order" }));
+    expect(within(tabs).getAllByRole("button").concat(within(tabs).queryAllByRole("tab")).map((tab) => tab.textContent?.replace(/\d+$/, "").trim()))
+      .toEqual(expect.arrayContaining(["To order", "Everything"]));
+    expect(within(tabs).queryByText("Late to order")).not.toBeInTheDocument();
+    expect(within(tabs).queryByText("Client sign-off")).not.toBeInTheDocument();
+  });
 
   it("lists what projects need, keeps unsigned lists apart, and orders the chosen lines from one supplier", async () => {
     const fetcher = mount((url, body) => (url.includes("/needs") ? needs : url.includes("/suppliers") ? state() : body ? orderState() : ordersList));

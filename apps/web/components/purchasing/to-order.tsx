@@ -137,17 +137,25 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
     late: [t("Nothing is late to order"), null], signoff: [t("Nothing waits for the client"), null], payment: [t("Nothing waits for a payment"), null], hold: [t("No project is on hold"), null],
     over: [t("Nothing is over-ordered"), null], restock: [t("No stock is low"), t("Set a reorder point on an item in Inventory to be told when it runs low.")], all: [t("Nothing to order yet"), null],
   }[view];
+  // At most six tabs (To order, four of these, Everything): the views that hold something, most pressing first; the
+  // open one always stays. Whatever doesn't fit is still under Everything.
+  const optional = [
+    { id: "late" as const, label: t("Late to order"), count: count("late") },
+    { id: "signoff" as const, label: t("Client sign-off"), count: count("signoff") },
+    { id: "payment" as const, label: t("Client payment"), count: count("payment") },
+    { id: "hold" as const, label: t("On hold"), count: count("hold") },
+    { id: "over" as const, label: t("Over-ordered"), count: count("over") },
+    { id: "restock" as const, label: t("Low stock"), count: restock.length },
+  ].filter((item) => item.count || item.id === view);
+  const extraTabs = optional.slice(0, 4);
+  const open = optional.find((item) => item.id === view);
+  if (open && !extraTabs.includes(open)) extraTabs[3] = open;
 
   return <div className={styles.stack} data-tour="purchasing-to-order">
     <div className={styles.toolbar}>
       <ListTabs label={t("What to order")} value={view} onChange={(next) => { setView(next); setSelected(new Set()); }} items={[
         { id: "order", label: t("To order"), count: count("order") },
-        { id: "late", label: t("Late to order"), count: count("late") },
-        { id: "signoff", label: t("Client sign-off"), count: count("signoff") },
-        ...(count("payment") ? [{ id: "payment" as const, label: t("Client payment"), count: count("payment") }] : []),
-        ...(count("hold") ? [{ id: "hold" as const, label: t("On hold"), count: count("hold") }] : []),
-        ...(count("over") ? [{ id: "over" as const, label: t("Over-ordered"), count: count("over") }] : []),
-        ...(restock.length ? [{ id: "restock" as const, label: t("Low stock"), count: restock.length }] : []),
+        ...extraTabs,
         { id: "all", label: t("Everything") },
       ]} />
       <div className={styles.filters}>

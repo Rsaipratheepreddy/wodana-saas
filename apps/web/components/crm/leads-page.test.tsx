@@ -456,7 +456,8 @@ describe("LeadsPage", () => {
     expect(screen.getByRole("button", { name: "Open Amira Al Mansoori" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Leena Mathew" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open Dr Maya Nair" })).not.toBeInTheDocument();
-    await interaction.click(screen.getByRole("button", { name: "Filter" }));
+    // The button counts the filters in use.
+    await interaction.click(screen.getByRole("button", { name: "Filter (1)" }));
     await interaction.click(screen.getByRole("button", { name: "Clear filters" }));
     await interaction.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.getByRole("button", { name: "Open Leena Mathew" })).toBeInTheDocument();
