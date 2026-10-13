@@ -11,6 +11,8 @@ import { CrmLeadsModule } from "../leads/crm-leads.module";
 import { AiGatewayModule } from "../../ai-gateway/ai-gateway.module";
 import { OpportunityProposalsController } from "./opportunity-proposals.controller";
 import { OpportunityProposalsService } from "./opportunity-proposals.service";
+import { TimelineChecksController } from "./timeline-checks.controller";
+import { TimelineChecksService } from "./timeline-checks.service";
 
-@Module({ imports: [WorkspacesModule, CrmLeadsModule, AiGatewayModule], controllers: [CrmOpportunitiesController, OpportunityFlowController, OpportunityProposalsController], providers: [CrmOpportunitiesService, OpportunityDiscoveryService, IntroMeetingService, OpportunityFlowService, OpportunityProposalsService, BrandAssetStorageService], exports: [CrmOpportunitiesService, OpportunityDiscoveryService] })
+@Module({ imports: [WorkspacesModule, CrmLeadsModule, AiGatewayModule], controllers: [CrmOpportunitiesController, OpportunityFlowController, OpportunityProposalsController, TimelineChecksController], providers: [CrmOpportunitiesService, OpportunityDiscoveryService, IntroMeetingService, OpportunityFlowService, OpportunityProposalsService, BrandAssetStorageService, TimelineChecksService], exports: [CrmOpportunitiesService, OpportunityDiscoveryService] })
 export class CrmOpportunitiesModule {}

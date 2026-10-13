@@ -104,6 +104,7 @@ export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   ...staffReminder("permit.expiry", "Renew the permit, or move the booking."),
   ...staffReminder("finance_request.waiting", "It is waiting for Finance."),
   ...staffReminder("meeting.minutes_due", "Write the minutes and share them with the client."),
+  ...staffReminder("crm.timeline_check", "Answer the timeline question so Sales can reply to the client today."),
   ...staffReminder("factory.inspection_due", "Inspect it at the factory, or ask someone to cover it."),
   ...staffReminder("quote.value_engineering_idle", "Agree the savings, present the options or record the client's decision."),
   ...staffReminder("finishes.signature_due", "Get the client to sign the samples and data sheets, then record them."),
@@ -648,6 +649,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "portal.minutes_shared", channel: "email", subject: "Notes from your meeting · {{project}}", body: "{{company}} shared the notes from {{title}}.\n\n{{note}}\n\nOpen your project page to read them and comment.", variables: ["company", "project", "title", "due", "note"] },
   { code: "meeting.minutes_comment", channel: "in_app", subject: "{{actor}} commented on the minutes · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "meeting.minutes_comment", channel: "email", subject: "{{actor}} commented on the minutes of {{title}}", body: "{{actor}} commented on the minutes of {{title}} in the client portal:\n\n{{note}}\n\nOpen the meeting to reply.", variables: ["title", "clientName", "actor", "note"] },
+  // PLM-155: a timeline question (the person asked), then its answer (the Account Manager, who replies to the client today).
+  { code: "crm.timeline_question", channel: "in_app", subject: "Timeline question · {{client}}", body: "{{actor}} asks: {{question}} Answer by {{due}}.", variables: ["client", "actor", "question", "due", "opportunity"] },
+  { code: "crm.timeline_question", channel: "email", subject: "Timeline question for {{client}}", body: "{{actor}} asks about {{opportunity}}:\n\n{{question}}\n\nAnswer in Wodana by {{due}}, so they can reply to the client the same day.", variables: ["client", "actor", "question", "due", "opportunity"] },
+  { code: "crm.timeline_answered", channel: "in_app", subject: "Timeline answer · {{client}}", body: "{{actor}}: {{answer}} Reply to the client today.", variables: ["client", "actor", "answer", "opportunity"] },
+  { code: "crm.timeline_answered", channel: "email", subject: "Timeline answer for {{client}}", body: "{{actor}} answered your timeline question on {{opportunity}}:\n\n{{answer}}\n\nReply to the client today.", variables: ["client", "actor", "answer", "opportunity"] },
   // D-29: a delivery to site is coming; the client confirms someone lets the team in, or asks to move it.
   { code: "portal.site_access", channel: "email", subject: "Confirm site access for {{title}}", body: "{{company}} has a delivery for {{project}} on {{title}}: {{note}}\n\nOpen your project page to confirm someone can let the team in, or ask to move it.", variables: ["company", "project", "title", "due", "note"] },
   // Client portal access (client-portal/portal-invitations.ts): the project's manager hears the client's first sign-in.
@@ -895,6 +901,8 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
   // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
   "crm.inbox_message", "crm.inbox_mention", "crm.inbox_scheduled_failed", "crm.inbox_filed",
+  // PLM-155: a timeline question to answer the same day, and its answer for the Account Manager.
+  "crm.timeline_question", "crm.timeline_answered",
 ]);
 
 /**

@@ -26,6 +26,7 @@ export const ENGINE_REMINDER_KINDS = [
   "factory.inspection_due",
   "quote.value_engineering_idle",
   "finishes.signature_due",
+  "crm.timeline_check",
 ] as const;
 export type EngineReminderKind = (typeof ENGINE_REMINDER_KINDS)[number];
 
@@ -38,6 +39,7 @@ export const MY_DAY_ONLY_KINDS = [
   "site.daily_report",
   "factory.production_due",
   "books.posting_issue",
+  "crm.chat_closing",
 ] as const;
 export type MyDayOnlyKind = (typeof MY_DAY_ONLY_KINDS)[number];
 
@@ -130,6 +132,7 @@ export const REMINDER_KIND_INFO: Record<ReminderKind, ReminderKindInfo> = {
   "factory.inspection_due": { module: "factory", audience: "staff", critical: false, notify: "engine", eventType: "factory.inspection_due" },
   "quote.value_engineering_idle": { module: "quotations", audience: "staff", critical: false, notify: "engine", eventType: "quotation.value_engineering_idle" },
   "finishes.signature_due": { module: "design", audience: "staff", critical: false, notify: "engine", eventType: "finishes.signature_due" },
+  "crm.timeline_check": { module: "sales", audience: "staff", critical: false, notify: "engine", eventType: "crm.timeline_check" },
   "crm.first_response": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.unowned": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.confirm_client": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
@@ -137,6 +140,7 @@ export const REMINDER_KIND_INFO: Record<ReminderKind, ReminderKindInfo> = {
   "site.daily_report": { module: "projects", audience: "staff", critical: false, notify: "module", eventType: null },
   "factory.production_due": { module: "factory", audience: "staff", critical: false, notify: "module", eventType: null },
   "books.posting_issue": { module: "ledger", audience: "staff", critical: false, notify: "module", eventType: null },
+  "crm.chat_closing": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
 };
 
 /**
@@ -186,6 +190,8 @@ export const REMINDER_KIND_DEFAULTS: Record<EngineReminderKind, ReminderRuleDefa
   "quote.value_engineering_idle": { offsets: [3, 7], unit: "day", workingDays: true, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
   // PLM-148: days after the project started while the client's signed samples and data sheets are missing.
   "finishes.signature_due": { offsets: [1, 3, 7], unit: "day", workingDays: true, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
+  // PLM-155: hours around the end of the working day a timeline question is due (2 hours before, then at the end).
+  "crm.timeline_check": { offsets: [-2, 0], unit: "hour", workingDays: false, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
 };
 
 /** Bounds a rule must keep (the database checks the same). */

@@ -1,6 +1,7 @@
 import type { ReminderSource } from "../engine/engine";
 import { approvalWaitingSource } from "./approvals";
 import { minutesDueSource } from "./meetings";
+import { chatClosingSource, timelineCheckSource } from "./sales-checks";
 import { confirmClientSource, firstResponseSource, followUpSource, replyWaitingSource, unownedSource } from "./crm";
 import { designDecisionSource, designStageSource } from "./designs";
 import { signatureDueSource } from "./finishes";
@@ -43,4 +44,6 @@ export const BUILTIN_REMINDER_SOURCES: readonly ReminderSource[] = [
   minutesDueSource,
   valueEngineeringIdleSource,
   signatureDueSource,
+  timelineCheckSource,
+  chatClosingSource,
 ];
