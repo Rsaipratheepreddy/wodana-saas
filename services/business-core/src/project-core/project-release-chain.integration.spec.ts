@@ -224,7 +224,7 @@ integration("technical drawings to production release (PLM-056 … 062, 068)", (
       detail = await w.core(w.tech.user, TEAM).command(actor, w.workspaceId, projectId, { action: "check_drawings", revisionId: r2, result: "ok", version: state.version });
       expect((await tasks(w, projectId)).filter((task) => task.status === "todo")).toEqual([expect.objectContaining({ title: "Client approval of the drawings", assignee: w.pm.membership })]);
       await expect(w.core(w.tech.user, TEAM).command(actor, w.workspaceId, projectId, { action: "send_drawings", revisionId: r2, version: detail.project.version }))
-        .rejects.toThrow("Only the project manager can do this.");
+        .rejects.toThrow("Only the project manager sends the drawings to the client.");
       detail = await pm.command(actor, w.workspaceId, projectId, { action: "send_drawings", revisionId: r2, version: detail.project.version });
       expect(detail.drawings.latest).toMatchObject({ number: 2, status: "sent" });
 

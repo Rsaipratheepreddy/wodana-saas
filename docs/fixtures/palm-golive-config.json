@@ -64,8 +64,9 @@
         {
           "stage": "Technical drawings",
           "checks": [
+            "technical_measure_done",
             "drawings_uploaded",
-            "drawings_site_checked",
+            "drawings_design_checked",
             "drawings_client_approved",
             "factory_slot_booked"
           ]
@@ -84,9 +85,24 @@
             "everything_made"
           ]
         }
+      ],
+      "_removeChecks": "PLM-149: the technical measure comes before the drawings and the lead designer's design check replaces the site check; the client's approval is recorded, not ticked by hand.",
+      "removeChecks": [
+        {
+          "stage": "Technical drawings",
+          "checks": [
+            "drawings_site_checked",
+            { "kind": "confirm", "label": "Client approved the drawings" }
+          ]
+        }
       ]
     }
   ],
+  "_projects": "PLM-149: the lead designer sends the drawings to the client and records the approval (switch to the Lead Interior Designer role key once PLM-151 adds it); the technical measure is due 5 working days after its task opens (to confirm with Palm).",
+  "projects": {
+    "drawingsClientRole": "designer",
+    "technicalMeasureDays": 5
+  },
   "factory": {
     "productionSteps": [
       "Scheduled",

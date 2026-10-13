@@ -1345,6 +1345,13 @@
       "when": 1801740007700,
       "tag": "0315_stuck_deal_days",
       "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1801740009000,
+      "tag": "0328_technical_measure",
+      "breakpoints": true
     }
   ]
 }

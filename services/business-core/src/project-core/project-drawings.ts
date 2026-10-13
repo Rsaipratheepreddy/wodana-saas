@@ -1,15 +1,18 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
-import { DRAWING_CHECKS, type StageCheck } from "./project-checks";
+import { DRAWING_CHECKS, type ProjectRole, type StageCheck } from "./project-checks";
 import { projectNeedsDrawings } from "./project-drawing-needs";
+import { technicalMeasureDone } from "./project-technical-measure";
 
 type Db = Pick<PoolClient, "query">;
 
 /**
- * A project's technical drawings (PLM-057 … PLM-060), one revision at a time: uploaded by the technical team,
- * checked on site (OK, or changes needed), sent to the client, then approved (the day, the client's name, the
- * signed file) or sent back. Only the latest revision counts; a revision sent back opens the next one. What the
- * route asks for decides the order: a route with a site check sends only drawings that passed it.
+ * A project's technical drawings (PLM-057 … PLM-060, PLM-149), one revision at a time: uploaded by the technical team
+ * (after the technical site measure when the route asks for one), checked before they go to the client (OK, or changes
+ * needed: on site by the technical team, or against the design by the lead designer), sent to the client, then
+ * approved (the day, the client's name, the signed file) or sent back. Only the latest revision counts; a revision
+ * sent back opens the next one. What the route asks for decides the order: a route with a check sends only drawings
+ * that passed it.
  */
 export const DRAWING_STATUSES = ["uploaded", "checked", "changes_needed", "sent", "approved", "changes_requested"] as const;
 export type DrawingStatus = (typeof DRAWING_STATUSES)[number];
@@ -22,18 +25,26 @@ export type DrawingFile = { id: string; kind: "drawing" | "approval"; name: stri
 export type DrawingRevision = {
   id: string; number: number; status: DrawingStatus; note: string; createdByName: string; createdAt: string;
   siteCheck: "ok" | "changes" | null; siteCheckNote: string; siteCheckedByName: string | null; siteCheckedAt: string | null;
+  /** Which check the revision had before it went to the client (null while none was recorded). */
+  checkKind: DrawingCheck | null;
   sentByName: string | null; sentAt: string | null;
   decidedOn: string | null; decidedByName: string | null; decisionNote: string; decisionVia: "recorded" | "portal" | null; decisionRecordedByName: string | null;
   files: DrawingFile[];
 };
 
-/** The facts the stage checks read, from the latest revision. */
-export function drawingFacts(latest: Pick<DrawingRevision, "status" | "siteCheck"> & { drawingFiles: number } | null) {
-  if (!latest) return { uploaded: false, siteChecked: false, approved: false };
+/** The internal check before drawings go to the client: on site (PLM-058) or against the design (PLM-149). */
+export type DrawingCheck = "site" | "design";
+
+/** The facts the stage checks read, from the latest revision (and whether the technical site measure is done). */
+export function drawingFacts(latest: Pick<DrawingRevision, "status" | "siteCheck"> & { drawingFiles: number; checkKind?: DrawingCheck | null } | null, measured = false) {
+  if (!latest) return { measured, uploaded: false, siteChecked: false, designChecked: false, approved: false };
   const sentBack = latest.status === "changes_needed" || latest.status === "changes_requested";
+  const passed = latest.siteCheck === "ok" && ["checked", "sent", "approved"].includes(latest.status);
   return {
+    measured,
     uploaded: latest.drawingFiles > 0 && !sentBack,
-    siteChecked: latest.siteCheck === "ok" && ["checked", "sent", "approved"].includes(latest.status),
+    siteChecked: passed && latest.checkKind !== "design",
+    designChecked: passed && latest.checkKind === "design",
     approved: latest.status === "approved",
   };
 }
@@ -48,12 +59,13 @@ export function routeHolds(stages: Array<{ status: string; checks: StageCheck[] 
   return stages.some((stage) => stage.status !== "skipped" && stage.checks.some((check) => kinds.includes(check.kind)));
 }
 
-/** What sending a revision to the client needs: drawing files, and a passed site check when the route asks for one. */
-export function assertSendable(revision: Pick<DrawingRevision, "status" | "number"> & { drawingFiles: number }, needsSiteCheck: boolean) {
+/** What sending a revision to the client needs: drawing files, and a passed check when the route asks for one (site or design). */
+export function assertSendable(revision: Pick<DrawingRevision, "status" | "number"> & { drawingFiles: number }, check: DrawingCheck | null) {
   if (revision.status === "sent") throw new ConflictException(`Drawings R${revision.number} are already with the client.`);
   if (!revision.drawingFiles) throw new ConflictException("Upload the drawings first.");
-  if (needsSiteCheck ? revision.status !== "checked" : !["uploaded", "checked"].includes(revision.status))
-    throw new ConflictException(needsSiteCheck && revision.status === "uploaded" ? "Record the technical site check first." : `Drawings R${revision.number} can't be sent now.`);
+  if (check ? revision.status !== "checked" : !["uploaded", "checked"].includes(revision.status))
+    throw new ConflictException(check && revision.status === "uploaded"
+      ? check === "design" ? "Check the drawings match the design first." : "Record the technical site check first." : `Drawings R${revision.number} can't be sent now.`);
 }
 
 /** The client's decision is recorded only on the revision they were sent, for a day between sending and today. */
@@ -65,7 +77,7 @@ export function assertDecidable(revision: Pick<DrawingRevision, "status" | "numb
 
 const REVISION_SELECT = `SELECT revision.id, revision.number, revision.status, revision.note, creator.display_name AS "createdByName", revision.created_at AS "createdAt",
   revision.site_check AS "siteCheck", revision.site_check_note AS "siteCheckNote", checker.display_name AS "siteCheckedByName", revision.site_checked_at AS "siteCheckedAt",
-  sender.display_name AS "sentByName", revision.sent_at AS "sentAt", revision.decided_on::text AS "decidedOn", revision.decided_by_name AS "decidedByName",
+  revision.check_kind AS "checkKind", sender.display_name AS "sentByName", revision.sent_at AS "sentAt", revision.decided_on::text AS "decidedOn", revision.decided_by_name AS "decidedByName",
   revision.decision_note AS "decisionNote", revision.decision_via AS "decisionVia", recorder.display_name AS "decisionRecordedByName",
   coalesce((SELECT jsonb_agg(jsonb_build_object('id', file.id, 'kind', file.kind, 'name', file.original_name, 'mimeType', file.mime_type, 'byteSize', file.byte_size,
       'hasPreview', file.preview_key IS NOT NULL, 'byName', uploader.display_name, 'at', file.created_at)
@@ -83,12 +95,15 @@ export async function readDrawingRevisions(db: Db, workspaceId: string, projectI
   return (await db.query<DrawingRevision>(`${REVISION_SELECT} WHERE revision.workspace_id = $1 AND revision.project_id = $2 ORDER BY revision.number DESC`, [workspaceId, projectId])).rows;
 }
 
-export type LatestRevision = { id: string; number: number; status: DrawingStatus; siteCheck: "ok" | "changes" | null; drawingFiles: number; approvalFiles: number; sentOn: string | null; createdBy: string };
+export type LatestRevision = {
+  id: string; number: number; status: DrawingStatus; siteCheck: "ok" | "changes" | null; checkKind: DrawingCheck | null; drawingFiles: number; approvalFiles: number;
+  sentOn: string | null; createdBy: string;
+};
 
 /** The latest revision with its file counts (locked when asked). */
 export async function readLatestRevision(db: Db, workspaceId: string, projectId: string, lock = false): Promise<LatestRevision | null> {
   return (await db.query<LatestRevision>(
-    `SELECT revision.id, revision.number, revision.status, revision.site_check AS "siteCheck", revision.created_by AS "createdBy",
+    `SELECT revision.id, revision.number, revision.status, revision.site_check AS "siteCheck", revision.check_kind AS "checkKind", revision.created_by AS "createdBy",
             (SELECT count(*)::int FROM project_drawing_files file WHERE file.workspace_id = revision.workspace_id AND file.revision_id = revision.id AND file.kind = 'drawing') AS "drawingFiles",
             (SELECT count(*)::int FROM project_drawing_files file WHERE file.workspace_id = revision.workspace_id AND file.revision_id = revision.id AND file.kind = 'approval') AS "approvalFiles",
             (revision.sent_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS "sentOn"
@@ -99,7 +114,7 @@ export async function readLatestRevision(db: Db, workspaceId: string, projectId:
 
 /** The stage-check facts for one project. */
 export async function readDrawingFacts(db: Db, workspaceId: string, projectId: string) {
-  return drawingFacts(await readLatestRevision(db, workspaceId, projectId));
+  return drawingFacts(await readLatestRevision(db, workspaceId, projectId), await technicalMeasureDone(db, workspaceId, projectId));
 }
 
 /** The project's stages with their checks (to read what its route asks for). */
@@ -118,14 +133,41 @@ export async function drawingsGate(db: Db, workspaceId: string, projectId: strin
 }
 
 /**
- * Whether the route asks for drawings at all, for a site check before they go to the client, and for a factory slot;
- * and whether any item needs drawings (`needed`: none does when every item is standard with its catalogue drawing).
+ * PLM-149: the project role that talks to the client about the drawings (checks they match the design, sends them,
+ * records the client's approval): the one the firm chose; with a design check and none chosen, the designer. Null: the
+ * project manager, as before. The technical team never sends drawings to the client.
+ */
+export function drawingsClientRoleOf(settings: { drawingsClientRole: string | null; roles: ProjectRole[] }, check: DrawingCheck | null) {
+  if (settings.drawingsClientRole && settings.roles.some((role) => role.key === settings.drawingsClientRole)) return settings.drawingsClientRole;
+  return check === "design" && settings.roles.some((role) => role.key === "designer") ? "designer" : null;
+}
+
+/** Which check the route asks for before the drawings go to the client: the design check wins (a route never holds both). */
+export function routeDrawingCheck(stages: Array<{ status: string; checks: StageCheck[] }>): DrawingCheck | null {
+  return routeHolds(stages, ["drawings_design_checked"]) ? "design" : routeHolds(stages, ["drawings_site_checked"]) ? "site" : null;
+}
+
+/**
+ * Whether the route asks for drawings at all, for a technical site measure before them, for a check before they go to
+ * the client (site or design), and for a factory slot; and whether any item needs drawings (`needed`: none does when
+ * every item is standard with its catalogue drawing).
  */
 export async function drawingRoute(db: Db, workspaceId: string, projectId: string) {
   const stages = await routeStages(db, workspaceId, projectId);
   const inRoute = routeHolds(stages, DRAWING_CHECKS);
-  return { inRoute, needed: inRoute && await projectNeedsDrawings(db, workspaceId, projectId), needsSiteCheck: routeHolds(stages, ["drawings_site_checked"]),
-    factorySlot: routeHolds(stages, ["factory_slot_booked"]) };
+  const check = routeDrawingCheck(stages);
+  return { inRoute, needed: inRoute && await projectNeedsDrawings(db, workspaceId, projectId), needsSiteCheck: check !== null, check,
+    needsMeasure: routeHolds(stages, ["technical_measure_done"]), factorySlot: routeHolds(stages, ["factory_slot_booked"]) };
+}
+
+/**
+ * PLM-149: whether shop drawings and production wait for the technical site measure, and whether it is done. Only when
+ * the route holds the measure on a stage that wasn't skipped and some item needs drawings. A project whose drawings
+ * started before the measure was asked for counts as measured (it isn't blocked afterwards).
+ */
+export async function measureGate(db: Db, workspaceId: string, projectId: string) {
+  const required = routeHolds(await routeStages(db, workspaceId, projectId), ["technical_measure_done"]) && await projectNeedsDrawings(db, workspaceId, projectId);
+  return { required, done: required ? await technicalMeasureDone(db, workspaceId, projectId) : true };
 }
 
 /**

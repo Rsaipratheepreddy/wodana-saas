@@ -16,7 +16,7 @@ import { FactoryService } from "../factory/factory.service";
 import { FinanceRequestsService } from "../finance-requests/finance-requests.service";
 import { FulfilmentService } from "../fulfilment/fulfilment.service";
 import { LogisticsService } from "../logistics/logistics.service";
-import type { StageCheck, TemplateStage } from "../project-core/project-checks";
+import { DRAWING_CHECKS, type StageCheck, type TemplateStage } from "../project-core/project-checks";
 import { ProjectCoreService } from "../project-core/project-core.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
@@ -348,16 +348,40 @@ const sameCheck = (check: StageCheck, spec: CheckSpec) => check.kind === spec.ki
   && (spec.kind !== "confirm" || lower(check.label) === lower(spec.label)) && (spec.kind !== "role_assigned" || check.role === spec.role);
 const checkLabel = (spec: CheckSpec) => spec.kind === "confirm" ? `confirm "${spec.label}"` : spec.kind === "role_assigned" ? `role_assigned ${spec.role}` : spec.kind;
 
-/** The route with the profile's stages and checks added; and what that changes. */
+/**
+ * Where a new check goes in a stage: a drawing-line check (PLM-149) before the first check that comes after it in the
+ * line, or after the last one before it; any other check at the end.
+ */
+function insertAt(checks: StageCheck[], kind: StageCheck["kind"]) {
+  const rank = DRAWING_CHECKS.indexOf(kind);
+  if (rank < 0) return checks.length;
+  const later = checks.findIndex((check) => DRAWING_CHECKS.indexOf(check.kind) > rank);
+  if (later >= 0) return later;
+  const earlier = checks.map((check) => DRAWING_CHECKS.indexOf(check.kind)).reduce((last, value, index) => (value >= 0 && value < rank ? index : last), -1);
+  return earlier >= 0 ? earlier + 1 : checks.length;
+}
+
+/** The route with the profile's checks taken off and its stages and checks added; and what that changes. */
 export function planRoute(template: Template, change: RouteChange, roles: string[]) {
   const stages: TemplateStage[] = template.stages.map((stage) => ({ ...stage, checks: [...stage.checks] }));
   const changes: Change[] = [], same: Change[] = [], missing: Change[] = [];
   const find = (name: string) => stages.find((stage) => lower(stage.name) === lower(name) || stage.key === lower(name));
+  for (const target of change.removeChecks ?? []) {
+    const stage = find(target.stage);
+    if (!stage) { missing.push({ label: `${template.name} › ${target.stage}`, detail: "no stage with this name" }); continue; }
+    for (const spec of target.checks) {
+      const label = `${template.name} › ${stage.name}: ${checkLabel(spec)}`;
+      const before = stage.checks.length;
+      stage.checks = stage.checks.filter((check) => !sameCheck(check, spec));
+      if (stage.checks.length === before) same.push({ label, detail: "not there" });
+      else changes.push({ label, detail: "check removed" });
+    }
+  }
   const addChecks = (stage: TemplateStage, specs: CheckSpec[]) => {
     for (const spec of specs) {
       const label = `${template.name} › ${stage.name}: ${checkLabel(spec)}`;
       if (stage.checks.some((check) => sameCheck(check, spec))) { same.push({ label }); continue; }
-      stage.checks.push({ kind: spec.kind, ...(spec.label ? { label: spec.label } : {}), ...(spec.role ? { role: spec.role } : {}) } as StageCheck);
+      stage.checks.splice(insertAt(stage.checks, spec.kind), 0, { kind: spec.kind, ...(spec.label ? { label: spec.label } : {}), ...(spec.role ? { role: spec.role } : {}) } as StageCheck);
       changes.push({ label, detail: "check added" });
     }
   };
@@ -541,6 +565,35 @@ const orderPaths: Section = async (ctx, profile, step) => {
   }
 };
 
+// ---------- project settings ----------
+
+type ProjectSettingsView = { settings: { version: number; roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null; technicalMeasureDays: number | null } };
+
+/** PLM-149: who talks to the client about drawings, and when the technical measure is due, through Settings › Projects. */
+const projects: Section = async (ctx, profile, step) => {
+  const wanted = profile.projects!;
+  const service = ctx.get(ProjectCoreService);
+  const current = (await service.settings(ctx.actor, ctx.workspace.id) as ProjectSettingsView).settings;
+  const patch: Record<string, unknown> = {};
+  const changes: Change[] = [];
+  if (wanted.drawingsClientRole !== undefined) {
+    const label = "drawings go to the client through";
+    if (wanted.drawingsClientRole !== null && !current.roles.some((role) => role.key === wanted.drawingsClientRole))
+      step.missing(label, `no project role "${wanted.drawingsClientRole}"`);
+    else if (current.drawingsClientRole === wanted.drawingsClientRole) step.same(label, shown(wanted.drawingsClientRole));
+    else { patch.drawingsClientRole = wanted.drawingsClientRole; changes.push(diff(label, current.drawingsClientRole, wanted.drawingsClientRole)); }
+  }
+  if (wanted.technicalMeasureDays !== undefined) {
+    const label = "technical measure due in working days";
+    if (current.technicalMeasureDays === wanted.technicalMeasureDays) step.same(label, shown(wanted.technicalMeasureDays));
+    else { patch.technicalMeasureDays = wanted.technicalMeasureDays; changes.push(diff(label, current.technicalMeasureDays, wanted.technicalMeasureDays)); }
+  }
+  if (changes.length) await step.change(changes, async () => {
+    const fresh = (await service.settings(ctx.actor, ctx.workspace.id) as ProjectSettingsView).settings;
+    return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, ...patch });
+  });
+};
+
 // ---------- client updates ----------
 
 const clientUpdates: Section = async (_ctx, profile, step) => {
@@ -658,7 +711,7 @@ const catalogCategories: Section = async (ctx, profile, step) => {
 export const SECTIONS: Array<[ProfileSection, Section]> = [
   ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["factory", factory], ["quotations", quotations], ["firstResponse", firstResponse],
   ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
-  ["catalogCategories", catalogCategories],
+  ["catalogCategories", catalogCategories], ["projects", projects],
 ];
 
 export async function runConfigure(ctx: OpsContext, profile: Profile, report: Report) {

@@ -11,14 +11,14 @@ const facts = (over: Partial<CheckFacts> = {}): CheckFacts => ({
 
 describe("technical drawings to production release", () => {
   it("reads the stage checks from the latest revision: sent back means the drawings are due again", () => {
-    expect(drawingFacts(null)).toEqual({ uploaded: false, siteChecked: false, approved: false });
-    expect(drawingFacts({ status: "uploaded", siteCheck: null, drawingFiles: 0 })).toEqual({ uploaded: false, siteChecked: false, approved: false });
-    expect(drawingFacts({ status: "uploaded", siteCheck: null, drawingFiles: 2 })).toEqual({ uploaded: true, siteChecked: false, approved: false });
-    expect(drawingFacts({ status: "changes_needed", siteCheck: "changes", drawingFiles: 2 })).toEqual({ uploaded: false, siteChecked: false, approved: false });
-    expect(drawingFacts({ status: "checked", siteCheck: "ok", drawingFiles: 2 })).toEqual({ uploaded: true, siteChecked: true, approved: false });
-    expect(drawingFacts({ status: "sent", siteCheck: "ok", drawingFiles: 2 })).toEqual({ uploaded: true, siteChecked: true, approved: false });
-    expect(drawingFacts({ status: "approved", siteCheck: "ok", drawingFiles: 2 })).toEqual({ uploaded: true, siteChecked: true, approved: true });
-    expect(drawingFacts({ status: "changes_requested", siteCheck: "ok", drawingFiles: 2 })).toEqual({ uploaded: false, siteChecked: false, approved: false });
+    expect(drawingFacts(null)).toEqual({ measured: false, uploaded: false, siteChecked: false, designChecked: false, approved: false });
+    expect(drawingFacts({ status: "uploaded", siteCheck: null, drawingFiles: 0 })).toEqual({ measured: false, uploaded: false, siteChecked: false, designChecked: false, approved: false });
+    expect(drawingFacts({ status: "uploaded", siteCheck: null, drawingFiles: 2 })).toEqual({ measured: false, uploaded: true, siteChecked: false, designChecked: false, approved: false });
+    expect(drawingFacts({ status: "changes_needed", siteCheck: "changes", drawingFiles: 2 })).toEqual({ measured: false, uploaded: false, siteChecked: false, designChecked: false, approved: false });
+    expect(drawingFacts({ status: "checked", siteCheck: "ok", drawingFiles: 2 })).toEqual({ measured: false, uploaded: true, siteChecked: true, designChecked: false, approved: false });
+    expect(drawingFacts({ status: "sent", siteCheck: "ok", drawingFiles: 2 })).toEqual({ measured: false, uploaded: true, siteChecked: true, designChecked: false, approved: false });
+    expect(drawingFacts({ status: "approved", siteCheck: "ok", drawingFiles: 2 })).toEqual({ measured: false, uploaded: true, siteChecked: true, designChecked: false, approved: true });
+    expect(drawingFacts({ status: "changes_requested", siteCheck: "ok", drawingFiles: 2 })).toEqual({ measured: false, uploaded: false, siteChecked: false, designChecked: false, approved: false });
   });
 
   it("starts a new revision only once the latest is decided", () => {
@@ -28,12 +28,12 @@ describe("technical drawings to production release", () => {
   });
 
   it("sends drawings to the client only after the site check when the route asks for one", () => {
-    expect(() => assertSendable({ status: "uploaded", number: 1, drawingFiles: 0 }, false)).toThrow("Upload the drawings first.");
-    expect(() => assertSendable({ status: "uploaded", number: 1, drawingFiles: 3 }, true)).toThrow("Record the technical site check first.");
-    expect(() => assertSendable({ status: "uploaded", number: 1, drawingFiles: 3 }, false)).not.toThrow();
-    expect(() => assertSendable({ status: "checked", number: 1, drawingFiles: 3 }, true)).not.toThrow();
-    expect(() => assertSendable({ status: "changes_needed", number: 1, drawingFiles: 3 }, true)).toThrow("can't be sent now");
-    expect(() => assertSendable({ status: "sent", number: 2, drawingFiles: 3 }, true)).toThrow("already with the client");
+    expect(() => assertSendable({ status: "uploaded", number: 1, drawingFiles: 0 }, null)).toThrow("Upload the drawings first.");
+    expect(() => assertSendable({ status: "uploaded", number: 1, drawingFiles: 3 }, "site")).toThrow("Record the technical site check first.");
+    expect(() => assertSendable({ status: "uploaded", number: 1, drawingFiles: 3 }, null)).not.toThrow();
+    expect(() => assertSendable({ status: "checked", number: 1, drawingFiles: 3 }, "site")).not.toThrow();
+    expect(() => assertSendable({ status: "changes_needed", number: 1, drawingFiles: 3 }, "site")).toThrow("can't be sent now");
+    expect(() => assertSendable({ status: "sent", number: 2, drawingFiles: 3 }, "site")).toThrow("already with the client");
   });
 
   it("records the client's decision only on drawings with them, for a day between sending and today", () => {

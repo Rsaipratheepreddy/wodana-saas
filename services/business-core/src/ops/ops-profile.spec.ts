@@ -102,6 +102,24 @@ describe("route changes", () => {
     expect(planRoute({ ...template, stages: once.stages }, change, roles).changes).toEqual([]);
   });
 
+  it("PLM-149: takes the site check off, puts the measure first and the design check before the client's approval", () => {
+    const palm = { ...template, stages: template.stages.map((stage) => stage.key === "drawings"
+      ? { ...stage, checks: [...stage.checks, { key: "u", kind: "drawings_uploaded" as const }, { key: "s", kind: "drawings_site_checked" as const },
+        { key: "a", kind: "drawings_client_approved" as const }, { key: "f", kind: "factory_slot_booked" as const }] } : stage) };
+    const swap = { route: null, isDefault: true, addStages: [],
+      addChecks: [{ stage: "Technical drawings", checks: (["technical_measure_done", "drawings_uploaded", "drawings_design_checked", "drawings_client_approved", "factory_slot_booked"] as const)
+        .map((kind) => ({ kind })) }],
+      removeChecks: [{ stage: "Technical drawings", checks: [{ kind: "drawings_site_checked" as const }, { kind: "confirm" as const, label: "Client approved the drawings" }] }] };
+    const plan = planRoute(palm, swap, roles);
+    expect(plan.stages.find((stage) => stage.key === "drawings")!.checks.map((check) => check.kind))
+      .toEqual(["technical_measure_done", "drawings_uploaded", "drawings_design_checked", "drawings_client_approved", "factory_slot_booked"]);
+    expect(plan.changes.map((entry) => entry.detail)).toEqual(["check removed", "check removed", "check added", "check added"]);
+    expect(planRoute({ ...palm, stages: plan.stages }, swap, roles).changes).toEqual([]);
+    expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5 });
+    expect(problems({ projects: { drawingsClientRole: "Lead Designer", technicalMeasureDays: 0 } })).toEqual([
+      "projects.drawingsClientRole is a project role key like designer, or null.", "projects.technicalMeasureDays is a whole number from 1 to 60."]);
+  });
+
   it("reports a stage it can't place", () => {
     const plan = planRoute(template, { ...change, addStages: [{ ...change.addStages[0], before: "Nowhere" }], addChecks: [{ stage: "Ghost", checks: [] }] }, roles);
     expect(plan.changes).toEqual([]);

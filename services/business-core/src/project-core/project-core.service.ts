@@ -29,7 +29,8 @@ import { decideClientUpdate } from "./client-updates";
 import { holdLength, shiftForHold } from "./project-hold";
 import { noticeStageReady } from "./project-stage-watch";
 import { markNotApplicable, notApplicableRoles } from "./project-team";
-import { assertDecidable, assertSendable, drawingRoute, productionReleased, readLatestRevision } from "./project-drawings";
+import { assertDecidable, assertSendable, drawingRoute, drawingsClientRoleOf, productionReleased, readLatestRevision } from "./project-drawings";
+import { parseMeasure, recordMeasure } from "./project-technical-measure";
 import { readDrawingItems } from "./project-drawing-needs";
 import { decideDrawings } from "./project-drawing-decisions";
 import { advanceStage } from "./project-advance";
@@ -117,12 +118,20 @@ export class ProjectCoreService {
       // §6.20: how a variation is paid. When a change waiting for the client is chased is its reminder rule (Settings › Reminders).
       const paymentRule = body.variationPaymentRule === undefined ? current.variationPaymentRule : body.variationPaymentRule;
       if (paymentRule !== "before_work" && paymentRule !== "next_milestone") throw new BadRequestException("Choose how a variation is paid.");
+      // PLM-149: who talks to the client about the drawings (a project role, or the project manager), and when the technical measure is due.
+      const clientRole = body.drawingsClientRole === undefined ? (roles.some((role) => role.key === current.drawingsClientRole) ? current.drawingsClientRole : null)
+        : body.drawingsClientRole === null || body.drawingsClientRole === "" ? null : String(body.drawingsClientRole);
+      if (clientRole !== null && !roles.some((role) => role.key === clientRole)) throw new BadRequestException("Choose who sends the drawings to the client from the project roles.");
+      const measureDays = body.technicalMeasureDays === undefined ? current.technicalMeasureDays : body.technicalMeasureDays;
+      if (measureDays !== null && !(Number.isInteger(measureDays) && Number(measureDays) >= 1 && Number(measureDays) <= 60))
+        throw new BadRequestException("Give the technical measure 1 to 60 working days, or no due date.");
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
                 require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, report_due_time = $11::time, auto_send_pending_reports = $12, weekly_rollup = $13,
-                keep_informed = $14::jsonb, variation_payment_rule = $15, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+                keep_informed = $14::jsonb, variation_payment_rule = $15, drawings_client_role = $16, technical_measure_days = $17,
+                version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend,
-          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule]);
+          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule, clientRole, measureDays]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };
@@ -208,7 +217,7 @@ export class ProjectCoreService {
           ...withValue(summary(project), canSeeValue),
           stage: current ? { name: current.name, position: current.position + 1, count: mine.length } : null,
           lead: team.find((member) => member.lead)?.name ?? null,
-          next: evaluated ? nextStep(evaluated, settings.roles) : null,
+          next: evaluated ? nextStep(evaluated, settings, team) : null,
           // Which project needs a look: its late and held-up work.
           attention: attention.get(project.id) ?? { late: 0, blocked: 0 },
         });
@@ -309,8 +318,8 @@ export class ProjectCoreService {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const project = await readProject(client, workspaceId, projectId, true);
       if (!project) throw new NotFoundException("Project not found.");
-      // The people who run the factory book its slot on a project they aren't on (PLM-068).
-      const factoryHand = body.action === "book_factory_slot" && await this.any(client, workspaceId, user.userId, ["factory.manage"]);
+      // The people who run the factory book its slot (PLM-068) and take the technical measure (PLM-149) on a project they aren't on.
+      const factoryHand = (body.action === "book_factory_slot" || body.action === "record_technical_measure") && await this.any(client, workspaceId, user.userId, ["factory.manage"]);
       const { all } = factoryHand ? { all: await this.any(client, workspaceId, user.userId, ["projects.manage"]) } : await this.viewer(client, workspaceId, user);
       const membershipId = await membershipOf(client, workspaceId, user.userId);
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
@@ -552,13 +561,30 @@ export class ProjectCoreService {
         await client.query(`UPDATE project_boq_lines SET drawing_needed = $3, drawing_reason = $4, drawing_set_by = $5, drawing_set_at = now(), version = version + 1, updated_at = now()
           WHERE workspace_id = $1 AND id = $2`, [workspaceId, item.lineId, needed, reason, user.userId]);
         audit = { lineId: item.lineId, title: item.title, rule: item.rule, from: item.override?.needed ?? null, to: needed, reason };
+      } else if (action === "record_technical_measure") {
+        // PLM-149: the technical site measure before shop drawings, by the project manager or the factory team.
+        open();
+        if (!manager && !factoryHand && !team.some((member) => member.membershipId === membershipId && member.roles.includes("factory_lead")))
+          throw new ForbiddenException("Only the project manager or the factory team records the technical measure.");
+        if (!(await drawingRoute(client, workspaceId, projectId)).needsMeasure) throw new ConflictException("This project's route has no technical measure.");
+        const measure = parseMeasure(body, await this.today(client, workspaceId));
+        if (!(await recordMeasure(client, { ...measure, workspaceId, projectId, userId: user.userId }))) return this.detail(client, workspaceId, projectId, user);
+        audit = { measureId: measure.measureId, measuredOn: measure.measuredOn, dimensions: measure.lines.length, note: measure.note };
       } else if (["check_drawings", "send_drawings", "decide_drawings"].includes(action)) {
-        // The technical drawings (PLM-058 … 060): checked on site, sent to the client, and the client's decision recorded.
+        // The technical drawings (PLM-058 … 060, PLM-149): checked on site or against the design, sent to the client, and the client's decision recorded.
         open();
         const latest = await readLatestRevision(client, workspaceId, projectId, true);
         if (!latest || latest.id !== body.revisionId) throw new ConflictException("These drawings changed. Reload to see the latest revision.");
         const stages = await readStages(client, workspaceId, [projectId]);
         const revision = `R${latest.number}`;
+        const route = await drawingRoute(client, workspaceId, projectId);
+        // PLM-149: the client hears about drawings only from the project manager or the role the firm chose (the lead designer).
+        const clientRole = drawingsClientRoleOf(settings, route.check);
+        const clientFacing = manager || Boolean(clientRole && team.some((member) => member.membershipId === membershipId && member.roles.includes(clientRole)));
+        const clientRoleLabel = settings.roles.find((role) => role.key === clientRole)?.label.toLowerCase() ?? null;
+        const needClientFacing = (what: string) => {
+          if (!clientFacing) throw new ForbiddenException(clientRoleLabel ? `Only the ${clientRoleLabel} or the project manager ${what}.` : `Only the project manager ${what}.`);
+        };
         // The technical team: whoever holds the role that owns a stage with drawing checks; and whoever uploaded them.
         const drawingRoles = new Set(stages.filter((stage) => stage.ownerRole && stage.checks.some((check) => DRAWING_CHECKS.includes(check.kind))).map((stage) => stage.ownerRole!));
         const drawers = async () => {
@@ -566,30 +592,32 @@ export class ProjectCoreService {
           return [...team.filter((member) => member.roles.some((role) => drawingRoles.has(role))).map((member) => member.membershipId), ...(uploader ? [uploader] : [])];
         };
         if (action === "check_drawings") {
-          // The technical drawer or the project manager records the site check.
-          if (!manager && !team.some((member) => member.membershipId === membershipId && member.roles.some((role) => drawingRoles.has(role))))
+          // The site check: the technical drawer or the project manager. The design check (PLM-149): the lead designer or the project manager.
+          const kind = route.check ?? "site";
+          if (kind === "design") needClientFacing("checks the drawings match the design");
+          else if (!manager && !team.some((member) => member.membershipId === membershipId && member.roles.some((role) => drawingRoles.has(role))))
             throw new ForbiddenException("Only the project manager or the technical team can record the site check.");
-          if (latest.status !== "uploaded") throw new ConflictException(`Drawings ${revision} aren't waiting for a site check.`);
+          if (latest.status !== "uploaded") throw new ConflictException(kind === "design" ? `Drawings ${revision} aren't waiting for the design check.` : `Drawings ${revision} aren't waiting for a site check.`);
           if (!latest.drawingFiles) throw new ConflictException("Upload the drawings first.");
           const result = oneOf(body.result, ["ok", "changes"] as const, "Result");
           const note = typeof body.note === "string" ? body.note.trim() : "";
           if (note.length > 1000) throw new BadRequestException("Keep the note under 1000 characters.");
           if (result === "changes" && !note) throw new BadRequestException("Say what needs changing.");
-          await client.query(`UPDATE project_drawing_revisions SET status = $3, site_check = $4, site_check_note = $5, site_checked_by = $6, site_checked_at = now(), version = version + 1
-            WHERE workspace_id = $1 AND id = $2`, [workspaceId, latest.id, result === "ok" ? "checked" : "changes_needed", result, note, user.userId]);
+          await client.query(`UPDATE project_drawing_revisions SET status = $3, site_check = $4, site_check_note = $5, site_checked_by = $6, site_checked_at = now(), check_kind = $7,
+            version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, latest.id, result === "ok" ? "checked" : "changes_needed", result, note, user.userId, kind]);
           if (result === "changes") notices.push({ key: `drawings:check:${latest.id}`, notice: { code: "project.drawings_changes", revision, note, memberships: await drawers() } });
-          audit = { revisionId: latest.id, number: latest.number, siteCheck: result, note };
+          audit = kind === "design" ? { revisionId: latest.id, number: latest.number, designCheck: result, note } : { revisionId: latest.id, number: latest.number, siteCheck: result, note };
         } else if (action === "send_drawings") {
-          needManager();
-          assertSendable(latest, (await drawingRoute(client, workspaceId, projectId)).needsSiteCheck);
+          needClientFacing("sends the drawings to the client");
+          assertSendable(latest, route.check);
           await client.query(`UPDATE project_drawing_revisions SET status = 'sent', sent_by = $3, sent_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`,
             [workspaceId, latest.id, user.userId]);
           // The client's decision-makers hear the drawings wait for them in the portal.
           await tellClients(client, { workspaceId, caseId: project.caseId, event: "decision_waiting", recordId: `drawings:${projectId}:${latest.number}`, title: `Drawings ${revision}` });
           audit = { revisionId: latest.id, number: latest.number };
         } else {
-          // The project manager records the client's decision: the day, who decided, and (to approve) the signed file.
-          needManager();
+          // The project manager (or the lead designer, PLM-149) records the client's decision: the day, who decided, and (to approve) the signed file.
+          needClientFacing("records the client's decision");
           const decision = oneOf(body.decision, ["approve", "changes"] as const, "Decision");
           const decidedOn = optionalDate(body.decidedOn, "Decision date");
           if (!decidedOn) throw new BadRequestException("Say on which day the client decided.");
@@ -731,7 +759,7 @@ export class ProjectCoreService {
       teamNote: await teamNote(client, workspaceId, projectId),
       stages: stages.map((stage) => ({ ...stage, canWork: stage.status === "current" && project.status === "active"
         && (manager || Boolean(stage.ownerRole && team.some((member) => member.membershipId === membershipId && member.roles.includes(stage.ownerRole!)))) })),
-      next: current ? nextStep(current, settings.roles) : null,
+      next: current ? nextStep(current, settings, team) : null,
       updates,
       members: manager ? await activeMembers(client, workspaceId) : [],
       canManage: manager,
@@ -769,9 +797,13 @@ export class ProjectCoreService {
     if (!project) throw new NotFoundException("Project not found.");
     const membershipId = await membershipOf(client, workspaceId, user.userId);
     // PLM-062: the factory reads a project its work comes from (read-only): once the client approved its drawings, or
-    // while its route asks the factory to book a slot.
-    const factoryReader = async () => await this.any(client, workspaceId, user.userId, ["factory.view", "factory.manage"])
-      && (await productionReleased(client, workspaceId, projectId) || (await drawingRoute(client, workspaceId, projectId)).factorySlot);
+    // while its route asks the factory to book a slot or to take the technical measure (PLM-149).
+    const factoryReader = async () => {
+      if (!(await this.any(client, workspaceId, user.userId, ["factory.view", "factory.manage"]))) return false;
+      if (await productionReleased(client, workspaceId, projectId)) return true;
+      const route = await drawingRoute(client, workspaceId, projectId);
+      return route.factorySlot || route.needsMeasure;
+    };
     const projects = await this.any(client, workspaceId, user.userId, ["projects.manage", "projects.view"]);
     if (!projects) {
       if (await factoryReader()) return { project, all: false, membershipId, factory: true };
@@ -825,6 +857,8 @@ function checkLabel(check: Evaluated["checks"][number], roles: Array<{ key: stri
   if (check.kind === "handover_accepted") return "The client accepted the handover";
   if (check.kind === "drawings_uploaded") return "Technical drawings uploaded";
   if (check.kind === "drawings_site_checked") return "Technical site check passed";
+  if (check.kind === "technical_measure_done") return "Technical site measure done";
+  if (check.kind === "drawings_design_checked") return "Drawings match the design";
   if (check.kind === "drawings_client_approved") return "Client approved the drawings";
   if (check.kind === "factory_slot_booked") return "Factory slot booked";
   if (check.kind === "installation_scheduled") return "Installation scheduled";
@@ -835,12 +869,17 @@ function checkLabel(check: Evaluated["checks"][number], roles: Array<{ key: stri
 }
 
 /** The project's next step: the current stage's first open check and who holds it. */
-function nextStep(stage: Evaluated, roles: Array<{ key: string; label: string }>) {
+function nextStep(stage: Evaluated, settings: { roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null }, team: TeamMember[]) {
   const open = stage.checks.find((check) => !check.passed);
+  // PLM-149: the technical measure is the project manager's; the design check and the client's approval the lead designer's (when the firm chose one).
+  const clientRole = drawingsClientRoleOf(settings, stage.checks.some((check) => check.kind === "drawings_design_checked") ? "design" : null);
+  const own = open?.kind === "technical_measure_done" ? LEAD_ROLE
+    : (open?.kind === "drawings_design_checked" || open?.kind === "drawings_client_approved") && clientRole ? clientRole : null;
+  if (own) return { stage: stage.name, kind: open!.kind, text: checkLabel(open!, settings.roles), role: own, owner: team.find((member) => member.roles.includes(own))?.name ?? null };
   return {
     stage: stage.name,
     kind: open ? open.kind : "finish",
-    text: open ? checkLabel(open, roles) : `Finish ${stage.name}`,
+    text: open ? checkLabel(open, settings.roles) : `Finish ${stage.name}`,
     role: open?.kind === "payment_verified" ? null : stage.ownerRole,
     owner: open?.kind === "payment_verified" ? null : stage.owner?.name ?? null,
   };

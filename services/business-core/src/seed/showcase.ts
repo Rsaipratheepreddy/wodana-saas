@@ -2873,12 +2873,19 @@ export class ShowcaseSeed {
     const pm = await this.as("projectManager");
     const version = async () => ((await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number } }).project.version;
     const want = (kind: string) => kinds.includes(kind);
-    if (want("drawings_uploaded") || want("drawings_site_checked") || want("drawings_client_approved")) {
+    if (want("technical_measure_done") || want("drawings_uploaded") || want("drawings_site_checked") || want("drawings_design_checked") || want("drawings_client_approved")) {
       const { ProjectDrawingsService } = await import("../project-core/project-drawings.service");
       const drawings = this.get(ProjectDrawingsService);
       type Revision = { id: string; number: number; status: string };
-      const latest = async () => (((await drawings.read(pm, this.w, projectId)) as unknown as { revisions?: Revision[] }).revisions ?? [])
+      type DrawingsRead = { revisions?: Revision[]; measure?: { done: boolean; unit: string } | null };
+      const latest = async () => (((await drawings.read(pm, this.w, projectId)) as unknown as DrawingsRead).revisions ?? [])
         .slice().sort((a, b) => b.number - a.number)[0] ?? null;
+      // PLM-149: on a route that asks for it, the project manager takes the technical site measure before shop drawings.
+      const measure = ((await drawings.read(pm, this.w, projectId)) as unknown as DrawingsRead).measure;
+      if (measure && !measure.done)
+        await this.advance("technical site measure recorded", false, async () => projects.command(pm, this.w, projectId, { action: "record_technical_measure", version: await version(),
+          measureId: this.id(ctx, "drawings:measure"), measuredOn: this.day(0), note: "Final site dimensions for the joinery.",
+          lines: [{ area: "Living", label: "TV wall width", value: 4200, unit: measure.unit }, { area: "Living", label: "Ceiling height", value: 2950, unit: measure.unit }] }));
       const revisionId = this.id(ctx, "drawings:r1");
       let revision = await latest();
       if (!revision) {
@@ -2886,7 +2893,8 @@ export class ShowcaseSeed {
         revision = await latest();
       }
       if (revision?.status === "uploaded") {
-        await this.advance("drawings checked on site", false, async () => projects.command(pm, this.w, projectId, { action: "check_drawings", version: await version(), revisionId: revision!.id, result: "ok", note: "Openings match the drawings." }));
+        // The site check, or the design check (PLM-149), as the route asks; the project manager may record either.
+        await this.advance("drawings checked", false, async () => projects.command(pm, this.w, projectId, { action: "check_drawings", version: await version(), revisionId: revision!.id, result: "ok", note: "The drawings match." }));
         revision = await latest();
       }
       if (revision && ["checked", "uploaded"].includes(revision.status)) {

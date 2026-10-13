@@ -23,7 +23,7 @@ import {
   workOrderNext, type ListedMaterial, type WorkOrderRow,
 } from "./factory";
 import { orderReady, readReadyReminder, remindForReady } from "./factory-ready";
-import { drawingsGate } from "../project-core/project-drawings";
+import { drawingsGate, measureGate } from "../project-core/project-drawings";
 import { readWorkOrderDrawing } from "./work-order-drawing";
 import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
 import { normaliseProductionSteps, parseProductionSteps, parseProductionWeeks, readProduction } from "./production-status";
@@ -588,6 +588,9 @@ export class FactoryService {
     // PLM-059: on a route that asks for the client's drawing approval, production waits for it (a skipped stage doesn't ask).
     const clientDrawings = await drawingsGate(client, workspaceId, order.projectId);
     if (clientDrawings.required) checks.push({ key: "client_drawings", passed: clientDrawings.approved, missing: "the client hasn't approved the technical drawings" });
+    // PLM-149: on a route that asks for the technical site measure, production waits for it too (older projects whose drawings started before aren't held).
+    const measure = await measureGate(client, workspaceId, order.projectId);
+    if (measure.required) checks.push({ key: "technical_measure", passed: measure.done, missing: "the technical site measure isn't done" });
     // Its own recorded drawing, the project's drawings the client approved (Scope › Drawings), or a standard piece's catalogue drawing.
     if (settings.requireDrawing) {
       const drawing = await readWorkOrderDrawing(client, workspaceId, order);

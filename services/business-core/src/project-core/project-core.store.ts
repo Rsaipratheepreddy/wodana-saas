@@ -33,6 +33,13 @@ export type ProjectSettings = {
   keepInformed: KeepInformed;
   /** §6.20: how a variation is paid — all before its work, or with the project's next milestone. */
   variationPaymentRule: "before_work" | "next_milestone";
+  /**
+   * PLM-149: the project role whose holder checks the drawings match the design, sends them to the client and records
+   * the client's approval (the technical team doesn't talk to the client); null: the project manager.
+   */
+  drawingsClientRole: string | null;
+  /** PLM-149: working days the technical site measure is due in once its task opens; null: no due date. */
+  technicalMeasureDays: number | null;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -44,10 +51,12 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
             require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish",
             client_update_auto_send_hours AS "clientUpdateAutoSendHours", to_char(report_due_time, 'HH24:MI') AS "reportDueTime",
             auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup", keep_informed AS "keepInformed",
-            variation_payment_rule AS "variationPaymentRule"
+            variation_payment_rule AS "variationPaymentRule", drawings_client_role AS "drawingsClientRole", technical_measure_days AS "technicalMeasureDays"
        FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
-  // Roles removed since drop out of who is kept informed.
-  return { ...row, keepInformed: normaliseKeepInformed(row.keepInformed, row.roles) };
+  // Roles removed since drop out of who is kept informed, and of who sends the drawings to the client.
+  return { ...row, keepInformed: normaliseKeepInformed(row.keepInformed, row.roles),
+    drawingsClientRole: row.drawingsClientRole && row.roles.some((role) => role.key === row.drawingsClientRole) ? row.drawingsClientRole : null,
+    technicalMeasureDays: row.technicalMeasureDays === null || row.technicalMeasureDays === undefined ? null : Number(row.technicalMeasureDays) };
 }
 
 export type TemplateRow = { id: string; name: string; isDefault: boolean; version: number; stages: TemplateStage[] };
@@ -186,7 +195,7 @@ export async function evaluateStages(db: Db, workspaceId: string, project: Pick<
   const needsDrawings = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => DRAWING_CHECKS.includes(check.kind)));
   // No item needs drawings (standard pieces with their catalogue drawing): the drawing checks have nothing to wait for.
   const drawings = needsDrawings ? (await projectNeedsDrawings(db, workspaceId, project.id) ? await readDrawingFacts(db, workspaceId, project.id)
-    : { uploaded: true, siteChecked: true, approved: true }) : undefined;
+    : { measured: true, uploaded: true, siteChecked: true, designChecked: true, approved: true }) : undefined;
   // A role marked "not applicable" on this project (PLM-100) is settled: its "role named" check passes.
   const needsRoles = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "role_assigned"));
   const notApplicableRoles = new Set(needsRoles ? (await db.query<{ role: string }>(

@@ -36,7 +36,7 @@ export type DrawingFact = Pick<DrawingItem, "needed" | "catalogDrawingUrl">;
 export type ProjectFacts = {
   catalog: Partial<Record<CatalogColumn, ReadinessCell>> | null;
   drawing: DrawingFact | null;
-  latestDrawing: Pick<LatestRevision, "status" | "drawingFiles"> | null;
+  latestDrawing: Pick<LatestRevision, "status" | "drawingFiles"> & { checkKind?: LatestRevision["checkKind"] } | null;
   materials: MaterialFact[];
   /** Where the material list stands as a whole (draft, sent, signed off, changes requested, changed since). */
   materialsState: string;
@@ -72,7 +72,7 @@ export function lineCells(line: LineFacts, facts: ProjectFacts): Record<ProjectC
     const latest = facts.latestDrawing;
     const sentBack = latest && (latest.status === "changes_needed" || latest.status === "changes_requested");
     drawing = latest?.status === "approved" ? done("approved")
-      : latest && latest.drawingFiles > 0 && !sentBack ? waiting(latest.status === "uploaded" ? "uploaded" : latest.status === "checked" ? "site_checked" : "sent")
+      : latest && latest.drawingFiles > 0 && !sentBack ? waiting(latest.status === "uploaded" ? "uploaded" : latest.status === "checked" ? (latest.checkKind === "design" ? "design_checked" : "site_checked") : "sent")
         : missing(sentBack ? "changes_requested" : undefined);
   }
 

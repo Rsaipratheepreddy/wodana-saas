@@ -16,6 +16,8 @@ export type RouteChange = {
   route: string | null; isDefault: boolean;
   addStages: Array<{ name: string; key?: string; ownerRole?: string | null; before?: string; after?: string; checks: CheckSpec[] }>;
   addChecks: Array<{ stage: string; checks: CheckSpec[] }>;
+  /** Checks taken off a stage (e.g. the site check a design check replaces, PLM-149); a check that isn't there is left as is. */
+  removeChecks?: Array<{ stage: string; checks: CheckSpec[] }>;
 };
 export type OrderPathChange = {
   enquiryType: string; path: (typeof FURNITURE_PATHS)[number] | null;
@@ -55,10 +57,15 @@ export type Profile = {
   orderPaths?: OrderPathChange[];
   clientUpdates?: { mode: "call" | "portal"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
   catalogCategories?: CategoryCleanup[];
+  /**
+   * Project settings (PLM-149): the project role that checks the drawings match the design, sends them to the client and
+   * records the client's approval (null: the project manager), and the working days the technical measure is due in.
+   */
+  projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null };
 };
 
 export const PROFILE_SECTIONS = ["enquiryTypes", "vehicles", "factory", "quotations", "firstResponse", "financeRequests", "approvals", "routes", "rolePermissions",
-  "design", "orderPaths", "clientUpdates", "catalogCategories"] as const;
+  "design", "orderPaths", "clientUpdates", "catalogCategories", "projects"] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 export const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -286,7 +293,7 @@ export function validateProfile(raw: unknown): Profile {
   if (raw.routes !== undefined) {
     profile.routes = at("routes").list(raw.routes, 20).flatMap((entry, index): RouteChange[] => {
       const path = `routes[${index}]`;
-      const object = at(path).object(entry, ["route", "default", "addStages", "addChecks"]);
+      const object = at(path).object(entry, ["route", "default", "addStages", "addChecks", "removeChecks"]);
       if (!object) return [];
       const isDefault = object.default === true;
       if (object.default !== undefined && typeof object.default !== "boolean") problems.push(`${path}.default is true or false.`);
@@ -308,15 +315,17 @@ export function validateProfile(raw: unknown): Profile {
         const checks = fields.checks === undefined ? [] : at(`${stagePath}.checks`).list(fields.checks, 12).flatMap((check, checkIndex) => checkSpec(`${stagePath}.checks[${checkIndex}]`, check) ?? []);
         return name ? [{ name, ...(key ? { key } : {}), ...(ownerRole !== undefined ? { ownerRole } : {}), ...(before ? { before } : {}), ...(after ? { after } : {}), checks }] : [];
       });
-      const addChecks = object.addChecks === undefined ? [] : at(`${path}.addChecks`).list(object.addChecks, 20).flatMap((stage, stageIndex) => {
-        const stagePath = `${path}.addChecks[${stageIndex}]`;
+      const stageChecks = (key: "addChecks" | "removeChecks") => object[key] === undefined ? [] : at(`${path}.${key}`).list(object[key], 20).flatMap((stage, stageIndex) => {
+        const stagePath = `${path}.${key}[${stageIndex}]`;
         const fields = at(stagePath).object(stage, ["stage", "checks"]);
         if (!fields) return [];
         const name = at(`${stagePath}.stage`).text(fields.stage, 120);
         const checks = at(`${stagePath}.checks`).list(fields.checks, 12).flatMap((check, checkIndex) => checkSpec(`${stagePath}.checks[${checkIndex}]`, check) ?? []);
         return name ? [{ stage: name, checks }] : [];
       });
-      return [{ route, isDefault, addStages, addChecks }];
+      const addChecks = stageChecks("addChecks");
+      const removeChecks = stageChecks("removeChecks");
+      return [{ route, isDefault, addStages, addChecks, ...(removeChecks.length ? { removeChecks } : {}) }];
     });
   }
 
@@ -382,6 +391,20 @@ export function validateProfile(raw: unknown): Profile {
       }
       return [change];
     });
+  }
+
+  if (raw.projects !== undefined) {
+    const section = at("projects").object(raw.projects, ["drawingsClientRole", "technicalMeasureDays"]);
+    if (section) {
+      const projects: NonNullable<Profile["projects"]> = {
+        drawingsClientRole: nullable(section, "drawingsClientRole", (value) => {
+          if (typeof value !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(value)) { problems.push("projects.drawingsClientRole is a project role key like designer, or null."); return null; }
+          return value;
+        }),
+        technicalMeasureDays: nullable(section, "technicalMeasureDays", (value) => at("projects.technicalMeasureDays").int(value, 1, 60) ?? null),
+      };
+      profile.projects = Object.fromEntries(Object.entries(projects).filter(([, value]) => value !== undefined));
+    }
   }
 
   if (raw.clientUpdates !== undefined) {

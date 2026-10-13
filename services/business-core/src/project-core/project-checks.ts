@@ -11,7 +11,7 @@ export type ProjectRole = { key: string; label: string };
  */
 export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed", "no_critical_snags",
   "handover_accepted", "drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked",
-  "installation_scheduled", "goods_delivered", "installation_done", "permit_collected"] as const;
+  "installation_scheduled", "goods_delivered", "installation_done", "permit_collected", "technical_measure_done", "drawings_design_checked"] as const;
 export type CheckKind = (typeof CHECK_KINDS)[number];
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
 export type TemplateStage = { key: string; name: string; ownerRole: string | null; checks: StageCheck[] };
@@ -20,14 +20,28 @@ export type TemplateStage = { key: string; name: string; ownerRole: string | nul
 export const HARD_CHECKS: readonly CheckKind[] = ["payment_verified", "permit_collected"];
 
 /**
- * Checks whose record is someone's work (PLM-057, 058, 059, 068, 069): while their stage is current, the first one not
- * yet passing opens a task for its person, and the record closes it. They run in the order the stage lists them, so the
- * drawings come first, then the site check, then the client's approval; the installation team schedules the installation.
+ * Checks whose record is someone's work (PLM-057, 058, 059, 068, 069, 149): while their stage is current, the first one
+ * not yet passing opens a task for its person, and the record closes it. They run in the order the stage lists them (the
+ * drawing line always in its own order): the technical site measure, the drawings, the site or design check, then the
+ * client's approval; the installation team schedules the installation.
  */
-export const TASK_CHECKS: readonly CheckKind[] = ["drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked", "installation_scheduled", "permit_collected"];
+export const TASK_CHECKS: readonly CheckKind[] = ["technical_measure_done", "drawings_uploaded", "drawings_site_checked", "drawings_design_checked", "drawings_client_approved",
+  "factory_slot_booked", "installation_scheduled", "permit_collected"];
 
-/** The drawing checks: a project whose route holds one keeps its drawings as revisions the client approves. */
-export const DRAWING_CHECKS: readonly CheckKind[] = ["drawings_uploaded", "drawings_site_checked", "drawings_client_approved"];
+/**
+ * The drawing line, in its order (PLM-057 … 059, PLM-149): the technical site measure before shop drawings, the drawings,
+ * one internal check before they go to the client (the site check by the technical team, or the design check by the
+ * lead designer), and the client's approval. A project whose route holds one keeps its drawings as revisions the
+ * client approves; a route asks for the site check or the design check, never both.
+ */
+export const DRAWING_CHECKS: readonly CheckKind[] = ["technical_measure_done", "drawings_uploaded", "drawings_site_checked", "drawings_design_checked", "drawings_client_approved"];
+
+/** The drawing line's checks of a stage in the line's order, each in a slot the line already held; other checks keep their place. */
+export function orderDrawingLine<T extends { kind: CheckKind }>(checks: T[]): T[] {
+  const line = checks.filter((check) => DRAWING_CHECKS.includes(check.kind)).sort((left, right) => DRAWING_CHECKS.indexOf(left.kind) - DRAWING_CHECKS.indexOf(right.kind));
+  let next = 0;
+  return checks.map((check) => (DRAWING_CHECKS.includes(check.kind) ? line[next++] : check));
+}
 
 /**
  * The delivery and installation checks (PLM-069): the installation day scheduled, the building permit collected for
@@ -140,9 +154,13 @@ export function parseStages(input: unknown, roles: ProjectRole[]): TemplateStage
       return parsed;
     });
     if (new Set(checks.map((check) => check.key)).size !== checks.length) throw new BadRequestException(`${name}: each check must be different.`);
-    return { key, name, ownerRole, checks };
+    return { key, name, ownerRole, checks: orderDrawingLine(checks) };
   });
   if (new Set(stages.map((stage) => stage.key)).size !== stages.length) throw new BadRequestException("Each stage needs a different name.");
+  // PLM-149: one check before the drawings go to the client.
+  const kinds = new Set(stages.flatMap((stage) => stage.checks.map((check) => check.kind)));
+  if (kinds.has("drawings_site_checked") && kinds.has("drawings_design_checked"))
+    throw new BadRequestException("Choose the site check or the design check for the drawings, not both.");
   return stages;
 }
 
@@ -163,8 +181,11 @@ export type CheckFacts = {
   openSnags: number; openCriticalSnags: number;
   /** Accepted handover packs cover the whole project. */
   handedOver: boolean;
-  /** The latest drawing revision: uploaded (and not sent back), passed its site check, approved by the client. */
-  drawings?: { uploaded: boolean; siteChecked: boolean; approved: boolean };
+  /**
+   * The drawing line: the technical site measure recorded (PLM-149), the latest revision uploaded (and not sent back),
+   * passed its site check or its design check, approved by the client.
+   */
+  drawings?: { measured?: boolean; uploaded: boolean; siteChecked: boolean; designChecked?: boolean; approved: boolean };
   /** A factory slot date is recorded on the project. */
   factorySlotBooked?: boolean;
   /** Roles marked "not applicable" on this project (PLM-100): settled on purpose, so a "role named" check passes. */
@@ -196,5 +217,7 @@ export function checkPasses(check: StageCheck, facts: CheckFacts) {
     case "goods_delivered": return Boolean(facts.installation?.delivered);
     case "installation_done": return Boolean(facts.installation?.installed);
     case "permit_collected": return Boolean(facts.permitCollected);
+    case "technical_measure_done": return Boolean(facts.drawings?.measured);
+    case "drawings_design_checked": return Boolean(facts.drawings?.designChecked);
   }
 }

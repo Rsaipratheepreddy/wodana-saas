@@ -86,6 +86,23 @@ export class ProjectCoreController {
     return this.drawingFiles.upload(actor, workspaceId, projectId, revisionId, fileId, kind, file);
   }
 
+  /** PLM-149: a photo or PDF of the technical site measure. */
+  @Post("projects/:projectId/technical-measures/:measureId/files/:fileId")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
+  measureUpload(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("measureId", ParseUUIDPipe) measureId: string, @Param("fileId", ParseUUIDPipe) fileId: string, @UploadedFile() file: ReferenceUpload) {
+    return this.drawingFiles.uploadMeasureFile(actor, workspaceId, projectId, measureId, fileId, file);
+  }
+
+  @Get("projects/:projectId/technical-measures/files/:fileId")
+  async measureFile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("fileId", ParseUUIDPipe) fileId: string, @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const file = await this.drawingFiles.measureFile(actor, workspaceId, projectId, fileId, preview === "1");
+    response.setHeader("Cache-Control", "private, max-age=300");
+    if (preview !== "1") response.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+    return sendMedia(file, request, response);
+  }
+
   @Get("projects/:projectId/drawings/files/:fileId")
   async drawingFile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
     @Param("fileId", ParseUUIDPipe) fileId: string, @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
