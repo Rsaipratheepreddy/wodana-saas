@@ -37,7 +37,9 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated, initia
   const region = useDesignSystem();
   // No follow-up yet: the next working day at 10:00 in the workspace's week. The field is the workspace's wall clock.
   const calendar = useWorkingCalendar();
-  const [nextAction, setNextAction] = useState(() => lead.nextActionAt ? zonedDateTime(lead.nextActionAt, region.timeZone) : `${calendar.nextWorkingDayFromToday().toString()}T10:00`);
+  // The enquiry's own follow-up while it is still ahead; an overdue one would make the new opportunity late from its first minute.
+  const [nextAction, setNextAction] = useState(() => lead.nextActionAt && Date.parse(lead.nextActionAt) > Date.now()
+    ? zonedDateTime(lead.nextActionAt, region.timeZone) : `${calendar.nextWorkingDayFromToday().toString()}T10:00`);
   const [closeDate, setCloseDate] = useState("");
   const [amount, setAmount] = useState("");
   const currency = initialData.defaultCurrency ?? region.currency ?? "";
