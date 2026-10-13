@@ -12,6 +12,7 @@ import type { WorkspaceModuleDefinition } from "./workspace-navigation";
 import styles from "./workspace.module.css";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey } from "@/lib/i18n/keys";
+import { useDetailsMenu } from "@/design-system";
 
 const tabIcons = { home: Home, projects: FolderKanban, leads: Inbox, opportunities: Columns3, customers: Users, followUps: BellRing, calendar: CalendarDays, conversations: MessagesSquare, automations: Workflow, reports: ChartNoAxesCombined };
 
@@ -29,6 +30,8 @@ const crmTabHelp: Record<string, string> = {
 export function WorkspaceFlowNavigation({ module, pathname }: { module: WorkspaceModuleDefinition; pathname: string }) {
   const searchParams = useSearchParams();
   const t = useT();
+  // Resources & setup closes on a click outside, Esc, or choosing a page, like every menu.
+  const resourcesMenu = useDetailsMenu({ closeOnChoose: true });
   const { selected } = usePreProject();
   const section = searchParams.get("section");
   if (pathname === "/workspace/tasks" || pathname === "/workspace/approvals") return null;
@@ -114,9 +117,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
           return <div className={styles.flowTabItem} key={item.id}><Link href={item.href} className={styles.flowTab} aria-current={(item.id === "sales-settings" ? settingsActive : !settingsActive && activeHref === item.href) ? "page" : undefined}><Icon size={15} strokeWidth={1.7} aria-hidden="true" /><span>{t(item.label as never)}</span></Link>{String(module.id) === "crm" && crmTabHelp[item.id] && <TabHelp label={t(item.label as never)} description={t(crmTabHelp[item.id] as never)} />}</div>;
         })}
       </div>
-      {module.id !== "projects" && String(module.id) !== "crm" && resources.length > 0 && <details className={styles.flowResources} key={`${pathname}?${searchParams}`} onKeyDown={(event) => {
-        if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); }
-      }}>
+      {module.id !== "projects" && String(module.id) !== "crm" && resources.length > 0 && <details className={styles.flowResources} key={`${pathname}?${searchParams}`} onClick={resourcesMenu.onClick} ref={resourcesMenu.ref}>
         <summary data-active={resources.some((item) => item.href === activeHref) || undefined}>{t("Resources & setup")} <ChevronDown size={14} /></summary>
         <div className={styles.flowResourceMenu}>
           {resources.map((item) => <Link key={item.id} href={item.href} aria-current={activeHref === item.href ? "page" : undefined}>{t(item.label as never)}</Link>)}

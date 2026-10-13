@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { Table } from "@tanstack/react-table";
 import { Download, Filter, MoreHorizontal, Rows3, X } from "lucide-react";
 import { Dialog, DialogTrigger, Popover } from "react-aria-components";
@@ -53,6 +53,7 @@ export function DataGridToolbar<T>({ compact = false, leading, title, table, vie
   ];
   const sortable = columns.filter(column => column.getCanSort() && typeof column.columnDef.header === 'string');
   const [targetId, setTargetId] = useState('');
+  const doneButton = useRef<HTMLButtonElement>(null);
   const [defaultState, setDefaultState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const saveColumnDefault = async () => {
     if (!onSaveColumnDefault) return;
@@ -79,13 +80,17 @@ export function DataGridToolbar<T>({ compact = false, leading, title, table, vie
         {hasMoreRows ? <span className="wd-record-count" title={t("Load more to include older records.")}><Rows3 size={14} />{t("{count} loaded", { count: table.getFilteredRowModel().rows.length })}</span> : null}
         <ToolbarSearch label={searchLabel} value={search} onChange={value => onSearchChange ? onSearchChange(value) : table.setGlobalFilter(value)} />
         {targets.length ? <DialogTrigger>
-          <Button variant="quiet" size="compact" aria-label={t("Filter")}><Filter size={14} /><span>{t("Filter")}</span></Button>
+          {/* How many filters are in use, on the button itself, so a filtered list never passes for the whole list. */}
+          <Button variant="quiet" size="compact" aria-label={active.length ? `${t("Filter")} (${active.length})` : t("Filter")} className="wd-filter-button" data-active={active.length ? true : undefined}>
+            <Filter aria-hidden="true" size={14} /><span>{t("Filter")}</span>{active.length ? <span aria-hidden="true" className="wd-count-chip">{active.length}</span> : null}
+          </Button>
           <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel" dir={direction} placement="bottom end"><Dialog aria-label={t("Filter records")}>{({ close }) => <>
             <header><strong>{t("Filter records")}</strong><IconButton aria-label={t("Close filters")} onPress={close} size="compact"><X size={14} /></IconButton></header>
             <SelectField label={t("Column")} items={targets.map(item => ({ id: item.id, label: item.label }))} selectedKey={target?.id} onSelectionChange={key => key && setTargetId(String(key))} />
             {target?.options ? <SelectField label={t("Filter by {column}", { column: target.label.toLowerCase() })} selectedKey={target.value ?? '__all'} items={[{ id: '__all', label: t("All values") }, ...target.options]} onSelectionChange={key => target.set(key === '__all' ? undefined : String(key))} />
               : target ? <TextInput label={t("Contains")} value={target.value ?? ''} onChange={value => target.set(value || undefined)} placeholder={t("Enter a value…")} /> : null}
-            <footer><Button size="compact" variant="quiet" isDisabled={!active.length} onPress={() => active.forEach(item => item.set(undefined))}>{t("Clear filters")}</Button><Button size="compact" onPress={close}>{t("Done")}</Button></footer>
+            {/* Clearing keeps the panel open with focus on Done, so Esc and a click outside still close it. */}
+            <footer><Button size="compact" variant="quiet" isDisabled={!active.length} onPress={() => { active.forEach(item => item.set(undefined)); doneButton.current?.focus(); }}>{t("Clear filters")}</Button><Button onPress={close} ref={doneButton} size="compact">{t("Done")}</Button></footer>
           </>}</Dialog></Popover>
         </DialogTrigger> : null}
         {leading ? viewSwitch : null}

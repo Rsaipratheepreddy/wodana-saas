@@ -14,7 +14,7 @@ import { referencePresentation, referenceTermsFor } from '@/lib/commercial/quota
 import { QuotationDocumentDetails } from './quotation-document-details';
 import { quotationPages } from './quotation-document-page';
 import { QuotationScopeGrid } from './quotation-scope-grid';
-import { Checkbox, ControlledModalDialog, useConfirmationDialog } from '@/design-system';
+import { Checkbox, ControlledModalDialog, useConfirmationDialog, useDetailsMenu } from '@/design-system';
 import { ScopeImport } from './scope-import';
 import { QuotationPaymentEditor } from './quotation-payment-editor';
 import { QuotationPdfExport } from './quotation-pdf-export';
@@ -42,6 +42,8 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
     const [revision, setRevision] = useState(initial.data.revision);
     const [active, setActive] = useState(draft.presentation!.pageOrder![0]);
     const [scopeView, setScopeView] = useState(false), [detailsOpen, setDetailsOpen] = useState(false);
+    // The page menus close on a click outside or Esc; ticking pages keeps Pages open, an action closes the options.
+    const pagesMenu = useDetailsMenu(), pageOptionsMenu = useDetailsMenu({ closeOnChoose: true });
     const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null);
     const [past, setPast] = useState<Quote[]>([]), [future, setFuture] = useState<Quote[]>([]);
     const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
@@ -228,8 +230,8 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
    {!preview && <div className={styles.tabs}>
     <div className={styles.pageNavigation} aria-label={t("Quotation pages")}>{embedded ? null : <button type="button" aria-pressed={scopeView} onClick={() => setScopeView(true)}>{t("Scope & Items")}</button>}<button type="button" aria-pressed={!scopeView} onClick={() => setScopeView(false)}>{t("Document")}</button>{!scopeView && documentPages.map((page, index) => <button key={page.id} type="button" aria-current={active === page.id ? 'page' : undefined} onClick={() => { setActive(page.id); document.getElementById(`document-page-${page.id}`)?.scrollIntoView({ block: 'start', behavior: 'instant' }); }}>{index + 1}</button>)}</div>
     {!readOnly && <label className={styles.addPage}><Plus size={14}/><select aria-label={t("Add page")} value="" disabled={busy || pages.length >= 40 || design.pages.length >= 40} onChange={event => addPage(event.target.value)}><option value="" disabled>{t("Add page")}</option><option value="blank">{t("Blank page")}</option><option value="introduction">{t("Introduction")}</option><option value="closing">{t("Closing page")}</option>{['payments', 'acceptance'].filter(id => !pages.includes(id)).map(id => <option key={id} value={id}>{t(labels[id])}</option>)}</select></label>}
-    <details className={styles.pageMenu}><summary>{t("Pages")}</summary><div><small>{t("Include in preview and document")}</small>{pages.map(id => <Checkbox key={id} aria-label={t('Include {title}', { title: title(id) })} isSelected={!design.hiddenPages?.includes(id)} isDisabled={readOnly || busy} onChange={included => change({ ...draft, presentation: { ...design, hiddenPages: included ? (design.hiddenPages ?? []).filter(hidden => hidden !== id) : [...(design.hiddenPages ?? []), id] } }, true)}>{title(id)}</Checkbox>)}</div></details>
-    {!readOnly && <details className={styles.pageMenu}><summary aria-label={t("Page options")}>•••</summary><div>
+    <details className={styles.pageMenu} ref={pagesMenu.ref}><summary>{t("Pages")}</summary><div><small>{t("Include in preview and document")}</small>{pages.map(id => <Checkbox key={id} aria-label={t('Include {title}', { title: title(id) })} isSelected={!design.hiddenPages?.includes(id)} isDisabled={readOnly || busy} onChange={included => change({ ...draft, presentation: { ...design, hiddenPages: included ? (design.hiddenPages ?? []).filter(hidden => hidden !== id) : [...(design.hiddenPages ?? []), id] } }, true)}>{title(id)}</Checkbox>)}</div></details>
+    {!readOnly && <details className={styles.pageMenu} onClick={pageOptionsMenu.onClick} ref={pageOptionsMenu.ref}><summary aria-label={t("Page options")}>•••</summary><div>
      <button type="button" disabled={busy} onClick={() => requestConfirmation({ title: t('Use the standard layout?'), body: t('This replaces the page designs with the standard layout, filled from your brand and proposal kit. Your scope, prices, terms and payment schedule stay unchanged. You can undo this change.'), confirmLabel: t('Use standard layout'), onConfirm: () => { const next = { ...draft, terms: referenceTermsFor(draft, initial.proposalKit) }; change({ ...next, presentation: referencePresentation(next, initial.portalBrand?.name ?? '', initial.customerName, initial) }, true); setActive('cover'); setScopeView(false); } })}>{t("Use standard layout")}</button>
      <button type="button" disabled={busy || pages.indexOf(active) === 0} onClick={() => move(-1)}><ArrowLeft size={14}/>{t("Move earlier")}</button>
      <button type="button" disabled={busy || pages.indexOf(active) === pages.length - 1} onClick={() => move(1)}><ArrowRight size={14}/>{t("Move later")}</button>
