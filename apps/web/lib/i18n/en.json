@@ -14844,5 +14844,17 @@
   "Design site measure": "Design site measure",
   "Interior designer": "Interior designer",
   "Concept": "Concept",
-  "Answers saved.": "Answers saved."
+  "Answers saved.": "Answers saved.",
+  "Round": "Round",
+  "{name}, version {number}": "{name}, version {number}",
+  "Give your decision": "Give your decision",
+  "For your review": "For your review",
+  "Review time passed": "Review time passed",
+  "Choose an option": "Choose an option",
+  "Shared": "Shared",
+  "Concepts and mood boards": "Concepts and mood boards",
+  "Layouts": "Layouts",
+  "No designs yet": "No designs yet",
+  "The designs your team shares with you appear here.": "The designs your team shares with you appear here.",
+  "{count} rounds": "{count} rounds"
 }

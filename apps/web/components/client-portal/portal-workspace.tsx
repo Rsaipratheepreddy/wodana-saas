@@ -34,16 +34,18 @@ import { HomeSection } from "./sections/home-section";
 import { MessagesSection } from "./sections/messages-section";
 import { MeetingsSection } from "./sections/meetings-section";
 import { MeetingNotes } from "./forms/meeting-notes";
+import { DesignsSection } from "./sections/designs-section";
+import { DesignFile } from "./forms/design-file";
 import { MoodboardSection } from "./sections/moodboard-section";
 import { PaymentsSection } from "./sections/payments-section";
 import { ProgressSection } from "./sections/progress-section";
 import type { PortalTarget, SectionProps } from "./sections/section-types";
 import { WarrantySection } from "./sections/warranty-section";
 
-const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: MoodboardSection, decisions: DecisionsSection, payments: PaymentsSection, documents: DocumentsSection,
-  warranty: WarrantySection, meetings: MeetingsSection, messages: MessagesSection } as const;
-/** The order the client reads them in: where it stands, what to decide, the ideas, then money, papers, cover, meeting notes and talk. */
-const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "payments", "documents", "warranty", "meetings", "messages"];
+const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: MoodboardSection, designs: DesignsSection, decisions: DecisionsSection, payments: PaymentsSection,
+  documents: DocumentsSection, warranty: WarrantySection, meetings: MeetingsSection, messages: MessagesSection } as const;
+/** The order the client reads them in: where it stands, what to decide, the ideas and designs, then money, papers, cover, meeting notes and talk. */
+const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "designs", "payments", "documents", "warranty", "meetings", "messages"];
 const DECISION_STEPS = ["quote", "design", "definition", "materials", "drawings", "handover", "request", "change", "presentation", "choice"];
 /** The side column opens from a small laptop up; below it the profile is a card above the sections. */
 const WIDE = "(min-width: 64rem)";
@@ -104,7 +106,7 @@ export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: 
   const props: SectionProps = { project, site, api, format, today: view.today, open, go, reload, wide };
   const counts = badges(project, t);
   const Section = SECTIONS[current];
-  const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t }) : null;
+  const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t, open }) : null;
   const nav = !project.paused && shown.length > 1
     ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout={wide ? "list" : "tabs"} /> : null;
   const modal = dialog ? <ControlledModalDialog isOpen onOpenChange={(isOpen) => { if (!isOpen) setTarget(null); }} size={target?.kind === "quote" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
@@ -157,10 +159,10 @@ export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: 
 }
 
 type Tools = { site: PortalSite; customer: string; api: PortalApi; format: PortalFormat; done: (message: string) => () => Promise<void>; reload: () => Promise<void>; today: string;
-  t: ReturnType<typeof useT> };
+  t: ReturnType<typeof useT>; open: (target: PortalTarget) => void };
 
 /** The dialog for what was opened: a decision at its revision, a conversation or a form. */
-function dialogFor(target: PortalTarget, project: PortalProject, { site, customer, api, format, done, reload, today, t }: Tools) {
+function dialogFor(target: PortalTarget, project: PortalProject, { site, customer, api, format, done, reload, today, t, open }: Tools) {
   const decisions = project.decisions;
   const channels = site.signIn.channels;
   const common = { caseId: project.id, api, format, channels };
@@ -202,6 +204,13 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
   if (target.kind === "thread") {
     const request = project.messages?.requests.find((item) => item.id === target.id);
     return request ? { title: request.title, body: <Thread request={request} caseId={project.id} api={api} format={format} onReplied={() => void reload()} /> } : null;
+  }
+  if (target.kind === "design-file") {
+    const design = project.designs?.groups.flatMap((group) => group.designs).find((item) => item.id === target.id);
+    // A file waiting for the client's decision is decided where decisions are (when this client sees them).
+    const decide = (fileId: string) => (decisions?.designs.some((item) => item.id === fileId) ? open({ kind: "design", id: fileId }) : undefined);
+    return design ? { title: design.title, body: <DesignFile design={design} fileId={target.fileId} caseId={project.id} api={api} format={format} onCommented={() => void reload()}
+      onDecide={decisions?.designs.length ? decide : undefined} /> } : null;
   }
   if (target.kind === "minutes") {
     const meeting = project.meetings?.meetings.find((item) => item.id === target.id);

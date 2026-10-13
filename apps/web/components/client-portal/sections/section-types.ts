@@ -10,6 +10,8 @@ export type PortalTarget =
   | { kind: "thread"; id: string }
   /** PLM-153: the notes of a meeting and the conversation on them. */
   | { kind: "minutes"; id: string }
+  /** PLM-153: a design in the client's Designs (its design id), opened at one of its files. */
+  | { kind: "design-file"; id: string; fileId?: string }
   | { kind: "new-message" }
   | { kind: "claim"; areaId?: string | null }
   | { kind: "board" | "pin"; id: string }

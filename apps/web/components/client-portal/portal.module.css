@@ -596,3 +596,6 @@
 .summary .person + .person { border-block-start: 1px solid var(--wd-color-structural-divider); }
 .summary .personName { font-size: var(--wd-text-sm); }
 .summary .contactActions :global(.wd-button) { color: var(--wd-color-text-secondary); }
+
+/* PLM-153: a design file in the client's Designs, as large as the dialog allows. */
+.designPreview { display: block; max-inline-size: 100%; block-size: auto; border-radius: var(--wd-radius-md); }

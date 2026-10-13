@@ -2,7 +2,7 @@ import type { ClientPresentation } from "@/lib/proposals/client";
 import type { DocumentLetterhead } from "../brand/letterhead";
 /** The client portal as the business core returns it (services/business-core/src/client-portal). */
 
-export const PORTAL_SECTIONS = ["progress", "moodboard", "decisions", "payments", "documents", "warranty", "meetings", "messages"] as const;
+export const PORTAL_SECTIONS = ["progress", "moodboard", "designs", "decisions", "payments", "documents", "warranty", "meetings", "messages"] as const;
 export type PortalSection = (typeof PORTAL_SECTIONS)[number];
 export type PortalSections = Record<PortalSection, boolean>;
 
@@ -114,6 +114,17 @@ export type PortalBudget = {
 
 export type PortalFeedKind = "day" | "update" | "design" | "presentation" | "document" | "quote" | "change" | "invoice" | "payment" | "reply" | "handover" | "choice" | "minutes";
 
+/** PLM-153: the folders of the client's Designs, in their order. */
+export type PortalDesignGroup = "concepts" | "layouts" | "materials" | "renders" | "drawings";
+/** A shared design file's state in the client's words: in review (or its time passed), decided, or shown as a presentation's option. */
+export type PortalDesignFileStatus = "client_review" | "expired" | "approved" | "changes_requested" | "rejected" | "presented" | "chosen" | "shown";
+/** PLM-153: one design in the client's Designs, its shared files newest first (earlier rounds after), each with its conversation. */
+export type PortalFolderDesign = {
+  id: string; title: string; room: string | null; sharedAt: string;
+  files: Array<{ id: string; number: number; status: PortalDesignFileStatus; sharedAt: string; mimeType: string; hasPreview: boolean; canComment: boolean;
+    comments: Array<{ id: string; at: string; text: string; fromClient: boolean; mine: boolean; author: string | null }> }>;
+};
+
 /** PLM-153: the notes of one meeting the team shared, its files and the conversation on it (the team reads as one team). */
 export type PortalMeeting = {
   id: string; title: string; meetingAt: string | null; text: string; sharedAt: string; updatedAt: string | null;
@@ -224,6 +235,8 @@ export type PortalProject = {
   messages: null | { requests: PortalRequest[]; unread: number };
   /** PLM-153: the notes of the meetings the team shared, newest meeting first. */
   meetings?: null | { meetings: PortalMeeting[] };
+  /** PLM-153: every design file shared with the client, by stage. */
+  designs?: null | { groups: Array<{ key: PortalDesignGroup; designs: PortalFolderDesign[] }> };
   /** Shared designs with their pinned comment threads, one conversation with the design team (plan §6.7a). */
   design?: PortalDesignReview | null;
   /** Concept presentations to choose from and the materials and decisions to confirm (plan §6.7a). */
