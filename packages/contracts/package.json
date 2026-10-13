@@ -9,7 +9,8 @@
     "./brand": "./src/brand.ts",
     "./financial-statements": "./src/financial-statements.ts",
     "./access-levels.json": "./access-levels.json",
-    "./history": "./src/history.ts"
+    "./history": "./src/history.ts",
+    "./person-name": "./src/person-name.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
