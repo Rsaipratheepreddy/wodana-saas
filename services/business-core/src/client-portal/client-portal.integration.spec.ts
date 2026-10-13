@@ -144,6 +144,13 @@ projects[].warranty.claims projects[].warranty.claims[] projects[].warranty.clai
 projects[].warranty.claims[].description projects[].warranty.claims[].status projects[].warranty.claims[].reason projects[].warranty.areas
 projects[].warranty.areas[] projects[].warranty.areas[].id projects[].warranty.areas[].name projects[].warranty.lines projects[].warranty.lines[]
 projects[].warranty.lines[].id projects[].warranty.lines[].title projects[].warranty.lines[].areaId projects[].warranty.canClaim
+projects[].sections.meetings projects[].meetings projects[].meetings.meetings projects[].meetings.meetings[] projects[].meetings.meetings[].id
+projects[].meetings.meetings[].title projects[].meetings.meetings[].meetingAt projects[].meetings.meetings[].text projects[].meetings.meetings[].sharedAt
+projects[].meetings.meetings[].updatedAt projects[].meetings.meetings[].files projects[].meetings.meetings[].files[] projects[].meetings.meetings[].files[].id
+projects[].meetings.meetings[].files[].name projects[].meetings.meetings[].files[].mimeType projects[].meetings.meetings[].files[].hasPreview
+projects[].meetings.meetings[].comments projects[].meetings.meetings[].comments[] projects[].meetings.meetings[].comments[].id projects[].meetings.meetings[].comments[].at
+projects[].meetings.meetings[].comments[].text projects[].meetings.meetings[].comments[].fromClient projects[].meetings.meetings[].comments[].author
+projects[].meetings.meetings[].comments[].mine
 projects[].messages projects[].messages.requests projects[].messages.requests[] projects[].messages.requests[].id projects[].messages.requests[].number
 projects[].messages.requests[].title projects[].messages.requests[].detail projects[].messages.requests[].status projects[].messages.requests[].createdAt
 projects[].messages.requests[].resolution projects[].messages.requests[].comments projects[].messages.requests[].comments[]
@@ -867,7 +874,7 @@ integration("client portal (plan §6.22)", () => {
       const access = await w.admin.project(actor, w.workspaceId, projectId);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version, sections: ["progress", "decisions"] });
       const narrow = (await w.portal.view(w.slug, token)).projects[0];
-      expect(narrow.sections).toEqual({ progress: true, moodboard: false, decisions: true, payments: false, documents: false, warranty: false, messages: false });
+      expect(narrow.sections).toEqual({ progress: true, moodboard: false, decisions: true, payments: false, documents: false, warranty: false, meetings: false, messages: false });
       expect([narrow.payments, narrow.documents, narrow.messages]).toEqual([null, null, null]);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version + 1, paused: true });
       const paused = (await w.portal.view(w.slug, token)).projects[0];

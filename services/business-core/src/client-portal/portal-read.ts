@@ -9,6 +9,7 @@ import { readDesignReview } from "./portal-design";
 import { ASSUME_PRESENT, readAttachments, type FilePresence } from "./portal-files";
 import { readIssues } from "./portal-issues";
 import { readMessages } from "./portal-messages";
+import { readMeetings } from "./portal-meetings";
 import { readMoodboard, takesIdeas } from "./portal-moodboard";
 import { readDesignChoices } from "./portal-design-decisions";
 import { readPayments } from "./portal-payments";
@@ -81,7 +82,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   };
   if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, address: null, startDate: null,
     team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, updates: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
-    messages: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
+    messages: null, meetings: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
   const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, grant.id, today) : null;
@@ -91,6 +92,8 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   const documents = on("documents") ? await readDocuments(db, workspaceId, row, commercial) : null;
   const warranty = started && on("warranty") ? await readWarranty(db, workspaceId, row, today) : null;
   const messages = on("messages") ? await readMessages(db, workspaceId, grant, row.caseId, commercial) : null;
+  // PLM-153: the notes of the meetings the team shared, with the conversation on each.
+  const meetings = on("meetings") ? await readMeetings(db, workspaceId, grant, row.caseId) : null;
   // The designs and their pinned comments, one conversation with the design team (part of what the client decides on).
   const design = on("decisions") ? await readDesignReview(db, workspaceId, grant, row, files) : null;
   // The concepts shown to the client to pick from, and the materials and decisions they confirm (plan §6.7a).
@@ -100,7 +103,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   const changes = on("decisions") ? await readPortalChanges(db, workspaceId, grant, row.caseId, ["active", "released"].includes(row.caseStatus)) : null;
   const budget = on("payments") && settings.invoiceAmounts ? await readBudget(db, workspaceId, row.caseId, row.currency, changes ?? []) : null;
   // The home: one feed of typed cards, and what changed since this contact last looked (AI2) — both from this projection only.
-  const source = { progress, design, choices, decisions, documents, payments, messages, changes };
+  const source = { progress, design, choices, decisions, documents, payments, messages, changes, meetings };
   // The newest word from the team: a written update or the latest day's card.
   const card = progress?.cards.find((item) => item.summary);
   const latestUpdate = [progress?.updates[0], card ? { id: card.id, at: card.sentAt, text: card.summary } : undefined]
@@ -120,7 +123,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
     next: nextSteps(decisions, payments, progress, choices, changes),
     unread: messages?.unread ?? 0,
-    latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, design, choices, changes, budget,
+    latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, meetings, design, choices, changes, budget,
     feed: feedCards(source), digest: since === undefined ? null : whatChanged(source, since),
   };
 }

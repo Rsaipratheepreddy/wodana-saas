@@ -1352,6 +1352,20 @@
       "when": 1801740009000,
       "tag": "0328_technical_measure",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1801740009100,
+      "tag": "0329_meeting_minutes",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1801740009200,
+      "tag": "0330_meeting_minutes_reminder",
+      "breakpoints": true
     }
   ]
 }

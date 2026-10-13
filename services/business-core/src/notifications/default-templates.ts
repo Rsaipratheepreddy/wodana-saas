@@ -45,6 +45,7 @@ export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   ...staffReminder("design.stage_due", "Finish the stage, or move its date."),
   ...staffReminder("permit.expiry", "Renew the permit, or move the booking."),
   ...staffReminder("finance_request.waiting", "It is waiting for Finance."),
+  ...staffReminder("meeting.minutes_due", "Write the minutes and share them with the client."),
   // Client kinds: the client by email (WhatsApp uses the firm's approved templates); the owner after the reminders.
   { code: "reminders.client.quote_decision", channel: "email", subject: "Your quotation {{title}} is waiting for you", body: "{{title}} is waiting for your decision.\n\n{{context}}\n\nOpen it to accept it or ask for changes.", variables: REMINDER_VARIABLES },
   { code: "reminders.client.design_decision", channel: "email", subject: "Your design {{title}} is waiting for you", body: "{{title}} is waiting for your approval.\n\n{{context}}\n\nOpen it to approve it or ask for changes.", variables: REMINDER_VARIABLES },
@@ -552,6 +553,10 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "portal.team_replied", channel: "email", subject: "{{company}} replied on {{project}}", body: "{{note}}\n\nOpen your project page to read it and reply.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.payment_checked", channel: "email", subject: "Your payment on {{project}}", body: "{{note}}\n\nOpen your project page to see your payments.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.issue_triaged", channel: "email", subject: "The issue you reported on {{project}}", body: "{{note}}\n\nOpen your project page to follow it.", variables: ["company", "project", "title", "due", "note"] },
+  // PLM-153: the minutes of a client meeting shared in the portal (the client); the client's comment on them (the author).
+  { code: "portal.minutes_shared", channel: "email", subject: "Notes from your meeting · {{project}}", body: "{{company}} shared the notes from {{title}}.\n\n{{note}}\n\nOpen your project page to read them and comment.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "meeting.minutes_comment", channel: "in_app", subject: "{{actor}} commented on the minutes · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "meeting.minutes_comment", channel: "email", subject: "{{actor}} commented on the minutes of {{title}}", body: "{{actor}} commented on the minutes of {{title}} in the client portal:\n\n{{note}}\n\nOpen the meeting to reply.", variables: ["title", "clientName", "actor", "note"] },
   // D-29: a delivery to site is coming; the client confirms someone lets the team in, or asks to move it.
   { code: "portal.site_access", channel: "email", subject: "Confirm site access for {{title}}", body: "{{company}} has a delivery for {{project}} on {{title}}: {{note}}\n\nOpen your project page to confirm someone can let the team in, or ask to move it.", variables: ["company", "project", "title", "due", "note"] },
   // Client portal access (client-portal/portal-invitations.ts): the project's manager hears the client's first sign-in.

@@ -11,7 +11,7 @@ type Db = Pick<PoolClient, "query">;
  *   - "what changed since you last looked": the same events counted since this contact's previous visit, worded by
  *     the web app (a deterministic summary; AI wording is optional and not needed for it).
  */
-export type FeedKind = "day" | "update" | "design" | "presentation" | "document" | "quote" | "change" | "invoice" | "payment" | "reply" | "handover" | "choice";
+export type FeedKind = "day" | "update" | "design" | "presentation" | "document" | "quote" | "change" | "invoice" | "payment" | "reply" | "handover" | "choice" | "minutes";
 export type FeedCard = { kind: FeedKind; id: string; at: string; title: string; note: string | null; status: string | null };
 
 /** The fields of a client projection the feed reads (every one already passed the projection's allow-list). */
@@ -35,6 +35,8 @@ export type FeedSource = {
     receipts: Array<{ id: string; amount: string | null; receivedOn: string | null }> }> };
   messages: null | { requests: Array<{ id: string; title: string; comments: Array<{ id: string; at: string; text: string; fromClient: boolean }> }> };
   changes?: Array<{ id: string; reference: string; title: string; status: string; sharedAt: string | null; decidedAt: string | null; createdAt: string; raisedByClient: boolean }> | null;
+  /** PLM-153: the notes of the meetings the team shared. */
+  meetings?: null | { meetings: Array<{ id: string; title: string; sharedAt: string }> };
 };
 
 const day = (date: string) => `${date.slice(0, 10)}T00:00:00.000Z`;
@@ -75,6 +77,7 @@ export function feedCards(project: FeedSource, limit = 40): FeedCard[] {
     const reply = [...request.comments].reverse().find((comment) => !comment.fromClient);
     if (reply) cards.push({ kind: "reply", id: request.id, at: reply.at, title: request.title, note: reply.text, status: null });
   }
+  for (const minutes of project.meetings?.meetings ?? []) cards.push({ kind: "minutes", id: minutes.id, at: minutes.sharedAt, title: minutes.title, note: null, status: null });
   return cards.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.kind.localeCompare(b.kind))).slice(0, limit);
 }
 

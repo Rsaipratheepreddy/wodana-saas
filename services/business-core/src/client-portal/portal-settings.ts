@@ -3,8 +3,8 @@ import type { PoolClient } from "pg";
 
 type Db = Pick<PoolClient, "query">;
 
-/** The portal's sections, in the order the client sees them after Home. */
-export const SECTIONS = ["progress", "moodboard", "decisions", "payments", "documents", "warranty", "messages"] as const;
+/** The portal's sections, in the order the client sees them after Home. Meetings: the minutes of every client meeting (PLM-153). */
+export const SECTIONS = ["progress", "moodboard", "decisions", "payments", "documents", "warranty", "meetings", "messages"] as const;
 export type Section = (typeof SECTIONS)[number];
 export type Sections = Record<Section, boolean>;
 
@@ -26,7 +26,8 @@ export type PortalSettings = {
 export type ProjectAccess = { sections: Section[] | null; paused: boolean; pausedAt: string | null; version: number };
 
 const COLUMNS = `workspace_id AS "workspaceId", slug, enabled, version, show_progress AS progress, show_decisions AS decisions, show_payments AS payments,
-  show_documents AS documents, show_warranty AS warranty, show_messages AS messages, show_moodboard AS moodboard, progress_stage_names AS "stageNames", progress_dates AS dates,
+  show_documents AS documents, show_warranty AS warranty, show_messages AS messages, show_moodboard AS moodboard, show_meetings AS meetings,
+  progress_stage_names AS "stageNames", progress_dates AS dates,
   progress_updates AS updates, progress_photos AS photos, show_invoice_amounts AS "invoiceAmounts", welcome_title AS "welcomeTitle",
   welcome_text AS "welcomeText", support_phone AS "supportPhone", support_email AS "supportEmail", support_whatsapp AS "supportWhatsapp"`;
 
@@ -117,18 +118,19 @@ export async function savePortalSettings(db: Db, workspaceId: string, userId: st
   await db.query(
     `INSERT INTO client_portal_settings (workspace_id, slug, enabled, version, show_progress, show_decisions, show_payments, show_documents, show_warranty, show_messages, show_moodboard,
        progress_stage_names, progress_dates, progress_updates, progress_photos, show_invoice_amounts, welcome_title, welcome_text, support_phone, support_email, support_whatsapp,
-       updated_by, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $22, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now())
+       updated_by, updated_at, show_meetings)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $22, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now(), $23)
      ON CONFLICT (workspace_id) DO UPDATE SET enabled = EXCLUDED.enabled, version = EXCLUDED.version, show_progress = EXCLUDED.show_progress,
        show_decisions = EXCLUDED.show_decisions, show_payments = EXCLUDED.show_payments, show_documents = EXCLUDED.show_documents,
-       show_warranty = EXCLUDED.show_warranty, show_messages = EXCLUDED.show_messages, show_moodboard = EXCLUDED.show_moodboard, progress_stage_names = EXCLUDED.progress_stage_names,
+       show_warranty = EXCLUDED.show_warranty, show_messages = EXCLUDED.show_messages, show_moodboard = EXCLUDED.show_moodboard, show_meetings = EXCLUDED.show_meetings,
+       progress_stage_names = EXCLUDED.progress_stage_names,
        progress_dates = EXCLUDED.progress_dates, progress_updates = EXCLUDED.progress_updates, progress_photos = EXCLUDED.progress_photos,
        show_invoice_amounts = EXCLUDED.show_invoice_amounts, welcome_title = EXCLUDED.welcome_title, welcome_text = EXCLUDED.welcome_text,
        support_phone = EXCLUDED.support_phone, support_email = EXCLUDED.support_email, support_whatsapp = EXCLUDED.support_whatsapp,
        updated_by = EXCLUDED.updated_by, updated_at = now()`,
     [workspaceId, current.slug, next.enabled, current.version + 1, next.sections.progress, next.sections.decisions, next.sections.payments, next.sections.documents,
       next.sections.warranty, next.sections.messages, next.progress.stageNames, next.progress.dates, next.progress.updates, next.progress.photos, next.invoiceAmounts,
-      next.welcomeTitle, next.welcomeText, next.support.phone, next.support.email, next.support.whatsapp, userId, next.sections.moodboard]);
+      next.welcomeTitle, next.welcomeText, next.support.phone, next.support.email, next.support.whatsapp, userId, next.sections.moodboard, next.sections.meetings]);
   if (current.enabled && !next.enabled)
     await db.query(`UPDATE client_portal_sessions SET revoked_at = now(), revoked_reason = 'portal_off' WHERE workspace_id = $1 AND revoked_at IS NULL`, [workspaceId]);
   return { before: current, after: { ...next, version: current.version + 1 } };

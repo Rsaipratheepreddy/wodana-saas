@@ -22,6 +22,7 @@ export const ENGINE_REMINDER_KINDS = [
   "permit.expiry",
   "finance_request.waiting",
   "change_request.client_decision",
+  "meeting.minutes_due",
 ] as const;
 export type EngineReminderKind = (typeof ENGINE_REMINDER_KINDS)[number];
 
@@ -122,6 +123,7 @@ export const REMINDER_KIND_INFO: Record<ReminderKind, ReminderKindInfo> = {
   "permit.expiry": { module: "projects", audience: "staff", critical: true, notify: "engine", eventType: "site.permit_expiry" },
   "finance_request.waiting": { module: "finance", audience: "staff", critical: false, notify: "engine", eventType: "finance_request.waiting" },
   "change_request.client_decision": { module: "projects", audience: "client", critical: false, notify: "engine", eventType: "change_request.client_decision" },
+  "meeting.minutes_due": { module: "sales", audience: "staff", critical: false, notify: "engine", eventType: "meeting.minutes_due" },
   "crm.first_response": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.unowned": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.confirm_client": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
@@ -171,6 +173,8 @@ export const REMINDER_KIND_DEFAULTS: Record<EngineReminderKind, ReminderRuleDefa
   "permit.expiry": { offsets: [-3, -1, 0], unit: "day", workingDays: true, escalateAfter: 1, chain: ["project_manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
   "finance_request.waiting": { offsets: [1, 3], unit: "day", workingDays: false, escalateAfter: 2, chain: ["finance", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
   "change_request.client_decision": { offsets: [2, 5], unit: "day", workingDays: false, escalateAfter: 2, chain: [], channels: CLIENT_CHANNELS, digest: false, priority: CLIENT_REMINDER_PRIORITY.decision },
+  // PLM-153: hours after a client meeting ended without minutes.
+  "meeting.minutes_due": { offsets: [2, 24], unit: "hour", workingDays: false, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
 };
 
 /** Bounds a rule must keep (the database checks the same). */

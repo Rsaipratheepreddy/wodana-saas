@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as shared from "../../../../packages/contracts/src/reminders";
@@ -8,13 +8,22 @@ const core = readFileSync(resolve(__dirname, "../../drizzle/0289_reminders_core.
 /** 0306 re-adds the kind lists with change_request.client_decision: the latest definition of a constraint wins. */
 const engine = readFileSync(resolve(__dirname, "../../drizzle/0306_reminders_engine.sql"), "utf8");
 const migration = core;
-/** The quoted values of a named CHECK constraint (an IN list or an ARRAY[...]), from its latest definition. */
+/**
+ * Later migrations extend a kind list without rewriting it (so a kind another release added stays), and say so in a
+ * line read here: `-- adds to <constraint>: 'kind', …` (0330 adds meeting.minutes_due).
+ */
+const drizzle = resolve(__dirname, "../../drizzle");
+const later = readdirSync(drizzle).filter((name) => /^\d{4}_.+\.sql$/.test(name) && name > "0306").sort().map((name) => readFileSync(resolve(drizzle, name), "utf8"));
+const added = (constraint: string) => later.flatMap((sql) => [...sql.matchAll(new RegExp(String.raw`-- adds to ${constraint}: ([^\n]*)`, "g"))]
+  .flatMap((match) => [...match[1].matchAll(/'([a-z_.]+)'/g)].map((value) => value[1])));
+/** The quoted values of a named CHECK constraint (an IN list or an ARRAY[...]), from its latest definition, with the kinds added since. */
 const checkList = (constraint: string, column: string) => {
   const source = engine.includes(`CONSTRAINT ${constraint} CHECK`) ? engine : core;
   const start = source.indexOf(`CONSTRAINT ${constraint} CHECK`);
   if (start < 0) return [];
   const list = new RegExp(String.raw`${column} (?:IN \(|<@ ARRAY\[)([^)\]]*)[)\]]`).exec(source.slice(start));
-  return list ? [...list[1].matchAll(/'([a-z_.]+)'/g)].map((value) => value[1]) : [];
+  const base = list ? [...list[1].matchAll(/'([a-z_.]+)'/g)].map((value) => value[1]) : [];
+  return [...base, ...added(constraint).filter((value, index, all) => !base.includes(value) && all.indexOf(value) === index)];
 };
 
 describe("reminder contract", () => {
@@ -35,7 +44,7 @@ describe("reminder contract", () => {
 
   it("matches the database's lists", () => {
     expect(checkList("reminder_rules_kind_check", "kind")).toEqual([...shared.ENGINE_REMINDER_KINDS]);
-    expect(checkList("reminder_subjects_kind_check", "kind")).toEqual([...shared.REMINDER_KINDS]);
+    expect(checkList("reminder_subjects_kind_check", "kind").sort()).toEqual([...shared.REMINDER_KINDS].sort());
     expect(checkList("reminder_rules_unit_check", "unit")).toEqual([...shared.REMINDER_UNITS]);
     expect(checkList("reminder_rules_chain_check", "chain")).toEqual([...shared.REMINDER_CHAIN_LINKS]);
     expect(checkList("reminder_rules_channels_check", "channels")).toEqual([...shared.REMINDER_CHANNELS]);

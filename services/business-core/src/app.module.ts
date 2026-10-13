@@ -51,6 +51,7 @@ import { FactoryModule } from "./factory/factory.module";
 import { TeamCalendarsModule } from "./team-calendars/team-calendars.module";
 import { LogisticsModule } from "./logistics/logistics.module";
 import { ClientCallsModule } from "./client-calls/client-calls.module";
+import { MeetingsModule } from "./meetings/meetings.module";
 import { SiteModule } from "./site/site.module";
 import { ReceivablesModule } from "./receivables/receivables.module";
 import { AccountingModule } from "./accounting/accounting.module";
@@ -131,6 +132,7 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     TeamCalendarsModule,
     LogisticsModule,
     ClientCallsModule,
+    MeetingsModule,
     SiteModule,
     ReceivablesModule,
     AccountingModule,

@@ -261,6 +261,10 @@ const clear = [
   "crm_sequence_enrollments",
   "bookings",
   "client_update_calls",
+  "meeting_minutes",
+  "meeting_minutes_comments",
+  "meeting_minutes_files",
+  "meeting_minutes_revisions",
   "link_previews",
   "team_calendar_pushes",
   // Pre-project cases, design and site
@@ -609,6 +613,7 @@ export const WORKSPACE_CLEARED_FILE_COLUMNS: Readonly<Record<string, readonly st
   hrms_captures: ["object_key"],
   hrms_documents: ["object_key"],
   link_previews: ["image_key", "image_preview_key"],
+  meeting_minutes_files: ["object_key", "preview_key"],
   petty_cash_claims: ["receipt_key"],
   pre_project_brief_assets: ["object_key", "preview_key"],
   product_clip_images: ["object_key", "preview_key"],
