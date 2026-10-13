@@ -113,7 +113,7 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     const samples = view({ journey: { packageName: "Bespoke Interior Design", includedRevisions: 2, flowVersion: 2, includesRenders: true },
       tasks: [{ task: "sample_collection", label: "Sample collection", status: "done", ownerId: "c1", ownerName: "Mona", dueAt: null, completedAt: "2031-04-10T10:00:00Z", completedByName: "Mona", note: null, version: 2, overdue: false }],
       stages: [stage({ stage: "samples", label: "Samples", status: "active", version: 7 })] });
-    const fetch = vi.fn(async () => ({ ok: true, json: async () => samples }));
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => samples }));
     vi.stubGlobal("fetch", fetch);
     renderJourney();
     fireEvent.click(await screen.findByRole("button", { name: "Book sample meeting" }));
