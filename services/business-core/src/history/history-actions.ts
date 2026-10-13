@@ -101,7 +101,7 @@ const RULES: Array<[RegExp, HistoryVerb]> = [
   [/(^|[._])expired$/, "expired"],
   [/(^|[._])(created|create|added|entered|new|planned|ready|entry_added|room_saved|[a-z_]+_created)$/, "created"],
   [/(^|[._])(deleted|removed|archived|discarded|erased|[a-z_]+_removed|[a-z_]+_archived)$/, "removed"],
-  [/(^|[._])(updated|update|changed|saved|save(_[a-z_]+)?|set|edited|arranged|marked|pinned|report|[a-z_]+_(updated|changed|saved|set|pinned|migrated|linked|prefilled|extended))$/, "updated"],
+  [/(^|[._])(updated|update|changed|saved|save(_[a-z_]+)?|set|edited|arranged|marked|pinned|report|[a-z_]+_(updated|changed|saved|set|pinned|migrated|linked|prefilled|extended|repaired))$/, "updated"],
   [/(amended|merged|renamed|restored|imported|installed|labelled|filed|hidden|blocked|resolved|detected|returning_customer|kept|skipped|undone|exported|shown|seeded|split|rolled_back|reset|answered|not_required|overridden|executed|enabled|disabled|failed|requested|access|read_thread|confirm_name|replaced|status|turned_on|recorded|provisioned|invited|ended|revoked|registered|prepared|suppressed|callback|allocate|add|check_in|check_out|enrolled|project_task|set_up|insights|regenerated|pushed|activated|step\.executed|digest|read|dismissed|review_required|reversed|stopped|added_to_catalog)$/, "updated"],
 ];
 
