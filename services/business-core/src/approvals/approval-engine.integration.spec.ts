@@ -9,6 +9,7 @@ import { decideProposalValue, loadProposals, markProposalWon, setProposalValue }
 import { loadDealClosing } from "../crm/opportunities/deal-closing";
 import type { OwnerReview, Quote } from "../commercial/commercial.types";
 import { waitingFor, type ApprovalContext } from "./approval-sources";
+import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Fixtures are committed in their own
 // workspaces (two connections are needed for the race); every command runs as the app role under forced RLS.
@@ -114,6 +115,17 @@ integration("E3 approval engine on real Postgres (allow, deny, cross-tenant, rep
     const approved = await tenant(workspaceId, people.approver, (client) => decideApproval(client, { workspaceId, requestId: opened.id, deciderUserId: people.approver, decision: "approve", notify: false }));
     expect(approved.status).toBe("approved");
     expect(approved.steps.map((step) => [step.state, step.decidedBy])).toEqual([["done", "Dual"], ["done", "Approver"]]);
+  });
+
+  it("QA-014: tells the approver the amount as money (grouped, at the currency's precision), not a raw number", async () => {
+    await tenant(workspaceId, people.owner, (client) => seedDefaultNotificationTemplates(client, workspaceId));
+    const opened = await tenant(workspaceId, people.sales, (client) => requestApproval(client, { workspaceId, kind: "deal_file", subjectId: randomUUID(), title: "Villa 12 · Q-4",
+      amount: "99999999", currency: "AED", requesterUserId: people.sales }));
+    const bodies = await tenant(workspaceId, people.owner, async (client) => (await client.query<{ body: string }>(
+      `SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'approvals.requested' AND channel = 'in_app' AND idempotency_key LIKE $2`,
+      [workspaceId, `approvals.requested:${opened.id}:%`])).rows.map((row) => row.body));
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) expect(body).toMatch(/asks for your approval · AED 99,999,999\.00\.$/);
   });
 
   it("keeps tenants apart: another workspace neither sees nor decides the request, nor writes into it", async () => {

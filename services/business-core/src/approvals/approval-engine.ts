@@ -1,6 +1,8 @@
 import { ConflictException, ForbiddenException, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
+import { currencyDecimals } from "../catalog-core/catalog-v2.service";
+import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { LIVE_TITLE_SQL } from "./approval-titles";
 import {
@@ -557,8 +559,14 @@ export async function escalateWaitingApprovals(db: Db, workspaceId: string, now 
 
 // ---------------------------------------------------------------- notices
 
+/** "10,500.00" at the currency's precision, as the sibling notices write amounts (QA-014). */
+const grouped = (amount: string, currency: string) => {
+  const [whole, fraction] = Dec.of(amount).toFixed(currencyDecimals(currency)).split(".");
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? `.${fraction}` : ""}`;
+};
 const moneyText = (status: Pick<ApprovalStatus, "amount" | "currency" | "previousAmount">) =>
-  status.amount && status.currency ? ` · ${status.currency} ${status.previousAmount ? `${status.previousAmount} → ` : ""}${status.amount}` : "";
+  status.amount && status.currency
+    ? ` · ${status.currency} ${status.previousAmount ? `${grouped(status.previousAmount, status.currency)} → ` : ""}${grouped(status.amount, status.currency)}` : "";
 
 /** The current step's approvers (and their delegates) hear it is theirs; the requester and earlier deciders never. */
 export async function tellApprovers(db: Db, workspaceId: string, status: ApprovalStatus, actorUserId: string, now = new Date()) {
