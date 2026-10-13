@@ -2494,31 +2494,33 @@ integration("projects core (plan §6.10)", () => {
       const png = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#8a8a8a" } }).png().toBuffer(), originalname: "kitchen.png", mimetype: "image/png", size: 0 };
       site = await supervisor.uploadPhoto(actor, w.workspaceId, projectId, report, randomUUID(), png);
       mine = site.reports.find((row) => row.id === report)!;
-      site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: report, version: mine.version });
-      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_waiting'", [w.workspaceId])).rows).toEqual([{ id: w.manager }]);
-
-      // More cabinets than arrived can't be installed: it goes back to the supervisor.
-      mine = site.reports.find((row) => row.id === report)!;
-      await expect(pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: report, version: mine.version })).rejects.toThrow("Kitchen cabinets: only 3 m is at the site.");
-      site = await pm.command(actor, w.workspaceId, projectId, { action: "return", reportId: report, note: "Only 3 m arrived", version: mine.version });
-      mine = site.reports.find((row) => row.id === report)!;
+      // QA-008: more cabinets than arrived can't be installed: the supervisor hears it when submitting, not the approver later.
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: report, version: mine.version })).rejects.toThrow("Kitchen cabinets: only 3 m is at the site.");
+      expect((await w.client.query("SELECT status FROM site_reports WHERE id = $1", [report])).rows[0].status).toBe("draft");
       site = await supervisor.command(actor, w.workspaceId, projectId, { id: report, action: "save_report", reportDate: "2026-09-25", weather: "Hot", workforce: [{ trade: "Carpenters", people: 4 }],
         lines: [{ boqLineId: cabinets.id, installed: "3" }, { boqLineId: lights.id, installed: "1" }], version: mine.version });
       mine = site.reports.find((row) => row.id === report)!;
       site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: report, version: mine.version });
+      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_waiting'", [w.workspaceId])).rows).toEqual([{ id: w.manager }]);
+      // Another report can't claim the lights while this one, still waiting for approval, installs the only one.
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { id: randomUUID(), action: "save_report", reportDate: "2026-09-25", noWorkReason: "Same day",
+        lines: [{ boqLineId: lights.id, installed: "1" }] })).rejects.toThrow("Under-cabinet lights: the scope has 1 nos and 1 nos is installed or reported already, so at most 0 nos can be installed.");
       mine = site.reports.find((row) => row.id === report)!;
       site = await pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: report, version: mine.version });
       expect(site.lines.filter((line) => [cabinets.id, lights.id].includes(line.id)).map((line) => [line.title, line.installed])).toEqual([["Kitchen cabinets", "3.0000"], ["Under-cabinet lights", "1.0000"]]);
       expect((await buyer.stock.stock(actor, w.workspaceId)).rows.filter((row) => row.itemName === "Kitchen cabinets").map((row) => row.onHand)).toEqual([]);
 
-      // A correction a day later puts half a metre back; the lights can't pass their scope.
+      // A correction a day later puts half a metre back; the lights can't pass their scope (said when saving), nor more come back than went in.
       const fix = randomUUID();
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { id: fix, action: "save_report", reportDate: "2026-09-26", noWorkReason: "Snagging only",
+        lines: [{ boqLineId: cabinets.id, installed: "-0.5", note: "One door refitted" }, { boqLineId: lights.id, installed: "1" }] }))
+        .rejects.toThrow("Under-cabinet lights: the scope has 1 nos and 1 nos is installed or reported already, so at most 0 nos can be installed.");
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { id: fix, action: "save_report", reportDate: "2026-09-26", noWorkReason: "Snagging only",
+        lines: [{ boqLineId: cabinets.id, installed: "-4", note: "Removed" }] })).rejects.toThrow("Kitchen cabinets: only 3 m is installed, so no more than that can be taken back.");
       site = await supervisor.command(actor, w.workspaceId, projectId, { id: fix, action: "save_report", reportDate: "2026-09-26", noWorkReason: "Snagging only",
-        lines: [{ boqLineId: cabinets.id, installed: "-0.5", note: "One door refitted" }, { boqLineId: lights.id, installed: "1" }] });
+        lines: [{ boqLineId: cabinets.id, installed: "-0.5", note: "One door refitted" }] });
       mine = site.reports.find((row) => row.id === fix)!;
       site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: fix, version: mine.version });
-      mine = site.reports.find((row) => row.id === fix)!;
-      await expect(pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: fix, version: mine.version })).rejects.toThrow("Under-cabinet lights: the scope has 1 nos; 1 is installed already.");
 
       // The manager's own report is approved by someone else; an incident reaches the manager at once, blocked work needs who recovers it.
       await expect(pm.command(actor, w.workspaceId, projectId, { id: randomUUID(), action: "save_report", reportDate: "2026-09-26", forecast: "blocked", impact: "Tiles late" }))

@@ -240,6 +240,8 @@ export class SiteService {
       if (!["draft", "returned"].includes(report.status)) throw new ConflictException("This report is already submitted.");
       // Evidence, or why nothing was done.
       if (!report.photos.length && !report.noWorkReason) throw new ConflictException("Add a photo, or say why no work was done.");
+      // QA-008: what approving would install is checked now (within the scope, and at the site), so the approver isn't the first to find out.
+      await this.install(client, workspaceId, projectId, report, userId, true);
       // The day's progress goes onto the plan, as if it was changed there.
       const moved = [];
       for (const task of report.tasks) {
@@ -404,6 +406,9 @@ export class SiteService {
       if (Dec.of(installed).isZero()) throw new BadRequestException(`${line.title}: enter how much was installed.`);
       const note = text(row?.note, 500);
       if (Dec.of(installed).cmp(0) < 0 && !note) throw new BadRequestException(`${line.title}: a correction says why.`);
+      // QA-008: the author hears now when a line can't fit the scope, not the approver later.
+      const problem = scopeProblem(line, Dec.of(line.installed).add(line.pending), installed);
+      if (problem) throw new BadRequestException(problem);
       return { boqLineId: line.id, installed, note };
     });
     if (new Set(entries.map((entry) => entry.boqLineId)).size !== entries.length) throw new BadRequestException("Each item once per report.");
@@ -846,14 +851,17 @@ export class SiteService {
    * goods bought or made for it come out of the project's stock at its site — so nothing is installed
    * that didn't arrive. A correction puts them back.
    */
-  private async install(client: Db, workspaceId: string, projectId: string, report: Report, userId: string) {
+  /**
+   * `check`: the same checks when the author submits (QA-008), without moving stock, counting what other submitted
+   * reports install too, so an impossible line is caught before it reaches the approver.
+   */
+  private async install(client: Db, workspaceId: string, projectId: string, report: Report, userId: string, check = false) {
     const lines = await this.lines(client, workspaceId, projectId);
     const site = (await client.query<{ id: string }>(`SELECT id FROM stock_locations WHERE workspace_id = $1 AND kind = 'site' AND project_id = $2`, [workspaceId, projectId])).rows[0];
     for (const entry of report.lines) {
       const line = lines.find((item) => item.id === entry.boqLineId)!;
-      const total = Dec.of(line.installed).add(entry.installed);
-      if (total.cmp(0) < 0) throw new ConflictException(`${line.title}: only ${Dec.of(line.installed).toString()} ${line.unit} was installed before.`.replace("  ", " "));
-      if (total.cmp(line.quantity) > 0) throw new ConflictException(`${line.title}: the scope has ${Dec.of(line.quantity).toString()} ${line.unit}; ${Dec.of(line.installed).toString()} is installed already.`.replace("  ", " "));
+      const problem = scopeProblem(line, check ? Dec.of(line.installed).add(line.pending) : Dec.of(line.installed), entry.installed);
+      if (problem) throw new ConflictException(problem);
       if (!line.supply || !STOCKED.includes(line.supply)) continue;
       const { itemId, factor } = line.supply === "make"
         ? { itemId: await stockItemFor(client, workspaceId, { catalogItemId: line.catalogItemId, name: line.title, unit: line.unit }), factor: Dec.of(1) }
@@ -863,7 +871,7 @@ export class SiteService {
         const have = site ? await onHand(client, workspaceId, itemId, site.id, projectId) : Dec.ZERO;
         if (!site || have.cmp(quantity) < 0) throw new ConflictException(`${line.title}: only ${have.div(factor).round(4).toString()} ${line.unit} is at the site.`.replace("  ", " "));
       }
-      if (!site) continue;
+      if (check || !site) continue;
       await move(client, workspaceId, { batchId: report.id, itemId, locationId: site.id, projectId, kind: quantity.cmp(0) > 0 ? "issue" : "return", quantity: quantity.neg().toString(),
         forProjectId: projectId, reason: entry.note || `Installed (${report.reportDate})`, movedOn: report.reportDate, actorId: userId, siteReportLineId: entry.id });
     }
@@ -1108,6 +1116,21 @@ export class SiteService {
               (extract(hour FROM now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC')) * 60
                 + extract(minute FROM now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC')))::int AS minutes FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
   }
+}
+
+/**
+ * Why a report line can't be installed against its scope line (null when it can): more than the scope leaves, or a
+ * correction taking back more than was installed. `before` is what is installed (and, before approval, reported) already.
+ */
+export function scopeProblem(line: Pick<Line, "title" | "unit" | "quantity">, before: Dec, installed: string) {
+  const total = before.add(installed);
+  const unit = line.unit ? ` ${line.unit}` : "";
+  if (total.cmp(0) < 0) return `${line.title}: only ${before.toString()}${unit} is installed, so no more than that can be taken back.`;
+  if (total.cmp(line.quantity) > 0) {
+    const left = Dec.of(line.quantity).sub(before);
+    return `${line.title}: the scope has ${Dec.of(line.quantity).toString()}${unit} and ${before.toString()}${unit} is installed or reported already, so at most ${(left.cmp(0) > 0 ? left : Dec.ZERO).toString()}${unit} can be installed.`;
+  }
+  return null;
 }
 
 function uuid(value: unknown, label: string) {
