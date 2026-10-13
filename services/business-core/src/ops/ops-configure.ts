@@ -11,6 +11,9 @@ import { CrmLeadsService } from "../crm/leads/crm-leads.service";
 import { CreateSlaPolicyDto, UpdateSlaPolicyDto } from "../crm/leads/dto/leads.dto";
 import { normalizeSlaSchedule, SLA_DAY_KEYS } from "../crm/leads/sla-schedule";
 import { CrmSettingsService } from "../crm/settings/crm-settings.service";
+import { EnquiryFieldsService } from "../crm/settings/enquiry-fields.service";
+import { CrmClosingMessagesService } from "../crm/conversations/crm-closing-messages.service";
+import { REQUIREMENT_GATES } from "../crm/leads/enquiry-problems";
 import { DesignPackagesService } from "../design/design-packages.service";
 import { FinishesService } from "../design/finishes.service";
 import { FactoryService } from "../factory/factory.service";
@@ -694,6 +697,82 @@ const projects: Section = async (ctx, profile, step) => {
   });
 };
 
+// ---------- inbox (PLM-137) ----------
+
+type ClosingView = { version: number; formUrl: string | null; afterHours: number; messages: Array<{ kind: "received" | "form" | "closing"; text: string; custom: boolean; defaultText: string }> };
+
+const inbox: Section = async (ctx, profile, step) => {
+  const wanted = profile.inbox!;
+  const service = ctx.get(CrmClosingMessagesService);
+  const current = await service.settings(ctx.actor, ctx.workspace.id) as ClosingView;
+  const texts: Record<string, string | null> = {};
+  const changes: Change[] = [];
+  for (const [kind, text] of Object.entries(wanted.closingMessages ?? {})) {
+    const message = current.messages.find((entry) => entry.kind === kind)!;
+    const label = `closing message ${kind}`;
+    const now = message.custom ? message.text : null;
+    const next = text === null || text === message.defaultText ? null : text;
+    if (now === next) step.same(label, shown(next ?? "the product's wording"));
+    else { texts[kind] = next; changes.push(diff(label, now ?? "the product's wording", next ?? "the product's wording")); }
+  }
+  const patch: Record<string, unknown> = {};
+  if (wanted.closingFormUrl !== undefined) {
+    if ((current.formUrl ?? null) === wanted.closingFormUrl) step.same("closing form link", shown(wanted.closingFormUrl));
+    else { patch.formUrl = wanted.closingFormUrl; changes.push(diff("closing form link", current.formUrl, wanted.closingFormUrl)); }
+  }
+  if (wanted.closingAfterHours !== undefined) {
+    if (current.afterHours === wanted.closingAfterHours) step.same("Closing the chat offered after working hours", shown(wanted.closingAfterHours));
+    else { patch.afterHours = wanted.closingAfterHours; changes.push(diff("Closing the chat offered after working hours", current.afterHours, wanted.closingAfterHours)); }
+  }
+  if (changes.length) await step.change(changes, async () => {
+    const fresh = await service.settings(ctx.actor, ctx.workspace.id) as ClosingView;
+    return service.update(ctx.actor, ctx.workspace.id, { version: fresh.version, ...(Object.keys(texts).length ? { texts } : {}), ...patch });
+  });
+};
+
+// ---------- sales (PLM-155) ----------
+
+const sales: Section = async (ctx, profile, step) => {
+  const wanted = profile.sales!;
+  if (!wanted.timelineCheckTeams) return;
+  const teams = await ctx.get(WorkspacesService).listTeams(ctx.actor, ctx.workspace.id) as Array<{ code: string; status: string }>;
+  const key = (code: string) => lower(code).replace(/^team_/, "");
+  const known = wanted.timelineCheckTeams.filter((code) => teams.some((team) => key(team.code) === key(code) && team.status === "active"));
+  for (const code of wanted.timelineCheckTeams.filter((entry) => !known.includes(entry))) step.missing(`team ${code}`, "no active team with this code");
+  const leads = ctx.get(CrmLeadsService);
+  const current = await leads.salesSettings(ctx.actor, ctx.workspace.id) as { timelineCheckRoles?: string[]; version: number };
+  const next = known.map(lower).sort();
+  const now = [...(current.timelineCheckRoles ?? [])].map(lower).sort();
+  if (stable(now) === stable(next)) { step.same("timeline questions go to", shown(next)); return; }
+  await step.change([diff("timeline questions go to", now, next)], async () => {
+    const fresh = await leads.salesSettings(ctx.actor, ctx.workspace.id) as { version: number };
+    return leads.updateSalesSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, timelineCheckRoles: next });
+  });
+};
+
+// ---------- enquiry requirements (PLM-096, PLM-155) ----------
+
+const enquiryRequirements: Section = async (ctx, profile, step) => {
+  const service = ctx.get(EnquiryFieldsService);
+  type State = { rules: Record<string, Record<string, string>>; versions: Record<string, Record<string, number>> };
+  // The active enquiry types are the ones the requirement rules list ("not sure yet" has none).
+  const active = Object.keys((await service.requirements(ctx.actor, ctx.workspace.id) as State).rules).filter((code) => code !== "not_sure");
+  const gate = (at: string | undefined) => (REQUIREMENT_GATES as readonly string[]).indexOf(at ?? "never");
+  for (const rule of profile.enquiryRequirements!) {
+    const types = rule.enquiryTypes ?? active;
+    for (const type of types.filter((code) => !active.includes(code))) step.missing(`enquiry type ${type}`, "no active enquiry type with this code");
+    const state = await service.requirements(ctx.actor, ctx.workspace.id) as State;
+    const change = types.filter((type) => active.includes(type)).flatMap((type) => {
+      const now = state.rules[type]?.[rule.field];
+      // Never loosens: a field required from an earlier gate stays so.
+      if (gate(now) >= 0 && gate(now) <= gate(rule.requiredAt)) { step.same(`${rule.field} on ${type}`, `required from ${now}`); return []; }
+      return [{ enquiryType: type, requiredAt: rule.requiredAt, version: state.versions[type]?.[rule.field] ?? 0, now: now ?? "never" }];
+    });
+    if (change.length) await step.change(change.map((entry) => diff(`${rule.field} on ${entry.enquiryType}`, entry.now, entry.requiredAt)), () =>
+      service.setRequirement(ctx.actor, ctx.workspace.id, rule.field, { types: change.map(({ enquiryType, requiredAt, version }) => ({ enquiryType, requiredAt, version })) }));
+  }
+};
+
 // ---------- client updates ----------
 
 const clientUpdates: Section = async (_ctx, profile, step) => {
@@ -859,7 +938,7 @@ export const SECTIONS: Array<[ProfileSection, Section]> = [
   // Design before factory: the design team's project roles (e.g. the Creative Director) exist before the inspections name them.
   ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["quotations", quotations], ["firstResponse", firstResponse],
   ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["factory", factory], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
-  ["catalogCategories", catalogCategories], ["projects", projects], ["finishes", finishes],
+  ["catalogCategories", catalogCategories], ["projects", projects], ["finishes", finishes], ["inbox", inbox], ["sales", sales], ["enquiryRequirements", enquiryRequirements],
 ];
 
 export async function runConfigure(ctx: OpsContext, profile: Profile, report: Report) {

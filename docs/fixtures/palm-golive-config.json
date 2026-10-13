@@ -192,6 +192,15 @@
         "reports.management.view",
         "reports.management.targets"
       ]
+    },
+    {
+      "_note": "PLM-137: only the Sales Admin sends Closing the chat.",
+      "roles": [
+        "team_sales_admin"
+      ],
+      "permissions": [
+        "crm.inbox.close_chats"
+      ]
     }
   ],
   "design": {
@@ -318,5 +327,22 @@
       { "label": "Premium" },
       { "label": "Luxury" }
     ]
-  }
+  },
+  "inbox": {
+    "_note": "PLM-137: Palm's three closing messages (English). {{form_link}} is left to the firm's published enquiry form until Palm gives a link.",
+    "closingMessages": {
+      "received": "Thank you, {{name}}! Your enquiry is now with our team. An Account Manager will contact you shortly. \u2013 Palm Living Interiors",
+      "form": "Hi {{name}}, to take your enquiry forward, please complete this short form: {{form_link}}. Once we receive it, our team will be in touch.",
+      "closing": "Hi {{name}}, we haven't heard back from you, so we'll close this chat for now. If you'd like to continue with your project, simply message us here anytime and we'll be happy to help. \u2013 Palm Living Interiors"
+    },
+    "closingAfterHours": 3
+  },
+  "sales": {
+    "_note": "PLM-155: timeline questions go to the design team and Production.",
+    "timelineCheckTeams": ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"]
+  },
+  "enquiryRequirements": [
+    { "_note": "PLM-096 / PLM-155: location and the client's target completion before the Intro (plot size and floor plan are already required to book it).", "field": "area", "requiredAt": "book_intro" },
+    { "field": "targetCompletion", "requiredAt": "book_intro" }
+  ]
 }

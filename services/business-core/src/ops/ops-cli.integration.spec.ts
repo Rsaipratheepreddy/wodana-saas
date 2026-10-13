@@ -71,6 +71,10 @@ integration("operator CLI: import and configure through the app's services (real
       await client.query(`INSERT INTO legal_entities(workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone)
         VALUES($1,'OPS','Ops Studio','Ops Studio LLC','US','USD','en-US','UTC')`, [workspaceId]);
       await client.query("INSERT INTO workspace_work_packages(id,workspace_id,name,position) VALUES($1,$2,'Joinery',0)", [randomUUID(), workspaceId]);
+      // A team that answers timeline questions (PLM-155).
+      const unit = randomUUID();
+      await client.query("INSERT INTO business_units(id,workspace_id,legal_entity_id,code,name,timezone) SELECT $1,$2,id,'main','Main','UTC' FROM legal_entities WHERE workspace_id=$2 AND code='OPS'", [unit, workspaceId]);
+      await client.query("INSERT INTO workspace_teams(id,workspace_id,business_unit_id,code,name,status) VALUES($1,$2,$3,'PRODUCTION','Production','active')", [randomUUID(), workspaceId, unit]);
       const taxonomy = randomUUID();
       await client.query("INSERT INTO crm_taxonomies(id,workspace_id,code,name) VALUES($1,$2,'enquiry_type','Enquiry type')", [taxonomy, workspaceId]);
       await client.query(`INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position) VALUES($1,$2,'not_sure','Not sure yet',0),
@@ -157,8 +161,7 @@ integration("operator CLI: import and configure through the app's services (real
     expect(apply.code).toBe(0);
     expect(applied.counts.failed ?? 0).toBe(0);
     const sections = new Set(applied.lines.filter((line) => line.status === "changed").map((line) => line.section));
-    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "design", "enquiryTypes", "factory", "financeRequests", "finishes", "firstResponse", "orderPaths", "quotations",
-      "rolePermissions", "routes", "vehicles"]);
+    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "design", "enquiryRequirements", "enquiryTypes", "factory", "financeRequests", "finishes", "firstResponse", "inbox", "orderPaths", "quotations", "rolePermissions", "routes", "sales", "vehicles"]);
     // PLM-146/148/156/157: the finish categories, the gates and the sample price bands, in the workspace's currency.
     const finishes = (await pool.query<{ categories: Array<{ key: string; clientSignature: boolean }>; gate: boolean; days: number; slots: string[]; since: Date | null }>(
       `SELECT categories, specification_gate AS gate, finishes_to_qs_days AS days, material_editor_slots AS slots, signature_required_since AS since FROM workspace_finish_settings WHERE workspace_id = $1`,
@@ -175,7 +178,15 @@ integration("operator CLI: import and configure through the app's services (real
       expect.objectContaining({ section: "rolePermissions", status: "unchanged", label: "role administrator" }),
       expect.objectContaining({ section: "catalogCategories", status: "not found", label: "catalogue No such catalogue" }),
       expect.objectContaining({ section: "catalogCategories", status: "unchanged", label: "Main catalogue › delete Never there" }),
+      expect.objectContaining({ section: "inbox", status: "unchanged", label: "closing message received" }),
+      expect.objectContaining({ section: "sales", status: "not found", label: "team NO_SUCH_TEAM" }),
+      // Never loosens: email stays required from conversion on the type that asked for it.
+      expect.objectContaining({ section: "enquiryRequirements", status: "unchanged", label: "email on furniture", detail: "required from convert" }),
     ]));
+    const closing = (await pool.query<{ form: string; url: string; hours: number }>(
+      `SELECT closing_form_text AS form, closing_form_url AS url, closing_after_hours AS hours FROM crm_inbox_settings WHERE workspace_id = $1`, [workspaceId])).rows;
+    expect(closing).toEqual([{ form: "Hi {{name}}, please fill in {{form_link}} and we will call you.", url: "https://forms.example.test/enquiry", hours: 4 }]);
+    expect((await pool.query(`SELECT timeline_check_roles AS roles FROM workspace_sales_settings WHERE workspace_id = $1`, [workspaceId])).rows).toEqual([{ roles: ["production"] }]);
     // The dry run played the steps in order: the renamed category is found by its new name for its parent.
     const dryLines = dry.output.split("\n").filter((line) => line.includes("[catalogCategories]")).map((line) => line.replace(/\s+/g, " ").trim());
     expect(dryLines).toEqual([

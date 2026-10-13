@@ -155,7 +155,11 @@ export function scrubForSandbox(raw: unknown): { value: unknown; dropped: Droppe
 }
 
 /** Settings a sandbox always has, whatever the profile says: finance requests stay inside Wodana (no outside inbox). */
-const SANDBOX_OVERRIDES: Array<{ section: string; key: string; value: unknown }> = [{ section: "financeRequests", key: "inbox", value: null }];
+const SANDBOX_OVERRIDES: Array<{ section: string; key: string; value: unknown }> = [
+  { section: "financeRequests", key: "inbox", value: null },
+  // A sandbox chats in the product's wording: the firm's own closing messages are signed with its name (PLM-137).
+  { section: "inbox", key: "closingMessages", value: { received: null, form: null, closing: null } },
+];
 
 /** A configuration profile ready for a sandbox: scrubbed, then the sandbox overrides on the sections it has. */
 export function sandboxProfile(raw: unknown): { profile: unknown; dropped: Dropped[] } {
@@ -163,7 +167,7 @@ export function sandboxProfile(raw: unknown): { profile: unknown; dropped: Dropp
   if (!isObject(value)) return { profile: value, dropped };
   for (const override of SANDBOX_OVERRIDES) {
     const section = value[override.section];
-    if (isObject(section)) section[override.key] = override.value;
+    if (isObject(section)) section[override.key] = structuredClone(override.value);
   }
   return { profile: value, dropped };
 }

@@ -88,6 +88,19 @@ export type Profile = {
     categories?: Array<{ key: string; label: string; clientSignature: boolean }>; specificationGate?: boolean; finishesToQsDays?: number; materialEditors?: string[];
     priceBands?: Array<{ label: string; minAmount: string | null; maxAmount: string | null }>;
   };
+  /**
+   * The inbox (PLM-137): the three closing messages' texts ({{name}}, {{form_link}}; null keeps the product's wording),
+   * the enquiry form link {{form_link}} fills (null: the firm's first published form), and the working hours without a
+   * reply before "Closing the chat" is offered.
+   */
+  inbox?: { closingMessages?: { received?: string | null; form?: string | null; closing?: string | null }; closingFormUrl?: string | null; closingAfterHours?: number };
+  /** Sales (PLM-155): the teams (by code) whose people answer timeline questions on an opportunity. */
+  sales?: { timelineCheckTeams?: string[] };
+  /**
+   * Enquiry fields required from a gate (PLM-096, PLM-155), for every enquiry type unless some are named. A field already
+   * required from an earlier gate stays so (the profile never loosens a rule).
+   */
+  enquiryRequirements?: Array<{ field: string; requiredAt: "create" | "convert" | "book_intro"; enquiryTypes?: string[] }>;
 };
 
 export const DESIGN_STEP_KEYS = ["allocationDays", "kickoffDays", "conceptDays", "siteMeasureDays", "developmentMinDays", "developmentMaxDays", "developmentDaysPerRoom",
@@ -97,7 +110,7 @@ export const DESIGN_TEAM_KEYS = ["lead_designer", "junior_designer", "sales_admi
 export type DesignTeamKey = (typeof DESIGN_TEAM_KEYS)[number];
 
 export const PROFILE_SECTIONS = ["enquiryTypes", "vehicles", "factory", "quotations", "firstResponse", "financeRequests", "approvals", "routes", "rolePermissions",
-  "design", "orderPaths", "clientUpdates", "catalogCategories", "projects", "finishes"] as const;
+  "design", "orderPaths", "clientUpdates", "catalogCategories", "projects", "finishes", "inbox", "sales", "enquiryRequirements"] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 export const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -544,6 +557,51 @@ export function validateProfile(raw: unknown): Profile {
       };
       profile.finishes = Object.fromEntries(Object.entries(finishes).filter(([, value]) => value !== undefined));
     }
+  }
+
+  if (raw.inbox !== undefined) {
+    const section = at("inbox").object(raw.inbox, ["closingMessages", "closingFormUrl", "closingAfterHours"]);
+    if (section) {
+      const texts = section.closingMessages === undefined ? undefined : at("inbox.closingMessages").object(section.closingMessages, ["received", "form", "closing"]);
+      const closingMessages = texts ? Object.fromEntries((["received", "form", "closing"] as const).flatMap((kind) => {
+        const value = nullable(texts, kind, (entry) => {
+          const text = at(`inbox.closingMessages.${kind}`).text(entry, 1024);
+          if (text && /\{\{\s*(?!name\b|form_link\b)[a-z_]+\s*\}\}/.test(text)) problems.push(`inbox.closingMessages.${kind} can fill {{name}} and {{form_link}} only.`);
+          return text ?? null;
+        });
+        return value === undefined ? [] : [[kind, value]];
+      })) : undefined;
+      const inbox: NonNullable<Profile["inbox"]> = {
+        closingMessages,
+        closingFormUrl: nullable(section, "closingFormUrl", (value) => {
+          if (typeof value !== "string" || !/^https:\/\/\S{3,}$/.test(value.trim())) { problems.push("inbox.closingFormUrl is a full https:// link, or null."); return null; }
+          return value.trim();
+        }),
+        closingAfterHours: optional(section, "closingAfterHours", (value) => at("inbox.closingAfterHours").int(value, 1, 72)),
+      };
+      profile.inbox = Object.fromEntries(Object.entries(inbox).filter(([, value]) => value !== undefined));
+    }
+  }
+
+  if (raw.sales !== undefined) {
+    const section = at("sales").object(raw.sales, ["timelineCheckTeams"]);
+    if (section) {
+      const teams = optional(section, "timelineCheckTeams", (value) => at("sales.timelineCheckTeams").texts(value, 64));
+      if (teams?.some((code) => !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(code))) problems.push("sales.timelineCheckTeams are team codes like INTERIOR_DESIGN.");
+      profile.sales = teams === undefined ? {} : { timelineCheckTeams: teams };
+    }
+  }
+
+  if (raw.enquiryRequirements !== undefined) {
+    profile.enquiryRequirements = at("enquiryRequirements").list(raw.enquiryRequirements, 50).flatMap((entry, index) => {
+      const path = `enquiryRequirements[${index}]`;
+      const object = at(path).object(entry, ["field", "requiredAt", "enquiryTypes"]);
+      if (!object) return [];
+      const field = at(`${path}.field`).text(object.field, 80);
+      const requiredAt = at(`${path}.requiredAt`).oneOf(object.requiredAt, ["create", "convert", "book_intro"] as const);
+      const enquiryTypes = optional(object, "enquiryTypes", (value) => at(`${path}.enquiryTypes`).texts(value, 100));
+      return field && requiredAt ? [{ field, requiredAt, ...(enquiryTypes ? { enquiryTypes } : {}) }] : [];
+    });
   }
 
   if (raw.clientUpdates !== undefined) {

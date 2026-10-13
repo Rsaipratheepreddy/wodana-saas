@@ -78,6 +78,8 @@ describe("what never reaches a sandbox", () => {
     expect(valid.financeRequests?.paymentMethods).toHaveLength(3);
     expect(valid.vehicles).toHaveLength(9);
     expect(valid.routes).toHaveLength(1);
+    expect(valid.inbox).toEqual({ closingMessages: { received: null, form: null, closing: null }, closingAfterHours: 3 });
+    expect(JSON.stringify((profile as { inbox: unknown }).inbox)).not.toContain("Palm Living");
   });
 
   it("drops integration settings, credentials, web addresses, phone numbers and bank accounts anywhere, and lists each", () => {

@@ -160,6 +160,22 @@ describe("route changes", () => {
     expect(validateProfile({ finishes: { specificationGate: false } }).finishes).toEqual({ specificationGate: false });
   });
 
+  it("reads the inbox closing messages, the timeline teams and the enquiry requirements (PLM-137, PLM-155)", () => {
+    const palm = validateProfile(json("../../../../docs/fixtures/palm-golive-config.json"));
+    expect(palm.inbox?.closingAfterHours).toBe(3);
+    expect(Object.keys(palm.inbox?.closingMessages ?? {})).toEqual(["received", "form", "closing"]);
+    expect(palm.inbox?.closingMessages?.form).toContain("{{form_link}}");
+    expect(palm.sales).toEqual({ timelineCheckTeams: ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"] });
+    expect(palm.enquiryRequirements).toEqual([{ field: "area", requiredAt: "book_intro" }, { field: "targetCompletion", requiredAt: "book_intro" }]);
+    expect(palm.rolePermissions).toContainEqual({ roles: ["team_sales_admin"], permissions: ["crm.inbox.close_chats"] });
+    expect(validateProfile({ inbox: { closingMessages: { received: null } } })).toEqual({ inbox: { closingMessages: { received: null } } });
+    expect(problems({ inbox: { closingMessages: { closing: "Hi {{client}}" }, closingFormUrl: "palm.example/form", closingAfterHours: 0 },
+      sales: { timelineCheckTeams: ["Interior design"] }, enquiryRequirements: [{ field: "area", requiredAt: "later" }] })).toEqual([
+      "inbox.closingMessages.closing can fill {{name}} and {{form_link}} only.", "inbox.closingFormUrl is a full https:// link, or null.",
+      "inbox.closingAfterHours is a whole number from 1 to 72.", "sales.timelineCheckTeams are team codes like INTERIOR_DESIGN.",
+      "enquiryRequirements[0].requiredAt is one of create, convert, book_intro."]);
+  });
+
   it("reports a stage it can't place", () => {
     const plan = planRoute(template, { ...change, addStages: [{ ...change.addStages[0], before: "Nowhere" }], addChecks: [{ stage: "Ghost", checks: [] }] }, roles);
     expect(plan.changes).toEqual([]);

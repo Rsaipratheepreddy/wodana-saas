@@ -60,5 +60,16 @@
     "categories": [{ "key": "tiles", "label": "Tiles" }, { "key": "appliances", "label": "Appliances", "clientSignature": true }],
     "specificationGate": true, "finishesToQsDays": 4, "materialEditors": ["lead_designer", "sales_admin"],
     "priceBands": [{ "label": "Budget", "maxAmount": "50" }, { "label": "Premium", "minAmount": "200" }]
-  }
+  },
+  "inbox": {
+    "closingMessages": { "received": null, "form": "Hi {{name}}, please fill in {{form_link}} and we will call you." },
+    "closingFormUrl": "https://forms.example.test/enquiry",
+    "closingAfterHours": 4
+  },
+  "sales": { "timelineCheckTeams": ["PRODUCTION", "NO_SUCH_TEAM"] },
+  "enquiryRequirements": [
+    { "field": "targetCompletion", "requiredAt": "book_intro" },
+    { "field": "email", "requiredAt": "convert", "enquiryTypes": ["furniture"] },
+    { "field": "email", "requiredAt": "book_intro" }
+  ]
 }
