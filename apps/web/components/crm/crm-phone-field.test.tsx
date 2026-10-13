@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { CrmPhoneField } from "./crm-phone-field";
 
@@ -57,6 +57,52 @@ describe("CRM phone country picker", () => {
     const input = screen.getByRole("textbox", { name: /Mobile/ });
     await user.type(input, "5012345678");
     await user.tab();
-    expect(await screen.findByText(/Too long: United Arab Emirates mobile numbers are 9 digits after \+971/)).toBeInTheDocument();
+    expect(await screen.findByText("Enter a valid mobile number for United Arab Emirates (9 digits)")).toBeInTheDocument();
+  });
+
+  it("checks against the selected country: exactly its mobile length, and again at once when the country changes", async () => {
+    const user = userEvent.setup();
+    render(<Example initialCountry="IN" />);
+    const input = screen.getByRole("textbox", { name: /Mobile/ });
+    await user.type(input, "987654321");
+    await user.tab();
+    expect(await screen.findByText("Enter a valid mobile number for India (10 digits)")).toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    // One digit more is a valid Indian mobile: the error goes as the number is typed.
+    await user.type(input, "0");
+    expect(screen.queryByText(/Enter a valid mobile number/)).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+    // Eleven digits is too many.
+    await user.type(input, "1");
+    expect(screen.getByText("Enter a valid mobile number for India (10 digits)")).toBeInTheDocument();
+    await user.type(input, "{Backspace}");
+    await user.tab();
+    expect(screen.queryByText(/Enter a valid mobile number/)).not.toBeInTheDocument();
+    // The same ten digits are not a UAE mobile: changing the country shows it straight away.
+    await user.click(screen.getByRole("button", { name: "Mobile country code" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search country or code" }), "United Arab");
+    await user.click(screen.getByRole("option", { name: /United Arab Emirates/ }));
+    expect(await screen.findByText("Enter a valid mobile number for United Arab Emirates (9 digits)")).toBeInTheDocument();
+  });
+
+  it("blocks the form's save while the number is invalid", async () => {
+    const user = userEvent.setup();
+    const submitted = vi.fn();
+    function Form() {
+      const [country, setCountry] = useState("IN");
+      const [value, setValue] = useState("");
+      return <DesignSystemProvider><form onSubmit={(event) => { event.preventDefault(); submitted(); }}>
+        <CrmPhoneField label="Mobile" value={value} onChange={setValue} countryCode={country} onCountryChange={setCountry} />
+        <button type="submit">Save</button>
+      </form></DesignSystemProvider>;
+    }
+    render(<Form />);
+    await user.type(screen.getByRole("textbox", { name: /Mobile/ }), "98765");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(submitted).not.toHaveBeenCalled();
+    expect(await screen.findByText("Enter a valid mobile number for India (10 digits)")).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: /Mobile/ }), "43210");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(submitted).toHaveBeenCalledOnce();
   });
 });

@@ -15108,5 +15108,8 @@
   "Send the closing message to a quiet chat": "Send the closing message to a quiet chat",
   "Clear a wrong spam flag": "Clear a wrong spam flag",
   "Mark 1 chat unresolved": "Mark 1 chat unresolved",
-  "Mark {count} chats unresolved": "Mark {count} chats unresolved"
+  "Mark {count} chats unresolved": "Mark {count} chats unresolved",
+  "Enter a valid mobile number for {country} ({digits} digits)": "Enter a valid mobile number for {country} ({digits} digits)",
+  "Enter a valid phone number for {country}": "Enter a valid phone number for {country}",
+  "Use letters and spaces only": "Use letters and spaces only"
 }

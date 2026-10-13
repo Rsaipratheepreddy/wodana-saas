@@ -6,7 +6,7 @@ import { ChevronDown } from "lucide-react";
 import { getExampleNumber, isSupportedCountry, type CountryCode } from "libphonenumber-js/max";
 import mobileExamples from "libphonenumber-js/examples.mobile.json";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { groupNational, joinPhone, phoneCountry, phoneCountryOptions, phoneProblem, splitPhone, toE164 } from "@/lib/phone";
+import { groupNational, joinPhone, phoneCountry, phoneCountryOptions, phoneProblem, phoneProblemText, splitPhone, toE164 } from "@/lib/phone";
 import { countryFromLocale } from "@/lib/workspace/region-labels";
 import { useDesignSystem } from "../foundations/provider";
 import { SearchInput, TextInput } from "./forms";
@@ -28,6 +28,8 @@ export type PhoneFieldProps = {
   autoFocus?: boolean;
   /** Warns under the field without blocking the save (an existing client with this number). */
   notice?: ReactNode;
+  /** A problem the form found itself (required, or refused by the server); shown as the field's error. */
+  errorMessage?: string;
 };
 
 /**
@@ -35,7 +37,7 @@ export type PhoneFieldProps = {
  * against that country, and a pasted or stored international number never repeats the code. Until a
  * country is chosen, the workspace region's country is used (and kept once a number is typed).
  */
-export function PhoneField({ label, value, onChange, countryCode: chosenCountry, onCountryChange, locale: localeProp, isRequired, kind = "mobile", description, isDisabled, isReadOnly, autoFocus, notice }: PhoneFieldProps) {
+export function PhoneField({ label, value, onChange, countryCode: chosenCountry, onCountryChange, locale: localeProp, isRequired, kind = "mobile", description, isDisabled, isReadOnly, autoFocus, notice, errorMessage }: PhoneFieldProps) {
   const t = useT();
   const { portalContainer, locale: regionLocale, regionLocale: workspaceLocale } = useDesignSystem();
   const locale = localeProp ?? regionLocale;
@@ -70,18 +72,21 @@ export function PhoneField({ label, value, onChange, countryCode: chosenCountry,
   };
   const tidy = () => {
     setDraft(null);
+    if (value.trim()) setTouched(true);
     const next = splitPhone(value, countryCode);
     if (next.national !== value) onChange(next.national);
   };
 
   const example = countryCode && isSupportedCountry(countryCode) ? getExampleNumber(countryCode as CountryCode, mobileExamples) : undefined;
-  const validate = (current: string) => phoneProblem(current, countryCode, {
-    tooShort: (country, code, digits) => t("Too short: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
-    tooLong: (country, code, digits) => t("Too long: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
-    invalid: (country) => t("Not a valid number for {country}", { country }),
-    notMobile: (country) => t("Not a mobile number for {country}", { country }),
-    chooseCountry: t("Choose the country code"),
-  }, { mobile: kind === "mobile", locale });
+  // Checked against the country chosen now. The same check blocks a save (the browser's validity) and, once the person
+  // has left the field or changed the country, shows under it and follows every change of the number or the country.
+  const problem = isReadOnly || isDisabled ? null : phoneProblem(value, countryCode, phoneProblemText(t), { mobile: kind === "mobile", locale });
+  const [touched, setTouched] = useState(false);
+  const [checkedCountry, setCheckedCountry] = useState(countryCode);
+  if (checkedCountry !== countryCode) { setCheckedCountry(countryCode); if (value.trim()) setTouched(true); }
+  const shownError = errorMessage || (touched && problem ? problem : undefined);
+  // Shown: invalid with this message. Touched and valid: valid now, whatever an earlier check left on screen.
+  const isInvalid = shownError ? true : touched && value.trim() ? false : undefined;
 
   const picker = <DialogTrigger isOpen={open} onOpenChange={(next) => { setOpen(next); if (!next) setSearch(""); }}>
     <AriaButton aria-label={t("{label} country code", { label })} className="wd-phone-code">
@@ -105,7 +110,7 @@ export function PhoneField({ label, value, onChange, countryCode: chosenCountry,
   </DialogTrigger>;
 
   const field = <TextInput autoFocus={autoFocus} description={description} inputType="tel" isDisabled={isDisabled} isReadOnly={isReadOnly} isRequired={isRequired} label={label} onFocus={() => setDraft(shown)} onBlur={tidy} onChange={type}
-    placeholder={example ? example.formatNational() : undefined} prefix={picker} validate={validate} value={shown} />;
+    placeholder={example ? example.formatNational() : undefined} prefix={picker} validate={() => problem} value={shown} errorMessage={shownError} isInvalid={isInvalid} />;
   return notice ? <div className="wd-field-with-notice">{field}<div aria-live="polite" className="wd-field-notice">{notice}</div></div> : field;
 }
 

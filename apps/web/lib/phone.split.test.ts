@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { groupNational, phoneProblem, splitPhone } from "./phone";
+import { groupNational, phoneDigits, phoneProblem, splitPhone } from "./phone";
 
 const text = {
-  tooShort: (c: string, code: string, n: number) => `Too short: ${c} numbers are ${n} digits after ${code}`,
-  tooLong: (c: string, code: string, n: number) => `Too long: ${c} numbers are ${n} digits after ${code}`,
-  invalid: (c: string) => `Not a valid ${c} number`,
-  notMobile: (c: string) => `Not a ${c} mobile number`,
+  mobile: (c: string, digits: string) => `Enter a valid mobile number for ${c} (${digits} digits)`,
+  phone: (c: string) => `Enter a valid phone number for ${c}`,
   chooseCountry: "Choose the country code",
 };
 
@@ -29,15 +27,24 @@ describe("splitPhone", () => {
 });
 
 describe("phoneProblem", () => {
-  it("explains length problems per country (PLM-021)", () => {
-    expect(phoneProblem("5012345678", "AE", text, { mobile: true })).toMatch(/^Too long: United Arab Emirates numbers are 9 digits after \+971/);
-    expect(phoneProblem("50123", "AE", text, { mobile: true })).toMatch(/^Too short/);
+  it("explains length problems per country with the digit count from the metadata (PLM-021)", () => {
+    expect(phoneProblem("5012345678", "AE", text, { mobile: true, locale: "en" })).toBe("Enter a valid mobile number for United Arab Emirates (9 digits)");
+    expect(phoneProblem("50123", "AE", text, { mobile: true, locale: "en" })).toBe("Enter a valid mobile number for United Arab Emirates (9 digits)");
+    expect(phoneDigits("IN", { mobile: true })).toBe("10");
+    expect(phoneDigits("DE", { mobile: true })).toBe("10–11");
+  });
+  it("accepts exactly a country's mobile length and refuses one digit less or more", () => {
+    expect(phoneProblem("9876543210", "IN", text, { mobile: true, locale: "en" })).toBeNull();
+    expect(phoneProblem("987654321", "IN", text, { mobile: true, locale: "en" })).toBe("Enter a valid mobile number for India (10 digits)");
+    expect(phoneProblem("98765432101", "IN", text, { mobile: true, locale: "en" })).toBe("Enter a valid mobile number for India (10 digits)");
+    expect(phoneProblem("98765abc10", "IN", text, { mobile: true, locale: "en" })).toBe("Enter a valid mobile number for India (10 digits)");
   });
   it("accepts valid mobiles and rejects a landline in a mobile field", () => {
     expect(phoneProblem("501234567", "AE", text, { mobile: true })).toBeNull();
     expect(phoneProblem("7780768279", "IN", text, { mobile: true })).toBeNull();
-    expect(phoneProblem("43001234", "AE", text, { mobile: true })).toBe("Not a United Arab Emirates mobile number");
+    expect(phoneProblem("43001234", "AE", text, { mobile: true, locale: "en" })).toBe("Enter a valid mobile number for United Arab Emirates (9 digits)");
     expect(phoneProblem("43001234", "AE", text)).toBeNull();
+    expect(phoneProblem("4300", "AE", text, { locale: "en" })).toBe("Enter a valid phone number for United Arab Emirates");
   });
   it("asks for a country when none is chosen", () => {
     expect(phoneProblem("501234567", "", text)).toBe("Choose the country code");

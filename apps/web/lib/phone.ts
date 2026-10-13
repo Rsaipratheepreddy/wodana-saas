@@ -1,6 +1,5 @@
-import { getCountries, getCountryCallingCode, getExampleNumber, isSupportedCountry, parsePhoneNumberFromString, validatePhoneNumberLength, type CountryCode } from "libphonenumber-js/max";
-import mobileExamples from "libphonenumber-js/examples.mobile.json";
-import { tKey } from "@/lib/i18n/keys";
+import { getCountries, getCountryCallingCode, isSupportedCountry, Metadata, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/max";
+import { tKey, type Translate } from "@/lib/i18n/keys";
 
 /** Resolve a contact's country first, then the workspace locale. Never guess a country from digits alone. */
 export function phoneCountry(contactCountry?: string | null, workspaceLocale?: string | null): CountryCode | undefined {
@@ -82,38 +81,64 @@ export function splitPhone(raw: string, country?: string | null): { country: str
   return { country: current, national: trimmed };
 }
 
-type PhoneProblemText = {
-  tooShort: (country: string, code: string, digits: number) => string;
-  tooLong: (country: string, code: string, digits: number) => string;
-  invalid: (country: string) => string;
-  notMobile: (country: string) => string;
+export type PhoneProblemText = {
+  /** A mobile that isn't valid for the country: "Enter a valid mobile number for India (10 digits)". */
+  mobile: (country: string, digits: string) => string;
+  /** Any other number that isn't valid for the country. */
+  phone: (country: string) => string;
   chooseCountry: string;
 };
 
-/** Checks a local number against the selected country; returns a message for the person, or null. */
+/** The one wording every form uses for a number that does not fit its country. */
+export function phoneProblemText(t: Translate): PhoneProblemText {
+  return {
+    mobile: (country, digits) => t("Enter a valid mobile number for {country} ({digits} digits)", { country, digits }),
+    phone: (country) => t("Enter a valid phone number for {country}", { country }),
+    chooseCountry: t("Choose the country code"),
+  };
+}
+
+const MOBILE_TYPES = new Set(["MOBILE", "FIXED_LINE_OR_MOBILE", "PERSONAL_NUMBER"]);
+/** Digits and the separators people type between them; anything else (letters, symbols) is never a number. */
+const PHONE_CHARACTERS = /^\+?[\d\s().-]+$/;
+
+type TypedPlan = { possibleLengths(): number[]; type?: (kind: string) => { possibleLengths(): number[] | undefined } | undefined };
+
+/**
+ * How many digits a country's numbers have after its calling code, from the library's metadata (never a table of
+ * our own): "10" for an Indian mobile, "10–11" where a country has more than one length.
+ */
+export function phoneDigits(country: string, options: { mobile?: boolean } = {}): string {
+  const upper = country.toUpperCase();
+  if (!isSupportedCountry(upper)) return "";
+  const metadata = new Metadata();
+  metadata.selectNumberingPlan(upper as CountryCode);
+  const plan = metadata.numberingPlan as TypedPlan | undefined;
+  const lengths = (options.mobile ? plan?.type?.("MOBILE")?.possibleLengths() : undefined) ?? plan?.possibleLengths() ?? [];
+  if (!lengths.length) return "";
+  const min = Math.min(...lengths), max = Math.max(...lengths);
+  return min === max ? String(min) : `${min}–${max}`;
+}
+
+function countryName(country: string, locale?: string) {
+  try { return new Intl.DisplayNames(locale ? [locale] : [], { type: "region" }).of(country) ?? country; } catch { return country; }
+}
+
+/**
+ * Checks a local number against the selected country; returns one line for the person, or null. A mobile must be a
+ * valid mobile number of that country (so exactly its length); any other number must be valid there.
+ */
 export function phoneProblem(national: string, country: string, text: PhoneProblemText, options: { mobile?: boolean; locale?: string } = {}): string | null {
   const value = national.trim();
   if (!value) return null;
   const upper = country.toUpperCase();
   if (!upper || !isSupportedCountry(upper)) return text.chooseCountry;
-  const code = `+${getCountryCallingCode(upper as CountryCode)}`;
-  let name: string = upper;
-  try { name = new Intl.DisplayNames(options.locale ? [options.locale] : [], { type: "region" }).of(upper) ?? upper; } catch { /* keep the code */ }
-  const example = getExampleNumber(upper as CountryCode, mobileExamples);
-  const expected = example ? String(example.nationalNumber).length : 0;
-  const length = validatePhoneNumberLength(value, upper as CountryCode);
-  if (length === "TOO_SHORT") return text.tooShort(name, code, expected);
-  if (length === "TOO_LONG") return text.tooLong(name, code, expected);
+  const wrong = () => options.mobile ? text.mobile(countryName(upper, options.locale), phoneDigits(upper, { mobile: true })) : text.phone(countryName(upper, options.locale));
+  if (!PHONE_CHARACTERS.test(value)) return wrong();
   const parsed = parsePhoneNumberFromString(value, { defaultCountry: upper as CountryCode, extract: false });
-  if (!parsed?.isValid() || (parsed.country && parsed.country !== upper)) {
-    // Some countries allow longer numbers of other types; for a mobile, compare with the mobile length.
-    const digits = value.replace(/\D/g, "").replace(/^0+/, "").length;
-    if (options.mobile && expected && digits > expected) return text.tooLong(name, code, expected);
-    if (options.mobile && expected && digits < expected) return text.tooShort(name, code, expected);
-    return text.invalid(name);
-  }
+  if (!parsed?.isValid() || (parsed.country && parsed.country !== upper)) return wrong();
   const type = parsed.getType();
-  if (options.mobile && type && !["MOBILE", "FIXED_LINE_OR_MOBILE", "PERSONAL_NUMBER"].includes(type)) return text.notMobile(name);
+  if (options.mobile && type && !MOBILE_TYPES.has(type)) return wrong();
   return null;
 }
 
