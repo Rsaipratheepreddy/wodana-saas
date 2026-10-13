@@ -101,6 +101,8 @@ export type BuilderState = {
   brand: { name: string; logo: string; primaryColor: string; accentColor: string };
   client: { name: string; project: string; address: string | null };
   canEdit: boolean; canEditCosts: boolean; canViewCosts: boolean;
+  /** Can change the lines' prices (rate, cost, markup, build-up): whoever edits the quote, and the QS while it is with them. */
+  canPrice?: boolean;
   /** A change request's variation: its change moves it on (approval, sending, the client's decision). */
   changeRequest?: { id: string; reference: string; status: string; projectId: string | null } | null;
   /** The project this quote belongs to once it has started, and the sealed name a variation got when applied. */

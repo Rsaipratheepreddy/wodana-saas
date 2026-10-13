@@ -38,12 +38,14 @@ function ImageCell({ url, canEdit, title, onPick }: { url: string | null; canEdi
 /** Which optional columns the table shows. */
 export type RowColumns = { picture: boolean; size: boolean; material: boolean };
 
-export function QuoteRow({ line, draft, serial, column, columns, customColumns = [], areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, onPasteRows, flash }: {
+export function QuoteRow({ line, draft, serial, column, columns, customColumns = [], areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canPrice = canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, onPasteRows, flash }: {
   line: BuilderLine; draft?: boolean; serial?: number; column: RowColumn; columns: RowColumns; areas: Option[]; trades: Option[];
   /** The firm's own columns, after material. */
   customColumns?: QuoteColumn[];
   units?: Array<{ code: string; label: string }>; materials?: string[]; sizeUnit?: string;
   amount: string | null; currency: string; decimals: number; canEdit: boolean;
+  /** The rate can be changed (the QS pricing a quotation that is with them, without editing its items). */
+  canPrice?: boolean;
   /** The assistant can be asked about this line (⌘K). */
   canAsk?: boolean;
   /** The line's picture (its own or its catalog item's). */
@@ -115,7 +117,7 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
     </span>
     <span role="gridcell" className={styles.numberCell} data-stick="rate">
       {line.pricingMode === "build_up" ? <button type="button" className={styles.formulaChip} onClick={onOpen} data-error={line.buildUpComplete === false || undefined}><Sigma aria-hidden="true" size={12} />{plain(line.rate, locale, decimals)}</button>
-        : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!canEdit || draft || line.kind === "client_supplied" || fixed} numeric onCommit={(value) => onChange({ rate: value })} />}
+        : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!(canEdit || canPrice) || draft || line.kind === "client_supplied" || fixed} numeric onCommit={(value) => onChange({ rate: value })} />}
     </span>
     <span role="gridcell" className={styles.amountCell} data-stick="amount">{draft ? "" : money(amount, currency, decimals, locale)}</span>
     <span role="gridcell" className={`${styles.menuCell} ${styles.gutter}`} data-stick="menu">

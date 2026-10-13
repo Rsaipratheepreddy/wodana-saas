@@ -20,7 +20,7 @@ import { priceQuote, PricingError, type PricingPolicy, type QuoteDiscountInput }
 import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
 import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } from "./proposal-kit";
 import { MARKUP_DISCLOSURES, type MarkupDisclosure } from "../proposals/markup-disclosure";
-import { touchesQsFields } from "../proposals/qs-review.domain";
+import { QS_FIELDS, touchesQsFields } from "../proposals/qs-review.domain";
 import { QS_ITEM_TYPES, QS_SCOPES, qsRequirement, quoteReviewAction, type QsItemType, type QsScope } from "../proposals/qs-requirement";
 
 type Db = PoolClient;
@@ -277,20 +277,43 @@ export class QuotationBuilderService {
    * whole batch is refused with the line as it is now, so the editor can merge.
    */
   apply(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { ops?: unknown }) {
-    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      await this.applyOps(client, workspaceId, caseId, quoteId, user.userId, input.ops);
+    return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => {
+      // PLM-082/084: a QS prices the quotation that is with them without the planning edit permission;
+      // they change its prices only (the items and quantities stay with Sales).
+      const priceOnly = !(await this.access.hasPermission(client, workspaceId, user.userId, EDIT));
+      if (priceOnly && !(await this.qsPricing(client, workspaceId, caseId, quoteId, user.userId)))
+        throw new ForbiddenException(`Permissions required: ${VIEW}, ${EDIT}`);
+      await this.applyOps(client, workspaceId, caseId, quoteId, user.userId, input.ops, { priceOnly });
       return this.state(client, workspaceId, caseId, quoteId, user.userId);
     });
   }
 
   /**
+   * Whether this person prices the quotation as its QS now (PLM-082/084): it is with the QS (an open review)
+   * and they price quotations (commercial.estimate; the review's assignee always does).
+   */
+  private async qsPricing(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string) {
+    const open = (await client.query(
+      `SELECT 1 FROM quote_qs_reviews WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND status = 'with_qs' LIMIT 1`, [workspaceId, caseId, quoteId])).rowCount;
+    return Boolean(open) && await this.access.hasPermission(client, workspaceId, userId, QS_PERMISSION);
+  }
+
+  /** Who enters costs and markup: cost managers, and the QS (who sees costs) on the quotation they price. */
+  private async costEditor(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string) {
+    if (await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.manage")) return true;
+    return await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.view") && await this.qsPricing(client, workspaceId, caseId, quoteId, userId);
+  }
+
+  /**
    * The same line commands in the caller's transaction, for a module that owns the quotation it fills (a change
    * request prices its variation here). The caller has checked who may; the quotation must still be a draft.
+   * `priceOnly`: the QS pricing a quotation that is with them changes prices only (assertPriceOnly).
    */
-  async applyOps(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string, ops: unknown) {
+  async applyOps(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string, ops: unknown, options: { priceOnly?: boolean } = {}) {
     const { quote } = await this.editable(client, workspaceId, caseId, quoteId, userId);
     if (!Array.isArray(ops) || !ops.length || ops.length > 200) throw new BadRequestException("Send 1 to 200 changes.");
-    const canEditCosts = await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.manage");
+    if (options.priceOnly) assertPriceOnly(ops);
+    const canEditCosts = await this.costEditor(client, workspaceId, caseId, quoteId, userId);
     const settings = await readSettings(client, workspaceId);
     // PLM-082: where the QS prices quotations, the price fields are theirs (a catalog pick still fills them).
     // Only where this quotation needs the QS (the firm's rules, qs-requirement.ts); others read the QS's lines.
@@ -362,6 +385,7 @@ export class QuotationBuilderService {
         const fields = object(op.line);
         const id = lineId(fields.id);
         const current = await readLine(client, workspaceId, caseId, quoteId, id, true);
+        if (options.priceOnly && !current) throw new ForbiddenException("Sales adds the items; you price the lines on the quotation.");
         if (qsPrices && priceChanged(current, fields))
           throw new ForbiddenException("The QS sets the prices on this quotation. Change the items and quantities; the QS prices them.");
         if (current && fields.version === undefined) throw new BadRequestException("Send the version of the line you edited.");
@@ -743,9 +767,11 @@ export class QuotationBuilderService {
   private async state(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string) {
     const quote = await readQuote(client, workspaceId, caseId, quoteId);
     const settings = await readSettings(client, workspaceId);
-    const canEditCosts = await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.manage");
+    const canEditCosts = await this.costEditor(client, workspaceId, caseId, quoteId, userId);
     const canViewCosts = canEditCosts || await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.view");
     const canEdit = quote.status === "draft" && await this.access.hasPermission(client, workspaceId, userId, EDIT);
+    // PLM-082/084: the QS prices the lines of a quotation that is with them (rate, cost, markup, build-up).
+    const canPrice = canEdit || (quote.status === "draft" && await this.qsPricing(client, workspaceId, caseId, quoteId, userId));
     const decimals = currencyDecimals(quote.currency);
     const lines = await readLines(client, workspaceId, caseId, quoteId);
     const components = await readComponents(client, workspaceId, caseId, quoteId, null);
@@ -821,7 +847,7 @@ export class QuotationBuilderService {
            FROM pre_project_cases pre_case JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
            LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
           WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null },
-      canEdit, canEditCosts, canViewCosts,
+      canEdit, canPrice, canEditCosts, canViewCosts,
       // Extending a sent or expired quote's validity is the sender's step (Q-7).
       canEditValidity: ["issued", "expired"].includes(quote.status) && await this.access.hasPermission(client, workspaceId, userId, EDIT),
       requirements: await caseRequirements(client, workspaceId, caseId),
@@ -1284,6 +1310,20 @@ export async function acceptedScope(db: Db, workspaceId: string, caseId: string,
   };
 }
 export type AcceptedScope = Awaited<ReturnType<typeof acceptedScope>>;
+
+/**
+ * PLM-082/084: the QS's changes to a quotation that is with them are prices only: the rate, cost, markup and
+ * build-up of lines that exist. Adding, removing, moving or describing lines stays with Sales.
+ */
+export function assertPriceOnly(ops: unknown[]) {
+  const allowed = new Set<string>(["id", "version", ...QS_FIELDS]);
+  for (const raw of ops) {
+    const op = object(raw);
+    const fields = op.op === "upsert" ? object(op.line) : null;
+    if (!fields || fields.version === undefined || Object.keys(fields).some((key) => !allowed.has(key)))
+      throw new ForbiddenException("You price this quotation: change its rates, costs and markup. Sales changes the items and quantities.");
+  }
+}
 
 /** Whether a line change sets a QS-held price field to something other than what the line has (a new line: anything but zero or empty). */
 function priceChanged(current: LineRow | null, fields: Record<string, unknown>) {

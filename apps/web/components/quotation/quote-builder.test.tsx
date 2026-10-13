@@ -223,6 +223,18 @@ describe("quotation builder", () => {
     expect(screen.queryByRole("button", { name: /Add item/ })).not.toBeInTheDocument();
   });
 
+  it("QA-001: the QS prices a quotation that is with them, and only its prices", async () => {
+    const fetcher = mount({ ...state([line({ rate: "0" })]), canEdit: false, canPrice: true });
+    expect(screen.getByRole("textbox", { name: "Quantity" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Item" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Add item/ })).not.toBeInTheDocument();
+    const rate = screen.getByRole("textbox", { name: "Rate" });
+    expect(rate).toBeEnabled();
+    await userEvent.clear(rate);
+    await userEvent.type(rate, "1250{Enter}");
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: { id: "a", rate: "1250", version: 3 } }] }]));
+  });
+
   it("sends a draft for review through the case, with the case revision", async () => {
     const initial = state([line({})]);
     const fetcher = mount(initial, (url) => url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [{ id: "q1", number: 2, status: "internal_review" }] } } : initial);

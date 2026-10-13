@@ -11,6 +11,8 @@ import styles from "./quote-builder.module.css";
 const KINDS: LineKind[] = ["item", "service", "allowance", "client_supplied", "relocate", "dismantle", "remove_store", "dispose"];
 const ROW_KINDS: BuildUpRow["kind"][] = ["material", "finish", "hardware", "labour", "other"];
 const ROW_KIND_LABEL: Record<BuildUpRow["kind"], string> = { material: "Material", finish: "Finish", hardware: "Hardware", labour: "Labour", other: "Other" };
+/** The fields the QS sets on a quotation that is with them (the server's QS_FIELDS). */
+const PRICE_FIELDS = new Set(["rate", "unitCost", "markupPercent", "pricingMode"]);
 type Row = Pick<BuildUpRow, "kind" | "name" | "quantityFormula" | "quantity" | "unit" | "rate" | "unitCost" | "wastePercent" | "suppliedByClient" | "catalogItemId"> & { key: string };
 
 /**
@@ -23,6 +25,8 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
   const { locale } = useDesignSystem();
   const { currency, decimals } = state.quote;
   const readOnly = !state.canEdit;
+  // The QS pricing a quotation that is with them changes its prices only (PLM-082/084).
+  const priceReadOnly = !(state.canEdit || state.canPrice);
   const [form, setForm] = useState(() => ({
     kind: line.kind, title: line.title, description: line.description, areaId: line.areaId ?? "", fromAreaId: line.fromAreaId ?? "", workPackageId: line.workPackageId ?? "",
     length: line.length ?? "", width: line.width ?? "", height: line.height ?? "", count: line.count ?? "", dimensionUnit: line.dimensionUnit ?? "",
@@ -49,11 +53,12 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
     const nullable = new Set(["areaId", "fromAreaId", "workPackageId", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "taxCode", "optionGroup", "scopeId"]);
     const fields: Record<string, unknown> = {};
     for (const key of changed) {
+      if (readOnly && !PRICE_FIELDS.has(key)) continue;
       if (!state.canEditCosts && (key === "unitCost" || key === "markupPercent")) continue;
       const value = form[key as keyof typeof form];
       fields[key] = value === "" && nullable.has(key) ? null : value;
     }
-    if (changed.includes("discountKind") || changed.includes("discountValue")) {
+    if (!readOnly && (changed.includes("discountKind") || changed.includes("discountValue"))) {
       fields.discountKind = form.discountKind || null;
       fields.discountValue = form.discountKind ? form.discountValue : null;
     }
@@ -69,7 +74,7 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
   const tradeItems = [{ id: "", label: t("No work package") }, ...state.workPackages.map((trade) => ({ id: trade.id, label: trade.name }))];
   const amount = state.pricing.lines.find((item) => item.id === line.id);
   return <InspectorSheet size="lg" isOpen isDirty={dirty} title={line.title || t("New line")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={readOnly ? undefined : <div className={styles.sheetActions}><Button variant="primary" size="compact" isLoading={busy} isDisabled={!dirty} onPress={() => void save()}>{t("Save")}</Button></div>}>
+    footer={priceReadOnly ? undefined : <div className={styles.sheetActions}><Button variant="primary" size="compact" isLoading={busy} isDisabled={!dirty} onPress={() => void save()}>{t("Save")}</Button></div>}>
     <div className={styles.details}>
       <section className={styles.detailSection}>
         <div className={styles.pair}>
@@ -105,13 +110,13 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
       <section className={styles.detailSection} aria-label={t("Price")}>
         <h3>{t("Price")}</h3>
         {form.kind === "client_supplied" ? <InlineNotice tone="info" message={t("The client supplies this; it's installed at no charge for the item.")} /> : <>
-          <SegmentedControl label={t("Pricing")} value={form.pricingMode} onChange={(value) => set("pricingMode", value as "rate" | "build_up")}
+          <SegmentedControl label={t("Pricing")} isDisabled={priceReadOnly} value={form.pricingMode} onChange={(value) => set("pricingMode", value as "rate" | "build_up")}
             options={[{ id: "rate", label: t("Rate") }, { id: "build_up", label: t("Build-up") }]} />
           {form.pricingMode === "rate" ? <div className={styles.triple}>
-            <MoneyField label={t("Rate")} currency={currency} isReadOnly={readOnly} value={form.rate} onChange={(value) => set("rate", value)} />
-            {state.canViewCosts ? <MoneyField label={t("Cost")} currency={currency} isReadOnly={readOnly || !state.canEditCosts} value={form.unitCost} onChange={(value) => set("unitCost", value)} /> : null}
-            {state.canViewCosts ? <PercentText label={t("Markup %")} isReadOnly={readOnly || !state.canEditCosts} value={form.markupPercent} onChange={(value) => set("markupPercent", value)} /> : null}
-          </div> : <BuildUp rows={rows} readOnly={readOnly} costs={state.canViewCosts} editCosts={state.canEditCosts} line={line} onChange={editRows} currency={currency} decimals={decimals}
+            <MoneyField label={t("Rate")} currency={currency} isReadOnly={priceReadOnly} value={form.rate} onChange={(value) => set("rate", value)} />
+            {state.canViewCosts ? <MoneyField label={t("Cost")} currency={currency} isReadOnly={priceReadOnly || !state.canEditCosts} value={form.unitCost} onChange={(value) => set("unitCost", value)} /> : null}
+            {state.canViewCosts ? <PercentText label={t("Markup %")} isReadOnly={priceReadOnly || !state.canEditCosts} value={form.markupPercent} onChange={(value) => set("markupPercent", value)} /> : null}
+          </div> : <BuildUp rows={rows} readOnly={priceReadOnly} costs={state.canViewCosts} editCosts={state.canEditCosts} line={line} onChange={editRows} currency={currency} decimals={decimals}
             markup={form.markupPercent} onMarkup={(value) => set("markupPercent", value)} />}
         </>}
         <div className={styles.pair}>

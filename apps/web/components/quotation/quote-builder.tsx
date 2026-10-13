@@ -449,7 +449,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       {group.children ? group.children.map((child) => renderGroup(child, { ...context, workPackageId: child.key === NO_TRADE ? null : child.key }, depth + 1)) : <>
         {group.lines.map((line, index) => <QuoteRow key={line.id} line={line} serial={index + 1} column={column} columns={columns} customColumns={customColumns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit}
           areas={state.areas} trades={state.workPackages} amount={amountOf.get(line.id) ?? null}
-          currency={currency} decimals={decimals} canEdit={state.canEdit} canAsk={canAsk} search={search} flash={flash.has(line.id)}
+          currency={currency} decimals={decimals} canEdit={state.canEdit} canPrice={state.canPrice ?? state.canEdit} canAsk={canAsk} search={search} flash={flash.has(line.id)}
           comments={threadsAt(threads, { kind: "line", key: line.id })} editingBy={people.filter((person) => person.lineId === line.id)}
           imageUrl={lineImage(line)} onImage={(file) => void setLineImage(line, file)} catalogThumb={catalogThumb} onNewArea={() => setRoomFor(line)}
           onComments={() => openComments({ kind: "line", key: line.id }, line.title)}
