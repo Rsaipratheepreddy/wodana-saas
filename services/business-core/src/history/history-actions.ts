@@ -37,6 +37,8 @@ const RULES: Array<[RegExp, HistoryVerb]> = [
   [/safety_incident$|^client_portal\.request$/, "raised"],
   [/(^|[._])delegated$/, "assigned"],
   [/(^|[._])add_[a-z_]+$/, "created"],
+  // A record taken (the technical site measure, PLM-149).
+  [/(^|[._])record_technical_measure$/, "created"],
   [/(^|[._])issue_[a-z_]+$/, "issued"],
   [/(^|[._])confirm_[a-z_]+$/, "confirmed"],
   [/email_not_sent$/, "not_sent"],

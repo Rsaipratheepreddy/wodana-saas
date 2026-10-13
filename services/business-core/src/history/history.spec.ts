@@ -66,6 +66,11 @@ describe("history: every action reads as a sentence", () => {
     expect(verb("crm.opportunity.won.v1")).toBe("won");
     expect(verb("change_request.signature_requested.v1")).toBe("requested_signature");
     expect(describeAction("client_portal.board_comment").category).toBe("message");
+    // PLM-149 / PLM-153: the technical measure, and the minutes of a meeting and the client's comments on them.
+    expect(verb("project.record_technical_measure")).toBe("created");
+    expect(verb("meeting.minutes_shared")).toBe("sent");
+    expect(verb("meeting.minutes_saved")).toBe("updated");
+    expect(describeAction("client_portal.minutes_comment")).toMatchObject({ verb: "commented", category: "message" });
     expect(describeAction("approvals.requested.v1").category).toBe("approval");
     expect(describeAction("purchase_order.created").category).toBe("change");
   });
