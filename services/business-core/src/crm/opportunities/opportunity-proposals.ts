@@ -52,11 +52,31 @@ export function parseProposalKind(value: unknown): ProposalKind {
  * Which proposal a Won marks (PLM-009): the round the payment belongs to when known; otherwise the first proposal
  * that is not Won yet, design before main; a deal with no proposal rows yet wins its main proposal.
  */
-export function wonProposalKind(existing: Array<Pick<ProposalRow, "kind" | "wonAt">>, round: ProposalKind | null | undefined): ProposalKind {
+export function wonProposalKind(existing: Array<Pick<ProposalRow, "kind" | "wonAt">>, round: ProposalKind | null | undefined, designRound = false): ProposalKind {
   if (round) return round;
   const design = existing.find((proposal) => proposal.kind === "design");
   if (design && !design.wonAt) return "design";
+  // QA-005: a job with a design round wins Proposal 1 first, even before its value is entered (no proposal row yet).
+  if (!design && designRound && !existing.find((proposal) => proposal.kind === "main")?.wonAt) return "design";
   return "main";
+}
+
+/**
+ * Whether the job has a design round (Proposal 1): its enquiry type follows the design flow, or its Planning case has
+ * a design-round quotation (a Design Fee proposal). Read when a Won doesn't name its round.
+ */
+export async function hasDesignRound(db: Db, workspaceId: string, opportunityId: string) {
+  return Boolean((await db.query<{ design: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM commercial_quotes quote JOIN pre_project_cases pre_case ON pre_case.workspace_id = quote.workspace_id AND pre_case.id = quote.case_id
+                     WHERE quote.workspace_id = $1 AND pre_case.opportunity_id = $2 AND quote.kind = 'quotation' AND quote.round = 'design'
+                       AND quote.status NOT IN ('withdrawn', 'superseded'))
+         OR EXISTS (SELECT 1 FROM crm_opportunities opportunity
+                      JOIN crm_leads lead ON lead.workspace_id = opportunity.workspace_id AND lead.id = opportunity.lead_id
+                      JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+                      JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = opportunity.workspace_id AND taxonomy.code = 'enquiry_type'
+                      JOIN crm_taxonomy_options choice ON choice.workspace_id = taxonomy.workspace_id AND choice.taxonomy_id = taxonomy.id AND choice.code = enquiry.service_type
+                     WHERE opportunity.workspace_id = $1 AND opportunity.id = $2 AND choice.flow = 'design') AS design`,
+    [workspaceId, opportunityId])).rows[0]?.design);
 }
 
 /** The headline opportunity value: the sum of the proposal values, when they share a currency. Exact decimals. */
@@ -235,7 +255,8 @@ export async function markProposalWon(db: Db, input: {
   quote?: { id: string; number: number; amount: string | number; currencyCode: string } | null; at?: Date; lockByDealFile?: boolean;
 }) {
   const existing = await loadProposals(db, input.workspaceId, input.opportunityId);
-  const kind = wonProposalKind(existing, input.round ?? null);
+  const unnamed = !input.round && !existing.some((proposal) => proposal.kind === "design");
+  const kind = wonProposalKind(existing, input.round ?? null, unnamed && await hasDesignRound(db, input.workspaceId, input.opportunityId));
   const current = existing.find((proposal) => proposal.kind === kind);
   const at = (input.at ?? new Date()).toISOString();
   const quoteAmount = input.quote ? trim(Dec.of(input.quote.amount).toFixed(4)) : null;

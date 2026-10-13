@@ -14,7 +14,7 @@ import { releaseForDeal, reserveForDeal } from "../../fulfilment/stock-reservati
 import { AiGatewayService } from "../../ai-gateway/ai-gateway.service";
 import { permissionHolders } from "../../commercial/commercial-notices";
 import { tell } from "../leads/sales-attention";
-import { loadProposals, markProposalWon, type ProposalKind } from "./opportunity-proposals";
+import { hasDesignRound, loadProposals, markProposalWon, wonProposalKind, type ProposalKind } from "./opportunity-proposals";
 import { readPaymentProof } from "./payment-proof-reading";
 
 export type UpdateFlowInput = {
@@ -85,7 +85,7 @@ export class OpportunityFlowService {
    * opportunity half-won and Won never exists without a proof.
    */
   async attachProof(actor: RequestActor, workspaceId: string, opportunityId: string, input: { version: number; kind: string; note?: string | null; proposal?: string | null }, file?: ReferenceUpload) {
-    const proposal: ProposalKind | null = input.proposal === "design" || input.proposal === "main" ? input.proposal : null;
+    const named: ProposalKind | null = input.proposal === "design" || input.proposal === "main" ? input.proposal : null;
     const attached = await this.access.withPermissions(actor, workspaceId, ["crm.opportunities.manage", "crm.opportunities.transition"], async (client, user) => {
       if (!Number.isInteger(input.version) || input.version < 1) throw new UnprocessableEntityException("Reload the opportunity and try again");
       if (!PAYMENT_PROOF_KINDS.includes(input.kind as PaymentProofKind)) throw new UnprocessableEntityException("Choose what the proof is");
@@ -93,8 +93,12 @@ export class OpportunityFlowService {
       if (note && note.length > 1000) throw new UnprocessableEntityException("Keep the note under 1000 characters");
       const before = await this.lock(client, workspaceId, opportunityId);
       if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
-      // PLM-103: Proposal 2 is a second Won on a won opportunity, with its own proof, after Proposal 1 was won.
       const proposals = await loadProposals(client, workspaceId, opportunityId);
+      // The round this proof pays (QA-005): the one named; on a won opportunity Proposal 2; else the round in play,
+      // Proposal 1 first on a job with a design round, so Proposal 2 stays open for its own proof.
+      const proposal: ProposalKind = named ?? (before.status === "won" ? "main"
+        : wonProposalKind(proposals, null, !proposals.some((item) => item.kind === "design") && await hasDesignRound(client, workspaceId, opportunityId)));
+      // PLM-103: Proposal 2 is a second Won on a won opportunity, with its own proof, after Proposal 1 was won.
       const secondWon = before.status === "won" && proposal === "main" && Boolean(proposals.find((item) => item.kind === "design")?.wonAt)
         && !proposals.find((item) => item.kind === "main")?.wonAt;
       if (before.status !== "open" && !secondWon) throw new UnprocessableEntityException("Only an open opportunity can be won");
@@ -115,11 +119,10 @@ export class OpportunityFlowService {
       const won = (await client.query<{ id: string }>(
         `SELECT id FROM crm_pipeline_stages WHERE workspace_id = $1 AND pipeline_id = $2 AND code = 'won' AND status = 'active' ORDER BY position LIMIT 1`,
         [workspaceId, before.pipeline_id])).rows[0];
+      // PLM-009: the proof wins its proposal, and only that one, with its own Won date.
       const opportunity = await this.opportunities.transitionWithin(client, user.userId, workspaceId, opportunityId, {
         version: input.version, stageId: won?.id, status: "won", reason: "Payment proof attached",
-      });
-      // PLM-009: the proof wins the proposal it names (or the first not yet Won), with its own Won date.
-      if (proposal) await markProposalWon(client, { workspaceId, opportunityId, round: proposal, actorUserId: user.userId });
+      }, { wonRound: proposal });
       return { opportunity, proof, file: { mimeType: prepared.mimeType, body: prepared.body } };
     });
     // AI proposes, people confirm: the stored proof is read into amount, date and reference; Finance confirms the

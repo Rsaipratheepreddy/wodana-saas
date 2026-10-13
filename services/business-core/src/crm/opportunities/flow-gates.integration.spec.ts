@@ -97,6 +97,57 @@ integration("the step-by-step pipeline (PLM-121/122)", () => {
     });
   });
 
+  const proposalsOf = async (client: PoolClient, id: string) => (await client.query<{ kind: string; won: boolean }>(
+    `SELECT kind, won_at IS NOT NULL AS won FROM crm_opportunity_proposals WHERE opportunity_id = $1 ORDER BY kind`, [id])).rows;
+  const proofsOf = async (client: PoolClient, id: string) => (await client.query<{ proposal: string | null }>(
+    `SELECT proposal_kind AS proposal FROM crm_opportunity_payment_proofs WHERE opportunity_id = $1 ORDER BY recorded_at, proposal_kind`, [id])).rows.map((row) => row.proposal);
+
+  it("QA-005: Proposal 1's proof wins only Proposal 1; Proposal 2's proof is a second Won with its own proof and date", async () => {
+    await withOpportunity("interior_design_furniture", "basic", async (client, { workspaceId, opportunityId, stage, flow }) => {
+      const first = await flow.attachProof(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), kind: "receipt", proposal: "design" }, png);
+      expect(first.opportunity).toMatchObject({ status: "won", stage_id: stage.won });
+      expect(await proposalsOf(client, opportunityId)).toEqual([{ kind: "design", won: true }]);
+      await client.query("UPDATE crm_opportunity_proposals SET won_at = won_at - interval '20 days' WHERE opportunity_id = $1", [opportunityId]);
+      // The client accepts the main quotation and pays the advance: its proof attaches and wins Proposal 2, without reopening.
+      const second = await flow.attachProof(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), kind: "bank_transfer", note: "Advance", proposal: "main" }, png);
+      expect(second.opportunity).toMatchObject({ status: "won", stage_id: stage.won });
+      expect(second.proof).toMatchObject({ proposal: "main", note: "Advance" });
+      const rounds = (await client.query<{ kind: string; wonAt: Date }>(`SELECT kind, won_at AS "wonAt" FROM crm_opportunity_proposals WHERE opportunity_id = $1 ORDER BY kind`, [opportunityId])).rows;
+      expect(rounds.map((row) => row.kind)).toEqual(["design", "main"]);
+      expect(rounds[1].wonAt.getTime() - rounds[0].wonAt.getTime()).toBeGreaterThan(19 * 86_400_000);
+      expect(await proofsOf(client, opportunityId)).toEqual(["design", "main"]);
+      // Once both are Won there is nothing left to win.
+      await expect(flow.attachProof(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), kind: "receipt", proposal: "main" }, png))
+        .rejects.toThrow(/Only an open opportunity can be won/);
+    });
+  });
+
+  it("QA-005: a proof that doesn't name its round wins the design round first where the job has one, so Proposal 2 can follow", async () => {
+    await withOpportunity("interior_design_furniture", "basic", async (client, { workspaceId, opportunityId, flow }) => {
+      const caseId = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,(SELECT created_by FROM workspaces WHERE id = $2))", [caseId, workspaceId, opportunityId]);
+      await client.query("INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,1,'{}')", [workspaceId, caseId]);
+      await client.query("INSERT INTO commercial_quotes(workspace_id,case_id,id,sort_order,number,kind,round,status,title,currency) VALUES($1,$2,$3,0,1,'quotation','design','accepted','Design fee','AED')", [workspaceId, caseId, randomUUID()]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      await flow.attachProof(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), kind: "receipt" }, png);
+      expect(await proposalsOf(client, opportunityId)).toEqual([{ kind: "design", won: true }]);
+      // On the won opportunity, a proof is Proposal 2's.
+      await flow.attachProof(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), kind: "receipt" }, png);
+      expect(await proposalsOf(client, opportunityId)).toEqual([{ kind: "design", won: true }, { kind: "main", won: true }]);
+      expect(await proofsOf(client, opportunityId)).toEqual(["design", "main"]);
+    });
+  });
+
+  it("QA-005: a job without a design round wins its one proposal, and takes no second proof", async () => {
+    await withOpportunity("architecture", "basic", async (client, { workspaceId, opportunityId, flow }) => {
+      await flow.attachProof(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), kind: "receipt" }, png);
+      expect(await proposalsOf(client, opportunityId)).toEqual([{ kind: "main", won: true }]);
+      await expect(flow.attachProof(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), kind: "receipt", proposal: "main" }, png))
+        .rejects.toThrow(/Only an open opportunity can be won/);
+    });
+  });
+
   it("keeps a 'not sure yet' enquiry in the first column", async () => {
     await withOpportunity("not_sure", null, async (client, { workspaceId, opportunityId, stage, opportunities }) => {
       await expect(opportunities.transition(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), stageId: stage.proposal }))

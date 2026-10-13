@@ -15,7 +15,7 @@ import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
 import { hasResolvedEnquiryType } from "../leads/lead-options";
 import { thankForDeal } from "../conversations/inbox/client-followups";
-import { markProposalWon } from "./opportunity-proposals";
+import { markProposalWon, type ProposalKind } from "./opportunity-proposals";
 import { tellDealOutcome } from "../leads/sales-attention";
 import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
 import { loadDealClosing } from "./deal-closing";
@@ -376,7 +376,7 @@ export class CrmOpportunitiesService {
   }
 
   /** A stage move inside the caller's permission-checked tenant transaction (the board, the edit dialog, Woddy, a payment proof). */
-  async transitionWithin(client: PoolClient, actorUserId: string, workspaceId: string, opportunityId: string, input: TransitionOpportunityDto) {
+  async transitionWithin(client: PoolClient, actorUserId: string, workspaceId: string, opportunityId: string, input: TransitionOpportunityDto, options: { wonRound?: ProposalKind | null } = {}) {
     const actorUser = { userId: actorUserId };
     const before = await this.requireOpportunity(client, workspaceId, opportunityId, true);
     if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
@@ -427,7 +427,7 @@ export class CrmOpportunitiesService {
     const event = targetStatus === "won" ? "crm.opportunity.won.v1" : targetStatus === "lost" ? "crm.opportunity.lost.v1" : "crm.opportunity.stage_changed.v1";
     await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: event, entityType: "crm_opportunity", entityId: opportunityId, before, after: response });
     // PLM-009: Won is reported per proposal (design, main); this win marks the first proposal not yet Won.
-    if (targetStatus === "won") await markProposalWon(client, { workspaceId, opportunityId, actorUserId: actorUser.userId });
+    if (targetStatus === "won") await markProposalWon(client, { workspaceId, opportunityId, round: options.wonRound ?? null, actorUserId: actorUser.userId });
     // A won deal: the client is thanked on WhatsApp and told what happens next (once per opportunity).
     if (targetStatus === "won") await thankForDeal(client, workspaceId, opportunityId, { actorUserId: actorUser.userId });
     // PLM-125: Won takes the deal's goods out of stock where its path says so (Furniture A and B).
