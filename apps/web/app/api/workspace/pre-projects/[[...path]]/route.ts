@@ -15,7 +15,8 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
   const mutation=request.method!=='GET';
   if(mutation&&!isSameOrigin(request))return NextResponse.json({message:t('This request must come from your workspace.')},{status:403});
   const backendPath=`/workspaces/${workspaceId}/pre-projects${path.length?'/'+path.join('/'):''}${query.size?'?'+query:''}`;
-  const asset=path[1]==='assets' && path.length===3;
+  // A case file (read or upload); the finishes schedule's own upload (a sample photo, a render snapshot, a signed sample) too.
+  const asset=(path[1]==='assets' && path.length===3)||(path[1]==='finishes'&&path[2]==='assets'&&path.length===4);
   if(asset&&request.method==='GET') {
     const result=await authenticatedBackendFetch(backendPath,{cache:'no-store'});
     if(result.unauthenticated||!result.upstream?.ok) {

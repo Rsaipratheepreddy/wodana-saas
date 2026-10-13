@@ -12,7 +12,7 @@ import styles from "./settings-layout.module.css";
 const ICONS: Record<string, LucideIcon> = {
   profile: UserRound, security: ShieldCheck, company: Building2, "workspace-language": Languages, members: Users, roles: KeyRound,
   "business-records": Landmark, billing: CreditCard, "audit-log": History, integrations: Plug, "client-portal-settings": Globe, "design-packages": Palette, "reminder-settings": BellRing,
-  "attendance-settings": CalendarClock, teams: Network, "project-settings": FolderKanban, "purchasing-settings": ShoppingCart, "inventory-settings": Warehouse,
+  "finish-settings": Palette, "attendance-settings": CalendarClock, teams: Network, "project-settings": FolderKanban, "purchasing-settings": ShoppingCart, "inventory-settings": Warehouse,
   "factory-settings": Factory, "fulfilment-settings": Truck, "accounting-settings": Calculator, "inbox-settings": MessagesSquare, "delivery-health": Send, "notification-settings": Bell,
   "ai-credits": Sparkles, "ai-apps": Bot,
 };

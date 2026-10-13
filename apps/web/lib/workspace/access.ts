@@ -29,6 +29,7 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "business-records": [ORGANIZATION_READ],
   "organizations-account": [ORGANIZATION_READ],
   "design-packages": [["crm.opportunities.view", "crm.settings.manage"]],
+  "finish-settings": [["pre_projects.view", "workspace.settings.manage"]],
   "quotation-settings": [["pre_projects.view"]],
   "project-settings": [PROJECTS_VIEW],
   "purchasing-settings": [["purchasing.view", "workspace.settings.manage"]],
@@ -77,6 +78,8 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "pre-projects": [["pre_projects.view"]],
   "pre-project-catalogs": [["catalog.view"]],
   "pre-project-supplier-offers": [["supplier_offers.view"]],
+  // PLM-157: the sample library is read by whoever chooses materials or keeps stock.
+  "pre-project-samples": [["pre_projects.view", "catalog.view", "stock.view"]],
   "quotation-templates": [["pre_projects.view"]],
   // Projects and operations
   "projects-overview": [PROJECTS_VIEW],

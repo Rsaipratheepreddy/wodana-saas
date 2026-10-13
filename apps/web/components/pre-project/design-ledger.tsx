@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { FileText, Plus } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
   Badge, Button, ComboboxField, DateField, EmptyState, ErrorState, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, NumericInput, RecordTable, SegmentedControl,
-  SelectField, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem, type DataGridColumn,
+  SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
@@ -15,6 +15,7 @@ import {
   type LedgerEntry, type LedgerVersion, type LedgerView,
 } from "@/lib/pre-project/design-decisions";
 import { FitCheckBadge, fitNeedsWarning, useItemFits } from "@/components/catalog/fit-check-panel";
+import { libraryApi, MATERIAL_ORIGINS, ORIGIN_LABEL, scheduleApi, type FinishCategory, type MaterialOrigin, type SampleChoice } from "@/lib/pre-project/finishes";
 import type { ItemFit } from "@/lib/workspace/product-sourcing";
 import { AssetUpload, CaseModal } from "./case-controls";
 import styles from "./design-decisions.module.css";
@@ -22,8 +23,12 @@ import styles from "./design-decisions.module.css";
 type Draft = {
   kind: "material" | "design"; roomId: string | null; catalogItemId: string | null; title: string; specification: string; supplier: string; quantity: string; unit: string; unitPrice: string;
   timeImpactDays: number; source: string; saidOn: string; evidence: CaseAsset | null; evidenceNote: string; note: string;
-  /** PLM-144: from a local supplier instead of the firm's own stock or brands. */
-  outsourced: boolean;
+  /** PLM-144/157: own stock, a brand, or a local supplier (the outsourced one, which needs the reviewer's sign-off). */
+  origin: MaterialOrigin | null;
+  /** PLM-157: the library sample it was chosen from, and the photo of the sample. */
+  sampleId: string | null; sampleName: string; samplePhoto: CaseAsset | null;
+  /** PLM-156: its finish category and where it goes (on a new material). */
+  categoryKey: string | null; location: string;
 };
 /** A catalog item a choice can be tied to (the quotation's catalog search), with its preferred supplier. */
 type CatalogChoice = { id: string; code: string; name: string; categoryName: string | null; description: string | null; unitCode: string; supplier: string | null };
@@ -49,6 +54,13 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
     setView(next); setFailure("");
   }).catch((error: unknown) => setFailure(error instanceof Error && error.message ? error.message : t("The list didn't load"))), [workspaceId, caseId, t]);
   useEffect(() => { void load(); }, [load]);
+  // PLM-156: the firm's finish categories, for a new material.
+  const [categories, setCategories] = useState<FinishCategory[]>([]);
+  useEffect(() => {
+    let live = true;
+    libraryApi(workspaceId).settings().then((next) => { if (live) setCategories(next.settings.categories); }).catch(() => { if (live) setCategories([]); });
+    return () => { live = false; };
+  }, [workspaceId]);
   // E5-6: a choice tied to a catalog item shows whether it gets through the site's measured access. A warning here;
   // ordering is where a failing item is blocked.
   const fits = useItemFits(workspaceId, caseId, (view?.entries ?? []).filter((entry) => !entry.archivedAt).map((entry) => entry.current?.catalogItemId ?? ""));
@@ -58,7 +70,10 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
   if (!view) return <Skeleton lines={5} shape="rows" />;
   const day = (iso: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso)); } catch { return iso; } };
   const saved = (message: string, next: LedgerView) => { setView((current) => ({ ...next, canEdit: current?.canEdit, canRecordClient: current?.canRecordClient, canApprove: current?.canApprove,
-    approval: next.approval !== undefined ? next.approval : current?.approval })); setNotice(message); setDialog(null); setOpen(null); };
+    canManageMaterials: current?.canManageMaterials, approval: next.approval !== undefined ? next.approval : current?.approval })); setNotice(message); setDialog(null); setOpen(null); };
+  // PLM-157: the Material Coordinator keeps the materials (not the design choices) without editing the rest of the case.
+  const canAdd = Boolean(view.canEdit || view.canManageMaterials);
+  const canChange = (entry: LedgerEntry) => Boolean(view.canEdit || (view.canManageMaterials && entry.kind === "material"));
   const pendingApproval = view.approval?.status === "pending" ? view.approval : null;
   const live = view.entries.filter((entry) => !entry.archivedAt);
   const currency = view.currency ?? undefined;
@@ -95,6 +110,11 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
       <span>V{row.original.currentNumber}</span>
       {row.original.current?.afterLock ? <Badge tone="warning">{t("After sign-off")}</Badge> : null}
     </span> },
+    // PLM-157: where a material comes from (own stock, a brand, a local supplier) and its supplier.
+    { id: "from", header: t("Supplied from"), accessorFn: (row) => row.current?.origin ?? (row.current?.outsourced ? "local_supplier" : ""), meta: { priority: "medium" },
+      cell: ({ row }: { row: { original: LedgerEntry } }) => { const current = row.original.current; const origin = current?.origin ?? (current?.outsourced ? "local_supplier" : null);
+        return row.original.kind === "material" && (origin || current?.supplier) ? <span className={styles.cell}><span>{origin ? t(ORIGIN_LABEL[origin]) : current?.supplier}</span>
+          {origin && current?.supplier ? <small>{current.supplier}</small> : null}</span> : null; } },
     { id: "source", header: t("Source"), accessorFn: (row) => row.current?.source ?? "", meta: { priority: "medium" },
       cell: ({ row }: { row: { original: LedgerEntry } }) => row.original.current ? <span className={styles.cell}><span>{t(SOURCE_LABEL[row.original.current.source] ?? row.original.current.source as never)}</span><small>{day(row.original.current.saidAt)}</small></span> : null },
     { id: "price", header: t("Price"), accessorFn: (row) => lineTotal(row.current?.quantity ?? null, row.current?.unitPrice ?? null) ?? "", meta: { align: "end", priority: "medium" },
@@ -120,25 +140,29 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
       {live.length ? <Link className={styles.link} href={`/print/material-list/${caseId}`} target="_blank"><FileText aria-hidden="true" size={14} />{t("Material list")}</Link> : null}
       {view.state === "changes_pending" && pendingApproval?.waitingFor.length ? <span className={styles.muted}>{t("Waiting for {names}", { names: pendingApproval.waitingFor.join(", ") })}</span> : null}
       {view.state === "changes_pending" && view.canApprove ? <Button size="compact" isLoading={approving} isDisabled={Boolean(view.lockProblem)} onPress={() => void approve()}>{t("Approve changes")}</Button> : null}
-      {view.canEdit ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "add" })}><Plus aria-hidden="true" size={14} />{t("Add choice")}</Button> : null}
+      {canAdd ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "add" })}><Plus aria-hidden="true" size={14} />{view.canEdit ? t("Add choice") : t("Add material")}</Button> : null}
     </div>
     {view.state === "changes_pending" ? <InlineNotice tone="info" message={view.lockProblem ? `${t("Procurement keeps the signed-off versions until the changes are approved.")} ${view.lockProblem}` : t("Procurement keeps the signed-off versions until the changes are approved.")} /> : null}
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
     {failure ? <InlineNotice tone="error" message={failure} /> : null}
     {live.length ? <RecordTable ariaLabel={t("Materials & decisions")} data={live} columns={columns} getRowId={(row) => row.id} showToolbar={false} selectable={false} rowNumbers={false} wrapText onRowAction={(row) => setOpen(row)} />
       : <EmptyState illustration="empty" title={t("No choices yet")} description={t("Record each material and design choice the client makes, with where it came from.")}
-        action={view.canEdit ? <Button variant="primary" onPress={() => setDialog({ kind: "add" })}><Plus aria-hidden="true" size={14} />{t("Add choice")}</Button> : undefined} />}
+        action={canAdd ? <Button variant="primary" onPress={() => setDialog({ kind: "add" })}><Plus aria-hidden="true" size={14} />{view.canEdit ? t("Add choice") : t("Add material")}</Button> : undefined} />}
 
-    {open ? <EntryHistory entry={open} fit={fitOf(open)} money={money} day={day} impact={impact} canEdit={Boolean(view.canEdit)} canRecordClient={Boolean(view.canRecordClient)} onClose={() => setOpen(null)}
+    {open ? <EntryHistory entry={open} fit={fitOf(open)} money={money} day={day} impact={impact} canEdit={canChange(open)} canRecordClient={Boolean(view.canRecordClient)} onClose={() => setOpen(null)}
       onVersion={() => setDialog({ kind: "version", entry: open })} onDecision={() => setDialog({ kind: "decision", entry: open })}
       onRemove={async () => saved(t("Removed from the list."), await caseRequest<LedgerView>(workspaceId, caseId, `design-ledger/entries/${open.id}/archive`, "POST", { entryVersion: open.version }))} /> : null}
     {dialog?.kind === "add" || dialog?.kind === "version" ? <EntryForm workspaceId={workspaceId} caseId={caseId} rooms={rooms} currency={currency} entry={dialog.kind === "version" ? dialog.entry : null}
+      categories={categories} materialsOnly={!view.canEdit}
       onClose={() => setDialog(null)} onSubmit={async (draft) => {
+        const material = draft.kind === "material";
         const fields = { catalogItemId: draft.catalogItemId, title: draft.title.trim(), specification: draft.specification.trim() || null, supplier: draft.supplier.trim() || null, quantity: draft.quantity || null, unit: draft.unit.trim() || null,
           unitPrice: draft.unitPrice || null, timeImpactDays: draft.timeImpactDays || 0, source: draft.source, saidAt: saidAt(draft.saidOn), evidenceAssetId: draft.evidence?.id ?? null,
-          evidenceNote: draft.evidenceNote.trim() || null, note: draft.note.trim() || null, outsourced: draft.outsourced };
+          evidenceNote: draft.evidenceNote.trim() || null, note: draft.note.trim() || null, outsourced: material && draft.origin === "local_supplier",
+          origin: material ? draft.origin : null, sampleId: material ? draft.sampleId : null, samplePhotoAssetId: material ? draft.samplePhoto?.id ?? null : null };
         if (dialog.kind === "add") saved(t("Choice added. It waits for the client's confirmation."), await caseRequest<LedgerView>(workspaceId, caseId, "design-ledger/entries", "POST",
-          { id: crypto.randomUUID(), versionId: crypto.randomUUID(), kind: draft.kind, roomId: draft.roomId, ...fields }));
+          { id: crypto.randomUUID(), versionId: crypto.randomUUID(), kind: draft.kind, roomId: draft.roomId, ...fields,
+            ...(material ? { categoryKey: draft.categoryKey, location: draft.location.trim() || null } : {}) }));
         else saved(t("New version recorded."), await caseRequest<LedgerView>(workspaceId, caseId, `design-ledger/entries/${dialog.entry.id}/versions`, "POST",
           { versionId: crypto.randomUUID(), entryVersion: dialog.entry.version, ...fields }));
       }} /> : null}
@@ -206,54 +230,93 @@ function FitWarning({ fit }: { fit?: ItemFit }) {
     : fit.result.status === "tight" ? t("Only just gets through the measured access.") : t("Doesn't get through the measured access. Ordering waits for an override.")}</span></div>;
 }
 
-/** The catalog item behind a choice: typing searches the catalog; clearing the text unties the choice from it. */
-function CatalogItemField({ workspaceId, caseId, value, initialText, onChange }: {
-  workspaceId: string; caseId: string; value: string | null; initialText: string; onChange: (item: CatalogChoice | null) => void;
+/**
+ * The sample or catalog item behind a choice: typing searches the sample library first (in stock, the firm's own stock
+ * before brands, PLM-144/157), then the catalog; clearing the text unties the choice from it.
+ */
+function CatalogItemField({ workspaceId, caseId, value, initialText, onChange, onSample }: {
+  workspaceId: string; caseId: string; value: string | null; initialText: string; onChange: (item: CatalogChoice | null) => void; onSample: (sample: SampleChoice) => void;
 }) {
   const t = useT();
   const [text, setText] = useState(initialText);
   const [items, setItems] = useState<CatalogChoice[]>([]);
+  const [samples, setSamples] = useState<SampleChoice[]>([]);
   useEffect(() => {
     let live = true;
     const timer = window.setTimeout(() => {
-      caseRequest<{ items: CatalogChoice[] }>(workspaceId, caseId, `design-ledger/catalog?q=${encodeURIComponent(text.trim())}`)
-        .then((next) => { if (live) setItems(Array.isArray(next?.items) ? next.items : []); }).catch(() => { if (live) setItems([]); });
+      caseRequest<{ items: CatalogChoice[]; samples?: SampleChoice[] }>(workspaceId, caseId, `design-ledger/catalog?q=${encodeURIComponent(text.trim())}`)
+        .then((next) => { if (live) { setItems(Array.isArray(next?.items) ? next.items : []); setSamples(Array.isArray(next?.samples) ? next.samples : []); } })
+        .catch(() => { if (live) { setItems([]); setSamples([]); } });
     }, text.trim() ? 160 : 0);
     return () => { live = false; window.clearTimeout(timer); };
   }, [workspaceId, caseId, text]);
-  const options = items.map((item) => ({ id: item.id, label: item.name, description: [item.code, item.categoryName].filter(Boolean).join(" · ") }));
+  const options = [
+    ...samples.map((sample) => ({ id: `sample:${sample.id}`, label: sample.name, description: [t("Sample"), t(ORIGIN_LABEL[sample.origin]), sample.priceBandLabel, sample.inStock ? sample.location : t("Out of stock")]
+      .filter(Boolean).join(" · ") })),
+    ...items.map((item) => ({ id: item.id, label: item.name, description: [item.code, item.categoryName].filter(Boolean).join(" · ") })),
+  ];
   if (value && initialText && !options.some((option) => option.id === value)) options.unshift({ id: value, label: initialText, description: "" });
-  return <ComboboxField label={t("Catalog item")} placeholder={t("Search the catalog")} items={options} inputValue={text} selectedKey={value}
+  return <ComboboxField label={t("Sample or catalog item")} placeholder={t("Search the samples and the catalog")} items={options} inputValue={text} selectedKey={value}
     onInputChange={(next) => { setText(next); if (!next.trim() && value) onChange(null); }}
-    onSelectionChange={(key) => { const item = items.find((option) => option.id === String(key)); if (item) { setText(item.name); onChange(item); } }} />;
+    onSelectionChange={(key) => {
+      const id = String(key);
+      const sample = id.startsWith("sample:") ? samples.find((option) => option.id === id.slice(7)) : undefined;
+      if (sample) { setText(sample.name); onSample(sample); return; }
+      const item = items.find((option) => option.id === id); if (item) { setText(item.name); onChange(item); }
+    }} />;
 }
 
-function EntryForm({ workspaceId, caseId, rooms, currency, entry, onClose, onSubmit }: {
-  workspaceId: string; caseId: string; rooms: CaseRoom[]; currency?: string; entry: LedgerEntry | null; onClose: () => void; onSubmit: (draft: Draft) => Promise<unknown>;
+function EntryForm({ workspaceId, caseId, rooms, currency, entry, categories, materialsOnly, onClose, onSubmit }: {
+  workspaceId: string; caseId: string; rooms: CaseRoom[]; currency?: string; entry: LedgerEntry | null; categories: FinishCategory[]; materialsOnly: boolean; onClose: () => void; onSubmit: (draft: Draft) => Promise<unknown>;
 }) {
   const t = useT();
   const current = entry?.current;
   const [draft, setDraft] = useState<Draft>(() => ({ kind: entry?.kind ?? "material", roomId: entry?.roomId ?? null, catalogItemId: current?.catalogItemId ?? null, title: current?.title ?? "", specification: current?.specification ?? "",
     supplier: current?.supplier ?? "", quantity: current?.quantity ?? "", unit: current?.unit ?? "", unitPrice: current?.unitPrice ?? "", timeImpactDays: 0, source: "showroom",
-    saidOn: new Date().toISOString().slice(0, 10), evidence: null, evidenceNote: "", note: "", outsourced: current?.outsourced ?? false }));
+    saidOn: new Date().toISOString().slice(0, 10), evidence: null, evidenceNote: "", note: "",
+    // A version recorded before origins read from its outsourced flag.
+    origin: current?.origin ?? (current?.outsourced ? "local_supplier" : null), sampleId: current?.sampleId ?? null, sampleName: current?.sampleName ?? "",
+    samplePhoto: current?.samplePhotoAssetId ? { id: current.samplePhotoAssetId, name: current.samplePhotoName ?? "", mimeType: "image/*", byteSize: 0, hasPreview: true } : null,
+    categoryKey: entry?.categoryKey ?? null, location: entry?.location ?? "" }));
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const set = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft((value0) => ({ ...value0, [key]: value }));
   // Choosing a catalog item fills the name, finish and supplier from it; each stays editable.
   const pick = (item: CatalogChoice | null) => setDraft((value0) => item ? { ...value0, catalogItemId: item.id, title: item.name, specification: item.description?.trim() || value0.specification,
-    supplier: item.supplier ?? value0.supplier, unit: value0.unit || item.unitCode } : { ...value0, catalogItemId: null });
+    supplier: item.supplier ?? value0.supplier, unit: value0.unit || item.unitCode, sampleId: null, sampleName: "" } : { ...value0, catalogItemId: null });
+  // PLM-157: choosing a library sample fills the name, where it comes from and its supplier (and its catalog item, when it has one).
+  const pickSample = (sample: SampleChoice) => setDraft((value0) => ({ ...value0, sampleId: sample.id, sampleName: sample.name, title: value0.title || sample.name, origin: sample.origin,
+    supplier: sample.supplier || value0.supplier, catalogItemId: sample.catalogItemId ?? value0.catalogItemId, categoryKey: value0.categoryKey ?? sample.categoryKey }));
   const fit = useItemFits(workspaceId, caseId, draft.catalogItemId ? [draft.catalogItemId] : []).get(draft.catalogItemId ?? "");
-  return <FormDialog title={entry ? t("New version of {title}", { title: entry.title }) : t("Add choice")} onClose={onClose} isDirty submitLabel={t("Save")} error={error || undefined}
+  const finishes = useMemo(() => scheduleApi({ kind: "case", workspaceId, caseId }), [workspaceId, caseId]);
+  const material = draft.kind === "material";
+  const NONE = "none";
+  return <FormDialog title={entry ? t("New version of {title}", { title: entry.title }) : materialsOnly ? t("Add material") : t("Add choice")} onClose={onClose} isDirty submitLabel={t("Save")} error={error || undefined}
     isSubmitDisabled={!draft.title.trim() || uploading} onSubmit={() => onSubmit(draft)}>
     <FormSection title={t("Choice")}>
-      {!entry ? <SegmentedControl label={t("Type")} value={draft.kind} onChange={(kind) => set("kind")(kind as Draft["kind"])} options={[{ id: "material", label: t("Material") }, { id: "design", label: t("Design") }]} /> : null}
-      <CatalogItemField workspaceId={workspaceId} caseId={caseId} value={draft.catalogItemId} initialText={current?.catalogItemId ? current.title : ""} onChange={pick} />
+      {!entry && !materialsOnly ? <SegmentedControl label={t("Type")} value={draft.kind} onChange={(kind) => set("kind")(kind as Draft["kind"])} options={[{ id: "material", label: t("Material") }, { id: "design", label: t("Design") }]} /> : null}
+      <CatalogItemField workspaceId={workspaceId} caseId={caseId} value={draft.sampleId ? `sample:${draft.sampleId}` : draft.catalogItemId}
+        initialText={draft.sampleId ? draft.sampleName : current?.catalogItemId ? current.title : ""} onChange={pick} onSample={pickSample} />
       <FitWarning fit={fit} />
       <TextInput isRequired autoFocus label={t("Name")} maxLength={240} value={draft.title} onChange={set("title")} />
       <TextAreaField label={t("Finish or specification")} maxLength={2000} value={draft.specification} onChange={set("specification")} />
-      {!entry && rooms.length ? <SelectField label={t("Room")} items={[{ id: "none", label: t("Whole home") }, ...rooms.map((room) => ({ id: room.id, label: room.name }))]}
-        selectedKey={draft.roomId ?? "none"} onSelectionChange={(key) => set("roomId")(key === "none" ? null : String(key))} /> : null}
+      {!entry && rooms.length ? <SelectField label={t("Room")} items={[{ id: NONE, label: t("Whole home") }, ...rooms.map((room) => ({ id: room.id, label: room.name }))]}
+        selectedKey={draft.roomId ?? NONE} onSelectionChange={(key) => set("roomId")(key === NONE ? null : String(key))} /> : null}
+      {!entry && material && categories.length ? <FormRow>
+        <SelectField label={t("Category")} items={[{ id: NONE, label: t("No category") }, ...categories.map((item) => ({ id: item.key, label: item.label }))]}
+          selectedKey={draft.categoryKey ?? NONE} onSelectionChange={(key) => set("categoryKey")(key === NONE ? null : String(key))} />
+        <TextInput label={t("Where it goes")} maxLength={200} value={draft.location} onChange={set("location")} />
+      </FormRow> : null}
     </FormSection>
+    {material ? <FormSection title={t("Supplied from")}>
+      <SegmentedControl label={t("Supplied from")} value={draft.origin ?? ""} onChange={(origin) => set("origin")(origin as MaterialOrigin)}
+        options={MATERIAL_ORIGINS.map((origin) => ({ id: origin, label: t(ORIGIN_LABEL[origin]) }))} />
+      {draft.origin === "local_supplier" ? <p className={styles.muted}>{t("A material from a local supplier needs the reviewer's sign-off.")}</p> : null}
+      {draft.samplePhoto ? <p className={styles.muted}>{t("Sample photo: {name}", { name: draft.samplePhoto.name || t("Sample photo") })}</p>
+        : <AssetUpload workspaceId={workspaceId} caseId={caseId} multiple={false} label={t("Add a photo of the sample")} onBusy={setUploading} onError={setError}
+          uploadFile={(file, id) => file.type.startsWith("image/") ? finishes.upload(caseId, file, id) : Promise.reject(new Error(t("Choose a photo of the sample.")))}
+          onUploaded={(asset) => set("samplePhoto")(asset)} />}
+    </FormSection> : null}
     <FormSection title={t("Price and time")}>
       <FormRow>
         <TextInput label={t("Quantity")} inputMode="decimal" value={draft.quantity} onChange={(value) => set("quantity")(value.replace(/[^\d.]/g, ""))} />
@@ -262,7 +325,6 @@ function EntryForm({ workspaceId, caseId, rooms, currency, entry, onClose, onSub
       <MoneyField label={t("Unit price")} currency={currency} value={draft.unitPrice} onChange={set("unitPrice")} />
       <NumericInput label={t("Time impact (days)")} minValue={-365} maxValue={365} step={1} value={draft.timeImpactDays} onChange={(value) => set("timeImpactDays")(Number.isFinite(value) ? Math.trunc(value) : 0)} />
       <TextInput label={t("Supplier")} maxLength={200} value={draft.supplier} onChange={set("supplier")} />
-      {draft.kind === "material" ? <Switch isSelected={draft.outsourced} onChange={set("outsourced")}>{t("From a local supplier (needs sign-off)")}</Switch> : null}
     </FormSection>
     <FormSection title={t("Where it came from")}>
       <FormRow>

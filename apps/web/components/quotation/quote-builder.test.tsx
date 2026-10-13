@@ -458,4 +458,25 @@ describe("requirement trace", () => {
     await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes("/quotes/q1/document") && init?.method === "PUT"
       && JSON.parse(String(init.body)).changeNote === "Porcelain instead of marble")).toBe(true));
   });
+  it("PLM-146: QS prices a line from the designer's finish; the material column is the designer's, and a changed finish is flagged", async () => {
+    const base = state([line({ material: "Calacatta marble" })]);
+    const finished: BuilderState = { ...base, canEditMaterial: false,
+      finishes: { sent: { number: 1, sentAt: "2026-10-10T09:00:00Z", sentByName: "Lina Lead" },
+        entries: [{ id: "e1", title: "Calacatta marble", roomName: "Kitchen", categoryLabel: "Hard finishes", specification: "Honed, 2 cm", versionId: "v2", number: 2, snapshots: 1, sent: true },
+          { id: "e2", title: "Oak veneer", roomName: "Kitchen", categoryLabel: "Hard finishes", specification: "Crown cut", versionId: "v3", number: 1, snapshots: 0, sent: true }],
+        links: [{ lineId: "a", entryId: "e1", stale: true, removed: false }] } };
+    const fetcher = mount(finished);
+    const grid = screen.getByRole("grid", { name: "Quote lines" });
+    expect(within(grid).getByText("Finish changed: price to check")).toBeInTheDocument();
+    // Only the designers write the material: no field to type in, no way to remove it.
+    expect(within(grid).queryByRole("combobox", { name: "Material" })).not.toBeInTheDocument();
+    expect(within(grid).queryByRole("button", { name: "Remove Calacatta marble" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Line actions for Base cabinets" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Change the finish" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /Finish$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Oak veneer/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(fetcher).at(-1)).toEqual({ ops: [{ op: "finish", lineId: "a", entryId: "e2", version: 3 }] }));
+  });
 });

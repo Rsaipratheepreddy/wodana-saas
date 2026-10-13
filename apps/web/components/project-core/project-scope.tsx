@@ -16,14 +16,15 @@ import { factoryApi } from "@/lib/factory/client";
 import { SampleRequests } from "../factory/samples";
 import { ProjectMaterials } from "./project-materials";
 import { ProjectDrawings } from "./project-drawings";
+import { FinishesSchedule } from "../finishes/finishes-schedule";
 import { ProjectReadiness } from "./project-readiness";
 import { SealedDocument } from "./sealed-document";
 import { ProjectChanges } from "../change-requests/project-changes";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
-type View = "items" | "readiness" | "materials" | "drawings" | "changes" | "sealed";
-const VIEWS: View[] = ["items", "readiness", "materials", "drawings", "changes", "sealed"];
+type View = "items" | "readiness" | "materials" | "finishes" | "drawings" | "changes" | "sealed";
+const VIEWS: View[] = ["items", "readiness", "materials", "finishes", "drawings", "changes", "sealed"];
 type Group = "package" | "area";
 const SUPPLIES: Supply[] = ["make", "buy", "ready_made", "subcontract", "client", "site_work"];
 const NONE = "__none";
@@ -112,7 +113,7 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
 
   return <div className={styles.scopeView}>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => { setView(key as View); setSeal(null); }}
-      items={[{ id: "items", label: t("Items") }, { id: "readiness", label: t("Readiness") }, { id: "materials", label: t("Materials") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, ...(priced ? [{ id: "sealed", label: t("Sealed") }] : [])]} />
+      items={[{ id: "items", label: t("Items") }, { id: "readiness", label: t("Readiness") }, { id: "materials", label: t("Materials") }, { id: "finishes", label: t("Finishes") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, ...(priced ? [{ id: "sealed", label: t("Sealed") }] : [])]} />
 
     {view === "items" ? <>
       <div className={styles.scopeToolbar}>
@@ -140,6 +141,8 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
       {/* PLM-061: the samples the design team asked the factory for. */}
       <SampleRequests api={factoryApi(workspaceId)} caseId={scope.caseId} />
     </>
+    // PLM-156: the finishes schedule (design and installation views, the drawings schedule), the same record as on the case.
+    : view === "finishes" ? <FinishesSchedule source={{ kind: "project", workspaceId, projectId }} />
     : view === "drawings" ? <ProjectDrawings workspaceId={workspaceId} projectId={projectId} version={version} onChanged={onChanged} />
     : view === "changes" ? <ProjectChanges workspaceId={workspaceId} projectId={projectId} onChanged={onChanged} />
     : seal ? <SealedDocument workspaceId={workspaceId} projectId={projectId} sealId={seal} onBack={() => setSeal(null)} />

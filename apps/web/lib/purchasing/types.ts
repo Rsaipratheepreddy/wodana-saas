@@ -56,7 +56,8 @@ export type Need = {
   title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; clientChoice: boolean;
   /** Why it can't be ordered yet: the client's material sign-off, or the client's payment for the order. */
-  blocked: "material_signoff" | "client_payment" | null;
+  /** PLM-148: client_signature: the client hasn't signed the samples or data sheets of the job's finishes yet. */
+  blocked: "material_signoff" | "client_signature" | "client_payment" | null;
   /** The supplier the catalog prefers for it. */
   supplierId?: string | null;
   /** When the work that uses it starts; ordered its lead time (in days) before that. */

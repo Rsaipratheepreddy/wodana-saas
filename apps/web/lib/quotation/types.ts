@@ -111,6 +111,10 @@ export type BuilderState = {
   project?: { id: string; reference: string; appliedAs: string | null } | null;
   /** The client's requirements and the decision on each: included, excluded, later, not possible, undecided. */
   requirements?: Array<{ id: string; title: string; roomName: string | null; priority: string; source: string; status: string; note: string }>;
+  /** PLM-146: the finishes to price from, who may edit the material column, and whether this quotation waits for the final specification. */
+  finishes?: QuoteFinishes;
+  canEditMaterial?: boolean;
+  specification?: { applies: boolean; final: boolean; problem: string | null; budgetRange: { note: string; markedByName: string | null; markedAt: string } | null } | null;
 };
 
 /** A line of the project's live BOQ that a variation can remove, move or replace. */
@@ -134,7 +138,16 @@ export type LineOp =
   | { op: "catalog"; itemId: string; line: Partial<BuilderLine> & { id: string; version?: number } }
   | { op: "delete"; id: string; version: number }
   | { op: "reorder"; ids: string[] }
-  | { op: "change"; change: "omit" | "move" | "replace"; id: string; boqLineId: string; quantity?: string; areaId?: string | null; replacementId?: string };
+  | { op: "change"; change: "omit" | "move" | "replace"; id: string; boqLineId: string; quantity?: string; areaId?: string | null; replacementId?: string }
+  /** PLM-146: a line priced from a finish of the schedule (null unties it); its material column takes the designer's specification. */
+  | { op: "finish"; lineId: string; entryId: string | null; version?: number };
+
+/** PLM-146: the finishes the designer sent to QS, and the lines priced from them (the old price flagged when a finish changed since). */
+export type QuoteFinishes = {
+  sent: { number: number; sentAt: string; sentByName: string | null } | null;
+  entries: Array<{ id: string; title: string; roomName: string | null; categoryLabel: string | null; specification: string; versionId: string | null; number: number | null; snapshots: number; sent: boolean }>;
+  links: Array<{ lineId: string; entryId: string; stale: boolean; removed: boolean }>;
+};
 
 export const GENERAL = "general";
 export const NO_TRADE = "none";

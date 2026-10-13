@@ -256,7 +256,7 @@ describe("the materials and decisions ledger (PLM-054, E5-1/E5-2)", () => {
     render(<DesignSystemProvider><DesignLedger workspaceId="w" caseId="c1" rooms={[]} /></DesignSystemProvider>);
     fireEvent.click((await screen.findAllByRole("button", { name: "Add choice" }))[0]);
     const dialog = await screen.findByRole("dialog");
-    const picker = within(dialog).getByRole("combobox", { name: "Catalog item" });
+    const picker = within(dialog).getByRole("combobox", { name: "Sample or catalog item" });
     // The catalog's first items load with the form, so the list opens on focus.
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("design-ledger/catalog?q=&"))).toBe(true));
     const user = userEvent.setup();

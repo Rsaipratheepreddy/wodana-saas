@@ -90,6 +90,8 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
   };
   const measure = task("site_measure");
   const collection = task("sample_collection");
+  // PLM-146: once the samples are approved, the lead designer marks the finishes and sends them to QS.
+  const finishesTask = task("finishes_to_qs");
   const team = view.team;
   const allocating = task("team_allocation");
 
@@ -143,6 +145,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                 {stage.stage === "inspiration" && !stage.dueAt ? <span>{t("Timer starts with the first inspiration")}</span> : null}
                 {stage.stage === "concepts" && current ? taskLine(measure) : null}
                 {stage.stage === "samples" ? taskLine(collection) : null}
+                {stage.stage === "approval" ? taskLine(finishesTask) : null}
                 {stage.stage === "renders" && current ? <>
                   {(["visualiser", "draftsman"] as const).map((key) => { const item = slot(key); return item ? <span key={key}>{slotLabel(item)}: {item.member?.name ?? t("Not tagged")}</span> : null; })}
                   {view.journey?.renderSignoffDueOn ? <span>{t("Client signs off by {date}", { date: calendarDay(view.journey.renderSignoffDueOn) })}</span> : null}
@@ -180,6 +183,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                   {ledger?.materials ? <Button size="compact" variant="secondary" isDisabled={ledger.waiting > 0} onPress={() => setDialog({ kind: "confirm_materials", stage })}>{t("Confirm material list")}</Button> : null}
                   {siteAndMaterials && !stage.progress?.total && !ledger?.materials ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "not_required", stage })}>{t("Not required for this order")}</Button> : null}
                 </> : null}
+                {stage.stage === "approval" && finishesTask?.status === "open" ? <Link className="wd-button" data-size="compact" data-variant="secondary" href={designLink("finishes")}>{t("Mark the finishes")}</Link> : null}
                 {stage.stage === "approval" ? <Link className="wd-button" data-size="compact" data-variant="primary" href={designLink("approval")}>{t("Record the approval")}</Link> : null}
               </div>
             </> : null}

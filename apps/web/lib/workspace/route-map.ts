@@ -107,6 +107,7 @@ function routeTable() {
     { id: "planning-case", label: "Planning", href: "/workspace/pre-projects", parent: "planning", record: true, paths: ["/workspace/pre-projects/cases"] },
     { id: "quotation-templates", label: "Quotation templates", href: "/workspace/pre-projects/quotation-templates", parent: "planning", paths: ["/workspace/pre-projects/quotation-templates"] },
     { id: "supplier-offers", label: "Supplier offers", href: "/workspace/pre-projects/supplier-offers", parent: "planning", paths: ["/workspace/pre-projects/supplier-offers"] },
+    { id: "sample-library", label: "Sample library", href: "/workspace/pre-projects/samples", parent: "planning", paths: ["/workspace/pre-projects/samples"] },
     { id: "catalog", label: "Catalog", href: "/workspace/catalogs", nav: "resources", paths: ["/workspace/catalogs", "/workspace/pre-projects/catalogs", "/workspace/pre-projects/master-data"] },
     { id: "projects", label: "Projects", href: "/workspace/projects", nav: "projects", paths: ["/workspace/projects"] },
     { id: "project", label: "Project", href: "/workspace/projects", parent: "projects", record: true, pattern: new RegExp(`^/workspace/projects/${UUID}(/|$)`, "i") },

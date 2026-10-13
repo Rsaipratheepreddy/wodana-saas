@@ -23,6 +23,8 @@ function allowed(path: string[], method: string) {
   if (path.length === 5 && path[4] === "pulse") return method === "POST";
   if (path.length === 5 && path[4] === "share") return method === "GET";
   if (path.length === 5 && path[4] === "resend") return method === "POST";
+  // PLM-146: a main quotation marked as a budget range the client asked for.
+  if (path.length === 5 && path[4] === "budget-range") return method === "POST";
   if (path.length === 5 && path[4] === "templates") return method === "POST";
   if (path.length === 7 && path[4] === "comments" && UUID.test(path[5]) && ["replies", "status"].includes(path[6])) return method === "POST";
   return false;

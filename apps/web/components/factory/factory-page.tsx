@@ -14,6 +14,7 @@ import { useProjectFilter, withProject } from "../operations/ops";
 import { LogisticsCalendar } from "../logistics/logistics-calendar";
 import { Batches } from "./batches";
 import { FactorySamples } from "./samples";
+import { FactorySharedFinishes } from "../finishes/factory-finishes";
 import { Schedule } from "./schedule";
 import { ToMake } from "./to-make";
 import type { WorkOrderIntent } from "./work-order-sheet";
@@ -36,6 +37,9 @@ export function FactoryPage({ workspaceId, section: initialSection }: { workspac
   const openId = params.get("order");
   const sampleId = params.get("sample");
   const batchId = params.get("batch");
+  // PLM-156: a sample log shared with the factory, opened from its notice (?case=).
+  const sharedCase = params.get("case");
+  const openShared = (caseId: string | null) => move("samples", caseId ? `/workspace/factory/samples?case=${caseId}` : "/workspace/factory/samples");
   const asked = params.get("do");
   const intent = INTENTS.includes(asked as WorkOrderIntent) ? asked as WorkOrderIntent : null;
   const load = useCallback(async () => {
@@ -65,8 +69,9 @@ export function FactoryPage({ workspaceId, section: initialSection }: { workspac
       { id: "calendar", label: t("Calendar"), panel: <LogisticsCalendar workspaceId={workspaceId} /> },
       { id: "batches", label: t("Batches"), panel: <Batches api={api} state={state} error={error} openId={batchId} onReload={() => void load()} onOpen={(id) => go("batches", id)}
         onOpenOrder={(id) => go("orders", id)} /> },
-      // PLM-061: the samples the design team asked for.
-      { id: "samples", label: t("Samples"), panel: <FactorySamples api={api} openId={sampleId} /> },
+      // PLM-061: the samples the design team asked for; PLM-156: the sample logs the lead designers shared with the factory.
+      { id: "samples", label: t("Samples"), panel: sharedCase ? <FactorySharedFinishes workspaceId={workspaceId} caseId={sharedCase} onOpen={openShared} />
+        : <><FactorySamples api={api} openId={sampleId} /><FactorySharedFinishes workspaceId={workspaceId} caseId={null} onOpen={openShared} /></> },
     ] });
   return <PageShell title={t("Factory")} tabs={tabs}>{content}</PageShell>;
 }

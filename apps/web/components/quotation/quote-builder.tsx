@@ -27,6 +27,7 @@ import { InsertTemplate, SaveTemplate } from "./quote-templates";
 import { QuoteChat, type AssistantCommands } from "./quote-chat";
 import { QuoteCatalog } from "./quote-catalog";
 import { NameDialog } from "./name-dialog";
+import { BudgetRangeDialog, FinishPicker } from "./quote-finishes";
 import { ColumnDialog } from "./column-dialog";
 import { useColumnWidths } from "./use-column-widths";
 import { ChangeAgreedItem } from "./quote-variation";
@@ -95,6 +96,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [catalogArea, setCatalogArea] = useState<string | null>(null);
   const [roomFor, setRoomFor] = useState<BuilderLine | "new" | null>(null);
   const [tradeFor, setTradeFor] = useState<BuilderLine | "new" | null>(null);
+  // PLM-146: a line being tied to a finish of the schedule; the budget-range mark being set.
+  const [linking, setLinking] = useState<BuilderLine | null>(null);
+  const [rangeOpen, setRangeOpen] = useState(false);
   const [columnFor, setColumnFor] = useState<QuoteColumn | "new" | null>(null);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const columnsApi = useMemo(() => quoteColumnsApi(workspaceId), [workspaceId]);
@@ -317,6 +321,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       void api.toCatalog(line.id, line.version).then((next) => { setState(next); setError(""); }).catch((cause: Error) => { setError(cause.message); void load(); });
     }
     else if (action === "optional") changeLine(line, { optional: !line.optional });
+    else if (action === "finish") setLinking(line);
     else if (action === "delete") {
       setState((current) => current ? { ...current, lines: current.lines.filter((item) => item.id !== line.id) } : current);
       send([{ op: "delete", id: line.id, version: line.version }]);
@@ -370,6 +375,12 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const toFix = state.quote.status === "draft" ? state.checks.length : 0;
   // An approved quotation waits to be sent until every requirement is decided; the notice opens the first one to decide.
   const undecided = state.quote.status === "internal_approved" ? state.checks.find((check) => check.requirementId) : undefined;
+  // PLM-146: the lines priced from a finish, flagged when the finish changed since; the designer's material column; the final specification.
+  const finishTitles = new Map((state.finishes?.entries ?? []).map((entry) => [entry.id, entry.title]));
+  const finishOf = new Map((state.finishes?.links ?? []).map((link) => [link.lineId, { title: finishTitles.get(link.entryId) ?? "", stale: link.stale }]));
+  const canLinkFinish = Boolean(state.finishes?.entries.length) && (state.canEdit || Boolean(state.canPrice));
+  const spec = state.specification;
+  const rangeOpenable = Boolean(spec) && state.canEdit && ["draft", "internal_review", "internal_approved"].includes(state.quote.status);
   const views: Array<{ id: Panel; label: string }> = [
     ...(state.canEdit ? [{ id: "assistant" as const, label: t("Assistant") }, { id: "catalog" as const, label: t("Catalog") }] : []),
     { id: "comments", label: openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments") },
@@ -454,6 +465,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           comments={threadsAt(threads, { kind: "line", key: line.id })} editingBy={people.filter((person) => person.lineId === line.id)}
           imageUrl={lineImage(line)} onImage={(file) => void setLineImage(line, file)} catalogThumb={catalogThumb} onNewArea={() => setRoomFor(line)}
           onComments={() => openComments({ kind: "line", key: line.id }, line.title)}
+          materialLocked={state.canEditMaterial === false} finish={finishOf.get(line.id) ?? null} canLinkFinish={canLinkFinish}
           onChange={(fields) => changeLine(line, fields)}
           onCatalog={(hit) => send([{ op: "catalog", itemId: hit.id, line: { id: line.id } }])}
           onOpen={() => setOpen(line.id)} onMenu={(action) => menu(line, action)} onDragStart={() => setDragged(line.id)}
@@ -519,8 +531,13 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
               else if (id === "save_template") setSavingTemplate({ scope: "quote", target: "", name: state.quote.title });
               else if (id === "trade") setTradeFor("new");
               else if (id === "change") setChanging(true);
+              else if (id === "budget_range") {
+                if (spec?.budgetRange) void api.budgetRange(false, null).then(() => load()).catch((cause: Error) => setError(cause.message));
+                else setRangeOpen(true);
+              }
             }} items={[
               ...(state.canEdit ? [{ id: "template", label: t("Insert a template") }, { id: "trade", label: t("New work package") }] : []),
+              ...(rangeOpenable ? [{ id: "budget_range", label: spec?.budgetRange ? t("Not a budget range") : t("Mark as a budget range") }] : []),
               ...(state.lines.length ? [{ id: "save_template", label: t("Save quote as template") }] : []),
               ...(state.quote.kind === "variation" && state.canEdit && state.project ? [{ id: "change", label: t("Change an agreed item") }] : []),
             ]} />
@@ -539,6 +556,10 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {["accepted", "declined"].includes(state.quote.status) && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round, status: state.quote.status }} projectStarted={Boolean(state.project)} /> : null}
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {flowNotice ? <InlineNotice tone={flowNotice.tone} message={flowNotice.message} /> : null}
+        {spec?.budgetRange ? <InlineNotice tone="info" title={t("Budget range")} message={t("Asked by the client: {note}", { note: spec.budgetRange.note })} />
+          : spec?.applies && !spec.final && spec.problem && state.quote.status !== "issued" && state.quote.status !== "accepted" ? <InlineNotice tone="info" message={spec.problem} /> : null}
+        {(state.finishes?.links ?? []).some((link) => link.stale) && ["draft", "internal_review"].includes(state.quote.status)
+          ? <InlineNotice tone="error" message={t("A finish changed after it was priced. Check the flagged lines.")} /> : null}
         {undecided ? <InlineNotice tone="error" message={<Link className={styles.checkLink} href={requirementHref(caseId, undecided.requirementId!)}>{t(undecided.code as never, undecided.values)}</Link>} /> : null}
         {!state.canEdit && state.quote.status !== "draft" && !undecided ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
           ? t("This quote is in review. It can be changed again if it's sent back.") : state.quote.status === "internal_approved"
@@ -627,6 +648,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <Button size="compact" variant="quiet" onPress={() => { applyOps(undo.ops); setUndo(null); }}>{t("Undo")}</Button>
     </div> : null}
     {tradeFor ? <NameDialog title={t("New work package")} label={t("Name")} onClose={() => setTradeFor(null)} onSave={newTrade} /> : null}
+    {linking && state.finishes ? <FinishPicker line={linking} finishes={state.finishes} onClose={() => setLinking(null)}
+      onPick={(entryId) => { send([{ op: "finish", lineId: linking.id, entryId, version: linking.version }]); setLinking(null); }} /> : null}
+    {rangeOpen ? <BudgetRangeDialog onClose={() => setRangeOpen(false)} onSave={async (note) => { await api.budgetRange(true, note); setRangeOpen(false); await load(); }} /> : null}
     {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}
       onSave={async (fields) => {
         try { const next = await api.apply([{ op: "upsert", line: { id: openLine.id, version: openLine.version, ...fields } }]); setState(next); setError(""); return true; }

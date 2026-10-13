@@ -3,8 +3,11 @@ import type { CaseDesign, DesignOptions } from "./content";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
 export type JourneyStageKey = "inspiration" | "kickoff" | "site_visit" | "concepts" | "space_planning" | "material_selection" | "renders" | "samples" | "approval";
-/** Work inside a step (PLM-141, PLM-144, PLM-151): the design team to allocate, the design site measure, the sample collection. */
-export type JourneyTaskKey = "team_allocation" | "site_measure" | "sample_collection";
+/**
+ * Work inside a step (PLM-141, PLM-144, PLM-151): the design team to allocate, the design site measure, the sample
+ * collection; PLM-146: the finishes marked and sent to QS once the samples are approved.
+ */
+export type JourneyTaskKey = "team_allocation" | "site_measure" | "sample_collection" | "finishes_to_qs";
 export type JourneyTaskView = {
   task: JourneyTaskKey; label: string; status: "open" | "done"; ownerId: string | null; ownerName: string | null; dueAt: string | null; completedAt: string | null;
   completedByName: string | null; note: string | null; version: number; overdue: boolean;
@@ -83,7 +86,7 @@ export function openSiteVisit(view: Pick<JourneyView, "stages" | "siteVisit"> | 
 
 /** The labels of the work inside a step. */
 export const TASK_LABEL: Record<JourneyTaskKey, MessageKey> = {
-  team_allocation: tKey("Design team"), site_measure: tKey("Design site measure"), sample_collection: tKey("Sample collection"),
+  team_allocation: tKey("Design team"), site_measure: tKey("Design site measure"), sample_collection: tKey("Sample collection"), finishes_to_qs: tKey("Finishes to QS"),
 };
 
 /** The design team's parts as the firm names them by default (its own role labels come from Settings › Projects). */

@@ -67,7 +67,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const scoped = useMemo(() => (state?.needs ?? []).filter((need) => (!projectId || need.projectId === projectId)
     && (!needle || `${need.title} ${need.detail} ${need.projectReference} ${need.projectName} ${need.packageName ?? ""}`.toLocaleLowerCase().includes(needle))), [state, projectId, needle]);
   const queues: Record<Exclude<ToOrderView, "restock">, (need: Need) => boolean> = {
-    order: orderable, late: (need) => orderable(need) && Boolean(need.orderBy && need.orderBy < today), signoff: (need) => need.blocked === "material_signoff" && running(need),
+    order: orderable, late: (need) => orderable(need) && Boolean(need.orderBy && need.orderBy < today), signoff: (need) => (need.blocked === "material_signoff" || need.blocked === "client_signature") && running(need),
     payment: (need) => need.blocked === "client_payment" && running(need), hold: onHold, over,
     all: () => true,
   };
@@ -81,6 +81,8 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const next = (need: Need) => {
     if (!canBuy) return null;
     if (need.blocked === "client_payment") return <Link className={styles.rowLink} href={projectHref(need.projectId, "money")}>{t("Open payments")}</Link>;
+    // PLM-148: the client signs the samples and data sheets on the job's finishes.
+    if (need.blocked === "client_signature") return <Link className={styles.rowLink} href={`${projectHref(need.projectId, "scope")}?view=finishes`}>{t("Get the signatures")}</Link>;
     if (need.blocked) return <Link className={styles.rowLink} href={projectHref(need.projectId, "scope")}>{t("Get sign-off")}</Link>;
     if (over(need)) return <Button size="compact" variant="quiet" onPress={onOrders}>{t("Open orders")}</Button>;
     if (onHold(need)) return <Button size="compact" aria-label={t("Order {name} anyway", { name: need.title })} onPress={() => openOrder([need])}>{t("Order anyway")}</Button>;
@@ -99,6 +101,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
       const parts = [Number(need.placed) ? t("{quantity} ordered", { quantity: unit(need.placed, need.unit) }) : "", Number(need.drafted) ? t("{quantity} in draft", { quantity: unit(need.drafted, need.unit) }) : "",
         Number(need.fromStock) ? t("{quantity} from stock", { quantity: unit(need.fromStock, need.unit) }) : ""].filter(Boolean).join(" · ");
       const main = need.blocked === "client_payment" ? <span className={styles.muted}>{t("Waiting for the client's payment")}</span>
+        : need.blocked === "client_signature" ? <span className={styles.muted}>{t("Waiting for the client's signed samples")}</span>
         : need.blocked ? <span className={styles.muted}>{t("Waiting for the client's sign-off")}</span>
         : need.remaining === null ? <span className={styles.muted}>{t("Quantity to confirm")}</span>
         : Number(need.remaining) > 0 ? <strong className={styles.money}>{unit(need.remaining, need.unit)}</strong>

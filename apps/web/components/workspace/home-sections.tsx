@@ -81,6 +81,7 @@ function kindLook(kind: ReminderKind, t: T): KindLook {
     "purchase.order_late": { icon: Truck, action: t("Chase") },
     "factory.production_due": { icon: Factory, action: t("Open") },
     "factory.inspection_due": { icon: ClipboardCheck, action: t("Inspect") },
+    "finishes.signature_due": { icon: Palette, action: t("Open") },
     "site.daily_report": { icon: ClipboardList, action: t("Open") },
   };
   return looks[kind] ?? { icon: AlertCircle, action: t("Open") };

@@ -12,6 +12,7 @@ import { mergeDesigns } from "@/lib/pre-project/design-workflow";
 import { DESIGN_STATUS_LABEL, designStatusTone, isDeliverableStage, latestOf, nextStep, STAGE_DOCUMENT_TYPE, stageDetail, type JourneyStageKey, type JourneyView } from "@/lib/pre-project/design-workspace";
 import { AssetUpload, CaseModal } from "./case-controls";
 import { DesignLedger } from "./design-ledger";
+import { FinishesSchedule } from "../finishes/finishes-schedule";
 import { DesignPresentations } from "./design-presentations";
 import { METHOD_LABEL, revisionDetail } from "@/lib/pre-project/design-decisions";
 import { DesignActions } from "./design-actions";
@@ -21,6 +22,8 @@ import { RoomField } from "./room-manager";
 import styles from "./design-workspace.module.css";
 
 type Listing = DesignOptions & { items: CaseDesign[] };
+/** A design stage, the files of no stage, the materials and decisions, the finishes schedule (PLM-156) or the history. */
+type Tab = JourneyStageKey | "other" | "ledger" | "finishes" | "history";
 const NO_ROOM = "no-room";
 
 /**
@@ -42,7 +45,7 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const [journey, setJourney] = useState<JourneyView | null>(null);
   const [journeyError, setJourneyError] = useState("");
   // A notice or a link can open a stage, the approval or the materials and decisions list (?stage=…).
-  const [picked, setPicked] = useState<JourneyStageKey | "other" | "ledger" | "history" | null>(() => (params.get("stage") as JourneyStageKey | "ledger" | "history" | null) ?? null);
+  const [picked, setPicked] = useState<Tab | null>(() => (params.get("stage") as Tab | null) ?? null);
   const [view, setView] = useState<"folders" | "all">("folders");
   const [folder, setFolder] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -86,9 +89,9 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const stages = (journey?.stages ?? []).filter((stage) => isDeliverableStage(stage.stage) || stage.stage === "approval");
   const activeStage = stages.find((stage) => stage.status === "active")?.stage;
   const unstaged = current.filter((design) => !isDeliverableStage(design.stage));
-  const shown: JourneyStageKey | "other" | "ledger" | "history" = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
+  const shown: Tab = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
   const stageView = stages.find((stage) => stage.stage === shown);
-  const inStage = shown === "other" ? unstaged : shown === "ledger" ? [] : current.filter((design) => design.stage === shown);
+  const inStage = shown === "other" ? unstaged : shown === "ledger" || shown === "finishes" ? [] : current.filter((design) => design.stage === shown);
   const roomName = (id: string | null) => id ? data.rooms.find((room) => room.id === id)?.name ?? t("Room") : t("General");
   const groups = [...new Set(inStage.map((design) => design.roomId ?? NO_ROOM))]
     .sort((a, b) => a === NO_ROOM ? 1 : b === NO_ROOM ? -1 : roomName(a).localeCompare(roomName(b)))
@@ -120,14 +123,15 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
     {!journey.journey ? <div className={styles.notStarted}>
       <EmptyState illustration="calendar" title={t("Design hasn't started")} description={t("It starts when the design fee is paid.")}
         action={journey.canStart ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void stageAction("design-journey/start", {})}>{t("Start design")}</Button> : undefined} />
-    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as JourneyStageKey | "other" | "ledger" | "history"); setFolder(null); }}
+    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as Tab); setFolder(null); }}
       items={[...stages.map((stage) => ({ id: stage.stage, label: t(stage.label as never), done: stage.status === "done" })), ...(unstaged.length ? [{ id: "other", label: t("Other") }] : []),
-        { id: "ledger", label: t("Materials & decisions") }, { id: "history", label: t("History") }]} />}
+        { id: "ledger", label: t("Materials & decisions") }, { id: "finishes", label: t("Finishes") }, { id: "history", label: t("History") }]} />}
 
     {error ? <InlineNotice tone="error" message={error} /> : null}
 
     {shown === "history" ? <RecordHistory workspaceId={workspaceId} recordType="design" recordId={caseId} />
     : shown === "ledger" ? <DesignLedger workspaceId={workspaceId} caseId={caseId} rooms={data.rooms} />
+    : shown === "finishes" ? <FinishesSchedule source={{ kind: "case", workspaceId, caseId }} rooms={data.rooms} onAddMaterials={() => setPicked("ledger")} />
     : shown === "approval" ? <SignOff data={data} designs={current} journey={journey} canReview={review.canRecordClient} busy={busy}
       onSignOff={(input) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, ...input })} /> : <>
       {(shown === "concepts" || (shown === "renders" && journey.journey?.flowVersion === 2)) && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage={shown} designs={current} canEdit={data.canEdit}

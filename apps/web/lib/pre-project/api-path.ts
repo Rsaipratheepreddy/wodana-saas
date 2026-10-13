@@ -17,6 +17,12 @@ export function allowedCasePath(path:string[],method:string) {
   if(path[1]==='design-ledger')return (method==='GET'&&(path.length===2||(path.length===3&&path[2]==='catalog')))||(method==='POST'&&((path.length===3&&['entries','approve-changes'].includes(path[2]))
     ||(path.length===5&&path[2]==='entries'&&UUID.test(path[3])&&['versions','archive'].includes(path[4]))
     ||(path.length===7&&path[2]==='entries'&&UUID.test(path[3])&&path[4]==='versions'&&UUID.test(path[5])&&path[6]==='decision')));
+  // PLM-146/148/156/157: the finishes schedule (placement, snapshots, send to QS, the client's signatures, the factory share) and its files.
+  if(path[1]==='finishes')return (path.length===2&&method==='GET')
+    ||(method==='POST'&&((path.length===3&&['send-to-qs','share'].includes(path[2]))
+      ||(path.length===4&&path[2]==='assets'&&UUID.test(path[3]))
+      ||(path.length===5&&path[2]==='entries'&&UUID.test(path[3])&&['details','snapshots','signatures'].includes(path[4]))
+      ||(path.length===5&&path[2]==='snapshots'&&UUID.test(path[3])&&path[4]==='archive')));
   // Plan §6.20: change requests (raise, assess, send for approval, decide, send to sign, withdraw).
   if(path[1]==='change-requests')return (path.length===2&&['GET','POST'].includes(method))||(path.length===3&&UUID.test(path[2])&&method==='PUT')
     ||(path.length===4&&UUID.test(path[2])&&method==='POST'&&['submit','decide','send','withdraw'].includes(path[3]));

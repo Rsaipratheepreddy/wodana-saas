@@ -38,7 +38,14 @@ function ImageCell({ url, canEdit, title, onPick }: { url: string | null; canEdi
 /** Which optional columns the table shows. */
 export type RowColumns = { picture: boolean; size: boolean; material: boolean };
 
-export function QuoteRow({ line, draft, serial, column, columns, customColumns = [], areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canPrice = canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, onPasteRows, flash }: {
+export function QuoteRow({ line, draft, serial, column, columns, customColumns = [], areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canPrice = canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, onPasteRows, flash,
+  materialLocked = false, finish = null, canLinkFinish = false }: {
+  /** PLM-146: the material column is the designer's (the firm's chosen design team parts); others read it. */
+  materialLocked?: boolean;
+  /** PLM-146: the finish this line is priced from, flagged when it changed since. */
+  finish?: { title: string; stale: boolean } | null;
+  /** Whoever prices the line can tie it to a finish of the schedule. */
+  canLinkFinish?: boolean;
   line: BuilderLine; draft?: boolean; serial?: number; column: RowColumn; columns: RowColumns; areas: Option[]; trades: Option[];
   /** The firm's own columns, after material. */
   customColumns?: QuoteColumn[];
@@ -102,7 +109,8 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
       <CellInput label={t(SIZE_LABEL[key] as never)} value={line[key] === null ? "" : plain(line[key], locale, 2)} disabled={locked} numeric allowEmpty onCommit={(value) => size(key, value)} />
     </span>) : null}
     {columns.material ? <span role="gridcell" className={styles.materialCell}>
-      <MaterialCell value={line.material} options={materials} disabled={locked} onCommit={(material) => onChange({ material })} />
+      <MaterialCell value={line.material} options={materials} disabled={locked || materialLocked} onCommit={(material) => onChange({ material })} />
+      {finish ? <Badge tone={finish.stale ? "danger" : "neutral"}>{finish.stale ? t("Finish changed: price to check") : t("From the finishes")}</Badge> : null}
     </span> : null}
     {customColumns.map((custom) => <span key={custom.id} role="gridcell" className={custom.kind === "number" ? styles.numberCell : styles.textCell}>
       <CellInput label={custom.name} value={line.values?.[custom.id] ?? ""} disabled={locked} numeric={custom.kind === "number"} allowEmpty
@@ -126,6 +134,7 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
         ...(canAsk ? [{ id: "ask", label: t("Ask AI about this line") }] : []),
         { id: "details", label: t("Details") },
         { id: "comment", label: t("Comment") },
+        ...(canLinkFinish ? [{ id: "finish", label: finish ? t("Change the finish") : t("Price from a finish") }] : []),
         ...(canEdit ? [
           ...(line.changeOp === "omit" || line.changeOp === "move" ? [] : [{ id: "duplicate", label: t("Duplicate") }]),
           ...(!line.catalogItemId && !line.changeOp ? [{ id: "to_catalog", label: t("Add to catalog") }] : []),

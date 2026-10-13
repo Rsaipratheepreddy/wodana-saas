@@ -30,17 +30,23 @@ export type LedgerVersion = {
   fromPortal: boolean; recordedByName: string | null; recordedAt: string;
   /** PLM-144: from a local supplier, and where its sign-off stands (pending, approved, returned, rejected). */
   outsourced?: boolean; signOff?: string | null;
+  /** PLM-157: own stock, a brand or a local supplier (null on a version recorded before), the library sample and its photo. */
+  origin?: "own_stock" | "brand" | "local_supplier" | null; sampleId?: string | null; sampleName?: string | null; samplePhotoAssetId?: string | null; samplePhotoName?: string | null;
 };
 export type LedgerEntry = {
   id: string; kind: "material" | "design"; roomId: string | null; roomName: string | null; position: number; currentNumber: number;
   archivedAt: string | null; archivedAfterLock: boolean; version: number; title: string;
   current: LedgerVersion | null; locked: { id: string; number: number } | null; versions: LedgerVersion[];
+  /** PLM-156: its finish category and where it goes. */
+  categoryKey?: string | null; location?: string; installNote?: string;
 };
 export type LedgerState = "empty" | "open" | "locked" | "changes_pending";
 export type LedgerView = {
   state: LedgerState; lockProblem: string | null; currency: string | null;
   lock: { number: number; reason: string; lockedAt: string; lockedByName: string | null; note: string | null } | null;
   entries: LedgerEntry[]; canEdit?: boolean; canRecordClient?: boolean; canApprove?: boolean;
+  /** PLM-157: keeps the materials (the Material Coordinator), not the design choices. */
+  canManageMaterials?: boolean;
   /** E5-1 on E3: the approval of changes after sign-off (who it waits for). */
   approval?: { id: string; status: string; version: number; waitingFor: string[]; requestedBy: { userId: string; name: string } } | null;
 };

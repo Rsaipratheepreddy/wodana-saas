@@ -20,6 +20,10 @@ function allowed(path: string[], method: string) {
   if (path.length === 2 && path[0] === "inspection-photos" && UUID.test(path[1])) return method === "GET";
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "workcenters") return method === "POST";
+  // PLM-156: the sample logs the lead designers shared with the factory, one of them, and its photos.
+  if (path.length === 1 && path[0] === "finishes") return method === "GET";
+  if (path.length === 2 && path[0] === "finishes" && UUID.test(path[1])) return method === "GET";
+  if (path.length === 4 && path[0] === "finishes" && UUID.test(path[1]) && path[2] === "assets" && UUID.test(path[3])) return method === "GET";
   return false;
 }
 
@@ -29,10 +33,10 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid factory resource.") }, { status: 400 });
-  // A quality check's (or an inspection's) photo streams back as a file.
-  if (path[0] === "photos" || path[0] === "inspection-photos") {
+  // A quality check's (or an inspection's, or a shared sample log's) photo streams back as a file.
+  if (path[0] === "photos" || path[0] === "inspection-photos" || (path[0] === "finishes" && path[2] === "assets")) {
     const preview = url.searchParams.get("preview") === "1";
-    const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/factory/${path[0]}/${path[1]}${preview ? "?preview=1" : ""}`, { cache: "no-store" });
+    const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/factory/${path.join("/")}${preview ? "?preview=1" : ""}`, { cache: "no-store" });
     if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: t("The photo could not be loaded.") }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
     const response = new NextResponse(result.upstream.body, { status: 200, headers: { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream",
       "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" } });
