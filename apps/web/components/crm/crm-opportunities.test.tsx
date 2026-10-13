@@ -226,6 +226,7 @@ it("has one title, one primary action, status tabs and the assignee as a removab
   await user.click(screen.getByRole("menuitem", { name: "Unassigned" }));
   const chips = screen.getByRole("group", { name: "Filters in use" });
   expect(within(chips).getByText("Unassigned")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Filter (1)" })).toHaveTextContent("1");
   await user.click(within(chips).getByRole("button", { name: "Remove filter Unassigned" }));
   expect(screen.queryByRole("group", { name: "Filters in use" })).not.toBeInTheDocument();
 });

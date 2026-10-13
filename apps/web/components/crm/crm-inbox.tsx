@@ -207,7 +207,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     </div>
     <div className={styles.listSearch}>
       <SearchInput label={t("Search inbox")} placeholder={t("Search chats")} value={search} onChange={setSearch} />
-      {filterItems.length ? <IconMenuButton ariaLabel={t("Filter")} icon={<Filter aria-hidden="true" size={15} />} items={filterItems} onAction={addFilter} /> : null}
+      {filterItems.length ? <IconMenuButton ariaLabel={t("Filter")} count={filterChips.length} icon={<Filter aria-hidden="true" size={15} />} items={filterItems} onAction={addFilter} /> : null}
       <IconMenuButton ariaLabel={t("Inbox options")} items={options} onAction={onOption} />
       {canSend ? <IconButton aria-label={t("New conversation")} className={styles.newChat} onPress={() => setCreating(true)} variant="primary"><Plus aria-hidden="true" size={16} /></IconButton> : null}
     </div>

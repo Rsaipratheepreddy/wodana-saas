@@ -201,6 +201,8 @@ describe("CRM inbox", () => {
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(await screen.findByRole("menuitem", { name: "Status: Unresolved" }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=unresolved") && String(url).includes("view=mine"))).toBe(true));
+    // The Filter button counts the filters in use.
+    expect(screen.getByRole("button", { name: "Filter (1)" })).toHaveTextContent("1");
     await user.click(screen.getByRole("button", { name: "Remove filter Status: Unresolved" }));
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(await screen.findByRole("menuitem", { name: "Status: Closing due" }));

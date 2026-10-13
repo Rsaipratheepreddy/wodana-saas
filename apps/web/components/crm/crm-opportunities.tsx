@@ -234,7 +234,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     <div className={styles.toolbarActions}>
       {layout === "board" ? <ScrollEdgeButtons edges={board.edges} onScroll={board.scroll} startLabel={t("Earlier stages")} endLabel={t("Later stages")} /> : null}
       <ToolbarSearch label={t("Search opportunities")} value={search} onChange={setSearch} />
-      <IconMenuButton ariaLabel={t("Filter")} icon={<Filter aria-hidden="true" size={15} />} items={filterItems} onAction={(id) => { const [kind, value] = id.split(":"); if (kind === "owner") setAssignee(value); else setPipelineFilter(value); }} />
+      <IconMenuButton ariaLabel={t("Filter")} count={chips.length} icon={<Filter aria-hidden="true" size={15} />} items={filterItems} onAction={(id) => { const [kind, value] = id.split(":"); if (kind === "owner") setAssignee(value); else setPipelineFilter(value); }} />
       <IconMenuButton ariaLabel={t("Pipeline options")} items={[{ id: "refresh", label: t("Refresh") }]} onAction={() => void reload()} />
     </div>
   </div>;

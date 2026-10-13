@@ -117,6 +117,7 @@ export function IconMenuButton({
   onAction,
   size = "compact",
   variant = "quiet",
+  count = 0,
 }: {
   ariaLabel: string;
   icon?: ReactNode;
@@ -125,12 +126,16 @@ export function IconMenuButton({
   /** A row's "⋯" is compact and quiet; beside a page's primary action it takes that action's size, as a secondary. */
   size?: ButtonSize;
   variant?: ButtonVariant;
+  /** A filter menu: how many filters are in use, shown beside the icon as the toolbar's Filter button shows it. */
+  count?: number;
 }) {
   const { direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   return (
     <MenuTrigger>
-      <IconButton aria-label={ariaLabel} size={size} variant={variant}>{icon}</IconButton>
+      {count > 0
+        ? <Button aria-label={`${ariaLabel} (${count})`} className="wd-filter-button" data-active size={size} variant={variant}>{icon}<span aria-hidden="true" className="wd-count-chip">{count}</span></Button>
+        : <IconButton aria-label={ariaLabel} size={size} variant={variant}>{icon}</IconButton>}
       <Popover {...portalTheme} className="wd-popover" dir={direction} placement="bottom end">
         <Menu aria-label={ariaLabel} className="wd-menu" items={items}>
           {(item) => <ActionMenuItem item={item} onAction={onAction} />}
