@@ -146,9 +146,9 @@ export function SelectField({ accent = "brand", description, errorMessage, items
   // pick, so the dropdown would show the previous choice instead of the page's (empty) value.
   const props = "selectedKey" in passed && passed.selectedKey === undefined ? { ...passed, selectedKey: null } : passed;
   if (items.length > LONG_LIST) {
-    const { selectedKey, defaultSelectedKey, onSelectionChange, isRequired, isDisabled, isInvalid, isReadOnly, autoFocus, name, validate, onOpenChange, ...rest } = props;
+    const { selectedKey, defaultSelectedKey, onSelectionChange, isRequired, isDisabled, isInvalid, autoFocus, name, validate, onOpenChange, ...rest } = props;
     return <ComboboxField aria-label={rest["aria-label"]} autoFocus={autoFocus} defaultSelectedKey={defaultSelectedKey} description={description} errorMessage={errorMessage}
-      isDisabled={isDisabled} isInvalid={isInvalid} isReadOnly={isReadOnly} isRequired={isRequired} items={items} label={label} name={name}
+      isDisabled={isDisabled} isInvalid={isInvalid} isRequired={isRequired} items={items} label={label} name={name}
       onOpenChange={onOpenChange ? (isOpen) => onOpenChange(isOpen) : undefined} onSelectionChange={onSelectionChange} placeholder={placeholder}
       prefix={prefix} {...("selectedKey" in props ? { selectedKey } : {})} validate={validate as never} />;
   }
