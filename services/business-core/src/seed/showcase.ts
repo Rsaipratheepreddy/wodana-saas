@@ -25,6 +25,7 @@ import { QualifyLeadDto, TransitionOpportunityDto } from "../crm/opportunities/d
 import { IntroMeetingService } from "../crm/opportunities/intro-meeting.service";
 import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
+import { FactoryInspectionsService } from "../factory/factory-inspections.service";
 import { FactoryService } from "../factory/factory.service";
 import { BriefService } from "../pre-projects/brief.service";
 import { MoodboardPinDto, SaveBriefEntryDto, SaveRoomDto } from "../pre-projects/brief.dto";
@@ -2486,6 +2487,8 @@ export class ShowcaseSeed {
         status = "released";
       }
       if (status === "released") { await this.advance(`${short} · production started`, false, () => command(maker, "start")); status = "in_production"; }
+      // PLM-150: where the firm inspects made items, Inspection 1 passes in raw material before the final finish.
+      if (status === "in_production") await this.passInspection(short, orderId, "raw");
       if (!finish) { this.kept(`${short} · in production`); continue; }
       if (status === "in_production") {
         order = (await get())!;
@@ -2498,8 +2501,39 @@ export class ShowcaseSeed {
         order = (await get())!;
         await this.advance(`${short} · quality checked`, Number(order.order.toCheck ?? 0) <= 0, () => factory.command(approver, this.w, orderId, { action: "check", id: this.id(ctx, `work-order:${line.lineId}:check-1`), passed: order.order.toCheck }));
       } else if (["ready", "closed", "dispatched"].includes(status)) this.kept(`${short} · work order ${status}`);
+      // PLM-150: made and checked, it goes to site once the last design inspection passed.
+      await this.passInspection(short, orderId, "final");
     }
     return firstId;
+  }
+
+  /**
+   * PLM-150: a design inspection a work order needs (none where the firm doesn't inspect): the factory marks it ready
+   * (the last one asks by itself once the item is ready), then someone in the design team, else a manager, passes it.
+   */
+  protected async passInspection(short: string, orderId: string, stage: "raw" | "final") {
+    const factory = this.get(FactoryService), inspections = this.get(FactoryInspectionsService);
+    const maker = await this.as("factory");
+    const read = async () => (await factory.order(maker, this.w, orderId)) as unknown as { order: Any;
+      inspection: { raw: string; final: string; dueId: string | null; dueStage: string | null } | null };
+    let order = await read();
+    const state = order.inspection?.[stage];
+    if (!state || state === "not_needed" || state === "passed") return;
+    const name = stage === "raw" ? "inspection 1" : "inspection 2";
+    if (state === "to_request") {
+      await this.advance(`${short} · ready for ${name}`, false, () => factory.command(maker, this.w, orderId, { action: "request_inspection", stage, version: order.order.version }));
+      order = await read();
+    }
+    const id = order.inspection?.dueStage === stage ? order.inspection.dueId : null;
+    if (!id) throw new Skip(`${short}: ${name} isn't open`);
+    for (const role of ["designer", "projectManager", "manager", "owner"] as const) {
+      const who = await this.as(role);
+      const round = (await inspections.detail(who, this.w, id).catch(() => null)) as unknown as { canRecord: boolean; row: { version: number } } | null;
+      if (!round?.canRecord) continue;
+      await this.advance(`${short} · ${name} passed`, false, () => inspections.command(who, this.w, id, { action: "pass", version: round.row.version, comments: "As drawn." }));
+      return;
+    }
+    throw new Skip(`${short}: nobody in the design team can record ${name}`);
   }
 
   // ---------------------------------------------------------------- Site

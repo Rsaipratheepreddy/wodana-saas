@@ -218,8 +218,11 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const state = (await factory.state(maker, this.w)) as unknown as { orders: Array<{ id: string; projectId: string; status: string }> };
     const running = state.orders.find((row) => row.projectId === projectId && row.status === "in_production");
     if (!running) throw new Skip("no work order in production");
-    const detail = (await factory.order(maker, this.w, running.id)) as unknown as { order: Any; reports: Array<{ id: string }> };
     const reportId = this.id(projectId, "factory:output:1");
+    // PLM-150: where the firm inspects made items, finished output follows Inspection 1.
+    if (!((await factory.order(maker, this.w, running.id)) as unknown as { reports: Array<{ id: string }> }).reports.some((row) => row.id === reportId))
+      await this.passInspection("work order", running.id, "raw");
+    const detail = (await factory.order(maker, this.w, running.id)) as unknown as { order: Any; reports: Array<{ id: string }> };
     await this.advance("factory output reported, waiting for approval", detail.reports.some((row) => row.id === reportId), () =>
       factory.command(maker, this.w, running.id, { action: "report", id: reportId, good: "0.5", note: "Carcass done; doors next." }));
   }
