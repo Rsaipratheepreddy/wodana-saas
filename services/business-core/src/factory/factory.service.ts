@@ -82,6 +82,8 @@ export class FactoryService {
       return {
         toMake: await readToMake(client, workspaceId), orders: rows, workcenters: await readWorkcenters(client, workspaceId), batches: await readBatches(client, workspaceId),
         requireCheck: settings.requireCheck, today: (await workspaceDay(client, workspaceId)).today, ...rights,
+        // PLM-150: the firm's names for its design inspections.
+        inspectionStages: inspectionSettings(settings).stages,
       };
     });
   }

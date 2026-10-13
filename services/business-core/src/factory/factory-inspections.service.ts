@@ -5,7 +5,7 @@ import { recordAudit } from "../audit/record-audit";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { readInspection, readInspectionBoard, readOpenInspections, recordInspection, recordRights } from "./factory-inspections";
+import { readInspection, readOpenInspections, recordInspection, recordRights } from "./factory-inspections";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -23,20 +23,17 @@ export class FactoryInspectionsService {
   constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly storage?: BrandAssetStorageService) {}
 
   /**
-   * The open inspections: the factory's list (due with the design team, and snags still to fix), or (`view=open`) the
-   * rounds due with the design team, one person's (`mine`) or in a date range, as the design calendar reads them.
+   * The open inspections (due with the design team) with who, which item, which project and by when: one person's
+   * (`mine=1`), one project's, or due in a date range (`from`, `to`), as the design calendar reads them (PLM-152).
    */
   list(actor: RequestActor, workspaceId: string, query: Record<string, string>) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const scope = await this.scope(client, workspaceId, user.userId);
       const projectId = query.projectId && UUID.test(query.projectId) ? query.projectId : null;
       if (projectId && scope.projects && !scope.projects.includes(projectId)) throw new NotFoundException("Project not found.");
-      if (query.view === "open") {
-        const membershipId = query.mine === "1" ? scope.membershipId : null;
-        const rows = await readOpenInspections(client, workspaceId, { projectId, membershipId, from: DATE.test(query.from ?? "") ? query.from : null, to: DATE.test(query.to ?? "") ? query.to : null });
-        return { inspections: scope.projects ? rows.filter((row) => scope.projects!.includes(row.projectId)) : rows };
-      }
-      return { board: await readInspectionBoard(client, workspaceId, { projectId, projectIds: scope.projects }), canSeeFactory: scope.factory };
+      const membershipId = query.mine === "1" ? scope.membershipId : null;
+      const rows = await readOpenInspections(client, workspaceId, { projectId, membershipId, from: DATE.test(query.from ?? "") ? query.from : null, to: DATE.test(query.to ?? "") ? query.to : null });
+      return { inspections: scope.projects ? rows.filter((row) => scope.projects!.includes(row.projectId)) : rows };
     });
   }
 

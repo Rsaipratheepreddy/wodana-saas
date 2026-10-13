@@ -150,7 +150,8 @@ export type OrderInspection = {
   raw: StageState; final: StageState;
   /** The round open with the designer, and the latest round (any status). */
   dueId: string | null; dueStage: InspectionStageKind | null; dueOn: string | null; latestId: string | null;
-  openSnags: number;
+  /** Who the open round is with (null: nobody on the team inspects), and the snags the factory still has to fix. */
+  inspectorName: string | null; openSnags: number;
 };
 
 /** Each work order's inspection state (only work orders that need inspections are in the map). */
@@ -161,8 +162,10 @@ export async function readOrderInspections(db: Db, workspaceId: string, filter: 
         AND ($2::uuid[] IS NULL OR wo.id = ANY($2::uuid[])) AND ($3::uuid IS NULL OR wo.project_id = $3::uuid)`,
     [workspaceId, filter.orderIds ?? null, filter.projectId ?? null])).rows;
   if (!orders.length) return new Map();
-  const rounds = (await db.query<RoundFact & { id: string; workOrderId: string; stage: InspectionStageKind; dueOn: string }>(
+  const rounds = (await db.query<RoundFact & { id: string; workOrderId: string; stage: InspectionStageKind; dueOn: string; inspectorName: string | null }>(
     `SELECT inspection.id, inspection.work_order_id AS "workOrderId", inspection.stage, inspection.status, inspection.due_on::text AS "dueOn",
+            (SELECT coalesce(person.display_name, person.primary_email) FROM workspace_memberships member JOIN users person ON person.id = member.user_id
+              WHERE member.workspace_id = inspection.workspace_id AND member.id = inspection.inspector_membership_id) AS "inspectorName",
             (SELECT count(*)::int FROM work_items snag WHERE snag.workspace_id = inspection.workspace_id AND snag.factory_inspection_id = inspection.id
                AND snag.status IN ('todo', 'in_progress')) AS "openSnags",
             (inspection.status = 'passed' AND EXISTS (SELECT 1 FROM work_order_reworks back WHERE back.workspace_id = inspection.workspace_id
@@ -179,7 +182,7 @@ export async function readOrderInspections(db: Db, workspaceId: string, filter: 
     result.set(order.id, {
       raw: stageState(order.stages.includes("raw"), of("raw"), false), final: stageState(order.stages.includes("final"), of("final"), true),
       dueId: due?.id ?? null, dueStage: due?.stage ?? null, dueOn: due?.dueOn ?? null, latestId: latest?.id ?? null,
-      openSnags: mine.reduce((sum, round) => sum + round.openSnags, 0),
+      inspectorName: due?.inspectorName ?? null, openSnags: mine.reduce((sum, round) => sum + round.openSnags, 0),
     });
   }
   return result;
@@ -554,30 +557,6 @@ export async function readOpenInspections(db: Db, workspaceId: string, filter: {
     [workspaceId, filter.membershipId ?? null, filter.projectId ?? null, filter.from ?? null, filter.to ?? null])).rows;
   return rows.map(({ number, ...row }) => ({ ...row, order: orderNumber(number), stageLabel: settings.stages.find((stage) => stage.kind === row.stage)?.label ?? "",
     overdue: row.dueOn < today }));
-}
-
-/** The factory's list: rounds open with the design team, and failed rounds whose snags the factory still has to fix. */
-export async function readInspectionBoard(db: Db, workspaceId: string, filter: { projectId?: string | null; projectIds?: string[] | null } = {}) {
-  const today = (await workspaceDay(db, workspaceId)).today;
-  const rows = (await db.query<{ id: string; workOrderId: string; number: number; item: string; projectId: string; projectReference: string; projectName: string;
-    stage: InspectionStageKind; round: number; status: "due" | "failed"; inspectorName: string | null; dueOn: string; openSnags: number; snagsDue: string | null }>(
-    `SELECT inspection.id, inspection.work_order_id AS "workOrderId", wo.number, wo.title AS item, inspection.project_id AS "projectId", project.reference AS "projectReference",
-            project.name AS "projectName", inspection.stage, inspection.round, inspection.status, coalesce(person.display_name, person.primary_email) AS "inspectorName",
-            inspection.due_on::text AS "dueOn", snags.open AS "openSnags", snags.due::text AS "snagsDue"
-       FROM factory_inspections inspection
-       JOIN work_orders wo ON wo.workspace_id = inspection.workspace_id AND wo.id = inspection.work_order_id AND wo.status <> 'cancelled'
-       JOIN delivery_projects project ON project.workspace_id = inspection.workspace_id AND project.id = inspection.project_id
-       LEFT JOIN workspace_memberships member ON member.workspace_id = inspection.workspace_id AND member.id = inspection.inspector_membership_id
-       LEFT JOIN users person ON person.id = member.user_id
-       LEFT JOIN LATERAL (SELECT count(*)::int AS open, min(snag.due_date) AS due FROM work_items snag WHERE snag.workspace_id = inspection.workspace_id
-                           AND snag.factory_inspection_id = inspection.id AND snag.status IN ('todo', 'in_progress')) snags ON true
-      WHERE inspection.workspace_id = $1 AND ($2::uuid IS NULL OR inspection.project_id = $2::uuid) AND ($3::uuid[] IS NULL OR inspection.project_id = ANY($3::uuid[]))
-        AND (inspection.status = 'due' OR (inspection.status = 'failed' AND snags.open > 0
-             AND NOT EXISTS (SELECT 1 FROM factory_inspections later WHERE later.workspace_id = inspection.workspace_id AND later.work_order_id = inspection.work_order_id
-                              AND later.stage = inspection.stage AND later.round > inspection.round)))
-      ORDER BY inspection.status = 'failed' DESC, inspection.due_on, wo.number LIMIT 500`,
-    [workspaceId, filter.projectId ?? null, filter.projectIds ?? null])).rows;
-  return rows.map(({ number, ...row }) => ({ ...row, order: orderNumber(number), overdue: (row.status === "due" ? row.dueOn : row.snagsDue ?? row.dueOn) < today }));
 }
 
 /** One round with its item, its photos, its snags and every round of the item. */
