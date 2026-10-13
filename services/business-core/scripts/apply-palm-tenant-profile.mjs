@@ -220,7 +220,10 @@ else await act("design:minimum-deposit", () => request(`/workspaces/${workspaceI
 for (const desired of design.packages) {
   const existing = designSettings.packages.find((row) => row.code === desired.code);
   const same = existing && ["name", "pricingMethod", "rate", "currency", "includedRevisions", "includesSpacePlanning", "includesRenders", "inclusions", "position"].every((key) => String(existing[key] ?? "") === String(desired[key] ?? ""))
-    && String(existing.areaUnit ?? "") === String(desired.areaUnit ?? "") && String(existing.requiredRoleCode ?? "") === String(desired.requiredRoleCode ?? "");
+    && String(existing.areaUnit ?? "") === String(desired.areaUnit ?? "") && String(existing.requiredRoleCode ?? "") === String(desired.requiredRoleCode ?? "")
+    // PLM-139/145: the reviewer role, a rate priced from, and what one unit is.
+    && String(existing.reviewRoleCode ?? "") === String(desired.reviewRoleCode ?? "") && Boolean(existing.rateFrom) === Boolean(desired.rateFrom)
+    && String(existing.unitDefinition ?? "") === String(desired.unitDefinition ?? "");
   if (same) unchanged.push(`design:package:${desired.code}`);
   else await act(`design:package:${desired.code}`, () => request(`/workspaces/${workspaceId}/design/packages`, { body: { ...desired, ...(existing ? { id: existing.id, version: existing.version } : {}) } }));
 }

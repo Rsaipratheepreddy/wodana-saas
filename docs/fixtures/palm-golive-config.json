@@ -197,7 +197,37 @@
   "design": {
     "renderInternalDays": 35,
     "renderClientDays": 56,
-    "revisionsIncluded": 2
+    "revisionsIncluded": 2,
+    "_steps": "PLM-140 to PLM-144 (13 Oct 2026): team allocated the day the fee is paid; first concept 7 days after the kick-off (4-7, set per job by the lead designer); site measure within 3 days of the kick-off; design development 2-8 weeks for the client (7 days per room between them, an assumption until Palm confirms); samples collected within a week and the sample meeting the week after; 1 or 2 concept options. The kick-off within 5 days of inspiration ending is an assumption until Palm confirms.",
+    "steps": {
+      "allocationDays": 1,
+      "kickoffDays": 5,
+      "conceptDays": 7,
+      "siteMeasureDays": 3,
+      "developmentMinDays": 14,
+      "developmentMaxDays": 56,
+      "developmentDaysPerRoom": 7,
+      "sampleCollectionDays": 7,
+      "sampleMeetingDays": 7,
+      "conceptOptionsMax": 2
+    },
+    "team": {
+      "lead_designer": "designer",
+      "junior_designer": "junior_designer",
+      "sales_admin": "sales_admin",
+      "visualiser": "visualiser",
+      "draftsman": "draftsman",
+      "material_coordinator": "material_coordinator",
+      "technicalLeadRoleCode": "technical_lead"
+    },
+    "projectRoles": [
+      { "key": "designer", "label": "Lead Interior Designer" },
+      { "key": "junior_designer", "label": "Junior Interior Designer" },
+      { "key": "sales_admin", "label": "Sales Admin" },
+      { "key": "visualiser", "label": "Visualiser" },
+      { "key": "draftsman", "label": "Draftsman" },
+      { "key": "material_coordinator", "label": "Material Coordinator" }
+    ]
   },
   "clientUpdates": {
     "mode": "call",

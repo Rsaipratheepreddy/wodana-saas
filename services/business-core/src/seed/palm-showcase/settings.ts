@@ -47,8 +47,10 @@ export async function ensureSettings(core: Core, data: SeedData, workspaceId: st
     () => design.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: data.design.minimumDeposit, version: designState.version }));
   for (const desired of data.design.packages) {
     const existing = designState.packages.find((row) => row.code === desired.code);
-    const keys = ["name", "pricingMethod", "rate", "currency", "includedRevisions", "includesSpacePlanning", "includesRenders", "inclusions", "position", "areaUnit", "requiredRoleCode"];
-    await core.ensure("design package", `design package ${desired.code}`, async () => Boolean(existing) && keys.every((key) => String(existing![key] ?? "") === String(desired[key] ?? "")),
+    const keys = ["name", "pricingMethod", "rate", "currency", "includedRevisions", "includesSpacePlanning", "includesRenders", "inclusions", "position", "areaUnit", "requiredRoleCode",
+      "reviewRoleCode", "unitDefinition"];
+    await core.ensure("design package", `design package ${desired.code}`, async () => Boolean(existing) && keys.every((key) => String(existing![key] ?? "") === String(desired[key] ?? ""))
+      && Boolean(existing!.rateFrom) === Boolean(desired.rateFrom),
       () => design.savePackage(actor, workspaceId, { ...(desired as Record<string, unknown>), ...(existing ? { id: existing.id, version: existing.version } : {}) } as never));
   }
 

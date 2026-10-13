@@ -128,6 +128,30 @@
       ]
     },
     {
+      "code": "TECHNICAL_LEAD",
+      "name": "Technical Lead",
+      "scope": "all",
+      "permissions": [
+        "pre_projects.view",
+        "projects.view",
+        "projects.report",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "MATERIAL_COORDINATOR",
+      "name": "Material Coordinator",
+      "scope": "assigned",
+      "permissions": [
+        "pre_projects.view",
+        "projects.view",
+        "catalog.view",
+        "vendors.view",
+        "supplier_offers.view",
+        "stock.view"
+      ]
+    },
+    {
       "code": "PROCUREMENT",
       "name": "Procurement",
       "scope": "all",
@@ -263,6 +287,21 @@
       ]
     }
   ],
+  "designTeam": {
+    "source": "PLM-151, PLM-143, PLM-144, PLM-145, PLM-157 (13 Oct 2026). No fixed lead/junior pairs: each job's design team is allocated once the design fee is paid. Team roles live on the job (Settings > Projects > Roles); Settings > Design > Design team names which role each part uses.",
+    "projectRoles": [
+      { "key": "designer", "label": "Lead Interior Designer", "part": "lead_designer", "setBy": "Account Manager; on Designed by the Creative Director, the Creative Director" },
+      { "key": "junior_designer", "label": "Junior Interior Designer", "part": "junior_designer", "setBy": "Account Manager" },
+      { "key": "sales_admin", "label": "Sales Admin", "part": "sales_admin", "setBy": "Account Manager" },
+      { "key": "visualiser", "label": "Visualiser", "part": "visualiser", "setBy": "Lead Interior Designer (2D renders)" },
+      { "key": "draftsman", "label": "Draftsman", "part": "draftsman", "setBy": "Technical Lead (3D renders)" },
+      { "key": "material_coordinator", "label": "Material Coordinator", "part": "material_coordinator", "setBy": "Account Manager or Lead Interior Designer; without one on the job, the Material Coordinator team collects the samples" }
+    ],
+    "technicalLeadRoleCode": "technical_lead",
+    "creativeDirectorReview": "The Designed by the Creative Director package names creative_director as its reviewer (palm-design-packages.json): the CREATIVE_DIRECTOR team chooses the lead designer and approves every concept and render before the client sees it. Outsourced materials and a Creative Director rate above the package rate are approved through Settings > Approvals (Outsourced material, Design rate above the package rate), whose default step is the design reviewer permission (pre_projects.review_designs), held by CREATIVE_DIRECTOR only.",
+    "clientTitle": "Clients see every designer as Interior designer (never Junior Designer).",
+    "allocatedChangeNeedsReason": true
+  },
   "gapsToBuild": [
     "Record scope own / assigned / all per team (PLM-038 'write on own leads only'): Module 4 Sales and Module 8 Projects.",
     "Self Generated source restricted to Sales, Sales Admin and Directors (PLM-030): Module 4.",

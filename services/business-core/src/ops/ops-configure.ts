@@ -22,7 +22,7 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
 import { WorkspacesService } from "../workspaces/workspaces.service";
 import type { OpsContext, Report } from "./ops-context";
-import { WEEK_DAYS, type CheckSpec, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
+import { WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
 
 /**
  * `configure`: a workspace configuration profile applied through the settings commands each screen uses (with their
@@ -509,14 +509,37 @@ const rolePermissions: Section = async (ctx, profile, step) => {
 // ---------- design ----------
 
 type DesignPackage = { id: string; code: string; name: string; pricingMethod: "per_space" | "per_area" | "fixed"; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null;
-  includedRevisions: number; includesSpacePlanning: boolean; includesRenders: boolean; requiredRoleCode: string | null; inclusions: string | null; position: number; status: string; version: number };
+  includedRevisions: number; includesSpacePlanning: boolean; includesRenders: boolean; requiredRoleCode: string | null; inclusions: string | null; position: number; status: string; version: number;
+  reviewRoleCode?: string | null; rateFrom?: boolean; unitDefinition?: string | null };
+type DesignSteps = Record<DesignStepKey, number> & { conceptOptionsMax: number | null };
+type DesignTeam = Record<DesignTeamKey, string | null>;
 type DesignFlow = { designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number; visualiserRoleCode: string;
-  showroomBookingTypeId: string | null; siteVisitQuestions: Array<{ key: string; question: string }>; renderInternalDays: number | null; renderClientDays: number | null };
+  showroomBookingTypeId: string | null; siteVisitQuestions: Array<{ key: string; question: string; scope?: string | null }>; renderInternalDays: number | null; renderClientDays: number | null;
+  steps: DesignSteps; team: DesignTeam };
 type DesignSettings = { version: number; packages: DesignPackage[]; flow: DesignFlow };
 
 const design: Section = async (ctx, profile, step) => {
   const wanted = profile.design!;
   const service = ctx.get(DesignPackagesService);
+  // The team roles first: the design team's parts name them (PLM-151).
+  if (wanted.projectRoles?.length) {
+    const projects = ctx.get(ProjectCoreService);
+    const { settings } = await projects.settings(ctx.actor, ctx.workspace.id) as { settings: { version: number; roles: Array<{ key: string; label: string }> } };
+    const roleChanges: Change[] = [];
+    const roles = settings.roles.map((role) => ({ ...role }));
+    for (const desired of wanted.projectRoles) {
+      const found = roles.find((role) => role.key === desired.key);
+      if (!found) { roles.push({ ...desired }); roleChanges.push({ label: `project role ${desired.key}`, detail: `added as ${desired.label}` }); }
+      else if (found.label !== desired.label) { roleChanges.push(diff(`project role ${desired.key}`, found.label, desired.label)); found.label = desired.label; }
+      else step.same(`project role ${desired.key}`, desired.label);
+    }
+    if (roleChanges.length) await step.change(roleChanges, async () => {
+      const fresh = (await projects.settings(ctx.actor, ctx.workspace.id) as { settings: { version: number; roles: Array<{ key: string; label: string }> } }).settings;
+      const next = fresh.roles.map((role) => ({ ...role, label: wanted.projectRoles!.find((entry) => entry.key === role.key)?.label ?? role.label }));
+      for (const desired of wanted.projectRoles!) if (!next.some((role) => role.key === desired.key)) next.push({ ...desired });
+      return projects.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, roles: next });
+    });
+  }
   const current = await service.get(ctx.actor, ctx.workspace.id) as DesignSettings;
   const changes: Change[] = [];
   const flowPatch: Partial<DesignFlow> = {};
@@ -524,6 +547,25 @@ const design: Section = async (ctx, profile, step) => {
     if (wanted[key] === undefined) continue;
     if ((current.flow[key] ?? null) === wanted[key]) step.same(label, shown(wanted[key]));
     else { flowPatch[key] = wanted[key]; changes.push(diff(label, current.flow[key], wanted[key])); }
+  }
+  // PLM-140–144: the days of the design steps; PLM-151: the design team's roles.
+  if (wanted.steps) {
+    const steps = { ...current.flow.steps };
+    for (const [key, value] of Object.entries(wanted.steps) as Array<[keyof DesignSteps, number | null]>) {
+      if (value === undefined) continue;
+      if ((steps[key] ?? null) === value) step.same(`design step ${key}`, shown(value));
+      else { changes.push(diff(`design step ${key}`, steps[key], value)); (steps as Record<string, number | null>)[key] = value; }
+    }
+    flowPatch.steps = steps;
+  }
+  if (wanted.team) {
+    const team = { ...current.flow.team };
+    for (const [key, value] of Object.entries(wanted.team) as Array<[DesignTeamKey, string | null]>) {
+      if (value === undefined) continue;
+      if ((team[key] ?? null) === value) step.same(`design team ${key}`, shown(value));
+      else { changes.push(diff(`design team ${key}`, team[key], value)); team[key] = value; }
+    }
+    flowPatch.team = team;
   }
   // The design flow settings are saved whole: everything else goes back as it is.
   if (changes.length) await step.change(changes, async () => {
@@ -544,7 +586,8 @@ const design: Section = async (ctx, profile, step) => {
       // A package is saved whole.
       return service.savePackage(ctx.actor, ctx.workspace.id, { id: now.id, version: now.version, code: now.code, name: now.name, pricingMethod: now.pricingMethod, rate: now.rate,
         currency: now.currency, areaUnit: now.areaUnit, includedRevisions: wanted.revisionsIncluded, includesSpacePlanning: now.includesSpacePlanning, includesRenders: now.includesRenders,
-        requiredRoleCode: now.requiredRoleCode, inclusions: now.inclusions, position: now.position });
+        requiredRoleCode: now.requiredRoleCode, inclusions: now.inclusions, position: now.position, reviewRoleCode: now.reviewRoleCode ?? null, rateFrom: Boolean(now.rateFrom),
+        unitDefinition: now.unitDefinition ?? null });
     });
   }
 };

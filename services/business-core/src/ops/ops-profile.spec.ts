@@ -25,7 +25,12 @@ describe("configuration profile", () => {
     expect(palm.financeRequests?.inbox).toBe("accounts@palmlivingae.com");
     expect(palm.financeRequests?.paymentMethods?.map((method) => [method.name, method.refundDays])).toEqual([["Bank transfer / card", null], ["Stripe", null], ["Tabby", null]]);
     expect(palm.approvals?.payableRequest).toEqual({ firstApproverRole: "finance", secondApproverRole: null, thresholdAmount: null });
-    expect(palm.design).toEqual({ renderInternalDays: 35, renderClientDays: 56, revisionsIncluded: 2 });
+    expect(palm.design).toMatchObject({ renderInternalDays: 35, renderClientDays: 56, revisionsIncluded: 2 });
+    // The design order of 13 Oct 2026 (PLM-140–144, PLM-151): the step days, the design team's roles and the team roles they need.
+    expect(palm.design?.steps).toEqual({ allocationDays: 1, kickoffDays: 5, conceptDays: 7, siteMeasureDays: 3, developmentMinDays: 14, developmentMaxDays: 56, developmentDaysPerRoom: 7,
+      sampleCollectionDays: 7, sampleMeetingDays: 7, conceptOptionsMax: 2 });
+    expect(palm.design?.team).toMatchObject({ lead_designer: "designer", junior_designer: "junior_designer", technicalLeadRoleCode: "technical_lead" });
+    expect(palm.design?.projectRoles?.map((role) => role.key)).toEqual(["designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator"]);
     expect(palm.clientUpdates).toEqual({ mode: "call", frequency: "weekly" });
     expect(palm.catalogCategories).toEqual([{ catalog: "Palm Living Core Collection", merge: [{ from: "BED & MATTRESS", into: "Beds & Mattress" }], deleteEmpty: [],
       deleteEmptyDuplicates: true, rename: [{ from: "DINING CHAIRS", to: "Dining Chairs" }, { from: "LOUNGE CHAIRS", to: "Lounge Chairs" }],
@@ -36,6 +41,16 @@ describe("configuration profile", () => {
   it("only names real people's addresses Palm gave for the finance inbox", () => {
     const text = readFileSync(resolve(__dirname, "../../../../docs/fixtures/palm-golive-config.json"), "utf8");
     expect(text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g)).toEqual(["accounts@palmlivingae.com"]);
+  });
+
+  it("checks the design steps, the design team's roles and the team roles (PLM-140–144, PLM-151)", () => {
+    expect(problems({ design: { steps: { kickoffDays: 0, developmentMinDays: 30, developmentMaxDays: 10, conceptOptionsMax: 20, other: 1 }, team: { lead_designer: null, junior_designer: "Junior Designer" },
+      projectRoles: [{ key: "Lead", label: "Lead" }] } })).toEqual([
+      "design.steps has unknown keys: other.", "design.steps.kickoffDays is a whole number from 1 to 365.", "design.steps.conceptOptionsMax is a whole number from 1 to 12.",
+      "design.steps.developmentMaxDays is at least developmentMinDays.", "design.team.lead_designer names a role.", "design.team.junior_designer is a role key like junior_designer.",
+      "design.projectRoles[0].key is a role key like junior_designer."]);
+    expect(validateProfile({ design: { steps: { developmentDaysPerRoom: 0, conceptOptionsMax: null }, team: { sales_admin: null } } }).design)
+      .toEqual({ steps: { developmentDaysPerRoom: 0, conceptOptionsMax: null }, team: { sales_admin: null } });
   });
 
   it("leaves out what a profile leaves out", () => {

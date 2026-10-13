@@ -61,7 +61,15 @@ export type Profile = {
   approvals?: { payableRequest?: { firstApproverRole: string; secondApproverRole?: string | null; thresholdAmount?: string | null } };
   routes?: RouteChange[];
   rolePermissions?: Array<{ roles: string[]; permissions: string[] }>;
-  design?: { renderInternalDays?: number | null; renderClientDays?: number | null; revisionsIncluded?: number; packages?: string[] };
+  design?: {
+    renderInternalDays?: number | null; renderClientDays?: number | null; revisionsIncluded?: number; packages?: string[];
+    /** The design order of 13 Oct 2026 (PLM-140–144, PLM-151): the days of its steps; a key left out keeps its value. */
+    steps?: Partial<Record<DesignStepKey, number>> & { conceptOptionsMax?: number | null };
+    /** PLM-151: the team role each part of the design team uses (null: not used); a key left out keeps its value. */
+    team?: Partial<Record<DesignTeamKey, string | null>>;
+    /** The team roles the design team needs on every job (Settings › Projects): added when missing, relabelled when different. */
+    projectRoles?: Array<{ key: string; label: string }>;
+  };
   orderPaths?: OrderPathChange[];
   clientUpdates?: { mode: "call" | "portal"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
   catalogCategories?: CategoryCleanup[];
@@ -71,6 +79,12 @@ export type Profile = {
    */
   projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null };
 };
+
+export const DESIGN_STEP_KEYS = ["allocationDays", "kickoffDays", "conceptDays", "siteMeasureDays", "developmentMinDays", "developmentMaxDays", "developmentDaysPerRoom",
+  "sampleCollectionDays", "sampleMeetingDays"] as const;
+export type DesignStepKey = (typeof DESIGN_STEP_KEYS)[number];
+export const DESIGN_TEAM_KEYS = ["lead_designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator", "technicalLeadRoleCode"] as const;
+export type DesignTeamKey = (typeof DESIGN_TEAM_KEYS)[number];
 
 export const PROFILE_SECTIONS = ["enquiryTypes", "vehicles", "factory", "quotations", "firstResponse", "financeRequests", "approvals", "routes", "rolePermissions",
   "design", "orderPaths", "clientUpdates", "catalogCategories", "projects"] as const;
@@ -375,13 +389,48 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.design !== undefined) {
-    const section = at("design").object(raw.design, ["renderInternalDays", "renderClientDays", "revisionsIncluded", "packages"]);
+    const section = at("design").object(raw.design, ["renderInternalDays", "renderClientDays", "revisionsIncluded", "packages", "steps", "team", "projectRoles"]);
     if (section) {
+      const roleKey = /^[a-z][a-z0-9_]{0,63}$/;
       const design: NonNullable<Profile["design"]> = {
         renderInternalDays: nullable(section, "renderInternalDays", (value) => at("design.renderInternalDays").int(value, 1, 365) ?? null),
         renderClientDays: nullable(section, "renderClientDays", (value) => at("design.renderClientDays").int(value, 1, 365) ?? null),
         revisionsIncluded: optional(section, "revisionsIncluded", (value) => at("design.revisionsIncluded").int(value, 0, 20)),
         packages: optional(section, "packages", (value) => at("design.packages").texts(value, 40)),
+        steps: optional(section, "steps", (value) => {
+          const steps = at("design.steps").object(value, [...DESIGN_STEP_KEYS, "conceptOptionsMax"]);
+          if (!steps) return undefined;
+          const read: NonNullable<NonNullable<Profile["design"]>["steps"]> = {};
+          for (const key of DESIGN_STEP_KEYS) {
+            const days = optional(steps, key, (entry) => at(`design.steps.${key}`).int(entry, key === "developmentDaysPerRoom" ? 0 : 1, 365));
+            if (days !== undefined) read[key] = days;
+          }
+          const options = nullable(steps, "conceptOptionsMax", (entry) => at("design.steps.conceptOptionsMax").int(entry, 1, 12) ?? null);
+          if (options !== undefined) read.conceptOptionsMax = options;
+          if (read.developmentMinDays && read.developmentMaxDays && read.developmentMaxDays < read.developmentMinDays) problems.push("design.steps.developmentMaxDays is at least developmentMinDays.");
+          return read;
+        }),
+        team: optional(section, "team", (value) => {
+          const team = at("design.team").object(value, [...DESIGN_TEAM_KEYS]);
+          if (!team) return undefined;
+          const read: Partial<Record<DesignTeamKey, string | null>> = {};
+          for (const key of DESIGN_TEAM_KEYS) {
+            const role = nullable(team, key, (entry) => at(`design.team.${key}`).text(entry, 64));
+            if (role === undefined) continue;
+            if (role === null && key === "lead_designer") { problems.push("design.team.lead_designer names a role."); continue; }
+            if (role && !roleKey.test(role)) { problems.push(`design.team.${key} is a role key like junior_designer.`); continue; }
+            read[key] = role;
+          }
+          return read;
+        }),
+        projectRoles: optional(section, "projectRoles", (value) => at("design.projectRoles").list(value, 40).flatMap((entry, index) => {
+          const object = at(`design.projectRoles[${index}]`).object(entry, ["key", "label"]);
+          if (!object) return [];
+          const key = at(`design.projectRoles[${index}].key`).text(object.key, 64);
+          const label = at(`design.projectRoles[${index}].label`).text(object.label, 80);
+          if (key && !roleKey.test(key)) problems.push(`design.projectRoles[${index}].key is a role key like junior_designer.`);
+          return key && label ? [{ key, label }] : [];
+        })),
       };
       if (design.renderInternalDays && design.renderClientDays && design.renderClientDays < design.renderInternalDays)
         problems.push("design.renderClientDays is at least design.renderInternalDays.");

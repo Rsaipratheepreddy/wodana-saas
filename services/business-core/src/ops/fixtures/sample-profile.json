@@ -37,7 +37,9 @@
     { "roles": ["finance_team"], "permissions": ["reports.management.view"] },
     { "roles": ["administrator"], "permissions": ["reports.management.view"] }
   ],
-  "design": { "renderInternalDays": 20, "renderClientDays": 30, "revisionsIncluded": 3 },
+  "design": { "renderInternalDays": 20, "renderClientDays": 30, "revisionsIncluded": 3,
+    "steps": { "kickoffDays": 4, "siteMeasureDays": 3, "conceptOptionsMax": 2 }, "team": { "junior_designer": null, "material_coordinator": "material_coordinator" },
+    "projectRoles": [{ "key": "designer", "label": "Lead designer" }, { "key": "material_coordinator", "label": "Material Coordinator" }] },
   "orderPaths": [
     { "enquiryType": "furniture", "path": "take_home_now", "takeFrom": "Showroom", "leadDays": { "min": 0, "max": 1 } },
     { "enquiryType": "furniture", "path": "bespoke", "boqRequired": true }
