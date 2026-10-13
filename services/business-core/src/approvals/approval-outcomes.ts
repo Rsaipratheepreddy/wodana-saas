@@ -3,6 +3,7 @@ import { applyManualJournalDecision } from "../books/journals/manual-journal-app
 import { applyChangeApproval } from "../change-requests/change-request.store";
 import { applyLedgerChangeOutcome } from "../change-requests/ledger-change-approval";
 import { applyValueDecision } from "../crm/opportunities/opportunity-proposals";
+import { applyDesignRateDecision } from "../crm/opportunities/design-rate-approval";
 import { applyFinanceRequestDecision } from "../finance-requests/finance-request-approval";
 import type { ApprovalDecision, ApprovalStatus } from "./approval-policy";
 
@@ -20,4 +21,5 @@ export const APPROVAL_OUTCOMES: Partial<Record<string, Outcome>> = {
   refund: applyFinanceRequestDecision,
   payable_request: applyFinanceRequestDecision,
   manual_journal: applyManualJournalDecision,
+  design_rate: applyDesignRateDecision,
 };

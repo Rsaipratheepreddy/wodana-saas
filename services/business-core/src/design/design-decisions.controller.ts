@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { DesignDecisionsService } from "./design-decisions.service";
@@ -45,6 +45,7 @@ class LedgerFieldsDto {
   @IsOptional() @optional() @IsUUID() evidenceAssetId?: string | null;
   @IsOptional() @optional() @IsString() @MaxLength(2000) evidenceNote?: string | null;
   @IsOptional() @optional() @IsString() @MaxLength(2000) note?: string | null;
+  @IsOptional() @optional() @IsBoolean() outsourced?: boolean | null;
 }
 class LedgerEntryDto extends LedgerFieldsDto {
   @IsUUID() id!: string;
@@ -75,6 +76,9 @@ export class DesignDecisionsController {
 
   @Post("design-presentations")
   create(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: PresentationDto) { return this.decisions.createPresentation(actor, workspaceId, caseId, input); }
+
+  @Post("design-presentations/:id/review")
+  review(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: VersionDto) { return this.decisions.review(actor, workspaceId, caseId, id, input); }
 
   @Post("design-presentations/:id/present")
   present(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: VersionDto) { return this.decisions.present(actor, workspaceId, caseId, id, input); }

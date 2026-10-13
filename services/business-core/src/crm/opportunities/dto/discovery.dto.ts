@@ -11,6 +11,8 @@ export class SaveDiscoveryDto {
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(254) clientEmail?: string | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() floorPlanAssetId?: string | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() designPackageId?: string | null;
+  /** PLM-139: the rate agreed with the client on a package priced from its rate (above it, it is approved first). */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @Matches(/^\d{1,12}(\.\d{1,2})?$/) designRate?: string | null;
   @IsOptional() @IsObject() answers?: Record<string, unknown>;
 }
 

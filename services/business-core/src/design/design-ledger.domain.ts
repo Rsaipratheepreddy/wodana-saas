@@ -17,6 +17,8 @@ export type VersionStatus = "proposed" | "confirmed" | "declined" | "superseded"
 export type LedgerVersionInput = {
   title?: string | null; specification?: string | null; supplier?: string | null; quantity?: string | null; unit?: string | null;
   unitPrice?: string | null; timeImpactDays?: number | null; source?: string | null; saidAt?: string | null; evidenceNote?: string | null; note?: string | null;
+  /** PLM-144: from a local supplier instead of the firm's own stock or brands; it needs the reviewer's sign-off. */
+  outsourced?: boolean | null;
 };
 
 const QUANTITY = /^\d{1,10}(\.\d{1,4})?$/;
@@ -54,7 +56,12 @@ export type EntryState = {
   current: { id: string; number: number; status: VersionStatus } | null;
   /** The version the latest lock holds for this entry, if it was in the list then. */
   locked: { id: string; number: number } | null;
+  /** PLM-144: the current version is outsourced and its sign-off isn't approved (yet). */
+  signOffWaiting?: boolean;
 };
+
+/** An outsourced version counts once its sign-off is approved; anything else (none asked yet, pending, sent back, rejected) waits. */
+export const outsourcedWaiting = (version: { outsourced: boolean; signOff: string | null } | null | undefined) => Boolean(version?.outsourced && version.signOff !== "approved");
 
 export type LedgerState = "empty" | "open" | "locked" | "changes_pending";
 
@@ -71,9 +78,11 @@ export function lockProblem(entries: EntryState[]) {
   const live = entries.filter((entry) => !entry.archived);
   if (!live.length) return "Add the materials and choices first";
   const waiting = live.filter((entry) => entry.current?.status !== "confirmed");
-  if (!waiting.length) return null;
-  const names = waiting.slice(0, 3).map((entry) => entry.title).join(", ");
-  return waiting.length > 3 ? `Waiting for the client's confirmation: ${names} and ${waiting.length - 3} more` : `Waiting for the client's confirmation: ${names}`;
+  const names = (list: EntryState[]) => `${list.slice(0, 3).map((entry) => entry.title).join(", ")}${list.length > 3 ? ` and ${list.length - 3} more` : ""}`;
+  if (waiting.length) return `Waiting for the client's confirmation: ${names(waiting)}`;
+  const unsigned = live.filter((entry) => entry.signOffWaiting);
+  if (unsigned.length) return `Waiting for the sign-off of the outsourced ${unsigned.length === 1 ? "material" : "materials"}: ${names(unsigned)}`;
+  return null;
 }
 
 /**

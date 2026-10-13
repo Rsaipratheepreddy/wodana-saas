@@ -536,7 +536,8 @@ const qsReviews: Source = async (db, ctx) => {
 };
 
 /** The group an engine request's kind shows under on the Approvals page. */
-const ENGINE_GROUP: Record<string, ApprovalGroup> = { opportunity_value: "deals", refund: "payments", payable_request: "finance", manual_journal: "finance", change_request: "quotes", quote_send: "quotes", discount: "quotes", quote_qs: "quotes" };
+const ENGINE_GROUP: Record<string, ApprovalGroup> = { opportunity_value: "deals", refund: "payments", payable_request: "finance", manual_journal: "finance", change_request: "quotes", quote_send: "quotes", discount: "quotes", quote_qs: "quotes",
+  outsourced_material: "designs", design_rate: "deals" };
 
 /**
  * Requests on the E3 approval engine this person may decide now (directly, as a delegate, or after escalation), and

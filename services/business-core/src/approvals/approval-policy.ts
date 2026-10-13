@@ -7,7 +7,7 @@ import { Dec } from "../catalog-core/decimal";
  */
 export const APPROVAL_SUBJECT_KINDS = [
   "deal_file", "opportunity_value", "quote_qs", "quote_send", "discount", "refund", "payable", "purchase_order", "change_request", "stock_correction", "ledger_change",
-  "payable_request", "manual_journal",
+  "payable_request", "manual_journal", "outsourced_material", "design_rate",
 ] as const;
 export type ApprovalSubjectKind = (typeof APPROVAL_SUBJECT_KINDS)[number];
 
@@ -76,6 +76,10 @@ export const DEFAULT_APPROVAL_POLICIES: Record<ApprovalSubjectKind, { name: stri
   payable_request: { name: "Payable request", steps: [step("permission", "payables.approve", "Payables approver")] },
   // A manual or opening Ledger journal (plan §6.21b P15): someone holding Ledger approval who didn't prepare it.
   manual_journal: { name: "Manual journal", steps: [step("permission", "books.approve", "Ledger approver")] },
+  // PLM-144: a material from a local supplier instead of the firm's own stock or brands (Palm: the Creative Director signs it off).
+  outsourced_material: { name: "Outsourced material", steps: [step("permission", "pre_projects.review_designs", "Design reviewer")] },
+  // PLM-139: a design fee rate above the package's starting rate (Palm: the Creative Director approves it).
+  design_rate: { name: "Design rate above the package rate", steps: [step("permission", "pre_projects.review_designs", "Design reviewer")] },
 };
 
 /** Shape rules some kinds need because their module maps steps onto its own screens (Finance first, then approvers). */

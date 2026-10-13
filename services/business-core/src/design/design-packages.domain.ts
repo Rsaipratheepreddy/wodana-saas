@@ -5,6 +5,12 @@ export type PricingMethod = "per_space" | "per_area" | "fixed";
 export type DesignPackageInput = {
   code: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit?: "sqft" | "sqm" | null;
   includedRevisions?: number; includesSpacePlanning?: boolean; includesRenders?: boolean; requiredRoleCode?: string | null; inclusions?: string | null; position?: number;
+  /** PLM-145: the role that reviews this package's concepts and renders before the client sees them and chooses its lead designer. */
+  reviewRoleCode?: string | null;
+  /** PLM-139: the rate is a starting price; a higher rate agreed with the client is approved (approval kind design_rate). */
+  rateFrom?: boolean;
+  /** PLM-139: what one pricing unit is, e.g. "1 space = 1 room with a door". */
+  unitDefinition?: string | null;
 };
 
 /** Validates a price-list entry; money stays a decimal string (never a float). */
@@ -22,10 +28,24 @@ export function checkDesignPackage(input: DesignPackageInput): DesignPackageInpu
   if (!Number.isInteger(revisions) || revisions < 0 || revisions > 20) throw new UnprocessableEntityException("Included revisions must be between 0 and 20");
   const role = input.requiredRoleCode?.trim() || null;
   if (role && !/^[a-z][a-z0-9_]{1,59}$/.test(role)) throw new UnprocessableEntityException("Choose a valid role");
+  const reviewRole = input.reviewRoleCode?.trim().toLowerCase() || null;
+  if (reviewRole && !/^[a-z][a-z0-9_]{1,59}$/.test(reviewRole)) throw new UnprocessableEntityException("Choose a valid reviewer role");
   const inclusions = input.inclusions?.trim() || null;
   if (inclusions && inclusions.length > 2000) throw new UnprocessableEntityException("Keep the inclusions under 2000 characters");
+  const unitDefinition = input.pricingMethod === "fixed" ? null : input.unitDefinition?.replace(/\s+/g, " ").trim() || null;
+  if (unitDefinition && unitDefinition.length > 200) throw new UnprocessableEntityException("Keep what a unit is under 200 characters");
   return { code, name, pricingMethod: input.pricingMethod, rate: Dec.of(input.rate).toFixed(2), currency: input.currency, areaUnit, includedRevisions: revisions,
-    includesSpacePlanning: Boolean(input.includesSpacePlanning), includesRenders: Boolean(input.includesRenders), requiredRoleCode: role, inclusions, position: input.position ?? 0 };
+    includesSpacePlanning: Boolean(input.includesSpacePlanning), includesRenders: Boolean(input.includesRenders), requiredRoleCode: role, inclusions, position: input.position ?? 0,
+    reviewRoleCode: reviewRole, rateFrom: input.pricingMethod !== "fixed" && Boolean(input.rateFrom), unitDefinition };
+}
+
+/**
+ * PLM-139: the rate a job's fee uses. On a package priced "from" its rate, a rate agreed with the client above it needs
+ * approval and counts only once approved; at or below it (or on any other package) the package's rate applies.
+ */
+export function agreedRate(pkg: { rate: string; rateFrom: boolean }, requested: string | null | undefined, approved: boolean) {
+  if (!requested || !pkg.rateFrom || Dec.of(requested).cmp(pkg.rate) <= 0) return { rate: Dec.of(pkg.rate).toFixed(2), needsApproval: false };
+  return { rate: approved ? Dec.of(requested).toFixed(2) : Dec.of(pkg.rate).toFixed(2), needsApproval: !approved };
 }
 
 /** PLM-041: the design fee from the package and the opportunity's spaces or area. */

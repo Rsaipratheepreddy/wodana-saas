@@ -5,6 +5,8 @@ export type DiscoveryFacts = {
   clientEmail: string | null; floorPlanAssetId: string | null; designPackageId: string | null;
   /** The property's position (WGS 84 degrees): both or neither. */
   latitude: number | null; longitude: number | null;
+  /** PLM-139: the rate agreed with the client when it differs from the package's (a package priced from its rate). */
+  designRate?: string | null;
 };
 export type DiscoveryQuestion = { key: string; label: string; required: boolean; dataType?: string; options?: Array<{ id: string; label: string }> };
 export type MissingItem = { key: string; label: string };

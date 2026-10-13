@@ -4,10 +4,11 @@ import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { decideLedgerChange, ledgerChangeApproval, requestLedgerChangeApproval } from "../change-requests/ledger-change-approval";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { stageRevisions } from "./design-journey.domain";
+import { STAGE_LABELS, stageRevisions, type JourneyStage } from "./design-journey.domain";
+import { caseFacts, holdsRole, membersWithRole, tellMembers } from "./design-journey.store";
 import type { LedgerVersionInput } from "./design-ledger.domain";
 import { addEntry, addVersion, archiveEntry, decideVersion, ledgerCatalogChoices, readLedger } from "./design-ledger.store";
-import { createPresentation, decideRound, presentedRounds, presentRound, readPresentations, withdrawRound } from "./design-presentations.store";
+import { createPresentation, decideRound, journeyReviewRole, presentedRounds, presentRound, readPresentations, reviewRound, roundReviewed, withdrawRound } from "./design-presentations.store";
 
 export type PresentationInput = { id: string; stage: string; options: Array<{ id: string; title: string; note?: string | null; designId?: string | null; linkUrl?: string | null }> };
 export type RoundDecisionInput = { version: number; decision: "chosen" | "changes_requested"; optionId?: string | null; source: string; decidedBy: string; note?: string | null };
@@ -25,35 +26,69 @@ export class DesignDecisionsService {
   constructor(private readonly access: WorkspaceAccessService) {}
 
   presentations(actor: RequestActor, workspaceId: string, caseId: string) {
-    return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client) => this.presentationView(client, workspaceId, caseId));
+    return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => this.presentationView(client, workspaceId, caseId, user.userId));
   }
 
   createPresentation(actor: RequestActor, workspaceId: string, caseId: string, input: PresentationInput) {
     return this.edit(actor, workspaceId, caseId, async (client, userId) => {
-      if (await createPresentation(client, workspaceId, caseId, input, userId))
+      if (await createPresentation(client, workspaceId, caseId, input, userId)) {
         await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.presentation_created.v1", entityType: "pre_project_case", entityId: caseId, after: { id: input.id, stage: input.stage, options: input.options.length } });
-      return this.presentationView(client, workspaceId, caseId);
+        // PLM-145: on a reviewed package the reviewer hears there is a round to approve before the client sees it.
+        const role = await journeyReviewRole(client, workspaceId, caseId);
+        if (role && !(await this.reviews(client, workspaceId, caseId, userId))) {
+          const facts = await caseFacts(client, workspaceId, caseId);
+          const actorName = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [userId])).rows[0]?.name ?? "";
+          await tellMembers(client, workspaceId, await membersWithRole(client, workspaceId, role), "design.presentation_to_review",
+            { stage: STAGE_LABELS[input.stage as JourneyStage] ?? input.stage, clientName: facts?.clientName ?? "", actor: actorName },
+            `/workspace/pre-projects/cases/${caseId}/designs?stage=${input.stage}`, `design:${caseId}:review:${input.id}`, true, userId);
+        }
+      }
+      return this.presentationView(client, workspaceId, caseId, userId);
     });
   }
 
-  /** PLM-052: on a package reviewed by the Creative Director (the package's reviewer role), only a reviewer presents. */
+  /**
+   * PLM-145: on a package with a reviewer (Palm: the Creative Director on "Designed by the Creative Director"), every
+   * concept and render round is approved by a member holding the package's review role before the client sees it. A
+   * reviewer who shows it approves it as they do. Packages without a reviewer have no review.
+   */
+  review(actor: RequestActor, workspaceId: string, caseId: string, id: string, input: { version: number }) {
+    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view"], async (client, user) => {
+      await this.case(client, workspaceId, caseId);
+      if (!(await journeyReviewRole(client, workspaceId, caseId))) throw new ConflictException("This package has no review before the client sees it.");
+      if (!(await this.reviews(client, workspaceId, caseId, user.userId))) throw new ForbiddenException("Only the package's reviewer approves this.");
+      const result = await reviewRound(client, workspaceId, caseId, id, input.version, user.userId);
+      if (!result.replayed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.presentation_reviewed.v1", entityType: "pre_project_case", entityId: caseId, after: { id, stage: result.stage } });
+      return this.presentationView(client, workspaceId, caseId, user.userId);
+    });
+  }
+
   present(actor: RequestActor, workspaceId: string, caseId: string, id: string, input: { version: number }) {
     return this.edit(actor, workspaceId, caseId, async (client, userId) => {
-      const reviewer = (await client.query<{ role: string | null }>(`SELECT reviewer_role_code AS role FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
-      if (!reviewer) throw new ConflictException("Start the design stages first");
-      if (reviewer.role && !(await this.access.hasPermission(client, workspaceId, userId, "pre_projects.review_designs")))
+      if (!(await client.query(`SELECT 1 FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rowCount) throw new ConflictException("Start the design stages first");
+      const role = await journeyReviewRole(client, workspaceId, caseId);
+      const reviewer = role ? await this.reviews(client, workspaceId, caseId, userId) : false;
+      if (role && !reviewer && !(await roundReviewed(client, workspaceId, id)))
         throw new ForbiddenException("The design reviewer approves this presentation before the client sees it.");
-      const result = await presentRound(client, workspaceId, caseId, id, input.version, userId);
+      const result = await presentRound(client, workspaceId, caseId, id, input.version, userId, { reviewedBy: reviewer ? userId : null });
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.presentation_presented.v1", entityType: "pre_project_case", entityId: caseId, after: { id, ...result } });
-      return this.presentationView(client, workspaceId, caseId);
+      return this.presentationView(client, workspaceId, caseId, userId);
     });
+  }
+
+  /** Whether the person reviews this journey's rounds: they hold its review role, or they run Planning (an admin). */
+  private async reviews(client: PoolClient, workspaceId: string, caseId: string, userId: string) {
+    const role = await journeyReviewRole(client, workspaceId, caseId);
+    if (!role) return false;
+    const membership = (await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`, [workspaceId, userId])).rows[0]?.id;
+    return (await holdsRole(client, workspaceId, membership, role)) || this.access.hasPermission(client, workspaceId, userId, "pre_projects.manage_lifecycle");
   }
 
   withdraw(actor: RequestActor, workspaceId: string, caseId: string, id: string, input: { version: number }) {
     return this.edit(actor, workspaceId, caseId, async (client, userId) => {
       await withdrawRound(client, workspaceId, caseId, id, input.version);
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.presentation_withdrawn.v1", entityType: "pre_project_case", entityId: caseId, after: { id } });
-      return this.presentationView(client, workspaceId, caseId);
+      return this.presentationView(client, workspaceId, caseId, userId);
     });
   }
 
@@ -63,7 +98,7 @@ export class DesignDecisionsService {
       const result = await decideRound(client, workspaceId, caseId, id, { ...input, userId });
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.presentation_decided.v1", entityType: "pre_project_case", entityId: caseId,
         after: { id, decision: input.decision, optionId: input.optionId ?? null, source: input.source, decidedBy: input.decidedBy } });
-      return { ...await this.presentationView(client, workspaceId, caseId), completed: result.completed ?? false };
+      return { ...await this.presentationView(client, workspaceId, caseId, userId), completed: result.completed ?? false };
     });
   }
 
@@ -139,13 +174,19 @@ export class DesignDecisionsService {
     });
   }
 
-  private async presentationView(client: PoolClient, workspaceId: string, caseId: string) {
-    const included = (await client.query<{ included: number }>(`SELECT included_revisions AS included FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.included ?? null;
+  private async presentationView(client: PoolClient, workspaceId: string, caseId: string, userId?: string) {
+    const journey = (await client.query<{ included: number; conceptOptionsMax: number | null }>(
+      `SELECT included_revisions AS included, concept_options_max AS "conceptOptionsMax" FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
+    const included = journey?.included ?? null;
     const rounds = await presentedRounds(client, workspaceId, caseId);
+    const reviewRole = await journeyReviewRole(client, workspaceId, caseId);
     return {
       presentations: await readPresentations(client, workspaceId, caseId),
       revisions: included === null ? null : Object.fromEntries(["concepts", "space_planning", "material_selection", "renders"].map((stage) =>
         [stage, stageRevisions(rounds.find((item) => item.stage === stage)?.rounds ?? 0, included)])),
+      /** PLM-145: whether rounds wait for the reviewer, and whether this person is one; PLM-142: how many concept options. */
+      review: reviewRole ? { role: reviewRole, canReview: userId ? await this.reviews(client, workspaceId, caseId, userId) : false } : null,
+      conceptOptionsMax: journey?.conceptOptionsMax ?? null,
     };
   }
 

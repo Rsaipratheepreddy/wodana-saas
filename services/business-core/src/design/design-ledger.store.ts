@@ -3,9 +3,10 @@ import { Dec } from "../catalog-core/decimal";
 import { searchCatalog } from "../quotation/quote-catalog";
 import { BadRequestException, ConflictException, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { PoolClient } from "pg";
+import { cancelApproval, requestApproval } from "../approvals/approval-engine.api";
 import { caseTeam, caseTitle, tellClients, tellStaff } from "../client-portal/portal-notices";
 import {
-  CONFIRMATION_METHODS, confirmProblem, impactText, LEDGER_KINDS, ledgerState, lockProblem, priceImpact, procurementProblem, versionProblem,
+  CONFIRMATION_METHODS, confirmProblem, impactText, LEDGER_KINDS, ledgerState, lineTotal, lockProblem, outsourcedWaiting, priceImpact, procurementProblem, versionProblem,
   type ConfirmationMethod, type EntryState, type LedgerKind, type LedgerVersionInput, type VersionStatus,
 } from "./design-ledger.domain";
 import { salesAdminMembership } from "./design-journey.store";
@@ -21,6 +22,8 @@ export type LedgerVersionRow = {
   source: string; saidAt: string; evidenceAssetId: string | null; evidenceName: string | null; evidenceNote: string; note: string; afterLock: boolean;
   status: VersionStatus; confirmedAt: string | null; confirmationMethod: string | null; confirmedByName: string | null; fromPortal: boolean;
   recordedByName: string | null; recordedAt: string;
+  /** PLM-144: from a local supplier, and where its sign-off stands (the approval engine: pending, approved, returned, rejected). */
+  outsourced: boolean; signOff: string | null;
 };
 export type LedgerEntryRow = {
   id: string; kind: LedgerKind; roomId: string | null; roomName: string | null; position: number; currentNumber: number;
@@ -53,7 +56,10 @@ export async function readLedger(db: Db, workspaceId: string, caseId: string) {
             version.time_impact_days AS "timeImpactDays", version.source, version.said_at AS "saidAt", version.evidence_asset_id AS "evidenceAssetId", asset.original_name AS "evidenceName",
             version.evidence_note AS "evidenceNote", version.note, version.after_lock AS "afterLock", version.status, version.confirmed_at AS "confirmedAt",
             version.confirmation_method AS "confirmationMethod", version.confirmed_by_name AS "confirmedByName", version.recorded_by_grant_id IS NOT NULL AS "fromPortal",
-            COALESCE(recorder.display_name, grant_row.name) AS "recordedByName", version.recorded_at AS "recordedAt"
+            COALESCE(recorder.display_name, grant_row.name) AS "recordedByName", version.recorded_at AS "recordedAt", version.outsourced,
+            CASE WHEN version.outsourced THEN (SELECT request.status FROM approval_requests request WHERE request.workspace_id = version.workspace_id
+              AND request.subject_kind = 'outsourced_material' AND request.subject_id = version.id AND request.status <> 'superseded'
+              ORDER BY request.requested_at DESC LIMIT 1) END AS "signOff"
        FROM design_ledger_versions version
        LEFT JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.id = version.evidence_asset_id
        LEFT JOIN users recorder ON recorder.id = version.recorded_by
@@ -70,7 +76,8 @@ export async function readLedger(db: Db, workspaceId: string, caseId: string) {
     return { ...entry, archivedAt: iso(entry.archivedAt), title: current?.title ?? "", current, locked: locked ? { id: locked.id, number: locked.number } : null, versions: own };
   });
   const states: EntryState[] = shaped.map((entry) => ({ id: entry.id, title: entry.title, archived: Boolean(entry.archivedAt), archivedAfterLock: entry.archivedAfterLock,
-    current: entry.current ? { id: entry.current.id, number: entry.current.number, status: entry.current.status } : null, locked: entry.locked }));
+    current: entry.current ? { id: entry.current.id, number: entry.current.number, status: entry.current.status } : null, locked: entry.locked,
+    signOffWaiting: outsourcedWaiting(entry.current) }));
   const currency = await ledgerCurrency(db, workspaceId, caseId);
   return {
     state: ledgerState(states, Boolean(lock)),
@@ -110,7 +117,22 @@ function clean(input: LedgerVersionInput & { catalogItemId?: string | null; evid
     title: text(input.title), specification: text(input.specification), supplier: text(input.supplier).slice(0, 200), quantity: text(input.quantity) || null,
     unit: text(input.unit).slice(0, 40), unitPrice: text(input.unitPrice) || null, timeImpactDays: input.timeImpactDays ?? 0, source: input.source as string,
     saidAt: input.saidAt as string, evidenceNote: text(input.evidenceNote), note: text(input.note), catalogItemId: input.catalogItemId ?? null, evidenceAssetId: input.evidenceAssetId ?? null,
+    outsourced: input.outsourced === true,
   };
+}
+
+/**
+ * PLM-144: an outsourced version asks for its sign-off through the approval engine (kind outsourced_material; the
+ * firm's policy says who, Palm: the Creative Director). A version it replaces stops waiting.
+ */
+async function askSignOff(db: Db, workspaceId: string, caseId: string, input: { versionId: string; replacedId: string | null; fields: ReturnType<typeof clean>; currency: string | null; actor: LedgerActor }) {
+  if (input.replacedId) await cancelApproval(db, { workspaceId, kind: "outsourced_material", subjectId: input.replacedId, actorUserId: input.actor.userId, reason: "Replaced by a new version" });
+  if (!input.fields.outsourced) return;
+  const facts = await caseTitle(db, workspaceId, caseId);
+  const total = lineTotal(input.fields.quantity, input.fields.unitPrice);
+  const supplier = input.fields.supplier ? ` (${input.fields.supplier})` : "";
+  await requestApproval(db, { workspaceId, kind: "outsourced_material", subjectId: input.versionId, title: `${input.fields.title}${supplier} · ${facts.title || facts.clientName}`.slice(0, 300),
+    href: ledgerLink(caseId), amount: total && input.currency ? total.toFixed(2) : null, currency: total && input.currency ? input.currency : null, requesterUserId: input.actor.userId });
 }
 
 async function assertBelongs(db: Db, workspaceId: string, caseId: string, input: { roomId?: string | null; catalogItemId?: string | null; evidenceAssetId?: string | null }) {
@@ -126,11 +148,11 @@ async function insertVersion(db: Db, workspaceId: string, caseId: string, entryI
   fields: ReturnType<typeof clean>, impact: string, afterLock: boolean, currency: string | null, actor: LedgerActor) {
   await db.query(
     `INSERT INTO design_ledger_versions (id, workspace_id, case_id, entry_id, number, title, specification, catalog_item_id, supplier, quantity, unit, unit_price, currency,
-                                         price_impact, time_impact_days, source, said_at, evidence_asset_id, evidence_note, note, after_lock, recorded_by, recorded_by_grant_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::numeric, $11, $12::numeric, $13, $14::numeric, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+                                         price_impact, time_impact_days, source, said_at, evidence_asset_id, evidence_note, note, after_lock, recorded_by, recorded_by_grant_id, outsourced)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::numeric, $11, $12::numeric, $13, $14::numeric, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
     [id, workspaceId, caseId, entryId, number, fields.title, fields.specification, fields.catalogItemId, fields.supplier, fields.quantity, fields.unit, fields.unitPrice,
       fields.unitPrice ? currency : null, impact, fields.timeImpactDays, fields.source, fields.saidAt, fields.evidenceAssetId, fields.evidenceNote, fields.note, afterLock,
-      actor.userId, null]);
+      actor.userId, null, fields.outsourced]);
 }
 
 /** Replays of the same command (same ids, same content) return the ledger unchanged; anything else with those ids is refused. */
@@ -138,7 +160,7 @@ function sameVersion(existing: LedgerVersionRow, fields: ReturnType<typeof clean
   const same = (a: string | null, b: string | null) => (a === null || b === null ? a === b : Dec.of(a).cmp(b) === 0);
   return existing.title === fields.title && existing.specification === fields.specification && same(existing.quantity, fields.quantity)
     && same(existing.unitPrice, fields.unitPrice) && existing.unit === fields.unit && existing.source === fields.source
-    && existing.catalogItemId === fields.catalogItemId;
+    && existing.catalogItemId === fields.catalogItemId && existing.outsourced === fields.outsourced;
 }
 
 /** A new material or design choice, its first version proposed for the client's confirmation. */
@@ -161,6 +183,7 @@ export async function addEntry(db: Db, workspaceId: string, caseId: string, inpu
     [input.id, workspaceId, caseId, input.kind, input.roomId ?? null, position, actor.userId]);
   const impact = priceImpact(null, fields);
   await insertVersion(db, workspaceId, caseId, input.id, input.versionId, 1, fields, impact, afterLock, ledger.currency, actor);
+  await askSignOff(db, workspaceId, caseId, { versionId: input.versionId, replacedId: null, fields, currency: ledger.currency, actor });
   await noticeVersion(db, workspaceId, caseId, { versionId: input.versionId, title: fields.title, impact, days: fields.timeImpactDays, afterLock, currency: ledger.currency, actor });
   return { replayed: false, versionId: input.versionId, afterLock };
 }
@@ -190,6 +213,7 @@ export async function addVersion(db: Db, workspaceId: string, caseId: string, en
   // The version it replaces stays as history; one still waiting for the client is superseded.
   await db.query(`UPDATE design_ledger_versions SET status = 'superseded' WHERE workspace_id = $1 AND entry_id = $2 AND status = 'proposed'`, [workspaceId, entryId]);
   await insertVersion(db, workspaceId, caseId, entryId, input.versionId, number, fields, impact, afterLock, ledger.currency, actor);
+  await askSignOff(db, workspaceId, caseId, { versionId: input.versionId, replacedId: previous?.outsourced ? previous.id : null, fields, currency: ledger.currency, actor });
   await db.query(`UPDATE design_ledger_entries SET current_number = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, entryId, number]);
   await noticeVersion(db, workspaceId, caseId, { versionId: input.versionId, title: fields.title, impact, days: fields.timeImpactDays, afterLock, currency: ledger.currency, actor });
   return { replayed: false, versionId: input.versionId, afterLock };
@@ -204,6 +228,9 @@ export async function archiveEntry(db: Db, workspaceId: string, caseId: string, 
   if (entry.version !== entryVersion) throw new ConflictException("This choice changed in another window. Reload and try again.");
   await db.query(`UPDATE design_ledger_entries SET archived_at = clock_timestamp(), archived_by = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, entryId, userId]);
   await db.query(`UPDATE design_ledger_versions SET status = 'superseded' WHERE workspace_id = $1 AND entry_id = $2 AND status = 'proposed'`, [workspaceId, entryId]);
+  // A removed outsourced choice no longer waits for its sign-off.
+  for (const version of (await db.query<{ id: string }>(`SELECT id FROM design_ledger_versions WHERE workspace_id = $1 AND entry_id = $2 AND outsourced`, [workspaceId, entryId])).rows)
+    await cancelApproval(db, { workspaceId, kind: "outsourced_material", subjectId: version.id, actorUserId: userId, reason: "Removed from the list" });
   return true;
 }
 
@@ -290,7 +317,7 @@ async function noticeVersion(db: Db, workspaceId: string, caseId: string, input:
        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
        JOIN workspace_memberships membership ON membership.workspace_id = pre_case.workspace_id AND membership.id = opportunity.owner_membership_id AND membership.status = 'active'
       WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows.map((row) => row.userId);
-  const admin = await salesAdminMembership(db, workspaceId);
+  const admin = await salesAdminMembership(db, workspaceId, caseId);
   const adminUser = admin ? (await db.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, admin])).rows.map((row) => row.userId) : [];
   await tellStaff(db, { workspaceId, recipients: [...new Set([...manager, ...adminUser])], code: "design.ledger_changed",
     variables: { clientName: facts.clientName, title: input.title, impact: impactText(input.impact, input.days, input.currency) },

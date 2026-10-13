@@ -6,22 +6,53 @@ import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { checkDesignPackage, designFee, effectiveMinimumDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
 import { DEFAULT_SITE_VISIT_QUESTIONS, normaliseSiteQuestions, type SiteQuestion } from "./design-journey.domain";
+import { designTeamConfig } from "./design-journey.store";
+import { teamConfigProblem, type TeamSlot } from "./design-team.domain";
+import { DEFAULT_ROLES } from "../project-core/project-checks";
 
 export type DesignFlowSettings = {
   version: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number;
   visualiserRoleCode: string; showroomBookingTypeId: string | null; siteVisitQuestions: SiteQuestion[];
   /** The 3D renders' own internal and client-facing days; null follows the design days. */
   renderInternalDays?: number | null; renderClientDays?: number | null;
+  /** The order of 13 Oct 2026 (PLM-140–144, PLM-151); left out, a value keeps what it was. */
+  steps?: DesignStepTimings;
+  /** PLM-151: the team role each part of the design team uses; left out, it keeps what it was. */
+  team?: Record<TeamSlot, string | null> & { technicalLeadRoleCode: string | null };
 };
+
+/** Days of the design steps: from the fee to the team, inspiration to the kick-off, the kick-off to the first concept and the site measure, the development window and samples. */
+export type DesignStepTimings = {
+  allocationDays: number; kickoffDays: number; conceptDays: number; siteMeasureDays: number; developmentMinDays: number; developmentMaxDays: number; developmentDaysPerRoom: number;
+  sampleCollectionDays: number; sampleMeetingDays: number; conceptOptionsMax: number | null;
+};
+
+const STEP_DEFAULTS: DesignStepTimings = { allocationDays: 1, kickoffDays: 5, conceptDays: 7, siteMeasureDays: 3, developmentMinDays: 14, developmentMaxDays: 56, developmentDaysPerRoom: 7,
+  sampleCollectionDays: 7, sampleMeetingDays: 7, conceptOptionsMax: null };
+
+/** What is wrong with the step days, in words for the person setting them. */
+export function stepTimingsProblem(steps: DesignStepTimings) {
+  const within = (value: number, low: number, high: number) => Number.isInteger(value) && value >= low && value <= high;
+  if (!within(steps.allocationDays, 1, 30)) return "The design team is allocated within 1 to 30 days";
+  if (!within(steps.kickoffDays, 1, 60)) return "The kick-off is within 1 to 60 days";
+  if (!within(steps.conceptDays, 1, 90)) return "The first concept is due within 1 to 90 days";
+  if (!within(steps.siteMeasureDays, 1, 30)) return "The site measure is due within 1 to 30 days";
+  if (!within(steps.developmentMinDays, 1, 365) || !within(steps.developmentMaxDays, 1, 365) || steps.developmentMaxDays < steps.developmentMinDays)
+    return "The development window runs from its shortest to its longest, within a year";
+  if (!within(steps.developmentDaysPerRoom, 0, 90)) return "Days per room are between 0 and 90";
+  if (!within(steps.sampleCollectionDays, 1, 60) || !within(steps.sampleMeetingDays, 1, 60)) return "Samples and their meeting take 1 to 60 days each";
+  if (steps.conceptOptionsMax !== null && !within(steps.conceptOptionsMax, 1, 12)) return "Show 1 to 12 concept options";
+  return null;
+}
 
 type PackageRow = {
   id: string; code: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null;
-  includedRevisions: number; includesSpacePlanning: boolean; includesRenders: boolean; requiredRoleCode: string | null; inclusions: string | null;
+  includedRevisions: number; includesSpacePlanning: boolean; includesRenders: boolean; requiredRoleCode: string | null; inclusions: string | null; reviewRoleCode: string | null; rateFrom: boolean; unitDefinition: string | null;
   position: number; status: "active" | "archived"; version: number;
 };
 const PACKAGE_COLUMNS = `id, code, name, pricing_method AS "pricingMethod", rate::text AS rate, currency, area_unit AS "areaUnit",
   included_revisions AS "includedRevisions", includes_space_planning AS "includesSpacePlanning", includes_renders AS "includesRenders",
-  required_role_code AS "requiredRoleCode", inclusions, position, status, version`;
+  required_role_code AS "requiredRoleCode", inclusions, position, status, version, review_role_code AS "reviewRoleCode", rate_from AS "rateFrom", unit_definition AS "unitDefinition"`;
 
 /** PLM-041: design package price list and minimum design deposit. Sales can read; owners and admins change it. */
 @Injectable()
@@ -67,6 +98,10 @@ export class DesignPackagesService {
     if (input.designClientDays < input.designInternalDays) throw new UnprocessableEntityException("The client deadline can't be before the internal one");
     const renderInternal = input.renderInternalDays ?? null, renderClient = input.renderClientDays ?? null;
     if ((renderClient ?? input.designClientDays) < (renderInternal ?? input.designInternalDays)) throw new UnprocessableEntityException("The renders' client deadline can't be before their internal one");
+    const stepProblem = input.steps ? stepTimingsProblem(input.steps) : null;
+    if (stepProblem) throw new UnprocessableEntityException(stepProblem);
+    const teamProblem = input.team ? teamConfigProblem(input.team) : null;
+    if (teamProblem) throw new UnprocessableEntityException(teamProblem);
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
       const before = (await client.query<{ version: number }>(`SELECT version FROM workspace_design_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId])).rows[0];
       if ((before?.version ?? 0) !== input.version) throw new ConflictException("Design settings changed in another window. Reload and try again.");
@@ -83,6 +118,22 @@ export class DesignPackagesService {
            updated_by = excluded.updated_by, updated_at = now(), version = workspace_design_settings.version + 1`,
         [workspaceId, input.designInternalDays, input.designClientDays, input.materialSelectionDays, input.estimateDays, input.visualiserRoleCode.trim() || "visualiser",
           input.showroomBookingTypeId ?? null, JSON.stringify(questions), user.userId, renderInternal, renderClient]);
+      if (input.steps) {
+        const steps = input.steps;
+        await client.query(
+          `UPDATE workspace_design_settings SET allocation_days = $2, kickoff_days = $3, concept_days = $4, site_measure_days = $5, development_min_days = $6, development_max_days = $7,
+                  development_days_per_room = $8, sample_collection_days = $9, sample_meeting_days = $10, concept_options_max = $11 WHERE workspace_id = $1`,
+          [workspaceId, steps.allocationDays, steps.kickoffDays, steps.conceptDays, steps.siteMeasureDays, steps.developmentMinDays, steps.developmentMaxDays, steps.developmentDaysPerRoom,
+            steps.sampleCollectionDays, steps.sampleMeetingDays, steps.conceptOptionsMax]);
+      }
+      if (input.team) {
+        const team = input.team;
+        await client.query(
+          `UPDATE workspace_design_settings SET lead_designer_role_key = $2, junior_designer_role_key = $3, sales_admin_role_key = $4, visualiser_role_key = $5, draftsman_role_key = $6,
+                  material_coordinator_role_key = $7, technical_lead_role_code = $8 WHERE workspace_id = $1`,
+          [workspaceId, team.lead_designer, team.junior_designer || null, team.sales_admin || null, team.visualiser || null, team.draftsman || null, team.material_coordinator || null,
+            team.technicalLeadRoleCode || null]);
+      }
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.flow_settings_changed.v1", entityType: "workspace_design_settings", entityId: workspaceId,
         after: { ...input, siteVisitQuestions: questions.map((question) => question.key) } });
       return this.load(client, workspaceId);
@@ -98,14 +149,14 @@ export class DesignPackagesService {
         if (input.version !== undefined && before.version !== input.version) throw new ConflictException("This package changed in another window. Reload and try again.");
         saved = (await client.query<PackageRow>(
           `UPDATE design_packages SET code=$3, name=$4, pricing_method=$5, rate=$6, currency=$7, area_unit=$8, included_revisions=$9, includes_space_planning=$10,
-             includes_renders=$11, required_role_code=$12, inclusions=$13, position=$14, version=version+1, updated_at=now()
+             includes_renders=$11, required_role_code=$12, inclusions=$13, position=$14, review_role_code=$15, rate_from=$16, unit_definition=$17, version=version+1, updated_at=now()
            WHERE workspace_id=$1 AND id=$2 RETURNING ${PACKAGE_COLUMNS}`,
           [workspaceId, input.id, ...this.values(value)])).rows[0];
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.package_updated", entityType: "design_package", entityId: saved.id, before, after: saved });
       } else {
         saved = (await client.query<PackageRow>(
-          `INSERT INTO design_packages (workspace_id, code, name, pricing_method, rate, currency, area_unit, included_revisions, includes_space_planning, includes_renders, required_role_code, inclusions, position)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          `INSERT INTO design_packages (workspace_id, code, name, pricing_method, rate, currency, area_unit, included_revisions, includes_space_planning, includes_renders, required_role_code, inclusions, position, review_role_code, rate_from, unit_definition)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
            ON CONFLICT (workspace_id, code) DO NOTHING RETURNING ${PACKAGE_COLUMNS}`,
           [workspaceId, ...this.values(value)])).rows[0];
         if (!saved) throw new ConflictException("A package with this code already exists");
@@ -152,6 +203,13 @@ export class DesignPackagesService {
               render_internal_days AS "renderInternalDays", render_client_days AS "renderClientDays"
          FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const bookingTypes = (await client.query<{ id: string; name: string }>(`SELECT id, name FROM booking_types WHERE workspace_id = $1 AND active ORDER BY name`, [workspaceId])).rows;
+    const steps = (await client.query<DesignStepTimings>(
+      `SELECT allocation_days AS "allocationDays", kickoff_days AS "kickoffDays", concept_days AS "conceptDays", site_measure_days AS "siteMeasureDays",
+              development_min_days AS "developmentMinDays", development_max_days AS "developmentMaxDays", development_days_per_room AS "developmentDaysPerRoom",
+              sample_collection_days AS "sampleCollectionDays", sample_meeting_days AS "sampleMeetingDays", concept_options_max AS "conceptOptionsMax"
+         FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+    // The workspace's team roles (Settings › Projects), to choose each part of the design team from.
+    const roles = (await client.query<{ roles: Array<{ key: string; label: string }> | null }>(`SELECT roles FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.roles ?? DEFAULT_ROLES;
     return { minimumDeposit: effectiveMinimumDeposit(settings), version: settings?.version ?? 0,
       timings: { inspirationDays: settings?.inspirationDays ?? 7, siteVisitHours: settings?.siteVisitHours ?? 72 }, packages,
       flow: {
@@ -159,7 +217,10 @@ export class DesignPackagesService {
         estimateDays: flow?.estimateDays ?? 7, visualiserRoleCode: flow?.visualiserRoleCode ?? "visualiser", showroomBookingTypeId: flow?.showroomBookingTypeId ?? null,
         siteVisitQuestions: flow ? normaliseSiteQuestions(flow.questions) : DEFAULT_SITE_VISIT_QUESTIONS,
         renderInternalDays: flow?.renderInternalDays ?? null, renderClientDays: flow?.renderClientDays ?? null,
+        steps: steps ? { ...steps, conceptOptionsMax: steps.conceptOptionsMax ?? null } : STEP_DEFAULTS,
+        team: await designTeamConfig(client, workspaceId),
       },
+      roles: roles.map((role) => ({ key: role.key, label: role.label })),
       bookingTypes };
   }
 
@@ -171,6 +232,6 @@ export class DesignPackagesService {
 
   private values(value: DesignPackageInput) {
     return [value.code, value.name, value.pricingMethod, value.rate, value.currency, value.areaUnit ?? null, value.includedRevisions, value.includesSpacePlanning,
-      value.includesRenders, value.requiredRoleCode ?? null, value.inclusions ?? null, value.position ?? 0];
+      value.includesRenders, value.requiredRoleCode ?? null, value.inclusions ?? null, value.position ?? 0, value.reviewRoleCode ?? null, Boolean(value.rateFrom), value.unitDefinition ?? null];
   }
 }

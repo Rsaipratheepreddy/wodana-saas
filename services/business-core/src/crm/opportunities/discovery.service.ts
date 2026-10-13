@@ -2,7 +2,9 @@ import { ConflictException, Injectable, NotFoundException, UnprocessableEntityEx
 import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
-import { designFee, type PricingMethod } from "../../design/design-packages.domain";
+import { agreedRate, designFee, type PricingMethod } from "../../design/design-packages.domain";
+import { approvalStatus, cancelApproval, requestApproval, type ApprovalStatus } from "../../approvals/approval-engine.api";
+import { Dec } from "../../catalog-core/decimal";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { REQUIREMENT_ASSET_PREFIX } from "../leads/requirement-notes.service";
 import { areaIn, coordinatesProblem, discoveryMissing, roundCoordinate, type DiscoveryFacts, type DiscoveryQuestion } from "./discovery.domain";
@@ -10,7 +12,7 @@ import { ensureSiteLocation } from "./site-location";
 
 export type SaveDiscoveryInput = Partial<DiscoveryFacts> & { version?: number; answers?: Record<string, unknown> };
 type Context = { leadId: string | null; enquiryType: string | null; clientType: string | null; partyEmail: string | null };
-type PackageRow = { id: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null; status: string };
+type PackageRow = { id: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null; status: string; rateFrom: boolean; unitDefinition: string | null };
 
 /** PLM-040: the Account Manager's discovery form on an opportunity, and the design fee it prices (PLM-041). */
 @Injectable()
@@ -36,7 +38,9 @@ export class OpportunityDiscoveryService {
         designPackageId: input.designPackageId !== undefined ? input.designPackageId : before?.designPackageId ?? null,
         latitude: input.latitude !== undefined ? input.latitude : before?.latitude ?? null,
         longitude: input.longitude !== undefined ? input.longitude : before?.longitude ?? null,
+        designRate: input.designRate !== undefined ? (input.designRate ? Dec.of(input.designRate).toFixed(2) : null) : before?.designRate ?? null,
       };
+      if (merged.designRate && Dec.of(merged.designRate).cmp(0) <= 0) throw new UnprocessableEntityException("Enter the agreed rate as an amount above zero");
       const position = coordinatesProblem(merged.latitude, merged.longitude);
       if (position) throw new UnprocessableEntityException(position);
       if (merged.latitude !== null && merged.longitude !== null) { merged.latitude = roundCoordinate(merged.latitude); merged.longitude = roundCoordinate(merged.longitude); }
@@ -50,16 +54,20 @@ export class OpportunityDiscoveryService {
         throw new UnprocessableEntityException("Choose a floor plan from this enquiry's files");
       const pkg = merged.designPackageId ? await this.package(client, workspaceId, merged.designPackageId) : null;
       if (merged.designPackageId && (!pkg || (pkg.status !== "active" && pkg.id !== before?.designPackageId))) throw new UnprocessableEntityException("Choose a design package that is offered");
-      const fee = pkg ? this.fee(pkg, merged) : null;
+      // PLM-139: an agreed rate counts only on a package priced from its rate; above it, the fee keeps the package's rate until it is approved.
+      if (!pkg?.rateFrom) merged.designRate = null;
+      const rate = pkg ? await this.rate(client, workspaceId, opportunityId, pkg, merged) : null;
+      const fee = pkg ? this.fee(pkg, merged, rate?.rate) : null;
       await client.query(
-        `INSERT INTO crm_opportunity_discovery (workspace_id, opportunity_id, area, area_unit, spaces, property_location, client_email, floor_plan_asset_id, design_package_id, design_fee, design_fee_currency, updated_by, latitude, longitude)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        `INSERT INTO crm_opportunity_discovery (workspace_id, opportunity_id, area, area_unit, spaces, property_location, client_email, floor_plan_asset_id, design_package_id, design_fee, design_fee_currency, updated_by, latitude, longitude, design_rate)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          ON CONFLICT (workspace_id, opportunity_id) DO UPDATE SET area=excluded.area, area_unit=excluded.area_unit, spaces=excluded.spaces,
            property_location=excluded.property_location, client_email=excluded.client_email, floor_plan_asset_id=excluded.floor_plan_asset_id,
            design_package_id=excluded.design_package_id, design_fee=excluded.design_fee, design_fee_currency=excluded.design_fee_currency,
-           latitude=excluded.latitude, longitude=excluded.longitude, updated_by=excluded.updated_by, updated_at=now(), version=crm_opportunity_discovery.version+1`,
+           latitude=excluded.latitude, longitude=excluded.longitude, design_rate=excluded.design_rate, updated_by=excluded.updated_by, updated_at=now(), version=crm_opportunity_discovery.version+1`,
         [workspaceId, opportunityId, merged.area, merged.areaUnit, merged.spaces, merged.propertyLocation, merged.clientEmail, merged.floorPlanAssetId,
-          merged.designPackageId, fee?.fee ?? null, fee?.currency ?? null, user.userId, merged.latitude, merged.longitude]);
+          merged.designPackageId, fee?.fee ?? null, fee?.currency ?? null, user.userId, merged.latitude, merged.longitude, merged.designRate ?? null]);
+      await this.askRateApproval(client, workspaceId, opportunityId, pkg, merged, rate, user.userId);
       // A planning case already open for this job gets its site for check-in from the position.
       if (merged.latitude !== before?.latitude || merged.longitude !== before?.longitude)
         await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId,
@@ -96,10 +104,14 @@ export class OpportunityDiscoveryService {
     const questions = await this.questions(client, workspaceId, context.enquiryType);
     const answers = await this.answers(client, workspaceId, opportunityId);
     const pkg = facts?.designPackageId ? await this.package(client, workspaceId, facts.designPackageId) : null;
+    // PLM-139: where an agreed rate above the package's stands (pending, approved, sent back or refused).
+    const rate = pkg && facts?.designRate ? await this.rate(client, workspaceId, opportunityId, pkg, facts) : null;
     return {
-      facts: facts ?? { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: context.partyEmail, floorPlanAssetId: null, designPackageId: null, latitude: null, longitude: null },
+      facts: facts ?? { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: context.partyEmail, floorPlanAssetId: null, designPackageId: null, latitude: null, longitude: null, designRate: null },
       designFee: facts?.designFee ? { amount: facts.designFee, currency: facts.designFeeCurrency } : null,
-      package: pkg ? { id: pkg.id, name: pkg.name, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit } : null,
+      package: pkg ? { id: pkg.id, name: pkg.name, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit, rate: pkg.rate, rateFrom: pkg.rateFrom, unitDefinition: pkg.unitDefinition } : null,
+      designRate: rate && facts?.designRate ? { requested: facts.designRate, rate: rate.rate, approval: !rate.needsApproval ? "approved" : rate.approval && ["rejected", "returned"].includes(rate.approval.status) ? rate.approval.status : "pending",
+        waitingFor: rate.needsApproval && rate.approval?.status === "pending" ? rate.approval.waitingFor : [] } : null,
       enquiryType: context.enquiryType, clientType: context.clientType,
       questions, answers, files: await this.files(client, workspaceId, context.leadId),
       missing: discoveryMissing({ facts, enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers }),
@@ -107,11 +119,47 @@ export class OpportunityDiscoveryService {
     };
   }
 
-  private fee(pkg: PackageRow, facts: DiscoveryFacts) {
+  private fee(pkg: PackageRow, facts: DiscoveryFacts, rate?: string | null) {
     if (pkg.pricingMethod === "per_area" && (!facts.area || !facts.areaUnit)) return null;
     if (pkg.pricingMethod === "per_space" && !facts.spaces) return null;
     const area = pkg.pricingMethod === "per_area" && facts.area && facts.areaUnit ? areaIn(facts.area, facts.areaUnit, pkg.areaUnit ?? facts.areaUnit) : null;
-    return { fee: designFee(pkg, { spaces: facts.spaces, area }), currency: pkg.currency };
+    return { fee: designFee({ ...pkg, rate: rate ?? pkg.rate }, { spaces: facts.spaces, area }), currency: pkg.currency };
+  }
+
+  /**
+   * PLM-139: the rate the fee uses, from the agreed rate and its approval (the approval engine, kind design_rate, one per
+   * opportunity). The approval is for the fee at the agreed rate: a different rate or measure is a new amount to approve.
+   */
+  private async rate(client: PoolClient, workspaceId: string, opportunityId: string, pkg: PackageRow, facts: DiscoveryFacts) {
+    const approval = await approvalStatus(client, workspaceId, "design_rate", opportunityId);
+    const atRate = facts.designRate ? this.fee(pkg, facts, facts.designRate) : null;
+    const approved = approval?.status === "approved" && Boolean(atRate && approval.amount && Dec.of(approval.amount).cmp(atRate.fee) === 0 && approval.currency === atRate.currency);
+    return { ...agreedRate(pkg, facts.designRate, approved), approval, atRate };
+  }
+
+  /**
+   * PLM-139: a rate above the package's starting rate waits for its approver (Palm: the Creative Director). The request's
+   * amount is the fee at the agreed rate (the engine resets a decided request whose amount changes); a rate back at the
+   * package's withdraws an open request. Without the area or spaces there is nothing to price yet, so nothing is asked.
+   */
+  private async askRateApproval(client: PoolClient, workspaceId: string, opportunityId: string, pkg: PackageRow | null, facts: DiscoveryFacts,
+    rate: { needsApproval: boolean; approval: ApprovalStatus | null; atRate: { fee: string; currency: string } | null } | null, userId: string) {
+    const pending = rate?.approval?.status === "pending";
+    if (!pkg || !rate?.needsApproval || !rate.atRate) {
+      if (pending && !rate?.needsApproval) await cancelApproval(client, { workspaceId, kind: "design_rate", subjectId: opportunityId, actorUserId: userId, reason: "The agreed rate no longer needs approval" });
+      return;
+    }
+    // A rate sent back or refused is asked again only once it changes.
+    const decided = rate.approval && ["rejected", "returned"].includes(rate.approval.status) && rate.approval.amount && Dec.of(rate.approval.amount).cmp(rate.atRate.fee) === 0;
+    if (decided) return;
+    const title = (await client.query<{ title: string }>(
+      `SELECT concat_ws(' · ', opportunity.reference, coalesce(party.display_name, opportunity.title)) AS title FROM crm_opportunities opportunity
+         LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+        WHERE opportunity.workspace_id = $1 AND opportunity.id = $2`, [workspaceId, opportunityId])).rows[0]?.title ?? "";
+    const unit = pkg.pricingMethod === "per_space" ? "space" : pkg.areaUnit ?? "unit";
+    await requestApproval(client, { workspaceId, kind: "design_rate", subjectId: opportunityId,
+      title: `${pkg.name} at ${pkg.currency} ${facts.designRate} per ${unit} · ${title}`.slice(0, 300), href: `/workspace/crm/opportunities?record=${opportunityId}`,
+      amount: rate.atRate.fee, currency: rate.atRate.currency, requesterUserId: userId });
   }
 
   private async context(client: PoolClient, workspaceId: string, opportunityId: string): Promise<Context> {
@@ -131,7 +179,7 @@ export class OpportunityDiscoveryService {
     return (await client.query<DiscoveryFacts & { version: number; designFee: string | null; designFeeCurrency: string | null }>(
       `SELECT area::text AS area, area_unit AS "areaUnit", spaces, property_location AS "propertyLocation", client_email AS "clientEmail",
               floor_plan_asset_id AS "floorPlanAssetId", design_package_id AS "designPackageId", design_fee::text AS "designFee",
-              design_fee_currency AS "designFeeCurrency", latitude::float8 AS latitude, longitude::float8 AS longitude, version
+              design_fee_currency AS "designFeeCurrency", latitude::float8 AS latitude, longitude::float8 AS longitude, version, design_rate::text AS "designRate"
        FROM crm_opportunity_discovery WHERE workspace_id = $1 AND opportunity_id = $2 ${lock ? "FOR UPDATE" : ""}`, [workspaceId, opportunityId])).rows[0] ?? null;
   }
 
@@ -163,6 +211,7 @@ export class OpportunityDiscoveryService {
 
   private async package(client: PoolClient, workspaceId: string, id: string) {
     return (await client.query<PackageRow>(
-      `SELECT id, name, pricing_method AS "pricingMethod", rate::text AS rate, currency, area_unit AS "areaUnit", status FROM design_packages WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0] ?? null;
+      `SELECT id, name, pricing_method AS "pricingMethod", rate::text AS rate, currency, area_unit AS "areaUnit", status, rate_from AS "rateFrom", unit_definition AS "unitDefinition"
+         FROM design_packages WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0] ?? null;
   }
 }
