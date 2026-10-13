@@ -170,9 +170,10 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                 {stage.stage === "renders" && !current && view.canReview && members.length ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "assign", stage })}><UserPlus aria-hidden="true" size={13} />{stage.ownerName ? t("Change Visualiser") : t("Assign Visualiser")}</Button> : null}
                 {stage.stage === "samples" && collection?.status === "open" ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "samples_collected", stage })}><PackageCheck aria-hidden="true" size={13} />{t("Samples collected")}</Button> : null}
                 {stage.stage === "samples" ? <>
-                  <Button size="compact" variant={stage.scheduledAt || collection?.status === "open" ? "secondary" : "primary"} onPress={() => setDialog({ kind: view.showroomBooking ? "schedule_materials" : "schedule_home", stage })}>
+                  {/* PLM-144: the sample meeting is at the showroom (the booking page's free slots, or a time picked by hand), or at the client's home if they ask. */}
+                  <Button size="compact" variant={stage.scheduledAt || collection?.status === "open" ? "secondary" : "primary"} onPress={() => setDialog({ kind: "schedule_materials", stage })}>
                     <CalendarPlus aria-hidden="true" size={13} />{stage.scheduledAt ? t("Reschedule") : t("Book sample meeting")}</Button>
-                  {view.showroomBooking ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "schedule_home", stage })}>{t("At the client's home")}</Button> : null}
+                  <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "schedule_home", stage })}>{t("At the client's home")}</Button>
                   <Link className="wd-button" data-size="compact" data-variant="secondary" href={designLink("ledger")}>{t("Material list")}</Link>
                   {collection?.status === "done" ? <Button size="compact" variant="secondary" isDisabled={!meetingHeld || (ledger?.waiting ?? 0) > 0 || (ledger?.outsourcedWaiting ?? 0) > 0 || !ledger?.materials}
                     onPress={() => setDialog({ kind: "approve_samples", stage })}>{t("Approve samples")}</Button> : null}
@@ -218,9 +219,13 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
     </FormDialog> : null}
     {dialog?.kind === "schedule_home" ? <ScheduleVisitDialog title={t("Book sample meeting")} timezone={view.timezone} addressRequired onClose={() => setDialog(null)}
       onSubmit={async (value) => saved(t("Sample meeting booked. The design team has been invited."), await post("design-journey/material-selection/schedule", { version: dialog.stage.version, ...value, atClientHome: true }))} /> : null}
-    {dialog?.kind === "schedule_materials" ? (view.showroomBooking
-      ? <ShowroomSlotDialog title={dialog.stage.stage === "samples" ? t("Book sample meeting") : t("Book material selection")} workspaceId={workspaceId} caseId={caseId} locale={locale} onClose={() => setDialog(null)} onSubmit={async (slotPicked, timezone) => saved(t("Material selection booked. The design team has been invited."), await post("design-journey/material-selection/schedule", { version: dialog.stage.version, startsAt: slotPicked.start, endsAt: slotPicked.end, timezone }))} />
-      : <ScheduleVisitDialog title={t("Book material selection")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Material selection booked. The design team has been invited."), await post("design-journey/material-selection/schedule", { version: dialog.stage.version, ...value }))} />) : null}
+    {dialog?.kind === "schedule_materials" ? (() => {
+      const samples = dialog.stage.stage === "samples";
+      const bookedMessage = samples ? t("Sample meeting booked. The design team has been invited.") : t("Material selection booked. The design team has been invited.");
+      return view.showroomBooking
+        ? <ShowroomSlotDialog title={samples ? t("Book sample meeting") : t("Book material selection")} workspaceId={workspaceId} caseId={caseId} locale={locale} onClose={() => setDialog(null)} onSubmit={async (slotPicked, timezone) => saved(bookedMessage, await post("design-journey/material-selection/schedule", { version: dialog.stage.version, startsAt: slotPicked.start, endsAt: slotPicked.end, timezone }))} />
+        : <ScheduleVisitDialog title={samples ? t("Book sample meeting") : t("Book material selection")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(bookedMessage, await post("design-journey/material-selection/schedule", { version: dialog.stage.version, ...value }))} />;
+    })() : null}
     {dialog?.kind === "confirm_materials" ? <FormDialog title={t("Confirm material list")} onClose={() => setDialog(null)} submitLabel={t("Confirm")} onSubmit={async () => saved(t("Material list confirmed."), await post("design-journey/material-selection/confirm", { version: dialog.stage.version }))}>
       <p className={styles.muted}>{t("{count} materials, each confirmed by the client. The next stage opens straight away.", { count: ledger?.materials ?? 0 })}</p>
     </FormDialog> : null}

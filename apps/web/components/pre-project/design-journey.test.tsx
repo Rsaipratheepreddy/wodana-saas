@@ -108,4 +108,26 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     const body = JSON.parse((fetch.mock.calls.find(([url]) => String(url).includes("material-selection/schedule")) as unknown as [string, { body: string }])[1].body);
     expect(body).toEqual({ version: 4, startsAt: "2031-04-09T11:00:00.000Z", endsAt: "2031-04-09T12:00:00.000Z", timezone: "Europe/London" });
   });
+
+  it("books the sample meeting at the showroom by hand without a booking page, and at the client's home only when chosen (PLM-144)", async () => {
+    const samples = view({ journey: { packageName: "Bespoke Interior Design", includedRevisions: 2, flowVersion: 2, includesRenders: true },
+      tasks: [{ task: "sample_collection", label: "Sample collection", status: "done", ownerId: "c1", ownerName: "Mona", dueAt: null, completedAt: "2031-04-10T10:00:00Z", completedByName: "Mona", note: null, version: 2, overdue: false }],
+      stages: [stage({ stage: "samples", label: "Samples", status: "active", version: 7 })] });
+    const fetch = vi.fn(async () => ({ ok: true, json: async () => samples }));
+    vi.stubGlobal("fetch", fetch);
+    renderJourney();
+    fireEvent.click(await screen.findByRole("button", { name: "Book sample meeting" }));
+    const dialog = await screen.findByRole("dialog", { name: "Book sample meeting" });
+    // At the showroom: the address is optional and the meeting isn't marked as at the client's home.
+    expect(within(dialog).getByRole("button", { name: "Book" })).toBeEnabled();
+    expect(within(dialog).queryByText("Client's address")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Book" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("material-selection/schedule"), expect.objectContaining({ method: "POST" })));
+    const body = JSON.parse((fetch.mock.calls.find(([url]) => String(url).includes("material-selection/schedule")) as unknown as [string, { body: string }])[1].body);
+    expect(body).not.toHaveProperty("atClientHome");
+    expect(await screen.findByText("Sample meeting booked. The design team has been invited.")).toBeInTheDocument();
+    // The client's home is the other choice, with their address.
+    fireEvent.click(screen.getByRole("button", { name: "At the client's home" }));
+    expect(await screen.findByText("Client's address")).toBeInTheDocument();
+  });
 });
