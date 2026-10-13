@@ -33,6 +33,8 @@ export const DEFAULT_CLOSING_AFTER_HOURS = 3;
 
 /** The WhatsApp template (Meta name) each closing message goes as outside the 24-hour window. */
 export const CLOSING_TEMPLATE_CODES: Record<ClosingKind, string> = { received: "wd_chat_received", form: "wd_chat_form", closing: "wd_chat_closing" };
+/** The names people know the closing messages by (Settings › Inbox and the chat's menu). */
+export const CLOSING_NAMES: Record<ClosingKind, string> = { received: "We have everything", form: "Please complete the form", closing: "Closing the chat" };
 export const closingKindOfTemplate = (code: string) => CLOSING_KINDS.find((kind) => CLOSING_TEMPLATE_CODES[kind] === code) ?? null;
 
 /** The state a chat takes once the message went: handled, or waiting for the client's form. */

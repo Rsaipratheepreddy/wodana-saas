@@ -9,7 +9,7 @@ import { CLOSE_CHATS, CrmConversationsService } from "./crm-conversations.servic
 import { UpdateClosingMessagesDto } from "./dto/inbox.dto";
 import { approvedTemplate, clientMessageRule } from "./inbox/client-messages";
 import {
-  CLOSING_FIELDS, CLOSING_KINDS, CLOSING_STATE, CLOSING_TEMPLATE_CODES, closingFacts, closingFieldsOf, closingTemplate, DEFAULT_CLOSING_AFTER_HOURS,
+  CLOSING_FIELDS, CLOSING_KINDS, CLOSING_NAMES, CLOSING_STATE, CLOSING_TEMPLATE_CODES, closingFacts, closingFieldsOf, closingTemplate, DEFAULT_CLOSING_AFTER_HOURS,
   DEFAULT_CLOSING_TEXTS, readClosingSettings, renderClosing, unknownClosingFields, type ClosingKind,
 } from "./inbox/closing-messages";
 import { applyConversationChange, recordChatEvent } from "./inbox/inbox-commands";
@@ -120,8 +120,8 @@ export class CrmClosingMessagesService {
         else {
           const found = await this.template(client, workspaceId, kind);
           if (!found) {
-            const name = CLOSING_TEMPLATE_CODES[kind];
-            throw new UnprocessableEntityException(`WhatsApp's 24-hour window has closed, and the template ${name} isn't approved by Meta yet, so this message can't go. Submit it in Settings › Inbox › WhatsApp templates, or wait for the client to write.`);
+            // Named as people know it; the template's code is for the admin who submits it.
+            throw new UnprocessableEntityException(`WhatsApp's 24-hour window has closed, so "${CLOSING_NAMES[kind]}" can only go as a WhatsApp template, and Meta hasn't approved it yet. Wait for the client to write, or ask an admin to submit it in Settings › Inbox › WhatsApp templates (${CLOSING_TEMPLATE_CODES[kind]}).`);
           }
           message.templateId = found.id;
           template = found.code;

@@ -227,7 +227,7 @@ integration("inbox status, closing messages and spam (real Postgres)", () => {
       await client.query(`INSERT INTO crm_inbox_settings (workspace_id, closing_form_url) VALUES ($1, 'https://studio.example.com/form')`, [ids.workspaceId]);
       thread = await staff.conversations.get(actor, ids.workspaceId, conversationId) as { version: number };
       const refused = await refusal(staff.closing.send(actor, ids.workspaceId, conversationId, { version: thread.version, kind: "form" }));
-      expect(refused.message).toMatch(/24-hour window has closed, and the template wd_chat_form isn't approved by Meta yet/);
+      expect(refused.message).toBe(`WhatsApp's 24-hour window has closed, so "Please complete the form" can only go as a WhatsApp template, and Meta hasn't approved it yet. Wait for the client to write, or ask an admin to submit it in Settings › Inbox › WhatsApp templates (wd_chat_form).`);
       expect((await client.query("SELECT count(*)::int AS n FROM crm_messages WHERE conversation_id = $1 AND direction = 'outbound'", [conversationId])).rows[0].n).toBe(0);
       await client.query(`INSERT INTO notification_templates (workspace_id, code, channel, locale, version_number, status, body_template, provider_status, approved_at)
         VALUES ($1, 'wd_chat_form', 'whatsapp', 'en', 1, 'approved', 'Hi {{1}}, please complete this short form: {{2}} Thank you.', 'approved', now())`, [ids.workspaceId]);

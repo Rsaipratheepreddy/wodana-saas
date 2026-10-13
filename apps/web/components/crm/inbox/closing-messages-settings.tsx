@@ -73,7 +73,7 @@ export function ClosingMessagesSection({ workspaceId }: { workspaceId: string })
       </SettingsRow>
       <SettingsRow label={t("Offer Closing the chat after")}>
         <span className={styles.inline}><SelectField aria-label={t("Offer Closing the chat after")} label={null} isDisabled={!canManage}
-          items={[...new Set([...HOURS, draft.afterHours])].sort((a, b) => a - b).map((hours) => ({ id: String(hours), label: t("{count} working hours", { count: hours }) }))} selectedKey={String(draft.afterHours)}
+          items={[...new Set([...HOURS, draft.afterHours])].sort((a, b) => a - b).map((hours) => ({ id: String(hours), label: hours === 1 ? t("1 working hour") : t("{count} working hours", { count: hours }) }))} selectedKey={String(draft.afterHours)}
           onSelectionChange={(key) => key && setDraft((current) => current && { ...current, afterHours: Number(key) })} /></span>
       </SettingsRow>
     </>}
