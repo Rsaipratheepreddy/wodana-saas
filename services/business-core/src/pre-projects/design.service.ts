@@ -104,13 +104,17 @@ export class DesignService {
   });
  }
  activity(actor:RequestActor,workspaceId:string,caseId:string,id:string,input:DesignActivityDto) {
-  return this.brief.edit(actor,workspaceId,caseId,async(client,userId)=>{
+  // QA-004 (plan 6.7): the assigned reviewer (pre_projects.review_designs) approves or sends back without editing the case.
+  const decision=input.action==='internal_approved'||input.action==='changes_requested';
+  return this.brief.edit(actor,workspaceId,caseId,async(client,userId,limited)=>{
    const design=await this.read(client,workspaceId,caseId,id);
    const retry=design.activity.find((a:{id:string})=>a.id===input.id);
    if(retry) { const replayVersion=design.versions.find((version:{id:string})=>version.id===input.versionId);if(retry.versionId!==input.versionId||retry.action!==input.action||retry.note!==input.note||retry.decisionBy!==input.decisionBy||(retry.reviewerId??null)!==(input.reviewerId??null)||(retry.decisionSource??null)!==(input.decisionSource??null)||(retry.decisionAt?new Date(retry.decisionAt).toISOString():null)!==(input.decisionAt?new Date(input.decisionAt).toISOString():null)||(input.action==='client_review'&&input.reviewExpiresAt&&new Date(replayVersion?.clientReviewExpiresAt??0).toISOString()!==new Date(input.reviewExpiresAt).toISOString())) throw new ConflictException('This activity ID is already in use.'); return design; }
    this.mutable(design,input.version);
    const latest=design.versions[0];
    if(!latest||!design.versions.some((v:{id:string})=>v.id===input.versionId)||(input.action!=='comment'&&latest.id!==input.versionId)) throw new ConflictException('Review the latest version. Earlier versions stay in history.');
+   // Without the edit permission only the internal review decision is open (the reviewer checks follow).
+   if(limited&&latest.status!=='internal_review')throw new ForbiddenException('Permissions required: pre_projects.view, pre_projects.edit');
    validateDesignTransition(latest.status,input.action,input.note,input.decisionBy);
    const clientDecision=latest.status==='client_review'&&input.action!=='comment';
    if(!clientDecision&&(input.decisionBy||input.decisionSource||input.decisionAt))throw new BadRequestException('Client decision details belong only to a client approval or change request.');
@@ -147,7 +151,7 @@ export class DesignService {
    if(input.action==='client_review')await tellClients(client,{workspaceId,caseId,event:'decision_waiting',recordId:`design:${input.versionId}`,title:`${design.title} (V${latest.number})`,due:reviewExpiresAt});
    if(input.action!=='comment')await noticeDesignStep(client,{workspaceId,caseId,designId:id,title:design.title,action:input.action,fromStatus:latest.status,actorUserId:userId,reviewerUserId:input.reviewerId??latest.reviewerId??null,uploaderUserId:latest.createdBy??null,note:input.note,activityId:input.id});
    return this.read(client,workspaceId,caseId,id);
-  });
+  },decision?'pre_projects.review_designs':undefined);
  }
  /**
   * The internal reviewer's answer from Approvals ("Waiting for you"): approve the latest version, or send it back with
@@ -300,7 +304,8 @@ export class DesignService {
   return this.access.withPermission(actor,w,'pre_projects.view',async(client,user)=>{
    await this.brief.case(client,w,c,true);
    const editable=await this.access.hasPermission(client,w,user.userId,'pre_projects.edit');
-   if(!editable){const assigned=await client.query(`SELECT f.id FROM pre_project_design_folders f JOIN pre_project_designs d ON d.folder_id=f.id AND d.workspace_id=f.workspace_id AND d.case_id=f.case_id WHERE d.workspace_id=$1 AND d.case_id=$2 AND d.id=$3 AND f.reviewer_id=$4`,[w,c,id,user.userId]);if(!assigned.rowCount||!await this.access.hasPermission(client,w,user.userId,'pre_projects.review_designs'))throw new ForbiddenException('Only editors or the assigned reviewer can comment.');}
+   // The folder's reviewer, or the reviewer a version was sent to (their pinned notes, plan 6.7).
+   if(!editable){const assigned=await client.query(`SELECT 1 FROM pre_project_designs d WHERE d.workspace_id=$1 AND d.case_id=$2 AND d.id=$3 AND (EXISTS(SELECT 1 FROM pre_project_design_folders f WHERE f.workspace_id=d.workspace_id AND f.case_id=d.case_id AND f.id=d.folder_id AND f.reviewer_id=$4) OR EXISTS(SELECT 1 FROM pre_project_design_versions v WHERE v.workspace_id=d.workspace_id AND v.design_id=d.id AND v.reviewer_id=$4))`,[w,c,id,user.userId]);if(!assigned.rowCount||!await this.access.hasPermission(client,w,user.userId,'pre_projects.review_designs'))throw new ForbiddenException('Only editors or the assigned reviewer can comment.');}
    return work(client,user.userId);
   });
  }

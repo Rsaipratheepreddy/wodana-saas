@@ -1,5 +1,5 @@
 import { startInspirationTimer } from "../design/design-journey.store";
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { isDeepStrictEqual } from "node:util";
 import { noteDocumentText, validateNoteDocument } from "../crm/leads/note-document";
 import { createHash } from "node:crypto";
@@ -318,14 +318,25 @@ export class BriefService {
     const result=await client.query(`SELECT c.status,o.description,o.amount,COALESCE(o.currency_code,w.default_currency) AS "currencyCode",o.lead_id AS "leadId",o.qualification_evidence AS "qualificationEvidence" FROM pre_project_cases c JOIN workspaces w ON w.id=c.workspace_id JOIN crm_opportunities o ON o.id=c.opportunity_id AND o.workspace_id=c.workspace_id WHERE c.workspace_id=$1 AND c.id=$2${lock ? " FOR UPDATE OF c" : ""}`,[workspaceId,caseId]);
     if (!result.rowCount) throw new NotFoundException("Pre-execution not found"); return result.rows[0];
   }
-  edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient,userId: string)=>Promise<T>) {
-    return this.access.withPermissions(actor,workspaceId,["pre_projects.view","pre_projects.edit"],async (client,user)=>{
+  /**
+   * A change to the case's working records: pre_projects.view and pre_projects.edit. With `alternative`, someone holding
+   * that permission instead of edit gets in too, with `limited` true: the step itself narrows what they may do (the
+   * assigned design reviewer recording their decision, QA-004).
+   */
+  edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient,userId: string,limited: boolean)=>Promise<T>, alternative?: string) {
+    const run = async (client: PoolClient, userId: string, limited: boolean) => {
       // Working records remain revisionable throughout execution. Commercial
       // acceptance and execution release retain their own immutable snapshots.
       await this.case(client,workspaceId,caseId,true);
-      const result=await work(client,user.userId);
+      const result=await work(client,userId,limited);
       await client.query(`UPDATE pre_project_cases SET updated_at=now() WHERE workspace_id=$1 AND id=$2`,[workspaceId,caseId]);
       return result;
+    };
+    if (!alternative) return this.access.withPermissions(actor,workspaceId,["pre_projects.view","pre_projects.edit"],(client,user)=>run(client,user.userId,false));
+    return this.access.withPermission(actor,workspaceId,"pre_projects.view",async (client,user)=>{
+      const limited=!(await this.access.hasPermission(client,workspaceId,user.userId,"pre_projects.edit"));
+      if (limited && !(await this.access.hasPermission(client,workspaceId,user.userId,alternative))) throw new ForbiddenException("Permissions required: pre_projects.view, pre_projects.edit");
+      return run(client,user.userId,limited);
     });
   }
   version(actual:number,expected:number) { if (actual!==expected) throw new ConflictException("Someone updated this record. Your changes have been kept in the form. Close it and reopen the latest record before applying them."); }
