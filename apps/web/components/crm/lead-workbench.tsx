@@ -293,12 +293,15 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
+  // QA-018: reopening a closed enquiry says why, as closing it did.
+  const reopening = ["qualified", "disqualified"].includes(lead.status) && Boolean(stage) && !["qualified", "disqualified"].includes(stage);
   return <Form className={styles.inlineStageEditor} aria-label={t("Update enquiry stage")} fieldMarkers="none" onSubmit={async event => {
     event.preventDefault(); if (inFlight.current || persisted || !stage) return;
     inFlight.current = true;
     setBusy(true); setFailure("");
     try {
       if (stage === "disqualified" && !reason.trim()) throw new Error(t("Add a reason for disqualifying this enquiry."));
+      if (reopening && !reason.trim()) throw new Error(t("Say why the enquiry is reopened."));
       const nextActionAt = nextDate && !["disqualified", "paused"].includes(stage) ? zonedDateTimeToIso(nextDate, timeZone) : null;
       if (nextDate && !["disqualified", "paused"].includes(stage) && !nextActionAt) throw new Error(t("Choose the next follow-up date and time."));
       await crmRequest(workspaceId, `leads/${lead.id}/status`, "POST", { ...(nextActionAt ? { nextActionAt } : {}), version: lead.version, status: stage, ...(reason.trim() ? { reason: reason.trim() } : {}), ...(lead.nextActionAt && !["qualified", "disqualified", "paused"].includes(stage) ? { nextActionAt: lead.nextActionAt } : {}) });
@@ -310,7 +313,7 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
     {failure && <Callout tone={persisted ? "warning" : "danger"} title={persisted ? t("Stage saved. Refresh needed.") : t("Stage not updated")}>{failure}</Callout>}
     <strong>{t("Change stage to {stage}", { stage: t(leadStageLabel(stage)) })}</strong>
     {stage && !["disqualified", "paused"].includes(stage) && !lead.ownerMembershipId && !lead.nextActionAt && <CrmDateTimeField label={t("Next follow-up")} isRequired value={nextDate} isDisabled={busy} onChange={setNextDate} />}
-    {stage === "disqualified" && <TextInput label={t("Reason")} value={reason} onChange={setReason} isRequired isDisabled={busy} />}
+    {stage === "disqualified" || reopening ? <TextInput label={t("Reason")} value={reason} onChange={setReason} isRequired isDisabled={busy} /> : null}
     <div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={onCancel}>{t("Cancel")}</Button><Button size="compact" type="submit" variant="primary" isDisabled={!stage || persisted} isLoading={busy}>{t("Save stage")}</Button></div>
   </Form>;
 }

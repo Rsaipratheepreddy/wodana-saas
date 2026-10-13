@@ -90,8 +90,8 @@ describe("CRM lead status moves", () => {
 
   it("requires and accepts a next action for an unassigned reopened lead", async () => {
     const { service } = setup("disqualified", { unassigned: true, noAction: true });
-    await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "connected" })).rejects.toThrow("requires a next action or assignment");
-    expect(await service.transition({} as never, "workspace", "lead", { version: 5, status: "connected", nextActionAt: "2026-09-20T09:30:00Z" })).toMatchObject({ status: "connected", nextActionAt: new Date("2026-09-20T09:30:00Z") });
+    await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "connected", reason: "Client called back" })).rejects.toThrow("requires a next action or assignment");
+    expect(await service.transition({} as never, "workspace", "lead", { version: 5, status: "connected", reason: "Client called back", nextActionAt: "2026-09-20T09:30:00Z" })).toMatchObject({ status: "connected", nextActionAt: new Date("2026-09-20T09:30:00Z") });
   });
 
   it("pauses and resumes the existing first-response clock", async () => {
@@ -115,7 +115,7 @@ describe("CRM lead status moves", () => {
     }));
 
     const reopened = setup("disqualified");
-    await reopened.service.transition({} as never, "workspace", "lead", { version: 5, status: "new" });
+    await reopened.service.transition({} as never, "workspace", "lead", { version: 5, status: "new", reason: "Client came back" });
     expect(reopened.slas.startFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", expect.objectContaining({ newCycle: true }));
   });
 
@@ -151,6 +151,15 @@ describe("CRM lead status moves", () => {
     await service.markSpam({} as never, "workspace", "lead", { version: 5 });
     expect(query.mock.calls.some(([sql]) => sql.includes("SET spam_at = now()"))).toBe(true);
     expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_parties SET blocked_at"))).toBe(false);
+  });
+
+  it.each(["disqualified", "qualified"])("QA-018: reopening a %s enquiry needs a reason, and the history keeps who reopened it and why", async (from) => {
+    const refused = setup(from);
+    await expect(refused.service.transition({} as never, "workspace", "lead", { version: 5, status: "new" })).rejects.toThrow("Say why the enquiry is reopened");
+    expect(refused.query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_leads"))).toBe(false);
+    const { service, events } = setup(from);
+    await service.transition({} as never, "workspace", "lead", { version: 5, status: "new", reason: "Client came back with a new budget" });
+    expect(events.record.mock.calls.map(([, event]) => [event.action, event.after.reason])).toEqual([["crm.lead.reopened.v1", "Client came back with a new budget"]]);
   });
 
   it("QA-017: refuses to mark a converted enquiry as spam, like every other move of a converted lead", async () => {

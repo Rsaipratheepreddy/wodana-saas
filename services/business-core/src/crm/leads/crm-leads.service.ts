@@ -1441,6 +1441,9 @@ export class CrmLeadsService {
       if (["disqualified", "paused"].includes(input.status) && !input.reason?.trim()) {
         throw new UnprocessableEntityException("A reason is required for this status");
       }
+      // QA-018 (plan 4.1): reopening a closed enquiry says why, as closing it did; the history keeps who and why.
+      const reopening = ["qualified", "disqualified"].includes(before.status) && !["qualified", "disqualified"].includes(input.status);
+      if (reopening && !input.reason?.trim()) throw new UnprocessableEntityException("Say why the enquiry is reopened");
       const qualification: QualificationEvaluation | null = input.status === "qualified"
         ? await evaluateQualification(client, workspaceId, leadId, {}, true)
         : null;
@@ -1549,11 +1552,11 @@ export class CrmLeadsService {
         ? "crm.lead.qualified.v1"
         : input.status === "disqualified"
           ? "crm.lead.disqualified.v1"
-          : "crm.lead.status_changed.v1";
+          : reopening ? "crm.lead.reopened.v1" : "crm.lead.status_changed.v1";
       await this.events.record(client, {
         workspaceId, actorUserId: actorUser.userId, source: "user",
         action: event, entityType: "crm_lead", entityId: leadId,
-        before: this.mapLead(before), after: response,
+        before: this.mapLead(before), after: reopening ? { ...response, reason: input.reason!.trim() } : response,
       });
       return response;
   }
