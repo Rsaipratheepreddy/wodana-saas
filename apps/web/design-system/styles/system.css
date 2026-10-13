@@ -364,6 +364,14 @@
 .wd-dialog > footer, .wd-sheet-dialog > footer { flex: none; padding: var(--wd-space-4) var(--wd-space-6); border-block-start: 1px solid var(--wd-line); background: var(--wd-surface); }
 .wd-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
 .wd-dialog-actions > .wd-button { flex: none; }
+/* Short screens (a 768px laptop, a phone): the modal is a column held inside the viewport; the body scrolls and the
+   header and the Save footer stay in view. The footer clears the phone's home indicator. */
+.wd-modal { display: flex; flex-direction: column; }
+.wd-modal > .wd-dialog { flex: 0 1 auto; min-block-size: 0; max-block-size: 100%; }
+.wd-dialog > footer, .wd-sheet-dialog > footer { padding-block-end: max(var(--wd-space-4), env(safe-area-inset-bottom)); }
+.wd-modal-overlay { padding-block: max(var(--wd-space-4), env(safe-area-inset-top)) max(var(--wd-space-4), env(safe-area-inset-bottom)); }
+.wd-modal-overlay .wd-modal { max-block-size: min(45rem, 100%); }
+.wd-modal-overlay .wd-modal:is([data-size="lg"], [data-size="xl"]) { max-block-size: 100%; }
 @media (max-width: 36rem) {
   .wd-dialog > header, .wd-sheet-dialog > header { padding-inline: var(--wd-space-4); }
   .wd-dialog-body, .wd-sheet-body { padding-inline: var(--wd-space-4); }
