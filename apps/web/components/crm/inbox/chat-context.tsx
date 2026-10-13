@@ -50,7 +50,9 @@ export function enquiryPrefill(thread: RecordData, context: ChatContext | null, 
   const email = context?.party?.contacts.find((contact) => contact.type === "email")?.value;
   const inbound = ((thread.messages ?? []) as RecordData[]).filter((message) => message.direction === "inbound").slice(-3).map((message) => String(message.bodyText ?? "")).join("\n");
   const placeholderName = /^whatsapp\s*\+?\d/i.test(name);
-  return { party: { displayName: placeholderName ? "" : name, mobile: phone, email }, channel: String(thread.channel), summary: extra.summary ?? inbound };
+  // The chat's own contact is the client; only a contact still named after its number waits for a real name first.
+  const partyId = !placeholderName && name.trim() ? context?.party?.id : undefined;
+  return { party: { displayName: placeholderName ? "" : name, mobile: phone, email }, channel: String(thread.channel), summary: extra.summary ?? inbound, ...(partyId ? { partyId } : {}) };
 }
 
 /**
@@ -59,8 +61,8 @@ export function enquiryPrefill(thread: RecordData, context: ChatContext | null, 
  */
 export function ChatContextPanel({ workspaceId, thread, context, owners, membershipId, onFile }: {
   workspaceId: string; thread: RecordData; context: ChatContext | null; owners: InboxOwner[]; membershipId: string | null;
-  /** "File into job": the one way a chat joins a job (it reports its own failures). */
-  onFile: (job: { kind: "enquiry"; id: string }) => Promise<void>;
+  /** "File into job": the one way a chat joins a job (it reports its own failures); `justCreated` for an enquiry made from this chat. */
+  onFile: (job: { kind: "enquiry"; id: string }, options?: { justCreated?: boolean }) => Promise<void>;
 }) {
   const t = useT();
   const draft = useEnquiryDraft(workspaceId, owners, membershipId);
@@ -69,9 +71,9 @@ export function ChatContextPanel({ workspaceId, thread, context, owners, members
   if (!context) return <div className={styles.contactDetails}><Skeleton lines={6} /></div>;
   const name = context.party?.name ?? String(thread.partyName ?? t("Customer"));
   // Linking an enquiry files the chat into it (the job it belongs to from now on).
-  const link = async (leadId: string) => {
+  const link = async (leadId: string, justCreated = false) => {
     setLinking(true);
-    try { await onFile({ kind: "enquiry", id: leadId }); } finally { setLinking(false); }
+    try { await onFile({ kind: "enquiry", id: leadId }, { justCreated }); } finally { setLinking(false); }
   };
   const phone = context.party?.contacts.find((contact) => contact.type === "phone")?.value;
   const email = context.party?.contacts.find((contact) => contact.type === "email")?.value;
@@ -99,6 +101,6 @@ export function ChatContextPanel({ workspaceId, thread, context, owners, members
       <Link href={`/workspace/projects/${project.id}/overview`}>{project.name}</Link><span>{project.managerName ?? label(project.status)}</span>
     </div>)}</section> : null}
     {draft.data ? <LeadEnquiryForm initialData={draft.data} prefill={enquiryPrefill(thread, context)}
-      onClose={draft.clear} onSaved={async (leadId) => { draft.clear(); await link(leadId); }} /> : null}
+      onClose={draft.clear} onSaved={async (leadId) => { draft.clear(); await link(leadId, true); }} /> : null}
   </div>;
 }

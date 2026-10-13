@@ -9,7 +9,7 @@ import { LeadEnquiryForm, type EditableEnquiry } from "./lead-enquiry-form";
 
 afterEach(() => { vi.unstubAllGlobals(); forgetAiReady(); });
 type Data = ReturnType<typeof structuredClone<typeof leadsPageFixture>>;
-function setup(existing?: EditableEnquiry, tweak?: (data: Data) => void, matches: ClientMatch[] = []) {
+function setup(existing?: EditableEnquiry, tweak?: (data: Data) => void, matches: ClientMatch[] = [], prefill?: Parameters<typeof LeadEnquiryForm>[0]["prefill"]) {
   const data = structuredClone(leadsPageFixture);
   data.defaultLocale = "en-AE";
   data.canAssign = true;
@@ -27,7 +27,7 @@ function setup(existing?: EditableEnquiry, tweak?: (data: Data) => void, matches
   const onSaved = vi.fn().mockResolvedValue(undefined);
   const onOpenLead = vi.fn();
   const saved = existing ? { ...existing, party: { mobile: "+971501234567", ...existing.party }, details: { emirate: "dubai", ...existing.details } } : undefined;
-  render(<DesignSystemProvider><LeadEnquiryForm initialData={data} existing={saved} onClose={vi.fn()} onSaved={onSaved} onOpenLead={onOpenLead} /></DesignSystemProvider>);
+  render(<DesignSystemProvider><LeadEnquiryForm initialData={data} existing={saved} prefill={prefill} onClose={vi.fn()} onSaved={onSaved} onOpenLead={onOpenLead} /></DesignSystemProvider>);
   const saves = () => fetchMock.mock.calls.filter(([url]) => !String(url).includes("contact-match") && !String(url).includes("ai-settings"));
   return { user: userEvent.setup(), fetchMock, onSaved, onOpenLead, saves, body: (index = 0) => JSON.parse((saves()[index] as unknown as [string, { body: string }])[1].body) };
 }
@@ -109,6 +109,17 @@ it("recognises an existing client from the mobile and needs an answer before sav
   expect(await screen.findByText("Choose the existing client or Different person.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Add as returning" }));
   expect(screen.getByLabelText(/Customer name/)).toHaveValue("Asha Rao");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body()).toMatchObject({ identity: "existing", partyId: "party-1", displayName: "Asha Rao" });
+}, 20_000);
+
+it("takes the chat's own contact as the client of an enquiry created from the chat, without asking (PLM-137)", async () => {
+  const { user, onSaved, body } = setup(undefined, undefined, [match], { party: { displayName: "Asha Rao", mobile: "+971501234567" }, channel: "call", partyId: "party-1" });
+  expect(await screen.findByText("Existing client?")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Add as returning" })).toHaveAttribute("aria-pressed", "true");
+  await choose(user, /Emirate/, "Dubai");
+  await choose(user, /Owner/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   expect(body()).toMatchObject({ identity: "existing", partyId: "party-1", displayName: "Asha Rao" });

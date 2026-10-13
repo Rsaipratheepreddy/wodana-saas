@@ -52,8 +52,11 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   initialData: LeadsPageData; existing?: EditableEnquiry; onClose: () => void;
   /** What the enquiry still needs (before converting), listed when the form opens to complete it. */
   initialProblems?: SaveProblem[];
-  /** A new enquiry started from somewhere else (a chat): the person, the channel and a summary. */
-  prefill?: { party: LeadContact; channel?: string; summary?: string };
+  /**
+   * A new enquiry started from somewhere else (a chat): the person, the channel and a summary. `partyId` is the chat's
+   * own contact, already chosen as the client (the Sales Admin isn't asked "Existing client?" about the person writing).
+   */
+  prefill?: { party: LeadContact; channel?: string; summary?: string; partyId?: string };
   onSaved: (leadId: string, reference?: string) => Promise<void>;
   /** Opens an existing enquiry instead of creating a new one. */
   onOpenLead?: (leadId: string) => void;
@@ -129,7 +132,8 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   // Who already has this mobile or email (LF-1). Results belong to the query that found them.
   const [found, setFound] = useState<{ key: string; matches: ClientMatch[] }>({ key: "", matches: [] });
   const [checkingKey, setCheckingKey] = useState("");
-  const [chosen, setIdentity] = useState<Identity>(null);
+  const [chosen, setIdentity] = useState<Identity>(() => !existing && prefill?.partyId && prefill.party.displayName?.trim()
+    ? { kind: "existing", partyId: prefill.partyId, name: prefill.party.displayName.trim() } : null);
   const mobileCountry = contact.mobileCountryCode ?? "";
   const mobile = contact.mobile?.trim() ?? "";
   const email = contact.email?.trim() ?? "";

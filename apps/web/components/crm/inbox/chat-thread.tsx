@@ -78,12 +78,15 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     catch (error) { setFailure(error instanceof Error ? error.message : t("The chat could not be updated.")); }
     finally { saving.current = false; setBusy(false); }
   }, [thread, workspaceId, id, refresh, onChanged, onDone, t]);
-  // "File into job": the chat belongs to one of the contact's jobs; `null` takes it out again.
-  const file = useCallback(async (job: Pick<ConversationJob, "kind" | "id"> | null) => {
+  // "File into job": the chat belongs to one of the contact's jobs; `null` takes it out again. An enquiry just created
+  // from this chat is filed against the chat as it is now: its welcome ("We have everything", PLM-137) went into the
+  // chat meanwhile, so the version on screen is already behind.
+  const file = useCallback(async (job: Pick<ConversationJob, "kind" | "id"> | null, options: { justCreated?: boolean } = {}) => {
     if (saving.current || !thread) return;
     saving.current = true; setBusy(true); setFailure("");
     try {
-      const result = await crmRequest<{ job: ConversationJob | null; visible?: boolean }>(workspaceId, `conversations/${id}/job`, "PUT", { version: thread.version, kind: job?.kind ?? null, id: job?.id }, timeout());
+      const version = options.justCreated ? (await crmRequest<RecordData>(workspaceId, `conversations/${id}`, "GET", undefined, timeout())).version : thread.version;
+      const result = await crmRequest<{ job: ConversationJob | null; visible?: boolean }>(workspaceId, `conversations/${id}/job`, "PUT", { version, kind: job?.kind ?? null, id: job?.id }, timeout());
       // Filed into a job whose team the person is not on: the chat is the job team's now (plan §5b).
       if (result.visible === false) { onLeft?.(result.job ? t("Filed into {job}. Its team has the chat now.", { job: jobName(result.job) }) : t("The chat was filed.")); return; }
       await refresh(); await loadContext(); await onChanged();
@@ -203,12 +206,12 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     {loadFailure || failure ? <p className={styles.error} role="alert">{failure || loadFailure} {loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : null}</p> : null}
     {status === "spam" || thread.spamAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Spam: messages are kept, nobody is told.")}</p>
       : thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Blocked: messages are kept, nobody is told.")}</p> : null}
-    {closingDue && thread.canSend ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("No reply for {count} working hours.", { count: closingState?.afterHours ?? 0 })}
+    {closingDue && thread.canSend ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{closingState?.afterHours === 1 ? t("No reply for 1 working hour.") : t("No reply for {count} working hours.", { count: closingState?.afterHours ?? 0 })}
       <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => sendClosing("closing")}>{t("Send {name}", { name: t(CLOSING_LABELS.closing) })}</Button></p> : null}
     {status === "snoozed" && thread.snoozedUntil ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("Snoozed until {time}", { time: new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(String(thread.snoozedUntil))) })}</p> : null}
     {thread.canSend ? <JobSuggestion context={context} busy={busy} onFile={(suggested) => void file(suggested)} /> : null}
     <WoddyLine workspaceId={workspaceId} thread={thread} context={context} insights={insights} owners={owners} membershipId={lookups.membershipId}
-      onCreated={async (leadId) => { await file({ kind: "enquiry", id: leadId }); }} />
+      onCreated={async (leadId) => { await file({ kind: "enquiry", id: leadId }, { justCreated: true }); }} />
     <MessageHistory workspaceId={workspaceId} thread={thread} onHide={thread.canSend ? hide : undefined} canShowHidden={Boolean(thread.canManage)}
       revision={woddy.turns.map((turn) => `${turn.id}:${turn.state}`).join(",")}
       after={<><ScheduledMessages workspaceId={workspaceId} conversationId={id} items={(thread.scheduledMessages ?? []) as ScheduledMessage[]} canSend={Boolean(thread.canSend)}
@@ -219,7 +222,7 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       lookups={{ quickReplies: lookups.quickReplies, templates: lookups.templates, owners, canManage: Boolean(lookups.settings?.canManage) }}
       onSent={async () => { await refresh(); await onChanged(); }} onAskWoddy={woddy.ask} woddyBusy={woddy.asking} />
   </section>
-    {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onFile={(job) => file(job)} /></InspectorSheet> : null}
+    {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onFile={(job, options) => file(job, options)} /></InspectorSheet> : null}
     {unmarking ? <NotSpamDialog onClose={() => setUnmarking(false)} onSubmit={async (reason) => {
       if (!thread) return;
       await crmRequest(workspaceId, `conversations/${id}/spam`, "PUT", { version: thread.version, spam: false, reason }, timeout());
