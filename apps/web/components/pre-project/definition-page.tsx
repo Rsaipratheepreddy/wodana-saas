@@ -91,7 +91,7 @@ function ScopeSignOff({ initial }: { initial: Extract<DefinitionPageData, { work
       <Badge tone={status.tone}>{status.label}</Badge>
       <span className={styles.meta}>{current ? t("Version {number} · sent {date}", { number: current.number, date: date(current.publishedAt) }) : t("{count} in scope", { count: included })}</span>
       <span className={styles.spacer} />
-      {canRecord ? <Button size="compact" onPress={() => { setError(""); setDecidedAt(localDecisionTime()); setDecisionOpen(true); }}>{t("Record the client's answer")}</Button> : null}
+      {canRecord ? <Button size="compact" onPress={() => { setError(""); setDecision("confirmed"); setDecisionBy(""); setChannel("meeting"); setEvidence(""); setNote(""); setDecidedAt(localDecisionTime()); setDecisionOpen(true); }}>{t("Record the client's answer")}</Button> : null}
       {canPublish ? <Button size="compact" variant="primary" onPress={() => void publish()} isLoading={busy}>{current ? t("Send the updated scope") : t("Send to client for sign-off")}</Button>
         : !current?.current && !definition.canPublish ? <span className={styles.meta}>{t("Someone who can send quotes sends the scope")}</span>
           : !current?.current && definition.caseStatus !== "active" ? <span className={styles.meta}>{t("Resume the enquiry to send the scope")}</span> : null}

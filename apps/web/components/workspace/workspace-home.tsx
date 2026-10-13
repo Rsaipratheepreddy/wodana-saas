@@ -190,7 +190,7 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions, 
     {followUp ? <FollowUpSheet workspaceId={workspaceId} recordId={followUp} onClose={() => setFollowUp(null)} onSaved={afterAction} /> : null}
     {creating ? <NewFollowUpDialog workspaceId={workspaceId} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); afterAction(); }} /> : null}
     {picking ? <ProjectPicker action={picking} projects={projects} onClose={() => setPicking(null)} onPick={(id) => { const action = picking; setPicking(null); router.push(action.onProject!(id)); }} /> : null}
-    {work ? <WorkSheet api={api} projectId={work.projectId} itemId={work.itemId} board={work.board}
+    {work ? <WorkSheet key={work.itemId} api={api} projectId={work.projectId} itemId={work.itemId} board={work.board}
       onBoard={(board) => setWork((current) => (current ? { ...current, board } : current))}
       onOpenItem={(itemId) => setWork((current) => (current ? { ...current, itemId } : current))}
       onClose={() => { setWork(null); afterAction(); }} /> : null}

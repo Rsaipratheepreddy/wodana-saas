@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileUp, Plus } from "lucide-react";
 import {
-  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageShell, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
+  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageShell, SelectField, TextAreaField, TextInput, useRememberedChoice,
   type DataGridColumn,
   TypeChip,
 } from "@/design-system";
@@ -120,7 +120,8 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
     return <PageShell title={t("Catalog")}>
       <EmptyState title={t("No catalogs yet")} description={t("A catalog holds the items, materials and prices you quote and buy.")}
         action={canManage ? <Button onPress={() => setDialog("catalog")} variant="primary"><Plus aria-hidden="true" size={15} />{t("Create catalog")}</Button> : null} />
-      <NewCatalogDialog isOpen={dialog === "catalog"} onClose={() => setDialog(null)} onCreated={(created) => { setCatalogs([created]); setCatalogId(created.id); setDialog(null); }} workspaceId={workspaceId} />
+      {/* Rendered only while open, so every New catalog / New item starts empty. */}
+      {dialog === "catalog" ? <NewCatalogDialog isOpen onClose={() => setDialog(null)} onCreated={(created) => { setCatalogs([created]); setCatalogId(created.id); setDialog(null); }} workspaceId={workspaceId} /> : null}
     </PageShell>;
   }
 
@@ -169,7 +170,7 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
     <LinkedImportDialog catalogId={catalogId} isOpen={dialog === "import"} onClose={() => { setDialog(null); setImportLinkId(null); }} onImported={() => void loadItems()} openLinkId={importLinkId}
       target="catalog" workspaceId={workspaceId} />
     <ProductClipDialog catalogId={catalogId} initialUrl={clipUrl} isOpen={dialog === "clip"} onClose={() => { setDialog(null); setClipUrl(""); }} onSaved={() => { setDialog(null); setClipUrl(""); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
-    <NewItemDialog catalogId={catalogId} isOpen={dialog === "item"} onClose={() => setDialog(null)} onCreated={() => { setDialog(null); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
+    {dialog === "item" ? <NewItemDialog catalogId={catalogId} isOpen key={catalogId} onClose={() => setDialog(null)} onCreated={() => { setDialog(null); void loadItems(); }} structure={structure} workspaceId={workspaceId} /> : null}
   </PageShell>;
 }
 
@@ -200,7 +201,6 @@ function NewItemDialog({ isOpen, onClose, onCreated, structure, workspaceId, cat
   const [draft, setDraft] = useState(blank);
   const set = (key: keyof typeof draft) => (value: string) => setDraft((current) => ({ ...current, [key]: value }));
   const dirty = Boolean(draft.code || draft.name || draft.description);
-  const saved = useFormDraft(isOpen ? `${workspaceId}/catalog/${catalogId}/new-item` : null, draft, { isDirty: dirty, restore: setDraft });
   const aiReady = useAiReady(isOpen ? workspaceId : null);
   const submit = async () => {
     await catalogApi(workspaceId, `${catalogId}/items`, { body: { ...draft, categoryId: draft.categoryId || undefined, description: draft.description.trim() || undefined } });
@@ -211,7 +211,7 @@ function NewItemDialog({ isOpen, onClose, onCreated, structure, workspaceId, cat
   const fill = (found: Record<string, string>) => setDraft((current) => ({ ...current, ...(found.name ? { name: found.name } : {}), ...(found.code ? { code: found.code } : {}),
     ...(found.description ? { description: found.description } : {}),
     ...(found.unit && units.some((unit) => unit.code.toLowerCase() === found.unit.toLowerCase()) ? { unitCode: units.find((unit) => unit.code.toLowerCase() === found.unit.toLowerCase())!.code } : {}) }));
-  return <FormDialog draft={saved} isDirty={dirty} isOpen={isOpen} onClose={onClose} onSubmit={submit} submitLabel={t("Add item")} title={t("New item")}
+  return <FormDialog isDirty={dirty} isOpen={isOpen} onClose={onClose} onSubmit={submit} submitLabel={t("Add item")} title={t("New item")}
     lead={aiReady ? <FillWithWoddy fields={[{ key: "name", label: t("Name") }, { key: "code", label: t("Code") }, { key: "unit", label: t("Unit") }, { key: "description", label: t("Description") }]}
       onApply={fill} onExtract={async ({ text, image }) => fillWithWoddy(workspaceId, "catalog_item", { ...(text ? { text } : {}), ...(image ? { image: await imageForWoddy(image) } : {}) })} /> : null}>
     <TextInput isRequired label={t("Name")} maxLength={200} onChange={set("name")} value={draft.name} />

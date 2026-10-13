@@ -92,7 +92,7 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
       : <GroupedTable<OpenWorkItem> ariaLabel={t("Open work")} columns={columns} sections={sections} selectable={false} getRowId={(item) => item.id}
           getRowLabel={(item) => `#${item.number} ${item.title}`} onRowAction={(item) => void open(item)} />}
     {opened?.error ? <ErrorState description={opened.error} onRetry={() => setOpened(null)} /> : null}
-    {opened?.board ? <WorkSheet api={api} projectId={opened.projectId} itemId={opened.itemId} board={opened.board}
+    {opened?.board ? <WorkSheet key={opened.itemId} api={api} projectId={opened.projectId} itemId={opened.itemId} board={opened.board}
       onBoard={(board) => setOpened((current) => (current ? { ...current, board } : current))}
       onOpenItem={(itemId) => setOpened((current) => (current ? { ...current, itemId } : current))}
       onClose={() => { setOpened(null); void load(); }} /> : null}

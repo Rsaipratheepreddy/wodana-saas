@@ -72,6 +72,8 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
   ];
 
   async function start() {
+    // Each start opens clean: no planning case chosen from the last time.
+    setCaseId("");
     setOpen(true);
     setBusy(true);
     setError("");

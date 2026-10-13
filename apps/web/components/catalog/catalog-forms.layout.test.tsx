@@ -44,6 +44,22 @@ describe("Catalog form dialogs", () => {
     saveAtTheEnd(dialog, "Add item");
   });
 
+  it("opens New item empty again after it was closed with something typed (no draft is kept)", async () => {
+    stub();
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><CatalogPage workspaceId="w" canManage currency="USD" initialCatalogs={[catalog]} /></DesignSystemProvider>);
+    for (let round = 0; round < 2; round += 1) {
+      await user.click(screen.getByRole("button", { name: "Add item" }));
+      await screen.findByRole("dialog", { name: "New item" });
+      expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
+      await user.type(screen.getByRole("textbox", { name: "Name" }), "Oak veneer");
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await user.click(await screen.findByRole("button", { name: "Discard changes" }));
+      await vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "New item" })).not.toBeInTheDocument());
+    }
+    expect(Object.keys(window.localStorage).filter((key) => key.includes("new-item"))).toEqual([]);
+  });
+
   it("edits an item in Attributes and Quantities sections, Save last", () => {
     const { container } = render(<DesignSystemProvider><CatalogItemForm workspaceId="w" catalogId="k1" structure={structure} onSaved={vi.fn()} onCancel={vi.fn()}
       item={{ id: "i1", code: "PLY-18", name: "Plywood 18mm", itemType: "material", unitCode: "sheet", categoryId: null, description: null, wastePercent: "5", purchaseRoundTo: null, values: {}, version: 3, components: [] }} /></DesignSystemProvider>);

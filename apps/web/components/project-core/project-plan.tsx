@@ -236,7 +236,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
       catch (cause) { if (cause instanceof Error && "status" in cause && cause.status === 409) await load(); throw cause; }
       setSelected(new Set()); setBulkDue(false);
     }} /> : null}
-    {open && board.items.some((item) => item.id === open) ? <WorkSheet api={api} projectId={projectId} itemId={open} board={board} onBoard={setBoard}
+    {open && board.items.some((item) => item.id === open) ? <WorkSheet key={open} api={api} projectId={projectId} itemId={open} board={board} onBoard={setBoard}
       onOpenItem={(id) => navigate({ item: id })} onClose={() => navigate({ item: null })} /> : null}
     {baselining ? <FormDialog size="md" title={board.baseline ? t("Reset the baseline") : t("Set the baseline")} onClose={() => setBaselining(false)} submitLabel={t("Save")}
       onSubmit={async () => { setBoard(await api.workCommand(projectId, "set_baseline")); setBaselining(false); }}>

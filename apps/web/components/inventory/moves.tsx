@@ -71,7 +71,7 @@ export function Moves({ api, openId, onOpen, refreshKey, onChanged, projectId = 
       </div>}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : current === "transit" ? <EmptyState title={t("Nothing on its way")} />
         : <EmptyState title={t("No moves yet")} description={t("Move stock from a row in Stock.")} />} />
-    {openId ? <MoveSheet api={api} transferId={openId} onChanged={() => { void load(); onChanged(); }} onClose={() => onOpen(null)} onOpenMove={onOpen} /> : null}
+    {openId ? <MoveSheet key={openId} api={api} transferId={openId} onChanged={() => { void load(); onChanged(); }} onClose={() => onOpen(null)} onOpenMove={onOpen} /> : null}
   </>;
 }
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge,
-  Button, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormSection, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem, useFormDraft,
+  Button, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormSection, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { joinPhone, phoneCountry, splitPhone } from "@/lib/phone";
@@ -162,7 +162,7 @@ function DealDialog({ supplier, onClose, onSave, onReload }: { supplier: Supplie
 
 /**
  * A new supplier: its name, what it supplies, who to call and how it's paid first; the rest under More
- * details. Saved together; Woddy can read a pasted message or card into it. A draft survives closing.
+ * details. Saved together; Woddy can read a pasted message or card into it. It opens empty every time.
  */
 function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
   const t = useT();
@@ -178,7 +178,7 @@ function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
   const [form, setForm] = useState(initial);
   const set = <K extends keyof typeof form>(key: K) => (value: (typeof form)[K]) => setForm((current) => ({ ...current, [key]: value }));
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
-  const draft = useFormDraft(`${api.workspaceId}/supplier/new`, form, { isDirty: dirty, restore: setForm });
+  // A new supplier always opens empty (no draft is kept from a closed one).
   const aiReady = useAiReady(api.workspaceId);
   const save = async () => {
     onState(await api.saveSupplier({ id, version: 0, name: form.name, legalName: form.legalName, categories: form.categories,
@@ -195,7 +195,7 @@ function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
   const percent = (value: string) => value.replace(/[^\d.]/g, "");
   const inRange = (value: string) => value && Number(value) > 0 && Number(value) < 100 ? null : t("Between 1 and 99%.");
   const moreFilled = [form.email, form.locality, form.legalName, form.taxRegistrationNumber, form.notes, form.termsNote, form.retentionPercent, form.deal !== "none" ? "deal" : ""].filter(Boolean).length;
-  return <FormDialog draft={draft} isDirty={dirty} onClose={onClose} onSubmit={save} size="lg" submitLabel={t("Add supplier")} title={t("New supplier")}
+  return <FormDialog isDirty={dirty} onClose={onClose} onSubmit={save} size="lg" submitLabel={t("Add supplier")} title={t("New supplier")}
     lead={aiReady ? <FillWithWoddy fields={[{ key: "name", label: t("Name") }, { key: "categories", label: t("Categories") }, { key: "contactName", label: t("Contact") }, { key: "phone", label: t("Phone") },
       { key: "email", label: t("Email") }, { key: "locality", label: t("Location") }, { key: "legalName", label: t("Legal name") }, { key: "taxRegistrationNumber", label: t("Tax number") }, { key: "notes", label: t("Notes") }]}
       onApply={fill} onExtract={async ({ text, image }) => fillWithWoddy(api.workspaceId, "supplier", { ...(text ? { text } : {}), ...(image ? { image: await imageForWoddy(image) } : {}) })} /> : null}>

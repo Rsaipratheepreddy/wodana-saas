@@ -166,7 +166,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
         <span className={s.muted}>
           {t("{count} open requests", { count: state.data.requests.filter((r) => !["resolved", "withdrawn", "declined"].includes(r.status)).length })}
         </span>
-        {state.canEdit && <div className={s.actions}>{decisionTargets.length > 0 && <Button size="compact" onPress={() => setCreateDecision(true)}>{t("Request client decision")}</Button>}<Button size="compact" variant="primary" onPress={() => setCreate(true)}><Plus size={15} />{newTitle}</Button></div>}
+        {state.canEdit && <div className={s.actions}>{decisionTargets.length > 0 && <Button size="compact" onPress={() => { setDecisionDraft(blankDecision); setCreateDecision(true); }}>{t("Request client decision")}</Button>}<Button size="compact" variant="primary" onPress={() => { setDraft({ title: "", detail: "" }); setChangeDraft(blankChange); setCreate(true); }}><Plus size={15} />{newTitle}</Button></div>}
       </div>
       {!state.data.requests.length ? (
         <EmptyState title={t("No change requests yet")} description={t("Client changes and your team’s clarifications appear here, each with an owner and a resolution.")} />
@@ -261,8 +261,8 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
       </FormDialog>
       <FormDialog
         isOpen={Boolean(request)}
-        // Files waiting to go belong to this request's reply: closing it lets them go.
-        onClose={() => { setSelected(""); setReplyFiles([]); setReplyFileError(""); }}
+        // The reply being written belongs to this request: closing it lets it go, so another request starts clean.
+        onClose={() => { setSelected(""); setComment(""); setInternal(false); setReplyFiles([]); setReplyFileError(""); }}
         title={request?.title ?? t("Request")}
         size="lg"
         hideSubmit={!state.canEdit}

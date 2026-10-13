@@ -244,7 +244,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       onIssue={(issue) => fromDetail(() => setEditing(issue))} onDraw={(photo) => fromDetail(() => { setQueue([]); setMarking(photo); })} /> : null}
     {picking ? <RoomPicker data={data} exclude={areas.map((area) => area.id)} onClose={() => setPicking(false)} onPick={startRoom} /> : null}
 
-    {marking ? <AssetMarkup workspaceId={workspaceId} caseId={caseId} asset={marking.asset} assetUrl={assetUrl} onClose={nextMarkup} onSaved={(marked) => void markupSaved(marking, marked).catch((failure: Error) => setError(failure.message))} /> : null}
+    {marking ? <AssetMarkup key={marking.asset.id} workspaceId={workspaceId} caseId={caseId} asset={marking.asset} assetUrl={assetUrl} onClose={nextMarkup} onSaved={(marked) => void markupSaved(marking, marked).catch((failure: Error) => setError(failure.message))} /> : null}
     {editing ? <SiteRecordEditor key={editing.id} initial={editing} data={data} site={site} onClose={() => setEditing(null)} onRoomAdded={(room) => setData((current) => ({ ...current, rooms: [...current.rooms, room] }))}
       onSave={async (record, version) => { upsertRecord(await caseRequest<SiteRecord>(workspaceId, caseId, `site/${paths[record.kind]}`, "PUT", sitePayload(record, version))); setEditing(null); setNotice(t("Saved.")); void loadJourney(); }} /> : null}
     {visitOpen && visitStage && journey ? <SiteVisitFlow view={journey} stage={visitStage} onClose={() => setVisitOpen(false)} onBook={() => setBooking(true)}

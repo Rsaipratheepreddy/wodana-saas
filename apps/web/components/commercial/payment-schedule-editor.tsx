@@ -202,7 +202,7 @@ export function PaymentScheduleEditor({
           <p className={s.muted}>{t("Accepted milestones carry into the agreement and payment tracking.")}</p>
         </div>
         {!readOnly ? (
-          <Button onPress={() => { void load(); setLibrary(true); }}>{t("Choose schedule")}</Button>
+          <Button onPress={() => { void load(); setEdit(null); setTemplateName(""); setLibrary(true); }}>{t("Choose schedule")}</Button>
         ) : null}
       </div>
 
