@@ -41,6 +41,10 @@ export function projectApi(workspaceId: string) {
     uploadDrawing: (projectId: string, revisionId: string, fileId: string, kind: "drawing" | "approval", file: File) =>
       upload<DrawingsState>(`${path(`projects/${projectId}/drawings/${revisionId}/files/${fileId}`)}&${new URLSearchParams({ kind })}`, file),
     drawingUrl: (projectId: string, fileId: string, preview = false) => `${path(`projects/${projectId}/drawings/files/${fileId}`)}${preview ? "&preview=1" : ""}`,
+    /** PLM-149: a photo or PDF of a technical site measure; replayed safely by its id. */
+    uploadMeasureFile: (projectId: string, measureId: string, fileId: string, file: File) =>
+      upload<DrawingsState>(path(`projects/${projectId}/technical-measures/${measureId}/files/${fileId}`), file),
+    measureFileUrl: (projectId: string, fileId: string, preview = false) => `${path(`projects/${projectId}/technical-measures/files/${fileId}`)}${preview ? "&preview=1" : ""}`,
     seal: (projectId: string, sealId: string) => request<SealedScope>(path(`projects/${projectId}/seals/${sealId}`)),
     /** What the project was agreed at and received, what it cost and still has committed, and its budgets. */
     money: (projectId: string) => request<ProjectMoney>(path(`projects/${projectId}/money`)),

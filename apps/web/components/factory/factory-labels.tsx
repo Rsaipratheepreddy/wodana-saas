@@ -26,12 +26,12 @@ export function useFactoryLabels() {
     } satisfies Record<Exclude<WorkOrderNext, null>, string>,
     check: {
       running: t("Project running"), scope: t("Scope unchanged"), client_drawings: t("Client approved the drawings"), drawing: t("Drawing approved"), payment: t("Payment before production verified"), materials: t("Materials in"),
-      schedule: t("Workcenter and dates"),
+      schedule: t("Workcenter and dates"), technical_measure: t("Technical site measure done"),
     } satisfies Record<ReleaseCheck["key"], string>,
     /** What's missing, in a few words, for a list. */
     blocked: {
       running: t("Project on hold"), scope: t("Scope changed"), client_drawings: t("Client hasn't approved the drawings"), drawing: t("Drawing not approved"), payment: t("Payment not in"), materials: t("Materials not in"),
-      schedule: t("No workcenter or dates"),
+      schedule: t("No workcenter or dates"), technical_measure: t("Technical site measure not done"),
     } satisfies Record<ReleaseCheck["key"], string>,
   }), [t]);
 }

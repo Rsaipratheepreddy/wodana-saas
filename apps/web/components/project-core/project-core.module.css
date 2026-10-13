@@ -234,3 +234,10 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
   .sealList button { grid-template-columns: minmax(0, 1fr) auto; }
   .sealList button > span:nth-child(2) { display: none; }
 }
+
+/* PLM-149: the technical site measure's dimensions, one row each: where, what, the size and its unit. */
+.measureLines { display: grid; gap: var(--wd-space-2); }
+.measureRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 7rem 6rem auto; gap: var(--wd-space-2); align-items: end; }
+@media (max-width: 720px) {
+  .measureRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}

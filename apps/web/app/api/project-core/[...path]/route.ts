@@ -19,6 +19,9 @@ function allowed(path: string[], method: string) {
   // Technical drawings: a file uploaded to a revision, and a drawing file (or its preview) opened.
   if (path.length === 6 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && UUID.test(path[3]) && path[4] === "files" && UUID.test(path[5])) return method === "POST";
   if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && path[3] === "files" && UUID.test(path[4])) return method === "GET";
+  // PLM-149: a photo or PDF added to a technical site measure, and one opened.
+  if (path.length === 6 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "technical-measures" && UUID.test(path[3]) && path[4] === "files" && UUID.test(path[5])) return method === "POST";
+  if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "technical-measures" && path[3] === "files" && UUID.test(path[4])) return method === "GET";
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "budgets") return method === "PUT";
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && ["milestones", "pnl", "cash-flow"].includes(path[3])) return method === "GET";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
@@ -38,7 +41,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const workspaceId = search.get("workspaceId") ?? "";
   if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid project resource.") }, { status: 400 });
   // Snag photos and drawing files stream back as files.
-  if (path[2] === "photos" || (path[2] === "drawings" && path[3] === "files")) {
+  if (path[2] === "photos" || ((path[2] === "drawings" || path[2] === "technical-measures") && path[3] === "files")) {
     const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/project-core/${path.join("/")}${search.get("preview") === "1" ? "?preview=1" : ""}`, { cache: "no-store" });
     if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: t("The photo could not be loaded.") }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
     const disposition = result.upstream.headers.get("content-disposition");
@@ -48,7 +51,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
     return response;
   }
   if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: t("Use your workspace to make this change.") }, { status: 403 });
-  if (path[2] === "drawings" && path[4] === "files") {
+  if ((path[2] === "drawings" || path[2] === "technical-measures") && path[4] === "files") {
     if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ message: t("Choose a PDF or image up to 20 MB.") }, { status: 400 });
     const input = await request.formData().catch(() => null);
     const file = input?.get("file");

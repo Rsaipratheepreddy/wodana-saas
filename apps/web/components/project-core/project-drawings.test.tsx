@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { DrawingRevision, DrawingsState } from "@/lib/project-core/types";
 import { ProjectDrawings } from "./project-drawings";
@@ -50,6 +51,44 @@ it("PLM-059: the project manager sends checked drawings and records the client's
   expect(await screen.findByText("R1 · Approved by the client")).toBeInTheDocument();
   expect(screen.getByText(/Maya Client/)).toHaveTextContent("In the client portal");
   expect(screen.queryByRole("button", { name: /Upload|Record|Send/ })).not.toBeInTheDocument();
+});
+
+it("PLM-149: shop drawings wait for the technical site measure, recorded with its dimensions; then it reads back with its photos", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const waiting = state({ revisions: [], canUpload: false, canCheck: false, check: "design",
+    measure: { required: true, done: false, measures: [], unit: "mm", units: ["mm", "cm", "m", "in", "ft"], canRecord: true } });
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, body: init?.body && typeof init.body === "string" ? JSON.parse(init.body) : null });
+    return { ok: true, json: async () => (url.includes("/drawings") ? waiting : { project: { version: 5 } }) };
+  }));
+  const user = userEvent.setup();
+  const { unmount } = render(<ProjectDrawings workspaceId="w" projectId="p" version={4} />);
+  expect(await screen.findByText("Shop drawings start after the technical site measure.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Upload drawings" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Record the technical measure" }));
+  const save = await screen.findByRole("button", { name: "Save" });
+  expect(save).toBeDisabled();
+  await user.type(screen.getByRole("textbox", { name: "Where" }), "Kitchen");
+  await user.type(screen.getByRole("textbox", { name: "Dimension" }), "Sink wall width");
+  await user.type(screen.getByRole("textbox", { name: "Size" }), "3195");
+  await user.tab();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(calls.some((call) => (call.body as { action?: string } | null)?.action === "record_technical_measure")).toBe(true));
+  expect(calls.find((call) => (call.body as { action?: string } | null)?.action === "record_technical_measure")!.body).toMatchObject({
+    action: "record_technical_measure", version: 4, measureId: expect.any(String), note: "",
+    lines: [{ area: "Kitchen", label: "Sink wall width", value: 3195, unit: "mm" }] });
+  unmount();
+
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => state({ revisions: [revision({ status: "uploaded" })], check: "design", canCheck: false, canUpload: true,
+    measure: { required: true, done: true, unit: "mm", units: ["mm"], canRecord: false, measures: [{ id: "m1", measuredOn: "2026-10-12", note: "Out of plumb", byName: "Faris", at: "2026-10-12T09:00:00Z",
+      lines: [{ area: "Kitchen", label: "Sink wall width", value: "3195", unit: "mm" }], files: [{ id: "f9", name: "sketch.pdf", mimeType: "application/pdf", byteSize: 9, hasPreview: false, byName: "Faris", at: "2026-10-12T09:00:00Z" }] }] } }) })));
+  render(<ProjectDrawings workspaceId="w" projectId="p" version={4} />);
+  expect(await screen.findByText("R1 · Waiting for the design check")).toBeInTheDocument();
+  expect(screen.getByText("Sink wall width")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "sketch.pdf" })).toHaveAttribute("href", expect.stringContaining("projects/p/technical-measures/files/f9"));
+  // The technical team doesn't check against the design nor record the measure.
+  expect(screen.queryByRole("button", { name: /Check against the design|Record the technical measure|Send/ })).not.toBeInTheDocument();
 });
 
 it("PLM-057: shows which items need drawings and which already have one, and the team decides per item with the reason", async () => {

@@ -36,7 +36,8 @@ export function useNextAction(detail: ProjectDetail, run: Run, open: (dialog: Pr
     case "everything_made": return { label: t("Open factory"), href: `/workspace/factory?project=${project.id}` };
     case "snags_closed": case "no_critical_snags": return { label: t("Open snags"), href: `${base}/plan?filter=snags` };
     case "handover_accepted": return { label: t("Open handover"), href: `${base}/handover` };
-    case "drawings_uploaded": case "drawings_site_checked": case "drawings_client_approved": return { label: t("Open the drawings"), href: `${base}/scope?view=drawings` };
+    case "drawings_uploaded": case "drawings_site_checked": case "drawings_design_checked": case "drawings_client_approved": case "technical_measure_done":
+      return { label: t("Open the drawings"), href: `${base}/scope?view=drawings` };
     case "factory_slot_booked": return detail.canBookSlot ? { label: t("Book the factory slot"), press: () => open("factory_slot") } : null;
     case "installation_scheduled": return detail.canScheduleInstallation ? { label: t("Schedule delivery and installation"), press: () => open("installation") } : null;
     case "permit_collected": return detail.canScheduleInstallation ? { label: t("Record the building permit"), press: () => open("permit") } : null;

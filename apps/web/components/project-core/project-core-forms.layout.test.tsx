@@ -82,8 +82,8 @@ describe("Project form dialogs", () => {
   it("keeps two-column grids out of the project form styles, except coupled fields and read-only displays", () => {
     const twoColumns = /grid-template-columns:\s*(repeat\(2,|repeat\(auto-fit|1fr 1fr|minmax\(0, ?1fr\) minmax\(0, ?1fr\))/;
     const allowed: Record<string, RegExp> = {
-      // A material's quantity and its unit.
-      "project-core.module.css": /^\.quantityUnit$/,
+      // A material's quantity and its unit; each dimension of the technical measure on a phone (a line table, not a form).
+      "project-core.module.css": /^\.(quantityUnit|measureRow)$/,
       // KPI tiles and the before/after snag photos.
       "work.module.css": /^\.(kpis|snagPhotos)$/,
       // Each standard task's row in the task list editor (a line table, not a form).

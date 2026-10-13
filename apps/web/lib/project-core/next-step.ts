@@ -16,6 +16,8 @@ const NEXT_STEP_ACTION: Partial<Record<CheckKind | "finish", MessageKey>> = {
   handover_accepted: tKey("Get the handover accepted"),
   drawings_uploaded: tKey("Upload the technical drawings"),
   drawings_site_checked: tKey("Check the drawings on site"),
+  technical_measure_done: tKey("Take the technical site measure"),
+  drawings_design_checked: tKey("Check the drawings match the design"),
   drawings_client_approved: tKey("Get the drawings approved"),
   factory_slot_booked: tKey("Book a factory slot"),
   installation_scheduled: tKey("Schedule the installation"),

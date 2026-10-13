@@ -106,6 +106,8 @@ export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, runn
     : check.kind === "handover_accepted" ? t("The client accepted the handover")
     : check.kind === "drawings_uploaded" ? t("Technical drawings uploaded")
     : check.kind === "drawings_site_checked" ? t("Technical site check passed")
+    : check.kind === "technical_measure_done" ? t("Technical site measure done")
+    : check.kind === "drawings_design_checked" ? t("Drawings match the design")
     : check.kind === "drawings_client_approved" ? t("Client approved the drawings")
     : check.kind === "factory_slot_booked" ? t("Factory slot booked")
     : check.kind === "installation_scheduled" ? t("Installation scheduled")
@@ -121,8 +123,8 @@ export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, runn
     : check.kind === "everything_made" ? <Link href={`/workspace/factory?project=${projectId}`}>{t("Open the factory")}</Link>
     : check.kind === "snags_closed" || check.kind === "no_critical_snags" ? <Link href={`${projectHref}/plan?filter=snags`}>{t("Open snags")}</Link>
     : check.kind === "handover_accepted" ? <Link href={`${projectHref}/handover`}>{t("Open the handover")}</Link>
-    : check.kind === "drawings_uploaded" || check.kind === "drawings_site_checked" || check.kind === "drawings_client_approved"
-      ? <Link href={`${projectHref}/scope?view=drawings`}>{t("Open the drawings")}</Link>
+    : check.kind === "drawings_uploaded" || check.kind === "drawings_site_checked" || check.kind === "drawings_client_approved" || check.kind === "technical_measure_done"
+      || check.kind === "drawings_design_checked" ? <Link href={`${projectHref}/scope?view=drawings`}>{t("Open the drawings")}</Link>
     // The slot and the installation are booked from the project's details (or its next step).
     : check.kind === "factory_slot_booked" || check.kind === "installation_scheduled" || check.kind === "permit_collected" ? null
     : check.kind === "goods_delivered" ? <Link href={`/workspace/inventory?project=${projectId}`}>{t("Open stock")}</Link>

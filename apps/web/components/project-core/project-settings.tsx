@@ -112,6 +112,20 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
         <Link href={reminderHref.settings("change_request.client_decision")}>{t("Open reminder settings")}</Link>
       </SettingsRow>
     </SettingsSection>
+    <SettingsSection id="drawings" title={t("Technical drawings")}>
+      {/* PLM-149: who talks to the client about the drawings (the technical team doesn't), and when the technical measure is due. */}
+      <SettingsRow label={t("Sent to the client by")} hint={t("Checks they match the design, sends them and records the client's approval.")}>
+        <SelectField aria-label={t("Sent to the client by")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.drawingsClientRole ?? LEAD}
+          onSelectionChange={(key) => setForm({ ...form, drawingsClientRole: key === LEAD ? null : String(key) })}
+          items={form.roles.map((role) => ({ id: role.key, label: t(role.label as never) }))} />
+      </SettingsRow>
+      <SettingsRow label={t("Technical measure due in")}>
+        <SelectField aria-label={t("Technical measure due in")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={String(form.technicalMeasureDays ?? "none")}
+          onSelectionChange={(key) => setForm({ ...form, technicalMeasureDays: key === "none" ? null : Number(key) })}
+          items={[{ id: "none", label: t("No due date") }, ...[...new Set([2, 3, 5, 7, 10, ...(form.technicalMeasureDays ? [form.technicalMeasureDays] : [])])].sort((a, b) => a - b)
+            .map((days) => ({ id: String(days), label: t("{count} working days", { count: days }) }))]} />
+      </SettingsRow>
+    </SettingsSection>
     <SettingsSection id="finish" title={t("When a project finishes")}>
       <SettingsRow label={t("Finish by itself")} hint={t("When the client accepts the handover and nothing is left open.")}>
         <Switch aria-label={t("Finish by itself")} isDisabled={readOnly} isSelected={form.autoFinish} onChange={(value) => setForm({ ...form, autoFinish: value })} />
@@ -144,7 +158,8 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!/^[A-Z]/.test(form.referencePrefix)} onDiscard={() => setForm(data.settings)}
       onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment,
         variationPaymentRule: form.variationPaymentRule ?? "before_work", autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
-        reportDueTime: form.reportDueTime ?? "18:00", autoSendPendingReports: Boolean(form.autoSendPendingReports), weeklyRollup: Boolean(form.weeklyRollup) }); setBusy(false); }} />}
+        reportDueTime: form.reportDueTime ?? "18:00", autoSendPendingReports: Boolean(form.autoSendPendingReports), weeklyRollup: Boolean(form.weeklyRollup),
+        drawingsClientRole: form.drawingsClientRole ?? null, technicalMeasureDays: form.technicalMeasureDays ?? null }); setBusy(false); }} />}
   </>;
 }
 
@@ -169,8 +184,8 @@ function Roles({ data, onSave }: { data: SettingsState; onSave: (roles: ProjectR
 }
 
 const CHECK_KINDS: CheckKind[] = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed",
-  "no_critical_snags", "handover_accepted", "drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked",
-  "installation_scheduled", "permit_collected", "goods_delivered", "installation_done"];
+  "no_critical_snags", "handover_accepted", "technical_measure_done", "drawings_uploaded", "drawings_site_checked", "drawings_design_checked", "drawings_client_approved",
+  "factory_slot_booked", "installation_scheduled", "permit_collected", "goods_delivered", "installation_done"];
 
 const MOMENTS: KeepInformedEvent[] = ["drawings_started", "production_started", "installation_scheduled"];
 
@@ -211,7 +226,7 @@ function RouteEditor({ route, roles, readOnly, onClose, onSave, onArchive }: {
     handover_accepted: t("The client accepted the handover"), drawings_uploaded: t("Technical drawings uploaded"), drawings_site_checked: t("Technical site check passed"),
     drawings_client_approved: t("Client approved the drawings"), factory_slot_booked: t("Factory slot booked"),
     installation_scheduled: t("Installation scheduled"), goods_delivered: t("Everything delivered"), installation_done: t("Installation signed off"),
-    permit_collected: t("Building permit collected") };
+    permit_collected: t("Building permit collected"), technical_measure_done: t("Technical site measure done"), drawings_design_checked: t("Drawings match the design") };
   const roleItems = roles.map((role) => ({ id: role.key, label: role.label }));
   const update = (index: number, patch: Partial<RouteStage>) => setStages(stages.map((stage, at) => (at === index ? { ...stage, ...patch } : stage)));
   const move = (index: number, step: number) => { const next = [...stages]; const [item] = next.splice(index, 1); next.splice(index + step, 0, item); setStages(next); };

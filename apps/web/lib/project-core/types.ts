@@ -7,7 +7,7 @@ export type Health = "on_track" | "at_risk" | "off_track";
 export type Priority = "normal" | "high" | "critical";
 export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified" | "material_list_signed_off" | "everything_ordered" | "everything_made"
   | "snags_closed" | "no_critical_snags" | "handover_accepted" | "drawings_uploaded" | "drawings_site_checked" | "drawings_client_approved" | "factory_slot_booked"
-  | "installation_scheduled" | "goods_delivered" | "installation_done" | "permit_collected";
+  | "installation_scheduled" | "goods_delivered" | "installation_done" | "permit_collected" | "technical_measure_done" | "drawings_design_checked";
 
 export type ProjectRole = { key: string; label: string };
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
@@ -30,6 +30,10 @@ export type ProjectSettings = {
   weeklyRollup?: boolean;
   /** PLM-055: the roles told at the project's key moments. */
   keepInformed?: Record<KeepInformedEvent, string[]>;
+  /** PLM-149: the project role that sends the drawings to the client and records the approval; null: the project manager. */
+  drawingsClientRole?: string | null;
+  /** PLM-149: working days the technical site measure is due in once its task opens; null: no due date. */
+  technicalMeasureDays?: number | null;
 };
 /** The project's key moments people can be kept informed about (PLM-055). */
 export type KeepInformedEvent = "drawings_started" | "production_started" | "installation_scheduled";
@@ -134,6 +138,8 @@ export type DrawingFile = { id: string; kind: "drawing" | "approval"; name: stri
 export type DrawingRevision = {
   id: string; number: number; status: DrawingStatus; note: string; createdByName: string; createdAt: string;
   siteCheck: "ok" | "changes" | null; siteCheckNote: string; siteCheckedByName: string | null; siteCheckedAt: string | null;
+  /** Which check the revision had before it went to the client: on site, or against the design (PLM-149); null while none. */
+  checkKind?: DrawingCheck | null;
   sentByName: string | null; sentAt: string | null;
   decidedOn: string | null; decidedByName: string | null; decisionNote: string; decisionVia: "recorded" | "portal" | null; decisionRecordedByName: string | null;
   files: DrawingFile[];
@@ -146,8 +152,20 @@ export type DrawingItem = {
   rule: { needed: boolean; reason: DrawingReason }; needed: boolean;
   override: { needed: boolean; reason: string; byName: string | null; at: string | null } | null; version: number;
 };
+export type DrawingCheck = "site" | "design";
+export type MeasureUnit = "mm" | "cm" | "m" | "in" | "ft";
+export type MeasureLine = { area: string; label: string; value: string; unit: MeasureUnit };
+/** PLM-149: one technical site measure (the final site dimensions before shop drawings), with its photos. */
+export type TechnicalMeasure = {
+  id: string; measuredOn: string; note: string; byName: string; at: string; lines: MeasureLine[];
+  files: Array<{ id: string; name: string; mimeType: string; byteSize: number; hasPreview: boolean; byName: string; at: string }>;
+};
 export type DrawingsState = {
   revisions: DrawingRevision[]; version: number; caseId: string; inRoute: boolean; needsSiteCheck: boolean;
+  /** The check before the drawings go to the client: on site, against the design (PLM-149), or none. */
+  check?: DrawingCheck | null;
+  /** PLM-149: the technical site measure when the route asks for it (the latest first), and whether this person records it. */
+  measure?: { required: boolean; done: boolean; measures: TechnicalMeasure[]; unit: MeasureUnit; units: MeasureUnit[]; canRecord: boolean } | null;
   canUpload: boolean; canCheck: boolean; canSend: boolean; canDecide: boolean;
   /** Whether any item needs drawings; the items; who may decide per item. */
   needed?: boolean; items?: DrawingItem[]; canDecideItems?: boolean;

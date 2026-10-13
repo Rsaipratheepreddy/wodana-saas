@@ -31,6 +31,8 @@ export function useProjectFormat() {
       },
       /** A moment, as a date in the workspace's time zone. */
       when: (value: string | null) => (value ? new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) : ""),
+      /** A measured size or quantity (decimal text), in the workspace's digits and separators. */
+      number: (value: string | number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(Number(value)),
       money: (value: string | number | null, currency: string) => {
         if (value === null || value === "") return "";
         try { return new Intl.NumberFormat(locale, { style: "currency", currency }).format(Number(value)); } catch { return `${currency} ${value}`; }

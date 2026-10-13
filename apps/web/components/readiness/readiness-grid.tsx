@@ -23,7 +23,7 @@ export function useReadinessLabels() {
     const state: Record<CellState, string> = { done: t("Done"), missing: t("Missing"), waiting: t("In progress"), not_needed: t("Not needed") };
     const notes: Record<string, string> = {
       from_sheet: t("From sheet"), from_quote: t("From quotation"), components: t("Components"), material_list: t("Material list"), in_review: t("In review"),
-      catalogue_drawing: t("Catalogue drawing"), approved: t("Approved"), uploaded: t("Uploaded"), site_checked: t("Site checked"), sent: t("Sent to client"),
+      catalogue_drawing: t("Catalogue drawing"), approved: t("Approved"), uploaded: t("Uploaded"), site_checked: t("Site checked"), design_checked: t("Matches the design"), sent: t("Sent to client"),
       changes_requested: t("Changes requested"), signed_off: t("Signed off"), ordered: t("Ordered"), received: t("Received"), installed: t("Installed"),
       scheduled: t("Scheduled"), in_production: t("In production"), on_hold: t("On hold"), ready: t("Ready"), part_installed: t("Part installed"), not_installed: t("Not installed"),
     };

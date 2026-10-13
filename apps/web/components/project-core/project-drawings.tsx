@@ -1,44 +1,50 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Send } from "lucide-react";
+import { Plus, Send, Trash2 } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
-  Badge, Button, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormSection, GroupedTable, InlineNotice, SegmentedControl, Skeleton, TextAreaField, TextInput,
-  type GroupedTableColumn,
+  Badge, Button, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormSection, GroupedTable, IconButton, InlineNotice, NumericInput, SegmentedControl, SelectField, Skeleton,
+  TextAreaField, TextInput, type GroupedTableColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
-import type { DrawingFile, DrawingItem, DrawingReason, DrawingRevision, DrawingStatus, DrawingsState } from "@/lib/project-core/types";
+import type {
+  DrawingCheck, DrawingFile, DrawingItem, DrawingReason, DrawingRevision, DrawingStatus, DrawingsState, MeasureLine, MeasureUnit, TechnicalMeasure,
+} from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
 const ACCEPT = "application/pdf,image/*";
 const uuid = () => crypto.randomUUID();
 
-export function useDrawingStatusLabels() {
+/** The revision states; "uploaded" and "checked" read by the check the route asks for (on site, or against the design, PLM-149). */
+export function useDrawingStatusLabels(check: DrawingCheck | null = "site") {
   const t = useT();
   return useMemo<Record<DrawingStatus, string>>(() => ({
-    uploaded: t("Waiting for the site check"), checked: t("Site check passed"), changes_needed: t("Changes needed"), sent: t("With the client"),
+    uploaded: check === "design" ? t("Waiting for the design check") : t("Waiting for the site check"),
+    checked: check === "design" ? t("Matches the design") : t("Site check passed"), changes_needed: t("Changes needed"), sent: t("With the client"),
     approved: t("Approved by the client"), changes_requested: t("The client asked for changes"),
-  }), [t]);
+  }), [check, t]);
 }
 
 /**
- * The project's technical drawings (PLM-057 … 060), one revision at a time: the technical team uploads them, the
- * drawer or the project manager records the site check, the project manager sends them to the client and records
- * the client's decision with the signed file. The factory reads the approved ones. Each change reloads the project.
+ * The project's technical drawings (PLM-057 … 060, PLM-149), one revision at a time: the project manager or the factory
+ * records the technical site measure first (when the route asks for it), the technical team uploads the drawings, the
+ * drawer or the project manager records the site check (or the lead designer checks they match the design), and the
+ * project manager (or the lead designer) sends them to the client and records the client's decision with the signed
+ * file. The factory reads the approved ones. Each change reloads the project.
  */
 export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: { workspaceId: string; projectId: string; version: number; onChanged?: () => void }) {
   const t = useT();
   const format = useProjectFormat();
-  const labels = useDrawingStatusLabels();
   const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<DrawingsState | null>(null);
+  const labels = useDrawingStatusLabels(data?.check ?? (data?.needsSiteCheck ? "site" : null));
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<"check" | "decide" | null>(null);
+  const [dialog, setDialog] = useState<"check" | "decide" | "measure" | null>(null);
   const [deciding, setDeciding] = useState<DrawingItem | null>(null);
   const load = useCallback(async () => {
     try { setData(await api.drawings(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The drawings didn't load.")); }
@@ -80,18 +86,24 @@ export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: 
     { id: "by", label: t("Added"), width: "40%", mobileHidden: true, render: (file) => <span className={styles.muted}>{[file.byName, format.when(file.at)].filter(Boolean).join(" · ")}</span> },
   ];
 
+  const measure = data.measure ?? null;
+  const design = data.check === "design";
   return <div className={styles.changes}>
     <div className={styles.scopeToolbar}>
       <div className={styles.toolbarActions}>
+        {measure?.canRecord ? <Button size="compact" variant={measure.done ? undefined : "primary"} isDisabled={busy} onPress={() => setDialog("measure")}>
+          {measure.measures.length ? t("Record a new measure") : t("Record the technical measure")}</Button> : null}
         {data.canUpload ? <FileUploader appearance="button" accept={ACCEPT} label={latest?.status === "uploaded" ? t("Add drawings") : latest ? t("Upload a new revision") : t("Upload drawings")}
           onFiles={(files) => void addDrawings(files)} /> : null}
-        {data.canCheck ? <Button size="compact" isDisabled={busy} onPress={() => setDialog("check")}>{t("Record the site check")}</Button> : null}
+        {data.canCheck ? <Button size="compact" isDisabled={busy} onPress={() => setDialog("check")}>{design ? t("Check against the design") : t("Record the site check")}</Button> : null}
         {data.canSend && latest ? <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void command("send_drawings", { revisionId: latest.id })}>
           <Send aria-hidden="true" size={14} />{t("Send to the client")}</Button> : null}
         {data.canDecide ? <Button size="compact" variant="primary" onPress={() => setDialog("decide")}>{t("Record the client's decision")}</Button> : null}
       </div>
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {measure?.required && !measure.done ? <InlineNotice tone="info" message={t("Shop drawings start after the technical site measure.")} /> : null}
+    {measure?.measures[0] ? <MeasureFacts measure={measure.measures[0]} earlier={measure.measures.length - 1} fileUrl={(fileId) => api.measureFileUrl(projectId, fileId)} /> : null}
     {data.items?.length ? <DrawingItems items={data.items} approved={latest?.status === "approved" ? latest.number : null} canDecide={Boolean(data.canDecideItems)} onDecide={setDeciding} /> : null}
     {latest ? <RevisionFacts revision={latest} /> : null}
     {data.revisions.length
@@ -102,8 +114,16 @@ export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: 
     {deciding ? <DrawingNeedDialog item={deciding} onClose={() => setDeciding(null)} onSave={async (needed, reason) => {
       await command("set_drawing_need", { lineId: deciding.lineId, needed, reason }, true); setDeciding(null);
     }} /> : null}
-    {dialog === "check" && latest ? <SiteCheckDialog revision={latest} onClose={() => setDialog(null)}
+    {dialog === "check" && latest ? <SiteCheckDialog revision={latest} design={design} onClose={() => setDialog(null)}
       onSave={async (result, note) => { await command("check_drawings", { revisionId: latest.id, result, note }, true); setDialog(null); }} /> : null}
+    {dialog === "measure" && measure ? <MeasureDialog unit={measure.unit} units={measure.units} today={format.today()} onClose={() => setDialog(null)}
+      onSave={async (input, files) => {
+        // The measure is recorded first; its photos then go on it (each replayed safely by its id).
+        const measureId = uuid();
+        await api.command(projectId, data.version, "record_technical_measure", { measureId, ...input });
+        for (const file of files) await api.uploadMeasureFile(projectId, measureId, uuid(), file);
+        await load(); onChanged?.(); setDialog(null);
+      }} /> : null}
     {dialog === "decide" && latest ? <ClientDecisionDialog revision={latest} today={format.today()} onClose={() => setDialog(null)}
       onSave={async (input, files) => {
         // The signed approval goes on the revision first; the decision is then checked against the drawings as they are now.
@@ -119,7 +139,7 @@ function RevisionFacts({ revision }: { revision: DrawingRevision }) {
   const t = useT();
   const format = useProjectFormat();
   const rows = [
-    revision.siteCheck ? { key: "check", label: t("Site check"), value: revision.siteCheck === "ok" ? t("OK") : t("Changes needed"),
+    revision.siteCheck ? { key: "check", label: revision.checkKind === "design" ? t("Design check") : t("Site check"), value: revision.siteCheck === "ok" ? t("OK") : t("Changes needed"),
       meta: [revision.siteCheckNote, revision.siteCheckedByName, format.when(revision.siteCheckedAt)].filter(Boolean).join(" · ") } : null,
     revision.sentAt ? { key: "sent", label: t("Sent to the client"), value: format.when(revision.sentAt), meta: revision.sentByName ?? "" } : null,
     revision.decidedOn ? { key: "decision", label: t("Client's decision"), value: revision.status === "approved" ? t("Approved") : t("Changes asked"),
@@ -132,11 +152,86 @@ function RevisionFacts({ revision }: { revision: DrawingRevision }) {
   </dl>;
 }
 
-function SiteCheckDialog({ revision, onClose, onSave }: { revision: DrawingRevision; onClose: () => void; onSave: (result: "ok" | "changes", note: string) => Promise<void> }) {
+/** PLM-149: the latest technical site measure: when and by whom, its dimensions, notes and photos. */
+function MeasureFacts({ measure, earlier, fileUrl }: { measure: TechnicalMeasure; earlier: number; fileUrl: (fileId: string) => string }) {
+  const t = useT();
+  const format = useProjectFormat();
+  const units = useUnitLabels();
+  const columns: GroupedTableColumn<MeasureLine & { id: string }>[] = [
+    { id: "area", label: t("Where"), width: "35%", render: (line) => <span className={styles.muted}>{line.area || "—"}</span> },
+    { id: "label", label: t("Dimension"), width: "40%", render: (line) => line.label },
+    { id: "value", label: t("Size"), width: "25%", align: "end", render: (line) => `${format.number(line.value)} ${units[line.unit]}` },
+  ];
+  return <>
+    <dl className={styles.detailList}>
+      <div><dt>{t("Technical site measure")}</dt><dd>{format.day(measure.measuredOn)}<small>{[measure.byName, earlier ? t("{count} earlier", { count: earlier }) : ""].filter(Boolean).join(" · ")}</small></dd></div>
+      {measure.note ? <div><dt>{t("Notes")}</dt><dd>{measure.note}</dd></div> : null}
+      {measure.files.length ? <div><dt>{t("Photos and files")}</dt><dd>{measure.files.map((file) =>
+        <a key={file.id} className={styles.detailLink} href={fileUrl(file.id)} target="_blank" rel="noreferrer">{file.name}</a>)}</dd></div> : null}
+    </dl>
+    <GroupedTable<MeasureLine & { id: string }> ariaLabel={t("Technical site measure")} columns={columns} selectable={false} getRowId={(line) => line.id} getRowLabel={(line) => line.label}
+      sections={[{ id: measure.id, label: t("Final site dimensions"), rows: measure.lines.map((line, index) => ({ ...line, id: `${measure.id}:${index}` })), emptyMessage: t("No dimensions yet.") }]} />
+  </>;
+}
+
+function useUnitLabels() {
+  const t = useT();
+  return useMemo<Record<MeasureUnit, string>>(() => ({ mm: t("mm"), cm: t("cm"), m: t("m"), in: t("in"), ft: t("ft") }), [t]);
+}
+
+type DraftLine = { key: string; area: string; label: string; value: number | null; unit: MeasureUnit };
+
+/** PLM-149: records the technical site measure: the day, each final dimension with its unit, notes and photos. Save bottom-end. */
+function MeasureDialog({ unit, units, today, onClose, onSave }: {
+  unit: MeasureUnit; units: MeasureUnit[]; today: string; onClose: () => void;
+  onSave: (input: { measuredOn: string; note: string; lines: Array<{ area: string; label: string; value: number; unit: MeasureUnit }> }, files: File[]) => Promise<void>;
+}) {
+  const t = useT();
+  const unitLabels = useUnitLabels();
+  const blank = (area = ""): DraftLine => ({ key: uuid(), area, label: "", value: null, unit });
+  const [measuredOn, setMeasuredOn] = useState(today);
+  const [lines, setLines] = useState<DraftLine[]>([blank()]);
+  const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const set = (key: string, patch: Partial<DraftLine>) => setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  const filled = lines.filter((line) => line.label.trim() || line.value !== null);
+  const valid = Boolean(measuredOn) && filled.length > 0 && filled.every((line) => line.label.trim() && line.value !== null && line.value > 0);
+  return <FormDialog size="lg" title={t("Technical site measure")} onClose={onClose} isDirty={Boolean(filled.length || note.trim() || files.length)} isSubmitDisabled={!valid}
+    submitLabel={t("Save")} onSubmit={() => onSave({ measuredOn, note: note.trim(),
+      lines: filled.map((line) => ({ area: line.area.trim(), label: line.label.trim(), value: line.value!, unit: line.unit })) }, files)}>
+    <FormSection>
+      <DateField label={t("Measured on")} isRequired value={measuredOn ? parseDate(measuredOn) : null} maxValue={parseDate(today)}
+        onChange={(value) => setMeasuredOn(value ? value.toString() : "")} />
+      <div className={styles.measureLines}>
+        {lines.map((line, index) => {
+          // The first row carries the column labels; the others are named for screen readers.
+          const name = (text: string) => (index === 0 ? { label: text } : { label: null, "aria-label": text });
+          return <div key={line.key} className={styles.measureRow}>
+          <TextInput {...name(t("Where"))} maxLength={120} value={line.area} onChange={(area) => set(line.key, { area })} />
+          <TextInput {...name(t("Dimension"))} maxLength={120} value={line.label} onChange={(label) => set(line.key, { label })} />
+          <NumericInput {...name(t("Size"))} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+            value={line.value ?? Number.NaN} onChange={(value) => set(line.key, { value: Number.isFinite(value) ? value : null })} />
+          <SelectField {...name(t("Unit"))} accent="neutral" selectedKey={line.unit}
+            items={units.map((id) => ({ id, label: unitLabels[id] }))} onSelectionChange={(key) => set(line.key, { unit: String(key) as MeasureUnit })} />
+          <IconButton aria-label={t("Remove dimension {number}", { number: index + 1 })} size="compact" variant="quiet" isDisabled={lines.length === 1}
+            onPress={() => setLines((current) => current.filter((item) => item.key !== line.key))}><Trash2 aria-hidden="true" size={14} /></IconButton>
+          </div>;
+        })}
+        <div><Button size="compact" variant="quiet" isDisabled={lines.length >= 120} onPress={() => setLines((current) => [...current, blank(current[current.length - 1]?.area ?? "")])}>
+          <Plus aria-hidden="true" size={14} />{t("Add dimension")}</Button></div>
+      </div>
+      <TextAreaField label={t("Notes")} maxLength={4000} value={note} onChange={setNote} />
+      <FileUploader accept={ACCEPT} label={t("Photos and files")} onFiles={(added) => setFiles((current) => [...current, ...added].slice(0, 30))} />
+      {files.length ? <small className={styles.muted}>{files.map((file) => file.name).join(", ")}</small> : null}
+    </FormSection>
+  </FormDialog>;
+}
+
+function SiteCheckDialog({ revision, design, onClose, onSave }: { revision: DrawingRevision; design: boolean; onClose: () => void; onSave: (result: "ok" | "changes", note: string) => Promise<void> }) {
   const t = useT();
   const [result, setResult] = useState<"ok" | "changes">("ok");
   const [note, setNote] = useState("");
-  return <FormDialog size="md" title={t("Site check for R{number}", { number: revision.number })} onClose={onClose} isDirty={Boolean(note.trim())}
+  return <FormDialog size="md" title={design ? t("Design check for R{number}", { number: revision.number }) : t("Site check for R{number}", { number: revision.number })} onClose={onClose} isDirty={Boolean(note.trim())}
     isSubmitDisabled={result === "changes" && !note.trim()} submitLabel={t("Save")} onSubmit={() => onSave(result, note.trim())}>
     <SegmentedControl label={t("Result")} value={result} onChange={(value) => setResult(value as "ok" | "changes")}
       options={[{ id: "ok", label: t("OK") }, { id: "changes", label: t("Changes needed") }]} />

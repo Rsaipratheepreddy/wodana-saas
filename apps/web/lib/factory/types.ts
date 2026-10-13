@@ -66,7 +66,7 @@ export type ScheduleState = {
   conflicts: Array<{ workcenterId: string; workcenterName: string; date: string; hours: number; capacity: number; orders: string[] }>;
 };
 
-export type ReleaseCheck = { key: "running" | "scope" | "client_drawings" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
+export type ReleaseCheck = { key: "running" | "scope" | "client_drawings" | "technical_measure" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
 export type OutputReport = {
   id: string; good: string; scrap: string; scrapReason: string; note: string; status: "pending" | "approved" | "refused"; reportedBy: string; reportedByName: string; reportedAt: string;
   decidedByName: string | null; decisionNote: string;
