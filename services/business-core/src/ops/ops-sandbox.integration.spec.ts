@@ -143,6 +143,14 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
     expect(await count(`SELECT count(*) FROM workspace_teams WHERE workspace_id = $1`, [id])).toBe(17);
     expect(await count(`SELECT count(*) FROM crm_taxonomy_options choice JOIN crm_taxonomies taxonomy ON taxonomy.id = choice.taxonomy_id
       WHERE choice.workspace_id = $1 AND taxonomy.code = 'enquiry_type' AND choice.code = 'furniture_only' AND choice.status = 'active'`, [id])).toBe(1);
+    // QA-002: each enquiry type's steps start from its flow (Design, Fit-out, Furniture), not a two-step Basic copy.
+    const starters = Object.fromEntries((await pool.query<{ code: string; starter: string }>(
+      `SELECT choice.code, coalesce(origin.code, owned.code) AS starter FROM crm_taxonomy_options choice
+         JOIN crm_taxonomies taxonomy ON taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
+         JOIN crm_flows owned ON owned.workspace_id = choice.workspace_id AND owned.enquiry_type_option_id = choice.id
+         LEFT JOIN crm_flows origin ON origin.workspace_id = owned.workspace_id AND origin.id = owned.split_from_flow_id
+        WHERE choice.workspace_id = $1 AND choice.status = 'active'`, [id])).rows.map((row) => [row.code, row.starter]));
+    expect(starters).toMatchObject({ interior_design_furniture: "design", furniture_only: "furniture", full_fit_out: "fit_out" });
   });
 
   it("seeds the showcase through the members, so every main section has records", async () => {

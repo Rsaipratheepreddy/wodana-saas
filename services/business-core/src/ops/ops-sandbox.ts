@@ -556,11 +556,14 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
         const existing = current.find((row) => row.code === taxonomy.code);
         // An option the workspace archived stays archived (e.g. by the profile's enquiryTypes.archive).
         const archived = new Set(existing?.options.filter((row) => row.status !== "active").map((row) => row.code) ?? []);
+        // QA-002: a new enquiry type starts from the flow the profile names (or suggests); a type already there keeps its own steps.
+        const known = new Set(existing?.options.map((row) => row.code) ?? []);
         const options = taxonomy.options.filter((option) => !archived.has(option.code)).map((option, position) => {
-          if (!option.teams) return { code: option.code, label: option.label, position };
+          const base = { code: option.code, label: option.label, position, ...(option.flow && !known.has(option.code) ? { flow: option.flow } : {}) };
+          if (!option.teams) return base;
           const allowed = option.teams.map((team) => teamRoles.get(team) ?? `team_${team.toLowerCase()}`).filter((code) => roleCodes.has(code));
-          if (!allowed.length) { report.add("crm", "info", `${taxonomy.code} › ${option.code}`, "open to everyone: none of its teams is in this workspace"); return { code: option.code, label: option.label, position }; }
-          return { code: option.code, label: option.label, position, allowedRoles: [...new Set(["owner", "administrator", ...allowed])] };
+          if (!allowed.length) { report.add("crm", "info", `${taxonomy.code} › ${option.code}`, "open to everyone: none of its teams is in this workspace"); return base; }
+          return { ...base, allowedRoles: [...new Set(["owner", "administrator", ...allowed])] };
         });
         const active = existing?.options.filter((row) => row.status === "active").sort((a, b) => a.position - b.position).map(({ code, label }) => ({ code, label })) ?? [];
         if (existing && existing.status === "active" && existing.name === taxonomy.name

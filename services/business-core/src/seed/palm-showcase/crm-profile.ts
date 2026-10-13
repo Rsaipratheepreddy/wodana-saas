@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { CrmLeadsService } from "../../crm/leads/crm-leads.service";
+import { suggestedFlow } from "../../crm/opportunities/flow-gates";
 import { CreateAssignmentPolicyDto, CreateQueueDto, CreateSlaPolicyDto, UpdateAssignmentPolicyDto, UpdateQueueDto, UpdateSlaPolicyDto } from "../../crm/leads/dto/leads.dto";
 import { CrmSettingsService } from "../../crm/settings/crm-settings.service";
 import { CreateTaxonomyDto, UpdateTaxonomyDto } from "../../crm/settings/dto/settings.dto";
@@ -41,8 +42,12 @@ export async function ensureCrmProfile(core: Core, data: SeedData, workspaceId: 
   ];
   let current = (await settings.list(actor, workspaceId)) as { taxonomies: Taxonomy[] };
   for (const taxonomy of desired) {
-    const options = taxonomy.options.map((option, position) => ({ code: option.code, label: option.label, position, ...(roleCodes(option.allowedRoles) ? { allowedRoles: roleCodes(option.allowedRoles) } : {}) }));
     const existing = current.taxonomies.find((row) => row.code === taxonomy.code);
+    // QA-002: a new enquiry type starts from the flow its code and label suggest (Design, Fit-out, Furniture or Basic).
+    const known = new Set(existing?.options.map((row) => row.code) ?? []);
+    const flowOf = (code: string, label: string) => (taxonomy.code === "enquiry_type" && code !== "not_sure" && !known.has(code) ? { flow: suggestedFlow(`${code} ${label}`) } : {});
+    const options = taxonomy.options.map((option, position) => ({ code: option.code, label: option.label, position, ...(roleCodes(option.allowedRoles) ? { allowedRoles: roleCodes(option.allowedRoles) } : {}),
+      ...flowOf(option.code, option.label) }));
     const same = existing?.status === "active" && existing.name === taxonomy.name
       && isDeepStrictEqual(existing.options.filter((row) => row.status === "active").map(({ code, label, position }) => ({ code, label, position })),
         options.map(({ code, label, position }) => ({ code, label, position })));

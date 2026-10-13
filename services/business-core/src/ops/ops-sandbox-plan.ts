@@ -5,6 +5,8 @@
  * their work needs.
  */
 
+import { OPPORTUNITY_FLOWS, suggestedFlow, type OpportunityFlow } from "../crm/opportunities/flow-gates";
+
 /** The deal-first design & build kit: an interior design and furniture firm's roles, pipeline and project route. */
 export const SANDBOX_DEFAULT_KIT = "design_build_deal_first";
 export const SANDBOX_PLAN = "starter";
@@ -171,7 +173,8 @@ export class SandboxFileError extends Error {
 }
 
 /** One of the lead options' lists (Settings → Lead options); `teams` limits who may choose an option by hand. */
-export type TaxonomySpec = { code: string; name: string; options: Array<{ code: string; label: string; teams?: string[] }> };
+/** An enquiry type's option names the starter flow its steps start from (QA-002). */
+export type TaxonomySpec = { code: string; name: string; options: Array<{ code: string; label: string; teams?: string[]; flow?: OpportunityFlow }> };
 
 /**
  * A CRM intake profile's lead options (e.g. docs/fixtures/palm-crm-intake-profile.json) as the taxonomies Settings → Lead
@@ -182,7 +185,7 @@ export function parseCrmFile(raw: unknown): TaxonomySpec[] {
   const what = "CRM intake profile";
   if (!isObject(raw)) throw new SandboxFileError(["It is a JSON object of lead options."], what);
   const problems: string[] = [];
-  const list = (path: string, value: unknown, required: boolean): TaxonomySpec["options"] => {
+  const list = (path: string, value: unknown, required: boolean, flows = false): TaxonomySpec["options"] => {
     if (value === undefined && !required) return [];
     if (!Array.isArray(value)) { problems.push(`${path} is a list of { code, label }.`); return []; }
     const seen = new Set<string>();
@@ -198,7 +201,11 @@ export function parseCrmFile(raw: unknown): TaxonomySpec[] {
       const teams = entry.allowedRoles;
       if (teams !== undefined && (!Array.isArray(teams) || teams.some((team) => typeof team !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(team))))
         problems.push(`${at}.allowedRoles is a list of team codes.`);
-      return [{ code, label, ...(Array.isArray(teams) && teams.length ? { teams: (teams as string[]).map((team) => team.toUpperCase()) } : {}) }];
+      // QA-002: an enquiry type's steps start from the flow the profile names, else the one its code and label suggest
+      // (Design, Fit-out, Furniture or Basic); "Not sure yet" has none. The administrator can change it in Settings.
+      if (flows && entry.flow !== undefined && !OPPORTUNITY_FLOWS.includes(entry.flow as OpportunityFlow)) problems.push(`${at}.flow is one of ${OPPORTUNITY_FLOWS.join(", ")}.`);
+      const flow = !flows || code === "not_sure" ? undefined : OPPORTUNITY_FLOWS.includes(entry.flow as OpportunityFlow) ? entry.flow as OpportunityFlow : suggestedFlow(`${code} ${label}`);
+      return [{ code, label, ...(Array.isArray(teams) && teams.length ? { teams: (teams as string[]).map((team) => team.toUpperCase()) } : {}), ...(flow ? { flow } : {}) }];
     });
   };
   const sources = list("sources", raw.sources, true);
@@ -211,7 +218,7 @@ export function parseCrmFile(raw: unknown): TaxonomySpec[] {
     taxonomies.push({ code: `lead_channel_${owner.code}`, name: `${owner.label} channels`, options: list(`channels.${source}`, entries, true) });
   }
   taxonomies.push(
-    { code: "enquiry_type", name: "Enquiry type", options: list("enquiryTypes", raw.enquiryTypes, true) },
+    { code: "enquiry_type", name: "Enquiry type", options: list("enquiryTypes", raw.enquiryTypes, true, true) },
     { code: "customer_type", name: "Client type", options: list("customerTypes", raw.customerTypes, false) },
     { code: "referral_broker", name: "Brokers", options: list("referralBrokers", raw.referralBrokers, false) },
     { code: "referral_partner", name: "Referral partners", options: list("referralPartners", raw.referralPartners, false) },

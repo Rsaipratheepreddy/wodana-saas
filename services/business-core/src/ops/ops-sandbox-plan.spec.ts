@@ -123,6 +123,17 @@ describe("what never reaches a sandbox", () => {
     expect(codes).not.toContain("referral_broker"); // an empty list is left out
     expect(taxonomies.find((taxonomy) => taxonomy.code === "enquiry_type")?.options.map((option) => option.code))
       .toEqual(["renovation_fit_out", "full_fit_out", "interior_design", "interior_design_furniture", "furniture_only", "concepts_early_ideas", "architecture_odg", "not_sure"]);
+    // QA-002: each enquiry type starts from the flow it names, else the one its code and label suggest; "Not sure yet" has none.
+    expect(Object.fromEntries(taxonomies.find((taxonomy) => taxonomy.code === "enquiry_type")!.options.map((option) => [option.code, option.flow ?? null]))).toEqual({
+      renovation_fit_out: "fit_out", full_fit_out: "fit_out", interior_design: "design", interior_design_furniture: "design", furniture_only: "furniture",
+      concepts_early_ideas: "design", architecture_odg: "basic", not_sure: null,
+    });
+    expect(parseCrmFile({ sources: [{ code: "web", label: "Web" }], enquiryTypes: [{ code: "studio", label: "Studio work", flow: "furniture" }, { code: "not_sure", label: "Not sure" }], budgetRanges: [{ code: "any", label: "Any" }] })
+      .find((taxonomy) => taxonomy.code === "enquiry_type")!.options.map((option) => option.flow ?? null)).toEqual(["furniture", null]);
+    expect(() => parseCrmFile({ sources: [{ code: "web", label: "Web" }], enquiryTypes: [{ code: "studio", label: "Studio", flow: "bespoke_flow" }], budgetRanges: [{ code: "any", label: "Any" }] }))
+      .toThrow(/enquiryTypes\[0\]\.flow is one of furniture, design, fit_out, basic/);
+    // Other lead options name no flow.
+    expect(taxonomies.filter((taxonomy) => taxonomy.code !== "enquiry_type").flatMap((taxonomy) => taxonomy.options).some((option) => "flow" in option)).toBe(false);
     expect(taxonomies[0].options.find((option) => option.code === "self_generated")).toEqual({ code: "self_generated", label: "Self Generated", teams: ["SALES", "SALES_ADMIN", "OPS_ADMIN"] });
     expect(JSON.stringify(taxonomies)).not.toMatch(/Asia\/Dubai|not_connected|queue/);
     expect(() => parseCrmFile({ sources: [{ code: "Web Site", label: "" }], channels: { other: [] }, enquiryTypes: [], budgetRanges: "x" }))
