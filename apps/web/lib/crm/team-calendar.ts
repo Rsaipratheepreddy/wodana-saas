@@ -28,7 +28,7 @@ export type Booking = { id: string; caseId: string; kind: "render" | "drawing"; 
 
 export const TEAM_LABEL: Record<Team, MessageKey> = { design: tKey("Design team"), logistics: tKey("Factory and logistics") };
 export const ENTRY_LABEL: Record<EntryKind, MessageKey> = {
-  render: tKey("3D render"), drawing: tKey("2D drawings"), design_deadline: tKey("Design deadline"), appointment: tKey("Design appointment"),
+  render: tKey("Visualiser renders"), drawing: tKey("Technical team"), design_deadline: tKey("Design deadline"), appointment: tKey("Design appointment"),
   presentation: tKey("Presentation"), production: tKey("Production"), delivery: tKey("Delivery"), installation: tKey("Installation"), factory_slot: tKey("Factory slot"),
   permit: tKey("Permit collection"),
 };

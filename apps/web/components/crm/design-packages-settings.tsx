@@ -114,8 +114,8 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     {flow ? <SettingsSection id="design-flow" title={t("Design flow")}>
       <SettingsRow hint={t("What the team works to on concepts, space planning and renders.")} label={t("Internal deadline")}>{days("designInternalDays", 365, t("Internal deadline"))}</SettingsRow>
       <SettingsRow hint={t("What the client is promised; at least the internal deadline.")} label={t("Client deadline")}>{days("designClientDays", 365, t("Client deadline"))}</SettingsRow>
-      <SettingsRow hint={t("Empty: the internal deadline above.")} label={t("3D renders, internal")}>{renderDays("renderInternalDays", t("3D renders, internal"), flow.designInternalDays)}</SettingsRow>
-      <SettingsRow hint={t("Empty: the client deadline above.")} label={t("3D renders, client")}>{renderDays("renderClientDays", t("3D renders, client"), flow.designClientDays)}</SettingsRow>
+      <SettingsRow hint={t("Empty: the internal deadline above.")} label={t("Renders, internal")}>{renderDays("renderInternalDays", t("Renders, internal"), flow.designInternalDays)}</SettingsRow>
+      <SettingsRow hint={t("Empty: the client deadline above.")} label={t("Renders, client")}>{renderDays("renderClientDays", t("Renders, client"), flow.designClientDays)}</SettingsRow>
       <SettingsRow hint={t("From the start of material selection to the confirmed material list.")} label={t("Material selection")}>{days("materialSelectionDays", 90, t("Material selection"))}</SettingsRow>
       <SettingsRow hint={t("From the design approval to sharing the estimate.")} label={t("Estimate")}>{days("estimateDays", 90, t("Estimate"))}</SettingsRow>
       <SettingsRow hint={t("Free slots come from this booking page's hours, buffers and the designer's calendar.")} label={t("Showroom appointment")}>

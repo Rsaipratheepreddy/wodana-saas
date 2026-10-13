@@ -49,10 +49,10 @@ describe("team calendars in the Wodana calendar (PLM-090)", () => {
     // A team the person can't read isn't offered.
     expect(screen.queryByRole("option", { name: "Factory and logistics" })).toBeNull();
     await user.click(await screen.findByRole("option", { name: "Design team" }));
-    expect((await screen.findAllByRole("button", { name: /3D render · Maya Client · 4 days/ })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("button", { name: /Visualiser renders · Maya Client · 4 days/ })).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /Overdue · Concepts due · Omar Client/ }).length).toBeGreaterThan(0);
-    // One primary action: book render or 2D time, instead of a new event.
-    expect(screen.getByRole("button", { name: "Book render or 2D time" })).toBeInTheDocument();
+    // One primary action: book design time, instead of a new event.
+    expect(screen.getByRole("button", { name: "Book design time" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "New event" })).toBeNull();
   });
 
@@ -63,7 +63,7 @@ describe("team calendars in the Wodana calendar (PLM-090)", () => {
     await waitFor(() => expect(calls.some((call) => call.url.startsWith("/api/workspace/team-calendars/settings"))).toBe(true));
     await user.click(within(toolbar).getByRole("button", { name: /Whose calendar/ }));
     await user.click(await screen.findByRole("option", { name: "Design team" }));
-    await user.click((await screen.findAllByRole("button", { name: /3D render · Maya Client · 4 days/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Visualiser renders · Maya Client · 4 days/ }))[0]);
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByText("Vic Visualiser")).toBeInTheDocument();
     await user.click(within(sheet).getByRole("button", { name: "Mark done" }));
@@ -77,8 +77,8 @@ describe("team calendars in the Wodana calendar (PLM-090)", () => {
     await waitFor(() => expect(calls.some((call) => call.url.startsWith("/api/workspace/team-calendars/settings"))).toBe(true));
     await user.click(within(toolbar).getByRole("button", { name: /Whose calendar/ }));
     await user.click(await screen.findByRole("option", { name: "Design team" }));
-    await user.click(await screen.findByRole("button", { name: "Book render or 2D time" }));
-    const dialog = await screen.findByRole("dialog", { name: "Book render or 2D time" });
+    await user.click(await screen.findByRole("button", { name: "Book design time" }));
+    const dialog = await screen.findByRole("dialog", { name: "Book design time" });
     await user.click(await within(dialog).findByRole("button", { name: /Job/ }));
     await user.click(await screen.findByRole("option", { name: "O-1 · Maya Client" }));
     expect(within(dialog).getByRole("button", { name: /Who does it/ })).toHaveTextContent("Vic Visualiser · Visualiser");

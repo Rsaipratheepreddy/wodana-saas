@@ -210,7 +210,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
     : connectionIds.length && google?.key === googleKey && google.error ? google.error : "";
   const frameLoading = scope === "team" ? !teamLoaded : crm?.key !== key;
   const frameError = scope === "team" ? teamLoaded?.error : crm?.error;
-  return <PageShell title={t("Calendar")} kind="dashboard" action={canBook ? <Button variant="primary" onPress={() => setBooking(calendarDayKey(newEventDate()))}><Plus size={16} aria-hidden="true" />{t("Book render or 2D time")}</Button>
+  return <PageShell title={t("Calendar")} kind="dashboard" action={canBook ? <Button variant="primary" onPress={() => setBooking(calendarDayKey(newEventDate()))}><Plus size={16} aria-hidden="true" />{t("Book design time")}</Button>
     : canBookLogistics ? <Button variant="primary" onPress={() => setLogisticsBooking({ day: calendarDayKey(newEventDate()) })}><Plus size={16} aria-hidden="true" />{t("Book")}</Button>
     : scope === "team" ? null : <Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("New event")}</Button>}>
     <div className={styles.toolbar} role="toolbar" aria-label={t("Calendar controls")}>

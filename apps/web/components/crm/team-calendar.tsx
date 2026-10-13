@@ -98,7 +98,7 @@ export function BookDesignTimeDialog({ workspaceId, date, onClose, onSaved }: { 
   }, [workspaceId]);
   const defaultDays = options ? (kind === "render" ? options.renderDays : options.drawingDays) : 1;
   const members = (options?.members ?? []).map((member) => ({ id: member.id, label: member.visualiser ? t("{name} · Visualiser", { name: member.name }) : member.name }));
-  return <FormDialog title={t("Book render or 2D time")} submitLabel={t("Book")} error={failure || undefined} onClose={onClose} isDirty={Boolean(caseId || note)}
+  return <FormDialog title={t("Book design time")} submitLabel={t("Book")} error={failure || undefined} onClose={onClose} isDirty={Boolean(caseId || note)}
     isSubmitDisabled={!options || !caseId || !assignee || !start}
     lead={!options && !failure ? <Skeleton lines={3} shape="form" /> : null}
     onSubmit={async () => {
@@ -108,7 +108,7 @@ export function BookDesignTimeDialog({ workspaceId, date, onClose, onSaved }: { 
     {options ? <>
       <SelectField isRequired label={t("Job")} selectedKey={caseId || null} onSelectionChange={(key) => setCaseId(String(key ?? ""))} items={options.cases.map((item) => ({ id: item.id, label: item.title }))} />
       <SegmentedControl label={t("Work")} value={kind} onChange={(value) => { setKind(value as "render" | "drawing"); setDays(null); }}
-        options={[{ id: "render", label: t("3D render") }, { id: "drawing", label: t("2D drawings") }]} />
+        options={[{ id: "render", label: t("Visualiser renders") }, { id: "drawing", label: t("Technical team") }]} />
       <SelectField isRequired label={t("Who does it")} selectedKey={assignee || null} onSelectionChange={(key) => setAssignee(String(key ?? ""))} items={members} />
       <DateField isRequired label={t("Starts")} value={start} onChange={(value) => setStart(value as Day)} />
       <NumericInput isRequired label={t("Days needed")} description={t("Working days")} minValue={1} maxValue={60} value={days ?? defaultDays}
@@ -120,7 +120,7 @@ export function BookDesignTimeDialog({ workspaceId, date, onClose, onSaved }: { 
 
 /**
  * Where a team calendar goes besides Wodana: one connected Google calendar (or none, everything stays in Wodana), and
- * for the design team the days a render and 2D drawings need by default.
+ * for the design team the days the Visualiser and the technical team need by default.
  */
 export function TeamCalendarSettingsDialog({ workspaceId, team, settings, connections, onClose, onSaved }: {
   workspaceId: string; team: Team; settings: TeamSettings; connections: CalendarConnection[]; onClose: () => void; onSaved: (next: TeamSettings) => void;
@@ -162,8 +162,8 @@ export function TeamCalendarSettingsDialog({ workspaceId, team, settings, connec
     {!calendars ? <Skeleton lines={2} shape="form" /> : <SelectField label={t("Google calendar")} description={t("The team's work is also sent there. Everyone still sees it in Wodana.")}
       selectedKey={choice} onSelectionChange={(key) => setChoice(String(key ?? "none"))} items={items} />}
     {team === "design" ? <>
-      <NumericInput isRequired label={t("Days a 3D render needs")} minValue={1} maxValue={60} value={renderDays} onChange={(value) => setRenderDays(Number.isFinite(value) ? value : 1)} />
-      <NumericInput isRequired label={t("Days 2D drawings need")} minValue={1} maxValue={60} value={drawingDays} onChange={(value) => setDrawingDays(Number.isFinite(value) ? value : 1)} />
+      <NumericInput isRequired label={t("Days the Visualiser needs")} minValue={1} maxValue={60} value={renderDays} onChange={(value) => setRenderDays(Number.isFinite(value) ? value : 1)} />
+      <NumericInput isRequired label={t("Days the technical team needs")} minValue={1} maxValue={60} value={drawingDays} onChange={(value) => setDrawingDays(Number.isFinite(value) ? value : 1)} />
     </> : null}
   </FormDialog>;
 }
