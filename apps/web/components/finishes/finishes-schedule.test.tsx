@@ -81,6 +81,28 @@ describe("the finishes schedule (PLM-156, PLM-146, PLM-148)", () => {
     await waitFor(() => expect(body(fetcher, "finishes/entries/e2/signatures")).toMatchObject({ versionId: "v1", signer: "Maya Client", assetId: "a1" }));
   });
 
+  it("dates the signature today in the workspace's time zone, not in UTC", async () => {
+    // 01:30 on 14 Oct in Tokyo is still 13 Oct in UTC; the server refuses a day after the workspace's today.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-13T16:30:00Z"));
+    try {
+      const fetcher = vi.fn(async (url: string, init?: RequestInit) => json(init?.method === "POST" && url.includes("/finishes/assets/")
+        ? { id: "a1", name: "signed.jpg", mimeType: "image/jpeg", byteSize: 10, hasPreview: true } : view()));
+      vi.stubGlobal("fetch", fetcher);
+      render(<DesignSystemProvider timeZone="Asia/Tokyo"><FinishesSchedule source={{ kind: "case", workspaceId: "w", caseId: "c1" }} rooms={[]} /></DesignSystemProvider>);
+      fireEvent.click(await screen.findByText("Wall-hung WC"));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Record the client's signature" }));
+      const dialog = (await screen.findAllByRole("dialog")).at(-1)!;
+      await userEvent.setup().upload(within(dialog).getByLabelText("Photo of the signed sample or data sheet"), new File(["x"], "signed.jpg", { type: "image/jpeg" }));
+      await within(dialog).findByText("Photo: signed.jpg");
+      fireEvent.change(within(dialog).getByRole("textbox", { name: /Who signed/ }), { target: { value: "Maya Client" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(body(fetcher, "finishes/entries/e2/signatures")).toMatchObject({ signedOn: "2026-10-14" }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reads a shared sample log from the Factory without any of the designers' actions", async () => {
     const fetcher = vi.fn(async (url: string) => json(url.includes("/api/factory/finishes/c1")
       ? view({ canEdit: false, canManageMaterials: false, canSendToQs: false, canRecordSignature: false, canShare: false })

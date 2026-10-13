@@ -5,6 +5,7 @@ import { MapPin, PenLine, Signature, Trash2 } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import { Badge, Button, DateField, FormDialog, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { zonedToday } from "@/lib/crm/zoned-time";
 import type { CaseAsset, CaseRoom } from "@/lib/pre-project/content";
 import { LOG_STATUS_LABEL, logStatusTone, ORIGIN_LABEL, type FinishEntry, type scheduleApi, type ScheduleView } from "@/lib/pre-project/finishes";
 import { AssetUpload, CaseModal } from "../pre-project/case-controls";
@@ -138,7 +139,8 @@ function SnapshotDialog({ view, api, onClose, onSubmit }: { view: ScheduleView; 
 function SignatureDialog({ view, api, onClose, onSubmit }: { view: ScheduleView; api: Api; onClose: () => void;
   onSubmit: (input: { signedOn: string; signer: string; assetId: string }) => Promise<unknown> }) {
   const t = useT();
-  const today = new Date().toISOString().slice(0, 10);
+  // The workspace's today: the server refuses a signature dated after it.
+  const today = zonedToday(useDesignSystem().timeZone);
   const [asset, setAsset] = useState<CaseAsset | null>(null);
   const [signedOn, setSignedOn] = useState(today);
   const [signer, setSigner] = useState("");

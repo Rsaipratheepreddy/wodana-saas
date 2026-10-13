@@ -9,6 +9,7 @@ import {
   SelectField, Skeleton, TextAreaField, TextInput, formatMoney, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { zonedToday } from "@/lib/crm/zoned-time";
 import { caseRequest, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
 import {
   clientStatus, CONFIRMATION_METHODS, LEDGER_SOURCES, LEDGER_STATE_LABEL, ledgerStateTone, lineTotal, METHOD_LABEL, signedAmount, SOURCE_LABEL,
@@ -275,10 +276,11 @@ function EntryForm({ workspaceId, caseId, rooms, currency, entry, categories, ma
   workspaceId: string; caseId: string; rooms: CaseRoom[]; currency?: string; entry: LedgerEntry | null; categories: FinishCategory[]; materialsOnly: boolean; onClose: () => void; onSubmit: (draft: Draft) => Promise<unknown>;
 }) {
   const t = useT();
+  const today = zonedToday(useDesignSystem().timeZone);
   const current = entry?.current;
   const [draft, setDraft] = useState<Draft>(() => ({ kind: entry?.kind ?? "material", roomId: entry?.roomId ?? null, catalogItemId: current?.catalogItemId ?? null, title: current?.title ?? "", specification: current?.specification ?? "",
     supplier: current?.supplier ?? "", quantity: current?.quantity ?? "", unit: current?.unit ?? "", unitPrice: current?.unitPrice ?? "", timeImpactDays: 0, source: "showroom",
-    saidOn: new Date().toISOString().slice(0, 10), evidence: null, evidenceNote: "", note: "",
+    saidOn: today, evidence: null, evidenceNote: "", note: "",
     // A version recorded before origins read from its outsourced flag.
     origin: current?.origin ?? (current?.outsourced ? "local_supplier" : null), sampleId: current?.sampleId ?? null, sampleName: current?.sampleName ?? "",
     samplePhoto: current?.samplePhotoAssetId ? { id: current.samplePhotoAssetId, name: current.samplePhotoName ?? "", mimeType: "image/*", byteSize: 0, hasPreview: true } : null,
@@ -334,7 +336,7 @@ function EntryForm({ workspaceId, caseId, rooms, currency, entry, categories, ma
     <FormSection title={t("Where it came from")}>
       <FormRow>
         <SelectField isRequired label={t("Source")} items={LEDGER_SOURCES.filter((source) => source !== "portal").map((source) => ({ id: source, label: t(SOURCE_LABEL[source]) }))} selectedKey={draft.source} onSelectionChange={(key) => set("source")(String(key))} />
-        <DateField isRequired label={t("Said on")} maxValue={parseDate(new Date().toISOString().slice(0, 10))} value={draft.saidOn ? parseDate(draft.saidOn) : null} onChange={(date) => set("saidOn")(date?.toString() ?? "")} />
+        <DateField isRequired label={t("Said on")} maxValue={parseDate(today)} value={draft.saidOn ? parseDate(draft.saidOn) : null} onChange={(date) => set("saidOn")(date?.toString() ?? "")} />
       </FormRow>
       {draft.evidence ? <p className={styles.muted}>{t("Evidence: {name}", { name: draft.evidence.name })}</p>
         : <AssetUpload workspaceId={workspaceId} caseId={caseId} multiple={false} label={t("Attach evidence")} onBusy={setUploading} onError={setError} onUploaded={(asset) => set("evidence")(asset)} />}
