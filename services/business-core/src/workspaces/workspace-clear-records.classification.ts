@@ -334,6 +334,7 @@ const clear = [
   "quote_documents",
   "quote_issue_snapshots",
   "quote_qs_reviews",
+  "quote_value_engineering",
   "esign_requests",
   "client_credit_notes",
   "client_invoice_lines",
