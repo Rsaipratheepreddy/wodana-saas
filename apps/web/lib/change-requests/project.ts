@@ -16,9 +16,12 @@ export type ProjectChangeRow = {
 };
 export type ApprovedVariation = { sealId: string; label: string; quoteId: string; changeRequestId: string | null; reference: string | null; title: string; net: string; tax: string; total: string; currency: string; acceptedAt: string; appliedAt: string };
 export type ChangeMoney = {
-  currency: string | null; sealed: { label: string; net: string; tax: string; total: string } | null; variations: ApprovedVariation[]; variationsTotal: string; variationsNet: string; agreed: string;
+  currency: string | null; sealed: { label: string; net: string; tax: string; total: string } | null; variations: ApprovedVariation[];
+  /** Null (and sealed null, variations empty) for people who don't see what changes are worth (QA-010). */
+  variationsTotal: string | null; variationsNet: string | null; agreed: string | null;
 };
-export type ProjectChangesView = { changes: ProjectChangeRow[]; money: ChangeMoney; canRaise: boolean; projectOpen: boolean };
+/** canSeeValue: whether values are shown (QA-010); the server leaves them out otherwise. */
+export type ProjectChangesView = { changes: ProjectChangeRow[]; money: ChangeMoney; canRaise: boolean; projectOpen: boolean; canSeeValue?: boolean };
 
 export type RaisedLine = {
   id: string; source: "custom" | "catalog" | "boq_line"; action: "add" | "omit" | "replace" | "move"; title: string; quantity: string | null; unit: string; unitPrice: string | null;
@@ -36,6 +39,8 @@ export type ChangePrice = {
 export type ApprovalStep = { position: number; label: string; state: "done" | "current" | "upcoming" | "returned" | "rejected"; decidedBy: string | null; decidedAt: string | null };
 export type ChangeApproval = { id: string; status: string; version: number; amount: string | null; currency: string | null; waitingFor: string[]; steps: ApprovalStep[] };
 export type ChangeRecord = {
+  /** Whether the price is shown (QA-010); the server leaves it out otherwise. */
+  canSeeValue?: boolean;
   change: {
     id: string; reference: string; title: string; reason: ChangeReason; description: string; status: ProjectChangeStatus; kind: string; currency: string; version: number;
     raisedByName: string | null; raisedByClient: boolean; createdAt: string; updatedAt: string; decidedAt: string | null; decidedByName: string | null; decisionMethod: "portal" | "signed_link" | null;

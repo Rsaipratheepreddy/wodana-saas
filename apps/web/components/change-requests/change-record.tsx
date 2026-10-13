@@ -105,7 +105,8 @@ export function ChangeRecord({ workspaceId, projectId, changeId, initial }: { wo
     {link ? <div className={styles.row}><TextInput label={t("Signing link")} value={link} isReadOnly /><IconButton aria-label={t("Copy")} onPress={() => void navigator.clipboard?.writeText(link)}><Copy size={14} /></IconButton></div> : null}
     <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)} items={[
       { id: "scope", label: t("Scope"), panel: <ScopeTab api={api} record={record} onChanged={setRecord} /> },
-      { id: "price", label: t("Price"), panel: <PriceTab record={record} priceHref={priceHref} /> },
+      // QA-010: the price only for the people who see it.
+      ...(record.canSeeValue === false ? [] : [{ id: "price", label: t("Price"), panel: <PriceTab record={record} priceHref={priceHref} /> }]),
       { id: "timeline", label: t("Timeline impact"), panel: <TimelineTab api={api} record={record} onSaved={(next) => { setRecord(next); setNotice({ tone: "success", message: t("Days saved.") }); }} /> },
       { id: "approvals", label: t("Approvals"), panel: <ApprovalsTab record={record} /> },
       { id: "history", label: t("History"), panel: <RecordHistory workspaceId={workspaceId} recordType="change_request" recordId={changeId} /> },

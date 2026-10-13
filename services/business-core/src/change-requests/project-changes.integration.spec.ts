@@ -424,6 +424,34 @@ integration("changes on a started project: raise → price → QS → approve �
     await expect(quentin.changes.get(actor, s.workspaceId, s.projectId, big.id)).rejects.toThrow(/access to projects/);
   });
 
+  it("QA-010: shows what changes are worth only to the people who see the project's value, price or approve changes", async () => {
+    const s = await seed();
+    const pm = services(s, s.pm).changes, site = services(s, s.site).changes, factory = services(s, s.factory).changes, ada = services(s, s.approver).changes;
+    const id = (await site.raise(actor, s.workspaceId, s.projectId, { id: randomUUID(), title: "Extra shelf", reason: "client_request",
+      lines: [{ id: randomUUID(), source: "custom", title: "Extra shelf", quantity: "2", unit: "nos", unitPrice: "450.50", roomId: s.study }] })).change.id;
+    let record = await pm.get(actor, s.workspaceId, s.projectId, id);
+    record = await pm.price(actor, s.workspaceId, s.projectId, id, { version: record.change.version });
+    record = await pm.submit(actor, s.workspaceId, s.projectId, id, { version: record.change.version });
+    expect(record.approval?.amount).toBeTruthy();
+    // The site supervisor and the factory on the team: the change, without what it's worth.
+    for (const member of [site, factory]) {
+      const listed = await member.list(actor, s.workspaceId, s.projectId);
+      expect(listed).toMatchObject({ canSeeValue: false, money: { sealed: null, variations: [], agreed: null, variationsTotal: null } });
+      expect(listed.changes.map((change) => [change.id, change.value])).toEqual([[id, null]]);
+      const seen = await member.get(actor, s.workspaceId, s.projectId, id);
+      expect(seen).toMatchObject({ canSeeValue: false, price: null, approval: { amount: null } });
+      await expect(member.variations(actor, s.workspaceId, s.projectId)).rejects.toThrow(/don't see this project's value/);
+    }
+    // Whoever prices it and the approver do.
+    for (const member of [pm, ada]) {
+      const listed = await member.list(actor, s.workspaceId, s.projectId);
+      expect(listed.canSeeValue).toBe(true);
+      expect(listed.money.agreed).not.toBeNull();
+      expect(listed.changes.find((change) => change.id === id)?.value).toBe("946.05");
+      expect((await member.get(actor, s.workspaceId, s.projectId, id)).price).toMatchObject({ total: "946.05" });
+    }
+  });
+
   it("declines, withdraws, reminds the client, and refuses steps out of turn", async () => {
     const s = await seed();
     const pm = services(s, s.pm).changes, ada = services(s, s.approver).changes;

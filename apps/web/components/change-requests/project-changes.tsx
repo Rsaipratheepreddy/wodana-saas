@@ -13,7 +13,7 @@ import { useProjectFormat } from "../project-core/format";
 import { RaiseChangeDialog } from "./raise-change-dialog";
 import styles from "./project-changes.module.css";
 
-type Legacy = { id: string; number: number; title: string; status: string; total: string; appliedAs: string | null };
+type Legacy = { id: string; number: number; title: string; status: string; total: string | null; appliedAs: string | null };
 type Row = (ProjectChangeRow & { legacy?: false }) | (Legacy & { legacy: true });
 
 /**
@@ -49,11 +49,12 @@ export function ProjectChanges({ workspaceId, projectId, onChanged }: { workspac
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, cell: ({ row: { original } }: { row: { original: Row } }) => original.legacy
       ? <Badge tone={original.appliedAs ? "success" : "neutral"}>{original.appliedAs ? t("Applied") : t("In the builder")}</Badge>
       : <Badge tone={CHANGE_STATUS_TONE[original.status]}>{t(CHANGE_STATUS_LABEL[original.status])}</Badge> },
-    { id: "value", header: t("Value"), accessorFn: (row) => (row.legacy ? row.total : row.value ?? ""), meta: { align: "end" },
+    // QA-010: only for the people who see what changes are worth.
+    ...(view.canSeeValue === false ? [] : [{ id: "value", header: t("Value"), accessorFn: (row: Row) => (row.legacy ? row.total : row.value ?? ""), meta: { align: "end" as const },
       cell: ({ row: { original } }: { row: { original: Row } }) => {
         const value = original.legacy ? original.total : original.value;
         return value === null ? <span className={styles.muted}>{t("Not priced")}</span> : <bdi className={styles.number} dir="ltr">{signedMoney(value, format.money, currency)}</bdi>;
-      } },
+      } } satisfies DataGridColumn<Row>]),
     { id: "days", header: t("Days"), accessorFn: (row) => (row.legacy ? 0 : row.days), meta: { align: "end" },
       cell: ({ row: { original } }: { row: { original: Row } }) => !original.legacy && original.days
         ? <span className={styles.cell}><span className={styles.number}>{t("+{count} days", { count: original.days })}</span>
@@ -68,7 +69,7 @@ export function ProjectChanges({ workspaceId, projectId, onChanged }: { workspac
     <div className={styles.toolbar}>
       {view.money.sealed ? <p className={styles.money}>
         <span>{t("Sealed {label}", { label: view.money.sealed.label })} <strong>{format.money(view.money.sealed.total, currency)}</strong></span>
-        <span>{t("Variations")} <strong><bdi dir="ltr">{signedMoney(view.money.variationsTotal, format.money, currency)}</bdi></strong></span>
+        <span>{t("Variations")} <strong><bdi dir="ltr">{signedMoney(view.money.variationsTotal ?? "0", format.money, currency)}</bdi></strong></span>
         <span>{t("Agreed value")} <strong>{format.money(view.money.agreed, currency)}</strong></span>
       </p> : <span />}
       {rows.length ? raise : null}

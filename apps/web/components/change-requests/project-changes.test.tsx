@@ -45,6 +45,16 @@ describe("a project's changes (§6.20)", () => {
     await waitFor(() => expect(navigation.push).toHaveBeenCalledWith(`/workspace/projects/p1/changes/${ID}`));
   });
 
+  it("QA-010: lists the changes without their value or the agreed value for someone who doesn't see them", async () => {
+    mount(() => view({ canSeeValue: false, changes: view().changes.map((change) => ({ ...change, value: null })),
+      money: { currency: "AED", sealed: null, variations: [], variationsTotal: null, variationsNet: null, agreed: null } }));
+    render(<DesignSystemProvider><ProjectChanges workspaceId="w" projectId="p1" /></DesignSystemProvider>);
+    const table = await screen.findByRole("grid", { name: "Changes" }).catch(() => screen.findByRole("table", { name: "Changes" }));
+    expect(within(table).getByText("CR-001 · Study wardrobe")).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Value" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Agreed value|Not priced|AED/)).not.toBeInTheDocument();
+  });
+
   it("offers one next action when there are none: raise a change (what, why, lines) and open it", async () => {
     const fetcher = mount((url, init) => (init?.method === "POST" ? { change: { id: ID } } : url.includes("/sources")
       ? { stages: [], rooms: [{ id: "r1", name: "Study" }], scope: [], catalog: [] } : view({ changes: [], money: { ...view().money, variationsTotal: "0.00", agreed: "7560.00" } })));
