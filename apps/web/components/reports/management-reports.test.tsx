@@ -1,5 +1,7 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@/design-system";
 import type { Dashboard, DashboardId, Kpi } from "@/lib/reports/management";
@@ -85,6 +87,22 @@ const tile = (name: string) => screen.getByRole("heading", { name }).closest("se
 
 describe("management dashboards", () => {
   beforeEach(() => { replace.mockClear(); search = new URLSearchParams(); });
+
+  it("QA-009: renders the same markup on the server and in the first client render; the print period follows once hydrated", async () => {
+    mount();
+    // The server knows neither the browser's clock nor its date formatting ("1 – 12 Oct" in Node, "1–12 Oct" in a browser).
+    const html = renderToString(<ManagementReports workspaceId={WS} initialDashboard="owner-overview" />);
+    expect(html).toMatch(/<p class="[^"]*printPeriod[^"]*"><\/p>/);
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await act(async () => { hydrateRoot(container, <ManagementReports workspaceId={WS} initialDashboard="owner-overview" />, { onRecoverableError: (error) => { throw error; } }); });
+    expect(errors.mock.calls.filter(([message]) => /hydrat/i.test(String(message)))).toEqual([]);
+    await waitFor(() => expect(container.querySelector("p[class*=printPeriod]")).toHaveTextContent(/^Overview · /));
+    errors.mockRestore();
+    container.remove();
+  });
 
   it("shows four figures against the period before, two charts and the list that needs attention", async () => {
     const user = userEvent.setup();

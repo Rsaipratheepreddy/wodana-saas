@@ -13,6 +13,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import { meetsRule, type AccessContext } from "@/lib/workspace/access";
 import { loadAiSettings } from "@/lib/workspace/ai-settings";
+import { useHydrated } from "@/lib/use-hydrated";
 import {
   DASHBOARD_FILTERS, DASHBOARD_LABELS, DASHBOARDS, downloadCsv, filtersFrom, filtersQuery, reportsApi, toCsv,
   type Chart, type Dashboard, type DashboardId, type FilterOptions, type Filters, type Kpi, type ReportRecord, type TargetResult, type Unit,
@@ -150,6 +151,7 @@ export function ManagementReports({ workspaceId, initialDashboard, dashboards = 
 }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
+  const hydrated = useHydrated();
   const router = useRouter();
   const params = useSearchParams();
   const api = useMemo(() => reportsApi(workspaceId), [workspaceId]);
@@ -226,7 +228,8 @@ export function ManagementReports({ workspaceId, initialDashboard, dashboards = 
   return <div className={styles.report} data-report="">
     <PageShell kind="dashboard" title={t("Reports")} toolbar={toolbar}
       tabs={<ListTabs label={t("Dashboards")} value={dashboard} onChange={changeTab} items={dashboards.map((id) => ({ id, label: t(DASHBOARD_LABELS[id]) }))} />}>
-      <p className={styles.printPeriod}>{t(DASHBOARD_LABELS[dashboard])} · {format.range(effective.from, effective.to)}</p>
+      {/* The period for print: worked out from today and the runtime's date formatting, so only once hydrated (QA-009). */}
+      <p className={styles.printPeriod}>{hydrated ? `${t(DASHBOARD_LABELS[dashboard])} · ${format.range(effective.from, effective.to)}` : null}</p>
       {failure ? <ErrorState title={t("This report didn't load")} description={translateKnown(t, failure)} onRetry={() => setReload((value) => value + 1)} />
         : loading && !data ? <div className={styles.loading}><Skeleton shape="facts" lines={6} /></div>
         : data ? <div className={styles.page}>
