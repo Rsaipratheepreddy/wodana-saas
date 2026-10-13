@@ -576,6 +576,8 @@ export function ApprovalRelease({
   initialView = "owner",
 }: Props & { root: string; sectionHref?: (section: string) => string; initialView?: string }) {
   const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  const day = (value: string) => <time dateTime={value}>{formatDate(value, { locale, timeZone })}</time>;
   const [tab, setTab] = useState<string>(initialView),
     [note, setNote] = useState(""),
     // Finance's note and the approver's remarks are separate: one never pre-fills the other.
@@ -708,7 +710,7 @@ export function ApprovalRelease({
               </> : null}
               <div><small>{t("Internal approval")}</small><strong>{d.ownerReview ? translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status) : t("Not submitted")}</strong></div>
             </div>
-            {d.dealFile && <div className={s.dealBanner}><div><small>{t("DEAL FILE")}</small><strong>{d.dealFile.reference}</strong><span>{t("Approved")}{" "}{d.dealFile.approvedAt.slice(0, 10)} {t("by")}{" "}{d.dealFile.approvedBy}</span></div><div><small>{t("Current round")}</small><strong>{d.dealFile.quoteId === accepted.id ? accepted.round === "design" ? t("Design") : t("Main quotation") : t("Design approved · main pending")}</strong></div><div><small>{t("Frozen evidence")}</small><strong>{d.dealFile.designEvidence?.links?.length ?? 0} {t("files ·")}{" "}{d.dealFile.materialEvidence?.length ?? 0} {t("materials")}</strong></div><div><small>{t("Deal value")}</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div></div>}
+            {d.dealFile && <div className={s.dealBanner}><div><small>{t("DEAL FILE")}</small><strong>{d.dealFile.reference}</strong><span>{t("Approved")}{" "}{day(d.dealFile.approvedAt)} {t("by")}{" "}{d.dealFile.approvedBy}</span></div><div><small>{t("Current round")}</small><strong>{d.dealFile.quoteId === accepted.id ? accepted.round === "design" ? t("Design") : t("Main quotation") : t("Design approved · main pending")}</strong></div><div><small>{t("Frozen evidence")}</small><strong>{d.dealFile.designEvidence?.links?.length ?? 0} {t("files ·")}{" "}{d.dealFile.materialEvidence?.length ?? 0} {t("materials")}</strong></div><div><small>{t("Deal value")}</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div></div>}
             {/* PLM-066 / PLM-102 / PLM-123: money, closing and contents; E3: the approval's steps and who holds the current one. */}
             {state.dealInsight ? <DealFileInsight insight={state.dealInsight} /> : null}
             {state.dealApproval && (state.dealApproval.status === "pending" || d.ownerReview?.status === "approved") ? <DealApprovalSteps approval={state.dealApproval} /> : null}
@@ -807,7 +809,7 @@ export function ApprovalRelease({
           {d.release ? (
             <p className={s.notice}>
               {t("Readiness recorded by")}{" "}{d.release.by} {t("on")}{" "}
-              {d.release.at.slice(0, 10)}.<br />
+              {day(d.release.at)}.<br />
               {d.release.note}
               {d.release.projectId && (
                 <>

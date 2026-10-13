@@ -20,7 +20,7 @@ import {
   PageShell,
   SelectField,
   useConfirmationDialog,
-  useDesignSystem, EmptyState
+  useDesignSystem, EmptyState, formatDate
 } from "@/design-system";
 import { usePreProject } from "@/components/pre-project/pre-project-context";
 import type { PreProjectCase } from "@/lib/pre-project/types";
@@ -537,10 +537,10 @@ export function CommercialPage({
                   </Button>
                   <p className={s.muted}>
                     {q.decidedBy
-                      ? `${q.decidedBy} · ${q.decidedAt?.slice(0, 10)}`
+                      ? `${q.decidedBy}${q.decidedAt ? ` · ${formatDate(q.decidedAt, { locale: design.locale, timeZone: design.timeZone })}` : ""}`
                       : q.issuedAt
-                        ? `Issued ${q.issuedAt.slice(0, 10)}`
-                        : "Internal draft"}
+                        ? t("Issued {date}", { date: formatDate(q.issuedAt, { locale: design.locale, timeZone: design.timeZone }) })
+                        : t("Internal draft")}
                   </p>
                 </li>
               ))}

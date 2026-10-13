@@ -40,6 +40,8 @@ it("shows the exact production evidence frozen in the Deal File", () => {
   render(<ApprovalRelease initialView="owner" state={state} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
   expect(screen.getByText("DF-2026-001")).toBeVisible();
   expect(screen.getByText("2 files · 3 materials")).toBeVisible();
+  // The approval reads as a date, not a raw ISO day.
+  expect(document.querySelector('time[datetime="2026-09-18T10:00:00.000Z"]')?.textContent).toBe("Sep 18, 2026");
 });
 
 it("submits a Won opportunity Deal File with separate commission and payment evidence", async () => {
