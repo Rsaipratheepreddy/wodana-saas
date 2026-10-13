@@ -386,7 +386,7 @@ export function CrmCreateDialog({ id, workspaceId, onClose, onSaved, initialValu
   const ownerField: FieldSpec = { key: "ownerMembershipId", label: t("Sales owner"), options: options(rows(members.data), "displayName"), required: true };
   let action: ActionSpec;
   if (id === "customers" || id === "organizations") action = { title: id === "customers" ? t("Add client") : t("Create company"), path: "parties", initial: { type: id === "customers" ? "person" : "organization" },
-    fields: [...(id === "customers" ? [{ key: "type", label: t("Record type"), options: choice(["person", "organization"]), required: true }] : []), { key: "displayName", label: t("Name"), required: true }, { key: "phone", label: t("Phone"), type: "phone" }, { key: "email", label: t("Email"), type: "email" }],
+    fields: [...(id === "customers" ? [{ key: "type", label: t("Record type"), options: choice(["person", "organization"]), required: true }] : []), { key: "displayName", label: t("Name"), required: true, personName: id === "customers" ? (values) => values.type !== "organization" : false }, { key: "phone", label: t("Phone"), type: "phone" }, { key: "email", label: t("Email"), type: "email" }],
     transform: ({ email, phone, ...v }) => ({ ...v, contacts: [...(email ? [{ type: "email", value: email, isPrimary: true }] : []), ...(phone ? [{ type: "phone", value: phone, isPrimary: true }] : [])] }),
     // Someone may already be a client: said under the phone and the email as they're typed.
     notice: (key, values) => key === "phone" || key === "email" ? <ContactMatchNotice workspaceId={workspaceId} {...(key === "phone" ? { phone: String(values.phone ?? "") } : { email: String(values.email ?? "") })} /> : null,

@@ -4,7 +4,7 @@ import { ArrowUpRight, Copy, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Button, Checkbox, EmailInput, EmptyState, ErrorState, IconMenuButton, InlineNotice, isNoAccessError, NoAccessState, PhoneField, RecordTable, SegmentedControl, Skeleton, TextInput,
+  Button, Checkbox, EmailInput, EmptyState, ErrorState, IconMenuButton, InlineNotice, isNoAccessError, NoAccessState, PersonNameField, PhoneField, RecordTable, SegmentedControl, Skeleton,
   type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, staffPortalApi } from "@/lib/client-portal/client";
@@ -106,7 +106,7 @@ export function ClientContacts({ workspaceId, caseId, portalUrl, portalEnabled, 
       : <EmptyState title={t("No client contacts yet")} description={state.canManage ? t("Add the people who follow this project.") : t("People who manage the client portal add contacts here.")} action={state.canManage ? <Button variant="primary" onPress={() => open()}>{t("Add contact")}</Button> : undefined} />}
     {edit ? <FormDialog title={edit.id ? t("Edit contact") : t("Add contact")} onClose={() => { setEdit(null); }} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!edit.name.trim() || !edit.national.trim()} submitLabel={t("Save")} onSubmit={() => save()}>
       <div className={styles.stack}>
-        <TextInput label={t("Name")} value={edit.name} onChange={(name) => setEdit({ ...edit, name })} maxLength={160} isRequired autoFocus />
+        <PersonNameField label={t("Name")} value={edit.name} savedValue={state.contacts.find((contact) => contact.id === edit.id)?.name} onChange={(name) => setEdit({ ...edit, name })} maxLength={160} isRequired autoFocus />
         <PhoneField label={t("Mobile number")} value={edit.national} countryCode={edit.country} locale={locale} isRequired
           onChange={(national) => setEdit({ ...edit, national })} onCountryChange={(next) => setEdit({ ...edit, country: next })} description={t("They sign in with this number.")} />
         <EmailInput label={t("Email")} value={edit.email} onChange={(email) => setEdit({ ...edit, email })} maxLength={254} description={t("For codes and notices when WhatsApp can't.")} />

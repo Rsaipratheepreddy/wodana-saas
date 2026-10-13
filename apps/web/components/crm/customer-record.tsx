@@ -89,7 +89,7 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
   };
   const addActivity = () => setAction(addActivityAction(t, { partyId }));
   return <RecordFrame className={styles.workbench}><ResourceState {...resource} retry={resource.refresh} />{party ? <>
-    <RecordHeader title={<EditableField canEdit={editable} heading="h2" isRequired label={t("Display name")} maxLength={240} onReload={resource.refresh} onSave={(displayName) => updateParty({ displayName })} value={String(party.displayName)} />}
+    <RecordHeader title={<EditableField canEdit={editable} heading="h2" isRequired kind={party.type === "person" ? "person-name" : "text"} label={t("Display name")} maxLength={240} onReload={resource.refresh} onSave={(displayName) => updateParty({ displayName })} value={String(party.displayName)} />}
       actions={<IconMenuButton ariaLabel={t("More actions")} items={menu} onAction={onMenu} />} />
     <RecordStrip label={t("Client status")}>
       <EditableField canEdit={editable} display={label(party.lifecycle)} items={["prospect", "customer", "partner", "vendor", "other"].map((id) => ({ id, label: label(id) }))} kind="select" label={t("Lifecycle")}

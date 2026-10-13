@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, EmailInput, FormDialog, FormSection, InlineNotice, PhoneField, SelectField, Skeleton, TextInput, useDesignSystem } from "@/design-system";
+import { Button, EmailInput, FormDialog, FormSection, InlineNotice, PersonNameField, PhoneField, SelectField, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { staffPortalApi } from "@/lib/client-portal/client";
 import type { PortalContact } from "@/lib/client-portal/types";
@@ -61,7 +61,7 @@ export function SendQuoteDialog({ workspaceId, caseId, quoteLabel, clientName, b
         ? t("{name} sees it in their portal and gets it by message or email.", { name: chosen.confirmedName ?? chosen.name })
         : t("{name} sees it in their portal. They have no email, so share the portal link if WhatsApp isn't set up.", { name: chosen.confirmedName ?? chosen.name })} /> : null}
       {!deciders.length && state.canManage ? <FormSection title={t("Add the client's decision-maker")}>
-        <TextInput label={t("Name")} isRequired value={draft.name} onChange={(name) => setDraft({ ...draft, name })} maxLength={160} />
+        <PersonNameField label={t("Name")} isRequired value={draft.name} onChange={(name) => setDraft({ ...draft, name })} maxLength={160} />
         <PhoneField label={t("Mobile number")} value={draft.national} countryCode={draft.country} locale={locale} isRequired
           onChange={(national) => setDraft({ ...draft, national })} onCountryChange={(next) => setDraft({ ...draft, country: next })} />
         <EmailInput label={t("Email")} value={draft.email} onChange={(email) => setDraft({ ...draft, email })} maxLength={254} />

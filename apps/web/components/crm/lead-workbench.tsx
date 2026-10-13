@@ -179,7 +179,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
   ];
   return <RecordFrame className={styles.workbench} tour="enquiry-detail">
     <ResourceState {...resource} retry={resource.refresh} />
-    <RecordHeader title={<EditableField canEdit={canEdit && !identityLocked} lockedReason={identityLock} display={customerDisplayName(text(enquiry?.partyName ?? lead.partyName))} heading="h2" isRequired label={t("Customer name")} maxLength={240} onReload={resource.refresh}
+    <RecordHeader title={<EditableField canEdit={canEdit && !identityLocked} lockedReason={identityLock} display={customerDisplayName(text(enquiry?.partyName ?? lead.partyName))} heading="h2" isRequired kind="person-name" label={t("Customer name")} maxLength={240} onReload={resource.refresh}
         onSave={(displayName) => saveDetails({ party: { displayName } })} value={text(enquiry?.partyName ?? lead.partyName)} />}
       meta={enquiryReference || showEnquiryTitle || live.slaDueAt ? <>{enquiryReference ? <span className={styles.enquiryReference}>{enquiryReference}</span> : null}{showEnquiryTitle ? <span>{enquiryTitle}</span> : null}<RespondByChip lead={live as { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }} now={now} /></> : null}
       actions={<>
@@ -228,7 +228,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
                   onReload={resource.refresh} onSave={(choice) => saveDetails({ team: [{ role, ...(choice === TEAM_NOT_APPLICABLE ? { notApplicable: true } : { membershipId: choice || null }) }] })}
                   value={tagged ? (tagged.notApplicable ? TEAM_NOT_APPLICABLE : tagged.membershipId ?? "") : ""} />;
               })}
-              <EditableField canEdit={canEdit && !identityLocked} lockedReason={identityLock} countryCode={text(contact.mobileCountryCode ?? contact.phoneCountryCode)} display={phoneText(enquiry?.primaryMobile ?? contact.mobile, contact.mobileCountryCode ?? contact.phoneCountryCode)} isRequired kind="phone" label={t("Mobile")}
+              <EditableField canEdit={canEdit && !identityLocked} lockedReason={identityLock} countryCode={text(contact.mobileCountryCode ?? contact.phoneCountryCode)} display={phoneText(enquiry?.primaryMobile ?? contact.mobile, contact.mobileCountryCode ?? contact.phoneCountryCode)} isRequired kind="mobile" label={t("Mobile")}
                 onReload={resource.refresh} onSave={(mobile, { countryCode }) => saveDetails({ party: { mobile, ...(countryCode ? { mobileCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryMobile ?? contact.mobile)} />
               <EditableField canEdit={canEdit && !(identityLocked && text(enquiry?.primaryPhone ?? contact.phone))} lockedReason={text(enquiry?.primaryPhone ?? contact.phone) ? identityLock : undefined} countryCode={text(contact.phoneCountryCode)} display={phoneText(enquiry?.primaryPhone ?? contact.phone)} kind="phone" label={t("Phone")} placeholder={t("Not provided")}
                 onReload={resource.refresh} onSave={(phone, { countryCode }) => saveDetails({ party: { phone, ...(countryCode ? { phoneCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryPhone ?? contact.phone)} />

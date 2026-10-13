@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CalendarClock, Check, Plus, UserRound } from "lucide-react";
-import { Badge, Button, Callout, DateField, FieldCaption, FormDialog, MoneyField, MoreDetails, NumericInput, PhoneNumberField, SelectField, TextInput, TextAreaField, Checkbox, Skeleton, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, DateField, FieldCaption, FormDialog, MoneyField, MoreDetails, NumericInput, PersonNameField, PhoneNumberField, SelectField, TextInput, TextAreaField, Checkbox, Skeleton, useDesignSystem } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import styles from "./crm-workbench.module.css";
@@ -20,6 +20,10 @@ export type FieldSpec = {
   required?: boolean; min?: number; max?: number; options?: { id: string; label: string }[]; value?: unknown;
   /** Folded under More details: the essentials come first. */
   more?: boolean;
+  /** A person's name typed by staff (letters and spaces); a function decides from the other values (a person, not a company). */
+  personName?: boolean | ((values: Record<string, unknown>) => boolean);
+  /** A phone field that must be a mobile of the chosen country. */
+  mobile?: boolean;
 };
 export type ActionSpec = {
   title: string; description?: string; blockedReason?: string; path: string | ((values: Record<string, unknown>) => string); method?: string; fields: FieldSpec[];
@@ -31,11 +35,14 @@ export type ActionSpec = {
 };
 
 function PhoneSpecField({ field, value, onChange }: { field: FieldSpec; value: string; onChange: (value: string) => void }) {
-  return <PhoneNumberField isRequired={field.required} label={field.label} onChange={onChange} value={value} />;
+  return <PhoneNumberField isRequired={field.required} kind={field.mobile ? "mobile" : "any"} label={field.label} onChange={onChange} value={value} />;
 }
 
-export function Fields({ fields, values, onChange, notice }: { fields: FieldSpec[]; values: Record<string, unknown>; onChange: (key: string, value: unknown) => void; notice?: ActionSpec["notice"] }) {
+export function Fields({ fields, values, onChange, notice, savedValues }: { fields: FieldSpec[]; values: Record<string, unknown>; onChange: (key: string, value: unknown) => void; notice?: ActionSpec["notice"];
+  /** What the record held when the form opened: a name kept as it came is not checked. */
+  savedValues?: Record<string, unknown> }) {
   const t = useT();
+  const personName = (field: FieldSpec) => typeof field.personName === "function" ? field.personName(values) : Boolean(field.personName);
   const field = (field: FieldSpec) => <div className={styles.field} key={field.key}>
     {field.type === "multi-select" ? <div aria-label={field.label} className={styles.multiSelect} role="group"><FieldCaption isRequired={field.required}>{field.label}</FieldCaption>{field.options?.map((option) => {
       const selected = Array.isArray(values[field.key]) ? values[field.key] as string[] : [];
@@ -49,6 +56,7 @@ export function Fields({ fields, values, onChange, notice }: { fields: FieldSpec
       : field.type === "date" ? <DateField label={field.label} isRequired={field.required} value={safeDay(values[field.key])} onChange={(value) => onChange(field.key, value?.toString() ?? "")} />
       : field.type === "datetime-local" ? <CrmDateTimeField label={field.label} isRequired={field.required} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
       : field.type === "phone" ? <PhoneSpecField field={field} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
+      : personName(field) ? <PersonNameField label={field.label} maxLength={240} isRequired={field.required} savedValue={typeof savedValues?.[field.key] === "string" && savedValues[field.key] ? String(savedValues[field.key]) : undefined} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
       : <TextInput label={field.label} inputType={field.type ?? "text"} maxLength={500} isRequired={field.required} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />}
     {notice?.(field.key, values)}
   </div>;
@@ -101,7 +109,7 @@ export function ActionDialog({ action, workspaceId, onClose, onSaved }: { action
     hideSubmit={saved} isDirty={!saved && JSON.stringify(values) !== JSON.stringify(initialValues)} isSubmitDisabled={Boolean(action.blockedReason)}
     lead={<>{action.blockedReason ? <p role="status">{action.blockedReason}</p> : null}{action.lead?.(values, set)}</>}
     onClose={onClose} onSubmit={submit} submitLabel={action.submit ?? t("Save")} submitVariant={action.submitVariant} title={action.title}>
-    <fieldset disabled={saved} className={styles.plainFieldset}><Fields fields={action.fields} notice={action.notice} values={values} onChange={(key, value) => set({ [key]: value })} /></fieldset>
+    <fieldset disabled={saved} className={styles.plainFieldset}><Fields fields={action.fields} notice={action.notice} savedValues={initialValues} values={values} onChange={(key, value) => set({ [key]: value })} /></fieldset>
   </FormDialog>;
 }
 
