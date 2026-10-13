@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
+import { notApplicableRoles } from "../project-core/project-team";
 import { projectRepository } from "../projects/project-repository";
 import type { ProjectData } from "../projects/execution.types";
 import { formatCalendarDay } from "../common/calendar-day";
@@ -250,6 +251,12 @@ async function activateStage(db: Db, workspaceId: string, caseId: string, stage:
     for (const slot of ["visualiser", "draftsman"] as const) {
       const holder = await caseRoleHolder(db, workspaceId, caseId, config[slot]);
       if (holder) await tellRenderTag(db, workspaceId, caseId, holder, slot === "visualiser" ? "Visualiser" : "Draftsman", userId);
+    }
+    // The technical lead tags the Draftsman: with nobody tagged yet (and the job needing one), they hear the renders started.
+    if (config.draftsman && dueAt && !(await caseRoleHolder(db, workspaceId, caseId, config.draftsman))
+      && !(await notApplicableRoles(db, workspaceId, { caseId })).includes(config.draftsman)) {
+      const leads = await membersWithRole(db, workspaceId, config.technicalLeadRoleCode);
+      if (leads.length) await tell(db, workspaceId, caseId, facts, "design.stage_started", { stage, due: dueAt }, `design:${caseId}:${stage}:started`, { extra: leads });
     }
   }
   if (stage === "samples") {

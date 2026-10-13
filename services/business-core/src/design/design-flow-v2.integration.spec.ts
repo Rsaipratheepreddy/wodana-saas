@@ -213,6 +213,8 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
 
     // PLM-143: the lead tags the Visualiser, the technical lead the Draftsman; the client-facing date is the one agreed at the kick-off.
     expect(new Date(stageRow(view, "renders").clientDueAt!).toISOString().slice(0, 10)).toBe(day(40));
+    // Nobody is the Draftsman yet, so the technical lead (who tags one) hears the renders started.
+    expect(await told(ids, "design.stage.started")).toContain(ids.people.techLead.user);
     await expect(lead.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: [{ slot: "draftsman", membershipId: ids.people.draftsman.member }] })).rejects.toThrow(/can't set/);
     view = await lead.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: [{ slot: "visualiser", membershipId: ids.people.visualiser.member }] });
     view = await as(ids, "techLead", ["pre_projects.view"]).journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: [{ slot: "draftsman", membershipId: ids.people.draftsman.member }] });
