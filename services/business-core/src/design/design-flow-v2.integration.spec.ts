@@ -271,6 +271,8 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     const ops = as(ids, "ops", ALL), lead = as(ids, "lead", DESIGNER);
     let view = await ops.journey.get(actor, ids.workspaceId, ids.caseId);
     expect(view.stages.map((row) => row.stage)).toEqual(["inspiration", "kickoff", "concepts", "samples", "approval"]);
+    // No renders, so no Visualiser or Draftsman to tag on this job.
+    expect(view.team?.slots.map((slot) => slot.slot)).toEqual(["lead_designer", "junior_designer", "sales_admin", "material_coordinator"]);
     view = await ops.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: team(ids.people.lead.member, [
       { slot: "junior_designer", notApplicable: true }, { slot: "sales_admin", membershipId: ids.people.admin.member }]) });
     expect(view.tasks.find((task) => task.task === "team_allocation")?.status).toBe("done");

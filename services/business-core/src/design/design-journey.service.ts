@@ -729,14 +729,14 @@ export class DesignJourneyService {
       ledger: ledger ? { state: ledger.state, lockProblem: ledger.lockProblem, lock: ledger.lock, materials: ledger.entries.filter((entry) => !entry.archivedAt && entry.kind === "material").length,
         waiting: ledger.entries.filter((entry) => !entry.archivedAt && entry.current?.status !== "confirmed").length,
         outsourcedWaiting: ledger.entries.filter((entry) => !entry.archivedAt && entry.current?.outsourced && entry.current.signOff !== "approved").length } : null,
-      team: journey ? await this.teamView(client, workspaceId, caseId, userId, journey.reviewerRoleCode) : null,
+      team: journey ? await this.teamView(client, workspaceId, caseId, userId, journey.reviewerRoleCode, journey.includesRenders !== false) : null,
       showroomBooking: Boolean(await this.showroomType(client, workspaceId)),
       timezone,
     };
   }
 
   /** The design team on the case, slot by slot, with what this person may set (PLM-151). */
-  private async teamView(client: PoolClient, workspaceId: string, caseId: string, userId: string | undefined, reviewRole: string | null) {
+  private async teamView(client: PoolClient, workspaceId: string, caseId: string, userId: string | undefined, reviewRole: string | null, rendered = true) {
     const config = await designTeamConfig(client, workspaceId);
     const labels = await roleLabels(client, workspaceId);
     const allowed = userId ? await this.settable(client, workspaceId, caseId, userId, config, reviewRole) : [];
@@ -746,6 +746,8 @@ export class DesignJourneyService {
     for (const slot of TEAM_SLOTS) {
       const role = config[slot];
       if (!role) continue;
+      // A package without renders (Palm's Concept Package) has no Visualiser or Draftsman to tag.
+      if (!rendered && (slot === "visualiser" || slot === "draftsman")) continue;
       const holder = await caseRoleHolder(client, workspaceId, caseId, role);
       if (holder || marked.has(role)) settled.set(role, { membershipId: holder, notApplicable: !holder && marked.has(role) });
       const name = holder ? (await this.names(client, workspaceId, [holder])).get(holder) ?? null : null;
