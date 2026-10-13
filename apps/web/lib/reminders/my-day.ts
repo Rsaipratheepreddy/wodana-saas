@@ -41,6 +41,7 @@ const MY_DAY_ROWS: Record<ReminderKind, { action: MessageKey | null; lead: "titl
   "factory.inspection_due": { action: tKey("Inspect · {subject}"), lead: "title" },
   "quote.value_engineering_idle": { action: tKey("Move value engineering on · {subject}"), lead: "context" },
   "finishes.signature_due": { action: tKey("Get the signatures · {subject}"), lead: "title" },
+  "crm.timeline_check": { action: tKey("Answer timeline question · {subject}"), lead: "title" },
   "crm.first_response": { action: tKey("Respond to enquiry · {subject}"), lead: "title" },
   "crm.unowned": { action: tKey("Assign enquiry · {subject}"), lead: "title" },
   "crm.confirm_client": { action: tKey("Confirm the client · {subject}"), lead: "title" },
@@ -48,6 +49,7 @@ const MY_DAY_ROWS: Record<ReminderKind, { action: MessageKey | null; lead: "titl
   "site.daily_report": { action: tKey("Submit site report · {subject}"), lead: "title" },
   "factory.production_due": { action: tKey("Finish production · {subject}"), lead: "title" },
   "books.posting_issue": { action: tKey("Fix posting · {subject}"), lead: "title" },
+  "crm.chat_closing": { action: tKey("Close the chat · {subject}"), lead: "title" },
 };
 
 type RowContext = { t: Translate; locale: string; timeZone: string };

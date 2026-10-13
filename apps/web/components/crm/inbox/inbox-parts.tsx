@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { crmRequest } from "@/lib/crm/client";
-import { waitingMinutes, waitingParts, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { waitingMinutes, waitingParts, type ClosingSettings, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
 import styles from "./inbox-parts.module.css";
 
@@ -27,8 +27,8 @@ export function useNow(ms = 30_000) {
   return now;
 }
 
-type Lookups = { labels: InboxLabel[]; owners: InboxOwner[]; quickReplies: QuickReply[]; settings: InboxSettings | null; templates: InboxTemplate[] };
-const EMPTY: Lookups = { labels: [], owners: [], quickReplies: [], settings: null, templates: [] };
+type Lookups = { labels: InboxLabel[]; owners: InboxOwner[]; quickReplies: QuickReply[]; settings: InboxSettings | null; templates: InboxTemplate[]; closing: ClosingSettings | null };
+const EMPTY: Lookups = { labels: [], owners: [], quickReplies: [], settings: null, templates: [], closing: null };
 
 /** The inbox's workspace lists (labels, people, quick replies, settings, templates), loaded once and reloadable. */
 export function useInboxLookups(workspaceId: string) {
@@ -36,12 +36,13 @@ export function useInboxLookups(workspaceId: string) {
   const [failure, setFailure] = useState("");
   const reload = useCallback(async () => {
     const read = <T,>(path: string, fallback: T) => crmRequest<T>(workspaceId, path).catch((error: Error & { status?: number }) => { if (error.status !== 403) setFailure(error.message); return fallback; });
-    const [labels, owners, quickReplies, settings, templates] = await Promise.all([
+    const [labels, owners, quickReplies, settings, templates, closing] = await Promise.all([
       read<InboxLabel[]>("inbox/labels", []), read<InboxOwner[]>("inbox/owners", []), read<QuickReply[]>("inbox/quick-replies", []),
-      read<InboxSettings | null>("inbox/settings", null), read<InboxTemplate[]>("inbox/templates", []),
+      read<InboxSettings | null>("inbox/settings", null), read<InboxTemplate[]>("inbox/templates", []), read<ClosingSettings | null>("inbox/closing-messages", null),
     ]);
     const list = <T,>(value: T[] | unknown) => (Array.isArray(value) ? value : []) as T[];
-    setLookups({ labels: list<InboxLabel>(labels), owners: list<InboxOwner>(owners), quickReplies: list<QuickReply>(quickReplies), settings: settings && typeof settings === "object" && "workday" in settings ? settings : null, templates: list<InboxTemplate>(templates) });
+    setLookups({ labels: list<InboxLabel>(labels), owners: list<InboxOwner>(owners), quickReplies: list<QuickReply>(quickReplies), settings: settings && typeof settings === "object" && "workday" in settings ? settings : null, templates: list<InboxTemplate>(templates),
+      closing: closing && typeof closing === "object" && Array.isArray(closing.messages) ? closing : null });
   }, [workspaceId]);
   useEffect(() => { const timer = setTimeout(() => void reload(), 0); return () => clearTimeout(timer); }, [reload]);
   return { ...lookups, failure, reload };

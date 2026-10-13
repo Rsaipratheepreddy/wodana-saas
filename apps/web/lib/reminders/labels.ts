@@ -21,6 +21,7 @@ export const REMINDER_KIND_LABELS: Record<ReminderKind, MessageKey> = {
   "factory.inspection_due": tKey("Design inspection due"),
   "quote.value_engineering_idle": tKey("Value engineering waiting"),
   "finishes.signature_due": tKey("Client signatures on samples"),
+  "crm.timeline_check": tKey("Timeline questions"),
   "crm.first_response": tKey("First response"),
   "crm.unowned": tKey("No owner yet"),
   "crm.confirm_client": tKey("Confirm the client"),
@@ -28,6 +29,7 @@ export const REMINDER_KIND_LABELS: Record<ReminderKind, MessageKey> = {
   "site.daily_report": tKey("Daily report"),
   "factory.production_due": tKey("Production"),
   "books.posting_issue": tKey("Posting issue"),
+  "crm.chat_closing": tKey("Closing message due"),
 };
 
 export const REMINDER_MODULE_LABELS: Record<ReminderModule, MessageKey> = {

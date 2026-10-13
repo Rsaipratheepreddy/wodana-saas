@@ -57,6 +57,7 @@ describe("workspace route map", () => {
   it("shows Home's tabs as Home and records under their module", () => {
     expect(route("/workspace/tasks")).toMatchObject({ homeTab: true, nav: "home", label: "Tasks" });
     expect(route("/workspace/my-day", "urgency=overdue")).toMatchObject({ homeTab: true, nav: "home", label: "My day" });
+    expect(route("/workspace/timeline-checks/50000000-0000-4000-8000-000000000001")).toMatchObject({ nav: "home", label: "Timeline question", trail: [{ id: "home" }, { id: "my-day" }] });
     expect(route("/workspace/crm/follow-ups", "view=activity")).toMatchObject({ homeTab: true, nav: "home" });
     expect(route("/workspace/projects/12345678-1234-4234-8234-123456789abc/scope")).toMatchObject({ record: true, nav: "projects" });
     expect(route("/workspace/pre-projects/cases/12345678-1234-4234-8234-123456789abc/quotations")).toMatchObject({ record: true, nav: "planning" });

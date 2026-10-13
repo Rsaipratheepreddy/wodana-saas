@@ -8,6 +8,7 @@ import { caseHref } from "@/lib/pre-project/types";
 import { DiscoverySheet, useDiscovery, type DiscoveryGroup } from "./opportunity-discovery";
 import { introWhen, useIntro } from "./opportunity-intro";
 import { ClientContact, OpportunityActivity, OpportunityCards } from "./opportunity-sections";
+import { TimelineChecks } from "./timeline-checks";
 import { RecordColumns, RecordFrame, RecordHeader, RecordPanel, SideSection } from "./record/record-layout";
 import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
 import { FurniturePathDialog, PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
@@ -301,6 +302,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
             <OpportunityActivity items={rows(activities.data)} loading={activities.loading} failure={activities.failure} retry={activities.refresh}
               onAdd={resource.data ? () => setAction(addActivityAction(t, activityTarget)) : undefined}
               onComplete={(item) => setAction(completeActivityAction(t, item))} onReschedule={(item) => setAction(rescheduleActivityAction(t, item))} />
+            {/* PLM-155: timelines are checked with the design team or Production before Sales reply to the client. */}
+            <TimelineChecks workspaceId={workspaceId} opportunityId={row.id} />
             <SideSection title={t("Links")}>
               <ul className={screen.links}>
                 {leadId ? <li><span>{t("Enquiry")}</span><Link className={screen.factLink} href={`/workspace/crm/leads?lead=${leadId}`}>{enquiryRef ?? t("Open enquiry")}</Link></li> : null}

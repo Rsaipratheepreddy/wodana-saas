@@ -185,6 +185,54 @@ describe("CRM inbox", () => {
     await user.click(await screen.findByRole("button", { name: "Resolve" }));
     await waitFor(() => expect(posted("conversations/email-chat?", "PATCH")).toEqual([{ version: 3, status: "closed" }]));
   });
+  it("PLM-137: filters by status, marks a chat unresolved in one action, and sends Closing the chat only after a confirmation that shows the text", async () => {
+    const closing = { version: 2, canManage: true, formUrl: "https://palm.example.com/f", formLink: "https://palm.example.com/f", afterHours: 3, defaultAfterHours: 3, fields: ["name", "form_link"], sentOnEnquiry: true,
+      messages: [
+        { kind: "received", text: "Thank you, {{name}}! Your enquiry is now with our team.", custom: true, defaultText: "x", templateCode: "wd_chat_received", template: null, templateProblem: null },
+        { kind: "form", text: "Hi {{name}}, please complete this short form: {{form_link}}. Thank you.", custom: true, defaultText: "x", templateCode: "wd_chat_form", template: null, templateProblem: null },
+        { kind: "closing", text: "Hi {{name}}, we haven't heard back from you, so we'll close this chat for now.", custom: true, defaultText: "x", templateCode: "wd_chat_closing", template: null, templateProblem: null },
+      ] };
+    const user = userEvent.setup();
+    const { data, record, posted, fetcher } = setup({ partyId: "party-1", waitingSince: null, closing: { dueAt: new Date(Date.now() - 60_000).toISOString(), problem: null, afterHours: 3, canClose: true } },
+      { payloads: { "inbox/closing-messages": closing, "inbox/summary": { mine: 1, unassigned: 4, team: 6, all: 9, snoozed: 0, unresolved: 2, spam: 1, closingDue: 1, unreadForMe: 0, membershipId: ME } } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    // The status filter: Unresolved narrows the view; Closing due lists the chats whose closing message is due.
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Status: Unresolved" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=unresolved") && String(url).includes("view=mine"))).toBe(true));
+    await user.click(screen.getByRole("button", { name: "Remove filter Status: Unresolved" }));
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Status: Closing due" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("closing=due"))).toBe(true));
+    // One action marks the chat unresolved.
+    await user.click(screen.getByRole("button", { name: "More chat actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark unresolved" }));
+    await waitFor(() => expect(posted(`conversations/${record.id}?`, "PATCH")).toEqual([{ version: 3, status: "unresolved" }]));
+    // The client has been quiet for the firm's hours: the chat offers Closing the chat, confirmed with the text the client reads.
+    expect(screen.getByText("No reply for 3 working hours.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send Closing the chat" }));
+    const confirm = await screen.findByRole("dialog");
+    expect(confirm).toHaveTextContent("Hi Noura, we haven't heard back from you, so we'll close this chat for now.");
+    await user.click(within(confirm).getByRole("button", { name: "Send and resolve" }));
+    await waitFor(() => expect(posted(`conversations/${record.id}/closing`, "POST")).toEqual([{ version: 3, kind: "closing" }]));
+  });
+
+  it("PLM-138: a spam chat shows it, can't be answered or resolved, and Not spam needs a reason", async () => {
+    const user = userEvent.setup(), { data, record, posted } = setup({ partyId: "party-1", status: "spam", spamAt: new Date().toISOString(), canUnmarkSpam: true });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    expect(screen.getByText("Spam: messages are kept, nobody is told.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resolve" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "More chat actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Not spam" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Mark not spam" })).toBeDisabled();
+    await user.type(within(dialog).getByRole("textbox", { name: /Reason/ }), "A real villa owner");
+    await user.click(within(dialog).getByRole("button", { name: "Mark not spam" }));
+    await waitFor(() => expect(posted(`conversations/${record.id}/spam`, "PUT")).toEqual([{ version: 3, spam: false, reason: "A real villa owner" }]));
+  });
+
   it("blocks a number and hides a message only after saying what it does", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup({ partyId: "party-1", canManage: true }); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await screen.findByText("Hello there");
@@ -193,8 +241,10 @@ describe("CRM inbox", () => {
     const confirm = await screen.findByRole("dialog");
     expect(confirm).toHaveTextContent("nobody is told");
     await user.click(within(confirm).getByRole("button", { name: "Mark as spam" }));
-    await waitFor(() => expect(posted(`conversations/${record.id}/block`, "PUT")).toEqual([{ blocked: true, spam: true }]));
-    await user.click(screen.getAllByRole("button", { name: "Hide message" })[0]);
+    // PLM-138: spam is its own command (the contact and its enquiry are marked too), version-checked.
+    await waitFor(() => expect(posted(`conversations/${record.id}/spam`, "PUT")).toEqual([{ version: record.version, spam: true }]));
+    // The chat reloads after the command; its messages come back with their actions.
+    await user.click((await screen.findAllByRole("button", { name: "Hide message" }))[0]);
     const hide = await screen.findByRole("dialog");
     expect(hide).toHaveTextContent("stays on the client's phone");
     await user.click(within(hide).getByRole("button", { name: "Hide message" }));
@@ -347,19 +397,19 @@ describe("CRM inbox", () => {
     const { data, record, fetcher } = setup({}, { payloads: { "inbox/summary": { mine: 2, unassigned: 0, team: 3, all: 3, snoozed: 0, closed: 5, unreadForMe: 1, membershipId: ME, scope: "own" } } });
     render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     const chips = await screen.findByRole("group", { name: "Inbox views" });
-    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Mine2", "Team3", "Closed"]));
+    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Mine2", "Team3", "Resolved"]));
     expect(screen.queryByRole("button", { name: /Unassigned/ })).not.toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search inbox" }), "Noura");
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("search=Noura"))).toBe(true));
-    await user.click(within(chips).getByRole("button", { name: /Closed/ }));
+    await user.click(within(chips).getByRole("button", { name: /Resolved/ }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=closed") && !String(url).includes("view="))).toBe(true));
   });
 
-  it("gives someone with no inbox only their jobs' chats: Team and Closed, nothing to start", async () => {
+  it("gives someone with no inbox only their jobs' chats: Team and Resolved, nothing to start", async () => {
     const { data, record, fetcher } = setup({ canSend: false }, { payloads: { "inbox/summary": { mine: 0, unassigned: 0, team: 1, all: 1, snoozed: 0, unreadForMe: 0, membershipId: ME, scope: "job" } } });
     render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     const chips = await screen.findByRole("group", { name: "Inbox views" });
-    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Team1", "Closed"]));
+    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Team1", "Resolved"]));
     // Team, for the job's team, is every open chat of their jobs (owned or not).
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=open") && !String(url).includes("view="))).toBe(true));
     expect(screen.queryByRole("button", { name: "New conversation" })).not.toBeInTheDocument();

@@ -15,15 +15,25 @@ export type InboxView = "mine" | "unassigned" | "team" | "all";
  * inbox) only the chats filed into the person's jobs. The server enforces it; the web only picks the chips.
  */
 export type InboxScope = "own" | "team" | "manage" | "job";
-/** The list's chips: each is one view at one state. */
+/** The list's chips: each is one view at one state. Unassigned, Mine and Team hold the chats still to work on (PLM-137). */
 export type InboxChip = "unassigned" | "mine" | "team" | "snoozed" | "closed";
-const CHIP_QUERIES: Record<InboxChip, { view: InboxView; status: ChatState }> = {
-  unassigned: { view: "unassigned", status: "open" }, mine: { view: "mine", status: "open" }, team: { view: "team", status: "open" },
+/** Open and Unresolved: the chats that are still work. */
+export const ACTIVE_STATES = "open,unresolved";
+const CHIP_QUERIES: Record<InboxChip, { view: InboxView; status: string }> = {
+  unassigned: { view: "unassigned", status: ACTIVE_STATES }, mine: { view: "mine", status: ACTIVE_STATES }, team: { view: "team", status: ACTIVE_STATES },
   snoozed: { view: "all", status: "snoozed" }, closed: { view: "all", status: "closed" },
 };
 /** The query a chip asks for. With no inbox, Team is every open chat of the person's jobs, owned or not. */
-export function chipQuery(chip: InboxChip, scope: InboxScope | undefined): { view: InboxView; status: ChatState } {
-  return chip === "team" && scope === "job" ? { view: "all", status: "open" } : CHIP_QUERIES[chip];
+export function chipQuery(chip: InboxChip, scope: InboxScope | undefined): { view: InboxView; status: string } {
+  return chip === "team" && scope === "job" ? { view: "all", status: ACTIVE_STATES } : CHIP_QUERIES[chip];
+}
+/** A status filter in the toolbar narrows a view to one state (Open or Unresolved), or lists the Spam chats; "closing" the chats whose closing message is due. */
+export type StatusFilter = "" | "open" | "unresolved" | "spam" | "closing";
+/** The list query once a status filter is applied to a chip's own. */
+export function statusQuery(chip: { view: InboxView; status: string }, filter: StatusFilter): { view: InboxView; status: string; closing?: "due" } {
+  if (!filter) return chip;
+  if (filter === "closing") return { view: chip.view, status: ACTIVE_STATES, closing: "due" };
+  return { view: filter === "spam" ? "all" : chip.view, status: filter };
 }
 /** The chips a level offers: own chats have no queue to look at; the job's team has only its jobs' chats. */
 export function chipsFor(scope: InboxScope | undefined): InboxChip[] {
@@ -44,13 +54,15 @@ export type InboxInsights = {
   conversationId: string; summary: string | null; suggestedEnquiryType: { id: string; label: string } | null; summaryForEnquiry: string | null;
   suggestedReplies: Array<{ id: string; shortcut: string; body: string }>; source: "ai" | "rules";
 };
-export type ChatState = "open" | "snoozed" | "closed";
+export type ChatState = "open" | "unresolved" | "snoozed" | "closed" | "spam";
 export type LabelColor = "viz-1" | "viz-2" | "viz-3" | "viz-4" | "viz-5" | "viz-6";
 export const LABEL_COLORS: LabelColor[] = ["viz-1", "viz-2", "viz-3", "viz-4", "viz-5", "viz-6"];
 
 export type InboxLabel = { id: string; name: string; color: LabelColor; status?: "active" | "archived"; version?: number; openChats?: number };
 export type InboxOwner = { id: string; displayName: string; openChats: number; away: boolean; isMe: boolean };
 export type InboxSummary = { mine: number; unassigned: number; team: number | null; all: number; snoozed: number; closed?: number; unreadForMe: number; membershipId: string | null; scope?: InboxScope;
+  /** PLM-137/138: chats waiting on the client, marked as spam, and whose closing message is due. */
+  unresolved?: number; spam?: number; closingDue?: number;
   /** The connected WhatsApp numbers; with two or more the inbox can show one number's chats. */
   numbers?: Array<{ connectionId: string; number: string | null; accountName: string | null; isDefault: boolean }> };
 export type QuickReply = { id: string; shortcut: string; body: string; status: "active" | "archived"; version: number; scope: "workspace" | "personal"; canEdit: boolean };
@@ -71,7 +83,8 @@ export type InboxSettings = {
   workday: { start: string | null; days: number[] | null };
 };
 export type ChatEvent = {
-  id: string; kind: "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden" | "filed" | "unfiled";
+  id: string; kind: "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden" | "filed" | "unfiled"
+    | "unresolved" | "spam" | "unspam" | "closing_sent";
   method: string | null; reason: string | null; snoozedUntil: string | null; createdAt: string;
   actorName: string | null; ownerName: string | null; labelName: string | null; labelColor: LabelColor | null;
 };
@@ -90,7 +103,7 @@ export type ChatContext = {
 export const TEMPLATE_SOURCES = [
   "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name", "project.stage",
   "quote.number", "invoice.number", "invoice.total", "invoice.due_date", "payment.amount", "portal.link", "staff.first_name", "business.name", "today.date",
-  "meeting.time", "meeting.place", "review.link",
+  "meeting.time", "meeting.place", "review.link", "form.link",
 ] as const;
 export type TemplateSource = (typeof TEMPLATE_SOURCES)[number];
 /** What each source is called in the mapping and in a blocked send (i18n keys). */
@@ -101,6 +114,7 @@ export const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, MessageKey> = {
   "project.stage": tKey("Project stage"), "invoice.due_date": tKey("Invoice due date"), "payment.amount": tKey("Payment amount"),
   "staff.first_name": tKey("Your first name"), "business.name": tKey("Business name"), "today.date": tKey("Today's date"),
   "meeting.time": tKey("Appointment date and time"), "meeting.place": tKey("Appointment address"), "review.link": tKey("Review link"),
+  "form.link": tKey("Enquiry form link"),
 };
 
 /** Meta's review state of a WhatsApp template, as the inbox shows it (only approved ones can be sent). */
@@ -331,5 +345,33 @@ export function eventLine(event: ChatEvent): { key: MessageKey; values: Record<s
     case "unhidden": return { key: tKey("{actor} showed a hidden message again"), values: { actor } };
     case "filed": return { key: tKey("{actor} filed this chat into {job}"), values: { actor, job: event.reason ?? "" } };
     case "unfiled": return { key: tKey("{actor} took this chat out of its job"), values: { actor } };
+    case "unresolved": return { key: tKey("{actor} marked this chat unresolved"), values: { actor } };
+    case "spam": return event.method === "contact_spam" ? { key: tKey("This contact is marked as spam, so this chat is spam"), values: {} } : { key: tKey("{actor} marked this chat as spam"), values: { actor } };
+    case "unspam": return { key: tKey("{actor} marked this chat not spam: {reason}"), values: { actor, reason: event.reason ?? "" } };
+    case "closing_sent": return { key: CLOSING_SENT[event.reason as ClosingKind] ?? tKey("{actor} sent a closing message"), values: { actor } };
   }
+}
+
+/** The inbox's three closing messages (PLM-137), in the order Settings and the chat list them. */
+export const CLOSING_KINDS = ["received", "form", "closing"] as const;
+export type ClosingKind = (typeof CLOSING_KINDS)[number];
+export const CLOSING_LABELS: Record<ClosingKind, MessageKey> = {
+  received: tKey("We have everything"), form: tKey("Please complete the form"), closing: tKey("Closing the chat"),
+};
+const CLOSING_SENT: Record<ClosingKind, MessageKey> = {
+  received: tKey("{actor} sent We have everything"), form: tKey("{actor} sent Please complete the form"), closing: tKey("{actor} sent Closing the chat"),
+};
+/** Settings › Inbox › Closing messages, as business-core reads them (crm/conversations/inbox/closing-messages.ts). */
+export type ClosingSettings = {
+  version: number; canManage: boolean; formUrl: string | null; formLink: string | null; afterHours: number; defaultAfterHours: number; fields: string[]; sentOnEnquiry: boolean;
+  messages: Array<{ kind: ClosingKind; text: string; custom: boolean; defaultText: string; templateCode: string;
+    template: { providerStatus: string; approved: boolean; matchesText: boolean } | null; templateProblem: string | null }>;
+};
+/** A chat's "Closing the chat" state: when it is due, why it can't be sent yet, and whether this person may send it. */
+export type ChatClosing = { dueAt: string | null; problem: string | null; afterHours: number; canClose: boolean };
+
+/** The closing text as the client will read it; a value the chat doesn't have is left out and the sentence closed up. */
+export function renderClosingText(text: string, values: { name?: string | null; form_link?: string | null }) {
+  return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (_all, name: string) => (values as Record<string, string | null | undefined>)[name]?.trim() ?? "")
+    .replace(/[ \t]+([,.!?;:])/g, "$1").replace(/,([!.?])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").trim();
 }

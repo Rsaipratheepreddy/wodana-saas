@@ -390,7 +390,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const fieldList = useMemo(() => enquiryFields(serverData.enquiryFields, ""), [serverData.enquiryFields]);
   const shown = (key: string) => isShown(fieldList, key);
   const customColumns = fieldList.filter((field) => field.custom && field.visible);
-  const statusText = (lead: CrmLeadListItem) => lead.isConverted ? t("Converted") : lead.status === "duplicate" ? t("Duplicate") : lead.status === "qualified" ? t("Qualified") : lead.status === "disqualified" ? t("Not interested") : listOf(lead.status) === "come_back" ? t("Come back later") : listOf(lead.status) === "contacted" ? t("Contacted") : t("New");
+  const statusText = (lead: CrmLeadListItem) => lead.isConverted ? t("Converted") : lead.status === "duplicate" ? t("Duplicate") : lead.status === "qualified" ? t("Qualified") : (lead as { spamAt?: string | null }).spamAt ? t("Spam") : lead.status === "disqualified" ? t("Not interested") : listOf(lead.status) === "come_back" ? t("Come back later") : listOf(lead.status) === "contacted" ? t("Contacted") : t("New");
   const statusTone = (lead: CrmLeadListItem): "success" | "info" | "warning" | "neutral" | "danger" => lead.isConverted || lead.status === "qualified" ? "success" : lead.status === "disqualified" ? "neutral" : listOf(lead.status) === "come_back" ? "warning" : listOf(lead.status) === "new" ? "info" : "neutral";
   // The default columns (with the row checkbox) add up to the content area at 1440 px, so Log contact and Convert
   // stay in view; their text wraps inside the cells (leads-page.module.css).

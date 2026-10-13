@@ -4,9 +4,9 @@ import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, FolderInput, ImageIcon, Info, Mail, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
-import { Avatar, Badge, Button, FormDialog, IconButton, IconMenuButton, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { Avatar, Badge, Button, FormDialog, IconButton, IconMenuButton, InspectorSheet, MenuButton, TextAreaField, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
-import { attachmentUrl, CLIENT_EVENT_LABELS, channelName, eventLine, fileSizeText, jobHref, jobName, snoozePresets, type ChatAttachment, type ChatContext, type ChatEmail, type ChatEvent, type EmailReplying, type ConversationJob, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { attachmentUrl, CLIENT_EVENT_LABELS, CLOSING_KINDS, CLOSING_LABELS, channelName, eventLine, fileSizeText, jobHref, jobName, renderClosingText, snoozePresets, type ChatAttachment, type ChatClosing, type ChatContext, type ChatEmail, type ChatEvent, type ClosingKind, type ClosingSettings, type EmailReplying, type ConversationJob, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -24,11 +24,15 @@ import { JobSuggestion, SuggestedReplies, useChatInsights, WoddyLine } from "./c
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
 const timeout = () => AbortSignal.timeout(20_000);
 
-export type ThreadLookups = { labels: InboxLabel[]; owners: InboxOwner[]; quickReplies: QuickReply[]; templates: InboxTemplate[]; settings: InboxSettings | null; membershipId: string | null };
+export type ThreadLookups = { labels: InboxLabel[]; owners: InboxOwner[]; quickReplies: QuickReply[]; templates: InboxTemplate[]; settings: InboxSettings | null; membershipId: string | null;
+  /** PLM-137: the firm's closing messages (their texts and the form link), for the preview before sending one. */
+  closing?: ClosingSettings | null };
 
 /**
- * One chat: who owns it, its state (Open, Snoozed, Resolved) and labels in the header, the messages with the
- * chat's own history between them, and the composer. `onDone` opens the next chat after Resolve or Snooze.
+ * One chat: who owns it, its state (Open, Unresolved, Snoozed, Resolved or Spam) and labels in the header, the
+ * messages with the chat's own history between them, and the composer. The ⋯ menu changes the state, sends one of
+ * the three closing messages after a confirmation (PLM-137), and marks the chat as spam or, with a reason, not spam
+ * (PLM-138). `onDone` opens the next chat after Resolve, Snooze or a closing message that resolves it.
  */
 export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onChanged, onDone, onLeft, lookups, registerActions }: {
   workspaceId: string; id: string; draft: string; onDraftChange: (value: string) => void; onBack: () => void;
@@ -88,16 +92,30 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     finally { saving.current = false; setBusy(false); }
   }, [thread, workspaceId, id, refresh, loadContext, onChanged, onLeft, t]);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
-  const command = useCallback(async (path: string, body: Record<string, unknown>, fallback: string) => {
+  const command = useCallback(async (path: string, body: Record<string, unknown>, fallback: string, method: "PUT" | "POST" = "PUT", done = false) => {
     setBusy(true); setFailure("");
-    try { await crmRequest(workspaceId, path, "PUT", body, timeout()); await refresh(); await onChanged(); }
+    try { await crmRequest(workspaceId, path, method, body, timeout()); await refresh(); await onChanged(); if (done) onDone(); }
     catch (error) { setFailure(error instanceof Error ? error.message : fallback); }
     finally { setBusy(false); }
-  }, [workspaceId, refresh, onChanged]);
-  const block = (blocked: boolean, spam = false) => blocked
-    ? requestConfirmation({ title: spam ? t("Mark as spam and block?") : t("Block this number?"), confirmLabel: spam ? t("Mark as spam") : t("Block number"),
-      body: t("Their messages are still kept here, but nobody is told and they get no automatic messages."), onConfirm: () => void command(`conversations/${id}/block`, { blocked, spam }, t("The number could not be blocked.")) })
+  }, [workspaceId, refresh, onChanged, onDone]);
+  const [unmarking, setUnmarking] = useState(false);
+  const block = (blocked: boolean) => blocked
+    ? requestConfirmation({ title: t("Block this number?"), confirmLabel: t("Block number"),
+      body: t("Their messages are still kept here, but nobody is told and they get no automatic messages."), onConfirm: () => void command(`conversations/${id}/block`, { blocked }, t("The number could not be blocked.")) })
     : void command(`conversations/${id}/block`, { blocked: false }, t("The number could not be unblocked."));
+  // PLM-138: spam is the contact's: its enquiry is created (or marked) spam, its later messages are spam; nothing is sent.
+  const markSpam = () => thread && requestConfirmation({ title: t("Mark as spam?"), confirmLabel: t("Mark as spam"),
+    body: t("The contact and its enquiry are marked as spam. Their messages are kept, nobody is told, and nothing is sent to them."),
+    onConfirm: () => void command(`conversations/${id}/spam`, { version: thread.version, spam: true }, t("The chat could not be marked as spam."), "PUT", true) });
+  // PLM-137: a closing message goes after a confirmation showing the text as the client reads it.
+  const sendClosing = (kind: ClosingKind) => {
+    if (!thread) return;
+    const message = lookups.closing?.messages.find((item) => item.kind === kind);
+    const preview = message ? renderClosingText(message.text, { name: context?.variables?.["contact.first_name"] ?? null, form_link: lookups.closing?.formLink ?? null }) : "";
+    const resolves = kind !== "form";
+    requestConfirmation({ title: t("Send {name}?", { name: t(CLOSING_LABELS[kind]) }), confirmLabel: resolves ? t("Send and resolve") : t("Send"), body: preview,
+      onConfirm: () => void command(`conversations/${id}/closing`, { version: thread.version, kind }, t("The closing message could not be sent."), "POST", resolves) });
+  };
   const hide = (messageId: string, hidden: boolean) => hidden
     ? requestConfirmation({ title: t("Hide this message?"), confirmLabel: t("Hide message"), body: t("It's hidden in Wodana only. It stays on the client's phone, and an administrator can show it again."),
       onConfirm: () => void command(`conversations/${id}/messages/${messageId}/hidden`, { hidden: true }, t("The message could not be hidden.")) })
@@ -116,12 +134,15 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
   if (!thread) return <section className={styles.empty}><IconButton aria-label={t("Back to chats")} onPress={onBack}><ArrowLeft size={18} /></IconButton>{loadFailure ? <><p role="alert">{loadFailure}</p><Button onPress={() => void refresh()}>{t("Retry")}</Button></> : <p role="status">{t("Loading chat…")}</p>}</section>;
   const isWhatsApp = thread.channel === "whatsapp";
   const isEmail = thread.channel === "email";
+  const closingState = (thread.closing ?? null) as ChatClosing | null;
+  const closingDue = Boolean(closingState?.canClose && !closingState.problem);
   const emailReplying = (thread.email ?? null) as EmailReplying | null;
   const status = String(thread.status);
   const chatLabels = (thread.labels ?? []) as InboxLabel[];
   const replyingAs = thread.replyingAs as { businessName: string | null; number: string | null } | undefined;
   const blocked = !thread.canSend ? t("You can view this conversation. Ask an administrator for permission to reply.")
     : status === "closed" ? t("This conversation is resolved. Reopen it to reply.")
+    : status === "spam" ? t("This chat is marked as spam.")
     : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Connections to reply.")
     : isWhatsApp && thread.numberHealth === "blocked" ? t("Meta has stopped sending from this number. Check it in Connections.")
     : isEmail && !emailReplying?.via ? t("Set up the inbox email address in Settings → Inbox to reply by email.") : "";
@@ -148,7 +169,8 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       <IconButton aria-label={t("Back to inbox")} className={styles.mobileBack} size="compact" onPress={onBack}><ArrowLeft size={18} /></IconButton>
       <Avatar name={String(thread.partyName ?? t("Customer"))} size="md" />
       <div className={styles.headingIdentity}>
-        <h2>{String(thread.partyName ?? t("Customer"))}{thread.demo === true ? <> <Badge tone="warning">{t("Demo")}</Badge></> : null}</h2>
+        <h2>{String(thread.partyName ?? t("Customer"))}{thread.demo === true ? <> <Badge tone="warning">{t("Demo")}</Badge></> : null}
+          {status === "unresolved" ? <> <Badge tone="info">{t("Unresolved")}</Badge></> : status === "spam" ? <> <Badge tone="danger">{t("Spam")}</Badge></> : null}</h2>
         <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number })
           : isEmail ? <span className={styles.headingChannel} title={emailReplying?.address ? t("Replies come back to {address}", { address: emailReplying.address }) : undefined}><Mail aria-hidden="true" size={12} />{thread.subject ? t("Email · {subject}", { subject: String(thread.subject) }) : t("Email")}</span>
           : channelName(thread.channel, t)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
@@ -163,18 +185,26 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
           onAction={(key) => { if (key === "none") void file(null); else { const [kind, jobId] = key.split(":", 2); void file({ kind: kind as ConversationJob["kind"], id: jobId }); } }} /> : null}
         {thread.canSend && activeLabels.length ? <IconMenuButton ariaLabel={t("Labels")} icon={<Tag aria-hidden="true" size={15} />} items={activeLabels.map((item) => ({ id: item.id, label: applied.has(item.id) ? t("Remove {label}", { label: item.name }) : item.name }))}
           onAction={(key) => void setLabels(applied.has(key) ? [...applied].filter((labelId) => labelId !== key) : [...applied, key])} /> : null}
-        {thread.canSend && status !== "closed" ? <MenuButton size="compact" label={status === "snoozed" ? t("Snoozed") : t("Snooze")} items={[...presets.map((preset) => ({ id: preset.id, label: t(preset.label) })), { id: "custom", label: t("Pick a date and time…") }, ...(status === "snoozed" ? [{ id: "wake", label: t("Wake now") }] : [])]}
+        {thread.canSend && status !== "closed" && status !== "spam" ? <MenuButton size="compact" label={status === "snoozed" ? t("Snoozed") : t("Snooze")} items={[...presets.map((preset) => ({ id: preset.id, label: t(preset.label) })), { id: "custom", label: t("Pick a date and time…") }, ...(status === "snoozed" ? [{ id: "wake", label: t("Wake now") }] : [])]}
           onAction={(key) => { if (key === "custom") setCustomSnooze(true); else if (key === "wake") void change({ status: "open" }); else { const preset = presets.find((item) => item.id === key); if (preset) void change({ status: "snoozed", snoozedUntil: preset.until }, true); } }} /> : null}
-        {thread.canSend ? <Button size="compact" variant={status === "closed" ? "secondary" : "primary"} isDisabled={busy} onPress={() => void change({ status: status === "closed" ? "open" : "closed" }, status !== "closed")}>{status === "closed" ? t("Reopen") : t("Resolve")}</Button> : null}
+        {thread.canSend && status !== "spam" ? <Button size="compact" variant={status === "closed" ? "secondary" : "primary"} isDisabled={busy} onPress={() => void change({ status: status === "closed" ? "open" : "closed" }, status !== "closed")}>{status === "closed" ? t("Reopen") : t("Resolve")}</Button> : null}
         <IconButton aria-label={t("Contact details")} className={styles.detailsToggle} size="compact" onPress={() => setDetailsOpen(true)}><Info size={16} /></IconButton>
         <IconButton aria-label={t("Refresh conversation")} size="compact" onPress={() => void refresh()}><RefreshCw size={16} /></IconButton>
-        {thread.canSend && thread.partyId ? <IconMenuButton ariaLabel={t("More chat actions")} items={thread.blockedAt ? [{ id: "unblock", label: t("Unblock number") }]
-          : [{ id: "block", label: t("Block number"), tone: "danger" }, { id: "spam", label: t("Mark as spam"), tone: "danger" }]}
-          onAction={(key) => key === "unblock" ? block(false) : block(true, key === "spam")} /> : null}
+        {thread.canSend && thread.partyId ? <IconMenuButton ariaLabel={t("More chat actions")} items={[
+          ...(status === "open" ? [{ id: "unresolved", label: t("Mark unresolved") }] : status === "unresolved" ? [{ id: "open", label: t("Mark open") }] : []),
+          ...(status === "open" || status === "unresolved" ? CLOSING_KINDS.filter((kind) => kind !== "closing" || closingDue).map((kind) => ({ id: `closing:${kind}`, label: t("Send {name}", { name: t(CLOSING_LABELS[kind]) }) })) : []),
+          ...(thread.blockedAt ? [{ id: "unblock", label: t("Unblock number") }] : [{ id: "block", label: t("Block number"), tone: "danger" as const }]),
+          ...(status === "spam" ? (thread.canUnmarkSpam ? [{ id: "unspam", label: t("Not spam") }] : []) : [{ id: "spam", label: t("Mark as spam"), tone: "danger" as const }]),
+        ]}
+          onAction={(key) => key === "unresolved" || key === "open" ? void change({ status: key }) : key.startsWith("closing:") ? sendClosing(key.slice(8) as ClosingKind)
+            : key === "unblock" ? block(false) : key === "block" ? block(true) : key === "spam" ? markSpam() : setUnmarking(true)} /> : null}
       </div>
     </header>
     {loadFailure || failure ? <p className={styles.error} role="alert">{failure || loadFailure} {loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : null}</p> : null}
-    {thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{thread.spamAt ? t("Blocked as spam: messages are kept, nobody is told.") : t("Blocked: messages are kept, nobody is told.")}</p> : null}
+    {status === "spam" || thread.spamAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Spam: messages are kept, nobody is told.")}</p>
+      : thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Blocked: messages are kept, nobody is told.")}</p> : null}
+    {closingDue && thread.canSend ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("No reply for {count} working hours.", { count: closingState?.afterHours ?? 0 })}
+      <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => sendClosing("closing")}>{t("Send {name}", { name: t(CLOSING_LABELS.closing) })}</Button></p> : null}
     {status === "snoozed" && thread.snoozedUntil ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("Snoozed until {time}", { time: new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(String(thread.snoozedUntil))) })}</p> : null}
     {thread.canSend ? <JobSuggestion context={context} busy={busy} onFile={(suggested) => void file(suggested)} /> : null}
     <WoddyLine workspaceId={workspaceId} thread={thread} context={context} insights={insights} owners={owners} membershipId={lookups.membershipId}
@@ -190,9 +220,24 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       onSent={async () => { await refresh(); await onChanged(); }} onAskWoddy={woddy.ask} woddyBusy={woddy.asking} />
   </section>
     {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onFile={(job) => file(job)} /></InspectorSheet> : null}
+    {unmarking ? <NotSpamDialog onClose={() => setUnmarking(false)} onSubmit={async (reason) => {
+      if (!thread) return;
+      await crmRequest(workspaceId, `conversations/${id}/spam`, "PUT", { version: thread.version, spam: false, reason }, timeout());
+      setUnmarking(false); await refresh(); await onChanged();
+    }} /> : null}
     {customSnooze ? <CustomSnooze timeZone={timeZone} onClose={() => setCustomSnooze(false)} onSnooze={async (until) => { setCustomSnooze(false); await change({ status: "snoozed", snoozedUntil: until }, true); }} /> : null}
     {confirmationDialog}
   </div>;
+}
+
+/** PLM-138: "Not spam" needs a reason, kept in the history. */
+function NotSpamDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (reason: string) => Promise<void> }) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  return <FormDialog title={t("Not spam")} isDirty={Boolean(reason)} onClose={onClose} submitLabel={t("Mark not spam")} isSubmitDisabled={!reason.trim()}
+    onSubmit={() => onSubmit(reason.trim())}>
+    <TextAreaField label={t("Reason")} value={reason} onChange={setReason} maxLength={500} isRequired autoFocus />
+  </FormDialog>;
 }
 
 function CustomSnooze({ timeZone, onClose, onSnooze }: { timeZone: string; onClose: () => void; onSnooze: (until: string) => Promise<void> }) {

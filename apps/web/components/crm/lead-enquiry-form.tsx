@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Callout, FillWithWoddy, FormDialog, FormNotSaved, FormSection, MoreDetails, readSaveProblems, SelectField, TextInput, TextAreaField, useFormDraft, type SaveProblem } from "@/design-system";
+import { Button, Callout, DateField, FillWithWoddy, FormDialog, FormNotSaved, FormSection, MoreDetails, readSaveProblems, SelectField, TextInput, TextAreaField, useFormDraft, type SaveProblem } from "@/design-system";
+import { parseDate } from "@internationalized/date";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
 import { sourceAllowedFor, TEAM_NOT_APPLICABLE, type EnquiryDetails, type LeadContact, type LeadOptions, type LeadTeamEntry } from "@/lib/crm/lead-options";
 import { problemText, requiredBy, teamRoleLabel } from "@/lib/crm/enquiry-requirements";
@@ -36,7 +37,7 @@ const ROUTING = "automatic";
 const UNASSIGNED = "unassigned";
 const EMAIL = /^\S+@\S+\.\S+$/;
 /** Fields that sit under More details. */
-const IN_MORE_DETAILS = new Set(["email", "budgetRange", "summary", "phone", "address", "company", "jobPosition", "website", "campaign"]);
+const IN_MORE_DETAILS = new Set(["email", "budgetRange", "summary", "phone", "address", "company", "jobPosition", "website", "campaign", "targetCompletion"]);
 const quiet = { tooShort: () => "x", tooLong: () => "x", invalid: () => "x", notMobile: () => "x", chooseCountry: "x" };
 
 type Identity = { kind: "existing"; partyId: string; name: string } | { kind: "new" } | null;
@@ -211,6 +212,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     if (needed("address") && !contact.address?.trim()) add("address", t("Enter the address"));
     if (needed("budgetRange") && shown("budgetRange") && options?.budgetRanges.length && !details.budgetRange) add("budgetRange", t("Choose the budget range"));
     if (needed("summary") && shown("summary") && !summary.trim()) add("summary", t("Describe the project"));
+    if (needed("targetCompletion") && !details.targetCompletion) add("targetCompletion", t("Enter the client's target completion date"));
     for (const role of teamRoles) if (needed(`team:${role}`) && !team[role]) add(`team:${role}`, t("Tag the {role}, or choose Not applicable", { role: teamRoleLabel(role, t).toLocaleLowerCase() }));
     return found;
   };
@@ -224,6 +226,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     if (key === "budgetRange") return Boolean(details.budgetRange);
     if (key === "customerType") return Boolean(details.customerType);
     if (key === "summary") return Boolean(summary.trim());
+    if (key === "targetCompletion") return Boolean(details.targetCompletion);
     if (key.startsWith("team:")) return Boolean(team[key.slice(5)]);
     return false;
   }
@@ -237,7 +240,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     // A problem in More details opens it, so its link in the box reaches the field.
     if (mine.some(item => IN_MORE_DETAILS.has(item.key))) setMore(true);
     if (mine.length) throw new FormNotSaved();
-    const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
+    const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "targetCompletion", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
     const referralChanged = Boolean(existing) && JSON.stringify(referralBody()) !== JSON.stringify(existing?.referral ? { ...(existing.referral.name ? { name: existing.referral.name } : {}), ...(existing.referral.contact ? { contact: existing.referral.contact } : {}), ...(existing.referral.membershipId ? { membershipId: existing.referral.membershipId } : {}), ...(existing.referral.option ? { option: existing.referral.option } : {}) } : undefined);
     const assignment = owner === ROUTING ? { mode: "automatic" } : owner === UNASSIGNED ? { mode: "unassigned" } : { mode: "manual", ownerMembershipId: owner, ...(queueId ? { queueId } : {}) };
     const body = existing ? { version: existing.version, serviceType, summary, party: contact, details: enquiryDetails, ...teamBody(), ...(sourceChanged ? { source, channel } : {}), ...(referralKind && (sourceChanged || referralChanged) ? { referral: referralBody() } : {}) }
@@ -297,7 +300,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     }
     if (found.email || found.phone || found.company || found.jobPosition || found.website || found.address || found.summary) setMore(true);
   };
-  const moreFilled = [contact.email, details.budgetRange, summary, contact.company, contact.jobPosition, contact.phone, contact.website, contact.address, details.campaign, details.internalNotes].filter(Boolean).length;
+  const moreFilled = [contact.email, details.budgetRange, details.targetCompletion, summary, contact.company, contact.jobPosition, contact.phone, contact.website, contact.address, details.campaign, details.internalNotes].filter(Boolean).length;
   const notesShown = existing?.notesVisible !== false;
   return <FormDialog draft={draft} errorTitle={initialProblems?.length && !attempted ? t("Before converting") : t("Enquiry not saved")} isDirty={dirty} isSubmitDisabled={!options} onClose={onClose} onSubmit={save} validation="caller"
     problems={problems.map(item => ({ ...item, text: problemText(item, t, { regionLabel: regionWord }) }))}
@@ -346,6 +349,9 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
           {shown("email") ? <TextInput label={t("Email")} inputType="email" isRequired={needed("email")} value={contact.email ?? ""} onChange={set("email")} {...mark("email")} /> : null}
           {shown("budgetRange") ? <SelectField label={t("Budget range")} isRequired={needed("budgetRange")} items={[{ id: "", label: t("Not provided") }, ...withExisting(options?.budgetRanges, existing?.details?.budgetRange ?? "")]} selectedKey={details.budgetRange ?? ""} onSelectionChange={key => setDetail("budgetRange")(String(key ?? ""))} {...mark("budgetRange")} /> : null}
           {shown("summary") ? <TextAreaField label={t("Project description")} isRequired={needed("summary")} value={summary} onChange={setSummary} placeholder={t("What would the customer like to do?")} {...mark("summary")} /> : null}
+          {/* PLM-155: Sales collect the client's target date; the design team and Production say what is possible. */}
+          <div data-problem-key="targetCompletion"><DateField label={t("Target completion")} isRequired={needed("targetCompletion")} value={/^\d{4}-\d{2}-\d{2}$/.test(details.targetCompletion ?? "") ? parseDate(details.targetCompletion!) : null}
+            onChange={(value) => setDetail("targetCompletion")(value?.toString() ?? "")} errorMessage={problem("targetCompletion")} isInvalid={Boolean(problem("targetCompletion"))} /></div>
           <TextInput label={t("Company")} value={contact.company ?? ""} onChange={set("company")} />
           <TextInput label={t("Job position")} value={contact.jobPosition ?? ""} onChange={set("jobPosition")} />
           <div data-problem-key="phone"><CrmPhoneField label={t("Phone")} kind="any" value={contact.phone ?? ""} onChange={set("phone")} countryCode={contact.phoneCountryCode ?? ""} onCountryChange={set("phoneCountryCode")} locale={initialData.defaultLocale}

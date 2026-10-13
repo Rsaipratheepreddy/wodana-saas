@@ -49,6 +49,9 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     return single ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
   }));
   const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  // PLM-155: the teams whose people answer timeline questions are chosen in the Sales settings (only by those who manage them).
+  const teamsResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/teams`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
+  const teams = teamsResponse?.ok ? ((await teamsResponse.json()) as Array<{ code: string; name: string; status: string }>).filter((team) => team.status === "active").map(({ code, name }) => ({ code, name })) : [];
   const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
   // The sales owners come from their own list: a salesperson may not read the member directory.
   const ownersResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/crm/sales-owners`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
@@ -69,12 +72,15 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     canEdit: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.leads.manage"),
     canManageSales: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
     canChangeIdentity: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.parties.identity"),
+    // PLM-138: clears a wrong spam flag (owners and administrators by default).
+    canUnmarkSpam: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.spam.unmark"),
     currentMembershipId: owners.currentMembershipId
       ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     salesOwners: owners.items,
     leadOptions,
     enquiryFields: supporting[7] as LeadsPageData["enquiryFields"],
     salesSettings: supporting[8] as LeadsPageData["salesSettings"],
+    teams,
     items: page.data ?? page.items ?? [],
     queues: supporting[0], assignmentPolicies: supporting[1], slaPolicies: supporting[2], intake: supporting[3], pipelines: supporting[4], members: supporting[5],
     nextCursor: page.nextCursor,

@@ -34,6 +34,8 @@ const FIXED: Fixed[] = [
   { key: "customerType", label: tKey("Customer type"), type: "select", lists: ["customer_type"] },
   { key: "budgetRange", label: tKey("Budget"), type: "select", lists: ["budget_range"], formField: "budgetRange" },
   { key: "summary", label: tKey("Project details"), type: "paragraph", formField: "summary" },
+  // PLM-155: the client's target date, required before the intro when the enquiry type asks for it.
+  { key: "targetCompletion", label: tKey("Target completion"), type: "date", locked: true },
   { key: "source", label: tKey("Source & channel"), type: "select", locked: true, lists: ["lead_source", "lead_channel_"] },
 ];
 

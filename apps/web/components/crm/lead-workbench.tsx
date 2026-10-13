@@ -184,9 +184,9 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
       meta={enquiryReference || showEnquiryTitle || live.slaDueAt ? <>{enquiryReference ? <span className={styles.enquiryReference}>{enquiryReference}</span> : null}{showEnquiryTitle ? <span>{enquiryTitle}</span> : null}<RespondByChip lead={live as { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }} now={now} /></> : null}
       actions={<>
         <Button size="compact" isDisabled={!detail} onPress={() => setEditing("edit")}><Pencil size={14} aria-hidden="true" />{t("Edit details")}</Button>
-        {/* Junk from a form (S-13): closed as spam, out of reports, and the contact blocked. */}
+        {/* Junk (S-13, PLM-138): closed as spam, out of reports, and the contact flagged as spam. */}
         {menu.length ? <IconMenuButton ariaLabel={t("More actions")} items={detail ? menu : []} onAction={() => setAction({ title: t("Mark as spam"), path: `leads/${lead.id}/spam`, method: "POST", submit: t("Mark as spam"),
-          description: t("This closes the enquiry as spam and blocks the number, unless the client has other work with you."), submitVariant: "danger",
+          description: t("This closes the enquiry as spam and marks the contact as spam, unless the client has other work with you."), submitVariant: "danger",
           fields: [], transform: () => ({ version }) })} /> : null}
       </>} />
     <RecordStrip label={t("Enquiry properties")} tour="enquiry-properties">
@@ -197,7 +197,10 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
     </RecordStrip>
     {stageEditing && <InlineStageEditor key={`${lead.id}-${version}-${selectedStage}`} initialStage={selectedStage} lead={live} workspaceId={workspaceId} onCancel={() => { setStageEditing(false); setSelectedStage(""); }} onSaved={async () => { await onChanged(); resource.refresh(); setActivityRevision(value => value + 1); setStageEditing(false); setSelectedStage(""); }} />}
     {live.status === "duplicate" ? <Callout title={t("Held as a duplicate")} tone="info" actions={<Button size="compact" isDisabled={!detail} onPress={() => setAction({ title: t("Not a duplicate: open as new"), path: `leads/${lead.id}/reopen-duplicate`, method: "POST", submit: t("Open as new"), fields: [{ key: "reason", label: t("Reason"), type: "textarea", required: true }], transform: (values) => ({ version, reason: String(values.reason ?? "").trim() }) })}>{t("Not a duplicate")}</Button>}>{live.duplicateOfLeadId ? <a href={`/workspace/crm/leads?lead=${String(live.duplicateOfLeadId)}`}>{t("Open the original")}</a> : t("This contact already had an open enquiry.")}</Callout> : null}
-    {live.disqualificationReason ? <Callout title={t("Disqualified")} tone="neutral">{String(live.disqualificationReason)}</Callout> : null}
+    {live.spamAt ? <Callout title={t("Spam")} tone="neutral" actions={initialData.canUnmarkSpam ? <Button size="compact" isDisabled={!detail} onPress={() => setAction({ title: t("Not spam"), path: `leads/${lead.id}/unspam`, method: "POST", submit: t("Mark not spam"),
+      fields: [{ key: "reason", label: t("Reason"), type: "textarea", required: true }], transform: (values) => ({ version, reason: String(values.reason ?? "").trim() }) })}>{t("Not spam")}</Button> : undefined}>
+      {t("Out of the pipeline and the reports, and not assigned.")}</Callout>
+      : live.disqualificationReason ? <Callout title={t("Disqualified")} tone="neutral">{String(live.disqualificationReason)}</Callout> : null}
     <RecordColumns sideLabel={t("Enquiry details")}
       next={clientMatches.length || nextStep ? <>
         {clientMatches.length ? <NextStepCard title={t("Confirm client")}>

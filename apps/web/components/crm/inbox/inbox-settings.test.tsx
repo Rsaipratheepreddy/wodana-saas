@@ -32,6 +32,12 @@ function setup(canManage = true) {
       defaults: { workingDays: [1, 2, 3, 4, 5], start: "09:00", end: "18:00", timeZone: "Europe/London" },
     },
     "inbox/email-address": { available: true, address: canManage ? "palm-abcdefghij@in.example" : null, version: canManage ? 1 : 0, canManage },
+    "inbox/closing-messages": { version: 0, canManage, formUrl: null, formLink: "https://app.example.com/enquiry/abc", afterHours: 3, defaultAfterHours: 3, fields: ["name", "form_link"], sentOnEnquiry: true,
+      messages: [
+        { kind: "received", text: "Thank you, {{name}}! Your enquiry is now with our team, and we will contact you shortly.", custom: false, defaultText: "Thank you, {{name}}! Your enquiry is now with our team, and we will contact you shortly.", templateCode: "wd_chat_received", template: { providerStatus: "approved", approved: true, matchesText: true }, templateProblem: null },
+        { kind: "form", text: "Hi {{name}}, please complete this short form: {{form_link}}", custom: true, defaultText: "x", templateCode: "wd_chat_form", template: null, templateProblem: "A template can't start or end with a variable" },
+        { kind: "closing", text: "Hi {{name}}, we haven't heard back from you.", custom: true, defaultText: "x", templateCode: "wd_chat_closing", template: { providerStatus: "pending", approved: false, matchesText: false }, templateProblem: null },
+      ] },
     "inbox/starter-pack": { languages: ["en", "ar"], defaultLanguages: ["en"], items: [
       { key: "enquiry_welcome", event: "crm.enquiry.created", name: "wd_enquiry_welcome", language: "en", body: "Hello {{1}}…", status: "rejected" },
       { key: "quote_ready", event: "portal.quote_issued", name: "wd_quote_ready", language: "en", body: "Hello {{1}}…", status: null },
@@ -191,5 +197,21 @@ describe("Settings → Inbox → Email (PLM-025)", () => {
     expect(await within(section).findByText("Not set up")).toBeInTheDocument();
     expect(within(section).queryByRole("button", { name: "Create address" })).not.toBeInTheDocument();
   });
-});
 
+  it("PLM-137: the three closing messages, their WhatsApp templates' state, the form link and the quiet hours, saved together", async () => {
+    const user = userEvent.setup();
+    const { sent } = setup();
+    render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const section = await screen.findByRole("region", { name: "Closing messages" });
+    const form = await within(section).findByRole("textbox", { name: "Please complete the form" });
+    expect(within(section).getByText("A template can't start or end with a variable")).toBeInTheDocument();
+    expect(within(section).getByText("Text changed since it was sent to Meta")).toBeInTheDocument();
+    expect(within(section).getByText("Also sent when an enquiry is created")).toBeInTheDocument();
+    await user.clear(form);
+    await user.type(form, "Hi {{{{name}}, please complete this short form: {{{{form_link}} Thank you.");
+    await user.type(within(section).getByRole("textbox", { name: "Enquiry form link" }), "https://palm.example.com/enquire");
+    await user.click(within(section).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("inbox/closing-messages", "PUT")).toEqual([{ version: 0, afterHours: 3, formUrl: "https://palm.example.com/enquire",
+      texts: { received: null, form: "Hi {{name}}, please complete this short form: {{form_link}} Thank you.", closing: "Hi {{name}}, we haven't heard back from you." } }]));
+  });
+});

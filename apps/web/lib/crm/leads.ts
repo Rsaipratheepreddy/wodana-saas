@@ -101,6 +101,8 @@ export type SalesSettings = {
   duplicateWindowDays: number;
   /** Days an open opportunity may keep its stage before Reports lists it as stuck (14 unless changed). */
   stuckDealDays?: number;
+  /** PLM-155: the teams (or roles) whose people answer timeline questions; none means anyone. */
+  timelineCheckRoles?: string[];
   salesAdminMembershipId: string | null;
   /** PLM-024: who reads internal notes, the enquiry team (default) or everyone with Sales access. */
   internalNotesVisibility?: "team" | "sales";
@@ -282,6 +284,8 @@ export type LeadsPageData = {
   canEdit?: boolean;
   /** Whether the signed-in member manages Sales settings (the Sales admin and escalation rules). */
   canManageSales?: boolean;
+  /** PLM-138: may say a spam enquiry isn't spam (with a reason). */
+  canUnmarkSpam?: boolean;
   /** May change the client's name and phone (crm.parties.identity); unknown (older pages) counts as yes, the server decides. */
   canChangeIdentity?: boolean;
   leadOptions?: LeadOptions;
@@ -298,6 +302,8 @@ export type LeadsPageData = {
   salesOwners?: CrmWorkspaceMember[];
   /** Readable by anyone who works enquiries; edited with CRM settings permission. */
   salesSettings?: SalesSettings;
+  /** The workspace's teams, for who answers timeline questions (read by those who manage Sales settings). */
+  teams?: Array<{ code: string; name: string }>;
   nextCursor: string | null;
   referenceTime: string;
   workspaceId: string;

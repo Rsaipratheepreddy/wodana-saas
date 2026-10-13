@@ -249,6 +249,7 @@ const clear = [
   "crm_sla_history",
   "crm_sla_instances",
   "crm_stage_history",
+  "crm_timeline_checks",
   // Conversations, activities and appointments
   "crm_activities",
   "crm_auto_replies",

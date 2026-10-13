@@ -26,7 +26,7 @@ export const timelineCheckSource: ReminderSource = {
     return rows.map((row): DueItem => ({
       key: `timeline:${row.id}`, sourceType: "crm_timeline_check", sourceId: row.id, jobSource: { type: "opportunity", id: row.opportunityId },
       projectId: null, caseId: null, partyId: row.partyId, ownerMembershipId: row.owner, ccMembershipIds: [], dueAt: new Date(row.dueAt),
-      title: `Timeline question · ${row.client || row.reference}`, context: row.reference, href: `/workspace/crm/timeline-checks/${encode(row.id)}`, variables: { client: row.client },
+      title: row.client || row.reference, context: row.reference, href: `/workspace/timeline-checks/${encode(row.id)}`, variables: { client: row.client },
     }));
   },
   async stillOpen(db, workspaceId, keys) {

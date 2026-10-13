@@ -12,7 +12,7 @@ import type { ChatAttachment, ChatTemplate } from './chat-content';
 export type ChatView = 'mine' | 'unassigned';
 export type ChatRow = {
   id: string; partyId: string | null; partyName: string | null; leadId: string | null; channel: 'email' | 'whatsapp' | 'phone' | 'internal' | string;
-  subject: string | null; status: 'open' | 'snoozed' | 'closed'; ownerMembershipId: string | null; ownerName: string | null;
+  subject: string | null; status: 'open' | 'unresolved' | 'snoozed' | 'closed' | 'spam'; ownerMembershipId: string | null; ownerName: string | null;
   lastMessageAt: string | null; lastInboundAt: string | null; waitingSince: string | null; unreadCount: number; version: number;
   lastMessageDirection: 'inbound' | 'outbound' | 'internal' | null; lastMessageText: string | null; lastMessageStatus: string | null;
 };
@@ -39,7 +39,8 @@ export function useChats(view: ChatView, enabled = true) {
   const api = useApi();
   return useQuery({
     queryKey: chatKeys.list(api.workspaceId, view),
-    queryFn: () => api.get<{ data: ChatRow[]; nextCursor: string | null }>(`crm/conversations?view=${view}&status=open&sort=waiting&limit=50`),
+    // Open and Unresolved (handled, waiting on the client) are the chats still to work on (PLM-137).
+    queryFn: () => api.get<{ data: ChatRow[]; nextCursor: string | null }>(`crm/conversations?view=${view}&status=open,unresolved&sort=waiting&limit=50`),
     enabled,
     refetchInterval: 30_000,
   });

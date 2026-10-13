@@ -37,6 +37,8 @@ const CHART_LABELS: Record<string, MessageKey> = {
   design_stage: tKey("Projects by design stage"), designer_workload: tKey("Designer workload"), work_orders_status: tKey("Open work orders"),
   factory_load: tKey("Factory load by week"), cash_in_out: tKey("Cash in and out by month"), receivables_ageing: tKey("Receivables by age"),
   reserved_available: tKey("Reserved and available stock"), slow_moving: tKey("Slow-moving stock"),
+  // PLM-138: spam enquiries by the source and channel they came from.
+  spam_by_source: tKey("Spam by source and channel"),
 };
 
 /** Fixed chart keys and reasons the server sends (stages, ages, series, steps), named here. */
@@ -336,6 +338,11 @@ function nameOf(t: Translate, options: FilterOptions | null, format: Formatters,
     if (key === "other") return t("Other");
     if (dimension === "type" || dimension === "typeGroup") return options?.enquiryTypes.find((item) => item.id === key)?.label ?? (key === "none" ? t("Not set") : key);
     if (dimension === "sourceGroup" || dimension === "source") return key === "none" ? t("No enquiry") : options?.sources.find((item) => item.id === key)?.label ?? (fallback || key);
+    // PLM-138: a source and its channel ("source/channel"), each by its name.
+    if (dimension === "sourceChannel") {
+      const [source, channel] = key.split("/");
+      return `${options?.sources.find((item) => item.id === source)?.label ?? source} · ${options?.channels[source]?.find((item) => item.id === channel)?.label ?? channel}`;
+    }
     if ((dimension === "am" || dimension === "person") && key === "none") return t("Not assigned");
     if (dimension === "series" && key === "design") return t("Design fee");
     if (dimension === "month") return format.month(key);

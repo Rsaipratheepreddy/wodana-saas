@@ -66,6 +66,8 @@ export type LeadContact = {
 };
 export type EnquiryDetails = {
   emirate?: string; area?: string; location?: string; customerType?: string; budgetRange?: string; campaign?: string;
+  /** PLM-155: the date the client wants it finished (YYYY-MM-DD); collected, never promised by Sales. */
+  targetCompletion?: string;
   internalNotes?: string; contact?: LeadContact;
   formAnswers?: Array<{ questionId: string; title: string; value: string | string[] }>;
 };

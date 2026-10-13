@@ -8,9 +8,10 @@ import { Badge, Button, Checkbox, DataGrid, EmptyState, InlineNotice, NoAccessSt
 import { crmRequest } from "@/lib/crm/client";
 import { fillTemplate, LABEL_COLORS, renderTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_SOURCES, TEMPLATE_STATUS, type InboxLabel, type InboxTemplate, type LabelColor, type QuickReply, type TemplateSource } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 import { AutoRepliesSection } from "./auto-replies-settings";
 import { ClientMessagesSection } from "./client-messages-settings";
+import { ClosingMessagesSection } from "./closing-messages-settings";
 import { InboundEmailSection } from "./inbound-email-settings";
 import { LabelChip, useInboxLookups } from "./inbox-parts";
 import styles from "./inbox-parts.module.css";
@@ -121,6 +122,7 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
       </SettingsSection>
       <AutoRepliesSection workspaceId={workspaceId} />
       <ClientMessagesSection workspaceId={workspaceId} canManage={canManage} templates={templates} />
+      <ClosingMessagesSection workspaceId={workspaceId} />
       <SettingsSection id="inbox-labels" title={t("Labels")} actions={canManage ? <Button size="compact" variant="primary" onPress={() => setEditingLabel({ color: "viz-1" })}><Plus aria-hidden="true" size={14} />{t("Add label")}</Button> : null}>
         <div data-sales-grid><DataGrid ariaLabel={t("Labels")} columns={labelColumns} data={labels} emptyTitle={t("No labels yet")} emptyDescription={t("Add labels such as Quote request or Site visit.")} getRowId={(label) => label.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
       </SettingsSection>
@@ -156,7 +158,7 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
 
 const CATEGORY_LABELS: Record<string, MessageKey> = { utility: tKey("Utility"), marketing: tKey("Marketing"), authentication: tKey("Authentication") };
 
-type StarterPack = { languages: string[]; defaultLanguages: string[]; items: Array<{ key: string; event: string; name: string; language: string; body: string; status: string | null }> };
+type StarterPack = { languages: string[]; defaultLanguages: string[]; items: Array<{ key: string; event: string; name: string; language: string; body: string; status: string | null; problem?: string | null }> };
 
 /** One confirm adds a template for every client message in the chosen languages; the worker submits them to Meta. */
 function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: string; onClose: () => void; onSubmit: (languages: string[]) => Promise<void> }) {
@@ -168,7 +170,8 @@ function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: st
     void crmRequest<StarterPack>(workspaceId, "inbox/starter-pack").then((next) => { setPack(next); setLanguages(new Set(next.defaultLanguages)); }).catch((reason: Error) => setError(reason.message));
   }, [workspaceId]);
   const names: Record<string, string> = { en: "English", ar: "العربية" };
-  const missing = pack?.items.filter((item) => languages.has(item.language) && !item.status) ?? [];
+  // A closing message Meta would refuse (PLM-137) waits until its text is fixed in Closing messages.
+  const missing = pack?.items.filter((item) => languages.has(item.language) && !item.status && !item.problem) ?? [];
   return <FormDialog size="lg" title={t("Starter templates")} onClose={onClose} isSubmitDisabled={!missing.length} submitLabel={missing.length ? t("Send {count} to Meta", { count: missing.length }) : t("Nothing to add")} onSubmit={() => onSubmit([...languages])}>
     <div className={styles.form}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
@@ -177,7 +180,8 @@ function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: st
         <div className={styles.inline} role="group" aria-label={t("Languages")}>{pack.languages.map((language) => <Checkbox key={language} isSelected={languages.has(language)} onChange={(value) => setLanguages((current) => { const next = new Set(current); if (value) next.add(language); else next.delete(language); return next; })}>{names[language] ?? language}</Checkbox>)}</div>
         <ul className={styles.starterList}>{pack.items.filter((item) => languages.has(item.language)).map((item) => <li key={`${item.name}:${item.language}`}>
           <span className={styles.name}><strong>{item.name}</strong><small dir="auto">{item.body}</small></span>
-          {item.status ? <Badge tone={TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.tone ?? "neutral"}>{t(TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.label ?? "Added")}</Badge> : <Badge tone="neutral">{names[item.language] ?? item.language}</Badge>}
+          {item.status ? <Badge tone={TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.tone ?? "neutral"}>{t(TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.label ?? "Added")}</Badge>
+            : item.problem ? <Badge tone="warning">{translateKnown(t, item.problem)}</Badge> : <Badge tone="neutral">{names[item.language] ?? item.language}</Badge>}
         </li>)}</ul>
       </> : null}
     </div>

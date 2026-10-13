@@ -77,6 +77,8 @@ function routeTable() {
     { id: "approvals", label: "Approvals", href: "/workspace/approvals", parent: "home", homeTab: true, paths: ["/workspace/approvals"] },
     // A change an AI app prepared, waiting for the person's OK (opened from Approvals or its notice).
     { id: "ai-action", label: "Waiting for your OK", href: "/workspace/approvals", parent: "approvals", paths: ["/workspace/ai-actions"] },
+    // A timeline question asked of the design team or Production (PLM-155), opened from My day or its notice.
+    { id: "timeline-check", label: "Timeline question", href: "/workspace/my-day", parent: "my-day", paths: ["/workspace/timeline-checks"] },
     // A case's client portal as the client sees it (read-only preview; no workspace chrome).
     { id: "client-view", label: "Client view", href: "/workspace/pre-projects", parent: "home", paths: ["/workspace/client-view"] },
     // Sales people without project tasks get their follow-ups as Home › Follow-ups.

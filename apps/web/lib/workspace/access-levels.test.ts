@@ -16,8 +16,9 @@ describe("access levels on the web", () => {
     expect(levelLabel("inbox", "none")).toBe("No access");
     expect(levelLabel("sales", "edit")).toBe("Edit");
     expect(describeAccess(["crm.communications.view", "crm.communications.send"]).levels.inbox).toBe("view");
-    expect(describeAccess(["crm.communications.view", "crm.communications.send", "crm.inbox.team"]).levels.inbox).toBe("edit");
-    expect(expandAccess({ levels: { inbox: "manage" }, extras: [] })).toEqual(["crm.communications.send", "crm.communications.view", "crm.consent.manage", "crm.inbox.manage", "crm.inbox.team"]);
+    // PLM-137: Team chats (the Sales admins) also send the closing message to a quiet chat.
+    expect(describeAccess(["crm.communications.view", "crm.communications.send", "crm.inbox.team", "crm.inbox.close_chats"]).levels.inbox).toBe("edit");
+    expect(expandAccess({ levels: { inbox: "manage" }, extras: [] })).toEqual(["crm.communications.send", "crm.communications.view", "crm.consent.manage", "crm.inbox.close_chats", "crm.inbox.manage", "crm.inbox.team"]);
   });
 
   it("round-trips a role through levels and extras", () => {

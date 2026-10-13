@@ -143,8 +143,12 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
               { key: "clientReviewMinutes", label: t("Working minutes to confirm a possible existing client"), type: "number", min: 1, max: 1440, required: true },
               { key: "duplicateWindowDays", label: t("Days a repeat enquiry counts as a duplicate"), type: "number", min: 1, max: 730, required: true },
               { key: "stuckDealDays", label: t("Days without a stage change before a deal is stuck"), type: "number", min: 1, max: 365, required: true },
+              // PLM-155: who answers timeline questions (none chosen: anyone in the workspace).
+              ...(initialData.teams?.length ? [{ key: "timelineCheckRoles", label: t("Timeline questions go to"), type: "multi-select" as const,
+                options: initialData.teams.map((team) => ({ id: team.code.toLowerCase(), label: team.name })) }] : []),
             ],
-            transform: (values) => ({ version: salesSettings.version, takeoverCap: values.takeoverCap, unownedEscalationMinutes: values.unownedEscalationMinutes, clientReviewMinutes: values.clientReviewMinutes, duplicateWindowDays: values.duplicateWindowDays, stuckDealDays: values.stuckDealDays, salesAdminMembershipId: values.salesAdminMembershipId || null }),
+            transform: (values) => ({ version: salesSettings.version, takeoverCap: values.takeoverCap, unownedEscalationMinutes: values.unownedEscalationMinutes, clientReviewMinutes: values.clientReviewMinutes, duplicateWindowDays: values.duplicateWindowDays, stuckDealDays: values.stuckDealDays, salesAdminMembershipId: values.salesAdminMembershipId || null,
+              ...(Array.isArray(values.timelineCheckRoles) ? { timelineCheckRoles: values.timelineCheckRoles } : {}) }),
           })}>{t("Escalation")}</Button> : null}
           <Button size="compact" onPress={() => setAction({ title: t("Add queue"), path: "queues", initial: { isFallback: queues.length === 0 }, fields: [{ key: "name", label: t("Name"), required: true }, { key: "code", label: t("Code"), required: true }, { key: "isFallback", label: t("Default queue"), type: "checkbox" }] })}>{t("Add queue")}</Button>
           <Button size="compact" isDisabled={!queue || !initialData.members.some((person) => person.status === "active" && !queue.members.some((existing) => existing.membershipId === person.id))} onPress={() => editMember()}>{t("Add sales owner")}</Button>

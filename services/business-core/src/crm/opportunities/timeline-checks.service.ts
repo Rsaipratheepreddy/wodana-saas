@@ -80,7 +80,7 @@ export class TimelineChecksService {
         after: { opportunityId, checkId: id, assigneeMembershipId: person.membershipId, assignee: person.name, dueAt: dueAt.toISOString(), note: question } });
       if (person.userId !== actorUser.userId) {
         const variables = { client: opportunity.client, actor: await this.name(client, actorUser.userId), question, due: await this.dueText(client, workspaceId, dueAt), opportunity: opportunity.label };
-        const deepLink = `/workspace/crm/timeline-checks/${id}`;
+        const deepLink = `/workspace/timeline-checks/${id}`;
         await notifyUserInApp(client, { workspaceId, recipientUserId: person.userId, code: "crm.timeline_question", eventType: "crm.timeline_question", variables, deepLink, idempotencyKey: `crm:timeline:asked:${id}` });
         await queueUserEmail(client, { workspaceId, recipientUserId: person.userId, code: "crm.timeline_question", eventType: "crm.timeline_question", variables, deepLink, idempotencyKey: `crm:timeline:asked:${id}:email` });
       }
