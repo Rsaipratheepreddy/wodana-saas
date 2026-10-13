@@ -14,8 +14,8 @@ import styles from "./value-engineering.module.css";
 
 type Dialog = "start" | "agree" | "meeting" | "keep" | "withdraw" | "minutes" | null;
 
-/** Loads the job's value engineering for this estimate version, again whenever the quote changes. */
-export function useValueEngineering(workspaceId: string, caseId: string, quoteId: string, revision: number, enabled: boolean) {
+/** Loads the job's value engineering for this estimate version, again whenever the quote changes (its revision, status or the QS's review). */
+export function useValueEngineering(workspaceId: string, caseId: string, quoteId: string, revision: number | string, enabled: boolean) {
   const [view, setView] = useState<ValueEngineeringView | null>(null);
   const load = useCallback(async () => {
     if (!enabled) return;
@@ -35,7 +35,8 @@ export function ValueEngineering({ workspaceId, caseId, state }: { workspaceId: 
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const estimate = state.quote.kind === "quotation" && state.quote.round !== "design";
-  const { view, setView } = useValueEngineering(workspaceId, caseId, state.quote.id, state.quote.revision, estimate);
+  // The QS confirming the price opens a round without a new revision: reload on the review too.
+  const { view, setView } = useValueEngineering(workspaceId, caseId, state.quote.id, `${state.quote.revision}:${state.quote.status}:${state.flow?.canReview ?? ""}:${state.canPrice ?? ""}`, estimate);
   const [dialog, setDialog] = useState<Dialog>(null);
   if (!estimate || !view?.can) return null;
   const api = valueEngineeringApi(workspaceId, caseId);

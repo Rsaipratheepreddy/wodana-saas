@@ -49,6 +49,20 @@ describe("value engineering on the estimate (PLM-147)", () => {
     expect(panel).toHaveTextContent("Marble to porcelain");
   });
 
+  it("reloads when the QS confirms the price, so the round it opened replaces the start prompt", async () => {
+    const open = round();
+    caseRequest.mockResolvedValueOnce(view({ can: { start: true, lead: false, decide: false, withdraw: false } }))
+      .mockResolvedValue(view({ open, rounds: [open], can: { start: false, lead: false, decide: false, withdraw: false } }));
+    const withQs = { ...state(), flow: { internalReview: true, reviewAction: "qs_approve", canReview: true, canRecordDecision: false }, canPrice: true } as BuilderState;
+    const { rerender } = show(withQs);
+    expect(await screen.findByRole("button", { name: "Over budget: start value engineering" })).toBeVisible();
+    // Same revision; the QS's review is done.
+    rerender(<DesignSystemProvider><ValueEngineering workspaceId="w1" caseId="c1" state={{ ...withQs, flow: { ...withQs.flow, canReview: false }, canPrice: false } as BuilderState} /></DesignSystemProvider>);
+    const panel = await screen.findByRole("region", { name: "Value engineering" });
+    await waitFor(() => expect(panel).toHaveTextContent("Value engineering · round 1"));
+    expect(screen.queryByRole("button", { name: "Over budget: start value engineering" })).toBeNull();
+  });
+
   it("says when the Account Manager leads because the job has no lead designer, and flags a chargeable round", async () => {
     const open = round({ round: 3, chargeable: true, lead: { membershipId: "m-am", name: "Sara Sales", fallback: true } });
     caseRequest.mockResolvedValue(view({ open, rounds: [open] }));
