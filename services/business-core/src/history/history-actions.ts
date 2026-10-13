@@ -48,6 +48,10 @@ const RULES: Array<[RegExp, HistoryVerb]> = [
   [/(hold|funds)_override$|continued_on_hold$/, "approved"],
   [/funds_asked$/, "requested_approval"],
   [/^finance_request\.approval$/, "decided"],
+  // PLM-150: the factory sends an item for its design inspection; the designer approves it or returns it with snags.
+  [/^work_order\.inspection_requested$/, "sent_for_review"],
+  [/^work_order\.inspection_passed$/, "approved"],
+  [/^work_order\.inspection_failed$/, "returned"],
   [/^finance_request\.needs_info$/, "returned"],
   [/^finance_request\.file$/, "uploaded"],
   [/(^|[._])(emailed|return_emailed)$/, "sent"],

@@ -40,7 +40,8 @@ const UNVERSIONED = [
   ...["accepted", "alternate_accepted", "alternate_offered", "alternate_rejected", "approved", "cancelled", "changing", "chased", "closed", "confirmed", "continued_on_hold",
     "created", "email_not_sent", "emailed", "funds_asked", "funds_override", "hold_override", "inspected", "line_cancelled", "over_funds", "receipt_reversed", "received",
     "return_cancelled", "return_emailed", "return_raised", "return_sent", "returned", "sent", "shipment_added", "shipment_updated", "submitted", "under_threshold"].map((kind) => `purchase_order.${kind}`),
-  ...["planned", "approve_drawing", "start", "release", "report", "check", "decide_report", "dispatch", "add_material", "issue_material"].map((kind) => `work_order.${kind}`),
+  ...["planned", "approve_drawing", "start", "release", "report", "check", "decide_report", "dispatch", "add_material", "issue_material", "inspection_requested", "inspection_passed",
+    "inspection_failed", "inspection_photo_added"].map((kind) => `work_order.${kind}`),
   ...["submitted", "approval", "file", "needs_info", "rejected"].map((kind) => `finance_request.${kind}`),
   "client_invoice.credited",
 ];
@@ -64,6 +65,8 @@ describe("history: every action reads as a sentence", () => {
     expect(verb("site.return")).toBe("returned");
     expect(verb("crm.opportunity.stage_changed.v1")).toBe("advanced");
     expect(verb("crm.opportunity.won.v1")).toBe("won");
+    expect([verb("work_order.inspection_requested"), verb("work_order.inspection_passed"), verb("work_order.inspection_failed"), verb("work_order.inspection_photo_added")])
+      .toEqual(["sent_for_review", "approved", "returned", "uploaded"]);
     expect(verb("change_request.signature_requested.v1")).toBe("requested_signature");
     expect(describeAction("client_portal.board_comment").category).toBe("message");
     // PLM-149 / PLM-153: the technical measure, and the minutes of a meeting and the client's comments on them.
