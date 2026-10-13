@@ -16,6 +16,7 @@ import { readLatestRevision } from "../project-core/project-drawings";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { stageOwners } from "../change-requests/change-request-notices";
 import { decideHandoverPack } from "../site/handover";
+import { settleQuietly } from "../value-engineering/value-engineering.store";
 import type { Grant, PortalContact } from "./portal-auth";
 import { attach, ownUploads } from "./portal-files";
 import { readCase } from "./portal-read";
@@ -204,6 +205,8 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
   // The account manager and whoever built it hear the client's decision.
   await noticeQuoteStep(ctx.db, { workspaceId: ctx.workspaceId, caseId: row.caseId, quoteId: q.id, number: q.number, title: q.title, action: "record_decision",
     actorUserId: NIL, revision: data.revision, note, decision });
+  // PLM-147: the client accepting the price ends an open value engineering round (they kept it).
+  if (decision === "accept" && q.kind === "quotation") await settleQuietly(ctx.db, ctx.workspaceId, row.caseId);
   return { ok: true, entity: { type: "pre_project_case", id: row.caseId }, audit: { quoteId: q.id, number: q.number, decision, hash: q.hash, options: q.clientDecision.selectedOptionLineIds } };
 }
 

@@ -9,7 +9,7 @@ import type { HistoryRecordType, RecordFacts } from "./history-records";
 export const HISTORY_SUBJECTS = [
   "enquiry", "opportunity", "planning_case", "brief", "site_visit", "design", "material_list", "quotation", "deal_file", "project", "stage", "drawing", "material",
   "change_request", "purchase_order", "delivery", "work_order", "invoice", "payment", "finance_request", "petty_cash_claim", "supplier_invoice", "price_request", "snag",
-  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "record",
+  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "value_engineering", "record",
 ] as const;
 export type HistorySubject = (typeof HISTORY_SUBJECTS)[number];
 
@@ -86,6 +86,8 @@ export function historySubject(entityType: string, action: string, after: Record
     case "site_report": return "site_report";
     case "pre_project_case":
       if (code.startsWith("change_request.")) return "change_request";
+      // PLM-147: a value engineering round on the job's estimate.
+      if (/^quotation\.value_engineering_/.test(code)) return "value_engineering";
       if (/^(quotation|commercial)\.|quote_decision$/.test(code)) return "quotation";
       if (/design|moodboard|board_comment|^client_portal\.react$/.test(code)) return "design";
       if (/report_payment$/.test(code)) return "payment";

@@ -6,6 +6,7 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { quotePricingSnapshot } from "../quotation/quotation-builder.service";
+import { checkOverBudget } from "../value-engineering/value-engineering.store";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { pricingHash, qsStage, type QsReviewState } from "./qs-review.domain";
 import { quotationReference } from "./quote-issue";
@@ -115,6 +116,8 @@ export class QsReviewService {
           WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0]?.userId ?? null;
       await this.tell(client, workspaceId, caseId, quoteId, [review.requestedBy, owner], decision === "confirm" ? "quotation.qs_confirmed" : "quotation.qs_returned",
         { title: await this.title(client, workspaceId, caseId, quote, quoteId), actor: user.displayName, note }, review.id, decision === "confirm", user.userId);
+      // PLM-147: a confirmed price above the client's recorded budget opens value engineering, led by the lead designer.
+      if (decision === "confirm") await checkOverBudget(client, { workspaceId, caseId, quoteId, actorUserId: user.userId });
       return this.read(client, workspaceId, caseId, quoteId, user.userId);
     });
   }

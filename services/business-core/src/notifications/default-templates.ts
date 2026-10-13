@@ -34,6 +34,25 @@ const clientDecisionCopy = (kind: string, what: string): DefaultTemplate[] => {
 };
 
 const INSPECTION_VARIABLES = ["order", "item", "project", "stage", "date", "actor", "note"];
+
+/** PLM-147 (0341 seeds them into existing workspaces): `why` is the over-budget line, written by the module in plain words. */
+const VALUE_ENGINEERING_VARIABLES = ["title", "clientName", "actor", "lead", "qs", "why", "round", "when", "place", "budget", "note"];
+const VALUE_ENGINEERING_TEMPLATES: DefaultTemplate[] = [
+  { code: "quotation.value_engineering_lead", channel: "in_app", subject: "Over budget · {{clientName}}", body: "{{why}}. You lead value engineering with {{qs}}: agree the savings, then present the options to the client. {{note}}", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_lead", channel: "email", subject: "Over budget: value engineering for {{clientName}}", body: "{{why}} ({{title}}).\n\nYou lead value engineering with {{qs}}: agree the savings together, then present the options to {{clientName}}. The client decides.\n\n{{note}}", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_no_designer", channel: "in_app", subject: "Over budget · {{clientName}} · no lead designer", body: "{{why}}. Nobody is the lead designer on this job, so you lead value engineering with {{qs}}. {{note}}", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_no_designer", channel: "email", subject: "Over budget: you lead value engineering for {{clientName}}", body: "{{why}} ({{title}}).\n\nNobody is the lead designer on this job, so you lead value engineering with {{qs}}: agree the savings, then present the options to {{clientName}}. Allocate a lead designer and it moves to them.\n\n{{note}}", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_copy", channel: "in_app", subject: "Value engineering · {{clientName}}", body: "{{why}}. {{lead}} leads it with {{qs}}. You can attend the meeting; the design choices are theirs.", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_copy", channel: "email", subject: "For information: value engineering for {{clientName}}", body: "{{why}} ({{title}}).\n\n{{lead}} leads value engineering with {{qs}} and presents the options to the client. You can attend the meeting; the design choices are theirs.", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_chargeable", channel: "in_app", subject: "Chargeable value engineering · {{clientName}}", body: "Round {{round}} is past the free rounds. Agree the fee with the client before the work starts.", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_chargeable", channel: "email", subject: "Chargeable value engineering for {{clientName}}", body: "Value engineering round {{round}} on {{title}} is past the free rounds your firm gives.\n\nAgree the fee with {{clientName}} before the work starts.", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_agreed", channel: "in_app", subject: "Savings agreed · {{clientName}}", body: "{{actor}}: {{note}}", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_agreed", channel: "email", subject: "Savings agreed for {{clientName}}", body: "{{actor}} recorded the savings agreed for {{title}}:\n\n{{note}}\n\nThe options go to the client next.", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_meeting", channel: "in_app", subject: "Value engineering meeting · {{clientName}}", body: "{{actor}} booked it for {{when}}.", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_meeting", channel: "email", subject: "Value engineering meeting booked: {{clientName}}", body: "{{actor}} booked the value engineering meeting for {{title}} on {{when}}. {{place}}\n\nOpen it to see the savings agreed and, afterwards, the minutes.", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_budget_changed", channel: "in_app", subject: "Budget changed · {{clientName}}", body: "{{actor}} changed the client's budget to {{budget}} during value engineering. {{note}}", variables: VALUE_ENGINEERING_VARIABLES },
+  { code: "quotation.value_engineering_closed", channel: "in_app", subject: "Value engineering closed · {{clientName}}", body: "{{note}}", variables: VALUE_ENGINEERING_VARIABLES },
+];
 export const INSPECTION_TEMPLATES: DefaultTemplate[] = [
   { code: "factory.inspection_ready", channel: "in_app", subject: "{{item}} is ready for {{stage}}", body: "{{order}} · {{project}}. Inspect it by {{date}}. {{note}}", variables: INSPECTION_VARIABLES },
   { code: "factory.inspection_ready", channel: "email", subject: "{{item}} is ready for {{stage}}: {{project}}", body: "{{actor}} marked {{order}} {{item}} for {{project}} ready for {{stage}}.\n\nInspect it at the factory by {{date}}. {{note}}", variables: INSPECTION_VARIABLES },
@@ -64,6 +83,7 @@ export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   ...staffReminder("finance_request.waiting", "It is waiting for Finance."),
   ...staffReminder("meeting.minutes_due", "Write the minutes and share them with the client."),
   ...staffReminder("factory.inspection_due", "Inspect it at the factory, or ask someone to cover it."),
+  ...staffReminder("quote.value_engineering_idle", "Agree the savings, present the options or record the client's decision."),
   // Client kinds: the client by email (WhatsApp uses the firm's approved templates); the owner after the reminders.
   { code: "reminders.client.quote_decision", channel: "email", subject: "Your quotation {{title}} is waiting for you", body: "{{title}} is waiting for your decision.\n\n{{context}}\n\nOpen it to accept it or ask for changes.", variables: REMINDER_VARIABLES },
   { code: "reminders.client.design_decision", channel: "email", subject: "Your design {{title}} is waiting for you", body: "{{title}} is waiting for your approval.\n\n{{context}}\n\nOpen it to approve it or ask for changes.", variables: REMINDER_VARIABLES },
@@ -295,6 +315,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "quotation.qs_confirmed", channel: "in_app", subject: "Priced: {{title}}", body: "{{actor}} confirmed the pricing. It can go to {{clientName}}.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.qs_confirmed", channel: "email", subject: "{{title}} is priced · {{clientName}}", body: "{{actor}} confirmed the pricing of {{title}} ({{clientName}}).\n\nOpen it to add it to the proposal and send it to the client.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.qs_returned", channel: "in_app", subject: "QS returned {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
+  // Value engineering (value-engineering/, PLM-147): the lead designer leads it with the QS; the Account Manager is copied.
+  ...VALUE_ENGINEERING_TEMPLATES,
   // Client payments on a planning case (commercial/commercial-notices.ts): Finance verifies, the reporter hears back.
   { code: "commercial.receipt_reported", channel: "in_app", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "commercial.receipt_reported", channel: "email", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}} ({{clientName}}).\n\nOpen it to check the receipt and verify it.", variables: ["title", "clientName", "actor", "amount", "note"] },

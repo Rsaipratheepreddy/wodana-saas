@@ -42,6 +42,7 @@ const SUBJECTS: Record<HistorySubject, { the: MessageKey; named: MessageKey }> =
   agreement: { the: tKey("the agreement"), named: tKey("agreement {reference}") },
   client_request: { the: tKey("a client request"), named: tKey("client request {reference}") },
   client: { the: tKey("the client's details"), named: tKey("client {reference}") },
+  value_engineering: { the: tKey("value engineering"), named: tKey("value engineering {reference}") },
   record: { the: tKey("the record"), named: tKey("record {reference}") },
 };
 

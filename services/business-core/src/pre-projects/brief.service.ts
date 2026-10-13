@@ -12,6 +12,8 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { ArchiveBriefEntryDto, MoodboardPinDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
 import { syncOneTreeFromCase } from "../jobs/one-tree.store";
 import { discoveryCoverage } from "./discovery-coverage";
+import { budgetOf } from "../value-engineering/value-engineering.domain";
+import { budgetChanged } from "../value-engineering/value-engineering.store";
 
 export const BRIEF_MAX_BYTES = 20 * 1024 * 1024;
 export function assertBriefUpload(file?:BriefUpload): asserts file is BriefUpload {
@@ -100,6 +102,9 @@ export class BriefService {
         ON CONFLICT(case_id) DO UPDATE SET content=$3,version=pre_project_briefs.version+1,updated_by=$4,updated_at=now()
         RETURNING content,version,updated_at AS "updatedAt"`, [caseId, workspaceId, content, userId]);
       await this.event(client, workspaceId, caseId, userId, "brief_saved", caseId, current.rows[0]?.content, content);
+      // PLM-147: the client's budget changed while value engineering is open: the lead designer and the QS hear it.
+      await budgetChanged(client, { workspaceId, caseId, actorUserId: userId,
+        before: budgetOf(current.rows[0]?.content?.budgetAmount, current.rows[0]?.content?.currencyCode), after: budgetOf(budgetAmount, currencyCode) });
       await syncOneTreeFromCase(client, workspaceId, caseId, userId);
       return { ...result.rows[0].content, version: result.rows[0].version, updatedAt: result.rows[0].updatedAt };
     });

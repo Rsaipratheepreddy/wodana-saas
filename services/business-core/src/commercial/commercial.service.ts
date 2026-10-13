@@ -130,6 +130,7 @@ import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm
 import { contactEmailSql } from "../client-portal/contact-email";
 import { beforeQuoteIssued, quotationEntityId, quotingEntity } from "../proposals/quote-issue";
 import { quoteReviewAction } from "../proposals/qs-requirement";
+import { checkOverBudget, settleQuietly } from "../value-engineering/value-engineering.store";
 import { quoteReferences } from "./case-quote-facts";
 import { dealFileReference } from "./deal-file-reference";
 import { readLetterhead } from "../workspaces/entity-letterhead";
@@ -3441,6 +3442,10 @@ export class CommercialService {
           await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined,
             recordedBySales: action === "record_decision" && recorder === "sales",
             reviewPermission: data.servicePath && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve" });
+        // PLM-147: the QS estimate confirms a price above the client's recorded budget: value engineering opens, led by
+        // the lead designer. A version sent or a client decision may end the round that is open.
+        if (q && action === "qs_approve") await checkOverBudget(client, { workspaceId, caseId, quoteId: q.id, actorUserId: user.userId });
+        if (q && (action === "issue" || action === "record_decision")) await settleQuietly(client, workspaceId, caseId);
         // The payment hand-offs: Finance hears a receipt was reported; the reporter, the case owner, whoever
         // approves a waiting deal and the client hear it was verified.
         if (action === "report_payment_receipt" || action === "verify_payment") {
