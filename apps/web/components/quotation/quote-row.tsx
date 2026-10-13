@@ -110,7 +110,7 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
     </span>) : null}
     {columns.material ? <span role="gridcell" className={styles.materialCell}>
       <MaterialCell value={line.material} options={materials} disabled={locked || materialLocked} onCommit={(material) => onChange({ material })} />
-      {finish ? <Badge tone={finish.stale ? "danger" : "neutral"}>{finish.stale ? t("Finish changed: price to check") : t("From the finishes")}</Badge> : null}
+      {finish ? <span className={styles.materialFinish}><Badge tone={finish.stale ? "danger" : "neutral"}>{finish.stale ? t("Finish changed: price to check") : t("From the finishes")}</Badge></span> : null}
     </span> : null}
     {customColumns.map((custom) => <span key={custom.id} role="gridcell" className={custom.kind === "number" ? styles.numberCell : styles.textCell}>
       <CellInput label={custom.name} value={line.values?.[custom.id] ?? ""} disabled={locked} numeric={custom.kind === "number"} allowEmpty

@@ -479,4 +479,18 @@ describe("requirement trace", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posted(fetcher).at(-1)).toEqual({ ops: [{ op: "finish", lineId: "a", entryId: "e2", version: 3 }] }));
   });
+  it("PLM-146: an approved final quotation that waits for the final specification says so once, never that it's ready to send", () => {
+    const base = state([line({})]);
+    const problem = "Calacatta marble changed after the finishes went to QS. The designer sends them to QS again.";
+    mount({ ...base, canEdit: false, canMarkBudgetRange: true, quote: { ...base.quote, status: "internal_approved" }, specification: { applies: true, final: false, problem, budgetRange: null } });
+    expect(screen.getByText("Waits for the final specification")).toBeInTheDocument();
+    expect(screen.getAllByText(problem)).toHaveLength(1);
+    expect(screen.queryByText("This quote is approved and ready to send to the client.")).not.toBeInTheDocument();
+  });
+  it("PLM-146: a budget range the client asked for can still be marked once the quotation is approved", async () => {
+    const base = state([line({})]);
+    mount({ ...base, canEdit: false, canMarkBudgetRange: true, quote: { ...base.quote, status: "internal_approved" }, specification: { applies: true, final: false, problem: "Not final.", budgetRange: null } });
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(await screen.findByRole("menuitem", { name: "Mark as a budget range" })).toBeInTheDocument();
+  });
 });

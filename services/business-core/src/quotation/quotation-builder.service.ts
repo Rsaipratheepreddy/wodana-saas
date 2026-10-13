@@ -885,6 +885,10 @@ export class QuotationBuilderService {
         (await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`, [workspaceId, userId])).rows[0]?.id ?? null,
         await this.access.hasPermission(client, workspaceId, userId, "pre_projects.manage_lifecycle"))).allowed,
       specification: await quoteSpecification(client, workspaceId, caseId, { id: quote.id, kind: quote.kind, round: quote.round }),
+      // PLM-146: whoever edits the case marks the main quotation a budget range the client asked for, until it is sent
+      // (also once approved, when the final specification is what holds it back).
+      canMarkBudgetRange: quote.kind === "quotation" && quote.round !== "design" && ["draft", "internal_review", "internal_approved"].includes(quote.status)
+        && await this.access.hasPermission(client, workspaceId, userId, EDIT),
       // Extending a sent or expired quote's validity is the sender's step (Q-7).
       canEditValidity: ["issued", "expired"].includes(quote.status) && await this.access.hasPermission(client, workspaceId, userId, EDIT),
       requirements: await caseRequirements(client, workspaceId, caseId),

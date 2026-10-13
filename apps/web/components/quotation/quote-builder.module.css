@@ -94,6 +94,9 @@
 .resizer:focus-visible { outline: none; }
 .row > [role="gridcell"].serialCell { justify-content: center; background: var(--wd-color-table-header); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
 .materialCell { min-inline-size: 0; }
+/* PLM-146: the finish a line is priced from sits under its materials, so a long flag never squeezes them. */
+.row > [role="gridcell"].materialCell { flex-direction: column; align-items: stretch; justify-content: center; }
+.materialFinish { display: flex; padding: 0 var(--wd-space-2) var(--wd-space-1); }
 /* Materials as tags inside the cell; the row grows when there are several. */
 .materials { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); inline-size: 100%; min-block-size: var(--wd-space-10); padding: var(--wd-space-1) var(--wd-space-2); }
 .tag { --tag: var(--wd-color-surface-muted); display: inline-flex; align-items: center; gap: var(--wd-space-0-5); max-inline-size: 100%; min-block-size: var(--wd-space-6); padding-inline: var(--wd-space-2) var(--wd-space-1); border-radius: var(--wd-radius-sm); background: var(--tag); color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }

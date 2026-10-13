@@ -380,7 +380,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const finishOf = new Map((state.finishes?.links ?? []).map((link) => [link.lineId, { title: finishTitles.get(link.entryId) ?? "", stale: link.stale }]));
   const canLinkFinish = Boolean(state.finishes?.entries.length) && (state.canEdit || Boolean(state.canPrice));
   const spec = state.specification;
-  const rangeOpenable = Boolean(spec) && state.canEdit && ["draft", "internal_review", "internal_approved"].includes(state.quote.status);
+  // PLM-146: the final quotation waits for the final specification (a budget range the client asked for doesn't).
+  const specWaiting = Boolean(spec?.applies && !spec.final && spec.problem && !spec.budgetRange && !["issued", "accepted"].includes(state.quote.status));
+  const rangeOpenable = Boolean(spec) && (state.canMarkBudgetRange ?? state.canEdit) && ["draft", "internal_review", "internal_approved"].includes(state.quote.status);
   const views: Array<{ id: Panel; label: string }> = [
     ...(state.canEdit ? [{ id: "assistant" as const, label: t("Assistant") }, { id: "catalog" as const, label: t("Catalog") }] : []),
     { id: "comments", label: openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments") },
@@ -557,11 +559,12 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {flowNotice ? <InlineNotice tone={flowNotice.tone} message={flowNotice.message} /> : null}
         {spec?.budgetRange ? <InlineNotice tone="info" title={t("Budget range")} message={t("Asked by the client: {note}", { note: spec.budgetRange.note })} />
-          : spec?.applies && !spec.final && spec.problem && state.quote.status !== "issued" && state.quote.status !== "accepted" ? <InlineNotice tone="info" message={spec.problem} /> : null}
+          // Said once: not again when a refused send already says it.
+          : specWaiting && !error.includes(spec!.problem!) ? <InlineNotice tone="info" title={t("Waits for the final specification")} message={spec!.problem!} /> : null}
         {(state.finishes?.links ?? []).some((link) => link.stale) && ["draft", "internal_review"].includes(state.quote.status)
           ? <InlineNotice tone="error" message={t("A finish changed after it was priced. Check the flagged lines.")} /> : null}
         {undecided ? <InlineNotice tone="error" message={<Link className={styles.checkLink} href={requirementHref(caseId, undecided.requirementId!)}>{t(undecided.code as never, undecided.values)}</Link>} /> : null}
-        {!state.canEdit && state.quote.status !== "draft" && !undecided ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
+        {!state.canEdit && state.quote.status !== "draft" && !undecided && !(state.quote.status === "internal_approved" && specWaiting) ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
           ? t("This quote is in review. It can be changed again if it's sent back.") : state.quote.status === "internal_approved"
             ? t("This quote is approved and ready to send to the client.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
 

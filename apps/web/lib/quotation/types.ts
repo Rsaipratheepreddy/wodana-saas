@@ -115,6 +115,8 @@ export type BuilderState = {
   finishes?: QuoteFinishes;
   canEditMaterial?: boolean;
   specification?: { applies: boolean; final: boolean; problem: string | null; budgetRange: { note: string; markedByName: string | null; markedAt: string } | null } | null;
+  /** PLM-146: this person may mark the main quotation a budget range (until it is sent, also once approved). */
+  canMarkBudgetRange?: boolean;
 };
 
 /** A line of the project's live BOQ that a variation can remove, move or replace. */
