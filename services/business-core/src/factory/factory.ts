@@ -326,9 +326,11 @@ export function workOrderNext(order: Pick<WorkOrderRow, "status" | "pending" | "
 /**
  * PLM-150 (SQL over the work order `alias`): it needs its last design inspection (after finishing, before dispatch) and
  * hasn't passed it since anything last came back from site to be made again. Work orders from before inspections
- * (no stages fixed on them) never wait, nor one closed short with nothing good made.
+ * (no stages fixed on them) never wait, nor one closed short with nothing good made; nothing waits while the firm has
+ * inspections switched off.
  */
 export const FINAL_PENDING = (alias: string) => `(coalesce(${alias}.inspection_stages, '{}'::varchar[]) @> ARRAY['final']::varchar[]
+  AND EXISTS (SELECT 1 FROM workspace_factory_settings inspecting WHERE inspecting.workspace_id = ${alias}.workspace_id AND inspecting.inspections_enabled)
   AND NOT (${alias}.status = 'short_closed' AND ${PASSED_NET(alias)} <= 0) AND NOT EXISTS (
   SELECT 1 FROM factory_inspections passed_round WHERE passed_round.workspace_id = ${alias}.workspace_id AND passed_round.work_order_id = ${alias}.id
      AND passed_round.stage = 'final' AND passed_round.status = 'passed'

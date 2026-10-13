@@ -8,8 +8,8 @@ import { dayStart, encode, idsOf, keysOf, managersByProject } from "./support";
  * factory.inspection_due (PLM-150): a design inspection the factory marked ready and the designer hasn't recorded by its
  * due day (the firm's working days after it was asked for). The inspecting designer hears on the day and after (0, +1,
  * +3 working days); once it is late the project manager is copied in, and escalation goes to the project manager, then
- * the owner. An inspection with nobody to do it belongs to the project manager. Done once it is passed or failed, or
- * its work order is cancelled, or the project stops running.
+ * the owner. An inspection with nobody to do it belongs to the project manager. Done once it is passed or failed, its
+ * work order is cancelled, the project stops running, or the firm switches inspections off.
  */
 export const inspectionDueSource: ReminderSource = {
   kind: "factory.inspection_due", module: "factory", audience: "staff", critical: false, notify: "engine",
@@ -22,6 +22,7 @@ export const inspectionDueSource: ReminderSource = {
          FROM factory_inspections inspection
          JOIN work_orders wo ON wo.workspace_id = inspection.workspace_id AND wo.id = inspection.work_order_id AND wo.status <> 'cancelled'
          JOIN delivery_projects project ON project.workspace_id = inspection.workspace_id AND project.id = inspection.project_id
+         JOIN workspace_factory_settings inspecting ON inspecting.workspace_id = inspection.workspace_id AND inspecting.inspections_enabled
          LEFT JOIN workspace_memberships inspector ON inspector.workspace_id = inspection.workspace_id AND inspector.id = inspection.inspector_membership_id AND inspector.status = 'active'
         WHERE inspection.workspace_id = $1 AND inspection.status = 'due' AND project.status = 'active' AND inspection.due_on BETWEEN $2::date AND $3::date
         ORDER BY inspection.due_on DESC, wo.number LIMIT $4`,
@@ -50,6 +51,7 @@ export const inspectionDueSource: ReminderSource = {
       `SELECT inspection.id FROM factory_inspections inspection
          JOIN work_orders wo ON wo.workspace_id = inspection.workspace_id AND wo.id = inspection.work_order_id AND wo.status <> 'cancelled'
          JOIN delivery_projects project ON project.workspace_id = inspection.workspace_id AND project.id = inspection.project_id
+         JOIN workspace_factory_settings inspecting ON inspecting.workspace_id = inspection.workspace_id AND inspecting.inspections_enabled
         WHERE inspection.workspace_id = $1 AND inspection.id = ANY($2::uuid[]) AND inspection.status = 'due' AND project.status = 'active'
           AND ($3::date IS NULL OR inspection.due_on <= $3::date)`,
       [workspaceId, ids, at ? addDays(at.today, 14) : null])).rows.map((row) => row.id));

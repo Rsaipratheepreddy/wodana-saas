@@ -154,8 +154,12 @@ export type OrderInspection = {
   inspectorName: string | null; openSnags: number;
 };
 
-/** Each work order's inspection state (only work orders that need inspections are in the map). */
+/**
+ * Each work order's inspection state (only work orders that need inspections are in the map; none while the firm has
+ * inspections switched off).
+ */
 export async function readOrderInspections(db: Db, workspaceId: string, filter: { orderIds?: string[]; projectId?: string } = {}): Promise<Map<string, OrderInspection>> {
+  if (!(await inspectionsOn(db, workspaceId))) return new Map();
   const orders = (await db.query<{ id: string; stages: string[] }>(
     `SELECT wo.id, wo.inspection_stages::text[] AS stages FROM work_orders wo
       WHERE wo.workspace_id = $1 AND cardinality(coalesce(wo.inspection_stages, '{}'::varchar[])) > 0
@@ -186,6 +190,11 @@ export async function readOrderInspections(db: Db, workspaceId: string, filter: 
     });
   }
   return result;
+}
+
+/** Whether the firm inspects made items now (switched off, nothing waits on an inspection). */
+export async function inspectionsOn(db: Db, workspaceId: string) {
+  return Boolean((await db.query<{ on: boolean }>(`SELECT inspections_enabled AS on FROM workspace_factory_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.on);
 }
 
 /**
@@ -260,6 +269,7 @@ export async function requestInspection(db: Db, workspaceId: string, input: { wo
   if (!order) throw new NotFoundException("Work order not found.");
   const settings = inspectionSettings(await ensureFactorySettings(db, workspaceId));
   const label = stageName(input.stage, settings.stages);
+  if (!settings.enabled) return refuse("Design inspections are switched off.");
   if (!(order.stages ?? []).includes(input.stage)) return refuse(`${orderNumber(order.number)} doesn't need ${label}.`);
   if (!input.auto) {
     if (input.stage === "raw" && order.status !== "in_production") return refuse(`Mark it ready for ${label} while it's in production, before the final finish.`);
@@ -539,6 +549,7 @@ export type OpenInspection = {
 export async function readOpenInspections(db: Db, workspaceId: string, filter: { membershipId?: string | null; projectId?: string | null; from?: string | null; to?: string | null } = {})
   : Promise<OpenInspection[]> {
   const settings = inspectionSettings(await ensureFactorySettings(db, workspaceId));
+  if (!settings.enabled) return [];
   const today = (await workspaceDay(db, workspaceId)).today;
   const rows = (await db.query<Omit<OpenInspection, "stageLabel" | "overdue" | "order"> & { number: number }>(
     `SELECT inspection.id, inspection.work_order_id AS "workOrderId", wo.number, wo.title AS item, inspection.project_id AS "projectId", project.reference AS "projectReference",

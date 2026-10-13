@@ -311,7 +311,7 @@ integration("design inspections at the factory (PLM-150)", () => {
       // The firm's project roles include its Creative Director.
       await w.client.query(`INSERT INTO workspace_project_settings (workspace_id, roles) VALUES ($1, $2::jsonb) ON CONFLICT (workspace_id) DO UPDATE SET roles = EXCLUDED.roles`,
         [w.workspaceId, JSON.stringify([...DEFAULT_ROLES, { key: "creative_director", label: "Creative Director" }])]);
-      const { maker, checker, inspections, joinery, lines } = await started(w,
+      const { projectId, maker, checker, inspections, joinery, lines } = await started(w,
         { inspectionsEnabled: true, inspectionStages: [{ kind: "final", label: "Design check" }], directorRole: "creative_director", directorPackages: ["creative_director"] },
         { designer: "designer", director: "creative_director", maker: "factory_lead" });
       const { id } = await inProduction(maker, w.workspaceId, lines.find((line) => line.title === "Wardrobe")!.id, joinery);
@@ -343,6 +343,14 @@ integration("design inspections at the factory (PLM-150)", () => {
         now: new Date(), limit: 50 } as never);
       expect(listed.map((item) => [item.key, item.ownerMembershipId, item.href])).toEqual([[`inspection:${round.id}`, w.memberships.director, `/workspace/inspections/${round.id}`]]);
       expect(await inspectionDueSource.stillOpen(w.client as never, w.workspaceId, [`inspection:${round.id}`, `inspection:${orphan.id}`])).toEqual(new Set([`inspection:${round.id}`]));
+      // Switched off, nothing waits on an inspection any more: delivery can be booked and the open one leaves the lists.
+      await expect(assertDeliveryCleared(w.client, w.workspaceId, { projectId })).rejects.toThrow(/waits for the design inspection/);
+      const current = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: current.settings.version, inspectionsEnabled: false });
+      await expect(assertDeliveryCleared(w.client, w.workspaceId, { projectId })).resolves.toBeUndefined();
+      expect(await readOpenInspections(w.client, w.workspaceId)).toEqual([]);
+      expect(await inspectionDueSource.stillOpen(w.client as never, w.workspaceId, [`inspection:${round.id}`])).toEqual(new Set());
+      expect((await maker.order(actor, w.workspaceId, id)).next).toBe("send");
     });
   });
 
