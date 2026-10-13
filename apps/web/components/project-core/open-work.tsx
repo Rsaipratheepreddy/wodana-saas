@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, EmptyState, ErrorState, GroupedTable, isNoAccessError, ListTabs, NoAccessState, MenuButton, NoResultsState, PageShell, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
@@ -35,9 +35,13 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
   const [days, setDays] = useState<30 | 90>(30);
   const [opened, setOpened] = useState<{ projectId: string; itemId: string; board: WorkBoard | null; error?: string } | null>(null);
 
+  // Only the latest request shows: switching Mine / All quickly never lets an older answer overwrite the newer one.
+  const latest = useRef(0);
   const load = useCallback(async () => {
     if (view === "team") return;
-    try { const next = await api.openWork(view); setData(next); setCanSeeTeam(next.canSeeTeam); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Your work didn't load.")); }
+    const request = ++latest.current;
+    try { const next = await api.openWork(view); if (request !== latest.current) return; setData(next); setCanSeeTeam(next.canSeeTeam); setError(""); }
+    catch (cause) { if (request === latest.current) setError(cause instanceof Error ? cause.message : t("Your work didn't load.")); }
   }, [api, view, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 

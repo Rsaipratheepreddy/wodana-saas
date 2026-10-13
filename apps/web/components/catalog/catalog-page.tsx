@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Plus } from "lucide-react";
 import {
   Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageShell, SelectField, TextAreaField, TextInput, useRememberedChoice,
@@ -70,8 +70,11 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   const typeLabel = useCallback((type: string) => typeLabels(t)[type] ?? type, [t]);
   const openItem = useCallback((item: { id: string; name: string }, tab: string) => setInspect({ id: item.id, name: item.name, tab }), []);
 
+  // Only the latest search or category shows: an older, slower answer never replaces the newer list.
+  const latestLoad = useRef(0);
   const loadItems = useCallback(async () => {
     if (!catalogId) return;
+    const request = ++latestLoad.current;
     setLoading(true); setError("");
     try {
       const query = new URLSearchParams({ ...(categoryId ? { categoryId } : {}), ...(search.trim() ? { search: search.trim() } : {}), limit: "200" });
@@ -79,9 +82,10 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
         catalogApi<CatalogStructure>(workspaceId, `${catalogId}/structure`),
         catalogApi<{ items: CatalogItemRow[] }>(workspaceId, `${catalogId}/items?${query}`),
       ]);
+      if (request !== latestLoad.current) return;
       setStructure(nextStructure); setItems(Array.isArray(page?.items) ? page.items : []);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : ""); }
-    finally { setLoading(false); }
+    } catch (reason) { if (request === latestLoad.current) setError(reason instanceof Error ? reason.message : ""); }
+    finally { if (request === latestLoad.current) setLoading(false); }
   }, [catalogId, categoryId, search, workspaceId]);
   useEffect(() => { const timer = window.setTimeout(() => void loadItems(), search ? 250 : 0); return () => window.clearTimeout(timer); }, [loadItems, search]);
 
