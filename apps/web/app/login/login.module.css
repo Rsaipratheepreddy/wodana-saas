@@ -33,7 +33,7 @@
   position: absolute;
   z-index: -2;
   inset: 0;
-  background: url("/images/palm-login-interiors-v1.png") center / cover no-repeat;
+  background: url("/images/palm-login-interiors-v1.jpg") center / cover no-repeat;
 }
 
 .loginLayout::after {
