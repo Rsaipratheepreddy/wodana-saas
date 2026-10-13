@@ -61,5 +61,6 @@ export const saveDesignPackage = (workspaceId: string, value: Partial<DesignPack
   call<DesignPackage>(workspaceId, "packages", { method: "POST", body: JSON.stringify(value) });
 export const setDesignPackageStatus = (workspaceId: string, id: string, status: DesignPackage["status"], version: number) =>
   call<DesignPackage>(workspaceId, `packages/${id}/status`, { method: "POST", body: JSON.stringify({ status, version }) });
-export const quoteDesignFee = (workspaceId: string, id: string, measure: { spaces?: number; area?: string; areaUnit?: "sqft" | "sqm" }) =>
-  call<{ fee: string; currency: string; pricingMethod: PricingMethod; areaUnit: string | null }>(workspaceId, `packages/${id}/quote`, { method: "POST", body: JSON.stringify(measure) });
+/** The fee for a measure; on a package priced from its rate, at the rate agreed with the client (PLM-139). */
+export const quoteDesignFee = (workspaceId: string, id: string, measure: { spaces?: number; area?: string; areaUnit?: "sqft" | "sqm"; rate?: string }) =>
+  call<{ fee: string; rate?: string; currency: string; pricingMethod: PricingMethod; areaUnit: string | null }>(workspaceId, `packages/${id}/quote`, { method: "POST", body: JSON.stringify(measure) });

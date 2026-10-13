@@ -81,6 +81,17 @@ describe("opportunity discovery sheets (PLM-040)", () => {
     expect(await screen.findByText(/4,000\.00/)).toBeInTheDocument();
   });
 
+  it("prices a package priced from its rate at the agreed rate (PLM-139)", async () => {
+    packages.packages.push({ ...packages.packages[0], id: "p2", code: "director", name: "Designed by the Creative Director", rate: "100.00", rateFrom: true } as never);
+    try {
+      const calls = stub(view({ missing: [], designFee: { amount: "216000.00", currency: "AED" }, designRate: { requested: "120.00", rate: "120.00", approval: "approved", waitingFor: [] },
+        facts: { area: "1800", areaUnit: "sqft", spaces: null, propertyLocation: "Jumeirah", clientEmail: "c@example.com", floorPlanAssetId: "f1", designPackageId: "p2", latitude: null, longitude: null, designRate: "120.00" } }));
+      renderSheet({ group: "package" });
+      expect(await screen.findByText("Rate approved")).toBeInTheDocument();
+      await waitFor(() => expect(calls.find((call) => call.url.includes("/quote"))?.body).toEqual({ area: "1800", areaUnit: "sqft", rate: "120" }));
+    } finally { packages.packages.pop(); }
+  });
+
   it("places the property from a pasted map link, opens it in Maps and saves the coordinates", async () => {
     const calls = stub(view({ facts: { ...view().facts, propertyLocation: "Villa 12, Palm Way" } }));
     const onClose = vi.fn();

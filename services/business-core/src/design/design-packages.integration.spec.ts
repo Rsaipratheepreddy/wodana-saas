@@ -52,6 +52,19 @@ integration("design packages (PLM-041)", () => {
     });
   });
 
+  it("quotes a package priced from its rate at the rate agreed with the client, never below the package's (PLM-139)", async () => {
+    await withWorkspace(async (_client, { workspaceId, service }) => {
+      const director = await service.savePackage(actor, workspaceId, { code: "director", name: "Designed by the Creative Director", pricingMethod: "per_area", rate: "100", rateFrom: true,
+        currency: "AED", areaUnit: "sqft", includesRenders: true, includesSpacePlanning: true });
+      const bespoke = await service.savePackage(actor, workspaceId, { code: "bespoke", name: "Bespoke interior design", pricingMethod: "per_area", rate: "40", currency: "AED", areaUnit: "sqft" });
+      expect(await service.quote(actor, workspaceId, director.id, { area: "1800", areaUnit: "sqft", rate: "120" })).toMatchObject({ fee: "216000.00", rate: "120.00" });
+      expect(await service.quote(actor, workspaceId, director.id, { area: "1800", areaUnit: "sqft", rate: "90" })).toMatchObject({ fee: "180000.00", rate: "100.00" });
+      expect(await service.quote(actor, workspaceId, director.id, { area: "1800", areaUnit: "sqft" })).toMatchObject({ fee: "180000.00" });
+      // A package with a fixed rate ignores an agreed rate.
+      expect(await service.quote(actor, workspaceId, bespoke.id, { area: "1500", rate: "60" })).toMatchObject({ fee: "60000.00", rate: "40.00" });
+    });
+  });
+
   it("stores the minimum design deposit and hands it to new cases", async () => {
     await withWorkspace(async (client, { workspaceId, service }) => {
       expect(await DesignPackagesService.minimumDeposit(client, workspaceId)).toBeNull();

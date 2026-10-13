@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { checkDesignPackage, designFee, effectiveMinimumDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
+import { agreedRate, checkDesignPackage, designFee, effectiveMinimumDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
 import { DEFAULT_SITE_VISIT_QUESTIONS, normaliseSiteQuestions, type SiteQuestion } from "./design-journey.domain";
 import { designTeamConfig } from "./design-journey.store";
 import { teamConfigProblem, type TeamSlot } from "./design-team.domain";
@@ -177,12 +177,14 @@ export class DesignPackagesService {
     });
   }
 
-  quote(actor: RequestActor, workspaceId: string, id: string, measure: { spaces?: number | null; area?: string | null; areaUnit?: "sqft" | "sqm" | null }) {
+  quote(actor: RequestActor, workspaceId: string, id: string, measure: { spaces?: number | null; area?: string | null; areaUnit?: "sqft" | "sqm" | null; rate?: string | null }) {
     return this.access.withAnyPermission(actor, workspaceId, ["crm.opportunities.view", "crm.settings.manage"], async (client) => {
       const pkg = await this.requirePackage(client, workspaceId, id, false);
       if (pkg.status !== "active") throw new UnprocessableEntityException("This package is no longer offered");
       const area = measure.area && measure.areaUnit && pkg.areaUnit ? areaIn(measure.area, measure.areaUnit, pkg.areaUnit) : measure.area;
-      return { packageId: pkg.id, fee: designFee(pkg, { spaces: measure.spaces, area }), currency: pkg.currency, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit };
+      // PLM-139: on a package priced from its rate, the fee at the rate agreed with the client (approved before the fee uses it).
+      const rate = agreedRate(pkg, measure.rate, true).rate;
+      return { packageId: pkg.id, fee: designFee({ ...pkg, rate }, { spaces: measure.spaces, area }), rate, currency: pkg.currency, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit };
     });
   }
 

@@ -71,10 +71,12 @@ export type Discovery = ReturnType<typeof useDiscovery>;
 /** Live fee from Business Core's pricing (exact decimals); null until the package has what it is priced on. */
 function useFeePreview(workspaceId: string, pkg: DesignPackage | undefined, draft: Draft | null) {
   const [fee, setFee] = useState<{ key: string; amount: string; currency: string } | null>(null);
+  // PLM-139: on a package priced from its rate, the fee at the rate agreed with the client.
+  const rate = pkg?.rateFrom && draft?.designRate ? { rate: draft.designRate } : {};
   const measure = !pkg || !draft ? null
-    : pkg.pricingMethod === "fixed" ? {}
-    : pkg.pricingMethod === "per_space" ? (draft.spaces ? { spaces: Number(draft.spaces) } : null)
-    : draft.area ? { area: draft.area, areaUnit: draft.areaUnit } : null;
+    : pkg.pricingMethod === "fixed" ? { ...rate }
+    : pkg.pricingMethod === "per_space" ? (draft.spaces ? { spaces: Number(draft.spaces), ...rate } : null)
+    : draft.area ? { area: draft.area, areaUnit: draft.areaUnit, ...rate } : null;
   const key = pkg && measure ? `${pkg.id}:${JSON.stringify(measure)}` : "";
   useEffect(() => {
     if (!pkg || !measure || pkg.status !== "active") return;

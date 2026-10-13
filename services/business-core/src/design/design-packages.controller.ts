@@ -74,7 +74,9 @@ class DesignFlowSettingsDto {
   @IsOptional() @ValidateNested() @Type(() => DesignTeamDto) team?: DesignTeamDto;
 }
 class PackageStatusDto { @IsIn(["active", "archived"]) status!: "active" | "archived"; @IsInt() @Min(1) version!: number; }
-class QuoteDto { @IsOptional() @IsInt() @Min(1) spaces?: number | null; @IsOptional() @Matches(/^\d{1,9}(\.\d{1,4})?$/) area?: string | null; @IsOptional() @IsIn(["sqft", "sqm"]) areaUnit?: "sqft" | "sqm" | null; }
+class QuoteDto { @IsOptional() @IsInt() @Min(1) spaces?: number | null; @IsOptional() @Matches(/^\d{1,9}(\.\d{1,4})?$/) area?: string | null; @IsOptional() @IsIn(["sqft", "sqm"]) areaUnit?: "sqft" | "sqm" | null;
+  /** PLM-139: the rate agreed with the client, on a package priced from its rate. */
+  @IsOptional() @Matches(/^\d{1,9}(\.\d{1,2})?$/) rate?: string | null; }
 
 @ApiTags("design")
 @ApiBearerAuth()
