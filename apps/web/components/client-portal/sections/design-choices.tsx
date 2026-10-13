@@ -82,7 +82,7 @@ function ChoiceRow({ choice, caseId, api, format, onChanged }: { choice: PortalC
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not send.")); }
     finally { setBusy(false); }
   };
-  const details = [choice.specification, choice.room, choice.quantity ? `${choice.quantity} ${choice.unit}`.trim() : "", choice.unitPrice && choice.currency ? format.money(choice.unitPrice, choice.currency) : ""].filter(Boolean).join(" · ");
+  const details = [choice.specification, choice.room, choice.quantity ? `${format.number(choice.quantity)} ${choice.unit}`.trim() : "", choice.unitPrice && choice.currency ? format.money(choice.unitPrice, choice.currency) : ""].filter(Boolean).join(" · ");
   return <li data-ok={choice.status === "confirmed" || undefined}>
     <span className={styles.cell}>
       <span className={styles.inline}><strong>{choice.title}</strong>{choice.changed ? <Badge tone="warning">{t("Changed")}</Badge> : null}</span>

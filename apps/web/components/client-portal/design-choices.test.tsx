@@ -7,14 +7,14 @@ import { DesignComments } from "./decisions/design-comments";
 import { DesignChoices } from "./sections/design-choices";
 import type { PortalFormat } from "./portal-format";
 
-const format = { date: (value: string) => value.slice(0, 10), money: (value: unknown, currency?: string | null) => `${currency} ${value}` } as unknown as PortalFormat;
+const format = { date: (value: string) => value.slice(0, 10), money: (value: unknown, currency?: string | null) => `${currency} ${value}`, number: (value: string) => String(Number(value)) } as unknown as PortalFormat;
 const portalApi = () => ({ command: vi.fn(async () => ({ ok: true })), file: (kind: string, id: string) => `/files/${kind}/${id}` }) as unknown as PortalApi & { command: ReturnType<typeof vi.fn> };
 const choices: PortalDesignChoices = {
   locked: false, currency: "AED",
   presentations: [{ id: "p1", stage: "concepts", label: "Concepts", round: 2, status: "presented", version: 3, presentedAt: "2031-04-01T10:00:00Z", chosenOptionId: null, decidedAt: null, decidedByName: null, decisionNote: null, canDecide: true,
     options: [{ id: "o1", title: "Warm minimal", note: "Oak and linen", linkUrl: "https://www.canva.com/design/warm", versionId: null, versionNumber: null, mimeType: null, hasPreview: false },
       { id: "o2", title: "Coastal", note: "", linkUrl: null, versionId: "v9", versionNumber: 1, mimeType: "image/png", hasPreview: true }] }],
-  choices: [{ entryId: "e1", kind: "material", room: "Living", versionId: "lv2", number: 2, title: "Smoked oak", specification: "Matt", quantity: "12.5", unit: "sqm", unitPrice: "100.00", currency: "AED",
+  choices: [{ entryId: "e1", kind: "material", room: "Living", versionId: "lv2", number: 2, title: "Smoked oak", specification: "Matt", quantity: "12.5000", unit: "sqm", unitPrice: "100.00", currency: "AED",
     priceImpact: "250.00", timeImpactDays: 4, afterLock: true, status: "proposed", confirmedAt: null, confirmedByName: null, changed: true, canDecide: true },
   { entryId: "e2", kind: "design", room: null, versionId: "lv3", number: 1, title: "Arched doorway", specification: "", quantity: null, unit: "", unitPrice: null, currency: null,
     priceImpact: "0.00", timeImpactDays: 0, afterLock: false, status: "confirmed", confirmedAt: "2031-04-02T10:00:00Z", confirmedByName: "Maya", changed: false, canDecide: false }],
@@ -26,6 +26,8 @@ describe("the client's design choices in the portal (plan §6.7a)", () => {
     const reload = vi.fn();
     render(<DesignSystemProvider><DesignChoices caseId="c1" choices={choices} api={api} format={format} onChanged={reload} /></DesignSystemProvider>);
     expect(screen.getByText("Concepts · revision 1")).toBeInTheDocument();
+    // A material's quantity reads as a number, not the stored decimal (12.5, not 12.5000).
+    expect(screen.getByText(/Living · 12\.5 sqm/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Open link/ })).toHaveAttribute("href", "https://www.canva.com/design/warm");
     const choose = screen.getByRole("button", { name: "Choose this one" });
     expect(choose).toBeDisabled();
