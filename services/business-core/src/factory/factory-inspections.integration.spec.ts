@@ -267,11 +267,12 @@ integration("design inspections at the factory (PLM-150)", () => {
       expect((await readProduction(w.client, w.workspaceId, projectId)).projects[0].step?.kind).toBe("quality_check");
       expect((await readProjectReadiness(w.client, w.workspaceId, projectId, { columns: ["production"] } as never, { production: true, supply: true, delivery: true })).rows
         .find((row) => row.id === wardrobe.id)?.cells.production).toEqual({ state: "waiting", note: "inspection_due" });
-      // Dispatch, a stock move from the factory and booking the delivery are refused until it passes.
+      // Dispatch and a stock move from the factory are refused until it passes; booking the delivery day ahead is not.
       const shipper = factoryAs(w, w.people.maker);
       await expect(shipper.command(actor, w.workspaceId, id, { action: "dispatch", id: randomUUID(), quantity: "1" })).rejects.toThrow(/WO-\d{4} Wardrobe can't go to site yet: Inspection 2 hasn't passed/);
-      await expect(writeInstallationDays(w.client, { workspaceId: w.workspaceId, projectId, days: { deliveryOn: "2026-11-01", installationOn: "2026-11-02", note: "" }, actorUserId: w.people.manager,
-        canClear: true, team: [] })).rejects.toThrow(/The delivery waits for the design inspection/);
+      const booked = await writeInstallationDays(w.client, { workspaceId: w.workspaceId, projectId, days: { deliveryOn: "2026-11-01", installationOn: "2026-11-02", note: "" }, actorUserId: w.people.manager,
+        canClear: true, team: [] }).then(() => "", (error: Error) => error.message);
+      expect(booked).not.toMatch(/design inspection/);
 
       // Failed twice: round 1 and round 2 of Inspection 2 fail, each with its own snags; round 3 passes.
       await fail(designer, w.workspaceId, final.id, ["Veneer lifting"]);

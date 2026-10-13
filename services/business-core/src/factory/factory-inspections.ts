@@ -241,8 +241,29 @@ export async function inspectorFor(db: Db, workspaceId: string, projectId: strin
     const holder = team.get(role)?.membershipId;
     if (holder) return { membershipId: holder, role };
   }
+  // On the director's packages the director inspects even when not on the project's team: whoever holds the
+  // workspace role or team with that code (e.g. the Creative Director, who reviews those packages' designs).
+  if (settings.directorRole && roles[0] === settings.directorRole) {
+    const director = (await workspaceRoleHolders(db, workspaceId, settings.directorRole))[0];
+    if (director) return { membershipId: director, role: settings.directorRole };
+  }
   const designer = (await membersInRoles(db, workspaceId, projectId, [DESIGNER_ROLE]))[0];
   return designer ? { membershipId: designer, role: DESIGNER_ROLE } : { membershipId: null, role: roles[0] };
+}
+
+/** Active members holding a workspace role, or in an active team, whose code matches (case-insensitive). */
+async function workspaceRoleHolders(db: Db, workspaceId: string, code: string): Promise<string[]> {
+  return (await db.query<{ id: string }>(
+    `SELECT membership.id FROM workspace_memberships membership
+       JOIN effective_member_roles assigned ON assigned.membership_id = membership.id AND assigned.workspace_id = membership.workspace_id
+       JOIN roles role ON role.id = assigned.role_id AND role.workspace_id = membership.workspace_id
+      WHERE membership.workspace_id = $1 AND membership.status = 'active' AND lower(role.code) = lower($2)
+     UNION
+     SELECT membership.id FROM workspace_memberships membership
+       JOIN workspace_team_members member ON member.membership_id = membership.id AND member.workspace_id = membership.workspace_id
+       JOIN workspace_teams team ON team.id = member.team_id AND team.workspace_id = member.workspace_id AND team.status = 'active'
+      WHERE membership.workspace_id = $1 AND membership.status = 'active' AND lower(team.code) = lower($2)
+      ORDER BY 1`, [workspaceId, code])).rows.map((row) => row.id);
 }
 
 type OrderFacts = { id: string; number: number; title: string; status: string; projectId: string; projectReference: string; projectName: string; stages: string[] | null;
