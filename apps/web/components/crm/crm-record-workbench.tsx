@@ -211,6 +211,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const showIntro = !flow || flow.flow === "design" || flow.flow === "fit_out";
   const discovery = useDiscovery(workspaceId, row.id);
   const intro = useIntro(workspaceId, row.id, showIntro);
+  // The intro meeting can be booked once the property details are in: saving them refreshes what still blocks it, with the record.
+  const factsSaved = async () => { discovery.refresh(); intro.refresh(); await saved(); };
   const needed = new Set((checklist?.rows ?? []).filter((item) => item.state === "missing").map((item) => item.group));
   const showPackage = showIntro && flow?.flow !== "fit_out" || Boolean(discovery.view?.package) || needed.has("package");
   const isOpen = (group: FactGroup) => folded[group] ?? needed.has(group);
@@ -315,13 +317,13 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
           { id: "details", label: t("Details"), panel: <OpportunityCards workspaceId={workspaceId} opportunityId={row.id} locale={locale} leadId={leadId ? String(leadId) : null} closed={closed} flow={flow}
             discovery={discovery} intro={intro} showIntro={showIntro} showPackage={showPackage} isOpen={isOpen} won={status === "won"} onSecondProof={() => setProofOpen("main")}
             onToggle={(group) => setFolded((current) => ({ ...current, [group]: !isOpen(group) }))}
-            onEdit={(group) => setSheet({ group })} onFurniture={() => setFurnitureOpen(true)} onSaved={async () => { discovery.refresh(); await saved(); }}
+            onEdit={(group) => setSheet({ group })} onFurniture={() => setFurnitureOpen(true)} onSaved={factsSaved}
             onClientApproval={(next) => { void saveFlow({ clientApproved: next }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}
             bookIntro={bookIntro} onBookingStarted={() => setBookIntro(false)} onIntroBlocked={() => setSheet({ group: "property" })} /> },
           { id: "files", label: t("Files"), panel: leadId ? <RecordAttachments workspaceId={workspaceId} leadId={String(leadId)} /> : <EmptyState illustration="upload" title={t("No enquiry files")} description={t("Project files live in Planning.")} /> },
         ]} />
     {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}
-    {sheet ? <DiscoverySheet workspaceId={workspaceId} opportunityId={row.id} leadId={leadId ? String(leadId) : null} group={sheet.group} focus={sheet.focus} discovery={discovery} locale={locale} onClose={() => setSheet(null)} onSaved={saved} /> : null}
+    {sheet ? <DiscoverySheet workspaceId={workspaceId} opportunityId={row.id} leadId={leadId ? String(leadId) : null} group={sheet.group} focus={sheet.focus} discovery={discovery} locale={locale} onClose={() => setSheet(null)} onSaved={factsSaved} /> : null}
     {proofOpen ? <PaymentProofDialog workspaceId={workspaceId} opportunityId={row.id} loadVersion={freshVersion} onClose={() => setProofOpen(false)} onWon={saved}
       proposal={proofOpen === "main" ? "main" : undefined}
       onBlocked={(items) => setBlocked({ stage: String(wonStage?.name ?? t("Won")), items })} /> : null}
