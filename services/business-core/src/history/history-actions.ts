@@ -82,7 +82,7 @@ const RULES: Array<[RegExp, HistoryVerb]> = [
   [/number_assigned$/, "numbered"],
   [/(^|[._])(raised|raise(_[a-z_]+)?|finance_request_raised|claimed|warranty_claim)$/, "raised"],
   [/(^|[._])(paid|reimburse|report_payment|payment_recorded|recorded_payment|fulfilment_recorded|payment\.recorded)$/, "paid"],
-  [/(^|[._])(resent|sent|send(_[a-z_]+)?|shared|moodboard_shared|digest_sent|reminder\.sent|presented)$/, "sent"],
+  [/(^|[._])(resent|sent|send(_[a-z_]+)?|shared(_with_[a-z_]+)?|moodboard_shared|digest_sent|reminder\.sent|presented)$/, "sent"],
   [/(^|[._])(submitted|submit)$/, "submitted"],
   [/(^|[._])(cancelled|cancel)$/, "cancelled"],
   [/(^|[._])(closed|close|subject_closed)$/, "closed"],
