@@ -27,7 +27,7 @@ export type FeedSource = {
     choices: Array<{ entryId: string; versionId: string; title: string; number: number; status: string; recordedAt?: string | null }>;
   };
   decisions: null | {
-    quotes: Array<{ id: string; title: string; number: number; status: string; issuedAt: string | null }>;
+    quotes: Array<{ id: string; title: string; number: number; status: string; issuedAt: string | null; expired?: boolean }>;
     handovers: Array<{ id: string; title: string; revision: number; status: string; issuedAt: string }>;
   };
   documents: null | Array<{ id: string; kind: string; title: string; date: string | null; version?: number; changed?: boolean; at?: string | null }>;
@@ -57,7 +57,9 @@ export function feedCards(project: FeedSource, limit = 40): FeedCard[] {
       note: document.version ? `V${document.version}` : null,
       status: document.changed ? "changed" : null });
   for (const quote of project.decisions?.quotes ?? [])
-    if (quote.issuedAt) cards.push({ kind: "quote", id: quote.id, at: quote.issuedAt, title: `${quote.title} · V${quote.number}`, note: null, status: quote.status });
+    // QA-016: a quotation past its validity reads Expired (the client asks for a new version), not Waiting for you.
+    if (quote.issuedAt) cards.push({ kind: "quote", id: quote.id, at: quote.issuedAt, title: `${quote.title} · V${quote.number}`, note: null,
+      status: quote.expired && quote.status === "issued" ? "expired" : quote.status });
   for (const pack of project.decisions?.handovers ?? []) cards.push({ kind: "handover", id: pack.id, at: pack.issuedAt, title: `${pack.title} · R${pack.revision}`, note: null, status: pack.status });
   for (const change of project.changes ?? []) {
     const at = change.decidedAt ?? change.sharedAt ?? (change.raisedByClient ? change.createdAt : null);

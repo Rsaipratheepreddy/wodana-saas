@@ -100,6 +100,13 @@ describe("AI2 feed and digest", () => {
     expect(feedCards(project).find((card) => card.kind === "document")).toMatchObject({ note: "V2", status: "changed" });
   });
 
+  it("QA-016: shows a quotation past its validity as expired, not waiting for the client", () => {
+    const quotes = [{ id: "old", title: "Penthouse", number: 1, status: "issued", issuedAt: "2026-10-01T00:00:00.000Z", expired: true },
+      { id: "live", title: "Villa", number: 2, status: "issued", issuedAt: "2026-10-02T00:00:00.000Z", expired: false }];
+    const cards = feedCards({ ...project, decisions: { quotes, handovers: [] } }).filter((card) => card.kind === "quote");
+    expect(cards.map((card) => [card.id, card.status])).toEqual([["live", "issued"], ["old", "expired"]]);
+  });
+
   it("counts what happened since the last visit, nothing on a first visit, never the client's own request", () => {
     expect(whatChanged(project, null)).toBeNull();
     expect(whatChanged(project, "2026-10-05T12:00:00.000Z")!.items).toEqual([
