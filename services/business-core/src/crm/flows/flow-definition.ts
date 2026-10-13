@@ -34,7 +34,7 @@ export const QUESTION_ASKED_BY: Record<BranchQuestion, (step: FlowStepDefinition
   budgetBand: (step) => (step.needs ?? []).includes("budget"),
 };
 
-export const DESIGN_STAGES = ["inspiration", "site_visit", "concepts", "space_planning", "material_selection", "renders", "approval"] as const;
+export const DESIGN_STAGES = ["inspiration", "kickoff", "site_visit", "concepts", "space_planning", "material_selection", "renders", "samples", "approval"] as const;
 export type DesignStage = (typeof DESIGN_STAGES)[number];
 
 export const DEADLINE_UNITS = ["working_hours", "hours", "days"] as const;

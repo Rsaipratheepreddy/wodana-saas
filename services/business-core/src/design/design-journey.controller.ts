@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { DesignJourneyService } from "./design-journey.service";
@@ -14,12 +14,31 @@ class ScheduleDto {
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @Matches(/^\d{4}-\d{2}-\d{2}T/) endsAt?: string | null;
   @IsString() @MaxLength(64) timezone!: string;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(500) address?: string | null;
+  /** PLM-144: the sample meeting at the client's home instead of the showroom. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsBoolean() atClientHome?: boolean | null;
 }
 class SkipStageDto { @IsInt() @Min(1) version!: number; @IsString() @MinLength(1) @MaxLength(2000) note!: string; }
 class AssignStageDto { @IsInt() @Min(1) version!: number; @IsUUID() membershipId!: string; }
 class CompleteSiteVisitDto { @IsInt() @Min(1) version!: number; @IsString() @MinLength(1) @MaxLength(5000) summary!: string; }
 class SiteAnswerDto { @IsString() @MinLength(1) @MaxLength(60) key!: string; @IsString() @MaxLength(2000) answer!: string; }
-class AnswerSiteVisitDto { @IsInt() @Min(1) version!: number; @IsArray() @ArrayMaxSize(40) @ValidateNested({ each: true }) @Type(() => SiteAnswerDto) answers!: SiteAnswerDto[]; }
+class AnswerSiteVisitDto { @IsInt() @Min(1) version!: number; @IsArray() @ArrayMaxSize(80) @ValidateNested({ each: true }) @Type(() => SiteAnswerDto) answers!: SiteAnswerDto[]; }
+class TeamRoleDto {
+  @IsIn(["lead_designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator"]) slot!: string;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() membershipId?: string | null;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsBoolean() notApplicable?: boolean | null;
+}
+class TeamDto {
+  @IsInt() @Min(1) version!: number;
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(6) @ValidateNested({ each: true }) @Type(() => TeamRoleDto) roles!: TeamRoleDto[];
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(500) reason?: string | null;
+}
+class KickoffDto extends StageVersionDto { @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) renderSignoffOn?: string | null; }
+class DeadlineDto { @IsInt() @Min(1) version!: number; @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) dueOn!: string; }
+class RenderSignOffDto extends StageVersionDto {
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) signedOn!: string;
+  @IsUUID() assetId!: string;
+  @IsString() @MinLength(1) @MaxLength(200) signer!: string;
+}
 class SignOffDto extends StageVersionDto {
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) approvedOn!: string;
   @IsUUID() assetId!: string;
@@ -41,6 +60,27 @@ export class DesignJourneyController {
 
   @Post("inspiration/close")
   closeInspiration(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: StageVersionDto) { return this.journey.closeInspiration(actor, workspaceId, caseId, input); }
+
+  @Put("team")
+  setTeam(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: TeamDto) { return this.journey.setTeam(actor, workspaceId, caseId, input); }
+
+  @Post("kickoff/schedule")
+  scheduleKickoff(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: ScheduleDto) { return this.journey.scheduleKickoff(actor, workspaceId, caseId, input); }
+
+  @Post("kickoff/complete")
+  completeKickoff(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: KickoffDto) { return this.journey.completeKickoff(actor, workspaceId, caseId, input); }
+
+  @Post("renders/sign-off")
+  recordRenderSignOff(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: RenderSignOffDto) { return this.journey.recordRenderSignOff(actor, workspaceId, caseId, input); }
+
+  @Post("samples/collected")
+  completeSampleCollection(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: StageVersionDto) { return this.journey.completeSampleCollection(actor, workspaceId, caseId, input); }
+
+  @Post("samples/approve")
+  approveSamples(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: StageVersionDto) { return this.journey.approveSamples(actor, workspaceId, caseId, input); }
+
+  @Post("stages/:stage/deadline")
+  setDeadline(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("stage") stage: string, @Body() input: DeadlineDto) { return this.journey.setDeadline(actor, workspaceId, caseId, stage, input); }
 
   @Post("site-visit/schedule")
   scheduleSiteVisit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: ScheduleDto) { return this.journey.scheduleSiteVisit(actor, workspaceId, caseId, input); }

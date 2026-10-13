@@ -26,9 +26,24 @@ export async function stageProgress(db: Db, workspaceId: string, caseId: string)
 }
 
 /**
+ * PLM-141: in the current order the concept can't be approved before the design site measure is done. True when the
+ * case has no site measure open (the old order, or it is done).
+ */
+export async function siteMeasureDone(db: Db, workspaceId: string, caseId: string) {
+  return !(await db.query(`SELECT 1 FROM design_journey_tasks WHERE workspace_id = $1 AND case_id = $2 AND task = 'site_measure' AND status <> 'done'`, [workspaceId, caseId])).rowCount;
+}
+
+/** The current order's renders end with the client's render sign-off (PLM-143), not with approved files. */
+async function signOffEnds(db: Db, workspaceId: string, caseId: string, stage: JourneyStage) {
+  if (stage !== "renders") return false;
+  return Boolean((await db.query(`SELECT 1 FROM design_journeys WHERE workspace_id = $1 AND case_id = $2 AND flow_version = 2`, [workspaceId, caseId])).rowCount);
+}
+
+/**
  * Completes the current journey stage once every current deliverable in it is client-approved, then
  * checks the next one, so work approved ahead of time finishes its stage as soon as that stage opens.
- * A stage with no deliverables is never completed here (it is skipped explicitly, with a reason).
+ * A stage with no deliverables is never completed here (it is skipped explicitly, with a reason). In the current order
+ * the concept also waits for the site measure, and the renders for the client's sign-off.
  */
 export async function syncDesignStages(db: Db, workspaceId: string, caseId: string, userId: string | null) {
   const completed: JourneyStage[] = [];
@@ -38,8 +53,25 @@ export async function syncDesignStages(db: Db, workspaceId: string, caseId: stri
     if (!active || !isDeliverableStage(active)) break;
     const progress = (await stageProgress(db, workspaceId, caseId)).find((item) => item.stage === active)!;
     if (progress.total === 0 || progress.pending > 0) break;
+    if (active === "concepts" && !(await siteMeasureDone(db, workspaceId, caseId))) break;
+    if (await signOffEnds(db, workspaceId, caseId, active)) break;
     await completeStage(db, workspaceId, caseId, active, userId, null, "approved");
     completed.push(active);
   }
   return completed;
+}
+
+/**
+ * PLM-141/142: once the site measure is done, a concept the client already chose (or whose files are all approved)
+ * completes the concept step. Returns whether it did.
+ */
+export async function completeConceptIfReady(db: Db, workspaceId: string, caseId: string, userId: string | null) {
+  const active = (await db.query(`SELECT 1 FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'concepts' AND status = 'active' FOR UPDATE`, [workspaceId, caseId])).rowCount;
+  if (!active || !(await siteMeasureDone(db, workspaceId, caseId))) return false;
+  const chosen = (await db.query<{ title: string }>(
+    `SELECT option.title FROM design_presentations presentation JOIN design_presentation_options option ON option.workspace_id = presentation.workspace_id AND option.id = presentation.chosen_option_id
+      WHERE presentation.workspace_id = $1 AND presentation.case_id = $2 AND presentation.stage = 'concepts' AND presentation.status = 'chosen' ORDER BY presentation.round DESC LIMIT 1`,
+    [workspaceId, caseId])).rows[0];
+  if (chosen) { await completeStage(db, workspaceId, caseId, "concepts", userId, `Client's choice: ${chosen.title}`, "chosen"); return true; }
+  return (await syncDesignStages(db, workspaceId, caseId, userId)).includes("concepts");
 }

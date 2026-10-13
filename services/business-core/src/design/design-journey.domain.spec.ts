@@ -2,14 +2,23 @@ import { describe, expect, it } from "vitest";
 import { journeyStages, nextStage, siteEvidenceProblem } from "./design-journey.domain";
 
 describe("design journey (PLM-047..053)", () => {
-  it("includes space planning and renders only when the package does", () => {
-    expect(journeyStages({ includesSpacePlanning: false, includesRenders: false })).toEqual(["inspiration", "site_visit", "concepts", "material_selection", "approval"]);
-    expect(journeyStages({ includesSpacePlanning: true, includesRenders: true })).toEqual(["inspiration", "site_visit", "concepts", "space_planning", "material_selection", "renders", "approval"]);
+  it("keeps the old order for journeys started under it: space planning and renders only when the package does", () => {
+    expect(journeyStages({ includesSpacePlanning: false, includesRenders: false }, 1)).toEqual(["inspiration", "site_visit", "concepts", "material_selection", "approval"]);
+    expect(journeyStages({ includesSpacePlanning: true, includesRenders: true }, 1)).toEqual(["inspiration", "site_visit", "concepts", "space_planning", "material_selection", "renders", "approval"]);
+  });
+  it("runs the order of 13 Oct 2026: kick-off after inspiration, renders after the concept, samples after the renders (PLM-140–144)", () => {
+    // Bespoke and Creative Director: renders; space planning folds into the concept (the layout to scale is in every package).
+    expect(journeyStages({ includesSpacePlanning: true, includesRenders: true })).toEqual(["inspiration", "kickoff", "concepts", "renders", "samples", "approval"]);
+    // Concept package: no renders, so samples follow the concept straight away.
+    expect(journeyStages({ includesSpacePlanning: false, includesRenders: false })).toEqual(["inspiration", "kickoff", "concepts", "samples", "approval"]);
   });
   it("moves to the next stage in order", () => {
-    const order = journeyStages({ includesSpacePlanning: false, includesRenders: true });
-    expect(nextStage(order, "material_selection")).toBe("renders");
-    expect(nextStage(order, "approval")).toBeNull();
+    const old = journeyStages({ includesSpacePlanning: false, includesRenders: true }, 1);
+    expect(nextStage(old, "material_selection")).toBe("renders");
+    expect(nextStage(old, "approval")).toBeNull();
+    const current = journeyStages({ includesSpacePlanning: false, includesRenders: true });
+    expect(nextStage(current, "concepts")).toBe("renders");
+    expect(nextStage(current, "renders")).toBe("samples");
   });
   it("needs every wall measured with a photo before the site visit is done", () => {
     expect(siteEvidenceProblem([])).toMatch(/Record the measurements/);
@@ -80,5 +89,84 @@ describe("design flow after Won (PLM-049/050/051/053/128, PLM-081)", () => {
 
   it("gives an order without a design package the site visit and material selection only", () => {
     expect(SITE_AND_MATERIALS_STAGES).toEqual(["site_visit", "material_selection"]);
+  });
+});
+
+import { developmentWindowDays, groupSiteQuestions, kickoffProblem, renderSignOffProblem, requiredSiteQuestions, samplesProblem, scopeMatches } from "./design-journey.domain";
+
+describe("the design order of 13 Oct 2026 (PLM-140–144, PLM-154)", () => {
+  const now = new Date("2026-10-13T08:00:00Z");
+  const timings = { siteVisitHours: 72, designInternalDays: 35, designClientDays: 56, materialSelectionDays: 7, flowVersion: 2 as const, kickoffDays: 5, conceptDays: 7,
+    sampleCollectionDays: 7, sampleMeetingDays: 7, renderInternalDays: 21, renderClientDays: 56 };
+
+  it("dates the kick-off, the concept from the meeting with the development window, the renders to the agreed sign-off and samples in two weeks", () => {
+    expect(stageDeadlines("kickoff", now, timings).dueAt?.toISOString()).toBe("2026-10-18T08:00:00.000Z");
+    const kickoffAt = new Date("2026-10-12T09:00:00Z");
+    const concept = stageDeadlines("concepts", now, timings, { kickoffAt, developmentDays: 28 });
+    expect([concept.dueAt?.toISOString(), concept.clientDueAt?.toISOString()]).toEqual(["2026-10-19T09:00:00.000Z", "2026-11-09T09:00:00.000Z"]);
+    // A meeting booked in the future (not held yet) never pulls the deadline earlier than now.
+    expect(stageDeadlines("concepts", now, timings, { kickoffAt: new Date("2026-10-20T09:00:00Z"), developmentDays: 14 }).dueAt?.toISOString()).toBe("2026-10-20T08:00:00.000Z");
+    const renders = stageDeadlines("renders", now, timings, { renderSignoffDueOn: "2026-12-01" });
+    expect([renders.dueAt?.toISOString(), renders.clientDueAt?.toISOString()]).toEqual(["2026-11-03T08:00:00.000Z", "2026-12-01T12:00:00.000Z"]);
+    const samples = stageDeadlines("samples", now, timings);
+    expect([samples.dueAt?.toISOString(), samples.bookingReminderAt?.toISOString()]).toEqual(["2026-10-27T08:00:00.000Z", "2026-10-20T08:00:00.000Z"]);
+  });
+
+  it("sizes the client-facing development window by the rooms in scope, between its shortest and longest", () => {
+    const window = { minDays: 14, maxDays: 56, daysPerRoom: 7 };
+    expect([0, 1, 3, 5, 12].map((rooms) => developmentWindowDays(rooms, window))).toEqual([14, 14, 21, 35, 56]);
+  });
+
+  it("holds the kick-off only once its meeting took place, with the render sign-off date agreed when the package has renders", () => {
+    const base = { now, today: "2026-10-13", includesRenders: true };
+    expect(kickoffProblem({ ...base, scheduledAt: null, renderSignoffOn: null })).toBe("Book the kick-off meeting first");
+    expect(kickoffProblem({ ...base, scheduledAt: new Date("2026-10-14T09:00:00Z"), renderSignoffOn: "2026-12-01" })).toBe("The kick-off meeting hasn't taken place yet");
+    expect(kickoffProblem({ ...base, scheduledAt: new Date("2026-10-12T09:00:00Z"), renderSignoffOn: null })).toBe("Enter the render sign-off date agreed with the client");
+    expect(kickoffProblem({ ...base, scheduledAt: new Date("2026-10-12T09:00:00Z"), renderSignoffOn: "2026-10-13" })).toBe("The render sign-off date is after today");
+    expect(kickoffProblem({ ...base, scheduledAt: new Date("2026-10-12T09:00:00Z"), renderSignoffOn: "2026-02-30" })).toBe("Enter the render sign-off date agreed with the client");
+    expect(kickoffProblem({ ...base, scheduledAt: new Date("2026-10-12T09:00:00Z"), renderSignoffOn: "2026-12-01" })).toBeNull();
+    expect(kickoffProblem({ ...base, includesRenders: false, scheduledAt: new Date("2026-10-12T09:00:00Z"), renderSignoffOn: null })).toBeNull();
+  });
+
+  it("needs the render sign-off's day (not after today), signer and file", () => {
+    expect(renderSignOffProblem({}, "2026-10-13")).toBe("Enter the day the client signed off the renders");
+    expect(renderSignOffProblem({ signedOn: "2026-10-14", signer: "Maya", assetId: "a" }, "2026-10-13")).toBe("The sign-off date can't be in the future");
+    expect(renderSignOffProblem({ signedOn: "2026-10-13", signer: " ", assetId: "a" }, "2026-10-13")).toBe("Say who signed off the renders");
+    expect(renderSignOffProblem({ signedOn: "2026-10-13", signer: "Maya" }, "2026-10-13")).toBe("Attach the client's render sign-off");
+    expect(renderSignOffProblem({ signedOn: "2026-10-13", signer: "Maya", assetId: "a" }, "2026-10-13")).toBeNull();
+  });
+
+  it("approves samples once collected, after the meeting, with every material confirmed and every outsourced one signed off", () => {
+    const base = { now, collected: true, meetingAt: new Date("2026-10-12T09:00:00Z"), materials: 2, waiting: [] as string[], outsourcedWaiting: [] as string[] };
+    expect(samplesProblem({ ...base, collected: false })).toBe("Collect the samples first");
+    expect(samplesProblem({ ...base, meetingAt: null })).toBe("Book the sample meeting first");
+    expect(samplesProblem({ ...base, meetingAt: new Date("2026-10-14T09:00:00Z") })).toBe("The sample meeting hasn't taken place yet");
+    expect(samplesProblem({ ...base, materials: 0 })).toBe("Add the materials to the list first");
+    expect(samplesProblem({ ...base, waiting: ["Oak"] })).toBe("Waiting for the client's confirmation: Oak");
+    expect(samplesProblem({ ...base, outsourcedWaiting: ["Onyx", "Brass"] })).toBe("Waiting for the sign-off of the outsourced materials: Onyx, Brass");
+    expect(samplesProblem(base)).toBeNull();
+  });
+
+  it("groups the site visit questions by scope: general first, the job's scopes next, the rest optional (PLM-154)", () => {
+    const questions = [
+      { key: "access", question: "Access?" },
+      { key: "bed-size", question: "Bed size?", scope: "Bedrooms" },
+      { key: "family", question: "Family size?", scope: "Kitchen" },
+      { key: "back", question: "Back kitchen?", scope: "kitchen" },
+    ];
+    expect(scopeMatches("Kitchen", ["Main kitchen"])).toBe(true);
+    expect(scopeMatches("Bedrooms", ["Bedroom 2"])).toBe(true);
+    expect(scopeMatches("Bedrooms", ["Living room"])).toBe(false);
+    const groups = groupSiteQuestions(questions, ["Main kitchen", "Living"]);
+    expect(groups.map((group) => [group.scope, group.matches, group.required, group.questions.map((question) => question.key)])).toEqual([
+      [null, true, true, ["access"]], ["Kitchen", true, true, ["family", "back"]], ["Bedrooms", false, false, ["bed-size"]],
+    ]);
+    expect(requiredSiteQuestions(questions, ["Main kitchen"]).map((question) => question.key)).toEqual(["access", "family", "back"]);
+    // The job's scope unknown (no rooms yet, or none matching): every group is asked.
+    expect(requiredSiteQuestions(questions, []).map((question) => question.key)).toEqual(["access", "bed-size", "family", "back"]);
+    expect(requiredSiteQuestions(questions, ["Garage"]).length).toBe(4);
+    // An old list without scopes is one group, asked in full.
+    expect(groupSiteQuestions(DEFAULT_SITE_VISIT_QUESTIONS, ["Kitchen"]).map((group) => [group.scope, group.questions.length])).toEqual([[null, 7]]);
+    expect(normaliseSiteQuestions([{ key: "k", question: "Q?", scope: "  Kitchen  " }, { key: "g", question: "G?", scope: "" }])).toEqual([{ key: "k", question: "Q?", scope: "Kitchen" }, { key: "g", question: "G?" }]);
   });
 });

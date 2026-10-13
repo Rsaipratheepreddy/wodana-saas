@@ -28,7 +28,7 @@ export type CasePlan = {
 
 export const FULL_PLAN: CasePlan = { source: "default", phases: [...engagementPhases], siteVisit: true, design: true, release: "production" };
 
-const DESIGN_DELIVERABLES = new Set(["inspiration", "concepts", "space_planning", "renders", "approval"]);
+const DESIGN_DELIVERABLES = new Set(["inspiration", "kickoff", "concepts", "space_planning", "renders", "samples", "approval"]);
 
 /** A step that asks for a site visit: the sales visit, or the design journey's site visit stage. */
 export const asksSiteVisit = (step: Pick<FlowStepDefinition, "check" | "designStage">) =>

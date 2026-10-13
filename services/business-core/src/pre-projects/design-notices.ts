@@ -42,7 +42,7 @@ export async function noticeDesignStep(db: Db, input: {
 export async function noticeExtraRevision(db: Db, input: { workspaceId: string; caseId: string; designId: string; title: string; stage: string | null; round: number; included: number | null; actorUserId: string; versionId: string }) {
   if (input.included === null || !roundChargeable(input.round, input.included)) return;
   const facts = await caseFacts(db, input.workspaceId, input.caseId);
-  const members = [facts?.accountManagerId, await salesAdminMembership(db, input.workspaceId)].filter((id): id is string => Boolean(id));
+  const members = [facts?.accountManagerId, await salesAdminMembership(db, input.workspaceId, input.caseId)].filter((id): id is string => Boolean(id));
   const recipients = (await db.query<{ userId: string }>(`SELECT DISTINCT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`, [input.workspaceId, members])).rows
     .map((row) => row.userId).filter((userId) => userId !== input.actorUserId);
   const variables = { stage: STAGE_LABELS[(input.stage ?? "concepts") as JourneyStage] ?? "Design", clientName: facts?.clientName ?? "the client", round: String(input.round - 1), included: String(input.included), title: input.title };

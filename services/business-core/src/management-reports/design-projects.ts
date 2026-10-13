@@ -11,27 +11,30 @@ import { proposalRatio } from "./owner-overview";
  * are not one). It is open until its Design approval stage is done, on a case that is not cancelled.
  */
 const JOURNEYS = `journey AS (
-  SELECT j.case_id, j.package_id, j.package_name, j.included_revisions, j.inspiration_days, j.includes_renders, j.started_at, j.approved_on,
+  SELECT j.case_id, j.package_id, j.package_name, j.included_revisions, j.inspiration_days, j.includes_renders, j.started_at, j.approved_on, j.flow_version,
          oc.opportunity_id, oc.reference, oc.title, oc.client, oc.owner, oc.am, oc.case_status, oc.entity_id,
          NOT EXISTS (SELECT 1 FROM design_journey_stages s WHERE s.workspace_id = j.workspace_id AND s.case_id = j.case_id AND s.stage = 'approval' AND s.status = 'done') AS open
     FROM design_journeys j CROSS JOIN p JOIN oc ON oc.case_id = j.case_id
    WHERE j.workspace_id = p.ws AND j.package_id IS NOT NULL AND oc.case_status <> 'cancelled' AND ${OPPORTUNITY_ENTITY}
 )`;
 
-/** The six phases the owner follows; concepts and space planning are "Development". */
-export const DESIGN_PHASES = ["inspiration", "site_visit", "development", "materials", "renders", "approval"] as const;
-
 /**
- * Projects by design stage, live: open design projects by the stage now in progress (Inspiration → Site visit →
- * Development (concepts, space planning) → Materials → Renders → Approval); one with no stage started yet is
- * "Not started".
+ * The phases the owner follows (PLM-130, in the order of 13 Oct 2026): Inspiration → Kick-off → Site visit → Concept →
+ * Renders → Samples → Approval. A concept whose design site measure is still open counts under Site visit. Journeys of
+ * the old order read the same way: concepts and space planning are the Concept, material selection is Samples.
  */
+export const DESIGN_PHASES = ["inspiration", "kickoff", "site_visit", "concept", "renders", "samples", "approval"] as const;
+
+/** Projects by design stage, live: open design projects by the phase now in progress; one with no stage started yet is "Not started". */
 const STAGE_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${JOURNEYS}
 SELECT ${FACT_COLUMNS} FROM (
   SELECT journey.case_id::text AS id, 'case' AS kind, journey.case_id::text AS parent_id, journey.reference, journey.title, journey.client, journey.owner, journey.am::text AS owner_id,
          current_stage.started_at AS at, NULL::text AS amount, NULL::text AS measure, journey.package_name AS detail,
-         jsonb_build_object('period', '1', 'stage', CASE current_stage.stage WHEN 'concepts' THEN 'development' WHEN 'space_planning' THEN 'development'
-           WHEN 'material_selection' THEN 'materials' ELSE COALESCE(current_stage.stage, 'not_started') END) AS dims
+         jsonb_build_object('period', '1', 'stage', CASE
+           WHEN current_stage.stage = 'concepts' AND EXISTS (SELECT 1 FROM design_journey_tasks t WHERE t.workspace_id = p.ws AND t.case_id = journey.case_id
+                                                              AND t.task = 'site_measure' AND t.status = 'open') THEN 'site_visit'
+           WHEN current_stage.stage IN ('concepts', 'space_planning') THEN 'concept' WHEN current_stage.stage = 'material_selection' THEN 'samples'
+           ELSE COALESCE(current_stage.stage, 'not_started') END) AS dims
     FROM journey CROSS JOIN p
     LEFT JOIN LATERAL (SELECT s.stage, s.started_at FROM design_journey_stages s WHERE s.workspace_id = p.ws AND s.case_id = journey.case_id AND s.status = 'active'
                         ORDER BY s.position LIMIT 1) current_stage ON true
@@ -85,8 +88,11 @@ const packageMix: KpiSpec = {
  * Overdue, live, on open design projects:
  *   inspiration open past its week (the inspiration days the journey started with, counted from the first inspiration,
  *     else from when the stage started);
- *   site visit not done within its hours (72 by default) of the stage starting;
- *   design (concepts, space planning) or renders past their internal deadline.
+ *   the kick-off not held within its days of inspiration ending;
+ *   the site visit not done within its hours (72 by default) of the stage starting, or the design site measure not done
+ *     within its days (3 by default) of the kick-off;
+ *   design (concepts, space planning) or renders past their internal deadline;
+ *   samples not approved by their deadline (collection and the sample meeting).
  */
 const OVERDUE_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${JOURNEYS},
 late AS (
@@ -94,7 +100,12 @@ late AS (
          CASE WHEN s.stage = 'inspiration' THEN COALESCE(s.due_at, s.started_at + make_interval(days => journey.inspiration_days)) ELSE s.due_at END AS deadline
     FROM journey CROSS JOIN p
     JOIN design_journey_stages s ON s.workspace_id = p.ws AND s.case_id = journey.case_id AND s.status = 'active'
-     AND s.stage IN ('inspiration', 'site_visit', 'concepts', 'space_planning', 'renders')
+     AND s.stage IN ('inspiration', 'kickoff', 'site_visit', 'concepts', 'space_planning', 'renders', 'samples')
+   WHERE journey.open
+  UNION ALL
+  SELECT journey.*, 'site_visit', t.owner_membership_id, t.due_at
+    FROM journey CROSS JOIN p
+    JOIN design_journey_tasks t ON t.workspace_id = p.ws AND t.case_id = journey.case_id AND t.task = 'site_measure' AND t.status = 'open'
    WHERE journey.open
 )
 SELECT ${FACT_COLUMNS} FROM (
@@ -113,7 +124,7 @@ const overdue: KpiSpec = {
   facts: (ctx) => readFacts(ctx, OVERDUE_SQL),
   build: (_ctx, facts) => ({
     code: "design_overdue", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
-    extra: Object.fromEntries(["inspiration", "site_visit", "design", "renders"].map((type) => [type, facts.filter((fact) => fact.dims.type === type).length])),
+    extra: Object.fromEntries(["inspiration", "kickoff", "site_visit", "design", "renders", "samples"].map((type) => [type, facts.filter((fact) => fact.dims.type === type).length])),
     chart: { type: "list", bucket: "period=1" },
   }),
 };
@@ -141,8 +152,9 @@ const revisions: KpiSpec = {
 };
 
 /**
- * Workload, live: open design projects per Interior Designer (the opportunity's dedicated designer) and per Visualiser
- * (who owns the renders stage, while renders aren't done). A project without one is under "Not assigned".
+ * Workload, live: open design projects per Interior Designer (the opportunity's dedicated designer, who is the allocated
+ * lead designer from 13 Oct 2026) and per Visualiser while renders aren't done (the Visualiser tagged on the case, else
+ * who owns the renders stage of a journey in the old order). A project without one is under "Not assigned".
  */
 const WORKLOAD_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${JOURNEYS}
 SELECT ${FACT_COLUMNS} FROM (
@@ -154,7 +166,9 @@ SELECT ${FACT_COLUMNS} FROM (
     CROSS JOIN LATERAL (
       SELECT 'designer' AS role, (SELECT designer.membership_id FROM crm_opportunity_designer designer WHERE designer.workspace_id = p.ws AND designer.opportunity_id = journey.opportunity_id) AS membership_id
       UNION ALL
-      SELECT 'visualiser', s.owner_membership_id FROM design_journey_stages s
+      SELECT 'visualiser', COALESCE((SELECT a.membership_id FROM project_assignments a JOIN workspace_design_settings settings ON settings.workspace_id = a.workspace_id
+                                      WHERE a.workspace_id = p.ws AND a.case_id = journey.case_id AND a.active AND settings.visualiser_role_key = ANY(a.role_keys)
+                                      ORDER BY a.id LIMIT 1), CASE WHEN journey.flow_version = 1 THEN s.owner_membership_id END) FROM design_journey_stages s
        WHERE s.workspace_id = p.ws AND s.case_id = journey.case_id AND s.stage = 'renders' AND s.status <> 'done'
     ) person
     LEFT JOIN workspace_memberships person_member ON person_member.workspace_id = p.ws AND person_member.id = person.membership_id

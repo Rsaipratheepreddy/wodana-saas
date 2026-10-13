@@ -80,8 +80,8 @@ const CHECK: Record<SimpleCheck, { key: string; label: string; done: (facts: Che
 };
 
 const DESIGN_STAGE_LABELS: Record<string, string> = {
-  inspiration: "Inspiration", site_visit: "Site visit", concepts: "Concepts", space_planning: "Space planning",
-  material_selection: "Material selection", renders: "Renders", approval: "Design approval",
+  inspiration: "Inspiration", kickoff: "Kick-off meeting", site_visit: "Site visit", concepts: "Concepts", space_planning: "Space planning",
+  material_selection: "Material selection", renders: "Renders", samples: "Samples", approval: "Design approval",
 };
 
 /** The pipeline step names the r30 API returned for the standard columns (kept for existing clients). */

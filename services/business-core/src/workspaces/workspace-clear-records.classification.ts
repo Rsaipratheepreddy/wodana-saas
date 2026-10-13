@@ -270,6 +270,7 @@ const clear = [
   // Pre-project cases, design and site
   "design_journey_events",
   "design_journey_stages",
+  "design_journey_tasks",
   "design_journeys",
   "design_ledger_alternatives",
   "design_ledger_entries",

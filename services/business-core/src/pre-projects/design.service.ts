@@ -293,7 +293,9 @@ export class DesignService {
  private async validStage(client:PoolClient,w:string,c:string,stage:string|null){
   if(stage===null)return;
   const stages=(await client.query<{stage:string}>(`SELECT stage FROM design_journey_stages WHERE workspace_id=$1 AND case_id=$2`,[w,c])).rows.map(row=>row.stage);
-  if(stages.length&&!stages.includes(stage))throw new BadRequestException(`${STAGE_LABELS[stage as JourneyStage]??'This stage'} is not part of this design package.`);
+  // Material and finish boards belong to the materials step: samples in the order of 13 Oct 2026 (PLM-144).
+  const own=stage==='material_selection'&&stages.includes('samples')?'samples':stage;
+  if(stages.length&&!stages.includes(own))throw new BadRequestException(`${STAGE_LABELS[stage as JourneyStage]??'This stage'} is not part of this design package.`);
  }
  private mutable(design:{archivedAt:string|null;version:number},version:number) { this.brief.version(design.version,version);if(design.archivedAt)throw new ConflictException('Restore this design before changing it.'); }
  private async belongs(client:PoolClient,table:'pre_project_rooms'|'pre_project_brief_assets',workspaceId:string,caseId:string,id:string,label:string) {

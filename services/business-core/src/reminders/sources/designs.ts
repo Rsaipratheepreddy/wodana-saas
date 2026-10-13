@@ -1,7 +1,7 @@
-import { STAGE_LABELS, type JourneyStage } from "../../design/design-journey.domain";
+import { STAGE_LABELS, TASK_LABELS, type JourneyStage, type JourneyTask } from "../../design/design-journey.domain";
 import { deliverClientDefault } from "../delivery/client-router";
 import { membershipsOfUsers } from "../delivery/people";
-import type { DueItem, ReminderSource } from "../engine/engine";
+import type { Db, DueItem, ReminderSource } from "../engine/engine";
 import { encode, idsOf, keysOf, managersByProject, readCases, UUID } from "./support";
 
 const DAY = 86_400_000;
@@ -93,7 +93,8 @@ export const designDecisionSource: ReminderSource = {
  * design.stage_due (replaces the overdue notice of design deadlines; the stage's overdue mark and history stay): an
  * active design stage with a due date. Its owner (else the case's designer) hears the day before, on the day and
  * after (−1, 0, +1, +3), with the account manager copied; then their team lead and the owner. Done when the stage is
- * done (or skipped, which also leaves it inactive).
+ * done (or skipped, which also leaves it inactive). The work inside a step (design_journey_tasks: the design team to
+ * allocate, the design site measure, the sample collection) is chased the same way until it is done.
  */
 export const designStageSource: ReminderSource = {
   kind: "design.stage_due", module: "design", audience: "staff", critical: false, notify: "engine",
@@ -108,8 +109,20 @@ export const designStageSource: ReminderSource = {
         WHERE stage.workspace_id = $1 AND stage.status = 'active' AND stage.due_at IS NOT NULL AND stage.stage <> 'inspiration'
           AND stage.due_at BETWEEN $2::timestamptz - interval '90 days' AND $2::timestamptz + interval '14 days'
         ORDER BY stage.due_at DESC LIMIT $3`, [workspaceId, now, limit])).rows;
-    const cases = await readCases(db, workspaceId, rows.map((row) => row.caseId));
-    return rows.flatMap((row): DueItem[] => {
+    // The work inside a step (PLM-141, PLM-144, PLM-151): the design team to allocate (the Account Manager), the design
+    // site measure (overdue after its 3 days, the lead designer with the junior copied) and the sample collection.
+    const tasks = (await db.query<{ caseId: string; task: JourneyTask; dueAt: Date; owner: string | null; designer: string | null }>(
+      `SELECT task.case_id AS "caseId", task.task, task.due_at AS "dueAt", owner.id AS owner, designer.membership_id AS designer
+         FROM design_journey_tasks task
+         JOIN pre_project_cases pre_case ON pre_case.workspace_id = task.workspace_id AND pre_case.id = task.case_id AND pre_case.status = 'active'
+         LEFT JOIN workspace_memberships owner ON owner.workspace_id = task.workspace_id AND owner.id = task.owner_membership_id AND owner.status = 'active'
+         LEFT JOIN crm_opportunity_designer designer ON designer.workspace_id = pre_case.workspace_id AND designer.opportunity_id = pre_case.opportunity_id
+        WHERE task.workspace_id = $1 AND task.status = 'open' AND task.due_at IS NOT NULL
+          AND task.due_at BETWEEN $2::timestamptz - interval '90 days' AND $2::timestamptz + interval '14 days'
+        ORDER BY task.due_at DESC LIMIT $3`, [workspaceId, now, limit])).rows;
+    const cases = await readCases(db, workspaceId, [...rows.map((row) => row.caseId), ...tasks.map((row) => row.caseId)]);
+    const juniors = await caseRole(db, workspaceId, tasks.filter((row) => row.task === "site_measure").map((row) => row.caseId), "junior_designer_role_key");
+    const stageItems = rows.flatMap((row): DueItem[] => {
       const facts = cases.get(row.caseId);
       if (!facts) return [];
       const owner = row.owner ?? row.designer ?? facts.accountMembershipId;
@@ -121,16 +134,52 @@ export const designStageSource: ReminderSource = {
         href: `/workspace/pre-projects/cases/${encode(row.caseId)}/overview`, variables: { client: facts.client },
       }];
     });
+    const taskItems = tasks.flatMap((row): DueItem[] => {
+      const facts = cases.get(row.caseId);
+      if (!facts) return [];
+      const owner = row.owner ?? (row.task === "team_allocation" ? facts.accountMembershipId : row.designer) ?? facts.accountMembershipId;
+      const cc = [...new Set([row.task === "site_measure" ? juniors.get(row.caseId) : null, row.task === "team_allocation" ? null : facts.accountMembershipId])]
+        .filter((id): id is string => Boolean(id) && id !== owner);
+      return [{
+        key: `design_task:${row.caseId}:${row.task}`, sourceType: "design_task", sourceId: `${row.caseId}:${row.task}`, jobSource: { type: "case", id: row.caseId },
+        projectId: facts.projectId, caseId: row.caseId, partyId: facts.partyId, ownerMembershipId: owner, ccMembershipIds: cc,
+        dueAt: new Date(row.dueAt), title: TASK_LABELS[row.task] ?? row.task, context: facts.client,
+        href: `/workspace/pre-projects/cases/${encode(row.caseId)}/${row.task === "site_measure" ? "site" : "overview"}`, variables: { client: facts.client },
+      }];
+    });
+    return [...stageItems, ...taskItems];
   },
   async stillOpen(db, workspaceId, keys, at) {
-    const pairs = keys.map((key) => key.split(":")).filter((parts) => parts[0] === "design_stage" && parts.length === 3 && UUID.test(parts[1]));
-    if (!pairs.length) return new Set();
+    const split = keys.map((key) => key.split(":")).filter((parts) => parts.length === 3 && UUID.test(parts[1]));
+    const pairs = split.filter((parts) => parts[0] === "design_stage");
+    const taskPairs = split.filter((parts) => parts[0] === "design_task");
     const horizon = at ? new Date(at.now.getTime() + 14 * DAY) : null;
-    return new Set((await db.query<{ key: string }>(
+    const open = new Set<string>();
+    if (pairs.length) for (const row of (await db.query<{ key: string }>(
       `SELECT 'design_stage:' || stage.case_id || ':' || stage.stage AS key FROM design_journey_stages stage
          JOIN pre_project_cases pre_case ON pre_case.workspace_id = stage.workspace_id AND pre_case.id = stage.case_id AND pre_case.status = 'active'
         WHERE stage.workspace_id = $1 AND (stage.case_id, stage.stage) IN (SELECT * FROM unnest($2::uuid[], $3::text[]))
           AND stage.status = 'active' AND stage.due_at IS NOT NULL AND ($4::timestamptz IS NULL OR stage.due_at <= $4)`,
-      [workspaceId, pairs.map((parts) => parts[1]), pairs.map((parts) => parts[2]), horizon])).rows.map((row) => row.key));
+      [workspaceId, pairs.map((parts) => parts[1]), pairs.map((parts) => parts[2]), horizon])).rows) open.add(row.key);
+    if (taskPairs.length) for (const row of (await db.query<{ key: string }>(
+      `SELECT 'design_task:' || task.case_id || ':' || task.task AS key FROM design_journey_tasks task
+         JOIN pre_project_cases pre_case ON pre_case.workspace_id = task.workspace_id AND pre_case.id = task.case_id AND pre_case.status = 'active'
+        WHERE task.workspace_id = $1 AND (task.case_id, task.task) IN (SELECT * FROM unnest($2::uuid[], $3::text[]))
+          AND task.status = 'open' AND task.due_at IS NOT NULL AND ($4::timestamptz IS NULL OR task.due_at <= $4)`,
+      [workspaceId, taskPairs.map((parts) => parts[1]), taskPairs.map((parts) => parts[2]), horizon])).rows) open.add(row.key);
+    return open;
   },
 };
+
+/** Who holds one of the design team's roles (a settings column naming the role key) on each case. */
+async function caseRole(db: Db, workspaceId: string, caseIds: string[], column: "junior_designer_role_key") {
+  if (!caseIds.length) return new Map<string, string>();
+  const rows = (await db.query<{ caseId: string; membershipId: string }>(
+    `SELECT DISTINCT ON (assignment.case_id) assignment.case_id AS "caseId", assignment.membership_id AS "membershipId"
+       FROM project_assignments assignment
+       JOIN workspace_memberships member ON member.workspace_id = assignment.workspace_id AND member.id = assignment.membership_id AND member.status = 'active'
+       JOIN workspace_design_settings settings ON settings.workspace_id = assignment.workspace_id
+      WHERE assignment.workspace_id = $1 AND assignment.case_id = ANY($2::uuid[]) AND assignment.active AND settings.${column} = ANY(assignment.role_keys)
+      ORDER BY assignment.case_id, assignment.id`, [workspaceId, [...new Set(caseIds)]])).rows;
+  return new Map(rows.map((row) => [row.caseId, row.membershipId]));
+}

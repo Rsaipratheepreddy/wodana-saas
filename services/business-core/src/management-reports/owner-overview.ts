@@ -313,6 +313,16 @@ SELECT ${FACT_COLUMNS} FROM (
     LEFT JOIN users stage_user ON stage_user.id = stage_member.user_id
    WHERE s.workspace_id = p.ws AND s.status = 'active' AND s.due_at < p.now_at AND oc.case_status NOT IN ('cancelled') AND ${OPPORTUNITY_ENTITY}
   UNION ALL
+  -- The work inside a design step (the design site measure, the sample collection, the design team to allocate).
+  SELECT t.case_id::text || ':' || t.task, 'case', t.case_id::text, oc.reference, oc.title, oc.client, COALESCE(NULLIF(btrim(task_user.display_name), ''), task_user.primary_email, oc.owner),
+         COALESCE(t.owner_membership_id, oc.am)::text, t.due_at, NULL, (p.today - (t.due_at AT TIME ZONE p.tz)::date)::text, t.task,
+         jsonb_build_object('period', '1', 'type', 'design_stage', 'stage', t.task)
+    FROM design_journey_tasks t CROSS JOIN p
+    JOIN oc ON oc.case_id = t.case_id
+    LEFT JOIN workspace_memberships task_member ON task_member.workspace_id = t.workspace_id AND task_member.id = t.owner_membership_id
+    LEFT JOIN users task_user ON task_user.id = task_member.user_id
+   WHERE t.workspace_id = p.ws AND t.status = 'open' AND t.due_at < p.now_at AND oc.case_status NOT IN ('cancelled') AND ${OPPORTUNITY_ENTITY}
+  UNION ALL
   SELECT j.case_id::text || ':estimate', 'case', j.case_id::text, oc.reference, oc.title, oc.client, oc.owner, oc.am::text, j.estimate_due_at, NULL,
          (p.today - (j.estimate_due_at AT TIME ZONE p.tz)::date)::text, 'estimate', jsonb_build_object('period', '1', 'type', 'estimate')
     FROM design_journeys j CROSS JOIN p JOIN oc ON oc.case_id = j.case_id

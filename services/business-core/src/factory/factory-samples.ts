@@ -41,7 +41,7 @@ const APPOINTMENT_DAY = (alias: string, caseColumn = "case_id") => `(SELECT (app
     FROM design_journey_stages stage
     JOIN crm_appointments appointment ON appointment.workspace_id = stage.workspace_id AND appointment.activity_id = stage.activity_id
     JOIN workspaces workspace ON workspace.id = stage.workspace_id
-   WHERE stage.workspace_id = ${alias}.workspace_id AND stage.case_id = ${alias}.${caseColumn} AND stage.stage = 'material_selection'
+   WHERE stage.workspace_id = ${alias}.workspace_id AND stage.case_id = ${alias}.${caseColumn} AND stage.stage IN ('material_selection', 'samples')
      AND appointment.attendance_status <> 'cancelled' LIMIT 1)`;
 
 /** The case's material selection appointment day (in the workspace's time zone), when one is booked. */

@@ -114,6 +114,11 @@ const DESIGN_SECTIONS: Array<[string, string]> = [
   ["inspiration", "inspiration"], ["site_visit", "site_visit"], ["concepts", "concepts"], ["space_planning", "space_planning"],
   ["material_list", "material_selection"], ["renders", "renders"], ["design_approval", "approval"],
 ];
+/** The design order of 13 Oct 2026 (PLM-140–144): the site measure inside the concept reads as the site visit. */
+const CURRENT_DESIGN_SECTIONS: Array<[string, string]> = [
+  ["inspiration", "inspiration"], ["kickoff", "kickoff"], ["site_visit", "site_visit"], ["concepts", "concepts"], ["renders", "renders"], ["samples", "samples"],
+  ["design_approval", "approval"],
+];
 
 /**
  * The Deal File's contents (PLM-123): what every Deal File holds, then what the enquiry type adds — Furniture (items,
@@ -161,7 +166,9 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
   if (design) {
     const proposal = live.proposals.find((item) => item.kind === "design");
     sections.push({ key: "design_fee_proposal", group: "design", state: state(Boolean(proposal?.wonAt) || data.quotes.some((item) => item.round === "design" && item.status === "accepted"), Boolean(proposal)), href: caseHref("quotations") });
-    for (const [key, stage] of DESIGN_SECTIONS) {
+    // A journey started in the old order keeps its own steps; a new one (or none yet) shows the current order.
+    const current = !Object.keys(live.designStages).length || "kickoff" in live.designStages;
+    for (const [key, stage] of current ? CURRENT_DESIGN_SECTIONS : DESIGN_SECTIONS) {
       const status = live.designStages[stage];
       if (!status && ["space_planning", "renders"].includes(stage)) continue;
       sections.push({ key, group: "design", state: state(status === "done", status === "active"), href: caseHref("designs") });
@@ -194,7 +201,9 @@ async function dealLive(db: Db, workspaceId: string, caseId: string, opportunity
   }>(
     `SELECT project.id AS "projectId", choice.flow, opportunity.furniture_path AS "furniturePath", opportunity.materials_change AS "materialsChange",
             (SELECT count(*)::int FROM crm_opportunity_payment_proofs proof WHERE proof.workspace_id = $1 AND proof.opportunity_id = opportunity.id) AS "proofCount",
-            (SELECT jsonb_object_agg(stage.stage, stage.status) FROM design_journey_stages stage WHERE stage.workspace_id = $1 AND stage.case_id = $2) AS stages,
+            (SELECT jsonb_object_agg(stage.stage, stage.status) FROM design_journey_stages stage WHERE stage.workspace_id = $1 AND stage.case_id = $2)
+              || coalesce((SELECT jsonb_build_object('site_visit', CASE task.status WHEN 'done' THEN 'done' ELSE 'active' END) FROM design_journey_tasks task
+                            WHERE task.workspace_id = $1 AND task.case_id = $2 AND task.task = 'site_measure'), '{}'::jsonb) AS stages,
             (SELECT count(*)::int FROM project_boq_lines line WHERE line.workspace_id = $1 AND line.project_id = project.id) AS "boqLines",
             (SELECT count(*) FILTER (WHERE work.status <> 'cancelled')::int FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS "workTotal",
             (SELECT count(*) FILTER (WHERE work.status IN ('ready', 'short_closed'))::int FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS "workReady",

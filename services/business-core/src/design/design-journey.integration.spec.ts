@@ -72,7 +72,8 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
 
   it("runs inspiration, then a site visit due within the configured hours that needs every wall measured with photos", async () => {
     await withCase({ spacePlanning: true, renders: true }, async (client, ids, service) => {
-      const started = await service.start(actor, ids.workspaceId, ids.caseId);
+      await startJourney(client, ids.workspaceId, ids.caseId, ids.amUser, { flow: 1 }); // A journey started before 13 Oct 2026 keeps the old order.
+      const started = await service.get(actor, ids.workspaceId, ids.caseId);
       expect(started.stages.map((row) => [row.stage, row.status])).toEqual([["inspiration", "active"], ["site_visit", "locked"], ["concepts", "locked"], ["space_planning", "locked"], ["material_selection", "locked"], ["renders", "locked"], ["approval", "locked"]]);
       expect((await stage(client, ids, "inspiration")).due_at).toBeNull();
       await expect(service.start(actor, ids.workspaceId, ids.caseId)).rejects.toThrow(/already started/);
@@ -131,7 +132,7 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
 
   it("ends a lapsed inspiration week and alerts once when a stage runs late", async () => {
     await withCase({ spacePlanning: false, renders: false }, async (client, ids) => {
-      await startJourney(client, ids.workspaceId, ids.caseId, ids.amUser);
+      await startJourney(client, ids.workspaceId, ids.caseId, ids.amUser, { flow: 1 });
       expect((await client.query(`SELECT count(*)::int AS n FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId])).rows[0].n).toBe(5);
       await client.query(`UPDATE design_journey_stages SET due_at = now() - interval '1 minute' WHERE workspace_id = $1 AND case_id = $2 AND stage = 'inspiration'`, [ids.workspaceId, ids.caseId]);
       expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ closed: 1, alerted: 0 });
@@ -150,7 +151,7 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
 
   it("completes design stages from approved deliverables, skips an unneeded one and signs off only when everything is approved", async () => {
     await withCase({ spacePlanning: true, renders: false }, async (client, ids, service) => {
-      await service.start(actor, ids.workspaceId, ids.caseId);
+      await startJourney(client, ids.workspaceId, ids.caseId, ids.amUser, { flow: 1 });
       await client.query(`UPDATE design_journey_stages SET status = CASE stage WHEN 'inspiration' THEN 'done' WHEN 'site_visit' THEN 'done' WHEN 'concepts' THEN 'active' ELSE status END,
         completed_at = CASE WHEN stage IN ('inspiration','site_visit') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]);
       const user = ids.amUser, asset = randomUUID();
@@ -273,7 +274,7 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
 
   it("assigns the render task to the Visualiser once the material list is confirmed (PLM-051)", async () => {
     await withCase({ spacePlanning: false, renders: true }, async (client, ids, service) => {
-      await service.start(actor, ids.workspaceId, ids.caseId);
+      await startJourney(client, ids.workspaceId, ids.caseId, ids.amUser, { flow: 1 });
       await client.query(`UPDATE design_journey_stages SET status = CASE WHEN stage IN ('inspiration','site_visit','concepts') THEN 'done' WHEN stage = 'material_selection' THEN 'active' ELSE status END,
         completed_at = CASE WHEN stage IN ('inspiration','site_visit','concepts') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]);
       const version = (await stage(client, ids, "material_selection")).version;
@@ -282,8 +283,8 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       expect(renders).toMatchObject({ status: "active", ownerName: "Vik Visualiser" });
       expect(Math.round((new Date(renders.dueAt as string).getTime() - Date.now()) / 86_400_000)).toBe(21);
       const task = (await client.query(`SELECT title, owner_membership_id AS owner FROM crm_activities WHERE workspace_id = $1 AND id = $2`, [ids.workspaceId, renders.activityId])).rows[0];
-      expect(task).toEqual({ title: "3D renders from the confirmed material list", owner: ids.visualiser });
-      const told = (await client.query(`SELECT recipient_id FROM notifications WHERE workspace_id = $1 AND subject = '3D renders · Maya Client' ORDER BY recipient_id`, [ids.workspaceId])).rows.map((row) => row.recipient_id);
+      expect(task).toEqual({ title: "Renders from the confirmed material list", owner: ids.visualiser });
+      const told = (await client.query(`SELECT recipient_id FROM notifications WHERE workspace_id = $1 AND subject = 'Renders · Maya Client' ORDER BY recipient_id`, [ids.workspaceId])).rows.map((row) => row.recipient_id);
       expect(told).toEqual([ids.amUser, ids.designerUser, ids.visualiserUser].sort());
     });
   });
@@ -291,7 +292,7 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
   it("gives the 3D renders their own internal and client deadlines when the firm sets them (Palm: 5 weeks inside, 8 weeks for the client)", async () => {
     await withCase({ spacePlanning: false, renders: true }, async (client, ids, service) => {
       await client.query(`UPDATE workspace_design_settings SET render_internal_days = 35, render_client_days = 56 WHERE workspace_id = $1`, [ids.workspaceId]);
-      await service.start(actor, ids.workspaceId, ids.caseId);
+      await startJourney(client, ids.workspaceId, ids.caseId, ids.amUser, { flow: 1 });
       await client.query(`UPDATE design_journey_stages SET status = CASE WHEN stage IN ('inspiration','site_visit','concepts') THEN 'done' WHEN stage = 'material_selection' THEN 'active' ELSE status END,
         completed_at = CASE WHEN stage IN ('inspiration','site_visit','concepts') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]);
       const view = await service.skipStage(actor, ids.workspaceId, ids.caseId, "material_selection", { version: (await stage(client, ids, "material_selection")).version, note: "Client-supplied finishes" });

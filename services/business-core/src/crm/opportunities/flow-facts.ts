@@ -85,9 +85,17 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
             EXISTS (SELECT 1 FROM commercial_payments payment WHERE payment.workspace_id = opportunity.workspace_id AND payment.case_id = source_case.id
                       AND payment.status = 'verified') AS "verifiedPayment",
             EXISTS (SELECT 1 FROM commercial_deal_files deal WHERE deal.workspace_id = opportunity.workspace_id AND deal.case_id = source_case.id) AS "dealApproved",
-            (SELECT array_agg(stage.stage ORDER BY stage.position) FROM design_journey_stages stage
-              WHERE stage.workspace_id = opportunity.workspace_id AND stage.case_id = source_case.id AND stage.status = 'done') AS "designStagesDone",
-            site_visit.completed_at AS "siteVisitAt", site_visit_user.display_name AS "siteVisitBy",
+            -- The done design stages; in the order of 13 Oct 2026 the design site measure counts as the site visit and samples as
+            -- material selection (PLM-141, PLM-144), so a flow step on either reads the same on every journey.
+            (SELECT array_agg(done.stage ORDER BY done.position) FROM (
+               SELECT stage.stage, stage.position FROM design_journey_stages stage
+                WHERE stage.workspace_id = opportunity.workspace_id AND stage.case_id = source_case.id AND stage.status = 'done'
+               UNION ALL
+               SELECT 'site_visit', 0 FROM design_journey_tasks task WHERE task.workspace_id = opportunity.workspace_id AND task.case_id = source_case.id AND task.task = 'site_measure' AND task.status = 'done'
+               UNION ALL
+               SELECT 'material_selection', stage.position FROM design_journey_stages stage
+                WHERE stage.workspace_id = opportunity.workspace_id AND stage.case_id = source_case.id AND stage.stage = 'samples' AND stage.status = 'done') done) AS "designStagesDone",
+            COALESCE(site_visit.completed_at, site_measure.completed_at) AS "siteVisitAt", COALESCE(site_visit_user.display_name, site_measure_user.display_name) AS "siteVisitBy",
             EXISTS (SELECT 1 FROM crm_project_links link JOIN project_material_revisions revision
                       ON revision.workspace_id = link.workspace_id AND revision.project_id = link.project_id AND revision.status = 'signed_off'
                      WHERE link.workspace_id = opportunity.workspace_id AND link.opportunity_id = opportunity.id) AS "materialListSignedOff"
@@ -105,6 +113,9 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
        LEFT JOIN design_journey_stages site_visit ON site_visit.workspace_id = opportunity.workspace_id AND site_visit.case_id = source_case.id
              AND site_visit.stage = 'site_visit' AND site_visit.status = 'done'
        LEFT JOIN users site_visit_user ON site_visit_user.id = site_visit.completed_by
+       LEFT JOIN design_journey_tasks site_measure ON site_measure.workspace_id = opportunity.workspace_id AND site_measure.case_id = source_case.id
+             AND site_measure.task = 'site_measure' AND site_measure.status = 'done'
+       LEFT JOIN users site_measure_user ON site_measure_user.id = site_measure.completed_by
        LEFT JOIN LATERAL (SELECT count(*)::int AS count, min(proof.recorded_at) AS at,
                                  (array_agg(proof.recorded_by ORDER BY proof.recorded_at))[1] AS by
                             FROM crm_opportunity_payment_proofs proof WHERE proof.workspace_id = opportunity.workspace_id AND proof.opportunity_id = opportunity.id) proofs ON true

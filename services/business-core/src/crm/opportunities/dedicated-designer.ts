@@ -14,6 +14,26 @@ export async function assignDesignerToCase(db: Db, workspaceId: string, caseId: 
     [workspaceId, caseId]);
 }
 
+/**
+ * PLM-151: the lead designer allocated on the case becomes the opportunity's dedicated designer, so everything that
+ * follows "the designer" (notices, appointments, the client's portal) follows the lead. The change is kept in the
+ * designer history with its reason. Nothing is written when they are already the designer.
+ */
+export async function setDedicatedDesigner(db: Db, workspaceId: string, opportunityId: string, membershipId: string, reason: string, userId: string) {
+  const current = (await db.query<{ membershipId: string }>(`SELECT membership_id AS "membershipId" FROM crm_opportunity_designer WHERE workspace_id = $1 AND opportunity_id = $2 FOR UPDATE`,
+    [workspaceId, opportunityId])).rows[0]?.membershipId ?? null;
+  if (current === membershipId) return false;
+  await db.query(
+    `INSERT INTO crm_opportunity_designer (workspace_id, opportunity_id, membership_id, assigned_by) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (workspace_id, opportunity_id) DO UPDATE SET membership_id = excluded.membership_id, assigned_by = excluded.assigned_by, assigned_at = now(),
+       version = crm_opportunity_designer.version + 1`, [workspaceId, opportunityId, membershipId, userId]);
+  await db.query(`INSERT INTO crm_opportunity_designer_history (workspace_id, opportunity_id, from_membership_id, to_membership_id, reason, changed_by, changed_at) VALUES ($1, $2, $3, $4, $5, $6, clock_timestamp())`,
+    [workspaceId, opportunityId, current, membershipId, reason, userId]);
+  if (current) await db.query(`DELETE FROM crm_opportunity_team WHERE workspace_id = $1 AND opportunity_id = $2 AND membership_id = $3 AND role = 'designer'`, [workspaceId, opportunityId, current]);
+  await db.query(`INSERT INTO crm_opportunity_team (workspace_id, opportunity_id, membership_id, role) VALUES ($1, $2, $3, 'designer') ON CONFLICT DO NOTHING`, [workspaceId, opportunityId, membershipId]);
+  return true;
+}
+
 /** The dedicated designer for the case's opportunity, if one was chosen. */
 export async function caseDesigner(db: Db, workspaceId: string, caseId: string) {
   return (await db.query<{ membershipId: string }>(

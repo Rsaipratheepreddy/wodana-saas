@@ -240,7 +240,7 @@ integration("design decisions: presentations and the materials ledger (plan §6.
   it("presents concept options as files or links, takes the client's choice in the portal and flags the chargeable revision", async () => {
     const ids = await seed();
     const { decisions, journey } = services(ids, ALL);
-    await asApp(ids.workspaceId, ids.opsUser, (client) => client.query(`UPDATE design_journey_stages SET status = CASE WHEN stage IN ('inspiration', 'site_visit') THEN 'done' WHEN stage = 'concepts' THEN 'active' ELSE status END, completed_at = CASE WHEN stage IN ('inspiration', 'site_visit') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]));
+    await asApp(ids.workspaceId, ids.opsUser, (client) => client.query(`UPDATE design_journey_stages SET status = CASE WHEN stage IN ('inspiration', 'kickoff', 'site_visit') THEN 'done' WHEN stage = 'concepts' THEN 'active' ELSE status END, completed_at = CASE WHEN stage IN ('inspiration', 'kickoff', 'site_visit') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]));
     const presentation = { id: randomUUID(), stage: "concepts", options: [{ id: randomUUID(), title: "Warm minimal", linkUrl: "https://www.canva.com/design/warm" }, { id: randomUUID(), title: "Coastal", linkUrl: "https://www.canva.com/design/coastal" }] };
     await expect(decisions.createPresentation(actor, ids.workspaceId, ids.caseId, { ...presentation, options: [{ id: randomUUID(), title: "Bad", linkUrl: "http://example.com" }] })).rejects.toThrow(/https/);
     let view = await decisions.createPresentation(actor, ids.workspaceId, ids.caseId, presentation);
@@ -272,9 +272,9 @@ integration("design decisions: presentations and the materials ledger (plan §6.
     expect(view.revisions?.concepts).toEqual({ used: 3, included: 2, chargeable: true });
     const extra = (await asApp(ids.workspaceId, ids.opsUser, (client) => client.query(`SELECT recipient_id FROM notifications WHERE workspace_id = $1 AND event_type = 'design.extra_revision' AND channel = 'in_app'`, [ids.workspaceId]))).rows;
     expect(extra.map((row) => row.recipient_id).sort()).toEqual([ids.amUser, ids.adminUser].sort());
-    // The client's choice completes Concepts; material selection is next.
+    // The client's choice completes the concept (no site measure open); samples are next (the Concept package has no renders).
     const after = await journey.get(actor, ids.workspaceId, ids.caseId);
-    expect(after.stages.map((stage) => [stage.stage, stage.status])).toEqual([["inspiration", "done"], ["site_visit", "done"], ["concepts", "done"], ["material_selection", "active"], ["approval", "locked"]]);
+    expect(after.stages.map((stage) => [stage.stage, stage.status])).toEqual([["inspiration", "done"], ["kickoff", "done"], ["concepts", "done"], ["samples", "active"], ["approval", "locked"]]);
     expect(after.stages.find((stage) => stage.stage === "concepts")).toMatchObject({ outcome: "chosen", note: "Client's choice: Warm minimal 4" });
   });
 

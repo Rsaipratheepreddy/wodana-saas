@@ -330,7 +330,7 @@ integration("management dashboards with PostgreSQL", () => {
     await scenario(async (client, ids) => {
       const { kpis } = await readDashboard(client, ids.ws, "design-projects", PERIOD, NOW, undefined, "all");
       expect(Object.fromEntries((kpi(kpis, "design_stage").chart as Extract<Kpi["chart"], { type: "bars" }>).items.map((item) => [item.key, item.count])))
-        .toEqual({ inspiration: 0, site_visit: 1, development: 0, materials: 0, renders: 0, approval: 0 });
+        .toEqual({ inspiration: 0, kickoff: 0, site_visit: 1, concept: 0, renders: 0, samples: 0, approval: 0 });
       const mix = kpi(kpis, "package_mix");
       expect(mix).toMatchObject({ value: "2", amount: "18000.00" });
       expect((mix.chart as Extract<Kpi["chart"], { type: "donut" }>).items.map((item) => [item.label, item.count, item.amount]).sort()).toEqual([

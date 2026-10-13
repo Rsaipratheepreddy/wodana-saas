@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import type { JourneyStage } from "../design/design-journey.domain";
+import type { JourneyStage, JourneyTask } from "../design/design-journey.domain";
 import { formatDay } from "../design/design-journey.store";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { INSTALLATION_ROLE, installationRoles, readInstallation } from "../project-core/project-installation";
@@ -12,82 +12,132 @@ type Db = Pick<PoolClient, "query">;
 
 const caseLink = (caseId: string, section = "overview") => `/workspace/pre-projects/cases/${caseId}/${section}`;
 
-/** The design team's calendar for [from, to): booked render and 2D time, design deadlines, design appointments and presentations. */
-export async function readDesignEntries(db: Db, workspaceId: string, from: string, to: string, clock: Clock): Promise<TeamEntry[]> {
-  const entries: TeamEntry[] = [];
-  const bookings = (await db.query<{ id: string; caseId: string; kind: BookingKind; note: string; startsOn: string; dueOn: string; days: number; status: string; version: number; assigneeName: string | null; clientName: string }>(
+/**
+ * One source of the design calendar: a kind of record read for [from, to) as entries. PLM-152: the calendar is the
+ * sources listed in DESIGN_CALENDAR_SOURCES, so a new kind of design work (factory inspections) is one more source here.
+ */
+export type DesignCalendarSource = (db: Db, workspaceId: string, from: string, to: string, clock: Clock) => Promise<TeamEntry[]>;
+
+const clientOf = `LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id`;
+
+/** Render and 2D time booked by the designers (PLM-090). */
+const renderBookings: DesignCalendarSource = async (db, workspaceId, from, to, clock) => {
+  const rows = (await db.query<{ id: string; caseId: string; kind: BookingKind; note: string; startsOn: string; dueOn: string; days: number; status: string; version: number; assigneeName: string | null; clientName: string }>(
     `SELECT booking.id, booking.case_id AS "caseId", booking.kind, booking.note, booking.starts_on::text AS "startsOn", booking.due_on::text AS "dueOn", booking.days,
             booking.status, booking.version, person.display_name AS "assigneeName", coalesce(party.display_name, opportunity.title, '') AS "clientName"
        FROM design_work_bookings booking
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = booking.workspace_id AND pre_case.id = booking.case_id
-       LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       ${clientOf}
        LEFT JOIN workspace_memberships member ON member.workspace_id = booking.workspace_id AND member.id = booking.assignee_membership_id
        LEFT JOIN users person ON person.id = member.user_id
       WHERE booking.workspace_id = $1 AND booking.status <> 'cancelled' AND booking.starts_on < $3::date AND booking.due_on >= $2::date
       ORDER BY booking.starts_on, booking.id`, [workspaceId, from, to])).rows;
-  for (const row of bookings) entries.push({
+  return rows.map((row) => ({
     key: `booking:${row.id}`, kind: row.kind, recordId: row.id, subject: row.clientName, detail: row.note || null, start: row.startsOn, end: row.dueOn, allDay: true,
     days: Number(row.days), status: row.status, overdue: row.status === "booked" && row.dueOn < clock.today, ownerName: row.assigneeName, href: caseLink(row.caseId), version: Number(row.version),
-  });
-  const deadlines = (await db.query<{ caseId: string; stage: JourneyStage; dueOn: string; overdue: boolean; ownerName: string | null; clientName: string }>(
+  }));
+};
+
+/** The deadline of each design step in progress (kick-offs, concepts, renders, samples…), with its owner. */
+const stageDeadlines: DesignCalendarSource = async (db, workspaceId, from, to, clock) => {
+  const rows = (await db.query<{ caseId: string; stage: JourneyStage; dueOn: string; overdue: boolean; ownerName: string | null; clientName: string }>(
     `SELECT stage.case_id AS "caseId", stage.stage, to_char(stage.due_at AT TIME ZONE $4, 'YYYY-MM-DD') AS "dueOn", stage.due_at < now() AS overdue,
             person.display_name AS "ownerName", coalesce(party.display_name, opportunity.title, '') AS "clientName"
        FROM design_journey_stages stage
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = stage.workspace_id AND pre_case.id = stage.case_id
-       LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       ${clientOf}
        LEFT JOIN workspace_memberships member ON member.workspace_id = stage.workspace_id AND member.id = stage.owner_membership_id
        LEFT JOIN users person ON person.id = member.user_id
       WHERE stage.workspace_id = $1 AND stage.status = 'active' AND stage.due_at IS NOT NULL
         AND (stage.due_at AT TIME ZONE $4)::date >= $2::date AND (stage.due_at AT TIME ZONE $4)::date < $3::date
       ORDER BY stage.due_at, stage.case_id`, [workspaceId, from, to, clock.timeZone])).rows;
-  for (const row of deadlines) entries.push({
+  return rows.map((row) => ({
     key: `deadline:${row.caseId}:${row.stage}`, kind: "design_deadline", recordId: row.caseId, subject: row.clientName, detail: row.stage, start: row.dueOn, end: row.dueOn, allDay: true,
     days: null, status: "active", overdue: row.overdue, ownerName: row.ownerName, href: caseLink(row.caseId),
-  });
-  // Appointments on a job with a design journey kept by its designer or a design-stage owner: site visits, the material
-  // selection appointment, presentations booked as meetings.
-  const appointments = (await db.query<{ activityId: string; caseId: string; title: string; status: string; startsAt: Date; endsAt: Date; ownerName: string | null; clientName: string }>(
+  }));
+};
+
+/** PLM-152: the work inside a step with its own deadline (the design site measure, the sample collection, the team to allocate). */
+const taskDeadlines: DesignCalendarSource = async (db, workspaceId, from, to, clock) => {
+  const rows = (await db.query<{ caseId: string; task: JourneyTask; dueOn: string; overdue: boolean; ownerName: string | null; clientName: string }>(
+    `SELECT task.case_id AS "caseId", task.task, to_char(task.due_at AT TIME ZONE $4, 'YYYY-MM-DD') AS "dueOn", task.due_at < now() AS overdue,
+            person.display_name AS "ownerName", coalesce(party.display_name, opportunity.title, '') AS "clientName"
+       FROM design_journey_tasks task
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = task.workspace_id AND pre_case.id = task.case_id
+       ${clientOf}
+       LEFT JOIN workspace_memberships member ON member.workspace_id = task.workspace_id AND member.id = task.owner_membership_id
+       LEFT JOIN users person ON person.id = member.user_id
+      WHERE task.workspace_id = $1 AND task.status = 'open' AND task.due_at IS NOT NULL
+        AND (task.due_at AT TIME ZONE $4)::date >= $2::date AND (task.due_at AT TIME ZONE $4)::date < $3::date
+      ORDER BY task.due_at, task.case_id`, [workspaceId, from, to, clock.timeZone])).rows;
+  return rows.map((row) => ({
+    key: `task:${row.caseId}:${row.task}`, kind: "design_deadline", recordId: row.caseId, subject: row.clientName, detail: row.task, start: row.dueOn, end: row.dueOn, allDay: true,
+    days: null, status: "active", overdue: row.overdue, ownerName: row.ownerName, href: caseLink(row.caseId, row.task === "site_measure" ? "site" : "overview"),
+  }));
+};
+
+/**
+ * Appointments on a job with a design journey kept by its designer or a design-step owner: kick-offs, site visits and
+ * site measures, sample meetings and the material selection appointment, presentations booked as meetings.
+ */
+const designAppointments: DesignCalendarSource = async (db, workspaceId, from, to, clock) => {
+  const rows = (await db.query<{ activityId: string; caseId: string; title: string; status: string; startsAt: Date; endsAt: Date; ownerName: string | null; clientName: string }>(
     `SELECT activity.id AS "activityId", pre_case.id AS "caseId", activity.title, activity.status::text AS status, appointment.starts_at AS "startsAt", appointment.ends_at AS "endsAt",
             person.display_name AS "ownerName", coalesce(party.display_name, opportunity.title, '') AS "clientName"
        FROM crm_appointments appointment
        JOIN crm_activities activity ON activity.workspace_id = appointment.workspace_id AND activity.id = appointment.activity_id
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = activity.workspace_id AND pre_case.opportunity_id = activity.opportunity_id
        JOIN design_journeys journey ON journey.workspace_id = pre_case.workspace_id AND journey.case_id = pre_case.id
-       LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       ${clientOf}
        LEFT JOIN workspace_memberships member ON member.workspace_id = activity.workspace_id AND member.id = activity.owner_membership_id
        LEFT JOIN users person ON person.id = member.user_id
       WHERE appointment.workspace_id = $1 AND activity.status <> 'cancelled'
         AND appointment.starts_at < ($3::date::timestamp AT TIME ZONE $4) AND appointment.ends_at > ($2::date::timestamp AT TIME ZONE $4)
         AND (EXISTS (SELECT 1 FROM design_journey_stages stage WHERE stage.workspace_id = activity.workspace_id AND stage.case_id = pre_case.id
                       AND (stage.activity_id = activity.id OR stage.owner_membership_id = activity.owner_membership_id))
+             OR EXISTS (SELECT 1 FROM design_journey_tasks task WHERE task.workspace_id = activity.workspace_id AND task.case_id = pre_case.id AND task.activity_id = activity.id)
              OR EXISTS (SELECT 1 FROM crm_opportunity_designer designer WHERE designer.workspace_id = activity.workspace_id AND designer.opportunity_id = activity.opportunity_id
                       AND designer.membership_id = activity.owner_membership_id))
       ORDER BY appointment.starts_at, activity.id`, [workspaceId, from, to, clock.timeZone])).rows;
-  for (const row of appointments) entries.push({
+  return rows.map((row) => ({
     key: `appointment:${row.activityId}`, kind: "appointment", recordId: row.activityId, subject: row.clientName, detail: row.title, start: new Date(row.startsAt).toISOString(),
     end: new Date(row.endsAt).toISOString(), allDay: false, days: null, status: row.status, overdue: false, ownerName: row.ownerName, href: caseLink(row.caseId),
-  });
-  const presentations = (await db.query<{ id: string; caseId: string; stage: JourneyStage; round: number; status: string; presentedAt: Date; ownerName: string | null; clientName: string }>(
+  }));
+};
+
+/** Rounds shown to clients (concepts, renders), at the time they were presented. */
+const designPresentations: DesignCalendarSource = async (db, workspaceId, from, to, clock) => {
+  const rows = (await db.query<{ id: string; caseId: string; stage: JourneyStage; round: number; status: string; presentedAt: Date; ownerName: string | null; clientName: string }>(
     `SELECT presentation.id, presentation.case_id AS "caseId", presentation.stage, presentation.round, presentation.status, presentation.presented_at AS "presentedAt",
             person.display_name AS "ownerName", coalesce(party.display_name, opportunity.title, '') AS "clientName"
        FROM design_presentations presentation
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = presentation.workspace_id AND pre_case.id = presentation.case_id
-       LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       ${clientOf}
        LEFT JOIN users person ON person.id = presentation.presented_by
       WHERE presentation.workspace_id = $1 AND presentation.status NOT IN ('draft', 'withdrawn') AND presentation.presented_at IS NOT NULL
         AND presentation.presented_at >= ($2::date::timestamp AT TIME ZONE $4) AND presentation.presented_at < ($3::date::timestamp AT TIME ZONE $4)
       ORDER BY presentation.presented_at, presentation.id`, [workspaceId, from, to, clock.timeZone])).rows;
-  for (const row of presentations) {
+  return rows.map((row) => {
     const start = new Date(row.presentedAt);
-    entries.push({
-      key: `presentation:${row.id}`, kind: "presentation", recordId: row.id, subject: row.clientName, detail: `${row.stage}:${row.round}`, start: start.toISOString(),
+    return {
+      key: `presentation:${row.id}`, kind: "presentation" as const, recordId: row.id, subject: row.clientName, detail: `${row.stage}:${row.round}`, start: start.toISOString(),
       end: new Date(start.getTime() + 30 * 60_000).toISOString(), allDay: false, days: null, status: row.status, overdue: false, ownerName: row.ownerName, href: caseLink(row.caseId, "designs"),
-    });
-  }
+    };
+  });
+};
+
+/** The design calendar's sources, in the order their entries are listed. */
+export const DESIGN_CALENDAR_SOURCES: readonly DesignCalendarSource[] = [renderBookings, stageDeadlines, taskDeadlines, designAppointments, designPresentations];
+
+/**
+ * The design team's calendar for [from, to) (PLM-090, PLM-152): who is working on what and every deadline — render and 2D
+ * time, kick-offs, concepts, renders, site measures, samples and sample meetings — with what is overdue. One view for the
+ * lead designer; there is no separate director view.
+ */
+export async function readDesignEntries(db: Db, workspaceId: string, from: string, to: string, clock: Clock, sources: readonly DesignCalendarSource[] = DESIGN_CALENDAR_SOURCES): Promise<TeamEntry[]> {
+  const entries: TeamEntry[] = [];
+  for (const source of sources) entries.push(...await source(db, workspaceId, from, to, clock));
   return entries;
 }
 
