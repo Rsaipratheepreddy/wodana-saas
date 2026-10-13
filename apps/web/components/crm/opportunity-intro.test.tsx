@@ -36,11 +36,13 @@ describe("opportunity intro meeting (PLM-043, PLM-088)", () => {
   });
 
   it("hands a blocked booking back so the missing facts can be added", async () => {
-    stub({ ...base, blockers: [{ key: "area", label: "Area" }] });
+    const blockers = [{ key: "area", label: "Area" }, { key: "targetCompletion", label: "Enter the client's target completion date", where: "enquiry" as const }];
+    stub({ ...base, blockers });
     const onBlocked = vi.fn();
     const onBookingStarted = vi.fn();
     render(<DesignSystemProvider><OpportunityIntro workspaceId="ws" opportunityId="o1" locale="en-GB" startBooking onBlocked={onBlocked} onBookingStarted={onBookingStarted} /></DesignSystemProvider>);
-    await waitFor(() => expect(onBlocked).toHaveBeenCalled());
+    // Everything that is missing goes back, each with where it's completed (PLM-155).
+    await waitFor(() => expect(onBlocked).toHaveBeenCalledWith(blockers));
     expect(onBookingStarted).toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: "Book intro meeting" })).not.toBeInTheDocument();
   });

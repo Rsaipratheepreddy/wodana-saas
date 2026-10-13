@@ -28,6 +28,12 @@ type Designer = { membershipId: string; name: string; introActivityId: string | 
 export const DESIGNER_PERMISSIONS = ["pre_projects.edit", "pre_projects.record_client_design_decisions"] as const;
 
 /**
+ * PLM-096/155: a blocker the enquiry holds (its area, the client's target completion…) is marked so: it is completed on
+ * the enquiry, not on Discovery, and its key may also be a Discovery fact's ("area").
+ */
+const onEnquiry = (items: Array<{ key: string; label: string }>) => items.map((item) => ({ ...item, where: "enquiry" as const }));
+
+/**
  * PLM-043: the Account Manager books the intro meeting straight into a designer's calendar once the
  * floor plan, area and client email are in; the designer and the Account Manager are invited.
  * PLM-088: that designer becomes the opportunity's dedicated designer; changing them later needs a
@@ -83,7 +89,7 @@ export class IntroMeetingService {
         // PLM-092: every blocker at once, each with its field.
         const message = [blockers.discovery.length ? `Add these on Discovery first: ${blockers.discovery.map((item) => item.label).join(", ")}` : "",
           blockers.enquiry.length ? `Complete the enquiry: ${blockers.enquiry.map((item) => item.label).join(", ")}` : ""].filter(Boolean).join(". ");
-        throw new UnprocessableEntityException({ statusCode: 422, error: "Unprocessable Entity", message, missing: [...blockers.discovery, ...blockers.enquiry] });
+        throw new UnprocessableEntityException({ statusCode: 422, error: "Unprocessable Entity", message, missing: [...blockers.discovery, ...onEnquiry(blockers.enquiry)] });
       }
       const slotError = checkIntroSlot(input);
       if (slotError) throw new UnprocessableEntityException(slotError);
@@ -175,8 +181,8 @@ export class IntroMeetingService {
          LEFT JOIN users actor ON actor.id = history.changed_by
         WHERE history.workspace_id = $1 AND history.opportunity_id = $2 ORDER BY history.changed_at DESC`, [workspaceId, opportunityId])).rows;
     const found = await this.blockers(client, workspaceId, await this.opportunity(client, workspaceId, opportunityId, false));
-    const blockers = [...found.discovery, ...found.enquiry];
-    const timezone = (await client.query<{ timezone: string }>(`SELECT default_timezone AS timezone FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.timezone ?? "UTC";
+    const blockers = [...found.discovery, ...onEnquiry(found.enquiry)];
+    const timezone =(await client.query<{ timezone: string }>(`SELECT default_timezone AS timezone FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.timezone ?? "UTC";
     return { designer: designer ? { membershipId: designer.membershipId, name: designer.name, version: designer.version } : null, intro, history, blockers, timezone, canChangeDesigner };
   }
 

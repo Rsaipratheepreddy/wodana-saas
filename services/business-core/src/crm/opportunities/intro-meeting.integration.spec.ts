@@ -85,6 +85,32 @@ integration("intro meeting and dedicated designer (PLM-043, PLM-088)", () => {
     });
   });
 
+  it("PLM-155: names what the enquiry still needs (marked as the enquiry's), and a Discovery email counts though the enquiry form left it empty", async () => {
+    await withOpportunity(async (client, ids, service) => {
+      // The firm requires the area and the client's target completion before the intro (Palm); the email too (the default).
+      await client.query(`INSERT INTO crm_enquiry_requirements(workspace_id,enquiry_type,field_key,required_at) VALUES($1,'fit_out','area','book_intro'),($1,'fit_out','targetCompletion','book_intro'),($1,'fit_out','email','book_intro')`, [ids.workspaceId]);
+      // The enquiry form saves an email it wasn't given as "".
+      const enquiry = async (patch: string) => {
+        await client.query("SET LOCAL session_replication_role = replica"); // fixtures only: the enquiry's intake event isn't seeded
+        await client.query(`UPDATE crm_enquiries SET details = details || $2::jsonb WHERE workspace_id = $1`, [ids.workspaceId, patch]);
+        await client.query("SET LOCAL session_replication_role = origin");
+      };
+      await enquiry('{"contact":{"email":""}}');
+      const plan = (await client.query(`SELECT value->>'id' AS id FROM crm_lead_qualification_values WHERE workspace_id = $1`, [ids.workspaceId])).rows[0].id;
+      await client.query(`INSERT INTO crm_opportunity_discovery(workspace_id,opportunity_id,area,area_unit,client_email,floor_plan_asset_id) VALUES($1,$2,120,'sqm','maya@example.com',$3)`, [ids.workspaceId, ids.opportunityId, plan]);
+      const before = await service.get(actor, ids.workspaceId, ids.opportunityId);
+      expect(before.blockers).toEqual([
+        { key: "area", label: "Enter the area", where: "enquiry" },
+        { key: "targetCompletion", label: "Enter the client's target completion date", where: "enquiry" },
+      ]);
+      const refused = await service.book(actor, ids.workspaceId, ids.opportunityId, { designerMembershipId: ids.designerA, mode: "in_person", ...slot(3) }).catch((error) => error as { message: string; response?: { missing?: unknown[] } });
+      expect(refused.message).toBe("Complete the enquiry: Enter the area, Enter the client's target completion date");
+      expect(refused.response?.missing).toEqual(before.blockers);
+      await enquiry('{"area":"Arabian Ranches","targetCompletion":"2027-01-15"}');
+      expect((await service.get(actor, ids.workspaceId, ids.opportunityId)).blockers).toEqual([]);
+    });
+  });
+
   it("refuses a clash in the designer's calendar", async () => {
     await withOpportunity(async (client, ids, service) => {
       const plan = (await client.query(`SELECT value->>'id' AS id FROM crm_lead_qualification_values WHERE workspace_id = $1`, [ids.workspaceId])).rows[0].id;

@@ -16,7 +16,8 @@ export type IntroView = {
   designer: { membershipId: string; name: string; version: number } | null;
   intro: { activityId: string; status: string; title: string; startsAt: string | null; endsAt: string | null; timezone: string | null; location: Location | null } | null;
   history: Array<{ id: string; reason: string | null; changedAt: string; fromName: string | null; toName: string; changedByName: string | null }>;
-  blockers: Array<{ key: string; label: string }>;
+  /** What blocks the booking; `where: "enquiry"` is completed on the enquiry (PLM-096/155), the rest on Discovery. */
+  blockers: Array<{ key: string; label: string; where?: "enquiry" }>;
   timezone: string;
   canChangeDesigner: boolean;
 };
@@ -46,8 +47,8 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, 
   workspaceId: string; opportunityId: string; locale?: string; onSaved?: () => void | Promise<void>;
   /** The checklist asked to book: the booking opens once the view has loaded (when nothing blocks it). */
   startBooking?: boolean; onBookingStarted?: () => void;
-  /** Asked to book while facts are still missing. */
-  onBlocked?: () => void;
+  /** Asked to book while facts are still missing: what is missing, each with where it is completed. */
+  onBlocked?: (blockers: IntroView["blockers"]) => void;
   /** The view, when the opportunity already reads it. */
   intro?: Intro;
 }) {
@@ -63,7 +64,7 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, 
   // Nothing to open (already booked, or facts missing): the request is done.
   useEffect(() => {
     if (!startBooking || !view || canBook) return;
-    if (view.blockers.length && view.intro?.status !== "pending") onBlocked?.();
+    if (view.blockers.length && view.intro?.status !== "pending") onBlocked?.(view.blockers);
     onBookingStarted?.();
   }, [startBooking, view, canBook, onBookingStarted, onBlocked]);
   const showBooking = dialog === "book" || Boolean(startBooking && canBook);

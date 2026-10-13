@@ -168,7 +168,8 @@ export async function loadEnquiryFacts(db: Db, workspaceId: string, leadId: stri
   const text = (value: unknown) => typeof value === "string" ? value : null;
   return {
     serviceType: row.serviceType, summary: row.summary,
-    email: row.email ?? text(details.contact?.email) ?? extraEmail ?? null,
+    // An email left empty on the enquiry form is no email: one given on Discovery still counts.
+    email: row.email || text(details.contact?.email)?.trim() || extraEmail || null,
     area: text(details.area) || text(details.location), address: text(details.contact?.address),
     budgetRange: text(details.budgetRange), customerType: text(details.customerType), targetCompletion: text(details.targetCompletion),
     team: new Set(team.map((entry) => entry.role)),

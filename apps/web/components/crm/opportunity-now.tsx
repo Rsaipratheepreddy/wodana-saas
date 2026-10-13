@@ -22,7 +22,7 @@ function shortDate(value: string | null | undefined, locale: string, timeZone: s
 /** The step's label with its values ("Move to {stage}"). */
 export function useStepText() {
   const t = useT();
-  return (step: NowStep, key: "title" | "short" = "title") => t(step[key], step.values);
+  return (step: NowStep, key: "title" | "short" = "title") => t(step[key], step.names ? { ...step.values, fields: step.names.map((name) => t(name)).join(", ") } : step.values);
 }
 
 /** The follow-up date as a chip; past dates are overdue. */

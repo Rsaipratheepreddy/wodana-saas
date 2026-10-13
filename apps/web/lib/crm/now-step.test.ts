@@ -30,6 +30,14 @@ describe("now step mapping (F1)", () => {
     expect(groupRequirements(undefined)).toEqual([]);
   });
 
+  it("sends what the enquiry holds to the enquiry, named, apart from the Discovery facts with the same key (PLM-155)", () => {
+    const steps = groupRequirements([{ key: "floorPlan", label: "Floor plan" }, { key: "enquiry.area", label: "Enter the area" },
+      { key: "enquiry.targetCompletion", label: "Enter the client's target completion date" }, { key: "enquiry.cf:1", label: "Fill in Plot size" }]);
+    expect(steps.map((step) => [step.id, step.target])).toEqual([["details", "discovery"], ["enquiryFields", "enquiry"]]);
+    expect(steps[1]).toMatchObject({ title: "Complete the enquiry: {fields}", short: "Open enquiry", names: ["Area / city", "Target completion", "Fill in Plot size"] });
+    expect(steps[0].names).toBeUndefined();
+  });
+
   it("puts the first missing step now, the others under the column, and the next two after", () => {
     const plan = nowPlan({ status: "open", flow: view({
       missing: [{ key: "clientEmail", label: "Client email" }, { key: "floorPlanOrArea", label: "Floor plan or area" }, { key: "enquiryType", label: "Enquiry type chosen" }],

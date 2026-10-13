@@ -13,7 +13,7 @@ import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/phone";
 import { SiteLocation } from "@/components/ui/site-location";
 import { ResourceState, useCrmResource } from "./crm-workbench";
 import { answered, formatMoney, type Discovery, type DiscoveryGroup } from "./opportunity-discovery";
-import { OpportunityIntro, type Intro } from "./opportunity-intro";
+import { OpportunityIntro, type Intro, type IntroView } from "./opportunity-intro";
 import { SideSection } from "./record/record-layout";
 import styles from "./opportunity-sections.module.css";
 import { OpportunityClosing, OpportunityProposals } from "./opportunity-proposals";
@@ -50,7 +50,7 @@ export type CardsProps = {
   isOpen: (id: FactGroup) => boolean; onToggle: (id: FactGroup) => void;
   onEdit: (group: DiscoveryGroup) => void; onFurniture: () => void; onSaved: () => Promise<void>;
   onClientApproval: (approved: boolean) => void;
-  bookIntro: boolean; onBookingStarted: () => void; onIntroBlocked: () => void;
+  bookIntro: boolean; onBookingStarted: () => void; onIntroBlocked: (blockers: IntroView["blockers"]) => void;
   /** PLM-103: the opportunity is Won (Proposal 2 can be a second Won with its own proof). */
   won?: boolean; onSecondProof?: () => void;
 };

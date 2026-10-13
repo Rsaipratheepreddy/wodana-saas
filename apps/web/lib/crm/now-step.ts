@@ -27,6 +27,8 @@ export type NowStep = {
   keys: string[];
   fields: string[];
   values?: Record<string, string>;
+  /** The fields this step asks for by name, shown as {fields} in its title. */
+  names?: MessageKey[];
   section?: PlanningSection;
 };
 
@@ -67,8 +69,19 @@ const STEPS: Record<string, StepDef> = {
   stakeholders: { id: "stakeholders", title: tKey("Add the stakeholders"), short: tKey("Add stakeholders"), target: "edit" },
 };
 
+/**
+ * PLM-096/155: a field the enquiry holds and the enquiry type requires before the intro ("enquiry.<field>"): completed
+ * on the enquiry. Its title names the fields ("Complete the enquiry: Area / city, Target completion").
+ */
+const ENQUIRY_FIELDS: StepDef = { id: "enquiryFields", title: tKey("Complete the enquiry: {fields}"), short: tKey("Open enquiry"), target: "enquiry" };
+const ENQUIRY_FIELD_NAMES: Record<string, MessageKey> = {
+  email: tKey("Client email"), area: tKey("Area / city"), address: tKey("Address"), budgetRange: tKey("Budget range"), customerType: tKey("Client type"),
+  summary: tKey("Project description"), targetCompletion: tKey("Target completion"),
+};
+
 /** The step a requirement key belongs to; anything else is a property or discovery fact. */
 export function stepForRequirement(key: string): StepDef {
+  if (key.startsWith("enquiry.")) return ENQUIRY_FIELDS;
   return STEPS[key] ?? DETAILS;
 }
 
@@ -83,9 +96,11 @@ export function groupRequirements(items: MissingRequirement[] | null | undefined
   const steps: NowStep[] = [];
   for (const item of items ?? []) {
     const def = stepForRequirement(item.key);
+    // An enquiry field reads by its name; the workspace's own fields and team roles by the server's words.
+    const name = def === ENQUIRY_FIELDS ? (ENQUIRY_FIELD_NAMES[item.key.slice(8)] ?? item.label as MessageKey) : null;
     const existing = steps.find((step) => step.id === def.id);
-    if (existing) { existing.keys.push(item.key); existing.fields.push(item.label); continue; }
-    steps.push({ id: def.id, title: def.title, short: def.short, target: def.target, keys: [item.key], fields: [item.label] });
+    if (existing) { existing.keys.push(item.key); existing.fields.push(item.label); if (name) existing.names!.push(name); continue; }
+    steps.push({ id: def.id, title: def.title, short: def.short, target: def.target, keys: [item.key], fields: [item.label], ...(name ? { names: [name] } : {}) });
   }
   return steps;
 }

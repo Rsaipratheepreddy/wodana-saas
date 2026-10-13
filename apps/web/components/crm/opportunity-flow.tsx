@@ -10,12 +10,16 @@ import { useStepText } from "./opportunity-now";
 import styles from "./opportunity-flow.module.css";
 
 /** A refused move: the first thing the column needs, with its action, and how many more. */
-export function StageBlockedSheet({ stageName, items, onAction, onClose }: { stageName: string; items: MissingRequirement[]; onAction: (step: NowStep) => void; onClose: () => void }) {
+export function StageBlockedSheet({ stageName, title, items, onAction, onClose }: {
+  stageName: string; items: MissingRequirement[]; onAction: (step: NowStep) => void; onClose: () => void;
+  /** Another step than a stage move waits for these (the intro meeting): every one of them is listed at once. */
+  title?: string;
+}) {
   const t = useT();
   const text = useStepText();
   const [first, ...rest] = groupRequirements(items);
-  const [expanded, setExpanded] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("To move to {stage}", { stage: stageName })} onOpenChange={(open) => { if (!open) onClose(); }}>
+  const [expanded, setExpanded] = useState(Boolean(title));
+  return <ControlledModalDialog isOpen size="md" title={title ?? t("To move to {stage}", { stage: stageName })} onOpenChange={(open) => { if (!open) onClose(); }}>
     {first ? <div className={styles.blocked}>
       <p className={styles.need}><span>{text(first)}</span><Button size="compact" variant="primary" onPress={() => { onClose(); onAction(first); }}>{text(first, "short")}</Button></p>
       {rest.length ? <button type="button" className={styles.moreToggle} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{t("and {count} more", { count: rest.length })}</button> : null}

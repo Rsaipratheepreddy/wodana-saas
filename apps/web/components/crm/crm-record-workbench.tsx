@@ -134,7 +134,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   // PLM-080/044 and PLM-081: the joinery site visit, and material selection (or "Not required for this order").
   const [siteVisitOpen, setSiteVisitOpen] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
-  const [blocked, setBlocked] = useState<{ stage: string; items: MissingRequirement[] } | null>(null);
+  const [blocked, setBlocked] = useState<{ stage: string; items: MissingRequirement[]; title?: string } | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [flowError, setFlowError] = useState("");
   const freshVersion = async () => Number((await crmRequest<RecordData>(workspaceId, `opportunities/${row.id}`)).version);
@@ -319,7 +319,10 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
             onToggle={(group) => setFolded((current) => ({ ...current, [group]: !isOpen(group) }))}
             onEdit={(group) => setSheet({ group })} onFurniture={() => setFurnitureOpen(true)} onSaved={factsSaved}
             onClientApproval={(next) => { void saveFlow({ clientApproved: next }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}
-            bookIntro={bookIntro} onBookingStarted={() => setBookIntro(false)} onIntroBlocked={() => setSheet({ group: "property" })} /> },
+            bookIntro={bookIntro} onBookingStarted={() => setBookIntro(false)}
+            // PLM-155: everything the intro waits for, at once, each with where it's completed (Discovery, or the enquiry).
+            onIntroBlocked={(items) => setBlocked({ stage: "", title: t("Before booking the intro"),
+              items: items.map((item) => item.where === "enquiry" ? { key: `enquiry.${item.key}`, label: item.label } : item) })} /> },
           { id: "files", label: t("Files"), panel: leadId ? <RecordAttachments workspaceId={workspaceId} leadId={String(leadId)} /> : <EmptyState illustration="upload" title={t("No enquiry files")} description={t("Project files live in Planning.")} /> },
         ]} />
     {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}
@@ -335,7 +338,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
         loadVersion={freshVersion} onClose={() => setMaterialsOpen(false)} onDone={() => { setMaterialsOpen(false); void saved(); }}
         secondaryAction={caseId ? <Link className="wd-button" data-variant="quiet" href={caseLink("designs")}>{t("Choose the materials")}</Link> : undefined} />;
     })() : null}
-    {blocked ? <StageBlockedSheet stageName={blocked.stage} items={blocked.items} onAction={act} onClose={() => setBlocked(null)} /> : null}
+    {blocked ? <StageBlockedSheet stageName={blocked.stage} title={blocked.title} items={blocked.items} onAction={act} onClose={() => setBlocked(null)} /> : null}
     {askingFinance ? <RaiseFinanceRequest workspaceId={workspaceId} origin={{ opportunityId: row.id }} onClose={() => setAskingFinance(false)} /> : null}
     {historyOpen ? <ControlledModalDialog isOpen size="lg" title={t("History")} onOpenChange={setHistoryOpen}>
       <RecordHistory workspaceId={workspaceId} recordType="opportunity" recordId={row.id} />
