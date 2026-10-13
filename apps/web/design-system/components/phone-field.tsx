@@ -48,7 +48,9 @@ export function PhoneField({ label, value, onChange, countryCode: chosenCountry,
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const query = search.trim().toLocaleLowerCase();
-  const matches = query ? countries.filter((country) => `${country.description} ${country.label} ${country.id}`.toLocaleLowerCase().includes(query)) : countries;
+  // A country whose name starts with what was typed comes first ("India" before "British Indian Ocean Territory").
+  const matches = query ? countries.filter((country) => `${country.description} ${country.label} ${country.id}`.toLocaleLowerCase().includes(query))
+    .sort((a, b) => Number(!a.description.toLocaleLowerCase().startsWith(query)) - Number(!b.description.toLocaleLowerCase().startsWith(query))) : countries;
 
   // A stored "+971…" (or one set by another form) is shown as code + local number.
   // Only acts while the value still carries a code, so it settles after one pass.

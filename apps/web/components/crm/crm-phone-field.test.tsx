@@ -21,6 +21,8 @@ describe("CRM phone country picker", () => {
     await user.click(trigger);
     await user.type(screen.getByRole("searchbox", { name: "Search country or code" }), "India");
     const option = screen.getByRole("option", { name: /India.*\+91|\+91.*India/ });
+    // The country named what was typed comes first, before "British Indian Ocean Territory".
+    expect(screen.getAllByRole("option")[0]).toBe(option);
     expect(option).toHaveTextContent("+91");
     expect(option).toHaveTextContent("India");
     await user.click(option);
