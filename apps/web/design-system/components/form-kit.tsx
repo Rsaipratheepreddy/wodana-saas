@@ -279,6 +279,12 @@ export function FormDialog({
   const [conflicted, setConflicted] = useState(false);
   const [resubmit, setResubmit] = useState(0);
   const submitting = busy || externalBusy;
+  // A dialog kept mounted while closed opens clean: no failure or conflict from the last time it was open.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) { setFailure(null); setConflicted(false); }
+  }
 
   // Keep my changes: the caller took the latest version; once that renders, save again.
   useEffect(() => { if (resubmit) form.current?.requestSubmit(); }, [resubmit]);

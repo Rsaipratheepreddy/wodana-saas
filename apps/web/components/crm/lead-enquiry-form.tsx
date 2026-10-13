@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Callout, DateField, FillWithWoddy, FormDialog, FormNotSaved, FormSection, MoreDetails, readSaveProblems, SelectField, TextInput, TextAreaField, useFormDraft, type SaveProblem } from "@/design-system";
+import { Button, Callout, DateField, FillWithWoddy, FormDialog, FormNotSaved, FormSection, MoreDetails, PersonNameField, personNameError, readSaveProblems, SelectField, TextInput, TextAreaField, useFormDraft, type SaveProblem } from "@/design-system";
 import { parseDate } from "@internationalized/date";
+import { normalizePersonName } from "@wodana/contracts/person-name";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
 import { sourceAllowedFor, TEAM_NOT_APPLICABLE, type EnquiryDetails, type LeadContact, type LeadOptions, type LeadTeamEntry } from "@/lib/crm/lead-options";
 import { problemText, requiredBy, teamRoleLabel } from "@/lib/crm/enquiry-requirements";
-import { countryForPhone, phoneCountry, phoneProblem, toE164 } from "@/lib/crm/phone";
+import { countryForPhone, phoneCountry, phoneProblem, phoneProblemText, toE164 } from "@/lib/crm/phone";
 import { findContactMatches, type ClientMatch } from "@/lib/crm/client-match";
 import { CrmPhoneField } from "./crm-phone-field";
 import { ClientMatchList } from "./client-match-list";
@@ -38,7 +39,7 @@ const UNASSIGNED = "unassigned";
 const EMAIL = /^\S+@\S+\.\S+$/;
 /** Fields that sit under More details. */
 const IN_MORE_DETAILS = new Set(["email", "budgetRange", "summary", "phone", "address", "company", "jobPosition", "website", "campaign", "targetCompletion"]);
-const quiet = { tooShort: () => "x", tooLong: () => "x", invalid: () => "x", notMobile: () => "x", chooseCountry: "x" };
+const quiet = { mobile: () => "x", phone: () => "x", chooseCountry: "x" };
 
 type Identity = { kind: "existing"; partyId: string; name: string } | { kind: "new" } | null;
 
@@ -183,21 +184,20 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   const [attempted, setAttempted] = useState(false);
   const [serverProblems, setServerProblems] = useState<SaveProblem[]>(initialProblems ?? []);
   const regionWord = translateKnown(t, areaLabel);
-  const phoneMessages = {
-    tooShort: (country: string, code: string, digits: number) => t("Too short: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
-    tooLong: (country: string, code: string, digits: number) => t("Too long: {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
-    invalid: (country: string) => t("Not a valid number for {country}", { country }),
-    notMobile: (country: string) => t("Not a mobile number for {country}", { country }),
-    chooseCountry: t("Choose the country code"),
-  };
+  const phoneMessages = phoneProblemText(t);
+  // The name is checked only when it is typed here: an existing client's name, or one that came from a channel and
+  // is left as it is, is kept as it came.
+  const nameAsItCame = existing?.party?.displayName ?? prefill?.party.displayName ?? "";
+  const nameTyped = identity?.kind !== "existing" && normalizePersonName(name) !== normalizePersonName(nameAsItCame);
   const ownProblems = (): SaveProblem[] => {
     const found: SaveProblem[] = [];
     const add = (key: string, label: string) => { if (!found.some(item => item.key === key)) found.push({ key, label }); };
     if (!existing && matches.length && !identity) add("identity", t("Choose the existing client or Different person."));
     if (!name.trim()) add("displayName", t("Enter a customer name."));
+    else if (nameTyped) { const wrong = personNameError(name, t); if (wrong) add("displayName", wrong); }
     if (!contact.mobile?.trim()) add("mobile", t("Enter a mobile number."));
-    else { const wrong = phoneProblem(contact.mobile, mobileCountry, phoneMessages, { mobile: true }); if (wrong) add("mobile", wrong); }
-    if (contact.phone?.trim()) { const wrong = phoneProblem(contact.phone, contact.phoneCountryCode ?? "", phoneMessages, { mobile: false }); if (wrong) add("phone", wrong); }
+    else { const wrong = phoneProblem(contact.mobile, mobileCountry, phoneMessages, { mobile: true, locale: initialData.defaultLocale }); if (wrong) add("mobile", wrong); }
+    if (contact.phone?.trim()) { const wrong = phoneProblem(contact.phone, contact.phoneCountryCode ?? "", phoneMessages, { mobile: false, locale: initialData.defaultLocale }); if (wrong) add("phone", wrong); }
     if (!serviceType) add("serviceType", t("Select an enquiry type"));
     if (hasRegions && !details.emirate?.trim()) add("emirate", t("Select the {area}.", { area: regionWord.toLowerCase() }));
     if (details.emirate !== "other" && customAreaSelected && !details.area?.trim()) add("area", t("Enter the area name."));
@@ -243,8 +243,10 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "targetCompletion", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
     const referralChanged = Boolean(existing) && JSON.stringify(referralBody()) !== JSON.stringify(existing?.referral ? { ...(existing.referral.name ? { name: existing.referral.name } : {}), ...(existing.referral.contact ? { contact: existing.referral.contact } : {}), ...(existing.referral.membershipId ? { membershipId: existing.referral.membershipId } : {}), ...(existing.referral.option ? { option: existing.referral.option } : {}) } : undefined);
     const assignment = owner === ROUTING ? { mode: "automatic" } : owner === UNASSIGNED ? { mode: "unassigned" } : { mode: "manual", ownerMembershipId: owner, ...(queueId ? { queueId } : {}) };
-    const body = existing ? { version: existing.version, serviceType, summary, party: contact, details: enquiryDetails, ...teamBody(), ...(sourceChanged ? { source, channel } : {}), ...(referralKind && (sourceChanged || referralChanged) ? { referral: referralBody() } : {}) }
-      : { workspaceId: initialData.workspaceId, requestId, ...contact, displayName: name, serviceType, summary, source, channel, details: enquiryDetails, ...teamBody(), ...(referralKind ? { referral: referralBody() } : {}), assignment,
+    // A typed name is saved trimmed, with one space between words.
+    const typedName = nameTyped ? normalizePersonName(name) : name;
+    const body = existing ? { version: existing.version, serviceType, summary, party: { ...contact, displayName: typedName }, details: enquiryDetails, ...teamBody(), ...(sourceChanged ? { source, channel } : {}), ...(referralKind && (sourceChanged || referralChanged) ? { referral: referralBody() } : {}) }
+      : { workspaceId: initialData.workspaceId, requestId, ...contact, displayName: typedName, ...(prefill && !nameTyped ? { nameFromChannel: true } : {}), serviceType, summary, source, channel, details: enquiryDetails, ...teamBody(), ...(referralKind ? { referral: referralBody() } : {}), assignment,
           ...(identity?.kind === "existing" ? { identity: "existing", partyId: identity.partyId } : identity?.kind === "new" ? { identity: "new" } : {}) };
     const response = await fetch(existing ? `/api/workspace/crm/data/leads/${existing.id}/details?workspaceId=${initialData.workspaceId}` : "/api/workspace/crm/leads", {
       method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
@@ -269,11 +271,12 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     { id: UNASSIGNED, label: t("Leave unassigned") },
   ];
   const locked = Boolean(savedId);
-  // Unsaved work stays on this device: a new enquiry per workspace, an edit per enquiry and version.
+  // An edit's unsaved work stays on this device per enquiry and version. A new enquiry always opens empty: closing it
+  // (after asking, when something was typed) or creating it leaves nothing behind for the next one.
   const snapshot = { contact, serviceType, summary, details, customAreaSelected, source, channel, referral, owner, queueId, customValues, team };
   const [start] = useState(() => JSON.stringify(snapshot));
   const dirty = !savedId && JSON.stringify(snapshot) !== start;
-  const draft = useFormDraft(savedId ? null : existing ? `${initialData.workspaceId}/crm/enquiry/${existing.id}@${existing.version}` : `${initialData.workspaceId}/crm/enquiry/new`, snapshot, {
+  const draft = useFormDraft(savedId || !existing ? null : `${initialData.workspaceId}/crm/enquiry/${existing.id}@${existing.version}`, snapshot, {
     isDirty: dirty,
     restore: (saved) => {
       setContact(saved.contact); setServiceType(saved.serviceType); setSummary(saved.summary); setDetails(saved.details); setCustomAreaSelected(saved.customAreaSelected);
@@ -302,7 +305,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   };
   const moreFilled = [contact.email, details.budgetRange, details.targetCompletion, summary, contact.company, contact.jobPosition, contact.phone, contact.website, contact.address, details.campaign, details.internalNotes].filter(Boolean).length;
   const notesShown = existing?.notesVisible !== false;
-  return <FormDialog draft={draft} errorTitle={initialProblems?.length && !attempted ? t("Before converting") : t("Enquiry not saved")} isDirty={dirty} isSubmitDisabled={!options} onClose={onClose} onSubmit={save} validation="caller"
+  return <FormDialog draft={existing ? draft : undefined} errorTitle={initialProblems?.length && !attempted ? t("Before converting") : t("Enquiry not saved")} isDirty={dirty} isSubmitDisabled={!options} onClose={onClose} onSubmit={save} validation="caller"
     problems={problems.map(item => ({ ...item, text: problemText(item, t, { regionLabel: regionWord }) }))}
     title={existing ? t("Edit enquiry") : t("New enquiry")} description={existing?.reference ?? undefined} formClassName={styles.leadForm} formId={formId}
     submitLabel={savedId ? t("Refresh enquiry") : existing ? t("Save changes") : t("Create enquiry")}
@@ -314,7 +317,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
       <fieldset className={styles.enquiryFields} disabled={locked}>
         <FormSection title={t("Client")}>
         <div data-problem-key="mobile"><CrmPhoneField label={t("Mobile")} required value={contact.mobile ?? ""} onChange={set("mobile")} countryCode={contact.mobileCountryCode ?? ""} onCountryChange={set("mobileCountryCode")} locale={initialData.defaultLocale}
-          isReadOnly={identityLocked && Boolean(existing?.party?.mobile)} description={problem("mobile") ?? (identityLocked && existing?.party?.mobile ? identityHint : undefined)} /></div>
+          isReadOnly={identityLocked && Boolean(existing?.party?.mobile)} errorMessage={problem("mobile")} description={identityLocked && existing?.party?.mobile ? identityHint : undefined} /></div>
         {!existing && matches.length > 0 ? <section className={styles.clientMatch} aria-label={t("Existing client?")} aria-live="polite" data-problem-key="identity" tabIndex={-1}>
           <strong>{t("Existing client?")}</strong>
           <ClientMatchList label={t("Clients with this mobile or email")} matches={matches} reason={matchReason} actions={(match) => <>
@@ -325,7 +328,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
           </>} />
           <div><Button size="compact" variant={identity?.kind === "new" ? "primary" : "quiet"} aria-pressed={identity?.kind === "new"} isDisabled={locked} onPress={() => setIdentity({ kind: "new" })}>{t("Different person")}</Button></div>
         </section> : checking ? <p className={styles.routingHint} aria-live="polite">{t("Checking for an existing client…")}</p> : null}
-        <TextInput isRequired label={t("Customer name")} value={name} isReadOnly={identity?.kind === "existing" || (identityLocked && Boolean(existing?.party?.displayName))} description={identityLocked && existing?.party?.displayName ? identityHint : undefined} onChange={set("displayName")} {...mark("displayName")} />
+        <PersonNameField isRequired label={t("Customer name")} value={name} savedValue={nameAsItCame || undefined} isReadOnly={identity?.kind === "existing" || (identityLocked && Boolean(existing?.party?.displayName))} description={identityLocked && existing?.party?.displayName ? identityHint : undefined} onChange={set("displayName")} {...mark("displayName")} />
         </FormSection>
         <FormSection title={t("Enquiry")}>
         <SelectField label={t("Enquiry type")} isRequired placeholder={t("Choose enquiry type")} items={withExisting(options?.enquiryTypes, existing?.serviceType ?? "")} selectedKey={serviceType || null} onSelectionChange={key => key && setServiceType(String(key))} {...mark("serviceType")} />

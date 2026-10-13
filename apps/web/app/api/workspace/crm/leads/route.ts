@@ -90,7 +90,8 @@ export async function POST(request: Request) {
         ...(referral ? { referral } : {}),
         ...(identity ? { identity, ...(identity === "existing" ? { partyId } : {}) } : {}),
         ...(team.length ? { team } : {}),
-        originalPayload: { origin: "wodana_leads_ui" },
+        // A name taken unchanged from a chat is kept as it came (a channel's display name is never refused).
+        originalPayload: { origin: "wodana_leads_ui", ...(body?.nameFromChannel === true ? { nameFromChannel: true } : {}) },
       }),
     },
     t("The lead could not be created."),

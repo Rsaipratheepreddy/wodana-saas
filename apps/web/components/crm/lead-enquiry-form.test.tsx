@@ -351,3 +351,48 @@ it("names each dropdown's own choice and takes the client type problem to the cl
   expect(clientType).toHaveFocus();
   expect(screen.getByRole("button", { name: /^Choose source|^Source/ })).not.toHaveFocus();
 });
+
+it("opens a new enquiry empty again after it was closed with something typed (no draft is kept)", async () => {
+  const { user } = setup();
+  await user.type(screen.getByLabelText(/Customer name/), "Old customer");
+  await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  // Closing unmounts the form (the page renders it only while open); opening again starts a fresh one.
+  cleanup();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  setup();
+  expect(screen.getByLabelText(/Customer name/)).toHaveValue("");
+  expect(screen.getByRole("textbox", { name: "Mobile" })).toHaveValue("");
+  expect(screen.queryByText("Restored your draft")).not.toBeInTheDocument();
+  expect(Object.keys(window.localStorage).filter((key) => key.includes("crm/enquiry/new"))).toEqual([]);
+});
+
+it("refuses a customer name with digits or symbols and saves real names (letters, hyphen, apostrophe, full stop)", async () => {
+  const { user, saves, body } = setup();
+  await completeRequired(user);
+  await choose(user, /Owner/, "Leave unassigned");
+  const name = screen.getByLabelText(/Customer name/);
+  await user.clear(name);
+  await user.type(name, "Priya 2");
+  expect(screen.getByText("Use letters and spaces only")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Use letters and spaces only");
+  expect(saves()).toHaveLength(0);
+  await user.clear(name);
+  await user.type(name, "  Anil D'Souza-Pinto Jr. ");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(saves()).toHaveLength(1));
+  expect(body()).toMatchObject({ displayName: "Anil D'Souza-Pinto Jr." });
+});
+
+it("refuses a mobile of the wrong length for the chosen country, on the mobile field", async () => {
+  const { user, saves } = setup();
+  await completeRequired(user);
+  await choose(user, /Owner/, "Leave unassigned");
+  const mobile = screen.getByRole("textbox", { name: "Mobile" });
+  await user.clear(mobile);
+  await user.type(mobile, "50 123 456");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Enter a valid mobile number for United Arab Emirates (9 digits)");
+  expect(mobile).toHaveAttribute("aria-invalid", "true");
+  expect(saves()).toHaveLength(0);
+});
