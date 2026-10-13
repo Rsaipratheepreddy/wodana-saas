@@ -11,13 +11,17 @@ const defaults: Required<FormatContext> = {
   timeZone: "UTC",
 };
 
-export function formatMoney(value: number, context: FormatContext = {}) {
+/**
+ * An amount in the workspace's currency and locale: the symbol where the locale puts it and the currency's own decimals
+ * (2 for AED, 3 for KWD). A decimal string (money from the API) is formatted exactly, without going through a float.
+ */
+export function formatMoney(value: number | string, context: FormatContext = {}, format: Pick<Intl.NumberFormatOptions, "signDisplay"> = {}) {
   const options = { ...defaults, ...context };
   return new Intl.NumberFormat(options.locale, {
     style: "currency",
     currency: options.currency,
-    maximumFractionDigits: 2,
-  }).format(value);
+    ...format,
+  }).format(value as number);
 }
 
 export function formatNumber(value: number, context: FormatContext = {}, options?: Intl.NumberFormatOptions) {

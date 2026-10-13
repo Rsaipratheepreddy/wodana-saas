@@ -6,7 +6,7 @@ import { FileText, Plus } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
   Badge, Button, ComboboxField, DateField, EmptyState, ErrorState, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, NumericInput, RecordTable, SegmentedControl,
-  SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem, type DataGridColumn,
+  SelectField, Skeleton, TextAreaField, TextInput, formatMoney, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
@@ -41,7 +41,7 @@ type Dialog = { kind: "add" } | { kind: "version"; entry: LedgerEntry } | { kind
  */
 export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { workspaceId: string; caseId: string; rooms: CaseRoom[]; clientName?: string }) {
   const t = useT();
-  const { locale, timeZone } = useDesignSystem();
+  const { locale, timeZone, currency: regionCurrency } = useDesignSystem();
   const [view, setView] = useState<LedgerView | null>(null);
   const [failure, setFailure] = useState("");
   const [notice, setNotice] = useState("");
@@ -77,7 +77,12 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
   const pendingApproval = view.approval?.status === "pending" ? view.approval : null;
   const live = view.entries.filter((entry) => !entry.archivedAt);
   const currency = view.currency ?? undefined;
-  const money = (value: string | null) => value === null ? "" : `${value}${view.currency ? ` ${view.currency}` : ""}`;
+  // Amounts in the workspace's currency and locale (where the symbol goes, the currency's decimals); a change keeps its sign.
+  const money = (value: string | null) => {
+    if (value === null) return "";
+    try { return formatMoney(value, { locale, currency: view.currency ?? regionCurrency }, /^[+-]/.test(value.trim()) ? { signDisplay: "exceptZero" } : {}); }
+    catch { return value; }
+  };
   // Amounts and day counts stay left-to-right inside right-to-left text (isolated, never reordered).
   const impact = (version: LedgerVersion | null) => {
     if (!version) return null;

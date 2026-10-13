@@ -217,7 +217,9 @@ describe("the materials and decisions ledger (PLM-054, E5-1/E5-2)", () => {
     expect(screen.getByText(/Procurement keeps the signed-off versions/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve changes" })).toBeDisabled();
     const table = screen.getByRole("table");
-    expect(table).toHaveTextContent("+250.00 AED · +4 days");
+    // Amounts in the workspace currency and locale (where the symbol goes, its decimals), never "250.00 AED".
+    expect(table).toHaveTextContent("+AED 250.00 · +4 days");
+    expect(table).toHaveTextContent("AED 1,250.00");
     expect(within(table).getByText("After sign-off")).toBeInTheDocument();
     expect(within(table).getByText("Waiting for the client")).toBeInTheDocument();
     expect(within(table).getByText("V1")).toBeInTheDocument();
