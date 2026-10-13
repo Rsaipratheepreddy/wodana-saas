@@ -981,9 +981,15 @@ export class FactoryService {
          LEFT JOIN workspace_memberships member ON member.workspace_id = inspection.workspace_id AND member.id = inspection.inspector_membership_id
          LEFT JOIN users inspector ON inspector.id = member.user_id
         WHERE inspection.workspace_id = $1 AND inspection.work_order_id = $2 ORDER BY inspection.stage <> 'raw', inspection.round`, [workspaceId, orderId])).rows;
+    // PLM-150: the snags of its inspections; the factory marks each one fixed from here (the next round opens once the last is fixed).
+    const snags = !inspection ? [] : (await client.query<{ id: string; number: number; title: string; severity: string; status: string; version: number; dueDate: string | null; inspectionId: string }>(
+      `SELECT item.id, item.number, item.title, item.severity, item.status, item.version, item.due_date::text AS "dueDate", item.factory_inspection_id AS "inspectionId"
+         FROM work_items item JOIN factory_inspections inspection ON inspection.workspace_id = item.workspace_id AND inspection.id = item.factory_inspection_id
+        WHERE item.workspace_id = $1 AND inspection.work_order_id = $2 AND item.type = 'snag' ORDER BY item.number`, [workspaceId, orderId])).rows
+      .map((snag) => ({ ...snag, canFix: (rights.canManage || rights.canReport) && ["todo", "in_progress"].includes(snag.status) }));
     return {
       order: { ...order, ...extra }, reports, checks, events, settings: { ...settings, inspectionStages: inspectionSettings(settings).stages }, materials, dispatches, atFactory, reworks,
-      next: next.step, inspection, inspections,
+      next: next.step, inspection, inspections, snags,
       payments, readyReminder: await readReadyReminder(client, workspaceId, caseId, extra.readyPaymentId),
       // The project's approved designs, to pick the drawing from.
       designs: await this.approvedDesigns(client, workspaceId, order.projectId),

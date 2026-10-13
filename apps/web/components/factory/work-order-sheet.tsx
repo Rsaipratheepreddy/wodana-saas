@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge, Button, EditableField, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, StageTracker, Tabs, type WorkflowStage } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
-import type { InspectionStageKind, ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
+import type { InspectionSnag, InspectionStageKind, ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
 import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { SavedPhotos } from "../purchasing/delivery-photos";
@@ -71,6 +71,14 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
     }
   };
   const update = (input: Record<string, unknown>) => save("update", input);
+  const [fixing, setFixing] = useState<string | null>(null);
+  /** PLM-150: one snag marked fixed (as its task's "In review"); the next round opens by itself once the last one is fixed. */
+  const fixSnag = async (snag: InspectionSnag) => {
+    setFixing(snag.id); setNotice("");
+    try { await api.fixSnag(snag.inspectionId, snag); onChanged(); }
+    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { await load(); setFixing(null); }
+  };
   /** The check is saved; its photo follows (once, by its own id). */
   const addCheckPhoto = async (checkId: string, photo: File) => {
     try { setState(await api.uploadCheckPhoto(orderId, checkId, crypto.randomUUID(), photo)); }
@@ -211,7 +219,18 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
   } as Record<string, string>)[outcome] ?? t("the client can't be reached");
   const outputCount = pendingReports.length + (canCheck ? 1 : 0);
 
+  // PLM-150: the snags still to fix (or fixed and waiting for the next round), each marked fixed by the factory here.
+  const snagsToFix = (state?.snags ?? []).filter((snag) => ["todo", "in_progress", "in_review"].includes(snag.status));
+  const severity: Record<string, string> = { minor: t("Minor"), major: t("Major"), critical: t("Critical") };
   const workPanel = !state || !order ? null : <div className={styles.sheet}>
+    {snagsToFix.length ? <Section title={t("Snags")}>
+      <ul className={ops.list}>{snagsToFix.map((snag) => <li key={snag.id}>
+        <Cell title={`#${snag.number} ${snag.title}`} tone={snag.status === "in_review" ? undefined : "danger"}
+          meta={[severity[snag.severity], snag.dueDate ? t("Due {date}", { date: format.day(snag.dueDate) }) : ""].filter(Boolean).join(" · ")} />
+        {snag.canFix ? <Button size="compact" variant="secondary" isLoading={fixing === snag.id} isDisabled={Boolean(fixing)} onPress={() => void fixSnag(snag)}>{t("Mark fixed")}</Button>
+          : <Badge tone={snag.status === "in_review" ? "info" : "warning"}>{snag.status === "in_review" ? t("Fixed") : t("To fix")}</Badge>}
+      </li>)}</ul>
+    </Section> : null}
     {failing.length ? <Section title={t("Before it's released")}>
       <ul className={ops.list}>{state.releaseChecks.map((check) => <li key={check.key}>
         <Cell title={labels.check[check.key]} tone={check.passed ? "success" : "danger"}

@@ -15112,5 +15112,6 @@
   "Enter a valid mobile number for {country} ({digits} digits)": "Enter a valid mobile number for {country} ({digits} digits)",
   "Enter a valid phone number for {country}": "Enter a valid phone number for {country}",
   "Use letters and spaces only": "Use letters and spaces only",
-  "Already the {role} on this job. Choose someone else.": "Already the {role} on this job. Choose someone else."
+  "Already the {role} on this job. Choose someone else.": "Already the {role} on this job. Choose someone else.",
+  "Mark fixed": "Mark fixed"
 }

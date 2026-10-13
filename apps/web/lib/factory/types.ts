@@ -32,6 +32,9 @@ export type InspectionRound = { id: string; stage: InspectionStageKind; round: n
 export type OpenInspection = { id: string; workOrderId: string; order: string; item: string; projectId: string; projectReference: string; projectName: string;
   stage: InspectionStageKind; stageLabel: string; round: number; inspectorMembershipId: string | null; inspectorName: string | null; inspectorRole: string | null;
   dueOn: string; requestedAt: string; overdue: boolean };
+/** A snag of a failed inspection: a rectification task for the factory, marked fixed when done (PLM-150). */
+export type InspectionSnag = { id: string; number: number; title: string; severity: "minor" | "major" | "critical"; status: string; dueDate: string | null; inspectionId: string;
+  version: number; canFix: boolean };
 /** One round, as its record page shows it. */
 export type InspectionState = {
   row: { id: string; workOrderId: string; projectId: string; stage: InspectionStageKind; round: number; status: "due" | "passed" | "failed" | "cancelled"; dueOn: string; requestedAt: string;
@@ -39,7 +42,8 @@ export type InspectionState = {
     resultAt: string | null; comments: string; version: number; number: number; title: string; specification: string; quantity: string; unit: string; orderStatus: WorkOrderStatus;
     projectReference: string; projectName: string; projectStatus: string };
   photos: Array<{ id: string; name: string; byName: string; at: string }>;
-  snags: Array<{ id: string; number: number; title: string; severity: "minor" | "major" | "critical"; status: string; dueDate: string | null; assigneeName: string | null; inspectionId: string }>;
+  /** Each snag of the item; `canFix`: the viewer (the factory, or whoever it is given to) can mark it fixed now. */
+  snags: Array<InspectionSnag & { assigneeName: string | null }>;
   rounds: InspectionRound[]; stages: InspectionStage[]; managers: string[];
   canRecord: boolean; why: string | null; canSeeFactory: boolean;
 };
@@ -149,6 +153,8 @@ export type WorkOrderState = FactoryRights & {
   next?: WorkOrderNext; reworks?: WorkOrderRework[];
   /** PLM-150: where its design inspections stand, and every round so far. */
   inspection?: OrderInspection | null; inspections?: InspectionRound[];
+  /** PLM-150: the snags of its inspections, which the factory marks fixed. */
+  snags?: InspectionSnag[];
   /** The project's designs with an approved revision (the latest of each), to make it to. */
   designs?: Array<{ designId: string; versionId: string; title: string; number: number; documentType: string }>;
   /**

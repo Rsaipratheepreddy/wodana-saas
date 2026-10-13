@@ -13,7 +13,7 @@ import { noticeWork, type WorkNotice } from "./project-notices";
 import { noticeStageReady } from "./project-stage-watch";
 import { stageTaskLinks } from "./project-stage-tasks";
 import {
-  ensureProjectAccess, OPEN, readActivity, readInsights, readItem, readItems, readLinks, readOpenWork, readProgress, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
+  ensureProjectAccess, OPEN, readActivity, readInsights, readItem, readItems, readLinks, readOpenWork, readProgress, readProjectLinks, snagCheckers, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
   type WorkItem, type WorkStatus,
 } from "./project-work";
 import { criticalPath, readCalendar, ripple, type PlanMove } from "./work-calendar";
@@ -446,9 +446,7 @@ export class ProjectWorkService {
           if (item.assigneeId) notices.push({ key: `reopen:${itemId}:${item.version}`, notice: { code: "work.snag_reopened", item, note: reason, memberships: [item.assigneeId] } });
         }
         if (status === "in_review") {
-          const checkers = ((await readTeam(client, workspaceId, [projectId])).get(projectId) ?? []).filter((member) => member.lead).map((member) => member.membershipId);
-          const raiser = await this.reporter(client, workspaceId, item);
-          notices.push({ key: `ready:${itemId}:${item.version}`, notice: { code: "work.snag_ready", item, note: "", memberships: [...checkers, ...(raiser ? [raiser] : [])] } });
+          notices.push({ key: `ready:${itemId}:${item.version}`, notice: { code: "work.snag_ready", item, note: "", memberships: await snagCheckers(client, workspaceId, projectId, item.createdBy) } });
         }
       }
       set("status", status);

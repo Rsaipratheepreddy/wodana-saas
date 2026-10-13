@@ -35,7 +35,7 @@ describe("design inspection record (PLM-150)", () => {
     const fetcher = mount((url, init) => {
       if (init?.body instanceof FormData) { current = inspection({ version: 2 }, { photos: [{ id: "ph1", name: "door.jpg", byName: "Dana Designer", at: "2026-10-13T09:00:00Z" }] }); return current; }
       if (init?.method === "POST") { current = inspection({ status: "failed", version: 3, resultByName: "Dana Designer", resultAt: "2026-10-13T09:10:00Z", comments: "Veneer lifting" }, {
-        snags: [{ id: "s1", number: 12, title: "Veneer lifting on the left door", severity: "major", status: "todo", dueDate: "2099-10-22", assigneeName: "Mo Maker", inspectionId: "i1" }] });
+        snags: [{ id: "s1", number: 12, title: "Veneer lifting on the left door", severity: "major", status: "todo", dueDate: "2099-10-22", assigneeName: "Mo Maker", inspectionId: "i1", version: 1, canFix: false }] });
         return current; }
       return current;
     });
@@ -79,6 +79,23 @@ describe("design inspection record (PLM-150)", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Pass" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "pass", version: 1, comments: "" }));
     expect(await screen.findByText("It can go to site.")).toBeInTheDocument();
+  });
+
+  it("gives the factory a Mark fixed action on each snag of a failed round", async () => {
+    const snag = (id: string, number: number, status: string, canFix: boolean) => ({ id, number, title: `Snag ${number}`, severity: "major" as const, status, dueDate: "2099-10-22",
+      assigneeName: "Mo Maker", inspectionId: "i1", version: 3, canFix });
+    const failed = { status: "failed" as const, version: 3, resultByName: "Dana Designer", resultAt: "2026-10-13T09:10:00Z", comments: "Veneer lifting" };
+    let current = inspection(failed, { canRecord: false, canSeeFactory: true, snags: [snag("s1", 12, "todo", true), snag("s2", 13, "todo", true)] });
+    const fetcher = mount((_url, init) => {
+      if (init?.method === "POST") current = inspection(failed, { canRecord: false, canSeeFactory: true, snags: [snag("s1", 12, "in_review", false), snag("s2", 13, "todo", true)] });
+      return current;
+    });
+    page();
+    const first = (await screen.findByRole("link", { name: "#12 Snag 12" })).closest("li")!;
+    await userEvent.click(within(first).getByRole("button", { name: "Mark fixed" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining("/inspections/i1"), body: { action: "fix_snag", snagId: "s1", version: 3 } }));
+    expect(await within(first).findByText("Fixed")).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: "#13 Snag 13" }).closest("li")!).getByRole("button", { name: "Mark fixed" })).toBeInTheDocument();
   });
 
   it("tells the factory person who marked it ready that the design team records it", async () => {

@@ -240,9 +240,23 @@ integration("design inspections at the factory (PLM-150)", () => {
       expect([order.next, order.inspection?.raw]).toEqual(["snags", "snags"]);
       await expect(maker.command(actor, w.workspaceId, id, { action: "request_inspection", stage: "raw", version: order.order.version })).rejects.toThrow(/Fix its 2 snags first/);
 
-      // The factory fixes them: once the last is fixed, the item comes back for round 2 by itself and the designer hears.
+      // The factory marks each one fixed from the work order (or the inspection page): once the last is fixed, the item
+      // comes back for round 2 by itself and the designer hears.
       const lead = work(w.people.maker, ["projects.view"]);
+      expect(order.snags.map((snag) => [snag.title, snag.status, snag.canFix])).toEqual([["Carcass out of square", "todo", true], ["Shelf pins missing", "todo", true]]);
+      expect((await designer.detail(actor, w.workspaceId, raw.id)).snags.map((snag) => snag.canFix)).toEqual([false, false]);
+      await expect(designer.command(actor, w.workspaceId, raw.id, { action: "fix_snag", snagId: order.snags[0].id, version: order.snags[0].version })).rejects.toThrow(/Only the factory/);
+      await expect(makerView.command(actor, w.workspaceId, raw.id, { action: "fix_snag", snagId: order.snags[0].id, version: order.snags[0].version + 1 })).rejects.toThrow(/Someone else changed/);
+      let fixed = await makerView.command(actor, w.workspaceId, raw.id, { action: "fix_snag", snagId: order.snags[0].id, version: order.snags[0].version });
+      expect(fixed.snags.map((snag) => [snag.status, snag.canFix])).toEqual([["in_review", false], ["todo", true]]);
+      // Pressed twice: nothing more happens; one snag is still open, so no round 2 yet.
+      fixed = await makerView.command(actor, w.workspaceId, raw.id, { action: "fix_snag", snagId: order.snags[0].id, version: order.snags[0].version });
+      expect(await openRound(w, id)).toBeNull();
+      // Marked fixed the same way as on the task: who fixed it is kept; the project manager and the designer who raised it hear it is ready to check.
+      expect((await w.client.query("SELECT fixed_by AS \"fixedBy\" FROM work_items WHERE id = $1", [order.snags[0].id])).rows[0].fixedBy).toBe(w.people.maker);
+      expect((await told(w, "work.snag_ready")).map((row) => row.recipient).sort()).toEqual([w.people.designer, w.people.manager].sort());
       await fixAll(w, lead, projectId, raw.id);
+      expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'work_order.inspection_snag_fixed'", [w.workspaceId])).rows[0].n).toBe(1);
       const again = (await openRound(w, id))!;
       expect(again).toMatchObject({ stage: "raw", round: 2 });
       expect((await told(w, "factory.reinspection_ready")).map((row) => row.recipient).sort()).toEqual([w.people.designer, w.people.manager].sort());

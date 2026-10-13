@@ -57,6 +57,8 @@ export function factoryApi(workspaceId: string) {
     inspection: (id: string) => request<InspectionState>(at(`inspections/${id}`)),
     /** Passes or fails a round (version-checked); failing takes comments and the snag lines. */
     recordInspection: (id: string, action: "pass" | "fail", input: Record<string, unknown>) => request<InspectionState>(at(`inspections/${id}`), "POST", { ...input, action }),
+    /** The factory marks one snag of a failed round fixed (version-checked); the next round opens once the last one is fixed. */
+    fixSnag: (inspectionId: string, snag: { id: string; version: number }) => request<InspectionState>(at(`inspections/${inspectionId}`), "POST", { action: "fix_snag", snagId: snag.id, version: snag.version }),
     /** A photo taken at an open round, uploaded once by its id. */
     uploadInspectionPhoto: (id: string, photoId: string, file: File) => upload<InspectionState>(at(`inspections/${id}/photos/${photoId}`), file),
     inspectionPhotoUrl: (photoId: string, preview = true) => at(`inspection-photos/${photoId}`, preview ? { preview: "1" } : {}),

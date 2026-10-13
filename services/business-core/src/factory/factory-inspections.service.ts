@@ -5,7 +5,7 @@ import { recordAudit } from "../audit/record-audit";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { readInspection, readOpenInspections, recordInspection, recordRights } from "./factory-inspections";
+import { markInspectionSnagFixed, readInspection, readOpenInspections, recordInspection, recordRights } from "./factory-inspections";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,10 +41,25 @@ export class FactoryInspectionsService {
     return this.access.asMember(actor, workspaceId, async (client, user) => this.view(client, workspaceId, inspectionId, user.userId));
   }
 
-  /** Passes or fails a round (version-checked). */
+  /**
+   * Passes or fails a round (version-checked), or (`fix_snag`) the factory marks one of the item's snags fixed: the
+   * factory's people and whoever the snag is given to; the next round opens by itself once the last one is fixed.
+   */
   command(actor: RequestActor, workspaceId: string, inspectionId: string, body: Record<string, unknown>) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      await this.view(client, workspaceId, inspectionId, user.userId);
+      const view = await this.view(client, workspaceId, inspectionId, user.userId);
+      if (body.action === "fix_snag") {
+        const snag = view.snags.find((row) => row.id === body.snagId);
+        if (!snag) throw new NotFoundException("Snag not found.");
+        // Marked fixed already (a second press, or someone else first): nothing changes.
+        if (["in_review", "done"].includes(snag.status)) return view;
+        if (snag.status === "cancelled") throw new ConflictException("This snag was cancelled.");
+        if (!snag.canFix) throw new ForbiddenException("Only the factory marks its snags fixed.");
+        const result = await markInspectionSnagFixed(client, workspaceId, { inspectionId, snagId: snag.id, version: body.version, userId: user.userId });
+        if (result.changed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "work_order.inspection_snag_fixed", entityType: "work_order",
+          entityId: result.snag.workOrderId, after: { inspectionId, snagId: snag.id, number: snag.number } });
+        return this.view(client, workspaceId, inspectionId, user.userId);
+      }
       await recordInspection(client, workspaceId, { id: inspectionId, body, userId: user.userId, manages: await this.access.hasPermission(client, workspaceId, user.userId, "projects.manage") });
       return this.view(client, workspaceId, inspectionId, user.userId);
     });
@@ -111,7 +126,11 @@ export class FactoryInspectionsService {
     const manages = await this.access.hasPermission(client, workspaceId, userId, "projects.manage");
     const rights = found.row.status === "due" ? await recordRights(client, workspaceId, found.row, userId, manages) : { canRecord: false, why: null };
     const { requestedBy, ...row } = found.row;
-    return { ...found, row: { ...row, requestedByMe: requestedBy === userId }, canRecord: rights.canRecord, why: rights.why, canSeeFactory: scope.factory };
+    // PLM-150: the factory (who makes and reports) marks a snag fixed; so does whoever it was given to.
+    const factoryFixes = (await this.access.grantedPermissions(client, workspaceId, userId, ["factory.manage", "factory.report"])).size > 0;
+    const snags = found.snags.map(({ assigneeId, ...snag }) => ({ ...snag,
+      canFix: ["todo", "in_progress"].includes(snag.status) && (factoryFixes || (Boolean(assigneeId) && assigneeId === scope.membershipId)) }));
+    return { ...found, snags, row: { ...row, requestedByMe: requestedBy === userId }, canRecord: rights.canRecord, why: rights.why, canSeeFactory: scope.factory };
   }
 
   /** What the person sees: every project (the factory, managers) or the projects they're on (with access to projects). */

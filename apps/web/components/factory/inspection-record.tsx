@@ -32,6 +32,7 @@ export function InspectionRecord({ workspaceId, inspectionId }: { workspaceId: s
   const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<"pass" | "fail" | null>(null);
   const [uploading, setUploading] = useState(0);
+  const [fixing, setFixing] = useState<string | null>(null);
   const load = useCallback(async () => {
     try { setState(await api.inspection(inspectionId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The inspection didn't load.")); }
   }, [api, inspectionId, t]);
@@ -55,6 +56,14 @@ export function InspectionRecord({ workspaceId, inspectionId }: { workspaceId: s
       if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
       throw cause;
     }
+  };
+
+  /** The factory marks one snag fixed; the round reloads (a clash with someone else's change too). */
+  const fixSnag = async (snag: { id: string; version: number }) => {
+    setFixing(snag.id); setNotice("");
+    try { setState(await api.fixSnag(inspectionId, snag)); }
+    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); await load(); }
+    finally { setFixing(null); }
   };
 
   if (error && !state) return <PageShell kind="record" title={t("Design inspection")}><ErrorState description={error} onRetry={() => void load()} /></PageShell>;
@@ -110,7 +119,9 @@ export function InspectionRecord({ workspaceId, inspectionId }: { workspaceId: s
             meta={[severity[snag.severity], snag.assigneeName, snag.dueDate ? t("Due {date}", { date: format.day(snag.dueDate) }) : "",
               snag.inspectionId !== row.id ? labels.stage(state.rounds.find((round) => round.id === snag.inspectionId)?.stage ?? row.stage, state.stages) : ""].filter(Boolean).join(" · ")}
             tone={["todo", "in_progress"].includes(snag.status) ? "danger" : undefined} />
-          <Badge tone={snag.status === "done" ? "success" : snag.status === "in_review" ? "info" : snag.status === "cancelled" ? "neutral" : "warning"}>{snagStatus[snag.status] ?? snag.status}</Badge>
+          {/* PLM-150: the factory marks each snag fixed here, as on the work order. */}
+          {snag.canFix ? <Button size="compact" variant="secondary" isLoading={fixing === snag.id} isDisabled={Boolean(fixing)} onPress={() => void fixSnag(snag)}>{t("Mark fixed")}</Button>
+            : <Badge tone={snag.status === "done" ? "success" : snag.status === "in_review" ? "info" : snag.status === "cancelled" ? "neutral" : "warning"}>{snagStatus[snag.status] ?? snag.status}</Badge>}
         </li>)}</ul>
       </Section> : null}
       {state.rounds.length > 1 ? <Section title={t("Rounds")}>

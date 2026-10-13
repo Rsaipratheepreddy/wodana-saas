@@ -660,6 +660,27 @@ describe("factory", () => {
     expect(rounds).toHaveTextContent("2 of 2 snags to fix");
   });
 
+  it("lists the snags to fix on the work order, each marked fixed by the factory there (PLM-150)", async () => {
+    nav.query = "order=w1";
+    const ready = { status: "ready" as const, releasedAt: "2026-10-01T08:00:00Z", passed: "3.0000", left: "0" };
+    const snag = (id: string, number: number, status: string, canFix: boolean) => ({ id, number, title: `Snag ${number}`, severity: "major" as const, status, dueDate: "2099-10-22", inspectionId: "i3",
+      version: 2, canFix });
+    let fixed = false;
+    const fetcher = mount((url, body) => {
+      if (url.includes("/inspections/i3") && body?.action === "fix_snag") { fixed = true; return {}; }
+      return url.includes("/orders/w1") ? order(ready, { next: "snags", atFactory: "3.0000", inspection: { raw: "passed", final: "snags", dueId: null, dueStage: null, dueOn: null, latestId: "i3", openSnags: fixed ? 1 : 2 },
+        snags: [snag("s1", 12, fixed ? "in_review" : "todo", !fixed), snag("s2", 13, "todo", true)] }) : factory();
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(within(sheet).getByRole("status", { name: "Next step" })).toHaveTextContent("Mark each one fixed: it then goes back for inspection.");
+    const snags = within(sheet).getByRole("region", { name: "Snags" });
+    await userEvent.click(within(within(snags).getByText("#12 Snag 12").closest("li")!).getByRole("button", { name: "Mark fixed" }));
+    await waitFor(() => expect(posts(fetcher).find((call) => call.url.includes("/inspections/i3"))?.body).toEqual({ action: "fix_snag", snagId: "s1", version: 2 }));
+    expect(await within(within(snags).getByText("#12 Snag 12").closest("li")!).findByText("Fixed")).toBeInTheDocument();
+    expect(within(sheet).getByRole("status", { name: "Next step" })).toHaveTextContent("1 snag to fix");
+  });
+
   it("turns design inspections on and keeps only the one after finishing, for the trades and roles chosen (PLM-150)", async () => {
     let data: FactorySettingsState = { settings: { ...settings, inspectionsEnabled: false, inspectionStages: [{ kind: "raw", label: "" }, { kind: "final", label: "" }], inspectionWorkPackages: [],
       inspectorRole: "designer", directorRole: null, directorPackages: [], inspectionDays: 2 }, workcenters: [joinery], canManage: true, canSeeRates: false, currency: "AED",

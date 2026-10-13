@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
+import { membershipOf, readTeam } from "./project-core.store";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -120,6 +121,16 @@ export async function wouldCycle(db: Db, workspaceId: string, predecessorId: str
 export async function workEvent(db: Db, workspaceId: string, itemId: string, kind: string, detail: Record<string, unknown>, actorUserId: string) {
   await db.query(`INSERT INTO work_item_events (id, workspace_id, work_item_id, kind, detail, actor_id) VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5)`,
     [workspaceId, itemId, kind, JSON.stringify(detail), actorUserId]);
+}
+
+/**
+ * Who checks a snag once it is marked fixed: the project's leads and whoever raised it. The same whether it was marked
+ * on the project's work or by the factory on its inspection (PLM-150).
+ */
+export async function snagCheckers(db: Db, workspaceId: string, projectId: string, raisedBy: string) {
+  const leads = ((await readTeam(db, workspaceId, [projectId])).get(projectId) ?? []).filter((member) => member.lead).map((member) => member.membershipId);
+  const raiser = await membershipOf(db, workspaceId, raisedBy);
+  return [...leads, ...(raiser ? [raiser] : [])];
 }
 
 /** Gives someone access to a project without a role, so work given to them opens for them. */

@@ -6,7 +6,8 @@ import { notifyUserInApp, queueUserEmail } from "../notifications/default-templa
 import { DESIGNER_ROLE, membersInRoles } from "../project-core/project-keep-informed";
 import { permissionHolders } from "../project-core/project-release";
 import { settledTeam } from "../project-core/project-team";
-import { ensureProjectAccess, workEvent } from "../project-core/project-work";
+import { noticeWork } from "../project-core/project-notices";
+import { ensureProjectAccess, snagCheckers, workEvent } from "../project-core/project-work";
 import { readCalendar, workdays } from "../project-core/work-calendar";
 import { ensureFactorySettings, FINAL_PENDING, type FactorySettings } from "./factory";
 import { projectReady } from "./factory-ready";
@@ -493,6 +494,33 @@ export async function inspectionSnagChanged(db: Db, workspaceId: string, itemId:
   return requestInspection(db, workspaceId, { workOrderId: round.workOrderId, stage: round.stage, actorId, requesterId: round.requestedBy, auto: true });
 }
 
+/**
+ * The factory marks one snag of a failed inspection fixed, from the work order or the inspection: the same as setting
+ * its task to "In review" in the project's work (who fixed it is kept, the project's leads and whoever raised it hear
+ * it's ready to check), and once the last one is fixed the item goes back for inspection by itself. Version-checked;
+ * a snag already marked fixed (or closed) is left as it is.
+ */
+export async function markInspectionSnagFixed(db: Db, workspaceId: string, input: { inspectionId: string; snagId: string; version: unknown; userId: string }) {
+  const snag = (await db.query<{ id: string; projectId: string; number: number; title: string; status: string; version: number; createdBy: string; workOrderId: string }>(
+    `SELECT item.id, item.project_id AS "projectId", item.number, item.title, item.status, item.version, item.created_by AS "createdBy", inspection.work_order_id AS "workOrderId"
+       FROM work_items item JOIN factory_inspections inspection ON inspection.workspace_id = item.workspace_id AND inspection.id = item.factory_inspection_id
+      WHERE item.workspace_id = $1 AND item.id = $2 AND item.type = 'snag'
+        AND inspection.work_order_id = (SELECT work_order_id FROM factory_inspections WHERE workspace_id = $1 AND id = $3)
+      FOR UPDATE OF item`, [workspaceId, input.snagId, input.inspectionId])).rows[0];
+  if (!snag) throw new NotFoundException("Snag not found.");
+  if (snag.status === "in_review" || snag.status === "done") return { snag, changed: false };
+  if (snag.status === "cancelled") throw new ConflictException("This snag was cancelled.");
+  if (input.version !== snag.version) throw new ConflictException("Someone else changed this snag. Reload to see their changes.");
+  await db.query(
+    `UPDATE work_items SET status = 'in_review', fixed_by = $3, started_at = coalesce(started_at, now()), completed_at = NULL, completed_by = NULL, version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2`, [workspaceId, snag.id, input.userId]);
+  await workEvent(db, workspaceId, snag.id, "status", { from: snag.status, to: "in_review", via: "factory" }, input.userId);
+  await noticeWork(db, { workspaceId, projectId: snag.projectId, key: `ready:${snag.id}:${snag.version}`, actorUserId: input.userId,
+    notice: { code: "work.snag_ready", item: { id: snag.id, number: snag.number, title: snag.title }, note: "", memberships: await snagCheckers(db, workspaceId, snag.projectId, snag.createdBy) } });
+  await inspectionSnagChanged(db, workspaceId, snag.id, input.userId);
+  return { snag, changed: true };
+}
+
 /** A cancelled work order's open rounds are withdrawn (their reminders stop). */
 export async function cancelInspections(db: Db, workspaceId: string, workOrderId: string) {
   await db.query(`UPDATE factory_inspections SET status = 'cancelled', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND work_order_id = $2 AND status = 'due'`,
@@ -617,8 +645,8 @@ export async function readInspection(db: Db, workspaceId: string, id: string) {
   const photos = (await db.query<{ id: string; name: string; byName: string; at: string }>(
     `SELECT photo.id, photo.original_name AS name, person.display_name AS "byName", photo.created_at AS at FROM factory_inspection_photos photo JOIN users person ON person.id = photo.created_by
       WHERE photo.workspace_id = $1 AND photo.inspection_id = $2 ORDER BY photo.created_at`, [workspaceId, id])).rows;
-  const snags = (await db.query<{ id: string; number: number; title: string; severity: string; status: string; dueDate: string | null; assigneeName: string | null; inspectionId: string }>(
-    `SELECT item.id, item.number, item.title, item.severity, item.status, item.due_date::text AS "dueDate", coalesce(person.display_name, person.primary_email) AS "assigneeName",
+  const snags = (await db.query<{ id: string; number: number; title: string; severity: string; status: string; dueDate: string | null; assigneeName: string | null; assigneeId: string | null; inspectionId: string; version: number }>(
+    `SELECT item.id, item.number, item.title, item.severity, item.status, item.due_date::text AS "dueDate", coalesce(person.display_name, person.primary_email) AS "assigneeName", item.assignee_membership_id AS "assigneeId", item.version,
             item.factory_inspection_id AS "inspectionId"
        FROM work_items item
        LEFT JOIN workspace_memberships member ON member.workspace_id = item.workspace_id AND member.id = item.assignee_membership_id
