@@ -1316,7 +1316,8 @@ export class ShowcaseSeed {
       await intake.updateDetails(actor, this.w, lead.id, await this.validated(UpdateLeadDetailsDto, {
         version: current.version, title: facts.title, summary: facts.summary, serviceType: enquiryType.id,
         party: { displayName: party.displayName, email: party.email, mobile: party.mobile },
-        details: { emirate: emirate?.id ?? "dubai", area: facts.area, ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
+        details: { emirate: emirate?.id ?? "dubai", area: facts.area, targetCompletion: daysAgo(-120).toISOString().slice(0, 10),
+          ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
       }));
     });
   }
@@ -1346,7 +1347,9 @@ export class ShowcaseSeed {
           source: source.id, channel: channel?.id ?? source.id, intakeMethod: "manual", externalEventId: reference,
           party: { displayName: party.displayName, email: party.email, mobile: party.mobile },
           title: facts.title, summary: facts.summary, serviceType: enquiryType?.id ?? "not_sure",
-          details: { emirate: emirate?.id ?? "dubai", area: facts.area, ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
+          // PLM-155: the client's target completion (a firm can require it before the Intro), four months out.
+          details: { emirate: emirate?.id ?? "dubai", area: facts.area, targetCompletion: daysAgo(-120).toISOString().slice(0, 10),
+            ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
           assignment: owner.membershipId ? { mode: "manual", ownerMembershipId: owner.membershipId } : { mode: "unassigned" },
           ...(referral ? { referral } : {}),
           originalPayload: { seed: "showcase", reference, fictional: true },
