@@ -129,4 +129,13 @@ describe("one change's record", () => {
     await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes(`/${ID}/decide`) && JSON.parse(String(init?.body)).decision === "approve"
       && JSON.parse(String(init?.body)).approvalVersion === 2)).toBe(true));
   });
+
+  it("QA-007: the QS a change waits for prices it from the change, without a way into the project", () => {
+    mount(() => record());
+    render(<DesignSystemProvider><ChangeRecord workspaceId="w" projectId="p1" changeId={ID}
+      initial={record({ qs: "with_qs", next: null, actions: [], qsPricing: true, canOpenProject: false })} /></DesignSystemProvider>);
+    expect(screen.getByRole("link", { name: "Price it" })).toHaveAttribute("href", `/workspace/projects/p1/changes/${ID}/price`);
+    expect(screen.queryByRole("link", { name: record().project.reference })).not.toBeInTheDocument();
+    expect(screen.getByText(record().project.reference)).toBeInTheDocument();
+  });
 });

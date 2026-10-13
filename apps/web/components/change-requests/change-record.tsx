@@ -70,7 +70,8 @@ export function ChangeRecord({ workspaceId, projectId, changeId, initial }: { wo
   const version = change.version;
   const priceHref = `/workspace/projects/${projectId}/changes/${change.id}/price`;
   const next = record.next;
-  const primary = !next ? null : next === "send_to_qs"
+  // QA-007: the QS prices the change that is with them in the builder (and confirms it there).
+  const primary = !next ? (record.qsPricing ? <Link className="wd-button" data-variant="primary" data-size="compact" href={priceHref}>{t("Price it")}</Link> : null) : next === "send_to_qs"
     ? <Link className="wd-button" data-variant="primary" data-size="compact" href={priceHref}>{t(NEXT_STEP_LABEL[next])}</Link>
     : <Button size="compact" variant="primary" isLoading={busy} onPress={() => void (next === "price" ? run(() => api.step(change.id, "price", { version }), t("Priced. Finish the price in the builder."))
       : next === "submit" ? run(() => api.step(change.id, "submit", { version }), t("Sent for approval."))
@@ -92,7 +93,8 @@ export function ChangeRecord({ workspaceId, projectId, changeId, initial }: { wo
 
   return <div className={styles.page}>
     <PageHeader title={`${change.reference} · ${change.title}`}
-      eyebrow={<Link className={styles.back} href={`/workspace/projects/${projectId}/scope?view=changes`}>{record.project.reference}</Link>}
+      eyebrow={record.canOpenProject === false ? <span className={styles.back}>{record.project.reference}</span>
+        : <Link className={styles.back} href={`/workspace/projects/${projectId}/scope?view=changes`}>{record.project.reference}</Link>}
       actions={<div className={styles.actions}>
         <Badge tone={CHANGE_STATUS_TONE[change.status]}>{t(CHANGE_STATUS_LABEL[change.status])}</Badge>
         {primary}

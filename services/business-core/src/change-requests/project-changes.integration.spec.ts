@@ -40,7 +40,7 @@ const integration = describe.skipIf(!databaseUrl);
 const NIL = "00000000-0000-4000-8000-000000000000";
 const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "T" } as never;
 
-type People = { pm: string; qs: string; qs2: string; approver: string; site: string; finance: string; factory: string; buyer: string; outsider: string };
+type People = { pm: string; qs: string; qs2: string; approver: string; site: string; finance: string; factory: string; buyer: string; outsider: string; qsOnly: string };
 type Seed = People & {
   workspaceId: string; caseId: string; quoteId: string; projectId: string; grantId: string; kitchen: string; study: string; wardrobe: string; pendant: string;
   membership: Record<keyof People, string>; worktopLine: string; stages: Array<{ id: string; name: string; position: number }>; fitting: string; delivery: string;
@@ -81,6 +81,8 @@ integration("changes on a started project: raise → price → QS → approve �
     factory: ["projects.view", "factory.manage"],
     buyer: ["projects.view", "purchasing.manage"],
     outsider: ["projects.view"],
+    // QA-007: a QS as firms set them up (the quantity_surveyor template): Planning and costs, no projects, no planning edits.
+    qsOnly: ["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate"],
   };
 
   function access(seed: Seed, userId: string) {
@@ -142,7 +144,7 @@ integration("changes on a started project: raise → price → QS → approve �
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const names: Record<keyof People, string> = { pm: "Pia PM", qs: "Quinn QS", qs2: "Queenie QS", approver: "Ada Approver", site: "Sam Site", finance: "Fay Finance", factory: "Faisal Factory", buyer: "Bo Buyer", outsider: "Olly Outside" };
+      const names: Record<keyof People, string> = { pm: "Pia PM", qs: "Quinn QS", qs2: "Queenie QS", approver: "Ada Approver", site: "Sam Site", finance: "Fay Finance", factory: "Faisal Factory", buyer: "Bo Buyer", outsider: "Olly Outside", qsOnly: "Quentin QS" };
       for (const key of Object.keys(people) as Array<keyof People>)
         await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,$3)", [people[key], `${people[key].slice(0, 8)}@example.com`, names[key]]);
       await client.query("SET LOCAL session_replication_role = replica");
@@ -150,7 +152,7 @@ integration("changes on a started project: raise → price → QS → approve �
       for (const key of Object.keys(people) as Array<keyof People>)
         await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [membership[key], ids.workspaceId, people[key]]);
       // Roles in the database (the approval engine and the notices read them).
-      for (const [key, code] of [["approver", "commercial.approve"], ["qs", "commercial.estimate"], ["qs2", "commercial.estimate"], ["finance", "commercial.finance.verify"],
+      for (const [key, code] of [["approver", "commercial.approve"], ["qs", "commercial.estimate"], ["qs2", "commercial.estimate"], ["qsOnly", "commercial.estimate"], ["finance", "commercial.finance.verify"],
         ["factory", "factory.manage"], ["buyer", "purchasing.manage"]] as Array<[keyof People, string]>) {
         const role = randomUUID();
         await client.query("INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$2,$3,$3,false)", [role, ids.workspaceId, `${key}_${role.slice(0, 6)}`]);
@@ -383,6 +385,43 @@ integration("changes on a started project: raise → price → QS → approve �
     const other = await seed();
     await expect(asApp(other.workspaceId, other.pm, (client) => readProjectChange(client, other.workspaceId, s.projectId, id))).rejects.toBeInstanceOf(NotFoundException);
     await expect(services(other, other.pm).changes.get(actor, other.workspaceId, s.projectId, id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("QA-007: the QS a change waits for opens it and prices it without the projects module, and nothing else of the project", async () => {
+    const s = await seed();
+    const pm = services(s, s.pm).changes, quentin = services(s, s.qsOnly);
+    const raise = async (title: string, unitPrice: string) => (await pm.raise(actor, s.workspaceId, s.projectId, { id: randomUUID(), title, reason: "client_request",
+      lines: [{ id: randomUUID(), source: "custom", title, quantity: "1", unit: "sum", unitPrice, roomId: s.study }] })).change;
+    await pool.query("UPDATE workspace_quotation_settings SET qs_variation_threshold = 5000 WHERE workspace_id = $1", [s.workspaceId]);
+    const big = await raise("Feature wall", "8000"), small = await raise("Paint touch-up", "300");
+    let record = await pm.get(actor, s.workspaceId, s.projectId, big.id);
+    record = await pm.price(actor, s.workspaceId, s.projectId, big.id, { version: record.change.version });
+    await pm.price(actor, s.workspaceId, s.projectId, small.id, { version: (await pm.get(actor, s.workspaceId, s.projectId, small.id)).change.version });
+    expect([record.qs, record.next]).toEqual(["needed", "send_to_qs"]);
+    // Before it's with them the QS has no way into the project or its changes.
+    await expect(quentin.changes.get(actor, s.workspaceId, s.projectId, big.id)).rejects.toThrow(/access to projects/);
+    await expect(quentin.changes.list(actor, s.workspaceId, s.projectId)).rejects.toThrow(/access to projects/);
+    await services(s, s.pm).qs.send(actor, s.workspaceId, s.caseId, record.change.quoteId!, { assigneeUserId: s.qsOnly });
+
+    // With the QS: the change waiting for them, and only that one.
+    expect((await quentin.changes.list(actor, s.workspaceId, s.projectId)).changes.map((change) => change.id)).toEqual([big.id]);
+    record = await quentin.changes.get(actor, s.workspaceId, s.projectId, big.id);
+    expect(record).toMatchObject({ qs: "with_qs", qsPricing: true, canOpenProject: false, actions: [], next: null, project: { caseId: s.caseId } });
+    await expect(quentin.changes.get(actor, s.workspaceId, s.projectId, small.id)).rejects.toBeInstanceOf(NotFoundException);
+    // Nothing else on the project: no raising, no sources, no steps, no project record.
+    await expect(quentin.changes.raise(actor, s.workspaceId, s.projectId, { id: randomUUID(), title: "X", reason: "client_request", lines: [] })).rejects.toThrow(/access to projects/);
+    await expect(quentin.changes.sources(actor, s.workspaceId, s.projectId, "")).rejects.toThrow(/access to projects/);
+    await expect(quentin.changes.submit(actor, s.workspaceId, s.projectId, big.id, { version: record.change.version })).rejects.toThrow(/access to projects/);
+    await expect(quentin.core.get(actor, s.workspaceId, s.projectId)).rejects.toThrow();
+    // The QS prices the variation in the builder (prices only) and confirms it.
+    const variation = await quentin.builder.builder(actor, s.workspaceId, s.caseId, record.change.quoteId!);
+    expect([variation.canEdit, variation.canPrice]).toEqual([false, true]);
+    const line = variation.lines.find((item) => item.title === "Feature wall")!;
+    await quentin.builder.apply(actor, s.workspaceId, s.caseId, record.change.quoteId!, { ops: [{ op: "upsert", line: { id: line.id, version: line.version, rate: "7600" } }] });
+    await quentin.qs.decide(actor, s.workspaceId, s.caseId, record.change.quoteId!, { decision: "confirm", commandId: randomUUID() });
+    // Confirmed: it's back with Sales, and out of the QS's reach again.
+    expect((await pm.get(actor, s.workspaceId, s.projectId, big.id)).qs).toBe("confirmed");
+    await expect(quentin.changes.get(actor, s.workspaceId, s.projectId, big.id)).rejects.toThrow(/access to projects/);
   });
 
   it("declines, withdraws, reminds the client, and refuses steps out of turn", async () => {

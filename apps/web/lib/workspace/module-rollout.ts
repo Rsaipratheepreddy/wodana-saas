@@ -17,6 +17,16 @@ export function deferredModuleForPath(pathname: string): DeferredModule | null {
   return null;
 }
 
+const CHANGE_RECORD = /^\/workspace\/projects\/[^/]+\/changes\/[^/]+(\/price)?$/;
+
+/**
+ * QA-007: a QS who works in Planning (pre-project module, commercial.estimate) opens a project change whose pricing is
+ * with them, without the Projects module. The page shows only what the API gives them: the changes waiting for them.
+ */
+export function opensAsQs(pathname: string, allowedModules: readonly string[], permissions: readonly string[] | undefined) {
+  return CHANGE_RECORD.test(pathname) && allowedModules.includes("pre-project") && Boolean(permissions?.includes("commercial.estimate"));
+}
+
 export function moduleForWorkspacePath(pathname: string): WorkspaceModuleId {
   if (pathname === "/workspace/catalogs" || pathname.startsWith("/workspace/catalogs/")) return "pre-project";
   if (pathname === "/workspace/pre-projects" || pathname.startsWith("/workspace/pre-projects/")) return "pre-project";

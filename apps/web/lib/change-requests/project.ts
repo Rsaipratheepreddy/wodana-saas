@@ -42,9 +42,14 @@ export type ChangeRecord = {
     declineNote: string | null; withdrawReason: string | null; appliedAt: string | null; applyProblem: string | null; quoteId: string | null;
     timeImpactDays: number; handoverBefore: string | null; handoverAfter: string | null; lines: RaisedLine[];
   };
-  project: { id: string; reference: string; name: string; status: string };
+  /** caseId: the planning record its variation is priced in. */
+  project: { id: string; reference: string; name: string; status: string; caseId?: string };
   price: ChangePrice | null;
   qs: QsState;
+  /** QA-007: this person prices the change as its QS now (the variation is with the QS). */
+  qsPricing?: boolean;
+  /** False for a QS who opens only the changes waiting for them (no access to the project itself). */
+  canOpenProject?: boolean;
   timeline: {
     impacts: Array<{ stageId: string; days: number }>; stages: Array<{ id: string; position: number; name: string; status: string }>; preview: SchedulePreview | null;
     sent: (Partial<SchedulePreview> & { quoteHash?: string; total?: string; sentAt?: string }) | null;

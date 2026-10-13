@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { forwardedDeviceHeaders } from "@/lib/auth/device-request";
-import { deferredModuleForPath, isCrmFirstWorkspace, moduleForWorkspacePath } from "@/lib/workspace/module-rollout";
+import { deferredModuleForPath, isCrmFirstWorkspace, moduleForWorkspacePath, opensAsQs } from "@/lib/workspace/module-rollout";
 import { accessRuleForPath, canSetUpWorkspace, meetsRule } from "@/lib/workspace/access";
 
 const ACCESS_COOKIE = "wodana_access";
@@ -31,7 +31,8 @@ function workspaceRedirect(profile: BootstrapProfile | null, request: NextReques
   // Legacy business-core releases do not include module grants in /me. Keep
   // their established access working until an explicit entitlement list exists.
   const allowedModules = ownerAccess ? ALL_WORKSPACE_MODULES : membership?.allowedModules ?? ALL_WORKSPACE_MODULES;
-  if (!membership || !allowedModules.includes(moduleForWorkspacePath(request.nextUrl.pathname))) {
+  if (!membership || (!allowedModules.includes(moduleForWorkspacePath(request.nextUrl.pathname))
+    && !opensAsQs(request.nextUrl.pathname, allowedModules, membership.allowedPermissions))) {
     return NextResponse.redirect(new URL("/workspace-access-denied", request.url));
   }
   // Areas such as Finance also need the permissions their pages load with. Older releases without

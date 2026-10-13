@@ -39,10 +39,12 @@ export function ChangePricePage({ workspaceId, projectId, changeId }: { workspac
   useWorkspaceBreadcrumb(target?.name);
   useEffect(() => {
     let alive = true;
-    Promise.all([projectApi(workspaceId).get(projectId), projectChangesApi(workspaceId, projectId).get(changeId)]).then(([detail, record]) => {
+    // The change names its planning record, so a QS who opens only this change (QA-007) prices it without the project.
+    projectChangesApi(workspaceId, projectId).get(changeId).then(async (record) => {
+      const caseId = record.project.caseId ?? (await projectApi(workspaceId).get(projectId)).project.caseId;
       if (!alive) return;
       if (!record.change.quoteId) setError(t("This change isn't priced yet."));
-      else setTarget({ caseId: detail.project.caseId, quoteId: record.change.quoteId, name: detail.project.name });
+      else setTarget({ caseId, quoteId: record.change.quoteId, name: record.project.name });
     }).catch((cause: Error) => { if (alive) setError(cause.message); });
     return () => { alive = false; };
   }, [workspaceId, projectId, changeId, t]);

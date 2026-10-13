@@ -23,6 +23,8 @@ import {
 import { cleanStageImpacts, scheduleImpact } from "./change-request-schedule";
 
 const EDIT = "pre_projects.edit";
+/** Who prices quotations and variations where the firm uses a QS (PLM-082). */
+const QS = "commercial.estimate";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -38,8 +40,9 @@ export class ProjectChangesService {
   /** The project's changes with their value, days, status and next step; the sealed value and the variations beside it. */
   list(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      const viewer = await this.viewer(client, workspaceId, projectId, user.userId);
-      const rows = await readProjectChangeRows(client, workspaceId, projectId);
+      const viewer = await this.viewer(client, workspaceId, projectId, user.userId, "read");
+      // A QS without project access lists only the changes waiting for them (QA-007).
+      const rows = (await readProjectChangeRows(client, workspaceId, projectId)).filter((change) => !viewer.waiting || viewer.waiting.has(change.id));
       const changes = [];
       for (const change of rows) {
         const qs = change.status === "pricing" && change.quoteId ? await qsStateOf(client, workspaceId, change.caseId, change.quoteId) : "not_needed";
@@ -55,7 +58,7 @@ export class ProjectChangesService {
            FROM commercial_quotes quote
            LEFT JOIN project_scope_seals seal ON seal.workspace_id = quote.workspace_id AND seal.project_id = $3 AND seal.quote_id = quote.id
           WHERE quote.workspace_id = $1 AND quote.case_id = $2 AND quote.kind = 'variation' AND NOT (quote.detail ? 'changeRequestId')
-            AND quote.status NOT IN ('superseded', 'withdrawn') ORDER BY quote.number DESC`, [workspaceId, viewer.project.caseId, projectId])).rows;
+            AND quote.status NOT IN ('superseded', 'withdrawn') ORDER BY quote.number DESC`, [workspaceId, viewer.project.caseId, projectId])).rows.filter(() => !viewer.waiting);
       return { changes, legacy, money: await approvedVariations(client, workspaceId, projectId), canRaise: viewer.all || viewer.onTeam || viewer.commercial,
         projectOpen: ["active", "on_hold"].includes(viewer.project.status) };
     });
@@ -83,7 +86,11 @@ export class ProjectChangesService {
 
   /** One change, everything its record shows: scope, price, timeline impact, approvals, activity, and what this person may do. */
   get(actor: RequestActor, workspaceId: string, projectId: string, id: string) {
-    return this.access.asMember(actor, workspaceId, async (client, user) => this.record(client, workspaceId, await this.viewer(client, workspaceId, projectId, user.userId), id, user.userId));
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const viewer = await this.viewer(client, workspaceId, projectId, user.userId, "read");
+      if (viewer.waiting && !viewer.waiting.has(id)) throw new NotFoundException("Change not found.");
+      return this.record(client, workspaceId, viewer, id, user.userId);
+    });
   }
 
   raise(actor: RequestActor, workspaceId: string, projectId: string, input: Record<string, unknown>) {
@@ -231,12 +238,12 @@ export class ProjectChangesService {
   /** One of a change's files (or its preview) for someone who sees the project. */
   file(actor: RequestActor, workspaceId: string, projectId: string, fileId: string, preview: boolean) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      await this.viewer(client, workspaceId, projectId, user.userId);
-      const row = (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string; name: string }>(
-        `SELECT file.object_key AS "objectKey", file.preview_key AS "previewKey", file.mime_type AS "mimeType", file.original_name AS name
+      const viewer = await this.viewer(client, workspaceId, projectId, user.userId, "read");
+      const row = (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string; name: string; changeId: string }>(
+        `SELECT file.object_key AS "objectKey", file.preview_key AS "previewKey", file.mime_type AS "mimeType", file.original_name AS name, change.id AS "changeId"
            FROM change_request_files file JOIN change_requests change ON change.workspace_id = file.workspace_id AND change.id = file.change_request_id
           WHERE file.workspace_id = $1 AND file.id = $2 AND change.project_id = $3`, [workspaceId, fileId, projectId])).rows[0];
-      if (!row || !this.storage) throw new NotFoundException("File not found.");
+      if (!row || !this.storage || (viewer.waiting && !viewer.waiting.has(row.changeId))) throw new NotFoundException("File not found.");
       const key = preview && row.previewKey ? row.previewKey : row.objectKey;
       const stored = await this.storage.read(key).catch(() => null);
       if (!stored) throw new NotFoundException("File not found.");
@@ -254,18 +261,38 @@ export class ProjectChangesService {
 
   // ---------- internals ----------
 
-  private async viewer(client: PoolClient, workspaceId: string, projectId: string, userId: string) {
+  /**
+   * Who someone is on the project's changes. `read`: also a QS without project access, for the changes whose pricing
+   * is with them (QA-007) — `waiting` names those; they read them and price the variation, nothing else on the project.
+   */
+  private async viewer(client: PoolClient, workspaceId: string, projectId: string, userId: string, purpose: "work" | "read" = "work") {
     const commercial = await this.access.hasPermission(client, workspaceId, userId, EDIT);
     try {
       const viewer = await projectViewer(client, this.access, workspaceId, projectId, userId);
-      return { ...viewer, commercial };
+      return { ...viewer, commercial, waiting: null as Set<string> | null };
     } catch (error) {
       // Whoever prices and sends quotations works the project's changes without being on its team; approvers read them.
-      if (!commercial && !(await this.access.hasPermission(client, workspaceId, userId, "commercial.approve"))) throw error;
+      if (!commercial && !(await this.access.hasPermission(client, workspaceId, userId, "commercial.approve"))) {
+        const waiting = purpose === "read" ? await this.waitingForQs(client, workspaceId, projectId, userId) : null;
+        if (!waiting?.size) throw error;
+        const project = await readProject(client, workspaceId, projectId);
+        if (!project) throw new NotFoundException("Project not found.");
+        return { project, all: false, onTeam: false, lead: false, membershipId: await membershipOf(client, workspaceId, userId), commercial, waiting };
+      }
       const project = await readProject(client, workspaceId, projectId);
       if (!project) throw new NotFoundException("Project not found.");
-      return { project, all: false, onTeam: false, lead: false, membershipId: await membershipOf(client, workspaceId, userId), commercial };
+      return { project, all: false, onTeam: false, lead: false, membershipId: await membershipOf(client, workspaceId, userId), commercial, waiting: null as Set<string> | null };
     }
+  }
+
+  /** The project's changes whose variation is with this QS for pricing (an open QS review assigned to them). */
+  private async waitingForQs(client: PoolClient, workspaceId: string, projectId: string, userId: string) {
+    if (!(await this.access.hasPermission(client, workspaceId, userId, QS))) return new Set<string>();
+    return new Set((await client.query<{ id: string }>(
+      `SELECT change.id FROM change_requests change
+         JOIN quote_qs_reviews review ON review.workspace_id = change.workspace_id AND review.case_id = change.case_id AND review.quote_id = change.quote_id
+        WHERE change.workspace_id = $1 AND change.project_id = $2 AND change.status = 'pricing' AND review.status = 'with_qs' AND review.assignee_user_id = $3`,
+      [workspaceId, projectId, userId])).rows.map((row) => row.id));
   }
 
   private async allow(client: PoolClient, workspaceId: string, viewer: ProjectViewerRights, change: ChangeRow, userId: string, action: string) {
@@ -348,9 +375,12 @@ export class ProjectChangesService {
         lines: change.lines.map((line) => ({ id: line.id, source: line.source, action: line.action, title: line.title, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice,
           roomId: line.roomId, roomName: line.roomName, catalogItemId: line.catalogItemId ?? null, boqLineId: line.boqLineId ?? null })),
       },
-      project: { id: viewer.project.id, reference: viewer.project.reference, name: viewer.project.name, status: viewer.project.status },
+      project: { id: viewer.project.id, reference: viewer.project.reference, name: viewer.project.name, status: viewer.project.status, caseId: viewer.project.caseId },
       price: price ? { ...price, value: signedAmount(price.total), paymentRule: change.paymentRule ?? settings.paymentRule, holdsWork: settings.requireVariationPayment } : null,
       qs,
+      // QA-007: the QS prices (and confirms) a change whose variation is with the QS; a QS without project access opens only that.
+      qsPricing: qs === "with_qs" && await this.access.hasPermission(client, workspaceId, userId, QS),
+      canOpenProject: !("waiting" in viewer && viewer.waiting),
       timeline: { impacts, stages: stages.map(({ ownerRole: _role, ...stage }) => stage), preview, sent: change.scheduleSnapshot ?? null, applied: change.appliedSchedule ?? null },
       approval, signing, files,
       events: await readChangeEvents(client, workspaceId, id),

@@ -139,4 +139,23 @@ describe("workspace onboarding gate", () => {
     membership = { allowedModules: ["workspace"], allowedPermissions: [], roles: ["owner"] };
     expect((await finance()).status).toBe(200);
   });
+
+  it("QA-007: lets a QS without Projects open a project change (to price it), and nothing else of the project", async () => {
+    vi.stubEnv("E2E_AUTH_BYPASS", "false");
+    let membership: Record<string, unknown> = { allowedModules: ["workspace", "crm", "pre-project", "hrms"], allowedPermissions: ["pre_projects.view", "commercial.estimate"], roles: ["quantity_surveyor"] };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ nextAction: "enter_workspace", memberships: [{ workspaceId: "workspace-1", workspaceSlug: "example", onboarding: { status: "completed" }, ...membership }] }),
+    })));
+    const open = (path: string) => proxy(new NextRequest(`http://localhost${path}`, { headers: { cookie: "wodana_access=access-token" } }));
+    const project = "/workspace/projects/0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
+    const change = `${project}/changes/5d1f6a2e-8b0c-4e7a-9f3d-2c4b6a8e0f11`;
+    expect((await open(change)).status).toBe(200);
+    expect((await open(`${change}/price`)).status).toBe(200);
+    for (const other of [project, `${project}/scope`, `${project}/changes`, "/workspace/projects", "/workspace/inventory"])
+      expect((await open(other)).headers.get("location")).toBe("http://localhost/workspace-access-denied");
+    // Someone in Planning who doesn't price quotations doesn't get in.
+    membership = { allowedModules: ["workspace", "pre-project"], allowedPermissions: ["pre_projects.view"], roles: ["designer"] };
+    expect((await open(change)).headers.get("location")).toBe("http://localhost/workspace-access-denied");
+  });
 });
