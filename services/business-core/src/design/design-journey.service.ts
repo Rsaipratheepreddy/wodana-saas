@@ -406,10 +406,18 @@ export class DesignJourneyService {
     return this.view(client, workspaceId, caseId, userId);
   }
 
-  /** PLM-128/154: the designer's answers to the site visit question list; each answer keeps who gave it and when. */
+  /**
+   * PLM-128/154: the designer's answers to the site visit question list; each answer keeps who gave it and when. The list
+   * is used at the kick-off meeting too (PLM-154): while the kick-off is the current step, its answers are recorded
+   * against it (the kick-off's version), and the site measure carries on from them.
+   */
   answerSiteVisit(actor: RequestActor, workspaceId: string, caseId: string, input: { answers: Array<{ key: string; answer: string }>; version: number }) {
     return this.edit(actor, workspaceId, caseId, async (client, userId) => {
-      const target = await this.siteVisitTarget(client, workspaceId, caseId, input.version);
+      const kickoff = (await client.query<{ status: string }>(`SELECT status FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'kickoff'`,
+        [workspaceId, caseId])).rows[0];
+      const target: SiteVisitTarget | { kind: "kickoff" } = kickoff?.status === "active"
+        ? (await this.activeStage(client, workspaceId, caseId, "kickoff", input.version), { kind: "kickoff" as const })
+        : await this.siteVisitTarget(client, workspaceId, caseId, input.version);
       const questions = await this.questions(client, workspaceId, caseId);
       for (const item of input.answers) {
         const question = questions.find((entry) => entry.key === item.key);
@@ -421,9 +429,11 @@ export class DesignJourneyService {
            ON CONFLICT (workspace_id, case_id, question_key) DO UPDATE SET answer = excluded.answer, answered_by = excluded.answered_by, answered_at = now(), version = design_site_visit_answers.version + 1
            WHERE design_site_visit_answers.answer IS DISTINCT FROM excluded.answer`, [workspaceId, caseId, item.key, question.question, answer, userId]);
       }
-      if (target.kind === "stage") await client.query(`UPDATE design_journey_stages SET version = version + 1 WHERE workspace_id = $1 AND case_id = $2 AND stage = 'site_visit'`, [workspaceId, caseId]);
+      if (target.kind === "kickoff") await client.query(`UPDATE design_journey_stages SET version = version + 1 WHERE workspace_id = $1 AND case_id = $2 AND stage = 'kickoff'`, [workspaceId, caseId]);
+      else if (target.kind === "stage") await client.query(`UPDATE design_journey_stages SET version = version + 1 WHERE workspace_id = $1 AND case_id = $2 AND stage = 'site_visit'`, [workspaceId, caseId]);
       else await client.query(`UPDATE design_journey_tasks SET version = version + 1 WHERE workspace_id = $1 AND case_id = $2 AND task = 'site_measure'`, [workspaceId, caseId]);
-      await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.site_visit_answered.v1", entityType: "pre_project_case", entityId: caseId, after: { keys: input.answers.map((item) => item.key) } });
+      await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.site_visit_answered.v1", entityType: "pre_project_case", entityId: caseId,
+        after: { keys: input.answers.map((item) => item.key), at: target.kind === "kickoff" ? "kickoff" : "site_visit" } });
       return this.view(client, workspaceId, caseId, userId);
     });
   }

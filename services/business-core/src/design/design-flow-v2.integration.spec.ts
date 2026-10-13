@@ -165,6 +165,8 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     view = await lead.journey.scheduleKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version, startsAt: future(1), endsAt: future(1.05), timezone: "Asia/Dubai", address: "Villa 12" });
     expect(await told(ids, "design.kickoff_booked")).toEqual([ids.people.am.user, ids.people.junior.user].sort());
     await expect(lead.journey.completeKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version, renderSignoffOn: day(40) })).rejects.toThrow("The kick-off meeting hasn't taken place yet");
+    // PLM-154: the question list is used at the kick-off too; its answers carry on into the site measure.
+    view = await lead.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version, answers: [{ key: "access", answer: "Service lift" }] });
     await held(ids, "kickoff");
     await expect(lead.journey.completeKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version })).rejects.toThrow("Enter the render sign-off date agreed with the client");
     view = await lead.journey.completeKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version, renderSignoffOn: day(40) });
@@ -198,8 +200,8 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     const room = (await sql<{ id: string }>(ids, "SELECT id FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2", [ids.workspaceId, ids.caseId]))[0].id;
     await sql(ids, `INSERT INTO pre_project_site_records(id,workspace_id,case_id,kind,room_id,title,status,version,content,created_by,updated_by) VALUES($1,$2,$3,'measurement',$4,'Kitchen wall','measured',1,$5,$6,$6)`,
       [randomUUID(), ids.workspaceId, ids.caseId, room, JSON.stringify({ assetIds: [randomUUID()] }), ids.people.junior.user]);
-    await expect(junior.journey.completeSiteVisit(actor, ids.workspaceId, ids.caseId, { version: view.siteVisit!.version, summary: "Measured" })).rejects.toThrow("Answer the 2 site visit questions left");
-    view = await junior.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: view.siteVisit!.version, answers: [{ key: "access", answer: "Service lift" }, { key: "family", answer: "Five, cooks daily" }] });
+    await expect(junior.journey.completeSiteVisit(actor, ids.workspaceId, ids.caseId, { version: view.siteVisit!.version, summary: "Measured" })).rejects.toThrow("Answer the last site visit question");
+    view = await junior.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: view.siteVisit!.version, answers: [{ key: "family", answer: "Five, cooks daily" }] });
     expect(view.siteChecklistProblem).toBeNull();
     view = await junior.journey.completeSiteVisit(actor, ids.workspaceId, ids.caseId, { version: view.siteVisit!.version, summary: "Every wall measured" });
     // The concept the client already chose completes now; renders start.

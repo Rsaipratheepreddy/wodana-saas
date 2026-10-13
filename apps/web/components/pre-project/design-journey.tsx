@@ -22,7 +22,7 @@ export type JourneyStage = JourneyStageView;
 export type JourneyView = JourneyData;
 type StageCode = JourneyStageView["stage"];
 type StageDialog = { kind: "close_inspiration" | "schedule" | "schedule_materials" | "schedule_home" | "not_required" | "confirm_materials" | "assign" | "schedule_kickoff" | "kickoff" | "deadline"
-  | "render_signoff" | "samples_collected" | "approve_samples"; stage: JourneyStage };
+  | "render_signoff" | "samples_collected" | "approve_samples" | "questions"; stage: JourneyStage };
 type Dialog = StageDialog | { kind: "team"; slot: TeamSlotView } | null;
 type Slots = { configured: boolean; slots: Array<{ start: string; end: string; date: string }>; timezone: string | null; durationMinutes: number | null; location: string | null };
 type Member = { id: string; displayName: string };
@@ -153,6 +153,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                 {stage.stage === "inspiration" ? <Button size="compact" variant="secondary" onPress={() => setDialog({ kind: "close_inspiration", stage })}>{t("Close inspiration")}</Button> : null}
                 {stage.stage === "kickoff" ? <>
                   <Button size="compact" variant={stage.scheduledAt ? "secondary" : "primary"} onPress={() => setDialog({ kind: "schedule_kickoff", stage })}><CalendarPlus aria-hidden="true" size={13} />{stage.scheduledAt ? t("Reschedule") : t("Book kick-off")}</Button>
+                  {view.checklist?.length && view.canEdit ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "questions", stage })}>{t("Site visit questions")}</Button> : null}
                   {meetingHeld ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "kickoff", stage })}><CheckCircle2 aria-hidden="true" size={13} />{t("Record the kick-off")}</Button> : null}
                 </> : null}
                 {stage.stage === "site_visit" ? <>
@@ -198,6 +199,8 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
     {dialog?.kind === "close_inspiration" ? <CloseInspirationDialog onClose={() => setDialog(null)} onSubmit={async (note) => saved(current ? t("Inspiration closed. The kick-off is next.") : t("Inspiration closed. The site visit is next."), await post("design-journey/inspiration/close", { version: dialog.stage.version, note: note || null }))} /> : null}
     {dialog?.kind === "schedule" ? <ScheduleVisitDialog title={t("Book site visit")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Site visit booked. The Account Manager has been invited."), await post("design-journey/site-visit/schedule", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "schedule_kickoff" ? <ScheduleVisitDialog title={t("Book kick-off meeting")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Kick-off booked. The design team has been invited."), await post("design-journey/kickoff/schedule", { version: dialog.stage.version, ...value }))} /> : null}
+    {dialog?.kind === "questions" ? <SiteQuestionsDialog view={view} onClose={() => setDialog(null)}
+      onSubmit={async (answers) => saved(t("Answers saved."), await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT", { version: dialog.stage.version, answers }))} /> : null}
     {dialog?.kind === "kickoff" ? <KickoffDialog needsRenderDate={Boolean(view.journey?.includesRenders)} onClose={() => setDialog(null)}
       onSubmit={async (value) => saved(t("Kick-off recorded. The concept and the site measure have started."), await post("design-journey/kickoff/complete", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "deadline" ? <DeadlineDialog title={dialog.stage.stage === "renders" ? t("Render due date") : t("Concept due date")} onClose={() => setDialog(null)}
@@ -256,6 +259,26 @@ function TeamDialog({ slot, label, members, onClose, onSubmit }: { slot: TeamSlo
     onSubmit={() => onSubmit({ role: picked === NOT_NEEDED ? { membershipId: null, notApplicable: true } : { membershipId: picked, notApplicable: false }, reason: reason.trim() || null })}>
     <SelectField isRequired label={label} items={items} selectedKey={picked} onSelectionChange={(key) => setPicked(String(key))} />
     {changing ? <TextAreaField isRequired label={t("Reason for the change")} maxLength={500} onChange={setReason} value={reason} /> : null}
+  </FormDialog>;
+}
+
+/**
+ * PLM-154: the site visit question list at the kick-off meeting, grouped by scope (the job's scopes first, a scope it
+ * doesn't have marked optional). The site measure carries on from these answers.
+ */
+function SiteQuestionsDialog({ view, onClose, onSubmit }: { view: JourneyView; onClose: () => void; onSubmit: (answers: Array<{ key: string; answer: string }>) => Promise<unknown> }) {
+  const t = useT();
+  const checklist = view.checklist ?? [];
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(checklist.map((item) => [item.key, item.answer ?? ""])));
+  const changed = checklist.filter((item) => (drafts[item.key] ?? "").trim() !== (item.answer ?? ""));
+  const groups = view.checklistGroups?.length ? view.checklistGroups : [{ scope: null, matches: true, required: true, keys: checklist.map((item) => item.key) }];
+  return <FormDialog title={t("Site visit questions")} onClose={onClose} isDirty={changed.length > 0} isSubmitDisabled={!changed.length} submitLabel={t("Save")}
+    onSubmit={() => onSubmit(changed.map((item) => ({ key: item.key, answer: (drafts[item.key] ?? "").trim() })))}>
+    {groups.map((group) => <section key={group.scope ?? ""} className={styles.questionGroup} aria-label={group.scope ?? t("General")}>
+      {groups.length > 1 ? <h4 className={styles.groupTitle}>{group.scope ?? t("General")}{group.required ? null : <span className={styles.muted}> · {t("Optional")}</span>}</h4> : null}
+      {group.keys.map((key) => checklist.find((item) => item.key === key)).filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) =>
+        <TextAreaField key={item.key} label={item.question} maxLength={2000} value={drafts[item.key] ?? ""} onChange={(next) => setDrafts((current) => ({ ...current, [item.key]: next }))} />)}
+    </section>)}
   </FormDialog>;
 }
 

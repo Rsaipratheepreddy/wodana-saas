@@ -34,6 +34,10 @@
 .measurements li { display: flex; justify-content: space-between; gap: var(--wd-space-3); font-size: var(--wd-text-sm); }
 .measurements small { color: var(--wd-color-text-secondary); }
 
+/* PLM-154: the site visit questions at the kick-off, by scope. */
+.questionGroup { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.groupTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
+
 /* PLM-151: the design team of the job, one line per part. */
 .team { display: flex; flex-direction: column; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
 .teamList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--wd-space-1); }
