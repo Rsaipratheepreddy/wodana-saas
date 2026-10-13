@@ -5,7 +5,7 @@ import { recordAudit } from "../../audit/record-audit";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { UNRESOLVED_ENQUIRY_TYPE } from "../leads/lead-options";
 import { loadFlowDetail } from "./crm-flows.service";
-import { ensureEnquiryTypeFlows, flowCodeFor, freeFlowCode } from "./enquiry-type-flows";
+import { ensureEnquiryTypeFlows, flowCodeFor, freeFlowCode, repairStarterFlows } from "./enquiry-type-flows";
 import { flowChecksum, validateFlowDefinition } from "./flow-definition";
 import { flowTemplate } from "./flow-templates";
 import { copyClosingRules, inferClosing, seedClosingRules, TEMPLATE_CLOSING } from "./flow-closing";
@@ -56,6 +56,16 @@ export class CrmEnquiryTypesService {
         [workspaceId, UNRESOLVED_ENQUIRY_TYPE])).rows;
       return { data: rows };
     });
+  }
+
+  /**
+   * QA-002: the operator's repair for a workspace provisioned before enquiry types started from their flows: each type
+   * still on its untouched Basic copy takes the flow named for it (type code → design, fit_out, furniture). Audited and
+   * idempotent; `dryRun` lists what would change.
+   */
+  repairStarterFlows(actor: RequestActor, workspaceId: string, wanted: Record<string, string>, dryRun = false) {
+    return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) =>
+      repairStarterFlows(client, workspaceId, new Map(Object.entries(wanted)), { actorUserId: user.userId, dryRun }));
   }
 
   /** The type with its steps: the flow's versions and one version's definition (the latest when none is named). */

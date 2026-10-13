@@ -38,6 +38,43 @@ const ENQUIRY_TYPES = `FROM crm_taxonomy_options choice
   WHERE choice.workspace_id = $1 AND choice.status = 'active' AND choice.code <> $2`;
 
 /**
+ * QA-002 repair: an enquiry type that should start from another starter flow (design, fit_out, furniture) but still
+ * owns the untouched copy of Basic it was given (one version, the Basic starter's steps, never published over) takes
+ * that flow's steps: the untouched copy is archived (a starter flow is only let go), the type points at the wanted flow,
+ * and `ensureEnquiryTypeFlows` links it (or gives it its own copy). Its jobs move to the new steps on their next read,
+ * as when a type's flow changes (E2-1, audited). Anything a firm edited is left alone. Idempotent; `dryRun` only says
+ * which types would change. Returns the codes of the types repaired (or to repair).
+ */
+export async function repairStarterFlows(db: Db, workspaceId: string, wanted: ReadonlyMap<string, string>, options: { actorUserId?: string | null; dryRun?: boolean } = {}) {
+  await ensureEnquiryTypeFlows(db, workspaceId, { actorUserId: options.actorUserId });
+  const basic = flowChecksum(STARTER_FLOWS.basic.definition);
+  const rows = (await db.query<{ id: string; code: string; flow: string | null; flowId: string; flowCode: string; versions: number; checksum: string | null; source: string | null }>(
+    `SELECT choice.id, choice.code, choice.flow, owned.id AS "flowId", owned.code AS "flowCode",
+            (SELECT count(*)::int FROM crm_flow_versions version WHERE version.workspace_id = owned.workspace_id AND version.flow_id = owned.id) AS versions,
+            (SELECT version.checksum FROM crm_flow_versions version WHERE version.workspace_id = owned.workspace_id AND version.flow_id = owned.id ORDER BY version.version DESC LIMIT 1) AS checksum,
+            (SELECT version.source FROM crm_flow_versions version WHERE version.workspace_id = owned.workspace_id AND version.flow_id = owned.id ORDER BY version.version DESC LIMIT 1) AS source
+     ${ENQUIRY_TYPES} AND owned.id IS NOT NULL ORDER BY choice.position, choice.label, choice.id`, [workspaceId, UNRESOLVED_ENQUIRY_TYPE])).rows;
+  const repaired: string[] = [];
+  for (const row of rows) {
+    const target = wanted.get(row.code);
+    if (!target || target === "basic" || !STARTER_FLOWS[target] || row.flowCode === target) continue;
+    if (row.versions !== 1 || row.checksum !== basic || row.source !== "starter") continue; // the firm's own steps
+    repaired.push(row.code);
+    if (options.dryRun) continue;
+    await db.query(
+      `UPDATE crm_flows SET enquiry_type_option_id = NULL, status = CASE WHEN code = ANY($3::text[]) THEN status ELSE 'archived' END, updated_by = $4, updated_at = now()
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, row.flowId, Object.keys(STARTER_FLOWS), options.actorUserId ?? null]);
+    await db.query(`UPDATE crm_taxonomy_options SET flow = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, row.id, target]);
+    await recordAudit(db, {
+      workspaceId, actorUserId: options.actorUserId ?? null, source: "internal", action: "crm.enquiry_type.flow_repaired.v1", entityType: "crm_taxonomy_option", entityId: row.id,
+      before: { flow: row.flow, flowId: row.flowId, flowCode: row.flowCode, steps: "basic" }, after: { flow: target },
+    });
+  }
+  if (repaired.length && !options.dryRun) await ensureEnquiryTypeFlows(db, workspaceId, { actorUserId: options.actorUserId });
+  return repaired;
+}
+
+/**
  * Plan §5a: one enquiry type, one flow. The product shows enquiry types, each with its own steps; the flow is how those
  * steps are stored. Run on read inside the tenant transaction, this makes the data match (idempotent, audited):
  *   * a type that already owns a flow keeps it, and its `flow` code is put back to that flow's code if it drifted;

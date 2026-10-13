@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { verifyPassword } from "../auth/local-password";
+import { flowChecksum } from "../crm/flows/flow-definition";
+import { STARTER_FLOWS } from "../crm/flows/starter-flows";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). The CLI runs in a child process (the
 // whole Nest application context, from source) as the app role wodana_app, so provisioning, tenant isolation,
@@ -206,4 +208,41 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
       client.release();
     }
   });
+
+  it("QA-002: a later run repairs a workspace made before enquiry types started from their flows (untouched Basic copies only), once, audited", async () => {
+    const id = await workspaceId();
+    const basic = STARTER_FLOWS.basic.definition;
+    const typeId = async (code: string) => (await pool.query<{ id: string }>(`SELECT choice.id FROM crm_taxonomy_options choice
+      JOIN crm_taxonomies taxonomy ON taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type' WHERE choice.workspace_id = $1 AND choice.code = $2`, [id, code])).rows[0].id;
+    // As the CLI used to leave it: these types own an untouched copy of Basic; another one's Basic copy was edited by the firm.
+    for (const [code, edited] of [["furniture_only", false], ["interior_design_furniture", false], ["full_fit_out", true]] as const) {
+      const type = await typeId(code);
+      await pool.query(`UPDATE crm_flows SET enquiry_type_option_id = NULL, status = CASE WHEN code IN ('basic', 'design', 'fit_out', 'furniture') THEN status ELSE 'archived' END
+        WHERE workspace_id = $1 AND enquiry_type_option_id = $2`, [id, type]);
+      const flow = (await pool.query<{ id: string }>(`INSERT INTO crm_flows (workspace_id, code, name, enquiry_type_option_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [id, `${code.slice(0, 30)}_old`, code, type])).rows[0].id;
+      await pool.query(`INSERT INTO crm_flow_versions (workspace_id, flow_id, version, definition, checksum, source) VALUES ($1, $2, 1, $3::jsonb, $4, 'starter')`,
+        [id, flow, JSON.stringify(basic), flowChecksum(basic)]);
+      if (edited) await pool.query(`INSERT INTO crm_flow_versions (workspace_id, flow_id, version, definition, checksum, source) VALUES ($1, $2, 2, $3::jsonb, $4, 'published')`,
+        [id, flow, JSON.stringify(basic), flowChecksum(basic)]);
+      await pool.query(`UPDATE crm_taxonomy_options SET flow = $3 WHERE workspace_id = $1 AND id = $2`, [id, type, `${code.slice(0, 30)}_old`]);
+    }
+    const [preview, repair, rerun] = await cli([[...full, "--json"], [...full, "--apply", "--json"], [...full, "--apply", "--json"]]);
+    for (const result of [preview, repair, rerun]) expect(result.code, result.output).toBe(0);
+    const repairs = (result: Result) => json(result).lines.filter((line) => line.label.startsWith("enquiry_type ›")).map((line) => [line.label, line.status]).sort();
+    expect(repairs(preview)).toEqual([["enquiry_type › furniture_only", "would change"], ["enquiry_type › interior_design_furniture", "would change"]]);
+    expect(repairs(repair)).toEqual([["enquiry_type › furniture_only", "changed"], ["enquiry_type › interior_design_furniture", "changed"]]);
+    const starters = Object.fromEntries((await pool.query<{ code: string; starter: string }>(
+      `SELECT choice.code, coalesce(origin.code, owned.code) AS starter FROM crm_taxonomy_options choice
+         JOIN crm_taxonomies taxonomy ON taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
+         JOIN crm_flows owned ON owned.workspace_id = choice.workspace_id AND owned.enquiry_type_option_id = choice.id
+         LEFT JOIN crm_flows origin ON origin.workspace_id = owned.workspace_id AND origin.id = owned.split_from_flow_id
+        WHERE choice.workspace_id = $1 AND choice.status = 'active'`, [id])).rows.map((row) => [row.code, row.starter]));
+    // Repaired; the firm's edited steps stay as they are.
+    expect(starters).toMatchObject({ furniture_only: "furniture", interior_design_furniture: "design", full_fit_out: "full_fit_out_old" });
+    expect(await count(`SELECT count(*) FROM audit_events WHERE workspace_id = $1 AND action = 'crm.enquiry_type.flow_repaired.v1'`, [id])).toBe(2);
+    // Run again: nothing left to repair.
+    expect(repairs(rerun)).toEqual([]);
+    expect(json(rerun).lines.find((line) => line.label === "enquiry type flows")?.status).toBe("unchanged");
+  }, 600_000);
 });

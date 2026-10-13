@@ -6,6 +6,7 @@ import { LocalAuthService } from "../auth/local-auth.service";
 import { ClientPortalAdminService } from "../client-portal/client-portal-admin.service";
 import { CreateTaxonomyDto, UpdateTaxonomyDto } from "../crm/settings/dto/settings.dto";
 import { CrmSettingsService } from "../crm/settings/crm-settings.service";
+import { CrmEnquiryTypesService } from "../crm/flows/crm-enquiry-types.service";
 import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
@@ -576,6 +577,13 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
         else await settings.createTaxonomy(actor, workspaceId, await validated(CreateTaxonomyDto, { code: taxonomy.code, name: taxonomy.name, options }));
         report.add("crm", "changed", taxonomy.code, `${options.length} options`);
       }
+      // QA-002: a workspace made before enquiry types started from their flows gets them now (untouched Basic copies only).
+      const types = taxonomies.find((taxonomy) => taxonomy.code === "enquiry_type");
+      const wanted = Object.fromEntries((types?.options ?? []).filter((option) => option.flow).map((option) => [option.code, option.flow!]));
+      if (!Object.keys(wanted).length || !current.some((taxonomy) => taxonomy.code === "enquiry_type")) return;
+      const repairs = await get(CrmEnquiryTypesService).repairStarterFlows(actor, workspaceId, wanted, !args.apply);
+      if (!repairs.length) report.add("crm", "unchanged", "enquiry type flows", "every type starts from its flow");
+      else for (const code of repairs) report.add("crm", args.apply ? "changed" : "would change", `enquiry_type › ${code}`, `steps from the ${wanted[code]} flow (was Basic)`);
     }
 
     async function ensureMember(plan: MemberPlan, ownerPerson: Person, teamIds: Map<string, string>): Promise<string | null> {
