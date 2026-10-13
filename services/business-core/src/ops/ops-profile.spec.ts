@@ -167,7 +167,7 @@ describe("route changes", () => {
     expect(palm.inbox?.closingMessages?.form).toContain("{{form_link}}");
     expect(palm.sales).toEqual({ timelineCheckTeams: ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"] });
     expect(palm.enquiryRequirements).toEqual([{ field: "area", requiredAt: "book_intro" }, { field: "targetCompletion", requiredAt: "book_intro" }]);
-    expect(palm.rolePermissions).toContainEqual({ roles: ["team_sales_admin"], permissions: ["crm.inbox.close_chats"] });
+    expect(palm.rolePermissions).toContainEqual({ roles: ["team_sales_admin"], permissions: ["crm.inbox.team", "crm.inbox.close_chats"] });
     expect(validateProfile({ inbox: { closingMessages: { received: null } } })).toEqual({ inbox: { closingMessages: { received: null } } });
     expect(problems({ inbox: { closingMessages: { closing: "Hi {{client}}" }, closingFormUrl: "palm.example/form", closingAfterHours: 0 },
       sales: { timelineCheckTeams: ["Interior design"] }, enquiryRequirements: [{ field: "area", requiredAt: "later" }] })).toEqual([

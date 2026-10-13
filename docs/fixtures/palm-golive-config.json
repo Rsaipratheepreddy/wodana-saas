@@ -194,11 +194,12 @@
       ]
     },
     {
-      "_note": "PLM-137: only the Sales Admin sends Closing the chat.",
+      "_note": "PLM-137: the WhatsApp inbox is the Sales Admin's intake (the unassigned chats and the Sales team's, crm.inbox.team), and only the Sales Admin sends Closing the chat.",
       "roles": [
         "team_sales_admin"
       ],
       "permissions": [
+        "crm.inbox.team",
         "crm.inbox.close_chats"
       ]
     }
