@@ -52,7 +52,7 @@ export type Profile = {
     inspections?: { enabled?: boolean; stages?: InspectionStage[]; trades?: string[]; inspectorRole?: string; directorRole?: string | null; directorPackages?: string[];
       workingDays?: number };
   };
-  quotations?: { validityDays?: number; qsReview?: boolean; qsPrices?: "all" | "rules"; qsItemTypes?: string[]; qsWorkPackages?: string[] };
+  quotations?: { validityDays?: number; qsReview?: boolean; qsPrices?: "all" | "rules"; qsItemTypes?: string[]; qsWorkPackages?: string[]; valueEngineeringFreeRounds?: number | null };
   firstResponse?: { minutes: number; warningMinutes?: number; workingCalendar?: { days: string[]; start: string; end: string; timeZone?: string } };
   financeRequests?: {
     inbox?: string | null; autoStageInvoiceRequests?: boolean;
@@ -247,7 +247,7 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.quotations !== undefined) {
-    const section = at("quotations").object(raw.quotations, ["validityDays", "qsReview", "qsPrices", "qsItemTypes", "qsWorkPackages"]);
+    const section = at("quotations").object(raw.quotations, ["validityDays", "qsReview", "qsPrices", "qsItemTypes", "qsWorkPackages", "valueEngineeringFreeRounds"]);
     if (section) profile.quotations = {
       validityDays: optional(section, "validityDays", (value) => at("quotations.validityDays").int(value, 1, 365)),
       qsReview: optional(section, "qsReview", (value) => at("quotations.qsReview").bool(value)),
@@ -255,6 +255,8 @@ export function validateProfile(raw: unknown): Profile {
       qsItemTypes: optional(section, "qsItemTypes", (value) => at("quotations.qsItemTypes").list(value, QS_ITEM_TYPES.length)
         .flatMap((entry, index) => { const type = at(`quotations.qsItemTypes[${index}]`).oneOf(entry, QS_ITEM_TYPES); return type ? [type] : []; })),
       qsWorkPackages: optional(section, "qsWorkPackages", (value) => at("quotations.qsWorkPackages").texts(value, 120)),
+      // PLM-147: free value engineering rounds per job (null: no limit).
+      valueEngineeringFreeRounds: nullable(section, "valueEngineeringFreeRounds", (value) => at("quotations.valueEngineeringFreeRounds").int(value, 0, 50) ?? null),
     };
   }
 

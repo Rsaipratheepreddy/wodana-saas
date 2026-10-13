@@ -58,12 +58,14 @@ export type QuotationSettings = {
   qsVariations: "rules" | "never";
   /** §6.20: the size (either way) from which a variation always goes to the QS; null for none. */
   qsVariationThreshold: string | null;
+  /** PLM-147: the free value engineering rounds per job; past them a round is chargeable. Null: no limit. */
+  valueEngineeringFreeRounds: number | null;
   version: number;
 };
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
   discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null,
-  markupDisclosure: "all_inclusive", qsReview: false, qsReviewScope: "all", qsReviewItemTypes: [], signingLinkDays: 14, introDeckUrl: null, qsVariations: "rules", qsVariationThreshold: null, version: 0,
+  markupDisclosure: "all_inclusive", qsReview: false, qsReviewScope: "all", qsReviewItemTypes: [], signingLinkDays: 14, introDeckUrl: null, qsVariations: "rules", qsVariationThreshold: null, valueEngineeringFreeRounds: null, version: 0,
 };
 
 type LineRow = {
@@ -162,6 +164,12 @@ export class QuotationBuilderService {
         next.qsVariationThreshold = decimal(input.qsVariationThreshold, "Variation size for the QS", { max: "10000000000", nullable: true });
         if (next.qsVariationThreshold !== null && Dec.of(next.qsVariationThreshold).isZero()) next.qsVariationThreshold = null;
       }
+      if (input.valueEngineeringFreeRounds !== undefined) {
+        // PLM-147: blank is no limit; past the free rounds a value engineering round is chargeable.
+        const rounds = input.valueEngineeringFreeRounds === null || input.valueEngineeringFreeRounds === "" ? null : Number(input.valueEngineeringFreeRounds);
+        if (rounds !== null && (!Number.isInteger(rounds) || rounds < 0 || rounds > 50)) throw new BadRequestException("Free value engineering rounds are 0 to 50, or blank for no limit.");
+        next.valueEngineeringFreeRounds = rounds;
+      }
       if (input.priceBookId !== undefined) {
         next.priceBookId = input.priceBookId === null ? null : uuid(input.priceBookId, "Price book");
         if (next.priceBookId && !(await client.query(`SELECT 1 FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.priceBookId])).rowCount)
@@ -184,6 +192,7 @@ export class QuotationBuilderService {
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
           next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays, next.defaultPaymentTemplateId,
           next.markupDisclosure, next.qsReview, next.signingLinkDays, next.introDeckUrl, next.qsReviewScope, next.qsReviewItemTypes, next.qsVariations, next.qsVariationThreshold]);
+      await client.query(`UPDATE workspace_quotation_settings SET value_engineering_free_rounds = $2 WHERE workspace_id = $1`, [workspaceId, next.valueEngineeringFreeRounds]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -877,7 +886,7 @@ export async function readSettings(db: Db, workspaceId: string): Promise<Quotati
             internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", default_payment_template_id AS "defaultPaymentTemplateId",
             markup_disclosure AS "markupDisclosure", qs_review AS "qsReview", signing_link_days AS "signingLinkDays", intro_deck_url AS "introDeckUrl",
             qs_review_scope AS "qsReviewScope", qs_review_item_types::text[] AS "qsReviewItemTypes", qs_variations AS "qsVariations",
-            qs_variation_threshold::text AS "qsVariationThreshold", version
+            qs_variation_threshold::text AS "qsVariationThreshold", value_engineering_free_rounds AS "valueEngineeringFreeRounds", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }

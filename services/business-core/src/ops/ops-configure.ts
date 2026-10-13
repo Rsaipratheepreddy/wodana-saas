@@ -205,11 +205,11 @@ const quotations: Section = async (ctx, profile, step) => {
   const wanted = profile.quotations!;
   const service = ctx.get(QuotationBuilderService);
   const current = await service.settings(ctx.actor, ctx.workspace.id) as {
-    settings: { validityDays: number; qsReview: boolean; qsReviewScope: string; qsReviewItemTypes: string[]; version: number };
+    settings: { validityDays: number; qsReview: boolean; qsReviewScope: string; qsReviewItemTypes: string[]; valueEngineeringFreeRounds: number | null; version: number };
     workPackages: Array<{ id: string; name: string; archived: boolean; qsReview: boolean }> };
   const patch: Record<string, unknown> = {};
   const changes: Change[] = [];
-  const compare = (label: string, key: "validityDays" | "qsReview" | "qsReviewScope" | "qsReviewItemTypes", value: unknown) => {
+  const compare = (label: string, key: "validityDays" | "qsReview" | "qsReviewScope" | "qsReviewItemTypes" | "valueEngineeringFreeRounds", value: unknown) => {
     if (value === undefined) return;
     const before = current.settings[key];
     const next = Array.isArray(value) ? [...new Set(value)].sort() : value;
@@ -220,6 +220,7 @@ const quotations: Section = async (ctx, profile, step) => {
   compare("QS prices quotations", "qsReview", wanted.qsReview);
   compare("quotations the QS prices", "qsReviewScope", wanted.qsPrices);
   compare("catalogue kinds for QS review", "qsReviewItemTypes", wanted.qsItemTypes);
+  compare("free value engineering rounds", "valueEngineeringFreeRounds", wanted.valueEngineeringFreeRounds);
   if (changes.length) await step.change(changes, async () => {
     const fresh = await service.settings(ctx.actor, ctx.workspace.id) as { settings: { version: number } };
     return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.settings.version, ...patch });
