@@ -141,12 +141,16 @@ const LONG_LIST = 10;
 /** The gap a dropdown list keeps from the viewport edges (px, as React Aria measures). */
 const POPOVER_VIEWPORT_PADDING = 12;
 
-export function SelectField({ accent = "brand", description, errorMessage, items, label, prefix, placeholder, ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
+export function SelectField({ accent = "brand", description, errorMessage, items, label, prefix, placeholder, ...passed }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
+  // A value the page controls stays controlled when it has none: `undefined` would hand the field back its own last
+  // pick, so the dropdown would show the previous choice instead of the page's (empty) value.
+  const props = "selectedKey" in passed && passed.selectedKey === undefined ? { ...passed, selectedKey: null } : passed;
   if (items.length > LONG_LIST) {
-    const { selectedKey, defaultSelectedKey, onSelectionChange, isRequired, isDisabled, isInvalid, autoFocus, name, validate, ...rest } = props;
+    const { selectedKey, defaultSelectedKey, onSelectionChange, isRequired, isDisabled, isInvalid, isReadOnly, autoFocus, name, validate, onOpenChange, ...rest } = props;
     return <ComboboxField aria-label={rest["aria-label"]} autoFocus={autoFocus} defaultSelectedKey={defaultSelectedKey} description={description} errorMessage={errorMessage}
-      isDisabled={isDisabled} isInvalid={isInvalid} isRequired={isRequired} items={items} label={label} name={name}
-      onSelectionChange={onSelectionChange} prefix={prefix} selectedKey={selectedKey} validate={validate as never} />;
+      isDisabled={isDisabled} isInvalid={isInvalid} isReadOnly={isReadOnly} isRequired={isRequired} items={items} label={label} name={name}
+      onOpenChange={onOpenChange ? (isOpen) => onOpenChange(isOpen) : undefined} onSelectionChange={onSelectionChange} placeholder={placeholder}
+      prefix={prefix} {...("selectedKey" in props ? { selectedKey } : {})} validate={validate as never} />;
   }
   return <SelectList accent={accent} description={description} errorMessage={errorMessage} items={items} label={label} prefix={prefix} placeholder={placeholder} {...props} />;
 }
@@ -178,20 +182,41 @@ export type ComboboxFieldProps = ComboBoxProps<object> & FieldChromeProps & {
   onCreate?: (text: string) => void;
 };
 
-export function ComboboxField({ description, errorMessage, items, label, onCreate, placeholder, prefix, ...props }: ComboboxFieldProps) {
+export function ComboboxField({ description, errorMessage, items, label, onCreate, placeholder, prefix, ...passed }: ComboboxFieldProps) {
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   const t = useT();
+  // A controlled value with none is null, never undefined (undefined would bring back the field's own last pick).
+  const props = "selectedKey" in passed && passed.selectedKey === undefined ? { ...passed, selectedKey: null } : passed;
   const [typed, setTyped] = useState(props.defaultInputValue ?? "");
   const text = (props.inputValue ?? typed).replace(/\s+/g, " ").trim();
   const known = items.some((item) => item.label.toLocaleLowerCase() === text.toLocaleLowerCase());
   const options: Array<SelectItem & { create?: true }> = onCreate && text && !known ? [...items, { id: CREATE_OPTION, label: text, create: true }] : items;
+  // What was typed is what was chosen: on Enter, Tab or leaving the field, text naming exactly one option (its whole
+  // label, or the only one it matches) selects it, instead of the list putting the previous choice back.
+  const [ownKey, setOwnKey] = useState<Key | null>(props.defaultSelectedKey ?? null);
+  const controlled = "selectedKey" in props;
+  const current = controlled ? props.selectedKey ?? null : ownKey;
+  // Focus selects the chosen label so typing replaces it; text the person is typing is never selected again.
+  const selectedLabel = items.find((item) => item.id === current)?.label ?? "";
+  const picked = useRef(false);
+  const select = (key: Key | null) => { picked.current = true; if (!controlled) setOwnKey(key); props.onSelectionChange?.(key); };
+  const takeTyped = () => {
+    if (picked.current) { picked.current = false; return; }
+    if (!text || props.isReadOnly || props.isDisabled || props.allowsCustomValue) return;
+    const lower = text.toLocaleLowerCase();
+    const exact = items.filter((item) => item.label.toLocaleLowerCase() === lower);
+    const containing = items.filter((item) => item.label.toLocaleLowerCase().includes(lower));
+    const match = exact.length === 1 ? exact[0] : !exact.length && containing.length === 1 ? containing[0] : null;
+    if (match && match.id !== current) select(match.id);
+  };
   // Opens on click with the whole list; typing filters. Focus selects the current text so typing replaces it.
   // "No matches" shows only when a real list is filtered to nothing; an empty source (still loading) stays closed.
-  return <ComboBox allowsEmptyCollection={items.length > 0} menuTrigger="focus" {...props} className="wd-field wd-combobox"
-    onInputChange={(value) => { setTyped(value); props.onInputChange?.(value); }}
-    onSelectionChange={(key) => { if (key === CREATE_OPTION) { if (text) onCreate?.(text); return; } props.onSelectionChange?.(key); }}>
-    <FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start" aria-hidden="true">{prefix}</span> : null}<Input className="wd-input" onFocus={(event) => event.currentTarget.select()} placeholder={placeholder ?? t("Type to search")} /><AriaButton aria-label={t("Show options")} className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction}><ListBox items={options} renderEmptyState={() => <p className="wd-picker-empty">{t("No matches")}</p>}>{(item) => item.create
+  return <ComboBox allowsEmptyCollection={items.length > 0} menuTrigger="focus" {...props} selectedKey={current} className="wd-field wd-combobox"
+    onInputChange={(value) => { picked.current = false; setTyped(value); props.onInputChange?.(value); }}
+    onSelectionChange={(key) => { if (key === CREATE_OPTION) { picked.current = true; if (text) onCreate?.(text); return; } select(key); }}>
+    <FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start" aria-hidden="true">{prefix}</span> : null}<Input className="wd-input" onBlur={takeTyped} onFocus={(event) => { if (event.currentTarget.value === selectedLabel) event.currentTarget.select(); }}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Tab") takeTyped(); }} placeholder={placeholder ?? t("Type to search")} /><AriaButton aria-label={t("Show options")} className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction}><ListBox items={options} renderEmptyState={() => <p className="wd-picker-empty">{t("No matches")}</p>}>{(item) => item.create
       ? <ListBoxItem className="wd-picker-item wd-picker-create" id={item.id} textValue={item.label}><Plus aria-hidden="true" size={14} /><span>{t("Create “{name}”", { name: item.label })}</span></ListBoxItem>
       : <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}>{item.icon ? <span className="wd-option-icon" aria-hidden="true">{item.icon}</span> : null}<span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></ComboBox>;
 }

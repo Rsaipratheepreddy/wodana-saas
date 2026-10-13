@@ -12,8 +12,12 @@ import { isVersionConflict } from "./form-kit";
 import { DateField, SelectField, TextAreaField, TextInput, type SelectItem } from "./forms";
 import { MoneyField } from "./money-field";
 import { PhoneField } from "./phone-field";
+import { personNameError, PersonNameField } from "./person-name-field";
+import { normalizePersonName } from "@wodana/contracts/person-name";
+import { phoneProblem, phoneProblemText } from "@/lib/phone";
 
-export type EditableFieldKind = "text" | "multiline" | "email" | "url" | "tel" | "money" | "date" | "select" | "phone";
+/** "person-name": a person's name typed by staff (letters and spaces); "mobile": a phone that must be a mobile of its country. */
+export type EditableFieldKind = "text" | "multiline" | "email" | "url" | "tel" | "money" | "date" | "select" | "phone" | "mobile" | "person-name";
 
 export type EditableFieldProps = {
   label: string;
@@ -81,7 +85,11 @@ export function EditableField({ canEdit = true, countryCode = "", currency, disp
   }, [mode]);
 
   const shown = (text: string) => kind === "select" ? items.find((item) => item.id === text)?.label ?? text : text;
-  const reads = display ?? (value ? shown(value) : null);
+  // A saved change reads as saved until the record comes back with it: the page's refresh may still be on its way,
+  // and the old value must not reappear meanwhile.
+  const [saved, setSaved] = useState<{ text: string; over: string } | null>(null);
+  if (saved && value !== saved.over) setSaved(null);
+  const reads = saved ? (shown(saved.text) || null) : display ?? (value ? shown(value) : null);
 
   // A fact is a dt/dd pair inside its list; a title is its heading, labelled for screen readers.
   const Label = heading ? "span" : "dt";
@@ -94,18 +102,22 @@ export function EditableField({ canEdit = true, countryCode = "", currency, disp
   if (!editable) return heading ? <Heading>{reads}{lock}</Heading>
     : <div className="wd-editable" data-readonly=""><Label className={labelClass}>{label}</Label><Cell className="wd-editable-cell">{reads ?? <span className="wd-editable-empty">—</span>}{lock}</Cell></div>;
 
-  const open = () => { setDraft(value); setCountry(countryCode); setProblem(null); setMode("editing"); };
+  const open = () => { setDraft(saved?.text ?? value); setCountry(countryCode); setProblem(null); setMode("editing"); };
   const cancel = () => { returnFocus.current = true; setProblem(null); setMode("idle"); };
 
   const commit = async (next: string, focusBack = true) => {
     if (modeRef.current === "saving") return;
-    const text = kind === "multiline" ? next.replace(/\s+$/, "") : next.trim();
+    const text = kind === "multiline" ? next.replace(/\s+$/, "") : kind === "person-name" ? normalizePersonName(next) : next.trim();
     if (text === value && country === countryCode) { returnFocus.current = focusBack; setProblem(null); setMode("idle"); return; }
-    const invalid = validate?.(text) ?? (isRequired && !text ? t("Required") : null);
+    // A changed name or number follows the shared rules (the value as it was is never checked again).
+    const builtIn = !text ? null : kind === "person-name" ? personNameError(text, t)
+      : kind === "phone" || kind === "mobile" ? phoneProblem(text, country, phoneProblemText(t), { mobile: kind === "mobile" }) : null;
+    const invalid = validate?.(text) ?? builtIn ?? (isRequired && !text ? t("Required") : null);
     if (invalid) { setProblem({ message: invalid, conflict: false }); setMode("editing"); return; }
     setDraft(text); setMode("saving"); setProblem(null);
     try {
       await onSave(text, { countryCode: country });
+      if (text !== value) setSaved({ text, over: value });
       returnFocus.current = focusBack;
       setMode("saved");
     } catch (cause) {
@@ -149,7 +161,8 @@ export function EditableField({ canEdit = true, countryCode = "", currency, disp
       case "date": return <DateField autoFocus label={label} onChange={(next: DateValue | null) => { const text = next?.toString() ?? ""; setDraft(text); if (picking.current) void commit(text); }}
         onOpenChange={(isOpen) => { if (isOpen) picking.current = true; else window.setTimeout(() => { picking.current = false; }, 0); }} value={draft ? safeDate(draft) : null} />;
       case "select": return <SelectField autoFocus defaultOpen items={items} label={label} onOpenChange={(isOpen) => { if (!isOpen) window.setTimeout(() => { if (modeRef.current === "editing") cancel(); }, 0); }} onSelectionChange={(key) => { if (key !== null && key !== undefined) { setDraft(String(key)); void commit(String(key)); } }} selectedKey={draft || null} />;
-      case "phone": return <PhoneField autoFocus countryCode={country} kind="any" label={label} onChange={setDraft} onCountryChange={setCountry} value={draft} />;
+      case "phone": case "mobile": return <PhoneField autoFocus countryCode={country} kind={kind === "mobile" ? "mobile" : "any"} label={label} onChange={setDraft} onCountryChange={setCountry} value={draft} />;
+      case "person-name": return <PersonNameField autoFocus label={label} maxLength={maxLength} onChange={setDraft} savedValue={value} value={draft} />;
       default: return <TextInput autoFocus inputType={kind === "text" ? "text" : kind} label={label} maxLength={maxLength} onChange={setDraft} value={draft} />;
     }
   })();

@@ -182,7 +182,8 @@ export default async function WorkspaceScreen({
 
   if (screen.id === "opportunities") {
     const query = await searchParams;
-    return <CrmOpportunities
+    // A link to another record (only the query changes) opens it: the list starts again from the server's data.
+    return <CrmOpportunities key={typeof query.record === "string" ? query.record : "list"}
       initialData={await getCrmScreenPageData("opportunities")}
       initialRecordId={typeof query.record === "string" && /^[\da-f-]{36}$/i.test(query.record) ? query.record : undefined}
     />;
@@ -191,7 +192,7 @@ export default async function WorkspaceScreen({
   if (screen.id === "customers") {
     const query = await searchParams;
     const view = query.type === "company" ? "organization" : query.type === "person" ? "person" : "all";
-    return <CrmCustomers
+    return <CrmCustomers key={`${view}-${typeof query.record === "string" ? query.record : "list"}`}
       initialData={await getCrmScreenPageData("customers")}
       initialRecordId={typeof query.record === "string" && /^[\da-f-]{36}$/i.test(query.record) ? query.record : undefined}
       initialView={view}

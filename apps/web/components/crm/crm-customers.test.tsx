@@ -49,6 +49,17 @@ describe("CrmCustomers", () => {
     expect(screen.getByText("Former Customer")).toBeInTheDocument();
     expect(screen.queryByText("Amira Al Mansoori")).not.toBeInTheDocument();
   });
+
+  it("narrows the list as the search is typed, and shows everyone again when it is cleared", async () => {
+    const user = userEvent.setup();
+    render(<CrmCustomers initialData={structuredClone(crmScreenFixture("customers"))} />);
+    const search = screen.getByRole("searchbox", { name: "Search customers" });
+    await user.type(search, "noor");
+    expect(screen.getByText("Al Noor Developments LLC")).toBeInTheDocument();
+    expect(screen.queryByText("Amira Al Mansoori")).not.toBeInTheDocument();
+    await user.clear(search);
+    expect(screen.getByText("Amira Al Mansoori")).toBeInTheDocument();
+  });
 });
 
 

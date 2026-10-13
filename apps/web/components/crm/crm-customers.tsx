@@ -46,11 +46,16 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
   const [failure, setFailure] = useState("");
   const [search, setSearch] = useState("");
 
-  const visible = useMemo(() => items.filter((record) => {
-    if (view === "archived") return record.status === "archived";
-    if (record.status === "archived") return false;
-    return view === "all" || record.type === view;
-  }), [items, view]);
+  // The toolbar's search narrows the list here (the page owns it): name, reference, email or phone.
+  const visible = useMemo(() => {
+    const words = search.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return items.filter((record) => {
+      if (view === "archived" ? record.status !== "archived" : record.status === "archived" || (view !== "all" && record.type !== view)) return false;
+      if (!words.length) return true;
+      const haystack = Object.values(record).filter((value) => typeof value === "string" || typeof value === "number").join(" ").toLocaleLowerCase();
+      return words.every((word) => haystack.includes(word));
+    });
+  }, [items, view, search]);
 
   const reload = async (more = false) => {
     if (busy || more && !nextCursor) return;

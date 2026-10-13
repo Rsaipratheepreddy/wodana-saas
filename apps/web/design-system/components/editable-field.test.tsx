@@ -141,4 +141,46 @@ describe("editable field", () => {
     expect(screen.getByText("Only Sales admins can change the client's name or phone")).toBeInTheDocument();
     expect(screen.getByTitle("Only Sales admins can change the client's name or phone")).toBeInTheDocument();
   });
+
+  it("keeps showing the saved value while the page's refresh is still on its way (no old value comes back)", async () => {
+    const user = userEvent.setup();
+    // The page reloads the record later: until then it still passes the old value.
+    function SlowRecord() {
+      const [value, setValue] = useState("Sara");
+      return <EditableField label="Name" onSave={() => { window.setTimeout(() => setValue("Sara Khan"), 2500); }} value={value} />;
+    }
+    render(wrap(<SlowRecord />));
+    await user.click(screen.getByRole("button", { name: "Edit Name" }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), " Khan{Enter}");
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 1900));
+    expect(screen.getByRole("button", { name: "Edit Name" })).toHaveTextContent("Sara Khan");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit Name" })).toHaveTextContent("Sara Khan"), { timeout: 2000 });
+  });
+
+  it("checks a changed person's name and mobile with the shared rules, and keeps the value as it came", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn();
+    render(wrap(<><Record initial="Ali 🙂" kind="person-name" label="Customer name" save={save} /><Record countryCode="AE" initial="501234567" kind="mobile" label="Mobile" save={save} /></>));
+    // Opened and left unchanged: nothing is checked or saved.
+    await user.click(screen.getByRole("button", { name: "Edit Customer name" }));
+    expect(screen.queryByText("Use letters and spaces only")).not.toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    expect(save).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Edit Customer name" }));
+    const name = screen.getByRole("textbox", { name: "Customer name" });
+    await user.clear(name);
+    await user.type(name, "Ali 2{Enter}");
+    expect(await screen.findAllByText("Use letters and spaces only")).not.toHaveLength(0);
+    expect(save).not.toHaveBeenCalled();
+    await user.clear(name);
+    await user.type(name, "Ali Al-Suwaidi{Enter}");
+    expect(save).toHaveBeenCalledWith("Ali Al-Suwaidi");
+    await user.click(screen.getByRole("button", { name: "Edit Mobile" }));
+    const mobile = screen.getByRole("textbox", { name: "Mobile" });
+    await user.clear(mobile);
+    await user.type(mobile, "5012345{Enter}");
+    expect(await screen.findAllByText("Enter a valid mobile number for United Arab Emirates (9 digits)")).not.toHaveLength(0);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });
