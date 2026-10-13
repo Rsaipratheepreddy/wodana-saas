@@ -6,6 +6,7 @@ import { crmRequest } from "@/lib/crm/client";
 import { WorkspaceRegionProvider } from "@/design-system";
 import { zonedToUtc, zonedToday } from "@/lib/crm/zoned-time";
 import { CrmCalendar } from "./crm-calendar";
+import { calendarRights } from "@/lib/crm/calendar-rights";
 
 const push = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn(), replace: vi.fn() }), usePathname: () => "/workspace/crm/calendar", useSearchParams: () => new URLSearchParams() }));
@@ -67,6 +68,27 @@ describe("CRM calendar", () => {
     await user.click(within(await screen.findByRole("toolbar", { name: "Calendar controls" })).getByRole("button", { name: "Calendar options" }));
     await user.click(await screen.findByRole("menuitem", { name: "Booking pages" }));
     expect(push).toHaveBeenCalledWith("/workspace/crm/booking-types");
+  });
+
+  it("asks only for what the viewer may read: no member list or integrations for a designer, so no refused calls", async () => {
+    const user = userEvent.setup();
+    render(<CrmCalendar workspaceId={workspaceId} currentUserId={userId} canListMembers={false} canReadConnections={false} />);
+    const toolbar = await screen.findByRole("toolbar", { name: "Calendar controls" });
+    expect(await screen.findByText("Design consultation")).toBeInTheDocument();
+    expect(vi.mocked(crmRequest).mock.calls.some(([, path]) => path === "members")).toBe(false);
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("integration-connections"))).toBe(false);
+    // Nothing offered that needs them: no one else's calendar, no Google.
+    await user.click(within(toolbar).getByRole("button", { name: "Calendar options" }));
+    expect(await screen.findByRole("menuitem", { name: "Refresh" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /Google/ })).toBeNull();
+  });
+
+  it("works out from the membership what the calendar may read", () => {
+    expect(calendarRights({ roles: ["designer"], allowedPermissions: ["pre_projects.view", "crm.activities.view"] }))
+      .toEqual({ canManageBooking: false, canListMembers: false, canReadConnections: false });
+    expect(calendarRights({ roles: ["sales"], allowedPermissions: ["module.members.read", "integrations.view", "crm.settings.manage"] }))
+      .toEqual({ canManageBooking: true, canListMembers: true, canReadConnections: true });
+    expect(calendarRights({ roles: ["owner"] })).toEqual({ canManageBooking: true, canListMembers: true, canReadConnections: true });
   });
 
   it("shows real activities, excludes cancellations and supports the day/search view", async () => {

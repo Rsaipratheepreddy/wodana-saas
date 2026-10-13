@@ -26,7 +26,7 @@ import type { BookingSubject } from "@/lib/logistics/types";
 function safeGoogleLink(value: unknown) { try { const url = new URL(String(value)); return url.protocol === "https:" && ["calendar.google.com", "www.google.com"].includes(url.hostname) ? url.href : undefined; } catch { return undefined; } }
 
 const subscribeToHydration = () => () => {};
-export function CrmCalendar(props: { workspaceId: string; currentUserId?: string; canView?: boolean; canManageBooking?: boolean; revision?: number }) {
+export function CrmCalendar(props: { workspaceId: string; currentUserId?: string; canView?: boolean; canManageBooking?: boolean; canListMembers?: boolean; canReadConnections?: boolean; revision?: number }) {
   const t = useT();
   const settings = useDesignSystem();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
@@ -36,7 +36,11 @@ export function CrmCalendar(props: { workspaceId: string; currentUserId?: string
   return <DesignSystemProvider {...settings} className={`${styles.provider} ${workspaceColors.theme}`} portalContainer={portal} ref={setPortal}>{props.canView === false ? <NoAccessState area={t("Calendar")} /> : ready ? <LocalCrmCalendar {...props} /> : <p role="status">{t("Loading your local calendar…")}</p>}</DesignSystemProvider>;
 }
 
-function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canManageBooking = false }: { workspaceId: string; currentUserId?: string; revision?: number; canManageBooking?: boolean }) {
+function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canManageBooking = false, canListMembers = true, canReadConnections = true }: {
+  workspaceId: string; currentUserId?: string; revision?: number; canManageBooking?: boolean;
+  /** Whether the viewer may read the member list and the integrations: when not, neither is asked for (no refused calls). */
+  canListMembers?: boolean; canReadConnections?: boolean;
+}) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   // Days, hours and "today" are the workspace's wall clock (CAL-2): a Dubai meeting stays at 10:00 in India.
@@ -54,8 +58,8 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
   const [members, setMembers] = useState<CalendarMember[]>([]);
   const [memberError, setMemberError] = useState("");
   // Sources the person's role can't read are left out quietly: the calendar shows what they can use.
-  const [membersDenied, setMembersDenied] = useState(false);
-  const [connectionsDenied, setConnectionsDenied] = useState(false);
+  const [membersDenied, setMembersDenied] = useState(!canListMembers);
+  const [connectionsDenied, setConnectionsDenied] = useState(!canReadConnections);
   const [scope, setScope] = useState<"organization" | "personal" | "member" | "team">("organization");
   // PLM-090/091: a team's calendar (the design team, the factory and logistics) across every job.
   const [team, setTeam] = useState<Team>("design");
@@ -84,15 +88,19 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
   const connectionIdKey = connectionIds.join(",");
   const googleKey = `${key}/${connectionIdKey}`;
   useEffect(() => {
+    // Someone who can't read the integrations isn't asked for them (no refused call): no Google calendars for them.
+    if (!canReadConnections) return;
     const controller = new AbortController();
     fetch(`/api/workspace/integration-connections?workspaceId=${workspaceId}`, { signal: controller.signal }).then(async (response) => { const payload = await response.json(); if (!response.ok) throw Object.assign(new Error(payload.message ?? t("Connections unavailable")), { status: response.status }); return rows(payload) as CalendarConnection[]; }).then((items) => { if (!controller.signal.aborted) setConnections(items.filter((item) => item.provider === "google_workspace")); }).catch((error: Error) => { if (controller.signal.aborted) return; if (isNoAccessError(error)) setConnectionsDenied(true); else setConnectionError(error.message); });
     return () => controller.abort();
-  }, [workspaceId, refresh, t]);
+  }, [workspaceId, refresh, t, canReadConnections]);
   useEffect(() => {
+    // The member list (to open someone else's calendar) only for those who may read it; the team view brings its own people.
+    if (!canListMembers) return;
     const controller = new AbortController();
     void crmRequest<CalendarMember[]>(workspaceId, "members", "GET", undefined, controller.signal).then(payload => { if (!controller.signal.aborted) { setMembers(rows(payload) as CalendarMember[]); setMemberError(""); } }).catch((error: Error) => { if (controller.signal.aborted) return; if (isNoAccessError(error)) setMembersDenied(true); else setMemberError(error.message); });
     return () => controller.abort();
-  }, [workspaceId, refresh]);
+  }, [workspaceId, refresh, canListMembers]);
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
