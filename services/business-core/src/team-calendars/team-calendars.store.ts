@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { JourneyStage, JourneyTask } from "../design/design-journey.domain";
 import { formatDay } from "../design/design-journey.store";
+import { readOpenInspections } from "../factory/factory-inspections";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { INSTALLATION_ROLE, installationRoles, readInstallation } from "../project-core/project-installation";
 import type { StageCheck } from "../project-core/project-checks";
@@ -128,7 +129,14 @@ const designPresentations: DesignCalendarSource = async (db, workspaceId, from, 
 };
 
 /** The design calendar's sources, in the order their entries are listed. */
-export const DESIGN_CALENDAR_SOURCES: readonly DesignCalendarSource[] = [renderBookings, stageDeadlines, taskDeadlines, designAppointments, designPresentations];
+/** PLM-150 / PLM-152: design inspections waiting at the factory, on the day they are due, with the inspecting designer. */
+const factoryInspections: DesignCalendarSource = async (db, workspaceId, from, to) =>
+  (await readOpenInspections(db, workspaceId, { from, to })).filter((row) => row.dueOn < to).map((row) => ({
+    key: `inspection:${row.id}`, kind: "design_deadline", recordId: row.id, subject: [row.item, row.projectName].filter(Boolean).join(" · "), detail: "inspection",
+    start: row.dueOn, end: row.dueOn, allDay: true, days: null, status: "active", overdue: row.overdue, ownerName: row.inspectorName, href: `/workspace/inspections/${row.id}`,
+  }));
+
+export const DESIGN_CALENDAR_SOURCES: readonly DesignCalendarSource[] = [renderBookings, stageDeadlines, taskDeadlines, designAppointments, designPresentations, factoryInspections];
 
 /**
  * The design team's calendar for [from, to) (PLM-090, PLM-152): who is working on what and every deadline — render and 2D

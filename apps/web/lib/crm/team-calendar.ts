@@ -63,6 +63,7 @@ const days = (t: Translate, count: number | null) => (count === null ? "" : coun
 /** PLM-152: the work inside a design step that has its own deadline on the calendar. */
 const DESIGN_TASK_LABELS: Record<string, MessageKey> = {
   team_allocation: tKey("Design team"), site_measure: tKey("Design site measure"), sample_collection: tKey("Sample collection"),
+  inspection: tKey("Design inspection"),
 };
 
 /** An entry's title in the viewer's language: what it is and for whom (and how many days render or 2D time needs). */

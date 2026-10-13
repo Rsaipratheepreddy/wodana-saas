@@ -226,7 +226,8 @@
       { "key": "sales_admin", "label": "Sales Admin" },
       { "key": "visualiser", "label": "Visualiser" },
       { "key": "draftsman", "label": "Draftsman" },
-      { "key": "material_coordinator", "label": "Material Coordinator" }
+      { "key": "material_coordinator", "label": "Material Coordinator" },
+      { "key": "creative_director", "label": "Creative Director" }
     ]
   },
   "clientUpdates": {

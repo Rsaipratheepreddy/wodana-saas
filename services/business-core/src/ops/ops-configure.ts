@@ -807,8 +807,9 @@ const catalogCategories: Section = async (ctx, profile, step) => {
 
 /** The sections in the order they run (routes before factory, so the permit check sees the route). */
 export const SECTIONS: Array<[ProfileSection, Section]> = [
-  ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["factory", factory], ["quotations", quotations], ["firstResponse", firstResponse],
-  ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
+  // Design before factory: the design team's project roles (e.g. the Creative Director) exist before the inspections name them.
+  ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["quotations", quotations], ["firstResponse", firstResponse],
+  ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["factory", factory], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
   ["catalogCategories", catalogCategories], ["projects", projects],
 ];
 
