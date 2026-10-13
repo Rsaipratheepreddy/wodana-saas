@@ -15119,5 +15119,9 @@
   "1 working hour": "1 working hour",
   "No reply for 1 working hour.": "No reply for 1 working hour.",
   "Before booking the intro": "Before booking the intro",
-  "Complete the enquiry: {fields}": "Complete the enquiry: {fields}"
+  "Complete the enquiry: {fields}": "Complete the enquiry: {fields}",
+  "a timeline question": "a timeline question",
+  "timeline question {reference}": "timeline question {reference}",
+  "{actor} answered {subject}": "{actor} answered {subject}",
+  "Who answers": "Who answers"
 }

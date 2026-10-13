@@ -43,6 +43,7 @@ const SUBJECTS: Record<HistorySubject, { the: MessageKey; named: MessageKey }> =
   client_request: { the: tKey("a client request"), named: tKey("client request {reference}") },
   client: { the: tKey("the client's details"), named: tKey("client {reference}") },
   value_engineering: { the: tKey("value engineering"), named: tKey("value engineering {reference}") },
+  timeline_question: { the: tKey("a timeline question"), named: tKey("timeline question {reference}") },
   record: { the: tKey("the record"), named: tKey("record {reference}") },
 };
 
@@ -96,6 +97,7 @@ const VERBS: Record<HistoryVerb, MessageKey> = {
   followed_up: tKey("{actor} followed up on {subject}"),
   not_sent: tKey("{actor} couldn't email {subject}"),
   credited: tKey("{actor} credited {subject}"),
+  answered: tKey("{actor} answered {subject}"),
 };
 
 /** Field names the audit keeps, as people say them; other fields aren't listed (no raw names). */

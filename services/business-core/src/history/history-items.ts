@@ -9,7 +9,8 @@ import type { HistoryRecordType, RecordFacts } from "./history-records";
 export const HISTORY_SUBJECTS = [
   "enquiry", "opportunity", "planning_case", "brief", "site_visit", "design", "material_list", "quotation", "deal_file", "project", "stage", "drawing", "material",
   "change_request", "purchase_order", "delivery", "work_order", "invoice", "payment", "finance_request", "petty_cash_claim", "supplier_invoice", "price_request", "snag",
-  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "value_engineering", "record",
+  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "value_engineering",
+  "timeline_question", "record",
 ] as const;
 export type HistorySubject = (typeof HISTORY_SUBJECTS)[number];
 
@@ -48,6 +49,8 @@ export function historySubject(entityType: string, action: string, after: Record
     case "crm_party": return "client";
     case "crm_opportunity":
       if (code === "finance_request_raised") return "finance_request";
+      // PLM-155: a timeline question asked, answered or withdrawn on the opportunity.
+      if (/\.timeline_check_[a-z]+$/.test(code)) return "timeline_question";
       if (/payment_proof/.test(code)) return "payment";
       if (/(intro|site_visit)_booked$/.test(code)) return "appointment";
       return "opportunity";
@@ -179,7 +182,8 @@ export function toHistoryItem(row: AuditRow, recordType: HistoryRecordType, reco
   const isOwn = own.includes(row.entityType) && row.entityId === recordId;
   const subject = historySubject(row.entityType, row.action, after, recordType);
   const stage = subject === "stage" && text(after.stage) ? text(after.stage)!.replace(/[_-]+/g, " ").replace(/^\w/, (first) => first.toUpperCase()) : null;
-  const reference = stage ?? (isOwn ? facts.reference : text(after.number) ?? (row.entityType === "approval_request" && text(after.subjectId) === recordId ? facts.reference : null));
+  // A timeline question is about the record it's on: "Sam asked a timeline question", not "… question O-0049".
+  const reference = subject === "timeline_question" ? null : stage ?? (isOwn ? facts.reference :text(after.number) ?? (row.entityType === "approval_request" && text(after.subjectId) === recordId ? facts.reference : null));
   // A log entry kept by name (the commercial case's) is a person's when it names one.
   const actorKind = row.source === "client_portal" ? "client" : row.actorId || text(after.by) ? "person" : "system";
   const decision = text(after.decision);

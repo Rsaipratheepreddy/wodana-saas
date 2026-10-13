@@ -17,6 +17,7 @@ export const HISTORY_VERBS = [
   "requested_signature", "sent_for_review", "returned", "cancelled", "closed", "completed", "started", "issued", "raised", "assigned", "reassigned",
   "numbered", "uploaded", "commented", "messaged", "logged_contact", "posted_update", "paid", "received", "scheduled", "priced", "applied", "won",
   "lost", "qualified", "held", "reopened", "released", "dispatched", "checked", "confirmed", "escalated", "expired", "reacted", "advanced", "followed_up", "not_sent", "credited",
+  "answered",
 ] as const;
 export type HistoryVerb = (typeof HISTORY_VERBS)[number];
 export type HistoryCategory = "change" | "message" | "approval";
@@ -24,7 +25,8 @@ export type HistoryCategory = "change" | "message" | "approval";
 export const HISTORY_SUBJECTS = [
   "enquiry", "opportunity", "planning_case", "brief", "site_visit", "design", "material_list", "quotation", "deal_file", "project", "stage", "drawing", "material",
   "change_request", "purchase_order", "delivery", "work_order", "invoice", "payment", "finance_request", "petty_cash_claim", "supplier_invoice", "price_request", "snag",
-  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "value_engineering", "record",
+  "site_report", "handover_pack", "warranty_claim", "task", "appointment", "message", "approval", "file", "agreement", "client_request", "client", "value_engineering",
+  "timeline_question", "record",
 ] as const;
 export type HistorySubject = (typeof HISTORY_SUBJECTS)[number];
 

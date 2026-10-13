@@ -143,6 +143,16 @@ describe("history: items", () => {
     expect(historySubject("work_item", "work.create", {}, "snag")).toBe("snag");
     expect(historySubject("something_else", "x.y", {})).toBe("record");
   });
+
+  it("PLM-155: a timeline question reads as asked and answered on the opportunity, never as the opportunity completed", () => {
+    expect(historySubject("crm_opportunity", "crm.opportunity.timeline_check_raised.v1", {})).toBe("timeline_question");
+    expect(describeAction("crm.opportunity.timeline_check_raised.v1").verb).toBe("raised");
+    expect(describeAction("crm.opportunity.timeline_check_completed.v1").verb).toBe("answered");
+    expect(describeAction("crm.opportunity.timeline_check_cancelled.v1").verb).toBe("cancelled");
+    const row = { id: "a", occurredAt: "2026-10-14T09:00:00Z", action: "crm.opportunity.timeline_check_completed.v1", entityType: "crm_opportunity", entityId: "o1",
+      actorId: "u1", actorName: "Fred", actorRoles: [], actorPreset: null, source: "user", before: { status: "open" }, after: { status: "answered", note: "Yes, by 20 November" } } as unknown as AuditRow;
+    expect(toHistoryItem(row, "opportunity", "o1", { reference: "O-0049" } as never, ["crm_opportunity"])).toMatchObject({ verb: "answered", subject: "timeline_question", reference: null, note: "Yes, by 20 November" });
+  });
 });
 
 describe("history: the shared contract", () => {

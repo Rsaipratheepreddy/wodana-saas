@@ -10,6 +10,7 @@ export const HISTORY_VERBS = [
   "requested_signature", "sent_for_review", "returned", "cancelled", "closed", "completed", "started", "issued", "raised", "assigned", "reassigned",
   "numbered", "uploaded", "commented", "messaged", "logged_contact", "posted_update", "paid", "received", "scheduled", "priced", "applied", "won",
   "lost", "qualified", "held", "reopened", "released", "dispatched", "checked", "confirmed", "escalated", "expired", "reacted", "advanced", "followed_up", "not_sent", "credited",
+  "answered",
 ] as const;
 export type HistoryVerb = (typeof HISTORY_VERBS)[number];
 export type HistoryCategory = "change" | "message" | "approval";
@@ -19,6 +20,8 @@ const MESSAGES = new Set<HistoryVerb>(["commented", "messaged", "logged_contact"
 
 /** Ordered: the first rule whose pattern matches the action (without its ".vN") gives the verb. */
 const RULES: Array<[RegExp, HistoryVerb]> = [
+  // PLM-155: a timeline question is asked (raised) and answered, not "completed".
+  [/^crm\.opportunity\.timeline_check_(completed|answered)$/, "answered"],
   [/^commercial\.(issue|resend)$/, "sent"],
   [/^commercial\.execute_agreement$/, "signed"],
   [/^commercial\.(submit_owner_review|submit_material_approval)$/, "submitted"],

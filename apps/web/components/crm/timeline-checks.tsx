@@ -73,7 +73,7 @@ function AskDialog({ workspaceId, opportunityId, view, onClose, onSaved }: { wor
   const items = view.people.map((person) => ({ id: person.membershipId, label: person.teams.length ? `${person.name} · ${person.teams.map((team) => team.name).join(", ")}` : person.name }));
   return <FormDialog title={t("Ask about the timeline")} onClose={onClose} submitLabel={t("Ask")} isDirty={Boolean(assignee || question.trim())} isSubmitDisabled={!assignee || !question.trim()}
     onSubmit={async () => { await crmRequest(workspaceId, `opportunities/${opportunityId}/timeline-checks`, "POST", { requestId, assigneeMembershipId: assignee, question: question.trim() }); onSaved(); }}>
-    {items.length ? <SelectField label={t("Ask")} isRequired placeholder={t("Choose who answers")} items={items} selectedKey={assignee || null} onSelectionChange={(key) => setAssignee(key ? String(key) : "")} />
+    {items.length ? <SelectField label={t("Who answers")} isRequired placeholder={t("Choose who answers")} items={items} selectedKey={assignee || null} onSelectionChange={(key) => setAssignee(key ? String(key) : "")} />
       : <EmptyState illustration={null} title={t("Nobody is in the teams that answer timeline questions")} action={<Link href="/workspace/crm/leads?section=assignment">{t("Open Sales settings")}</Link>} />}
     <TextAreaField label={t("Question")} isRequired value={question} onChange={setQuestion} maxLength={2000} />
   </FormDialog>;

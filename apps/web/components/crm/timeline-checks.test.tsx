@@ -31,7 +31,7 @@ describe("timeline checks (PLM-155)", () => {
     await user.click(screen.getByRole("button", { name: "Ask" }));
     const dialog = await screen.findByRole("dialog");
     expect((within(dialog).getByRole("textbox", { name: /Question/ }) as HTMLTextAreaElement).value).toMatch(/^Can we meet the client.s target of .*2027\?$/);
-    await user.click(within(dialog).getByRole("button", { name: /Choose who answers/ }));
+    await user.click(within(dialog).getByRole("button", { name: /Who answers/ }));
     await user.click(await screen.findByRole("option", { name: "Pavel Production · Production" }));
     await user.click(within(dialog).getByRole("button", { name: "Ask" }));
     await waitFor(() => expect(sent(`opportunities/${OPPORTUNITY}/timeline-checks`)).toEqual([expect.objectContaining({ assigneeMembershipId: PAVEL, requestId: expect.any(String),
