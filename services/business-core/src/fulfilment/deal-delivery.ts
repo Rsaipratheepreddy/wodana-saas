@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
+import { assertDeliveryCleared } from "../factory/factory-inspections";
 import { assertPermitFor } from "../logistics/permits";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { permissionHolders } from "../project-core/project-release";
@@ -24,6 +25,8 @@ export async function writeDealDelivery(db: Db, input: { workspaceId: string; op
     [workspaceId, opportunityId])).rows[0];
   if (current.cancelledAt) throw new ConflictException("This order is cancelled.");
   if (current.deliveryOn === date && (date === null || current.note === note)) return null;
+  // PLM-150: an order the factory makes is delivered once its items passed their last design inspection.
+  if (date && date !== current.deliveryOn) await assertDeliveryCleared(db, workspaceId, { opportunityId });
   if (date && date !== current.deliveryOn) await assertPermitFor(db, workspaceId, { opportunityId }, date, "delivery");
   await db.query(
     `UPDATE crm_deal_fulfilment SET delivery_on = $3, delivery_note = $4, delivery_booked_by = CASE WHEN $3::date IS NULL THEN NULL ELSE $5::uuid END,

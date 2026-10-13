@@ -10,6 +10,7 @@ import { latestFlowVersion } from "../flows/flow-store";
 import { loadWonAreas, parseWonAreas, WON_AREAS } from "../flows/flow-won-areas";
 import { FULFILMENT_EVENTS, loadDealClosing, loadFulfilment, type FulfilmentEvent } from "./deal-closing";
 import { FURNITURE_PATHS, type FurniturePath } from "./flow-gates";
+import { assertDeliveryCleared } from "../../factory/factory-inspections";
 import { takeForDeal } from "../../fulfilment/stock-reservations";
 import {
   decideProposalValue, loadProposals, loadValueEvents, parseProposalAmount, parseProposalKind, setProposalValue, valueStatusFrom, VALUE_KIND,
@@ -105,6 +106,9 @@ export class OpportunityProposalsService {
     return this.access.withAnyPermission(actor, workspaceId, FULFIL, async (client, user) => {
       const facts = await this.facts(client, workspaceId, opportunityId, true);
       if (facts.status !== "won") throw new ConflictException("The deal is won first: attach the payment proof.");
+      // PLM-150: goods the factory makes leave once they passed their last design inspection (a replay records nothing new).
+      if (event !== "installed" && !(commandId && (await client.query(`SELECT 1 FROM crm_deal_fulfilment_events WHERE workspace_id = $1 AND command_id = $2`, [workspaceId, commandId])).rowCount))
+        await assertDeliveryCleared(client, workspaceId, { opportunityId });
       const row = (await client.query<{ id: string }>(
         `INSERT INTO crm_deal_fulfilment_events (workspace_id, opportunity_id, event, received_by, note, command_id, recorded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (workspace_id, command_id) WHERE command_id IS NOT NULL DO NOTHING RETURNING id`,

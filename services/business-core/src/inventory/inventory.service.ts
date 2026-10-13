@@ -11,6 +11,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { holdsAny, STOCK_COST_READERS } from "../workspaces/money-visibility";
 import { likePattern, searchTerms } from "../search/search-terms";
 import { raiseSnag } from "../project-core/project-work";
+import { assertTransferCleared } from "../factory/factory-inspections";
 import { reworkFromSite } from "../factory/factory-rework";
 import { averageCost, move, onHand, readMovements, readStock, readStockItems, readTransfer, readTransfers, stockItemFor } from "./stock";
 import { processStockLevels, readReorderPoints } from "./stock-levels";
@@ -257,7 +258,13 @@ export class InventoryService {
 
   /** Sends stock from one place to another: it leaves now and arrives when the other end receives it. */
   send(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
-    return this.access.withPermission(actor, workspaceId, "stock.manage", async (client, user) => this.sendWith(client, workspaceId, user.userId, body));
+    return this.access.withPermission(actor, workspaceId, "stock.manage", async (client, user) => {
+      // PLM-150: goods a work order made go to site from that work order, once their last design inspection passed (a replay is recorded once).
+      const replay = typeof body.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id)
+        && Boolean((await client.query(`SELECT 1 FROM stock_transfers WHERE workspace_id = $1 AND id = $2`, [workspaceId, body.id])).rowCount);
+      if (!replay) await assertTransferCleared(client, workspaceId, { fromLocationId: body.fromLocationId, toLocationId: body.toLocationId, lines: body.lines });
+      return this.sendWith(client, workspaceId, user.userId, body);
+    });
   }
 
   /** Sends a move inside a command already running (the factory sending made goods to site); replayed safely by its id. */

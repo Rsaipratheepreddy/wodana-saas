@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineCells, projectColumns, type LineFacts, type ProjectFacts } from "./project-readiness";
+import { inspectionWait, lineCells, projectColumns, type LineFacts, type ProjectFacts } from "./project-readiness";
 
 const line = (input: Partial<LineFacts> = {}): LineFacts => ({
   id: "l1", kind: "item", title: "Wardrobe", quantity: "2", unit: "pcs", areaName: "Bedroom", catalogItemId: null, catalogId: null, code: null, itemType: null,
@@ -61,6 +61,17 @@ describe("a project line's readiness", () => {
     expect(lineCells(line(), facts({ orders: [{ status: "ready", quantity: "1" }] })).production).toEqual({ state: "waiting", note: "in_production" });
     expect(lineCells(line(), facts({ orders: [{ status: "ready", quantity: "1" }, { status: "short_closed", quantity: "1" }] })).production).toEqual({ state: "done", note: "ready" });
     expect(lineCells(line(), facts({ orders: [{ status: "cancelled", quantity: "2" }] })).production.state).toBe("missing");
+    // PLM-150: made and checked but waiting for its design inspection, or with snags to fix: not ready yet.
+    expect(lineCells(line(), facts({ orders: [{ status: "ready", quantity: "2", inspection: "due" }] })).production).toEqual({ state: "waiting", note: "inspection_due" });
+    expect(lineCells(line(), facts({ orders: [{ status: "ready", quantity: "1", inspection: "snags" }, { status: "ready", quantity: "1" }] })).production)
+      .toEqual({ state: "waiting", note: "inspection_snags" });
+    expect(lineCells(line(), facts({ orders: [{ status: "in_production", quantity: "1" }, { status: "ready", quantity: "1", inspection: "due" }] })).production)
+      .toEqual({ state: "waiting", note: "in_production" });
+    expect(inspectionWait("in_production", { raw: "due", final: "to_request" })).toBe("due");
+    expect(inspectionWait("in_production", { raw: "to_request", final: "to_request" })).toBeNull();
+    expect(inspectionWait("ready", { raw: "passed", final: "to_request" })).toBe("waiting");
+    expect(inspectionWait("ready", { raw: "not_needed", final: "passed" })).toBeNull();
+    expect(inspectionWait("ready", undefined)).toBeNull();
   });
 
   it("is installed by approved site reports", () => {

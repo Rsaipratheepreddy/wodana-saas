@@ -3,6 +3,7 @@ import { Dec } from "../catalog-core/decimal";
 import {
   catalogRows, missingCount, readCatalogFacts, type CatalogColumn, type ReadinessCell, type ReadinessColumn, type ReadinessSettings,
 } from "../catalog-core/item-readiness";
+import { readOrderInspections, type OrderInspection } from "../factory/factory-inspections";
 import { readNeeds, type LineStatus } from "../purchasing/orders";
 import { readDrawingItems, type DrawingItem } from "./project-drawing-needs";
 import { readLatestRevision, type LatestRevision } from "./project-drawings";
@@ -30,7 +31,11 @@ export type LineFacts = {
 };
 
 export type MaterialFact = { id: string; boqLineIds: string[]; clientChoice: boolean; decision: "approved" | "rejected" | null };
-export type OrderFact = { status: string; quantity: string };
+/**
+ * A work order of the line, and (PLM-150) the design inspection it waits on: with the design team (`due`), snags the
+ * factory fixes (`snags`), or not asked for yet (`waiting`, after finishing only). Null when it waits on none.
+ */
+export type OrderFact = { status: string; quantity: string; inspection?: "due" | "snags" | "waiting" | null };
 export type DrawingFact = Pick<DrawingItem, "needed" | "catalogDrawingUrl">;
 
 export type ProjectFacts = {
@@ -104,11 +109,14 @@ export function lineCells(line: LineFacts, facts: ProjectFacts): Record<ProjectC
     const planned = live.reduce((sum, order) => sum.add(order.quantity), Dec.of(0));
     if (!live.length) production = missing();
     else {
-      const steps = live.map((order) => order.status === "ready" || order.status === "short_closed" ? "ready" : order.status === "in_production" ? "in_production"
-        : order.status === "on_hold" ? "on_hold" : "scheduled");
-      const order = ["on_hold", "scheduled", "in_production", "ready"];
+      // PLM-150: an item at a design inspection (or with its snags) reads as that, after production and before ready.
+      const steps = live.map((order) => order.inspection ? "inspection" : order.status === "ready" || order.status === "short_closed" ? "ready"
+        : order.status === "in_production" ? "in_production" : order.status === "on_hold" ? "on_hold" : "scheduled");
+      const order = ["on_hold", "scheduled", "in_production", "inspection", "ready"];
       const least = steps.reduce((low, next) => (order.indexOf(next) < order.indexOf(low) ? next : low));
-      production = least === "ready" && planned.cmp(line.quantity) >= 0 ? done("ready") : waiting(least === "ready" ? "in_production" : least);
+      production = least === "ready" && planned.cmp(line.quantity) >= 0 ? done("ready")
+        : least === "inspection" ? waiting(live.some((entry) => entry.inspection === "snags") ? "inspection_snags" : "inspection_due")
+          : waiting(least === "ready" ? "in_production" : least);
     }
   }
 
@@ -118,6 +126,15 @@ export function lineCells(line: LineFacts, facts: ProjectFacts): Record<ProjectC
     : installed.cmp(line.quantity) >= 0 ? done("installed") : waiting("part_installed");
 
   return { picture, size, drawing, materials, labour, selection, purchase, production, delivery };
+}
+
+/** The design inspection a work order waits on (PLM-150): Inspection 1 while it's made, the last one once it's made and checked. */
+export function inspectionWait(status: string, state: Pick<OrderInspection, "raw" | "final"> | undefined): OrderFact["inspection"] {
+  if (!state) return null;
+  const as = (step: OrderInspection["raw"]) => step === "due" ? "due" as const : step === "snags" ? "snags" as const : null;
+  if (status === "in_production") return as(state.raw);
+  if (status === "ready" || status === "short_closed") return as(state.final) ?? (state.final === "to_request" ? "waiting" : null);
+  return null;
 }
 
 /** The columns a project shows: the workspace's chosen columns, less the delivery areas its path doesn't use. */
@@ -161,8 +178,10 @@ export async function readProjectReadiness(db: Db, workspaceId: string, projectI
   const materialList = await readMaterials(db, workspaceId, projectId);
   const materials: MaterialFact[] = materialList.items.map((entry) => ({ id: entry.id, boqLineIds: entry.boqLineIds, clientChoice: entry.clientChoice, decision: entry.decision?.decision ?? null }));
   const needs = await readNeeds(db, workspaceId, false, projectId);
-  const orders = (await db.query<OrderFact & { lineId: string }>(
-    `SELECT boq_line_id AS "lineId", status, quantity::text AS quantity FROM work_orders WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows;
+  const inspections = await readOrderInspections(db, workspaceId, { projectId });
+  const orders = (await db.query<OrderFact & { lineId: string; id: string }>(
+    `SELECT id, boq_line_id AS "lineId", status, quantity::text AS quantity FROM work_orders WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows
+    .map((order) => ({ ...order, inspection: inspectionWait(order.status, inspections.get(order.id)) }));
 
   const rows = lines.map(({ packageSupply, ...line }): ProjectReadinessRow => {
     const facts: LineFacts = { ...line, supply: packageSupply ?? suggestedSupply(line.kind, line.itemType), packaged: Boolean(packageSupply) };

@@ -1,5 +1,5 @@
 import { Dec } from "../catalog-core/decimal";
-import { materialsShort, ORDER_TOTALS, defaultHours, plain, readWorkOrderMaterials } from "../factory/factory";
+import { materialsShort, ORDER_TOTALS, defaultHours, FINAL_PENDING, plain, readWorkOrderMaterials } from "../factory/factory";
 import { DEFAULT_PRODUCTION_STEPS, normaliseProductionSteps } from "../factory/production-status";
 import { readCalendar, workdays } from "../project-core/work-calendar";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
@@ -34,16 +34,18 @@ const inChosen = (day: string) => `(${local(day)} >= p.from_at AND ${local(day)}
 
 /**
  * Work orders by status, live: every work order on a running project by where it stands — Scheduled (planned or
- * released), In production, Quality check (everything made, waiting for its approval or check), Ready — as the
- * factory's own production status reads it (PLM-063; a step the firm doesn't use folds into the one before, and it
- * names the steps in its own words); plus Delivered: ready work orders whose dispatches all arrived on site, counted
- * when they arrived in the period.
+ * released), In production, Quality check (everything made, waiting for its approval or check, or for its last design
+ * inspection, PLM-150), Ready — as the factory's own production status reads it (PLM-063; a step the firm doesn't use
+ * folds into the one before, and it names the steps in its own words); plus Delivered: ready work orders whose
+ * dispatches all arrived on site, counted when they arrived in the period.
  */
 const STATUS_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${PROJECTS},
 orders AS (
   SELECT wo.id, wo.number, wo.title, wo.planned_end, wo.project_id, pj.reference AS project_reference, pj.client, pj.owner, pj.am, pj.status AS project_status,
          CASE
            WHEN wo.status IN ('ready', 'short_closed') AND shipped.arrived > 0 AND shipped.moving = 0 THEN 'delivered'
+           -- PLM-150: made and checked but not through its last design inspection yet: still the quality check.
+           WHEN wo.status IN ('ready', 'short_closed') AND ${FINAL_PENDING("wo")} THEN 'quality_check'
            WHEN wo.status IN ('ready', 'short_closed') THEN 'ready'
            WHEN wo.status IN ('planned', 'released') OR (wo.status = 'on_hold' AND wo.held_from IS DISTINCT FROM 'in_production') THEN 'scheduled'
            WHEN wo.status = 'in_production'

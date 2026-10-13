@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { everythingMade } from "../factory/factory";
+import { assertDeliveryCleared } from "../factory/factory-inspections";
 import { reserveForProduction } from "../fulfilment/stock-reservations";
 import { assertPermitFor } from "../logistics/permits";
 import { INSTALLATION_CHECKS, type StageCheck } from "./project-checks";
@@ -152,6 +153,8 @@ export async function writeInstallationDays(db: Db, input: {
     [workspaceId, projectId])).rows[0];
   if (!before) throw new BadRequestException("Project not found.");
   if (before.deliveryOn === deliveryOn && before.installationOn === installationOn && before.note === note) return null;
+  // PLM-150: the delivery is booked once every made item passed its last design inspection.
+  if (deliveryOn && deliveryOn !== before.deliveryOn) await assertDeliveryCleared(db, workspaceId, { projectId });
   // PLM-136: buildings can't be entered without a permit: a new delivery or installation day needs one covering it.
   if (deliveryOn && deliveryOn !== before.deliveryOn) await assertPermitFor(db, workspaceId, { projectId }, deliveryOn, "delivery");
   if (installationOn && installationOn !== before.installationOn) await assertPermitFor(db, workspaceId, { projectId }, installationOn, "installation");
