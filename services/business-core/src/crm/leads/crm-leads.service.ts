@@ -38,6 +38,7 @@ import { evaluateQualification, QualificationEvaluation } from "./qualification-
 import { hasResolvedEnquiryType } from "./lead-options";
 import { loadEnquiryFacts, requirementContext, requirementProblems } from "./enquiry-problems";
 import { readLeadTeam, teamRolesForType } from "./lead-team";
+import { clearPartySpam, flagPartySpam } from "../spam/contact-spam";
 import { canReadNotes, isNotesField, notesReader, redactNotes } from "./internal-notes";
 import {
   formatDeadline, leadFacts, leadLink, loadSalesSettings, memberPerson, refreshUnownedEscalation,
@@ -871,7 +872,7 @@ export class CrmLeadsService {
   }
 
   /** The Sales rules the timers read (S-1, S-2, S-3, S-10): one row per workspace, version-checked and audited. */
-  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null; internalNotesVisibility?: "team" | "sales"; opportunityReferencePrefix?: string; stuckDealDays?: number }) {
+  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null; internalNotesVisibility?: "team" | "sales"; opportunityReferencePrefix?: string; stuckDealDays?: number; timelineCheckRoles?: string[] }) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       const before = await loadSalesSettings(client, workspaceId);
       if (before.version !== input.version) throw new ConflictException("Sales settings changed; reload and try again");
@@ -888,18 +889,19 @@ export class CrmLeadsService {
         internalNotesVisibility: input.internalNotesVisibility ?? before.internalNotesVisibility,
         opportunityReferencePrefix: input.opportunityReferencePrefix ?? before.opportunityReferencePrefix,
         stuckDealDays: input.stuckDealDays ?? before.stuckDealDays,
+        timelineCheckRoles: input.timelineCheckRoles ? [...new Set(input.timelineCheckRoles.map((code) => code.trim().toLowerCase()).filter(Boolean))] : before.timelineCheckRoles,
       };
       if (!/^[A-Z][A-Z0-9]{0,5}-?$/.test(next.opportunityReferencePrefix)) throw new UnprocessableEntityException("Use capital letters and digits, for example O-");
       const saved = await client.query(
-        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by, internal_notes_visibility, opportunity_reference_prefix, stuck_deal_days)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$10,$11)
+        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by, internal_notes_visibility, opportunity_reference_prefix, stuck_deal_days, timeline_check_roles)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$10,$11,$12::text[])
          ON CONFLICT (workspace_id) DO UPDATE SET takeover_cap=EXCLUDED.takeover_cap, unowned_escalation_minutes=EXCLUDED.unowned_escalation_minutes,
            client_review_minutes=EXCLUDED.client_review_minutes, duplicate_window_days=EXCLUDED.duplicate_window_days,
            sales_admin_membership_id=EXCLUDED.sales_admin_membership_id, updated_by=EXCLUDED.updated_by, internal_notes_visibility=EXCLUDED.internal_notes_visibility,
-           opportunity_reference_prefix=EXCLUDED.opportunity_reference_prefix, stuck_deal_days=EXCLUDED.stuck_deal_days, version=workspace_sales_settings.version+1, updated_at=now()
+           opportunity_reference_prefix=EXCLUDED.opportunity_reference_prefix, stuck_deal_days=EXCLUDED.stuck_deal_days, timeline_check_roles=EXCLUDED.timeline_check_roles, version=workspace_sales_settings.version+1, updated_at=now()
          WHERE workspace_sales_settings.version=$8
          RETURNING version`,
-        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version, next.internalNotesVisibility, next.opportunityReferencePrefix, next.stuckDealDays]);
+        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version, next.internalNotesVisibility, next.opportunityReferencePrefix, next.stuckDealDays, next.timelineCheckRoles]);
       if (!saved.rowCount) throw new ConflictException("Sales settings changed; reload and try again");
       const after = await loadSalesSettings(client, workspaceId);
       await this.events.record(client, {
@@ -1401,32 +1403,99 @@ export class CrmLeadsService {
    * on WhatsApp, raises nothing — unless that client already has other real work with the firm. Audited.
    */
   markSpam(actor: RequestActor, workspaceId: string, leadId: string, input: { version: number }) {
-    return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.manage", (client, actorUser) => this.markSpamWith(client, workspaceId, leadId, actorUser, input.version));
+  }
+
+  /**
+   * Marks one enquiry as spam inside the caller's transaction (S-13, PLM-138): disqualified as "Spam" (its response
+   * timer stops), out of round-robin, the pipeline and the conversion reports. Its contact is flagged as spam unless it
+   * has other real work with the firm, so its later messages and enquiries on any channel are spam too (PLM-138).
+   * `version` is checked when given (a person acting on what they saw); safe to repeat.
+   */
+  async markSpamWith(client: PoolClient, workspaceId: string, leadId: string, actorUser: { userId: string }, version?: number, method: "manual" | "chat" = "manual") {
+    const before = await this.requireLead(client, workspaceId, leadId, true);
+    if (version !== undefined && before.version !== version) throw new ConflictException("Lead changed; reload and try again");
+    if ((before as unknown as Record<string, unknown>).spam_at) return this.mapLead(before);
+    // QA-017: an enquiry that became an opportunity is real work: it isn't spam (and stays in the reports' conversions).
+    if ((await client.query(`SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND lead_id = $2 LIMIT 1`, [workspaceId, leadId])).rowCount)
+      throw new ConflictException("This lead has been converted. Continue work in its opportunity or create a new enquiry.");
+    if (!["disqualified", "qualified", "duplicate"].includes(String(before.status)))
+      await this.transitionWith(client, workspaceId, leadId, { version: before.version, status: "disqualified", reason: "Spam" } as TransitionLeadDto, actorUser);
+    const marked = await client.query(`UPDATE crm_leads SET spam_at = now(), spam_by = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 RETURNING *`, [workspaceId, leadId, actorUser.userId]);
+    const partyId = (before as unknown as { party_id?: string | null }).party_id ?? null;
+    let flagged = false;
+    if (partyId) {
+      const otherWork = method === "chat" ? { rowCount: 0 } : await client.query(
+        `SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND party_id = $2
+         UNION ALL SELECT 1 FROM crm_leads WHERE workspace_id = $1 AND party_id = $2 AND id <> $3 AND spam_at IS NULL AND status <> 'duplicate' LIMIT 1`,
+        [workspaceId, partyId, leadId]);
+      if (!otherWork.rowCount) flagged = (await flagPartySpam(client, this.events, { workspaceId, partyId, actorUserId: actorUser.userId, method: "manual" })).flagged;
+    }
+    const response = this.mapLead(marked.rows[0] as LeadContext);
+    await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.marked_spam.v1", entityType: "crm_lead", entityId: leadId,
+      before: this.mapLead(before), after: { ...response, contactFlagged: flagged, method } });
+    return response;
+  }
+
+  /**
+   * PLM-138: "Not spam" (crm.spam.unmark), with a reason the history keeps. The enquiry's contact is a real client again
+   * (no longer spam or blocked), its Spam chats are Open, and each of its spam enquiries goes back into the normal
+   * flow as a new lead: routed like a new enquiry (round-robin) with its response timer started.
+   */
+  unmarkSpam(actor: RequestActor, workspaceId: string, leadId: string, input: { version: number; reason: string }) {
+    return this.access.withPermission(actor, workspaceId, "crm.spam.unmark", async (client, actorUser) => {
+      const reason = input.reason?.trim();
+      if (!reason) throw new UnprocessableEntityException("Say why this isn't spam");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:lead-assignment`]);
       const before = await this.requireLead(client, workspaceId, leadId, true);
       if (before.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
-      if ((before as unknown as Record<string, unknown>).spam_at) return this.mapLead(before);
-      // QA-017: an enquiry that became an opportunity is real work: it isn't spam (and stays in the reports' conversions).
-      if ((await client.query(`SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND lead_id = $2 LIMIT 1`, [workspaceId, leadId])).rowCount)
-        throw new ConflictException("This lead has been converted. Continue work in its opportunity or create a new enquiry.");
-      if (!["disqualified", "qualified"].includes(String(before.status)))
-        await this.transitionWith(client, workspaceId, leadId, { version: input.version, status: "disqualified", reason: "Spam" } as TransitionLeadDto, actorUser);
-      const marked = await client.query(`UPDATE crm_leads SET spam_at = now(), spam_by = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 RETURNING *`, [workspaceId, leadId, actorUser.userId]);
-      const partyId = (before as unknown as { party_id?: string | null }).party_id ?? null;
-      let blocked = false;
-      if (partyId) {
-        const otherWork = await client.query(
-          `SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND party_id = $2
-           UNION ALL SELECT 1 FROM crm_leads WHERE workspace_id = $1 AND party_id = $2 AND id <> $3 AND spam_at IS NULL AND status <> 'duplicate' LIMIT 1`,
-          [workspaceId, partyId, leadId]);
-        if (!otherWork.rowCount)
-          blocked = Boolean((await client.query(`UPDATE crm_parties SET blocked_at = now(), blocked_by = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND blocked_at IS NULL`,
-            [workspaceId, partyId, actorUser.userId])).rowCount);
-      }
-      const response = this.mapLead(marked.rows[0] as LeadContext);
-      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.marked_spam.v1", entityType: "crm_lead", entityId: leadId,
-        before: this.mapLead(before), after: { ...response, contactBlocked: blocked } });
-      return response;
+      const lead = before as unknown as { spam_at: Date | null; party_id: string | null };
+      if (!lead.spam_at) return this.mapLead(before);
+      if (lead.party_id) await this.unmarkPartySpamWith(client, workspaceId, lead.party_id, actorUser.userId, reason);
+      else await this.reopenSpamLeadWith(client, workspaceId, leadId, actorUser.userId, reason);
+      return this.mapLead(await this.requireLead(client, workspaceId, leadId, false));
     });
+  }
+
+  /** Clears a contact's spam flag and reopens each of its spam enquiries as a new lead (the caller holds crm.spam.unmark). */
+  async unmarkPartySpamWith(client: PoolClient, workspaceId: string, partyId: string, actorUserId: string, reason: string) {
+    const cleared = await clearPartySpam(client, this.events, { workspaceId, partyId, actorUserId, reason });
+    const spam = (await client.query<{ id: string }>(
+      `SELECT lead.id FROM crm_leads lead WHERE lead.workspace_id = $1 AND lead.party_id = $2 AND lead.spam_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM crm_opportunities opportunity WHERE opportunity.workspace_id = lead.workspace_id AND opportunity.lead_id = lead.id)
+        ORDER BY lead.created_at, lead.id`, [workspaceId, partyId])).rows;
+    const reopened: string[] = [];
+    for (const row of spam) reopened.push((await this.reopenSpamLeadWith(client, workspaceId, row.id, actorUserId, reason)).id);
+    return { ...cleared, leads: reopened };
+  }
+
+  /** One spam enquiry back into the normal flow as a new lead: routed like a new enquiry, its response timer started anew. */
+  private async reopenSpamLeadWith(client: PoolClient, workspaceId: string, leadId: string, actorUserId: string, reason: string) {
+    const before = await this.requireLead(client, workspaceId, leadId, true);
+    const opened = await client.query(
+      `UPDATE crm_leads SET status = 'new', spam_at = NULL, spam_by = NULL, disqualification_reason = NULL, duplicate_of_lead_id = NULL, owner_membership_id = NULL,
+              closed_at = NULL, next_action_at = NULL, version = version + 1, updated_at = now()
+        WHERE workspace_id = $1 AND id = $2 RETURNING *`, [workspaceId, leadId]);
+    if (!opened.rowCount) throw new ConflictException("Lead changed; reload and try again");
+    await client.query(`UPDATE crm_enquiries SET status = 'open', closed_at = NULL, version = version + 1 WHERE workspace_id = $1 AND id = (SELECT enquiry_id FROM crm_leads WHERE workspace_id = $1 AND id = $2)`, [workspaceId, leadId]);
+    // A new response cycle: a timer stopped when it was marked spam doesn't block the new one.
+    await this.startFirstResponseSla(client, workspaceId, leadId, null, actorUserId, true, "Spam flag cleared");
+    const lead = await this.requireLead(client, workspaceId, leadId, true);
+    let routed: Record<string, unknown>;
+    try {
+      routed = await this.applyAssignment(client, workspaceId, lead, await this.selectAssignment(client, workspaceId, lead, true), actorUserId, "automatic", "Not spam: back in the normal flow");
+    } catch (error) {
+      // No routing configured: it stays open without an owner, and the unowned countdown starts.
+      if (!(error instanceof ConflictException)) throw error;
+      await refreshUnownedEscalation(client, workspaceId, leadId);
+      routed = this.mapLead(await this.requireLead(client, workspaceId, leadId, false));
+    }
+    await this.events.record(client, {
+      workspaceId, actorUserId, source: "user", action: "crm.lead.spam_reopened.v1", entityType: "crm_lead", entityId: leadId,
+      before: { status: before.status, spam: true, ownerMembershipId: before.owner_membership_id },
+      after: { status: "new", spam: false, reason, note: reason, ownerMembershipId: routed.ownerMembershipId ?? null },
+    });
+    return { id: leadId, ownerMembershipId: (routed.ownerMembershipId as string | null) ?? null };
   }
 
   private async transitionWith(client: PoolClient, workspaceId: string, leadId: string, input: TransitionLeadDto, actorUser: { userId: string }) {

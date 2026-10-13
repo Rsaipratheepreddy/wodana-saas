@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../../../audit/record-audit";
 import { readProjectAccess } from "../../../client-portal/portal-settings";
-import { normalizeTemplateParameter, renderTemplate, TEMPLATE_SOURCE_NAMES, templatePlaceholders, type TemplateVariableSource } from "./inbox-rules";
+import { firstName, normalizeTemplateParameter, renderTemplate, TEMPLATE_SOURCE_NAMES, templatePlaceholders, type TemplateVariableSource } from "./inbox-rules";
+import { CLOSING_TEMPLATE_CODES, closingFieldsOf, readClosingSettings, renderClosing } from "./closing-messages";
 import { resolveTemplateSources, type TemplateContext } from "./template-variables";
 import { starterForEvent, startersForEvent, type StarterEvent } from "./whatsapp-starter-pack";
 import { clientDailyGate } from "../../../reminders/delivery/client-gate";
@@ -87,7 +88,9 @@ export async function sendClientEvent(db: Db, input: {
 
   // The firm's chosen template, else the starter templates for the event in order: the first that is approved and
   // whose every value the record has (a visit with its address, else without it).
-  const codes = rule.chosen ? [rule.templateCode] : [...new Set([rule.templateCode, ...startersForEvent(event).map((starter) => starter.name)])];
+  // PLM-137: a new enquiry's welcome is the inbox's closing message "We have everything": its own template first.
+  const welcome = event === "crm.enquiry.created";
+  const codes = rule.chosen ? [rule.templateCode] : [...new Set([...(welcome ? [CLOSING_TEMPLATE_CODES.received] : []), rule.templateCode, ...startersForEvent(event).map((starter) => starter.name)])];
   let chosen: { code: string; template: { id: string; body: string }; parameters: string[] } | null = null;
   let missing: Extract<ClientMessageResult, { sent: false }> | null = null;
   for (const code of codes) {
@@ -98,11 +101,15 @@ export async function sendClientEvent(db: Db, input: {
     chosen = { code, template, parameters: filled.parameters };
     break;
   }
-  if (!chosen) return missing ?? { sent: false, reason: "template_not_approved" };
+  // PLM-137: no approved template yet, but the client wrote to us on WhatsApp in the last 24 hours: the welcome goes as
+  // the firm's own text of "We have everything", which WhatsApp allows inside that window.
+  const freeText = !chosen && welcome ? await welcomeInWindow(db, workspaceId, partyId) : null;
+  if (!chosen && !freeText) return missing ?? { sent: false, reason: "template_not_approved" };
   // Only a message that can go claims the day's one client reminder.
   if (input.gate && !(await clientDailyGate(db, workspaceId, { partyId, priority: input.gate.priority, key: input.gate.key })).allowed) return { sent: false, reason: "capped" };
-  const { template, parameters } = chosen;
-  const body = renderTemplate(template.body, parameters);
+  const template = chosen?.template ?? null;
+  const parameters = chosen?.parameters ?? [];
+  const body = chosen ? renderTemplate(chosen.template.body, chosen.parameters) : freeText!;
 
   const found = (await db.query<{ id: string }>(
     `SELECT id FROM crm_conversations WHERE workspace_id = $1 AND party_id = $2 AND channel = 'whatsapp'
@@ -117,17 +124,31 @@ export async function sendClientEvent(db: Db, input: {
   await db.query(
     `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, sender_id, body_text, metadata)
      VALUES ($1, $2, $3, 'outbound', 'queued', 'automation', 'system', NULL, $4, $5)`,
-    [messageId, workspaceId, conversationId, body, { automatic: event, eventKey, template: { id: template.id, code: chosen.code, parameters } }]);
+    [messageId, workspaceId, conversationId, body, { automatic: event, eventKey, ...(chosen && template ? { template: { id: template.id, code: chosen.code, parameters } } : {}) }]);
   // An automatic message is not a reply: the client's wait keeps running.
   await db.query(`UPDATE crm_conversations SET last_message_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId]);
   const notificationId = randomUUID();
   await db.query(
     `INSERT INTO notifications (id, workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status, scheduled_for, body, idempotency_key, correlation_id, template_parameters)
      VALUES ($1, $2, $3, 'party', $4, 'whatsapp', $5, 'pending', now(), $6, $7, gen_random_uuid(), $8)`,
-    [notificationId, workspaceId, template.id, partyId, event, body, `message:${messageId}`, parameters]);
+    [notificationId, workspaceId, template?.id ?? null, partyId, event, body, `message:${messageId}`, parameters]);
   await recordAudit(db, { workspaceId, actorUserId: input.actorUserId ?? null, source: "internal", action: "notification.delivery_requested.v1", entityType: "notification", entityId: notificationId,
-    after: { messageId, channel: "whatsapp", partyId, event, template: chosen.code } });
+    after: { messageId, channel: "whatsapp", partyId, event, template: chosen?.code ?? null } });
   return { sent: true, messageId, conversationId, duplicate: false };
+}
+
+/**
+ * The welcome as free text ("We have everything", PLM-137) when the client wrote to us on WhatsApp in the last 24 hours;
+ * null outside that window, or when the text needs a field the client hasn't got.
+ */
+async function welcomeInWindow(db: Db, workspaceId: string, partyId: string) {
+  const open = await db.query(
+    `SELECT 1 FROM crm_conversations WHERE workspace_id = $1 AND party_id = $2 AND channel = 'whatsapp' AND last_inbound_at > now() - interval '24 hours' LIMIT 1`, [workspaceId, partyId]);
+  if (!open.rowCount) return null;
+  const text = (await readClosingSettings(db, workspaceId)).texts.received;
+  if (closingFieldsOf(text).some((field) => field !== "name")) return null;
+  const party = (await db.query<{ name: string | null }>(`SELECT display_name AS name FROM crm_parties WHERE workspace_id = $1 AND id = $2`, [workspaceId, partyId])).rows[0];
+  return renderClosing(text, { name: firstName(party?.name) }) || null;
 }
 
 /** A template's {{n}} values from the event's record, by the firm's mapping; the first missing one is named. */

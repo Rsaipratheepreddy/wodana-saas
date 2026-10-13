@@ -114,3 +114,20 @@ export class FileIntoJobDto {
 export class WakeSnoozedDto {
   @IsOptional() @IsInt() @Min(1) @Max(100) limit = 50;
 }
+
+/** The three closing messages' texts (PLM-137); null brings back the standard wording, an omitted one stays. */
+export class ClosingTextsDto {
+  @IsOptional() @IsString() @MaxLength(1024) received?: string | null;
+  @IsOptional() @IsString() @MaxLength(1024) form?: string | null;
+  @IsOptional() @IsString() @MaxLength(1024) closing?: string | null;
+}
+
+/** Settings › Inbox › Closing messages: the texts, the enquiry form link {{form_link}} fills, and the quiet working hours. */
+export class UpdateClosingMessagesDto {
+  /** 0 when the workspace has never saved them. */
+  @IsInt() @Min(0) version!: number;
+  @IsOptional() @ValidateNested() @Type(() => ClosingTextsDto) texts?: ClosingTextsDto;
+  @IsOptional() @IsString() @MaxLength(500) @Matches(/^(https:\/\/\S{3,})?$/, { message: "Use a full https:// link" }) formUrl?: string | null;
+  /** Working hours without a reply before "Closing the chat" is offered. */
+  @IsOptional() @IsInt() @Min(1) @Max(72) afterHours?: number;
+}

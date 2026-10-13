@@ -230,7 +230,7 @@ export function readTools(services: ToolServices): AiTool[] {
 
   const listConversations: AiTool = {
     name: "list_conversations",
-    description: "Chats in the inbox: mine, unassigned, my team's or all; open, snoozed or resolved (closed); optionally unread only or matching a name.",
+    description: "Chats in the inbox: mine, unassigned, my team's or all; open, unresolved (handled, waiting on the client), snoozed, resolved (closed) or spam; optionally unread only or matching a name.",
     kind: "read",
     confirmation: "none",
     calls: "CrmConversationsService.list",
@@ -239,7 +239,7 @@ export function readTools(services: ToolServices): AiTool[] {
       type: "object",
       properties: {
         view: { type: "string", enum: ["mine", "unassigned", "team", "all"] },
-        status: { type: "string", enum: ["open", "snoozed", "closed"] },
+        status: { type: "string", enum: ["open", "unresolved", "snoozed", "closed", "spam"] },
         search: { type: "string", maxLength: 200 },
         unread: { type: "boolean" },
         limit: { type: "integer", description: "Up to 20" },

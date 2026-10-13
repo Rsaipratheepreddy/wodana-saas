@@ -125,7 +125,7 @@ async function describeSalesRecord(services: ToolServices, context: AiToolContex
 /** A card's title, and the same sentence in English for the model and the audit trail. */
 export const titled = (title: ReturnType<typeof phrase>, extra = "") => ({ title: { key: title.key, values: title.values }, summary: `${title.text}${extra}` });
 export const KIND_LABELS: Record<string, string> = { note: "Note", call: "Call", meeting: "Meeting", email: "Email", whatsapp: "WhatsApp", sms: "SMS", other: "Other", task: "Task" };
-const STATE_LABELS: Record<string, string> = { open: "Open", snoozed: "Snoozed", closed: "Resolved" };
+const STATE_LABELS: Record<string, string> = { open: "Open", unresolved: "Unresolved", snoozed: "Snoozed", closed: "Resolved", spam: "Spam" };
 
 const targetKey = (type: string) => (type === "enquiry" ? "leadId" : type === "opportunity" ? "opportunityId" : "partyId");
 
@@ -497,7 +497,7 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
 
   const setChatState: AiTool = {
     name: "set_chat_state",
-    description: "Prepare resolving, reopening or snoozing chats (the ids given, else the selected chats, else the chat open). Snoozing needs a local time to come back.",
+    description: "Prepare resolving, reopening, marking unresolved (handled, waiting on the client) or snoozing chats (the ids given, else the selected chats, else the chat open). Snoozing needs a local time to come back. Spam chats are left as they are.",
     kind: "write",
     confirmation: "confirm",
     calls: "CrmConversationsService.updateConversation (per chat, version-checked)",
@@ -506,7 +506,7 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       type: "object",
       properties: {
         ids: { type: "array", items: { type: "string", maxLength: 40 }, maxItems: 50 },
-        state: { type: "string", enum: ["open", "snoozed", "closed"], description: "closed is Resolved" },
+        state: { type: "string", enum: ["open", "unresolved", "snoozed", "closed"], description: "closed is Resolved" },
         snoozeUntil: { type: "string", description: "Local date and time, for snoozed", maxLength: 25 },
       },
       required: ["state"],
@@ -518,14 +518,15 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       const targets: ProposalTarget[] = [];
       for (const id of chatIds(context, input.ids)) {
         const chat = await services.conversations.get(context.actor, context.workspaceId, id) as unknown as Row;
-        if (chat.status === state && state !== "snoozed") continue;
+        if ((chat.status === state && state !== "snoozed") || chat.status === "spam") continue;
         const label = `${str(chat.partyName) ?? "Chat"} · ${str(chat.channel) ?? "chat"}`;
         items.push({ id, version: Number(chat.version), label });
         targets.push({ ...ref("conversation", id, label), now: STATE_LABELS[String(chat.status)] ?? str(chat.status) });
       }
       if (!items.length) throw new ToolInputError("Every chat listed is already in that state");
       return {
-        ...titled(phrase(`${state === "closed" ? "Resolve" : state === "open" ? "Reopen" : "Snooze"} ${items.length === 1 ? "1 chat" : "{count} chats"}`, { count: items.length })),
+        ...titled(state === "unresolved" ? phrase(items.length === 1 ? "Mark 1 chat unresolved" : "Mark {count} chats unresolved", { count: items.length })
+          : phrase(`${state === "closed" ? "Resolve" : state === "open" ? "Reopen" : "Snooze"} ${items.length === 1 ? "1 chat" : "{count} chats"}`, { count: items.length })),
         target: null,
         preview: { kind: "targets", items: targets, selectable: items.length > 1, fields: [{ label: "State", after: STATE_LABELS[state] }, ...(snoozedUntil ? [{ label: "Until", after: snoozedUntil, format: "datetime" as const }] : [])] },
         command: { state, snoozedUntil, items },

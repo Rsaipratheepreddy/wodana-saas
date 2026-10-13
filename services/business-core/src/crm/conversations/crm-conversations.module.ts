@@ -16,11 +16,12 @@ import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
 import { EmailModule } from "../../email/email.module";
 import { CrmInboundEmailAddressController, InboundEmailWebhookController } from "./crm-inbound-email.controller";
 import { CrmInboundEmailService } from "./crm-inbound-email.service";
+import { CrmClosingMessagesService } from "./crm-closing-messages.service";
 
 @Module({
   imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule, AiGatewayModule, EmailModule],
   controllers: [CrmInboundEmailAddressController, InboundEmailWebhookController, CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController, CrmAttachmentsController, CrmAttachmentTargetsController, InternalCrmAttachmentsController],
-  providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService, CrmPaymentRemindersService, CrmAttachmentsService, CrmScheduledMessagesService, BrandAssetStorageService, CrmInboundEmailService],
+  providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService, CrmPaymentRemindersService, CrmAttachmentsService, CrmScheduledMessagesService, BrandAssetStorageService, CrmInboundEmailService, CrmClosingMessagesService],
   exports: [CrmConversationsService, CrmInboxService, CrmScheduledMessagesService],
 })
 export class CrmConversationsModule {}

@@ -43,7 +43,7 @@ export const REQUIRED_AT: readonly RequiredAt[] = [...REQUIREMENT_GATES, "never"
  * key of the region; labels come from the region pack in the web. `team:<role>` is a team role tagged on the enquiry
  * (a member, or Not applicable); `cf:<id>` is one of the workspace's own enquiry fields.
  */
-export const REQUIRABLE_FIELDS = ["email", "area", "address", "budgetRange", "customerType", "summary"] as const;
+export const REQUIRABLE_FIELDS = ["email", "area", "address", "budgetRange", "customerType", "summary", "targetCompletion"] as const;
 export type RequirementRules = Record<string, RequiredAt>;
 
 /**
@@ -59,6 +59,7 @@ const LABELS: Record<string, string> = {
   budgetRange: "Choose the budget range",
   customerType: "Choose the client type",
   summary: "Describe the project",
+  targetCompletion: "Enter the client's target completion date",
 };
 
 export function isRequirableKey(key: string) {
@@ -76,6 +77,8 @@ export function requiredBy(at: RequiredAt | undefined, gate: RequirementGate) {
 export type EnquiryFacts = {
   serviceType: string | null;
   email: string | null; area: string | null; address: string | null; budgetRange: string | null; customerType: string | null; summary: string | null;
+  /** PLM-155: the date the client wants it finished (Sales collect it; the design team and Production say what is possible). */
+  targetCompletion?: string | null;
   /** Team roles answered on the enquiry (a member or Not applicable). */
   team: ReadonlySet<string>;
   /** The workspace's own fields that hold a value, by `cf:<id>`. */
@@ -103,7 +106,7 @@ export function requirementProblems(facts: EnquiryFacts, context: RequirementCon
     if (!needs(key)) continue;
     if (key === "budgetRange" && !context.hasBudgetRanges) continue;
     if (key === "customerType" && !context.hasCustomerTypes) continue;
-    problems.when(blank(facts[key]), key, LABELS[key]);
+    problems.when(blank(facts[key] ?? null), key, LABELS[key]);
   }
   for (const role of context.teamRoles) {
     const key = `team:${role}`;
@@ -167,7 +170,7 @@ export async function loadEnquiryFacts(db: Db, workspaceId: string, leadId: stri
     serviceType: row.serviceType, summary: row.summary,
     email: row.email ?? text(details.contact?.email) ?? extraEmail ?? null,
     area: text(details.area) || text(details.location), address: text(details.contact?.address),
-    budgetRange: text(details.budgetRange), customerType: text(details.customerType),
+    budgetRange: text(details.budgetRange), customerType: text(details.customerType), targetCompletion: text(details.targetCompletion),
     team: new Set(team.map((entry) => entry.role)),
     custom: new Set(custom.filter((field) => field.filled).map((field) => `cf:${field.id}`)),
     customLabels: new Map(custom.map((field) => [`cf:${field.id}`, field.label])),

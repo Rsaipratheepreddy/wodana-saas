@@ -7,8 +7,9 @@ import { snoozeProblem, type ConversationState } from "./inbox-rules";
 
 type Db = Pick<PoolClient, "query">;
 export type ConversationRow = Record<string, unknown>;
-export type ChatEventKind = "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden" | "filed" | "unfiled";
-export type ChatEventMethod = "manual" | "bulk" | "relationship" | "queue" | "client_replied" | "schedule" | "enquiry" | "quiet";
+export type ChatEventKind = "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden" | "filed" | "unfiled"
+  | "unresolved" | "spam" | "unspam" | "closing_sent";
+export type ChatEventMethod = "manual" | "bulk" | "relationship" | "queue" | "client_replied" | "schedule" | "enquiry" | "quiet" | "contact_spam" | "closing";
 
 export type ConversationChange = {
   status?: ConversationState;
@@ -40,7 +41,7 @@ export function mapConversation(row: ConversationRow) {
     id: row.id, partyId: row.party_id, leadId: row.lead_id, channel: row.channel, subject: row.subject, status: row.status,
     ownerMembershipId: row.owner_membership_id, lastMessageAt: row.last_message_at, lastInboundAt: row.last_inbound_at,
     unreadCount: row.unread_count, snoozedUntil: row.snoozed_until ?? null, waitingSince: row.waiting_since ?? null,
-    assignedAt: row.assigned_at ?? null, resolvedAt: row.resolved_at ?? null, connectionId: row.connection_id ?? null, version: Number(row.version),
+    assignedAt: row.assigned_at ?? null, resolvedAt: row.resolved_at ?? null, connectionId: row.connection_id ?? null, closingDueAt: row.closing_due_at ?? null, version: Number(row.version),
   };
 }
 
@@ -61,6 +62,8 @@ const instant = (value: unknown) => value == null ? null : new Date(value as str
 export async function applyConversationChange(db: Db, events: CrmEventsService, input: {
   workspaceId: string; before: ConversationRow; change: ConversationChange; actorUserId: string;
   method: "manual" | "bulk" | "enquiry"; expectedVersion?: number;
+  /** The closing message (PLM-137) that set the state, kept on the history line. */
+  closing?: string;
 }) {
   const { workspaceId, before, change, actorUserId } = input;
   const conversationId = String(before.id);
@@ -80,6 +83,8 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
   const leadChanged = !same(leadId, before.lead_id);
   const subjectChanged = !same(subject, before.subject);
   if (!statusChanged && !ownerChanged && !leadChanged && !subjectChanged) return { after: mapConversation(before), changed: false };
+  // PLM-138: a spam chat leaves Spam only when its contact is cleared ("Not spam", with a reason).
+  if (statusChanged && before.status === "spam") throw new UnprocessableEntityException("This chat is marked as spam. Mark it Not spam first.");
   if (input.expectedVersion !== undefined && Number(before.version) !== input.expectedVersion) throw new ConflictException("Conversation changed; refresh before trying again");
   if (ownerChanged && owner) await requireInboxMember(db, workspaceId, owner);
   if (leadChanged && leadId) {
@@ -103,8 +108,8 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
   const after = updated.rows[0];
   const method = input.method === "enquiry" ? "enquiry" : input.method;
   if (statusChanged) {
-    const kind: ChatEventKind = status === "closed" ? "resolved" : status === "snoozed" ? "snoozed" : "reopened";
-    await recordChatEvent(db, { workspaceId, conversationId, kind, actorUserId, snoozedUntil, method });
+    const kind: ChatEventKind = status === "closed" ? "resolved" : status === "snoozed" ? "snoozed" : status === "unresolved" ? "unresolved" : status === "spam" ? "spam" : "reopened";
+    await recordChatEvent(db, { workspaceId, conversationId, kind, actorUserId, snoozedUntil, method: input.closing ? "closing" : method, reason: input.closing ?? null });
   }
   if (ownerChanged) {
     await recordChatEvent(db, { workspaceId, conversationId, kind: owner ? "assigned" : "unassigned", actorUserId, ownerMembershipId: owner, previousOwnerMembershipId: before.owner_membership_id as string | null, method });

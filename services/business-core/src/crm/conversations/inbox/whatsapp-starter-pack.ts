@@ -169,7 +169,7 @@ export const starterForEvent = (event: string) => STARTER_PACK.find((template) =
 export const startersForEvent = (event: string) => STARTER_PACK.filter((template) => template.event === event);
 
 /** Sample values Meta reviews with the template, in the workspace's own currency, locale and name. */
-export function sampleValues(template: StarterTemplate, region: { businessName: string; currency: string; locale: string; webOrigin: string }) {
+export function sampleValues(template: Pick<StarterTemplate, "sources">, region: { businessName: string; currency: string; locale: string; webOrigin: string }) {
   const money = (amount: number) => { try { return new Intl.NumberFormat(region.locale, { style: "currency", currency: region.currency }).format(amount); } catch { return `${region.currency} ${amount}`; } };
   const date = (() => { try { return new Intl.DateTimeFormat(region.locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 9, 15, 12))); } catch { return "15 Oct 2026"; } })();
   const samples: Record<TemplateVariableSource, string> = {
@@ -178,7 +178,7 @@ export function sampleValues(template: StarterTemplate, region: { businessName: 
     "invoice.total": money(12500), "invoice.due_date": date, "payment.amount": money(12500), "portal.link": `${region.webOrigin.replace(/\/$/, "")}/portal`,
     "staff.first_name": "Sara", "business.name": region.businessName, "today.date": date,
     "meeting.time": (() => { try { return new Intl.DateTimeFormat(region.locale, { dateStyle: "full", timeStyle: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 9, 15, 10))); } catch { return "15 Oct 2026, 10:00"; } })(),
-    "meeting.place": "Villa 12, Garden Street", "review.link": `${region.webOrigin.replace(/\/$/, "")}/review`,
+    "meeting.place": "Villa 12, Garden Street", "review.link": `${region.webOrigin.replace(/\/$/, "")}/review`, "form.link": `${region.webOrigin.replace(/\/$/, "")}/enquiry/form`,
   };
   return template.sources.map((source) => samples[source]);
 }

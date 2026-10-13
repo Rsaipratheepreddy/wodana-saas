@@ -163,10 +163,16 @@ export class CrmLeadsController {
     return this.leads.transition(actor, workspaceId, leadId, input);
   }
 
-  /** Junk from a public form (S-13): closed as spam, out of reports, and its contact blocked. */
+  /** Junk (S-13, PLM-138): closed as spam, out of reports, and its contact flagged as spam. */
   @Post("leads/:leadId/spam")
   markSpam(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: LeadVersionDto) {
     return this.leads.markSpam(actor, workspaceId, leadId, input);
+  }
+
+  /** PLM-138: "Not spam", with a reason: the contact is a real client again and its spam enquiries go back into the flow. */
+  @Post("leads/:leadId/unspam")
+  unmarkSpam(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: ReopenDuplicateDto) {
+    return this.leads.unmarkSpam(actor, workspaceId, leadId, input);
   }
 
   @Put("leads/:leadId/qualification")

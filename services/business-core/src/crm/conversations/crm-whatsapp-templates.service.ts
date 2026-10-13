@@ -12,6 +12,17 @@ import { readFollowUpSettings, runClientFollowUps } from "./inbox/client-followu
 import { CLIENT_EVENTS, clientMessageRule, EMAIL_FALLBACK } from "./inbox/client-messages";
 import { numberHealthState, templatePlaceholders, type NumberHealth } from "./inbox/inbox-rules";
 import { metaBodyProblem, sampleValues, STARTER_LANGUAGES, STARTER_PACK, starterByName, type StarterEvent, type StarterLanguage } from "./inbox/whatsapp-starter-pack";
+import { CLOSING_KINDS, CLOSING_TEMPLATE_CODES, closingKindOfTemplate, closingTemplate, readClosingSettings } from "./inbox/closing-messages";
+import type { TemplateVariableSource } from "./inbox/inbox-rules";
+
+/** The closing messages as WhatsApp templates, from the firm's current texts, with why Meta would refuse one. */
+async function closingStarters(client: Pick<PoolClient, "query">, workspaceId: string) {
+  const settings = await readClosingSettings(client, workspaceId);
+  return CLOSING_KINDS.map((kind) => {
+    const { body, sources } = closingTemplate(settings.texts[kind]);
+    return { key: `closing_${kind}`, name: CLOSING_TEMPLATE_CODES[kind], body, sources, problem: metaBodyProblem(body, sources.length) };
+  });
+}
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type ProviderStatus = "submitting" | "pending" | "approved" | "rejected" | "paused" | "disabled";
@@ -46,12 +57,17 @@ export class CrmWhatsAppTemplatesService {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
       const existing = await this.existing(client, workspaceId);
       const language = (await this.region(client, workspaceId)).locale.split("-")[0];
+      // PLM-137: the three closing messages, from the firm's own texts, in English.
+      const closing = (await closingStarters(client, workspaceId)).map((template) => ({
+        key: template.key, event: "inbox.closing", name: template.name, language: "en", body: template.body,
+        status: existing.get(`${template.name}:en`) ?? null, problem: template.problem,
+      }));
       return {
         languages: STARTER_LANGUAGES, defaultLanguages: STARTER_LANGUAGES.includes(language as StarterLanguage) ? [language] : ["en"],
-        items: STARTER_PACK.flatMap((template) => STARTER_LANGUAGES.map((locale) => ({
+        items: [...STARTER_PACK.flatMap((template) => STARTER_LANGUAGES.map((locale) => ({
           key: template.key, event: template.event, name: template.name, language: locale, body: template.bodies[locale],
-          status: existing.get(`${template.name}:${locale}`) ?? null,
-        }))),
+          status: existing.get(`${template.name}:${locale}`) ?? null, problem: null as string | null,
+        }))), ...closing],
       };
     });
   }
@@ -80,8 +96,24 @@ export class CrmWhatsAppTemplatesService {
           added.push(`${template.name}:${language}`);
         }
       }
+      // PLM-137: the closing messages go in English, as the firm wrote them; one Meta would refuse waits until it is fixed.
+      let closingSkipped = 0;
+      if (input.languages.includes("en")) {
+        for (const template of await closingStarters(client, workspaceId)) {
+          if (existing.has(`${template.name}:en`)) continue;
+          if (template.problem) { closingSkipped += 1; continue; }
+          await this.mapVariables(client, workspaceId, template.name, template.sources, actorUser.userId);
+          await client.query(
+            `INSERT INTO notification_templates (workspace_id, code, channel, locale, version_number, status, body_template, variables,
+               provider_status, provider_category, starter_key)
+             VALUES ($1, $2::varchar, 'whatsapp', 'en', COALESCE((SELECT max(version_number) FROM notification_templates WHERE workspace_id = $1 AND code = $2::varchar AND channel = 'whatsapp' AND locale = 'en'), 0) + 1,
+               'draft', $3, $4, 'submitting', 'utility', $5)`,
+            [workspaceId, template.name, template.body, JSON.stringify(template.sources.map((_source, index) => String(index + 1))), template.key]);
+          added.push(`${template.name}:en`);
+        }
+      }
       if (added.length) await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.whatsapp.starter_pack.submitted.v1", entityType: "integration_connection", entityId: workspaceId, after: { added, languages: input.languages } });
-      return { added: added.length, skipped: STARTER_PACK.length * new Set(input.languages).size - added.length };
+      return { added: added.length, skipped: Math.max(0, STARTER_PACK.length * new Set(input.languages).size - added.length), closingSkipped };
     });
   }
 
@@ -94,10 +126,14 @@ export class CrmWhatsAppTemplatesService {
           WHERE workspace_id = $1 AND channel = 'whatsapp' AND provider_status = 'submitting'
             AND (provider_submitted_at IS NULL OR provider_submitted_at < now() - interval '10 minutes')
           RETURNING id, code, locale, body_template AS body, provider_category AS category, starter_key AS "starterKey"`, [workspaceId]);
+      // A closing message's fields are what its mapping says (written when it was added).
+      const mapped = await client.query<{ code: string; source: TemplateVariableSource }>(
+        `SELECT template_code AS code, source FROM crm_template_variables WHERE workspace_id = $1 AND channel = 'whatsapp' AND template_code = ANY($2::text[]) ORDER BY position`,
+        [workspaceId, Object.values(CLOSING_TEMPLATE_CODES)]);
       const submissions = claimed.rows.flatMap((row) => {
-        const starter = starterByName(row.code);
-        if (!starter) return [];
-        return [{ id: row.id, name: row.code, language: row.locale, category: (row.category ?? "utility").toUpperCase(), body: row.body, examples: sampleValues(starter, { ...region, webOrigin: webOrigin(this.config ?? { get: () => undefined }) }) }];
+        const sources = starterByName(row.code)?.sources ?? (closingKindOfTemplate(row.code) ? mapped.rows.filter((entry) => entry.code === row.code).map((entry) => entry.source) : null);
+        if (!sources) return [];
+        return [{ id: row.id, name: row.code, language: row.locale, category: (row.category ?? "utility").toUpperCase(), body: row.body, examples: sampleValues({ sources }, { ...region, webOrigin: webOrigin(this.config ?? { get: () => undefined }) }) }];
       });
       const sync = await client.query(
         `UPDATE integration_connections SET configuration = configuration || jsonb_build_object('templatesSyncAttemptedAt', now())

@@ -34,7 +34,7 @@ import {
 } from "./dto/intake.dto";
 
 import { CrmLeadsService } from "../leads/crm-leads.service";
-import { loadLeadOptions, validateLeadOptions } from "../leads/lead-options";
+import { loadLeadOptions, UNRESOLVED_ENQUIRY_TYPE, validateLeadOptions } from "../leads/lead-options";
 import { assertCustomerType, assertSourceAllowed, resolveReferral } from "../leads/intake-rules";
 import { classifyRepeat } from "../leads/repeat-rules";
 import { notifyUserInApp } from "../../notifications/default-templates";
@@ -47,6 +47,7 @@ import { memberRoleKeys } from "../../workspaces/role-vocabulary";
 import { teamRolesByEnquiryType, teamRolesForType, writeLeadTeam } from "../leads/lead-team";
 import { loadRequirementRows, ProblemList, requirementContext, requirementProblems, rulesByType, type EnquiryFacts } from "../leads/enquiry-problems";
 import { canReadNotes, notesReader, redactNotes } from "../leads/internal-notes";
+import { contactKeys, flagPartySpam, spamContact } from "../spam/contact-spam";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -82,7 +83,7 @@ export class CrmIntakeService {
     const facts: EnquiryFacts = {
       serviceType: input.serviceType ?? null, summary: input.summary ?? null, email: text(input.party?.email),
       area: text(details.area) || text(details.location), address: text(input.party?.address), budgetRange: text(details.budgetRange), customerType: text(details.customerType),
-      team: answered, custom: new Set(),
+      targetCompletion: text(details.targetCompletion), team: answered, custom: new Set(),
     };
     const roles = await teamRolesForType(client, workspaceId, input.serviceType ?? null);
     return requirementProblems(facts, await requirementContext(client, workspaceId, input.serviceType ?? null, roles), "create");
@@ -371,6 +372,35 @@ export class CrmIntakeService {
     });
   }
 
+  /**
+   * PLM-138: a chat marked as spam still gets its enquiry, created at once and already spam (its contact is flagged
+   * first, so the intake marks it). Source and channel come from the chat (the firm's source that lists the chat's
+   * channel). Inside the caller's transaction; the same key returns the same enquiry. Null when the workspace has no
+   * source to file it under.
+   */
+  async createSpamEnquiryForChat(client: PoolClient, workspaceId: string, actorUserId: string, input: { key: string; partyId: string; channel: string; summary: string | null; conversationId: string }) {
+    const options = await loadLeadOptions(client, workspaceId);
+    const lists = options.channels as Record<string, Array<{ id: string }>>;
+    // As "Create enquiry" from a chat picks it: the firm's own source when it lists the channel, else one open to everyone, else any.
+    const listing = options.sources.filter((item) => lists[item.id]?.some((channel) => channel.id === input.channel)) as Array<{ id: string; allowedRoles?: unknown }>;
+    const source = listing.find((item) => item.id === "company") ?? listing.find((item) => !Array.isArray(item.allowedRoles) || !item.allowedRoles.length) ?? listing[0] ?? options.sources[0];
+    if (!source) return null;
+    const channel = lists[source.id]?.find((item) => item.id === input.channel)?.id ?? lists[source.id]?.[0]?.id ?? input.channel;
+    const party = (await client.query<{ name: string; phone: string | null; email: string | null }>(
+      `SELECT party.display_name AS name,
+              (SELECT raw_value FROM crm_contact_points WHERE workspace_id = party.workspace_id AND party_id = party.id AND type = 'phone' AND status = 'active' ORDER BY is_primary DESC, created_at LIMIT 1) AS phone,
+              (SELECT raw_value FROM crm_contact_points WHERE workspace_id = party.workspace_id AND party_id = party.id AND type = 'email' AND status = 'active' ORDER BY is_primary DESC, created_at LIMIT 1) AS email
+         FROM crm_parties party WHERE party.workspace_id = $1 AND party.id = $2`, [workspaceId, input.partyId])).rows[0];
+    if (!party) return null;
+    const result = await this.ingest(client, workspaceId, actorUserId, "user", input.key.slice(0, 160), undefined, {
+      source: source.id, channel, intakeMethod: "manual", title: "", serviceType: UNRESOLVED_ENQUIRY_TYPE,
+      party: { displayName: party.name, mobile: party.phone ?? "", ...(party.email ? { email: party.email } : {}) },
+      details: { emirate: "" }, summary: input.summary?.slice(0, 10_000) ?? undefined, assignment: { mode: "unassigned" },
+      identity: "existing", partyId: input.partyId, originalPayload: { origin: "inbox_spam", conversationId: input.conversationId },
+    } as CreateIntakeEventDto, { spamChat: true }) as { leadId?: string };
+    return result.leadId ?? null;
+  }
+
   createFormIntake(client: PoolClient, workspaceId: string, key: string, input: CreateIntakeEventDto) {
     return this.ingest(client, workspaceId, null, "integration", key, undefined, input);
   }
@@ -533,6 +563,7 @@ export class CrmIntakeService {
     idempotencyKey: string | undefined,
     requestedCorrelationId: string | undefined,
     input: CreateIntakeEventDto,
+    internal: { spamChat?: boolean } = {},
   ) {
     const normalizedIdempotencyKey = idempotencyKey?.trim();
     if (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 160) {
@@ -560,18 +591,20 @@ export class CrmIntakeService {
       return this.intakeResult(client, workspaceId, existing.rows[0].id);
     }
     const problems = new ProblemList()
-      .when(!input.party.mobile?.trim(), "mobile", "Enter a mobile number")
+      .when(!internal.spamChat && !input.party.mobile?.trim(), "mobile", "Enter a mobile number")
       .when(!input.serviceType?.trim(), "serviceType", "Select an enquiry type")
-      .when(!input.details?.emirate?.trim(), "emirate", "Select the region");
+      .when(!internal.spamChat && !input.details?.emirate?.trim(), "emirate", "Select the region");
     // Staff entry is checked against what its enquiry type requires from the start; a form or import is the sender's.
-    if (sourceActor === "user" && input.intakeMethod !== "import") problems.addAll(await this.createProblems(client, workspaceId, input));
+    // A spam chat's enquiry (PLM-138) is kept as it came: nobody fills it in.
+    if (sourceActor === "user" && input.intakeMethod !== "import" && !internal.spamChat) problems.addAll(await this.createProblems(client, workspaceId, input));
     problems.throwIfAny();
-    await validateLeadOptions(client, workspaceId, input);
+    await validateLeadOptions(client, workspaceId, input, undefined, { requireEmirate: !internal.spamChat });
     const submittedParty = input.party;
     const workspaceCountry = needsWorkspacePhoneCountry(input.party)
       ? countryFromLocale((await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.defaultLocale)
       : undefined;
-    input = { ...input, party: normalizeIntakePartyPhones(input.party, workspaceCountry) };
+    // A spam chat's enquiry keeps the number the provider gave (the contact already exists), whatever its country rules.
+    input = { ...input, party: internal.spamChat ? input.party : normalizeIntakePartyPhones(input.party, workspaceCountry) };
     await this.assertScope(client, workspaceId, input.legalEntityId, input.businessUnitId);
     const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
     if (Number.isNaN(receivedAt.getTime())) throw new BadRequestException("receivedAt is invalid");
@@ -702,7 +735,7 @@ export class CrmIntakeService {
         correlationId: eventCorrelationId, evidence: { matchStrength: "fuzzy", provisional: true, candidateCount: matches.length },
       });
       const settings = await loadSalesSettings(client, workspaceId);
-      await client.query(`UPDATE crm_leads SET client_review_due_at=$3 WHERE workspace_id=$1 AND id=$2`,
+      await client.query(`UPDATE crm_leads SET client_review_due_at=$3 WHERE workspace_id=$1 AND id=$2 AND spam_at IS NULL`,
         [workspaceId, records.leadId, addSlaMinutes(new Date(), settings.clientReviewMinutes, await salesSchedule(client, workspaceId))]);
       await this.events.record(client, {
         workspaceId, actorUserId, source: sourceActor,
@@ -896,6 +929,18 @@ export class CrmIntakeService {
       const member = await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, membershipId]);
       if (member.rowCount) await notifyUserInApp(client, { workspaceId, recipientUserId: member.rows[0].userId, code, eventType: code, variables, deepLink: `/workspace/crm/leads?lead=${leadId}`, idempotencyKey: `${code}:${leadId}` });
     };
+    // PLM-138: a contact flagged as spam (this one, or one sharing its phone or email) raises a spam enquiry: kept and
+    // counted by source and channel, but never routed, timed, welcomed or shown in the pipeline.
+    const spamParty = await spamContact(client, workspaceId, input.partyId, contactKeys(original.party));
+    if (spamParty) {
+      await client.query(`UPDATE crm_leads SET status = 'disqualified', disqualification_reason = 'Spam', spam_at = now(), spam_by = NULL, closed_at = now(), client_review_due_at = NULL
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId]);
+      await client.query(`UPDATE crm_enquiries SET status = 'disqualified', closed_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, enquiryId]);
+      if (spamParty !== input.partyId) await flagPartySpam(client, this.events, { workspaceId, partyId: input.partyId, actorUserId: null, method: "contact_spam" });
+      await this.events.record(client, { workspaceId, actorUserId, source: actorUserId ? "user" : "system", action: "crm.lead.marked_spam.v1", entityType: "crm_lead", entityId: leadId,
+        after: { spam: true, method: "contact_spam", source: input.source, channel: input.channel, note: "The contact is marked as spam" } });
+      return { partyId: input.partyId, enquiryId, leadId, reference: enquiry.rows[0].reference, spam: true };
+    }
     if (repeat?.kind === "duplicate") {
       // Kept for the record and marketing reports, owned by the original's owner, never routed or timed.
       await client.query(`UPDATE crm_leads SET status = 'duplicate', duplicate_of_lead_id = $3, owner_membership_id = $4, closed_at = now()

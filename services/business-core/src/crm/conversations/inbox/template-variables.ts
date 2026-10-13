@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { readPortalSettings } from "../../../client-portal/portal-settings";
-import { portalUrl } from "../../../client-portal/portal-site";
+import { portalUrl, webOrigin } from "../../../client-portal/portal-site";
 import { firstName, type TemplateVariableSource } from "./inbox-rules";
 
 type Db = Pick<PoolClient, "query">;
@@ -144,9 +144,24 @@ export async function resolveTemplateSources(db: Db, context: TemplateContext, s
         values[source] = row?.url?.trim() || null;
         break;
       }
+      case "form.link": values[source] = await closingFormLink(db, workspaceId, context.config); break;
     }
   }
   return values;
+}
+
+/**
+ * The enquiry form a closing message links to (PLM-137): the link the firm set in Settings › Inbox › Closing
+ * messages, else its first published enquiry form. Null when it has neither.
+ */
+export async function closingFormLink(db: Db, workspaceId: string, config?: Config) {
+  const row = (await db.query<{ url: string | null; token: string | null }>(
+    `SELECT (SELECT nullif(btrim(closing_form_url), '') FROM crm_inbox_settings WHERE workspace_id = $1) AS url,
+            (SELECT token FROM crm_lead_forms WHERE workspace_id = $1 AND status = 'published' AND published IS NOT NULL ORDER BY created_at, id LIMIT 1) AS token`,
+    [workspaceId])).rows[0];
+  if (row?.url) return row.url;
+  const origin = config ? webOrigin(config).replace(/\/$/, "") : "";
+  return row?.token && origin ? `${origin}/enquiry/${row.token}` : null;
 }
 
 /** "Tuesday, 14 October 2026 at 11:00" in the workspace's locale and time zone. */

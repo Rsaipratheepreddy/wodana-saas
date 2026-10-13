@@ -46,9 +46,10 @@ describe("access levels", () => {
     expect(() => expandAccess({ levels: { sales: "owner" } })).toThrow("sales has no owner level");
     expect(() => expandAccess({ levels: { woddy: "manage" } })).toThrow("woddy has no manage level");
     expect(() => expandAccess({ levels: {}, extras: "crm.leads.view" })).toThrow("Extras must be permission codes");
-    expect(expandAccess({ levels: { inbox: "edit" }, extras: ["crm.parties.export"] })).toEqual(["crm.communications.send", "crm.communications.view", "crm.inbox.team", "crm.parties.export"]);
+    expect(expandAccess({ levels: { inbox: "edit" }, extras: ["crm.parties.export"] })).toEqual(["crm.communications.send", "crm.communications.view", "crm.inbox.close_chats", "crm.inbox.team", "crm.parties.export"]);
     // Inbox levels (plan §5b): Own chats sees and answers; Team chats adds the queue and the team; Manage adds every chat and the settings.
     expect(expandAccess({ levels: { inbox: "view" } })).toEqual(["crm.communications.send", "crm.communications.view"]);
-    expect(expandAccess({ levels: { inbox: "manage" } })).toEqual(["crm.communications.send", "crm.communications.view", "crm.consent.manage", "crm.inbox.manage", "crm.inbox.team"]);
+    // PLM-137: Team chats (the Sales admins) also send the closing message to a quiet chat.
+    expect(expandAccess({ levels: { inbox: "manage" } })).toEqual(["crm.communications.send", "crm.communications.view", "crm.consent.manage", "crm.inbox.close_chats", "crm.inbox.manage", "crm.inbox.team"]);
   });
 });

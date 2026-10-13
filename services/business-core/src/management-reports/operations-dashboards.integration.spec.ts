@@ -442,7 +442,8 @@ integration("production, finance and stock dashboards with PostgreSQL", () => {
       expect(buyer.layout).toEqual({ tiles: ["purchases"], charts: [], attention: null });
 
       const sales = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW);
-      expect(sales.layout).toEqual({ tiles: ["new_leads", "conversion_funnel", "response_rate", "lost"], charts: ["new_leads", "won_by_source"], attention: "sales_attention" });
+      // PLM-138: the spam figures by source and channel are a chart of their own.
+      expect(sales.layout).toEqual({ tiles: ["new_leads", "conversion_funnel", "response_rate", "lost"], charts: ["new_leads", "won_by_source", "spam_by_source"], attention: "sales_attention" });
       const { kpis } = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW, undefined, "all");
       const bySource = kpi(kpis, "enquiries_by_source");
       expect(bySource).toMatchObject({ value: "3", previous: expect.objectContaining({ value: "1", change: "200.0" }) });

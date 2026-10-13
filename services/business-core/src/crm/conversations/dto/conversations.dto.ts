@@ -1,9 +1,12 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { CLOSING_KINDS } from "../inbox/closing-messages";
 
 export class ListConversationsQueryDto {
-  /** Open, Snoozed or Resolved ('closed'). */
-  @IsOptional() @IsIn(["open", "snoozed", "closed"]) status?: string;
+  /** One status, or several comma-separated: Open, Unresolved, Snoozed, Resolved ('closed') or Spam (PLM-137). */
+  @IsOptional() @Matches(/^(open|unresolved|snoozed|closed|spam)(,(open|unresolved|snoozed|closed|spam)){0,4}$/) status?: string;
+  /** "due": only chats whose "Closing the chat" message is due (no reply for the firm's quiet working hours). */
+  @IsOptional() @IsIn(["due"]) closing?: string;
   /** Mine, Unassigned, Team (people who share a queue with me) or All. */
   @IsOptional() @IsIn(["mine", "unassigned", "team", "all"]) view?: string;
   @IsOptional() @IsUUID() labelId?: string;
@@ -25,13 +28,27 @@ export class ListConversationsQueryDto {
 
 export class UpdateConversationDto {
   @IsInt() @Min(1) version!: number;
-  @IsOptional() @IsIn(["open", "snoozed", "closed"]) status?: string;
+  /** Spam has its own command (it creates and marks the enquiry and flags the contact). */
+  @IsOptional() @IsIn(["open", "unresolved", "snoozed", "closed"]) status?: string;
   /** Required with status snoozed: when the chat comes back. */
   @IsOptional() @IsISO8601({ strict: true }) snoozedUntil?: string;
   /** Link the chat to the client's enquiry (null unlinks). */
   @IsOptional() @IsUUID() leadId?: string | null;
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(500) subject?: string;
   @IsOptional() @IsUUID() ownerMembershipId?: string | null;
+}
+
+/** Sends one of the three closing messages (PLM-137); `version` is the chat as the person saw it. */
+export class SendClosingMessageDto {
+  @IsInt() @Min(1) version!: number;
+  @IsIn(CLOSING_KINDS) kind!: string;
+}
+
+/** Marks a chat as spam, or (with a reason, crm.spam.unmark) says it isn't (PLM-138). */
+export class ConversationSpamDto {
+  @IsInt() @Min(1) version!: number;
+  @IsBoolean() spam!: boolean;
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
 }
 
 export class ListMessagesQueryDto {

@@ -20,6 +20,7 @@ import { CrmIntakeModule } from "./crm/intake/crm-intake.module";
 import { CrmLeadsModule } from "./crm/leads/crm-leads.module";
 import { CrmActivitiesModule } from "./crm/activities/crm-activities.module";
 import { CrmConversationsModule } from "./crm/conversations/crm-conversations.module";
+import { CrmSpamModule } from "./crm/spam/crm-spam.module";
 import { CrmOpportunitiesModule } from "./crm/opportunities/crm-opportunities.module";
 import { CrmFlowsModule } from "./crm/flows/crm-flows.module";
 import { FlowStepsModule } from "./crm/flow-steps/flow-steps.module";
@@ -92,6 +93,7 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     CrmLeadsModule,
     CrmActivitiesModule,
     CrmConversationsModule,
+    CrmSpamModule,
     CrmOpportunitiesModule,
     CrmFlowsModule,
     FlowStepsModule,

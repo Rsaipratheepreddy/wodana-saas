@@ -239,14 +239,18 @@ integration("team inbox", () => {
     await withInbox(async (client, { workspaceId, manager, sara, nouraChat, conversations, templates, as }) => {
       as(manager);
       const first = await templates.submitStarterPack(actor, workspaceId, { languages: ["en", "ar"] });
-      expect(first.added).toBe(STARTER_PACK.length * 2);
-      expect(await templates.submitStarterPack(actor, workspaceId, { languages: ["en"] })).toEqual({ added: 0, skipped: STARTER_PACK.length });
+      // PLM-137: with them, the inbox's three closing messages, in English, from the firm's own texts.
+      expect(first.added).toBe(STARTER_PACK.length * 2 + 3);
+      expect(await templates.submitStarterPack(actor, workspaceId, { languages: ["en"] })).toEqual({ added: 0, skipped: STARTER_PACK.length, closingSkipped: 0 });
+      const closingMapping = await client.query(`SELECT position, source FROM crm_template_variables WHERE workspace_id=$1 AND template_code='wd_chat_form' ORDER BY position`, [workspaceId]);
+      expect(closingMapping.rows.map((row) => row.source)).toEqual(["contact.first_name", "form.link"]);
       const mapping = await client.query(`SELECT position, source FROM crm_template_variables WHERE workspace_id=$1 AND template_code='wd_payment_due' ORDER BY position`, [workspaceId]);
       expect(mapping.rows.map((row) => row.source)).toEqual(["contact.first_name", "payment.amount", "invoice.due_date", "portal.link"]);
 
       const work = await templates.dueWorkInternal(workspaceId);
       expect(work.sync).toBe(true);
-      expect(work.submissions).toHaveLength(STARTER_PACK.length * 2);
+      expect(work.submissions).toHaveLength(STARTER_PACK.length * 2 + 3);
+      expect(work.submissions.find((item) => item.name === "wd_chat_form")).toMatchObject({ language: "en", examples: ["Noura", expect.stringMatching(/\/enquiry\/form$/)] });
       expect(work.submissions.find((item) => item.name === "wd_invoice_issued" && item.language === "en")).toMatchObject({ category: "UTILITY", examples: ["Noura", "INV-0101", expect.stringContaining("12,500"), expect.stringMatching(/\/portal$/)] });
       // Claimed for ten minutes: a second pass doesn't submit them again, and the daily sync isn't due again.
       expect(await templates.dueWorkInternal(workspaceId)).toEqual({ submissions: [], sync: false });
@@ -325,10 +329,18 @@ integration("team inbox", () => {
       expect((await chat(client, strangerChat)).owner_membership_id).toBeNull();
       expect(await notices(client, workspaceId, manager, "crm.inbox.unassigned")).toEqual([]);
       expect((await client.query(`SELECT count(*)::int AS n FROM crm_messages WHERE conversation_id=$1`, [strangerChat])).rows[0].n).toBe(1);
+      // PLM-138: unblocking keeps the spam flag (only "Not spam", with a reason, clears it): its messages stay spam.
+      await inbox.blockConversation(actor, workspaceId, strangerChat, { blocked: false });
+      await conversations.addInboundInternal(workspaceId, strangerChat, { direction: "inbound", bodyText: "Still selling" } as never);
+      expect(await chat(client, strangerChat)).toMatchObject({ owner_membership_id: null, status: "spam", waiting_since: null });
+      // A number blocked without spam comes back into the inbox once unblocked.
+      await client.query(`UPDATE crm_parties SET spam_at = NULL WHERE workspace_id = $1 AND id = (SELECT party_id FROM crm_conversations WHERE id = $2)`, [workspaceId, strangerChat]);
+      await client.query(`UPDATE crm_conversations SET status = 'open' WHERE id = $1`, [strangerChat]);
+      await inbox.blockConversation(actor, workspaceId, strangerChat, { blocked: true });
       await inbox.blockConversation(actor, workspaceId, strangerChat, { blocked: false });
       await conversations.addInboundInternal(workspaceId, strangerChat, { direction: "inbound", bodyText: "Sorry, real question" } as never);
       expect((await chat(client, strangerChat)).owner_membership_id).not.toBeNull();
-      expect((await client.query(`SELECT kind FROM crm_conversation_events WHERE conversation_id=$1 AND kind IN ('blocked','unblocked') ORDER BY created_at`, [strangerChat])).rows.map((row) => row.kind)).toEqual(["blocked", "unblocked"]);
+      expect((await client.query(`SELECT kind FROM crm_conversation_events WHERE conversation_id=$1 AND kind IN ('blocked','unblocked') ORDER BY created_at`, [strangerChat])).rows.map((row) => row.kind)).toEqual(["blocked", "unblocked", "blocked", "unblocked"]);
 
       const message = await conversations.addInboundInternal(workspaceId, nouraChat, { direction: "inbound", bodyText: "My card number is 4111…" } as never) as { id: string };
       await inbox.hideMessage(actor, workspaceId, nouraChat, message.id, { hidden: true });

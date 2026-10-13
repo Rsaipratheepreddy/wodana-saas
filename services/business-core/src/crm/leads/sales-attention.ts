@@ -94,12 +94,14 @@ export type SalesSettings = {
   opportunityReferencePrefix: string;
   /** Days an open opportunity may keep its stage before Reports lists it as stuck (product default 14). */
   stuckDealDays: number;
+  /** PLM-155: the team or role codes whose people answer timeline questions (none: anyone in the workspace). */
+  timelineCheckRoles: string[];
   version: number;
 };
 
 export const DEFAULT_SALES_SETTINGS: SalesSettings = {
   takeoverCap: 2, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90,
-  salesAdminMembershipId: null, internalNotesVisibility: "team", opportunityReferencePrefix: "O-", stuckDealDays: 14, version: 0,
+  salesAdminMembershipId: null, internalNotesVisibility: "team", opportunityReferencePrefix: "O-", stuckDealDays: 14, timelineCheckRoles: [], version: 0,
 };
 
 export async function loadSalesSettings(db: Db, workspaceId: string): Promise<SalesSettings> {
@@ -107,9 +109,9 @@ export async function loadSalesSettings(db: Db, workspaceId: string): Promise<Sa
     `SELECT takeover_cap AS "takeoverCap", unowned_escalation_minutes AS "unownedEscalationMinutes",
             client_review_minutes AS "clientReviewMinutes", duplicate_window_days AS "duplicateWindowDays",
             sales_admin_membership_id AS "salesAdminMembershipId", internal_notes_visibility AS "internalNotesVisibility",
-            opportunity_reference_prefix AS "opportunityReferencePrefix", stuck_deal_days AS "stuckDealDays", version
+            opportunity_reference_prefix AS "opportunityReferencePrefix", stuck_deal_days AS "stuckDealDays", timeline_check_roles AS "timelineCheckRoles", version
        FROM workspace_sales_settings WHERE workspace_id = $1`, [workspaceId]);
-  return row.rows[0] ? { ...row.rows[0], internalNotesVisibility: row.rows[0].internalNotesVisibility === "sales" ? "sales" : "team", version: Number(row.rows[0].version) } : { ...DEFAULT_SALES_SETTINGS };
+  return row.rows[0] ? { ...row.rows[0], timelineCheckRoles: row.rows[0].timelineCheckRoles ?? [], internalNotesVisibility: row.rows[0].internalNotesVisibility === "sales" ? "sales" : "team", version: Number(row.rows[0].version) } : { ...DEFAULT_SALES_SETTINGS };
 }
 
 export type Recipient = { userId: string; membershipId: string; name: string };

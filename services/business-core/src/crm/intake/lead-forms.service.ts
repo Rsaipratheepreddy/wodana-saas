@@ -209,7 +209,7 @@ export class LeadFormsService {
         )::int AS contact
         FROM crm_intake_events WHERE workspace_id=$1 AND original_payload->>'formId'=$2 AND received_at > now()-interval '10 minutes'`, [form.workspace_id, form.id, contactFingerprint]);
       if (rate.rows[0].total >= 200 || rate.rows[0].contact >= 5) throw new HttpException("Too many submissions. Please try again later", 429);
-      // A contact the firm marked as spam (or blocked in the inbox) raises nothing new (S-13).
+      // A number the firm blocked in the inbox raises nothing new (S-13); a spam contact raises a spam enquiry (PLM-138).
       if (await blockedContact(client, form.workspace_id, contactFingerprint)) return { received: true };
       const capturedAt = new Date().toISOString();
       const consent = {
@@ -274,11 +274,11 @@ export function looksAutomated(input: { website?: string; elapsedMs?: number }) 
   return Boolean(input.website?.trim()) || (typeof input.elapsedMs === "number" && input.elapsedMs < MIN_FILL_MS);
 }
 
-/** Whether a blocked client (marked spam, or blocked from the inbox) has this mobile number (digits) or email. */
+/** Whether a client blocked in the inbox (and not flagged as spam, whose enquiries are kept as spam, PLM-138) has this mobile number (digits) or email. */
 export async function blockedContact(client: Pick<PoolClient, "query">, workspaceId: string, fingerprint: string) {
   const blocked = await client.query(
     `SELECT 1 FROM crm_contact_points point JOIN crm_parties party ON party.workspace_id = point.workspace_id AND party.id = point.party_id
-      WHERE point.workspace_id = $1 AND party.blocked_at IS NOT NULL
+      WHERE point.workspace_id = $1 AND party.blocked_at IS NOT NULL AND party.spam_at IS NULL
         AND (regexp_replace(point.normalized_value, '[^0-9]', '', 'g') = $2 OR lower(point.raw_value) = lower($2)) LIMIT 1`, [workspaceId, fingerprint]);
   return Boolean(blocked.rowCount);
 }

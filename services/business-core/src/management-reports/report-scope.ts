@@ -193,14 +193,14 @@ export const NO_SALES_FILTERS = `(p.am IS NULL AND p.enquiry_type IS NULL AND p.
   AND p.region IS NULL AND p.package_id IS NULL)`;
 
 /**
- * Enquiries (leads) with what the filters read, already filtered, spam left out: one row per lead (`lc`). The lead's
+ * Enquiries (leads) with what the filters read, already filtered, spam left out (only spam with `spam`, PLM-138): one row per lead (`lc`). The lead's
  * opportunity (if it became one) gives the package and, first, the entity. Without the owner filter, a KPI applies the
  * Account Manager filter to whoever was responsible at the time (the response clock's owner, the owner a lead moved from).
  */
-export const leadsCte = (ownerFilter = true) => `lc AS (
+export const leadsCte = (ownerFilter = true, spam = false) => `lc AS (
   SELECT l.id AS lead_id, l.status, l.created_at, l.owner_membership_id AS am, l.next_action_at, l.duplicate_of_lead_id,
          l.closed_at, l.disqualification_reason,
-         e.reference, COALESCE(NULLIF(btrim(e.title), ''), e.reference) AS title, e.source, e.channel, e.original_source,
+         e.reference, COALESCE(NULLIF(btrim(e.title), ''), e.reference) AS title, e.source, e.channel, e.original_source, e.original_channel,
          e.service_type AS enquiry_type, party.display_name AS client, ${NAME("am_user")} AS owner, o.id AS opportunity_id
     FROM crm_leads l CROSS JOIN p
     JOIN crm_enquiries e ON e.workspace_id = l.workspace_id AND e.id = l.enquiry_id
@@ -213,7 +213,7 @@ export const leadsCte = (ownerFilter = true) => `lc AS (
     LEFT JOIN crm_parties party ON party.workspace_id = l.workspace_id AND party.id = l.party_id
     LEFT JOIN workspace_memberships am ON am.workspace_id = l.workspace_id AND am.id = l.owner_membership_id
     LEFT JOIN users am_user ON am_user.id = am.user_id
-   WHERE l.workspace_id = p.ws AND l.spam_at IS NULL
+   WHERE l.workspace_id = p.ws AND l.spam_at IS ${spam ? "NOT NULL" : "NULL"}
      ${ownerFilter ? "AND (p.am IS NULL OR l.owner_membership_id = p.am)" : ""}
      AND (p.enquiry_type IS NULL OR e.service_type = p.enquiry_type)
      AND (p.client_type IS NULL OR e.details->>'customerType' = p.client_type)

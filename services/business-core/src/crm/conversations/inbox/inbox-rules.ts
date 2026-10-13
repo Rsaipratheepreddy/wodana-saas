@@ -3,8 +3,14 @@
  * values, the optional signature, and the text of a staff notice. The service and the web share the
  * same vocabulary (see apps/web/lib/crm/inbox.ts).
  */
-export const CONVERSATION_STATES = ["open", "snoozed", "closed"] as const;
+/**
+ * A chat's status (PLM-137): Open (needs us), Unresolved (handled, waiting on the client), Snoozed (back at a time),
+ * Resolved (stored "closed": the archive) or Spam (PLM-138: kept, nobody told, nothing automatic).
+ */
+export const CONVERSATION_STATES = ["open", "unresolved", "snoozed", "closed", "spam"] as const;
 export type ConversationState = (typeof CONVERSATION_STATES)[number];
+/** The states that are still work: what the Unassigned, Mine and Team views list. */
+export const ACTIVE_STATES = ["open", "unresolved"] as const;
 
 export const INBOX_VIEWS = ["mine", "unassigned", "team", "all"] as const;
 export type InboxView = (typeof INBOX_VIEWS)[number];
@@ -16,7 +22,7 @@ export const LABEL_COLORS = ["viz-1", "viz-2", "viz-3", "viz-4", "viz-5", "viz-6
 export const TEMPLATE_VARIABLE_SOURCES = [
   "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name", "project.stage",
   "quote.number", "invoice.number", "invoice.total", "invoice.due_date", "payment.amount", "portal.link", "staff.first_name", "business.name", "today.date",
-  "meeting.time", "meeting.place", "review.link",
+  "meeting.time", "meeting.place", "review.link", "form.link",
 ] as const;
 export type TemplateVariableSource = (typeof TEMPLATE_VARIABLE_SOURCES)[number];
 
@@ -27,6 +33,7 @@ export const TEMPLATE_SOURCE_NAMES: Record<TemplateVariableSource, string> = {
   "invoice.number": "Invoice number", "invoice.total": "Invoice amount", "invoice.due_date": "Invoice due date", "payment.amount": "Payment amount",
   "portal.link": "Client portal link", "staff.first_name": "Your first name", "business.name": "Business name", "today.date": "Today's date",
   "meeting.time": "Appointment date and time", "meeting.place": "Appointment address", "review.link": "Review link",
+  "form.link": "Enquiry form link",
 };
 
 export const MAX_SNOOZE_DAYS = 90;

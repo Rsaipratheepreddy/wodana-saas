@@ -13,6 +13,7 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  Matches,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -57,6 +58,8 @@ export class EnquiryDetailsDto {
   @IsOptional() @IsString() @MaxLength(240) location?: string;
   @IsOptional() @IsString() @MaxLength(80) customerType?: string;
   @IsOptional() @IsString() @MaxLength(80) budgetRange?: string;
+  /** PLM-155: the date the client wants the work finished (YYYY-MM-DD); Sales collect it but don't promise it. */
+  @IsOptional() @IsString() @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: "Enter the target completion as a date" }) targetCompletion?: string;
   @IsOptional() @IsString() @MaxLength(160) campaign?: string;
   @IsOptional() @IsString() @MaxLength(10000) internalNotes?: string;
 }

@@ -25,6 +25,7 @@ import { conversationVisible, INBOX_MANAGE, INBOX_READ, JOB_KINDS, JOB_SQL, jobL
 import { AiGatewayService } from "../../ai-gateway/ai-gateway.service";
 import { loadLeadOptions } from "../leads/lead-options";
 import { isDemoThread } from "./crm-conversations.service";
+import { flagPartySpam } from "../spam/contact-spam";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
@@ -86,12 +87,15 @@ export class CrmInboxService {
       // The counts follow the stage filter, so each view says how many of its chats are at those stages.
       const stageSql = stage ? stageFilterSql(stage.split(",").slice(0, 30), (value) => { values.push(value); return `$${values.length}`; }) : null;
       const result = await client.query<Row>(
-        `SELECT count(*) FILTER (WHERE status = 'open' AND owner_membership_id = $2)::int AS mine,
-                count(*) FILTER (WHERE status = 'open' AND owner_membership_id IS NULL)::int AS unassigned,
-                count(*) FILTER (WHERE status = 'open' AND owner_membership_id IS NOT NULL)::int AS team,
-                count(*) FILTER (WHERE status = 'open')::int AS "all",
+        `SELECT count(*) FILTER (WHERE status IN ('open', 'unresolved') AND owner_membership_id = $2)::int AS mine,
+                count(*) FILTER (WHERE status IN ('open', 'unresolved') AND owner_membership_id IS NULL)::int AS unassigned,
+                count(*) FILTER (WHERE status IN ('open', 'unresolved') AND owner_membership_id IS NOT NULL)::int AS team,
+                count(*) FILTER (WHERE status IN ('open', 'unresolved'))::int AS "all",
+                count(*) FILTER (WHERE status = 'unresolved')::int AS unresolved,
                 count(*) FILTER (WHERE status = 'snoozed')::int AS snoozed,
                 count(*) FILTER (WHERE status = 'closed')::int AS closed,
+                count(*) FILTER (WHERE status = 'spam')::int AS spam,
+                count(*) FILTER (WHERE status IN ('open', 'unresolved') AND waiting_since IS NULL AND closing_due_at <= now())::int AS "closingDue",
                 count(*) FILTER (WHERE status = 'open' AND unread_count > 0 AND (owner_membership_id = $2 OR owner_membership_id IS NULL))::int AS "unreadForMe"
            FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND ${visibleSql(viewer, "$2")}${stageSql ? ` AND ${stageSql}` : ""}`,
         values,
@@ -130,7 +134,7 @@ export class CrmInboxService {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
       const result = await client.query<Row>(
         `SELECT inbox."membershipId" AS id, inbox."displayName",
-                (SELECT count(*) FROM crm_conversations chat WHERE chat.workspace_id = $1 AND chat.owner_membership_id = inbox."membershipId" AND chat.status = 'open')::int AS "openChats",
+                (SELECT count(*) FROM crm_conversations chat WHERE chat.workspace_id = $1 AND chat.owner_membership_id = inbox."membershipId" AND chat.status IN ('open', 'unresolved'))::int AS "openChats",
                 (EXISTS (SELECT 1 FROM crm_effective_queue_members member WHERE member.workspace_id = $1 AND member.membership_id = inbox."membershipId")
                  AND NOT EXISTS (SELECT 1 FROM crm_effective_queue_members member WHERE member.workspace_id = $1 AND member.membership_id = inbox."membershipId"
                    AND member.is_available AND (member.unavailable_until IS NULL OR member.unavailable_until <= now()))) AS away,
@@ -154,6 +158,8 @@ export class CrmInboxService {
       if (input.action === "assign" && input.ownerMembershipId === undefined) throw new UnprocessableEntityException("Choose who takes these chats");
       let changed = 0;
       for (const before of found.rows) {
+        // A spam chat keeps its state (only "Not spam" moves it); its labels and owner can still change.
+        if (before.status === "spam" && ["resolve", "reopen", "snooze"].includes(input.action)) continue;
         if (input.action === "label" || input.action === "unlabel") {
           changed += await this.changeLabel(client, workspaceId, String(before.id), input.labelId!, input.action === "label", actorUser.userId, "bulk") ? 1 : 0;
           continue;
@@ -179,13 +185,15 @@ export class CrmInboxService {
       if (!chat) throw new NotFoundException("Conversation not found");
       if (!chat.partyId) throw new UnprocessableEntityException("This chat has no client to block");
       const before = (await client.query<{ blockedAt: Date | null; spamAt: Date | null }>(`SELECT blocked_at AS "blockedAt", spam_at AS "spamAt" FROM crm_parties WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, chat.partyId])).rows[0];
-      const spam = input.blocked && Boolean(input.spam);
+      // Spam is the contact's own flag (PLM-138): blocking can add it; only "Not spam" (crm.spam.unmark, with a reason) clears it.
+      const spam = Boolean(before?.spamAt) || (input.blocked && Boolean(input.spam));
       if (Boolean(before?.blockedAt) === input.blocked && Boolean(before?.spamAt) === spam) return { conversationId, blocked: input.blocked, spam };
       await client.query(
         `UPDATE crm_parties SET blocked_at = CASE WHEN $3 THEN COALESCE(blocked_at, now()) END, blocked_by = CASE WHEN $3 THEN $4::uuid END,
-                spam_at = CASE WHEN $5 THEN COALESCE(spam_at, now()) END, version = version + 1, updated_at = now()
-          WHERE workspace_id = $1 AND id = $2`, [workspaceId, chat.partyId, input.blocked, actorUser.userId, spam]);
-      if (Boolean(before?.blockedAt) !== input.blocked) await recordChatEvent(client, { workspaceId, conversationId, kind: input.blocked ? "blocked" : "unblocked", actorUserId: actorUser.userId, method: "manual", reason: spam ? "Spam" : null });
+                version = version + 1, updated_at = now()
+          WHERE workspace_id = $1 AND id = $2`, [workspaceId, chat.partyId, input.blocked, actorUser.userId]);
+      if (spam && !before?.spamAt) await flagPartySpam(client, this.events, { workspaceId, partyId: chat.partyId, actorUserId: actorUser.userId, method: "manual" });
+      if (Boolean(before?.blockedAt) !== input.blocked) await recordChatEvent(client, { workspaceId, conversationId, kind: input.blocked ? "blocked" : "unblocked", actorUserId: actorUser.userId, method: "manual", reason: spam && input.blocked ? "Spam" : null });
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: input.blocked ? "crm.party.blocked.v1" : "crm.party.unblocked.v1", entityType: "crm_party", entityId: chat.partyId, before: { blocked: Boolean(before?.blockedAt), spam: Boolean(before?.spamAt) }, after: { blocked: input.blocked, spam } });
       return { conversationId, blocked: input.blocked, spam };
     });
@@ -229,7 +237,7 @@ export class CrmInboxService {
   labels(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => (await client.query(
       `SELECT ${LABEL_COLUMNS}, (SELECT count(*) FROM crm_conversation_label_links link JOIN crm_conversations chat ON chat.workspace_id = link.workspace_id AND chat.id = link.conversation_id
-                                 WHERE link.workspace_id = label.workspace_id AND link.label_id = label.id AND chat.status <> 'closed')::int AS "openChats"
+                                 WHERE link.workspace_id = label.workspace_id AND link.label_id = label.id AND chat.status NOT IN ('closed', 'spam'))::int AS "openChats"
          FROM crm_conversation_labels label WHERE workspace_id = $1 ORDER BY status, lower(name)`, [workspaceId])).rows);
   }
 

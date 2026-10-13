@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsArray,
+  ArrayMaxSize,
   Matches,
   IsBoolean,
   IsIn,
@@ -165,6 +166,8 @@ export class UpdateSalesSettingsDto {
   @IsOptional() @IsInt() @Min(1) @Max(730) duplicateWindowDays?: number;
   /** Days an open opportunity may keep its stage before Reports lists it as stuck. */
   @IsOptional() @IsInt() @Min(1) @Max(365) stuckDealDays?: number;
+  /** PLM-155: the team or role codes whose people answer timeline questions (empty: anyone). */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @Matches(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/, { each: true }) timelineCheckRoles?: string[];
   @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
   /** PLM-024: who reads internal notes. */
   @IsOptional() @IsIn(["team", "sales"]) internalNotesVisibility?: "team" | "sales";

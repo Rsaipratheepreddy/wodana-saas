@@ -4,7 +4,7 @@ import { responseRate, SLA_SQL } from "./lead-response";
 import { WON_SQL } from "./owner-overview";
 import { type KpiSpec, type ReportContext, moneyNotes, readFacts } from "./report-context";
 import { type Fact, FACT_COLUMNS, categories, grid, groupBy, inPeriod, mean, monthKeys, percent, sum } from "./report-kit";
-import { NO_SALES_FILTERS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, month } from "./report-scope";
+import { NO_SALES_FILTERS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, leadsCte, month } from "./report-scope";
 import { FUNNEL_SQL, NEW_LEADS_SQL } from "./sales-pipeline";
 import { salesFiltered } from "./finance";
 
@@ -326,6 +326,41 @@ const bySource: KpiSpec = {
   },
 };
 
+/**
+ * PLM-138 · Spam by source and channel: enquiries created in the period that are spam (marked so, or raised by a contact
+ * already flagged as spam, on any channel), counted by where they came from (the source and channel they arrived on,
+ * before any returning-client relabelling), the biggest first. Left out of every other figure.
+ */
+export const SPAM_SQL = `WITH ${P}, ${leadsCte(true, true)}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT lc.lead_id::text AS id, 'lead' AS kind, NULL::text AS parent_id, lc.reference, lc.title, lc.client, lc.owner, lc.am::text AS owner_id,
+         lc.created_at AS at, NULL::text AS amount, NULL::text AS measure,
+         COALESCE(lc.original_source, lc.source) || ' / ' || COALESCE(lc.original_channel, lc.channel) AS detail,
+         jsonb_build_object('period', CASE WHEN lc.created_at >= p.from_at AND lc.created_at < p.to_at THEN '1' ELSE '0' END, 'month', ${month("lc.created_at")},
+           'source', COALESCE(lc.original_source, lc.source), 'channel', COALESCE(lc.original_channel, lc.channel)) AS dims
+    FROM lc CROSS JOIN p WHERE lc.created_at >= p.from_at AND lc.created_at < p.to_at
+) facts ORDER BY at DESC`;
+
+const spamBySource: KpiSpec = {
+  code: "spam_by_source",
+  requires: MARKETING_READ,
+  compare: "lower",
+  facts: async (ctx) => { const facts = await readFacts(ctx, SPAM_SQL); for (const fact of facts) fact.dims.sourceChannel = `${fact.dims.source}/${fact.dims.channel}`; return facts; },
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    const counts = new Map<string, number>();
+    for (const fact of period) counts.set(fact.dims.sourceChannel, (counts.get(fact.dims.sourceChannel) ?? 0) + 1);
+    const items = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key, count]) => {
+      const [source, channel] = key.split("/");
+      return { key, label: `${ctx.labels.sources.get(source) ?? source} · ${channel}`, value: String(count), count };
+    });
+    return {
+      code: "spam_by_source", unit: "count", value: String(period.length), count: period.length, targetable: false,
+      chart: { type: "bars", dimension: "sourceChannel", unit: "count", items },
+    };
+  },
+};
+
 /** Enquiries by type: the same enquiries, 12-month columns stacked by enquiry type (the five biggest, the rest "Other"). */
 const byType: KpiSpec = {
   code: "enquiries_by_type",
@@ -433,4 +468,4 @@ const responseBySource: KpiSpec = {
 };
 
 export const STOCK: KpiSpec[] = [stockValue, purchases, stockUsed, reserved, slowMoving, lowStock];
-export const MARKETING: KpiSpec[] = [bySource, byType, conversion, wonBySource, responseBySource];
+export const MARKETING: KpiSpec[] = [bySource, byType, conversion, wonBySource, responseBySource, spamBySource];

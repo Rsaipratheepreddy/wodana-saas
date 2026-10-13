@@ -14,7 +14,7 @@ export const OFFBOARDING_AREAS = [
     open: `status NOT IN ('qualified', 'disqualified', 'duplicate')` },
   { key: "opportunities", label: "Opportunities", table: "crm_opportunities", column: "owner_membership_id", open: `status = 'open'` },
   { key: "followUps", label: "Follow-ups", table: "crm_activities", column: "owner_membership_id", open: `status = 'pending'` },
-  { key: "chats", label: "Chats", table: "crm_conversations", column: "owner_membership_id", open: `status IN ('open', 'snoozed')` },
+  { key: "chats", label: "Chats", table: "crm_conversations", column: "owner_membership_id", open: `status IN ('open', 'unresolved', 'snoozed')` },
   { key: "clients", label: "Clients", table: "crm_parties", column: "owner_membership_id", open: `true` },
   { key: "planning", label: "Planning cases", table: "pre_project_cases", column: "owner_membership_id", open: `status IN ('draft', 'active', 'on_hold')` },
   { key: "tasks", label: "Project tasks", table: "work_items", column: "assignee_membership_id", open: `status NOT IN ('done', 'cancelled')` },

@@ -7,13 +7,13 @@
       "view": ["crm.leads.view", "crm.parties.view", "crm.opportunities.view", "crm.activities.view", "crm.reports.view", "crm.notifications.view"],
       "edit": ["crm.leads.manage", "crm.parties.manage", "crm.opportunities.manage", "crm.opportunities.transition", "crm.opportunities.sensitive_values", "crm.activities.manage"],
       "manage": ["crm.leads.assign", "crm.parties.identity", "crm.parties.merge", "crm.notifications.manage"],
-      "advanced": ["crm.parties.export", "crm.privacy.erase"]
+      "advanced": ["crm.parties.export", "crm.privacy.erase", "crm.spam.unmark"]
     },
     {
       "id": "inbox",
       "$comment": "Own chats (see and answer the chats assigned to me) · Team chats (the unassigned queue and my team's chats) · Manage (every chat and the inbox settings).",
       "view": ["crm.communications.view", "crm.communications.send"],
-      "edit": ["crm.inbox.team"],
+      "edit": ["crm.inbox.team", "crm.inbox.close_chats"],
       "manage": ["crm.inbox.manage", "crm.consent.manage"],
       "advanced": []
     },

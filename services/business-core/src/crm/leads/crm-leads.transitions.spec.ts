@@ -136,21 +136,23 @@ describe("CRM lead status moves", () => {
     expect(stopped.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("completion_outcome") && params?.[2] === "cancelled")).toBe(true);
   });
 
-  it("marks junk as spam: closed with the reason, out of reports, its contact blocked, audited (S-13)", async () => {
+  it("marks junk as spam: closed with the reason, out of reports, its contact flagged as spam, audited (S-13, PLM-138)", async () => {
     const { service, query, events } = setup("new");
     await service.markSpam({} as never, "workspace", "lead", { version: 5 });
     const statusUpdate = query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_leads SET status"));
     expect(statusUpdate?.[1]?.slice(0, 2)).toEqual(["disqualified", "Spam"]);
     expect(query.mock.calls.some(([sql, params]) => sql.includes("SET spam_at = now()") && params?.[2] === "user")).toBe(true);
-    expect(query.mock.calls.some(([sql, params]) => sql.includes("UPDATE crm_parties SET blocked_at") && params?.[1] === "party")).toBe(true);
-    expect(events.record.mock.calls.map(([, event]) => event.action)).toEqual(["crm.lead.disqualified.v1", "crm.lead.marked_spam.v1"]);
+    expect(query.mock.calls.some(([sql, params]) => sql.includes("UPDATE crm_parties SET spam_at = now()") && params?.[1] === "party")).toBe(true);
+    // PLM-138: the contact's chats become Spam too.
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_conversations SET status = 'spam'"))).toBe(true);
+    expect(events.record.mock.calls.map(([, event]) => event.action)).toEqual(["crm.lead.disqualified.v1", "crm.party.marked_spam.v1", "crm.lead.marked_spam.v1"]);
   });
 
-  it("does not block a client who has other real work with the firm", async () => {
+  it("does not flag a client who has other real work with the firm", async () => {
     const { service, query } = setup("connected", { otherWork: true });
     await service.markSpam({} as never, "workspace", "lead", { version: 5 });
     expect(query.mock.calls.some(([sql]) => sql.includes("SET spam_at = now()"))).toBe(true);
-    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_parties SET blocked_at"))).toBe(false);
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_parties"))).toBe(false);
   });
 
   it.each(["disqualified", "qualified"])("QA-018: reopening a %s enquiry needs a reason, and the history keeps who reopened it and why", async (from) => {

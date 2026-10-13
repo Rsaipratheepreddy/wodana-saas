@@ -8,14 +8,20 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdateFollowUpTimingDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
-import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, FileIntoJobDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto, WhatsappTestDto } from "./dto/inbox.dto";
+import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, FileIntoJobDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateClosingMessagesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto, WhatsappTestDto } from "./dto/inbox.dto";
+import { SendClosingMessageDto } from "./dto/conversations.dto";
+import { CrmClosingMessagesService } from "./crm-closing-messages.service";
 
 type Ws = string;
 
 @ApiTags("crm-inbox") @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm")
 export class CrmInboxController {
-  constructor(private readonly inbox: CrmInboxService, private readonly whatsappTemplates: CrmWhatsAppTemplatesService, private readonly reminders: CrmPaymentRemindersService) {}
+  constructor(private readonly inbox: CrmInboxService, private readonly whatsappTemplates: CrmWhatsAppTemplatesService, private readonly reminders: CrmPaymentRemindersService,
+    private readonly closing: CrmClosingMessagesService) {}
+  @Get("inbox/closing-messages") closingMessages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.closing.settings(actor, workspaceId); }
+  @Put("inbox/closing-messages") updateClosingMessages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: UpdateClosingMessagesDto) { return this.closing.update(actor, workspaceId, input); }
+  @Post("conversations/:conversationId/closing") sendClosing(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: SendClosingMessageDto) { return this.closing.send(actor, workspaceId, conversationId, input); }
   @Get("inbox/starter-pack") starterPack(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.whatsappTemplates.starterPack(actor, workspaceId); }
   @Post("inbox/starter-pack") submitStarterPack(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: SubmitStarterPackDto) { return this.whatsappTemplates.submitStarterPack(actor, workspaceId, input); }
   @Post("inbox/payment-reminders") remind(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: SendPaymentReminderDto) { return this.reminders.remind(actor, workspaceId, input); }

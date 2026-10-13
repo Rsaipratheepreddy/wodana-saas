@@ -273,6 +273,10 @@ integration("management dashboards with PostgreSQL", () => {
       const { kpis } = await readDashboard(client, ids.ws, "sales-pipeline", PERIOD, NOW, undefined, "all");
       // L1, L2, L3, L5, L8 — not the duplicate, the spam, August's L6, nor L9 (31 August locally).
       expect(kpi(kpis, "new_leads")).toMatchObject({ value: "5", count: 5 });
+      // PLM-138: the spam (L7) is counted on its own, by the source and channel it came from.
+      const spam = kpi(kpis, "spam_by_source");
+      expect(spam).toMatchObject({ value: "1", count: 1 });
+      expect((spam.chart as Extract<Kpi["chart"], { type: "bars" }>).items.map((item) => [item.key, item.value])).toEqual([["website/form", "1"]]);
       const funnel = kpi(kpis, "conversion_funnel");
       expect(funnel.value).toBe("20.0");
       expect((funnel.chart as Extract<Kpi["chart"], { type: "funnel" }>).items.map((item) => [item.key, item.value, item.rate])).toEqual([

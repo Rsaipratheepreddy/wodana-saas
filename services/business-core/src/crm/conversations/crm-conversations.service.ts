@@ -21,6 +21,12 @@ import { sendAutoReply } from "./inbox/auto-replies";
 import { kindOf, safeFileName, sendableProblem, WHATSAPP_MEDIA, type SendableKind } from "./inbox/attachment-rules";
 import { inboundDomain } from "./email/mailgun-inbound";
 import { conversationVisible, findJob, INBOX_MANAGE, INBOX_READ, JOB_SQL, loadInboxViewer, viewSql, visibleSql, type InboxViewer, type JobKind } from "./inbox/inbox-visibility";
+import { closingDueAt, closingFacts, closingSchedule, readClosingSettings } from "./inbox/closing-messages";
+
+/** Sends "Closing the chat" (PLM-137): the Sales admins by default. */
+export const CLOSE_CHATS = "crm.inbox.close_chats";
+/** Clears a wrong spam flag (PLM-138): owners and administrators by default. */
+export const UNMARK_SPAM = "crm.spam.unmark";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -72,7 +78,7 @@ export class CrmConversationsService {
 
   list(actor: RequestActor, workspaceId: string, query: ListConversationsQueryDto) {
     return this.access.withAnyPermission(actor, workspaceId, INBOX_READ, async (client, actorUser) => {
-      const sort = query.sort ?? (query.status === "open" ? "waiting" : "recent");
+      const sort = query.sort ?? (query.status && query.status.split(",").every((state) => state === "open" || state === "unresolved") ? "waiting" : "recent");
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && (!cursor || (sort === "waiting" && !/^-?\d+(\.\d+)?$/.test(cursor.value)))) throw new BadRequestException("Invalid page cursor");
       // Who may see what (plan §5b): own chats, the team's, or every chat. Every list view stays inside it.
@@ -84,7 +90,9 @@ export class CrmConversationsService {
       for (const [column, value] of [["party_id", query.partyId], ["lead_id", query.leadId], ["owner_membership_id", query.ownerMembershipId], ["channel", query.channel], ["connection_id", query.connectionId]] as const) {
         if (value) { values.push(value); clauses.push(`conversation.${column} = $${values.length}`); }
       }
-      if (query.status) { values.push(query.status); clauses.push(`conversation.status = $${values.length}`); }
+      if (query.status) { values.push([...new Set(query.status.split(","))]); clauses.push(`conversation.status = ANY($${values.length}::varchar[])`); }
+      // PLM-137: chats whose "Closing the chat" message is due (still work, nobody waiting on us, quiet long enough).
+      if (query.closing === "due") clauses.push(`conversation.status IN ('open', 'unresolved') AND conversation.waiting_since IS NULL AND conversation.closing_due_at <= now()`);
       if (query.labelId) { values.push(query.labelId); clauses.push(`EXISTS (SELECT 1 FROM crm_conversation_label_links link WHERE link.workspace_id = conversation.workspace_id AND link.conversation_id = conversation.id AND link.label_id = $${values.length})`); }
       if (query.stage) { const stageSql = stageFilterSql(query.stage.split(",").slice(0, 30), (value) => { values.push(value); return `$${values.length}`; }); if (stageSql) clauses.push(stageSql); }
       if (query.unread === "true") clauses.push("conversation.unread_count > 0");
@@ -101,7 +109,7 @@ export class CrmConversationsService {
                 conversation.lead_id AS "leadId", conversation.channel, conversation.subject,
                 conversation.status, conversation.owner_membership_id AS "ownerMembershipId", ${MEMBER_NAME("owner_user")} AS "ownerName",
                 conversation.last_message_at AS "lastMessageAt", conversation.last_inbound_at AS "lastInboundAt",
-                conversation.waiting_since AS "waitingSince", conversation.snoozed_until AS "snoozedUntil",
+                conversation.waiting_since AS "waitingSince", conversation.snoozed_until AS "snoozedUntil", conversation.closing_due_at AS "closingDueAt",
                 conversation.unread_count AS "unreadCount", conversation.version, ${CONVERSATION_LABELS_SQL} AS labels,
                 message.id AS "lastMessageId", message.direction AS "lastMessageDirection",
                 COALESCE(message.body_text, message.metadata->>'fileName') AS "lastMessageText", message.metadata->>'messageType' AS "lastMessageKind",
@@ -195,7 +203,13 @@ export class CrmConversationsService {
       const labels = await client.query<{ labels: unknown[] }>(`SELECT ${CONVERSATION_LABELS_SQL} AS labels FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND conversation.id = $2`, [workspaceId, conversationId]);
       const lastInbound = conversation.last_inbound_at ? new Date(conversation.last_inbound_at as string | Date) : null;
       const fact = facts.rows[0];
+      // PLM-137: when "Closing the chat" may go, why not yet, and whether this person may send it; PLM-138: who may clear spam.
+      const closing = await closingFacts(client, workspaceId, conversation);
+      const canClose = await this.access.hasPermission(client, workspaceId, actorUser.userId, CLOSE_CHATS);
+      const canUnmarkSpam = await this.access.hasPermission(client, workspaceId, actorUser.userId, UNMARK_SPAM);
       return {
+        closing: { dueAt: closing.dueAt?.toISOString() ?? null, problem: closing.problem, afterHours: closing.settings.afterHours, canClose },
+        canUnmarkSpam,
         // A demonstration chat (Inbox › Simulate a client message) behaves as connected; nothing reaches Meta.
         ...mapConversation(conversation), canSend, whatsappConnected: Boolean(connection.rowCount) || isDemoThread(conversation),
         demo: isDemoThread(conversation),
@@ -295,7 +309,7 @@ export class CrmConversationsService {
       const before = await this.requireVisibleConversation(client, workspaceId, conversationId, actorUser.userId, true);
       const { after } = await applyConversationChange(client, this.events, {
         workspaceId, before, actorUserId: actorUser.userId, method: "manual", expectedVersion: input.version,
-        change: { status: input.status as "open" | "snoozed" | "closed" | undefined, snoozedUntil: input.snoozedUntil, ownerMembershipId: input.ownerMembershipId, leadId: input.leadId, subject: input.subject },
+        change: { status: input.status as "open" | "unresolved" | "snoozed" | "closed" | undefined, snoozedUntil: input.snoozedUntil, ownerMembershipId: input.ownerMembershipId, leadId: input.leadId, subject: input.subject },
       });
       return after;
     });
@@ -459,7 +473,9 @@ export class CrmConversationsService {
          VALUES ($1, $2, $3, 'outbound', 'sent', 'provider', 'provider', $4, $5, $6, now()) ON CONFLICT (workspace_id, provider_message_id) DO NOTHING`,
         [messageId, input.workspaceId, conversationId, input.providerMessageId, input.bodyText ?? null, { ...input.metadata, sentFromPhone: true }]);
       if (echoed.rowCount) await this.queueProviderMedia(client, input.workspaceId, conversationId, messageId, "outbound", input.metadata);
-      await client.query(`UPDATE crm_conversations SET last_message_at = now(), waiting_since = NULL, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [input.workspaceId, conversationId]);
+      // A reply from the phone is our reply: it ends the wait and starts the quiet clock for "Closing the chat" (PLM-137).
+      const closingDue = closingDueAt(new Date(), (await readClosingSettings(client, input.workspaceId)).afterHours, await closingSchedule(client, input.workspaceId));
+      await client.query(`UPDATE crm_conversations SET last_message_at = now(), waiting_since = NULL, closing_due_at = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [input.workspaceId, conversationId, closingDue]);
       await this.events.record(client, { workspaceId: input.workspaceId, actorUserId: null, source: "integration", action: "crm.message.sent_from_phone.v1", entityType: "crm_message", entityId: messageId, after: { conversationId, partyId } });
       return { conversationId, messageId, duplicate: false };
     });
@@ -806,6 +822,7 @@ export class CrmConversationsService {
     }
     // A snoozed chat can still be answered; a resolved one is reopened first.
     if (input.direction === "outbound" && conversation.status === "closed") throw new ConflictException("Reopen this conversation before replying");
+    if (input.direction === "outbound" && conversation.status === "spam") throw new ConflictException("This chat is marked as spam. Clear the spam flag before replying.");
     let bodyText = input.bodyText?.trim() || null;
     let bodyHtml = input.bodyHtml?.trim() || null;
     let template: Record<string, unknown> | null = null;
@@ -836,7 +853,8 @@ export class CrmConversationsService {
         const lastInbound = conversation.last_inbound_at ? new Date(String(conversation.last_inbound_at)) : null;
         if (!lastInbound || Date.now() - lastInbound.getTime() > 24 * 60 * 60 * 1000) throw new UnprocessableEntityException("WhatsApp requires an approved template outside the 24-hour customer-service window");
       }
-      if (!input.templateId && source === "user" && actorUserId && bodyText) bodyText = await this.signed(client, workspaceId, bodyText, actorUserId);
+      // A closing message (PLM-137) goes exactly as the firm wrote it, unsigned.
+      if (!input.templateId && source === "user" && actorUserId && bodyText && !input.metadata?.closing) bodyText = await this.signed(client, workspaceId, bodyText, actorUserId);
       if (conversation.channel === "whatsapp" && attachment) {
         // WhatsApp's own limits: its types and sizes per kind, audio without a caption, captions up to 1,024 characters.
         const kind = attachment.kind as SendableKind;
@@ -886,18 +904,29 @@ export class CrmConversationsService {
     if (attachment) await client.query(`UPDATE crm_message_attachments SET message_id = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, attachment.id, messageId]);
     // A client's file is fetched into our storage later; a failure there never loses the message.
     if (input.direction === "inbound") await this.queueProviderMedia(client, workspaceId, conversationId, messageId, "inbound", input.metadata);
-    // A client message reopens and un-snoozes the chat and starts (or keeps) its wait; our reply ends the wait.
+    // The client's standing: a blocked number raises nothing; a spam contact's messages are spam too (PLM-138).
+    const standing = input.direction === "inbound" && conversation.party_id
+      ? (await client.query<{ blocked: boolean; spam: boolean }>(`SELECT blocked_at IS NOT NULL AS blocked, spam_at IS NOT NULL AS spam FROM crm_parties WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, conversation.party_id])).rows[0] : undefined;
+    const spam = standing?.spam === true;
+    // Our reply starts the quiet clock for "Closing the chat" (PLM-137): the firm's working hours from now.
+    const closingDue = input.direction === "outbound" && conversation.channel !== "internal" && source === "user"
+      ? closingDueAt(new Date(), (await readClosingSettings(client, workspaceId)).afterHours, await closingSchedule(client, workspaceId)) : null;
+    // A client message reopens and un-snoozes the chat and starts (or keeps) its wait; our reply ends the wait. A spam
+    // contact's chat stays Spam and nobody waits on it.
     const touched = await client.query<Record<string, unknown>>(
       `UPDATE crm_conversations SET last_message_at = now(),
-         status = CASE WHEN $1 = 'inbound' THEN 'open' ELSE status END,
+         status = CASE WHEN $1 = 'inbound' THEN (CASE WHEN $4::boolean THEN 'spam' ELSE 'open' END) ELSE status END,
          snoozed_until = CASE WHEN $1 = 'inbound' THEN NULL ELSE snoozed_until END,
          resolved_at = CASE WHEN $1 = 'inbound' THEN NULL ELSE resolved_at END,
          last_inbound_at = CASE WHEN $1 = 'inbound' THEN now() ELSE last_inbound_at END,
-         waiting_since = CASE WHEN $1 = 'inbound' THEN COALESCE(waiting_since, now()) WHEN $1 = 'outbound' THEN NULL ELSE waiting_since END,
+         waiting_since = CASE WHEN $1 = 'inbound' AND $4::boolean THEN NULL WHEN $1 = 'inbound' THEN COALESCE(waiting_since, now()) WHEN $1 = 'outbound' THEN NULL ELSE waiting_since END,
+         closing_due_at = CASE WHEN $1 = 'inbound' THEN NULL WHEN $5::timestamptz IS NOT NULL THEN $5::timestamptz ELSE closing_due_at END,
          unread_count = CASE WHEN $1 = 'inbound' THEN unread_count + 1 ELSE unread_count END,
          version = version + 1 WHERE id = $2 AND workspace_id = $3 RETURNING *`,
-      [input.direction, conversationId, workspaceId],
+      [input.direction, conversationId, workspaceId, spam, closingDue],
     );
+    if (spam && conversation.status !== "spam") await recordChatEvent(client, { workspaceId, conversationId, kind: "spam", actorUserId: null, method: "contact_spam" });
     if (input.direction === "inbound") {
       await client.query(`UPDATE crm_sequence_enrollments SET status = 'exited', exit_reason = 'customer_replied', exited_at = now(), next_run_at = NULL, version = version + 1 WHERE workspace_id = $1 AND party_id = $2 AND status = 'active'`, [workspaceId, conversation.party_id]);
       // A follow-up scheduled in this chat doesn't land on top of the client's reply: it's cancelled and its author told (X-1).
@@ -930,9 +959,8 @@ export class CrmConversationsService {
       : messageId;
     await this.events.record(client, { workspaceId, actorUserId, source, action: input.direction === "inbound" ? "crm.customer.replied.v1" : "crm.message.created.v1", entityType: aggregateType, entityId: aggregateId,
       after: { ...response, partyId: conversation.party_id, leadId: conversation.lead_id, ...(jobKind && conversation.job_id ? { job: { kind: jobKind, id: conversation.job_id } } : {}) } });
-    // A blocked number's messages are kept, but raise no notice and no assignment.
-    const blocked = input.direction === "inbound" && conversation.party_id
-      ? (await client.query(`SELECT 1 FROM crm_parties WHERE workspace_id = $1 AND id = $2 AND blocked_at IS NOT NULL`, [workspaceId, conversation.party_id])).rowCount : 0;
+    // A blocked number's or a spam contact's messages are kept, but raise no notice, no assignment and no automatic reply.
+    const blocked = standing?.blocked === true || spam;
     if (input.direction === "inbound" && !blocked) await this.routeInbound(client, workspaceId, conversation, touched.rows[0], messageId, bodyText);
     if (input.direction === "inbound" && !blocked && conversation.channel === "whatsapp") await this.autoReply(client, workspaceId, touched.rows[0] ?? conversation, messageId, input.metadata);
     if (input.direction === "internal" && input.mentions?.length) await this.noticeMentions(client, workspaceId, conversation, [...new Set(input.mentions)], messageId, bodyText, actorUserId);
@@ -961,7 +989,7 @@ export class CrmConversationsService {
    */
   private async routeInbound(client: PoolClient, workspaceId: string, before: Record<string, unknown>, after: Record<string, unknown>, messageId: string, bodyText: string | null) {
     const conversationId = String(before.id);
-    if (before.status === "closed" || before.status === "snoozed") {
+    if (before.status === "closed" || before.status === "snoozed" || before.status === "unresolved") {
       await recordChatEvent(client, { workspaceId, conversationId, kind: "reopened", actorUserId: null, method: "client_replied" });
     }
     let owner = (after.owner_membership_id as string | null) ?? null;
