@@ -36,6 +36,14 @@ describe("verifying the signed agreement (M6)", () => {
     expect(screen.getByText("Attach the signed agreement first.")).toBeVisible();
   });
 
+  it("dates the verification on the workspace's calendar, as a date people read", () => {
+    // 22:30 UTC on 13 Oct is already 14 Oct in a UTC+4 workspace.
+    render(<DesignSystemProvider locale="en-GB" timeZone="Asia/Dubai"><AgreementPayments initialView="agreement" busy={false} run={vi.fn()}
+      state={state({ status: "executed", executedBy: "Max Manager", executedAt: "2026-10-13T22:30:00.000Z", files: [file] })} /></DesignSystemProvider>);
+    expect(screen.getByText("14 Oct 2026")).toBeVisible();
+    expect(screen.queryByText(/2026-10-13/)).not.toBeInTheDocument();
+  });
+
   it("still accepts a written description of the signed document", () => {
     view(state({ evidence: "Signed by both parties on 28 Sep" }));
     expect(screen.getByRole("button", { name: "Verify signed agreement" })).toBeEnabled();

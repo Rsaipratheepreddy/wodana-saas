@@ -36,6 +36,7 @@ import {
   TextAreaField,
   TextInput,
   useDesignSystem,
+  formatDate,
 } from "@/design-system";
 import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/lib/commercial/client";
 import { smallestAmount } from "@/lib/money-exact";
@@ -344,7 +345,7 @@ const newPayment = (): PaymentDraft => ({ title: "Advance payment", amount: "", 
 /** `openPaymentId` (from a notice's link) opens the client's payment report on that milestone once it's loaded. */
 export function AgreementPayments({ state, run, busy, error, initialView = "agreement", openPaymentId }: Props & { initialView?: "agreement" | "payments"; openPaymentId?: string }) {
   const t = useT();
-  const { currency: workspaceCurrency } = useDesignSystem();
+  const { currency: workspaceCurrency, locale, timeZone } = useDesignSystem();
   const accepted = state.data.servicePath
       ? state.data.quotes.find(q => q.status === "accepted" && q.kind === "quotation" && q.round === "main")
         ?? state.data.quotes.find(q => q.status === "accepted" && q.kind === "quotation" && q.round === "design")
@@ -411,7 +412,7 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
           {a?.status === "executed" ? (
             <p className={s.notice}>
               {t("Signed agreement verified by")}{" "}<strong>{a.executedBy}</strong> ·{" "}
-              {a.executedAt?.slice(0, 10)}
+              {a.executedAt ? <time dateTime={a.executedAt}>{formatDate(a.executedAt, { locale, timeZone })}</time> : null}
             </p>
           ) : (
             a &&
