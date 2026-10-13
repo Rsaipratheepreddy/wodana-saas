@@ -9,10 +9,11 @@ export type StockRow = {
   category?: string;
   locationId: string; locationName: string; locationKind: LocationKind;
   projectId: string | null; projectReference: string | null; projectName: string | null; onHand: string; updatedAt: string;
-  value: string; averageCost: string | null; currency: string;
+  /** Null for people who don't see stock costs (QA-006). */
+  value: string | null; averageCost: string | null; currency: string;
 };
 export type PendingAdjustment = {
-  id: string; itemName: string; unit: string; locationName: string; projectReference: string | null; counted: string; difference: string; value: string;
+  id: string; itemName: string; unit: string; locationName: string; projectReference: string | null; counted: string; difference: string; value: string | null;
   reason: string; requestedBy: string; requestedByName: string; requestedAt: string;
 };
 export type ProjectOption = { id: string; reference: string; name: string };
@@ -29,6 +30,8 @@ export type StockState = {
   /** Every active stock item (a materials list imported without quantities shows at nothing on hand). */
   items?: StockItemSummary[]; locations: StockLocation[]; projects: ProjectOption[]; inTransit: number; canManage: boolean; canAdjust: boolean; canReceive: boolean;
   pendingAdjustments: PendingAdjustment[]; me: string; currency: string; reorderPoints?: ReorderPoint[];
+  /** Whether stock values and costs are shown (QA-006); the server leaves them out otherwise. */
+  canSeeCosts?: boolean;
 };
 
 export type MovementKind = "receive" | "issue" | "return" | "transfer_out" | "transfer_in" | "allocate" | "release" | "adjust" | "supplier_return" | "reverse" | "produce" | "sale" | "sale_return";

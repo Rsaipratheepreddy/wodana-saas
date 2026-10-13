@@ -12,6 +12,7 @@ import { seedDefaultNotificationTemplates } from "../notifications/default-templ
 import { ProjectCoreService } from "../project-core/project-core.service";
 import { ProjectWorkService } from "../project-core/project-work.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
+import { ROLE_TEMPLATES } from "../workspaces/role-templates";
 import { OrdersService } from "./orders.service";
 import { tellOverOrdered } from "./purchasing-changes";
 import { tellMaterialsReady } from "./materials-ready";
@@ -616,6 +617,82 @@ integration("operations v2 (plan §6.14–6.16, D-8, D-11, D-20, D-26, D-38, D-4
       await pay("verified");
       const placed = await buyer.orders.command(actor, w.workspaceId, draft.order.id, { action: "submit", version: draft.order.version });
       expect(placed.order.status).toBe("approved");
+    });
+  });
+
+  it("QA-006: shows stock value, the project's agreed value and order totals only to the people whose permissions name money", async () => {
+    await world(async (w) => {
+      const { projectId, vendor, buyer, as } = await started(w);
+      const role = (code: string) => [...ROLE_TEMPLATES.find((template) => template.code === code)!.permissions];
+      const SITE = role("site_supervisor"), STORE = role("storekeeper"), FINANCE = role("finance"), SALES = role("sales"), FACTORY_LEAD = role("factory_lead");
+      const site = as(randomUUID(), SITE);
+      // Stock with a cost, an order on its way to the site.
+      const place = randomUUID();
+      await buyer.stock.saveLocation(actor, w.workspaceId, { id: place, kind: "warehouse", name: "Main store" });
+      await buyer.stock.command(actor, w.workspaceId, { id: randomUUID(), action: "add", locationId: place, name: "Wood glue", unit: "nos", quantity: "10", unitCost: "12", reason: "Opening stock" });
+      let detail = await w.core.get(actor, w.workspaceId, projectId);
+      detail = await w.core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, version: detail.project.version });
+      const oak = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Oak veneer")!;
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: oak.sourceId, quantity: "12", unitPrice: "90" }], { deliverTo: "site", expectedDate: "2026-10-09" });
+
+      // The site supervisor works stock and deliveries without what they cost.
+      const seen = await site.stock.stock(actor, w.workspaceId);
+      expect(seen).toMatchObject({ canSeeCosts: false });
+      expect(seen.rows.find((row) => row.itemName === "Wood glue")).toMatchObject({ onHand: "10.0000", value: null, averageCost: null });
+      const moves = await site.stock.movements(actor, w.workspaceId, {});
+      expect(moves.canSeeCosts).toBe(false);
+      expect(moves.movements.every((movement) => movement.unitCost === null && movement.currency === null)).toBe(true);
+      const deliveries = await site.receiving.deliveries(actor, w.workspaceId);
+      expect(deliveries.canSeeValue).toBe(false);
+      expect(deliveries.expected.map((row) => [row.id, row.total])).toEqual([[order.order.id, null]]);
+      const form = await site.receiving.receiving(actor, w.workspaceId, order.order.id);
+      expect(form.order).toMatchObject({ total: null, subtotal: null, taxTotal: null });
+      expect(form.lines.map((line) => [line.quantity, line.unitPrice, line.net, line.total])).toEqual([["12.0000", null, null, null]]);
+      expect((await site.receiving.arrivals(actor, w.workspaceId, projectId)).orders.map((row) => row.total)).toEqual([null]);
+
+      // Whoever sees supplier prices (the storekeeper) and Finance still see them.
+      for (const permissions of [STORE, FINANCE, FACTORY_LEAD]) {
+        const reader = as(randomUUID(), permissions);
+        const stock = await reader.stock.stock(actor, w.workspaceId).catch(() => null);
+        if (stock) expect(stock.rows.find((row) => row.itemName === "Wood glue")).toMatchObject({ value: "120.0000", averageCost: "12.0000" });
+      }
+      const store = as(randomUUID(), STORE);
+      expect((await store.receiving.deliveries(actor, w.workspaceId)).expected[0].total).not.toBeNull();
+      expect((await store.stock.movements(actor, w.workspaceId, {})).movements.find((movement) => movement.unitCost !== null)).toBeTruthy();
+
+      // The project: the site supervisor on its team sees it without the agreed value, the BOQ's prices or the sealed document.
+      const onTeam = async (name: string) => {
+        const userId = randomUUID(), membership = randomUUID();
+        await w.client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,$3)", [userId, `${userId.slice(0, 8)}@example.com`, name]);
+        await w.client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [membership, w.workspaceId, userId]);
+        await w.client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id) VALUES($1,$2,$3)", [w.workspaceId, projectId, membership]);
+        return userId;
+      };
+      const siteUser = await onTeam("Sid Site");
+      const coreAs = (userId: string, permissions: string[]) => {
+        const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId });
+        return new ProjectCoreService({ asMember: (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId }), withPermission: run, withAnyPermission: run,
+          hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never);
+      };
+      const siteCore = coreAs(siteUser, SITE);
+      const list = await siteCore.list(actor, w.workspaceId);
+      expect(list.canSeeValue).toBe(false);
+      expect(list.projects.map((project) => [project.id, project.total])).toEqual([[projectId, null]]);
+      const opened = await siteCore.get(actor, w.workspaceId, projectId);
+      expect([opened.project.total, opened.canSeeValue]).toEqual([null, false]);
+      const scope = await siteCore.scope(actor, w.workspaceId, projectId);
+      expect(scope.canSeeValue).toBe(false);
+      expect(scope.lines.every((line) => line.rate === null && line.net === null)).toBe(true);
+      expect(scope.lines.map((line) => line.title).sort()).toEqual(["Kitchen cabinets", "Worktop"]);
+      expect(scope.seals.map((seal) => seal.total)).toEqual([null]);
+      await expect(siteCore.seal(actor, w.workspaceId, projectId, scope.seals[0].id)).rejects.toThrow(/don't see this project's prices/);
+      // Sales (who sold it) and Finance on the team, and whoever manages projects, see the value.
+      for (const [name, permissions] of [["Sara Sales", [...SALES, "projects.view"]], ["Fay Finance", FINANCE], ["Pat Projects", ["projects.manage", "projects.view"]]] as const) {
+        const reader = coreAs(await onTeam(name), [...permissions]);
+        expect((await reader.list(actor, w.workspaceId)).projects[0].total).toBe("7200.0000");
+        expect((await reader.get(actor, w.workspaceId, projectId)).project.total).toBe("7200.0000");
+        expect((await reader.scope(actor, w.workspaceId, projectId)).lines.every((line) => line.net !== null)).toBe(true);
+      }
     });
   });
 });

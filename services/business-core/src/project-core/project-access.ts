@@ -37,3 +37,22 @@ export async function moneyAccess(client: PoolClient, access: WorkspaceAccessSer
     || await access.hasPermission(client, workspaceId, userId, "commercial.finance.verify");
   return { costs, margin, client: client_ };
 }
+
+/** Who sees what a project is worth to the client without seeing its money: Sales who sold it, and whoever manages projects. */
+const VALUE_ONLY = ["crm.opportunities.sensitive_values", "projects.manage"];
+
+/**
+ * Whether the person sees what the project is worth to the client (its agreed value, its BOQ's prices and the sealed
+ * totals, QA-006): the people who see its client-side money, Sales who sold it and the people who manage projects
+ * (variations change it). Everyone else on the project (site, factory, design, logistics, buyers) works it without the amounts.
+ */
+export async function valueAccess(client: PoolClient, access: WorkspaceAccessService, workspaceId: string, userId: string, viewer: Pick<ProjectViewer, "all" | "onTeam">) {
+  if ((await moneyAccess(client, access, workspaceId, userId, viewer)).client) return true;
+  for (const permission of VALUE_ONLY) if (await access.hasPermission(client, workspaceId, userId, permission)) return true;
+  return false;
+}
+
+/** A project's agreed value as this person may see it (null when they don't see it). */
+export function withValue<T extends { total: string | null }>(project: T, value: boolean): Omit<T, "total"> & { total: string | null } {
+  return value ? project : { ...project, total: null };
+}

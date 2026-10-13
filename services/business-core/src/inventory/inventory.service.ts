@@ -8,6 +8,7 @@ import { notifyUserInApp } from "../notifications/default-templates";
 import { readLocations, type StockLocation } from "../purchasing/receiving";
 import { tellMaterialsReady } from "../purchasing/materials-ready";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { holdsAny, STOCK_COST_READERS } from "../workspaces/money-visibility";
 import { likePattern, searchTerms } from "../search/search-terms";
 import { raiseSnag } from "../project-core/project-work";
 import { reworkFromSite } from "../factory/factory-rework";
@@ -96,11 +97,14 @@ export class InventoryService {
   }
 
   movements(actor: RequestActor, workspaceId: string, query: Record<string, unknown>) {
-    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client) => ({
-      movements: await readMovements(client, workspaceId, {
+    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client, user) => {
+      const movements = await readMovements(client, workspaceId, {
         itemId: optionalUuid(query.itemId, "Item") ?? undefined, locationId: optionalUuid(query.locationId, "Place") ?? undefined, projectId: optionalUuid(query.projectId, "Project") ?? undefined,
-      }),
-    }));
+      });
+      // QA-006: what each movement cost only for the people who see stock costs.
+      const canSeeCosts = await holdsAny(client, this.access, workspaceId, user.userId, STOCK_COST_READERS);
+      return { movements: canSeeCosts ? movements : movements.map((movement) => ({ ...movement, unitCost: null, currency: null })), canSeeCosts };
+    });
   }
 
   /**
@@ -519,6 +523,14 @@ export class InventoryService {
   }
 
   private async state(client: Db, workspaceId: string, userId: string) {
+    // QA-006: what stock is worth (valuation, average cost, a correction's value) only for the people who see stock costs.
+    const canSeeCosts = await holdsAny(client, this.access, workspaceId, userId, STOCK_COST_READERS);
+    const state = await this.stockState(client, workspaceId, userId);
+    return canSeeCosts ? { ...state, canSeeCosts }
+      : { ...state, canSeeCosts, rows: state.rows.map((row) => ({ ...row, value: null, averageCost: null })), pendingAdjustments: state.pendingAdjustments.map((request) => ({ ...request, value: null })) };
+  }
+
+  private async stockState(client: Db, workspaceId: string, userId: string) {
     return {
       rows: await readStock(client, workspaceId),
       // Every item kept, so a list imported without quantities shows (at nothing on hand).

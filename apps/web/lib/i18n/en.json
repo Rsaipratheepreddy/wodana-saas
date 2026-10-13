@@ -2526,6 +2526,7 @@
   "{price} each": "{price} each",
   "Corrections waiting for approval": "Corrections waiting for approval",
   "Counted {counted} ({difference}), worth {value}: {reason} ({name})": "Counted {counted} ({difference}), worth {value}: {reason} ({name})",
+  "Counted {counted} ({difference}): {reason} ({name})": "Counted {counted} ({difference}): {reason} ({name})",
   "Someone else approves it.": "Someone else approves it.",
   "Worth {value}": "Worth {value}",
   "Refuse the correction": "Refuse the correction",

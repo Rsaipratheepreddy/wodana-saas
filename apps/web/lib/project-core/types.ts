@@ -54,7 +54,8 @@ export type NextStep = { stage: string; kind: CheckKind | "finish"; text: string
 
 export type ProjectSummary = {
   id: string; reference: string; name: string; clientName: string; status: ProjectStatus; priority: Priority; health: Health;
-  promiseDate: string | null; currency: string; total: string; startedAt: string;
+  /** The agreed value; null for people who don't see it (QA-006). */
+  promiseDate: string | null; currency: string; total: string | null; startedAt: string;
 };
 export type ProjectRow = ProjectSummary & {
   stage: { name: string; position: number; count: number } | null; lead: string | null; next: NextStep | null;
@@ -107,6 +108,8 @@ export type ProjectDetail = {
   canClose: boolean;
   /** Whether this person sees the project's costs (the Money tab). */
   canSeeMoney: boolean;
+  /** Whether the agreed value is shown (QA-006); the server leaves it out otherwise. */
+  canSeeValue?: boolean;
   /** Whole percent of the work done, packages weighed by value; null before any work is planned. */
   progress: number | null;
   /** The factory slot booked for the project (PLM-068), and whether this person may book or move it. */
@@ -277,15 +280,18 @@ export type ReadyCase = { caseId: string; name: string; clientName: string; quot
 export type Supply = "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work";
 export type ScopeLine = {
   id: string; position: number; kind: string; areaId: string | null; areaName: string | null; workPackageId: string | null; tradeName: string | null;
-  title: string; description: string; unit: string; quantity: string; rate: string; net: string; status: "active" | "omitted"; packageId: string | null;
+  /** Rate and amount are null for people who don't see the project's value (QA-006). */
+  title: string; description: string; unit: string; quantity: string; rate: string | null; net: string | null; status: "active" | "omitted"; packageId: string | null;
   origin: string; catalogImageId: string | null; imageAssetId: string | null;
 };
 export type ScopePackage = { id: string; name: string; supply: Supply; ownerMembershipId: string | null; ownerName: string | null; dueDate: string | null; version: number };
-export type SealSummary = { id: string; kind: "baseline" | "variation"; revisionLabel: string; quoteNumber: number; total: string; currency: string; acceptedAt: string; acceptedBy: string };
-export type VariationSummary = { id: string; number: number; title: string; status: string; total: string; appliedAs: string | null };
+export type SealSummary = { id: string; kind: "baseline" | "variation"; revisionLabel: string; quoteNumber: number; total: string | null; currency: string; acceptedAt: string; acceptedBy: string };
+export type VariationSummary = { id: string; number: number; title: string; status: string; total: string | null; appliedAs: string | null };
 export type LiveScope = {
   lines: ScopeLine[]; packages: ScopePackage[]; seals: SealSummary[]; variations: VariationSummary[];
   currency: string; version: number; canManage: boolean; members: Member[]; caseId: string; baselineQuoteId: string;
+  /** Whether prices, amounts and the sealed documents are shown (QA-006). */
+  canSeeValue?: boolean;
 };
 export type LineHistoryEntry = { id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string };
 

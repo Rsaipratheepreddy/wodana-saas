@@ -29,8 +29,12 @@ export function History({ api, itemId, onClearItem, refreshKey, projectId = null
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<Kind>("all");
+  const [canSeeCosts, setCanSeeCosts] = useState(true);
   const load = useCallback(async () => {
-    try { setRows((await api.movements({ itemId: itemId ?? undefined, projectId: projectId ?? undefined })).movements); setError(""); }
+    try {
+      const next = await api.movements({ itemId: itemId ?? undefined, projectId: projectId ?? undefined });
+      setRows(next.movements); setCanSeeCosts(next.canSeeCosts !== false); setError("");
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("History didn't load.")); }
   }, [api, itemId, projectId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
@@ -52,13 +56,14 @@ export function History({ api, itemId, onClearItem, refreshKey, projectId = null
     { id: "change", header: t("Change"), accessorFn: (row) => Number(row.quantity), size: 170, meta: { renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.number} data-sign={Number(row.quantity) < 0 ? "out" : "in"}>{`${Number(row.quantity) > 0 ? "+" : ""}${quantityText(row.quantity)} ${row.unit}`.trim()}</span>
       <span><TypeChip>{kinds[row.kind]}</TypeChip></span></span> } },
-    { id: "value", header: t("Value"), accessorFn: (row) => (row.unitCost ? movementValue(row.quantity, row.unitCost) : "0"), size: 130, meta: { align: "end", mobileHidden: true,
-      renderCell: (row) => (row.unitCost && row.currency ? <span className={styles.number}>{format.money(movementValue(row.quantity, row.unitCost), row.currency)}</span> : "—") } },
+    // Only for the people who see stock costs (QA-006).
+    ...(canSeeCosts ? [{ id: "value", header: t("Value"), accessorFn: (row: MovementRow) => (row.unitCost ? movementValue(row.quantity, row.unitCost) : "0"), size: 130, meta: { align: "end" as const, mobileHidden: true,
+      renderCell: (row: MovementRow) => (row.unitCost && row.currency ? <span className={styles.number}>{format.money(movementValue(row.quantity, row.unitCost), row.currency)}</span> : "—") } }] : []),
     { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 160 },
     { id: "for", header: t("For"), accessorFn: (row) => row.forProjectReference ?? row.projectReference ?? "", size: 130, meta: { renderCell: (row) => row.forProjectReference ?? row.projectReference
       ?? <span className={styles.muted}>{t("Free stock")}</span> } },
     { id: "source", header: t("From"), accessorFn: (row) => source(row), size: 240, meta: { mobileHidden: true, renderCell: (row) => <Cell title={source(row) || "—"} meta={row.byName} /> } },
-  ], [t, format, kinds, source]);
+  ], [t, format, kinds, source, canSeeCosts]);
   if (error && !rows) return <ErrorState description={error} onRetry={() => void load()} />;
   const reference = projectId ? (rows ?? []).find((row) => row.forProjectReference || row.projectReference) : undefined;
   return <DataGrid<MovementRow> ariaLabel={t("History")} columns={columns} data={shown} getRowId={(row) => row.id} isLoading={!rows}

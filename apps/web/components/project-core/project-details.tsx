@@ -40,10 +40,11 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd, comp
   return <div className={styles.detailsPanel}>
     <dl className={styles.detailList} data-layout="stacked">
       {compact ? null : <div><dt>{t("Client")}</dt><dd>{project.clientName}</dd></div>}
-      <div><dt>{t("Agreed value")}</dt><dd>
+      {/* QA-006: the agreed value only for the people who see it (the server sends none to the rest). */}
+      {project.total !== null ? <div><dt>{t("Agreed value")}</dt><dd>
         <Link className={styles.detailLink} href={`/workspace/projects/${project.id}/scope`}>{format.money(project.total, project.currency)}</Link>
         {detail.seal ? <small>{t("Sealed {revision} · {date}", { revision: detail.seal.revisionLabel, date: format.when(detail.seal.acceptedAt) })}</small> : null}
-      </dd></div>
+      </dd></div> : null}
       <EditableField canEdit={manage} display={project.startDate ? format.short(project.startDate) : undefined} kind="date" label={t("Start")} onReload={onReload}
         onSave={(startDate) => save("set_dates", { startDate: startDate || null })} placeholder={t("Not set")} value={project.startDate ?? ""} />
       <EditableField canEdit={manage} display={project.promiseDate ? format.short(project.promiseDate) : undefined} kind="date" label={t("Handover")} onReload={onReload}

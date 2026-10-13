@@ -14,6 +14,7 @@ import { event as boqEvent } from "../project-core/project-scope";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { holdsAny, ORDER_VALUE_READERS } from "../workspaces/money-visibility";
 import { currencyDecimals, ensurePurchasingSettings, firstTime, orderEvent, readOrder, readOrderLines, readOrders, type OrderDetail } from "./orders";
 import {
   RECEIVABLE, REJECT_KINDS, outstanding, placesFor, readLocations, readPhotos, readReceipt, readReceiptLines, readReceipts, readUnmatched, readUnmatchedLines, receivable, resolvePlace, settleOrder,
@@ -42,10 +43,12 @@ export class ReceivingService {
       const open = (await readOrders(client, workspaceId)).filter((order) => (RECEIVABLE as readonly string[]).includes(order.status) && order.linesLeft > 0);
       const deliverTo = new Map((await client.query<{ id: string; deliverTo: string }>(`SELECT id, deliver_to AS "deliverTo" FROM purchase_orders WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
         [workspaceId, open.map((order) => order.id)])).rows.map((row) => [row.id, row.deliverTo]));
-      const expected = open.map((order) => ({ ...order, deliverTo: deliverTo.get(order.id) ?? "site" }))
+      // QA-006: what an order is worth only for the people who see orders and supplier prices (not who only receives).
+      const canSeeValue = await holdsAny(client, this.access, workspaceId, user.userId, ORDER_VALUE_READERS);
+      const expected = open.map((order) => ({ ...order, total: canSeeValue ? order.total : null, deliverTo: deliverTo.get(order.id) ?? "site" }))
         .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
       return {
-        expected,
+        expected, canSeeValue,
         inspection: await readReceipts(client, workspaceId, { pending: true }),
         received: await readReceipts(client, workspaceId, { pending: false, limit: 100 }),
         unmatched: await readUnmatched(client, workspaceId, { open: true }),
@@ -66,13 +69,15 @@ export class ReceivingService {
     return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "stock.receive", "stock.view", "projects.manage", "projects.report"], async (client, user) => {
       const orders = (await readOrders(client, workspaceId)).filter((order) => (RECEIVABLE as readonly string[]).includes(order.status) && order.linesLeft > 0
         && order.projects.some((project) => project.id === projectId));
+      // QA-006: the site sees what's coming, not what it cost.
+      const canSeeValue = await holdsAny(client, this.access, workspaceId, user.userId, ORDER_VALUE_READERS);
       const rows = [];
       for (const order of orders) {
         const detail = (await client.query<{ deliverTo: string }>(`SELECT deliver_to AS "deliverTo" FROM purchase_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id])).rows[0];
         if (detail?.deliverTo !== "site") continue;
         const items = (await readOrderLines(client, workspaceId, order.id)).filter((line) => line.projectId === projectId && outstanding(line).cmp(0) > 0)
           .map((line) => ({ description: line.description, left: outstanding(line).toString(), unit: line.unit, due: line.due }));
-        if (items.length) rows.push({ ...order, items });
+        if (items.length) rows.push({ ...order, total: canSeeValue ? order.total : null, items });
       }
       const moves = (await readTransfers(client, workspaceId)).filter((move) => move.status === "in_transit" && move.toKind === "site" && move.toProjectId === projectId);
       const has = (code: string) => this.access.hasPermission(client, workspaceId, user.userId, code);
@@ -105,14 +110,18 @@ export class ReceivingService {
 
   /** Everything the receive form needs for one order: what's left on each line, where it can go and the rules. */
   receiving(actor: RequestActor, workspaceId: string, orderId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client) => {
-      const order = await readOrder(client, workspaceId, orderId);
-      if (!order) throw new NotFoundException("Order not found.");
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client, user) => {
+      const found = await readOrder(client, workspaceId, orderId);
+      if (!found) throw new NotFoundException("Order not found.");
       const settings = await ensurePurchasingSettings(client, workspaceId);
+      // QA-006: whoever only receives counts what came, without the order's prices.
+      const canSeeValue = await holdsAny(client, this.access, workspaceId, user.userId, ORDER_VALUE_READERS);
+      const order = canSeeValue ? found : { ...found, total: null, subtotal: null, discountTotal: null, taxTotal: null };
       const lines = (await readOrderLines(client, workspaceId, orderId)).map((line) => ({
         ...line, outstanding: outstanding(line).toString(), receivable: receivable(line, settings.receiveTolerancePercent).toString(),
+        ...(canSeeValue ? {} : { unitPrice: null, discountPercent: null, net: null, tax: null, total: null }),
       }));
-      return { order, lines, ...(await placesFor(client, workspaceId, orderId, order.deliverTo)),
+      return { order, lines, canSeeValue, ...(await placesFor(client, workspaceId, orderId, found.deliverTo)),
         requireInspection: settings.requireInspection, receiveTolerancePercent: settings.receiveTolerancePercent, requireSitePhoto: settings.requireSitePhoto };
     });
   }

@@ -181,6 +181,22 @@ describe("projects", () => {
     expect(screen.queryByRole("button", { name: "Edit Priority" })).not.toBeInTheDocument();
   });
 
+  it("QA-006: shows no agreed value, prices or sealed documents to someone who doesn't see the project's value", async () => {
+    const live: LiveScope = {
+      lines: [{ id: "a", position: 0, kind: "item", areaId: "k", areaName: "Kitchen", workPackageId: null, tradeName: null, title: "Kitchen cabinets", description: "", unit: "m", quantity: "6.5000", rate: null, net: null, status: "active", packageId: null, origin: "R3", catalogImageId: null, imageAssetId: null }],
+      packages: [], seals: [{ id: "s1", kind: "baseline", revisionLabel: "R3", quoteNumber: 14, total: null, currency: "AED", acceptedAt: "2026-09-20T10:00:00Z", acceptedBy: "Maya Rahman" }],
+      currency: "AED", version: 4, canManage: false, members: [], variations: [], caseId: "c1", baselineQuoteId: "q1", canSeeValue: false,
+    };
+    mount((url) => (url.includes("/scope") ? live : url.includes("/lines/") ? { history: [] } : { ...detail({ total: null }), canManage: false, canSeeValue: false }));
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
+    const table = await screen.findByRole("table", { name: "Scope items" });
+    expect(within(table).getByText("Kitchen cabinets")).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Amount" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Agreed value")).not.toBeInTheDocument();
+    expect(screen.queryByText(/AED/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Sealed" })).not.toBeInTheDocument();
+  });
+
   it("shows why a change was refused and reloads when someone else changed the project", async () => {
     let loads = 0;
     mount((url, body) => (body ? new Error("Someone else changed this project. Reload to see their changes.")

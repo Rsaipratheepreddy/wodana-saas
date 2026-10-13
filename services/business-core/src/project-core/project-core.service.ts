@@ -23,7 +23,7 @@ import { assignLines, deletePackage, lineHistory, proposePackages, readScope, sa
 import { sealVariation } from "./variation-seal";
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
 import { readReadyCases, readStartState, startProject } from "./project-start";
-import { moneyAccess } from "./project-access";
+import { moneyAccess, valueAccess, withValue } from "./project-access";
 import { readAttention } from "./project-attention";
 import { decideClientUpdate } from "./client-updates";
 import { holdLength, shiftForHold } from "./project-hold";
@@ -196,6 +196,8 @@ export class ProjectCoreService {
       const stages = await readStages(client, workspaceId, ids);
       const settings = await ensureSettings(client, workspaceId);
       const attention = await readAttention(client, workspaceId, ids);
+      // QA-006: the agreed value only for the people who see it (the list holds their own projects, or all with projects.manage).
+      const canSeeValue = await valueAccess(client, this.access, workspaceId, user.userId, { all, onTeam: true });
       const rows = [];
       for (const project of projects) {
         const mine = stages.filter((stage) => stage.projectId === project.id);
@@ -203,7 +205,7 @@ export class ProjectCoreService {
         const current = mine.find((stage) => stage.status === "current");
         const evaluated = current ? (await evaluateStages(client, workspaceId, project, [current], team))[0] : null;
         rows.push({
-          ...summary(project),
+          ...withValue(summary(project), canSeeValue),
           stage: current ? { name: current.name, position: current.position + 1, count: mine.length } : null,
           lead: team.find((member) => member.lead)?.name ?? null,
           next: evaluated ? nextStep(evaluated, settings.roles) : null,
@@ -214,7 +216,7 @@ export class ProjectCoreService {
       // Projects › Profitability is for people who see project costs (with margins, or their own projects' costs).
       const canSeeProfit = await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.view")
         || await this.access.hasPermission(client, workspaceId, user.userId, "projects.costs.view");
-      return { projects: rows, canStart: all, canSeeProfit };
+      return { projects: rows, canStart: all, canSeeProfit, canSeeValue };
     });
   }
 
@@ -228,15 +230,26 @@ export class ProjectCoreService {
       const { all, membershipId, project } = await this.visible(client, workspaceId, projectId, user);
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
-      return { ...(await readScope(client, workspaceId, projectId)), currency: project.currency, version: project.version, caseId: project.caseId, baselineQuoteId: project.quoteId,
-        canManage: manager && ["active", "on_hold"].includes(project.status), members: manager ? await activeMembers(client, workspaceId) : [] };
+      const scope = await readScope(client, workspaceId, projectId);
+      // QA-006: the BOQ's prices and the sealed totals only for the people who see the project's value.
+      const canSeeValue = await valueAccess(client, this.access, workspaceId, user.userId, { all, onTeam: team.some((member) => member.membershipId === membershipId) });
+      const priced = canSeeValue ? scope : {
+        ...scope, lines: scope.lines.map((line) => ({ ...line, rate: null, net: null })),
+        seals: scope.seals.map((seal) => ({ ...seal, total: null })), variations: scope.variations.map((variation) => ({ ...variation, total: null })),
+      };
+      return { ...priced, currency: project.currency, version: project.version, caseId: project.caseId, baselineQuoteId: project.quoteId,
+        canManage: manager && ["active", "on_hold"].includes(project.status), members: manager ? await activeMembers(client, workspaceId) : [], canSeeValue };
     });
   }
 
   /** One sealed document exactly as the client accepted it, with a fresh check that it's untouched. */
   seal(actor: RequestActor, workspaceId: string, projectId: string, sealId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      await this.visible(client, workspaceId, projectId, user);
+      const { all, membershipId } = await this.visible(client, workspaceId, projectId, user);
+      // QA-006: the sealed document is the priced quotation; the team without the project's value works from the scope's items.
+      const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
+      if (!(await valueAccess(client, this.access, workspaceId, user.userId, { all, onTeam: team.some((member) => member.membershipId === membershipId) })))
+        throw new ForbiddenException("You don't see this project's prices.");
       const seal = (await client.query<{ snapshot: Record<string, unknown>; contentHash: string; sealedAt: string; sealedBy: string; kind: string }>(
         `SELECT seal.snapshot, seal.content_hash AS "contentHash", seal.sealed_at AS "sealedAt", sealer.display_name AS "sealedBy", seal.kind
            FROM project_scope_seals seal JOIN users sealer ON sealer.id = seal.sealed_by
@@ -697,11 +710,13 @@ export class ProjectCoreService {
          FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND kind = 'baseline'`, [workspaceId, projectId])).rows[0];
     const current = stages.find((stage) => stage.status === "current");
     const money = await moneyAccess(client, this.access, workspaceId, user.userId, { all, onTeam: team.some((member) => member.membershipId === membershipId) });
+    // QA-006: the agreed value only for the people who see it.
+    const canSeeValue = await valueAccess(client, this.access, workspaceId, user.userId, { all, onTeam: team.some((member) => member.membershipId === membershipId) });
     const notApplicable = await notApplicableRoles(client, workspaceId, { projectId });
     const site = (await client.query<{ startedOn: string | null; finishedOn: string | null }>(
       `SELECT site_started_on::text AS "startedOn", site_finished_on::text AS "finishedOn" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0];
     return {
-      project: { ...summary(project), caseId: project.caseId, opportunityId: project.opportunityId, opportunityReference: project.opportunityReference,
+      project: { ...withValue(summary(project), canSeeValue), caseId: project.caseId, opportunityId: project.opportunityId, opportunityReference: project.opportunityReference,
         holdReason: project.holdReason, holdReviewOn: project.holdReviewOn, startDate: project.startDate, templateName: project.templateName, version: project.version,
         closedAt: project.cancelledAt ?? project.completedAt, closedByName: project.closedByName, cancelReason: project.cancelReason, heldAt: project.heldAt,
         siteStartedOn: site?.startedOn ?? null, siteFinishedOn: site?.finishedOn ?? null,
@@ -725,6 +740,7 @@ export class ProjectCoreService {
       // Who sees what of the money: costs (with margin only for commercial costs), and the client side.
       money,
       canSeeMoney: money.costs,
+      canSeeValue,
       progress: (await readProgress(client, workspaceId, projectId)).project,
       // PLM-068: the factory slot booked for the project; the project manager, its factory lead or the factory books it.
       factorySlot: (await client.query<{ date: string; note: string; byName: string | null; at: string | null }>(

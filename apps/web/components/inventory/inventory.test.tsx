@@ -173,6 +173,21 @@ describe("inventory", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: "Corrections waiting for approval" })).not.toBeInTheDocument());
   });
 
+  it("QA-006: shows no stock value or cost to someone who doesn't see stock costs (a site supervisor)", async () => {
+    const request = { id: "a0000000-0000-4000-8000-000000000001", itemName: "Calacatta slab", unit: "m²", locationName: "Warehouse", projectReference: "PRJ-0007", counted: "6.0000",
+      difference: "-4.0000", value: null, reason: "Two slabs broken", requestedBy: "u2", requestedByName: "Sam Store", requestedAt: "2026-09-27T09:00:00Z" };
+    const hidden = stock({ canSeeCosts: false, pendingAdjustments: [request] });
+    mount((url) => (url.includes("/transfers") ? { transfers: [], locations: [], canManage: false, canAdjust: false, canReceive: true }
+      : { ...hidden, rows: hidden.rows.map((row) => ({ ...row, value: null, averageCost: null })) }));
+    page();
+    const slab = await rowOf("Calacatta slab");
+    expect(slab).toHaveTextContent("10 m²");
+    expect(slab).not.toHaveTextContent(/AED|3,500|350/);
+    expect(screen.queryByRole("columnheader", { name: "Value" })).not.toBeInTheDocument();
+    const waiting = screen.getByRole("region", { name: "Corrections waiting for approval" });
+    expect(within(waiting).getByText("Counted 6 m² (-4): Two slabs broken (Sam Store)")).toBeInTheDocument();
+  });
+
   it("does not let whoever counted approve their own correction", async () => {
     const request = { id: "a0000000-0000-4000-8000-000000000001", itemName: "Wood glue", unit: "nos", locationName: "Warehouse", projectReference: null, counted: "2.0000",
       difference: "-15.0000", value: "180.0000", reason: "Dried out", requestedBy: "u1", requestedByName: "Me", requestedAt: "2026-09-27T09:00:00Z" };

@@ -98,10 +98,10 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
       : row.projectId && row.projectReference ? <ProjectLinks projects={[{ id: row.projectId, reference: row.projectReference, name: row.projectName }]} />
       : <span className={styles.muted}>{t("Free stock")}</span> } },
     { id: "onHand", header: t("On hand"), accessorFn: (row) => Number(row.onHand), size: 130, meta: { align: "end", renderCell: (row) => <span className={styles.number}>{unit(row.onHand, row.unit)}</span> } },
-    // An unknown cost is "—", never "AED 0.00" (UX-006).
-    { id: "value", header: t("Value"), accessorFn: (row) => Number(row.value), size: 150, meta: { align: "end", mobileHidden: true, renderCell: (row) => row.empty || (!known(row.value) && !known(row.averageCost)) ? <span className={styles.muted}>—</span> : <span className={styles.nameCell}>
+    // An unknown cost is "—", never "AED 0.00" (UX-006). Only for the people who see stock costs (QA-006).
+    ...(state?.canSeeCosts === false ? [] : [{ id: "value", header: t("Value"), accessorFn: (row) => Number(row.value), size: 150, meta: { align: "end", mobileHidden: true, renderCell: (row) => row.empty || (!known(row.value) && !known(row.averageCost)) ? <span className={styles.muted}>—</span> : <span className={styles.nameCell}>
       <span className={styles.number}>{format.money(row.value, row.currency)}</span>
-      {known(row.averageCost) ? <small>{t("{price} each", { price: format.money(row.averageCost!, row.currency) })}</small> : null}</span> } },
+      {known(row.averageCost) ? <small>{t("{price} each", { price: format.money(row.averageCost!, row.currency) })}</small> : null}</span> } } satisfies DataGridColumn<ListRow>]),
     { id: "actions", header: "", accessorFn: () => "", size: 120, meta: { align: "end", renderCell: (row) => row.empty ? (state && (state.canManage || state.canAdjust) ? <MenuButton size="compact" label={t("Actions")}
       onAction={(id) => (id === "history" ? onHistory(row.itemId) : id === "reorder" ? setReorder({ item: { itemId: row.itemId, itemName: row.itemName, unit: row.unit, locationId: null }, point: pointFor(row) ?? null })
         : setChange({ mode: "add", row: null, itemId: row.itemId }))}
@@ -155,7 +155,9 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
       <h3 className={styles.subhead}>{t("Corrections waiting for approval")}</h3>
       <ul className={styles.places}>{state.pendingAdjustments.map((request) => <li key={request.id}>
         <span className={styles.nameCell}><span>{`${request.itemName} · ${request.locationName}${request.projectReference ? ` · ${request.projectReference}` : ""}`}</span>
-          <small>{t("Counted {counted} ({difference}), worth {value}: {reason} ({name})", { counted: `${quantityText(request.counted)} ${request.unit}`.trim(),
+          <small>{request.value === null ? t("Counted {counted} ({difference}): {reason} ({name})", { counted: `${quantityText(request.counted)} ${request.unit}`.trim(),
+            difference: `${Number(request.difference) > 0 ? "+" : ""}${quantityText(request.difference)}`, reason: request.reason, name: request.requestedByName })
+            : t("Counted {counted} ({difference}), worth {value}: {reason} ({name})", { counted: `${quantityText(request.counted)} ${request.unit}`.trim(),
             difference: `${Number(request.difference) > 0 ? "+" : ""}${quantityText(request.difference)}`, value: format.money(request.value, state.currency),
             reason: request.reason, name: request.requestedByName })}</small></span>
         {state.canAdjust && request.requestedBy !== state.me ? <span className={styles.filters}>

@@ -91,7 +91,7 @@ export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDi
     ...(detailsOpen ? [] : [
       <span key="client" className={styles.headFact} data-extra>{project.clientName}</span>,
       lead ? <span key="lead" className={styles.headFact} data-extra>{lead.name}</span> : null,
-      <span key="value" className={`${styles.headFact} ${styles.number}`} data-extra>{format.money(project.total, project.currency)}</span>,
+      project.total !== null ? <span key="value" className={`${styles.headFact} ${styles.number}`} data-extra>{format.money(project.total, project.currency)}</span> : null,
     ]),
   ].filter(Boolean);
   const shownFacts = record ? [] : facts;

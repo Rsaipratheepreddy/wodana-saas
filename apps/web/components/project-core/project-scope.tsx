@@ -77,22 +77,25 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
 
   if (error && !scope) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!scope) return <Skeleton lines={6} shape="rows" />;
-  const money = (value: string) => format.money(value, scope.currency);
+  // QA-006: prices and amounts only for the people who see the project's value; the server leaves them out for the rest.
+  const priced = scope.canSeeValue !== false;
+  const money = (value: string | null) => (value === null ? "" : format.money(value, scope.currency));
+  const sum = (values: Array<string | null>) => (priced ? money(addAmounts(values.map((value) => value ?? "0"))) : "");
   const active = scope.lines.filter((item) => item.status === "active");
   const omitted = scope.lines.filter((item) => item.status === "omitted");
   const unpackaged = active.filter((item) => !item.packageId);
   const variationLabels = new Set(scope.seals.filter((item) => item.kind === "variation").map((item) => item.revisionLabel));
-  const agreed = addAmounts(scope.seals.map((item) => item.total));
+  const agreed = sum(scope.seals.map((item) => item.total));
 
   const sections: GroupedTableSection<ScopeLine>[] = group === "package"
     ? [...scope.packages.map((item) => {
         const rows = active.filter((row) => row.packageId === item.id);
         return { id: item.id, label: item.name, rows, emptyMessage: t("No items in this package."),
-          headerLabels: { where: supplies[item.supply], quantity: item.ownerName ?? "", amount: money(addAmounts(rows.map((row) => row.net))) } };
-      }), ...(unpackaged.length ? [{ id: NONE, label: t("Not in a package"), rows: unpackaged, emptyMessage: "", headerLabels: { where: "", quantity: "", amount: money(addAmounts(unpackaged.map((row) => row.net))) } }] : [])]
+          headerLabels: { where: supplies[item.supply], quantity: item.ownerName ?? "", amount: sum(rows.map((row) => row.net)) } };
+      }), ...(unpackaged.length ? [{ id: NONE, label: t("Not in a package"), rows: unpackaged, emptyMessage: "", headerLabels: { where: "", quantity: "", amount: sum(unpackaged.map((row) => row.net)) } }] : [])]
     : [...new Map(active.map((row) => [row.areaId ?? NONE, row.areaName ?? t("General")])).entries()].map(([id, label]) => {
         const rows = active.filter((row) => (row.areaId ?? NONE) === id);
-        return { id, label, rows, emptyMessage: "", headerLabels: { where: "", quantity: "", amount: money(addAmounts(rows.map((row) => row.net))) } };
+        return { id, label, rows, emptyMessage: "", headerLabels: { where: "", quantity: "", amount: sum(rows.map((row) => row.net)) } };
       });
   if (omitted.length) sections.push({ id: "omitted", label: t("Removed by variations"), rows: omitted, emptyMessage: "", headerLabels: { where: "", quantity: "", amount: "" } });
   const packageName = (id: string | null) => scope.packages.find((item) => item.id === id)?.name ?? t("Not in a package");
@@ -103,13 +106,13 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
     </span> },
     { id: "where", label: group === "package" ? t("Area") : t("Package"), width: "22%", mobileHidden: true, render: (row) => <span className={styles.muted}>{group === "package" ? row.areaName ?? t("General") : packageName(row.packageId)}</span> },
     { id: "quantity", label: t("Qty"), width: "16%", render: (row) => <span className={styles.number}>{Number(row.quantity).toLocaleString()} {row.unit}</span> },
-    { id: "amount", label: t("Amount"), width: "18%", render: (row) => <span className={styles.number}>{row.status === "omitted" ? "—" : money(row.net)}</span> },
+    ...(priced ? [{ id: "amount", label: t("Amount"), width: "18%", render: (row: ScopeLine) => <span className={styles.number}>{row.status === "omitted" ? "—" : money(row.net)}</span> }] : []),
   ];
   const packageOptions = [...scope.packages.map((item) => ({ id: item.id, label: item.name })), { id: NONE, label: t("Not in a package") }];
 
   return <div className={styles.scopeView}>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => { setView(key as View); setSeal(null); }}
-      items={[{ id: "items", label: t("Items") }, { id: "readiness", label: t("Readiness") }, { id: "materials", label: t("Materials") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
+      items={[{ id: "items", label: t("Items") }, { id: "readiness", label: t("Readiness") }, { id: "materials", label: t("Materials") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, ...(priced ? [{ id: "sealed", label: t("Sealed") }] : [])]} />
 
     {view === "items" ? <>
       <div className={styles.scopeToolbar}>
@@ -130,7 +133,7 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
         selectable={scope.canManage} selectedIds={selected} onSelectionChange={setSelected} onRowAction={setLine}
         onSectionAction={group === "package" && scope.canManage ? (id) => { const found = scope.packages.find((item) => item.id === id); if (found) setEditing(found); } : undefined} />
         : <EmptyState illustration={null} title={t("No items")} />}
-      <p className={styles.agreedLine}><span>{t("Agreed value")}</span><strong>{money(agreed)}</strong></p>
+      {priced ? <p className={styles.agreedLine}><span>{t("Agreed value")}</span><strong>{agreed}</strong></p> : null}
     </> : view === "readiness" ? <ProjectReadiness workspaceId={workspaceId} projectId={projectId} version={version} onView={(next) => { setView(next); setSeal(null); }} />
     : view === "materials" ? <>
       <ProjectMaterials workspaceId={workspaceId} projectId={projectId} version={version} run={run} lines={scope.lines} />
@@ -180,8 +183,9 @@ function LineSheet({ workspaceId, projectId, line, scope, run, onClose }: { work
               items={[...scope.packages.map((item) => ({ id: item.id, label: item.name })), { id: NONE, label: t("Not in a package") }]} />
           : scope.packages.find((item) => item.id === current.packageId)?.name ?? t("Not in a package")}</dd></div>
         <div><dt>{t("Quantity")}</dt><dd>{Number(current.quantity).toLocaleString()} {current.unit}</dd></div>
-        <div><dt>{t("Rate")}</dt><dd>{format.money(current.rate, scope.currency)}</dd></div>
-        <div><dt>{t("Amount")}</dt><dd>{current.status === "omitted" ? t("Removed") : format.money(current.net, scope.currency)}</dd></div>
+        {current.rate !== null ? <div><dt>{t("Rate")}</dt><dd>{format.money(current.rate, scope.currency)}</dd></div> : null}
+        {current.status === "omitted" ? <div><dt>{t("Amount")}</dt><dd>{t("Removed")}</dd></div>
+          : current.net !== null ? <div><dt>{t("Amount")}</dt><dd>{format.money(current.net, scope.currency)}</dd></div> : null}
         {current.description ? <div><dt>{t("Description")}</dt><dd>{current.description}</dd></div> : null}
       </dl>
       <h3 className={styles.sheetHeading}>{t("History")}</h3>

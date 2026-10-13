@@ -19,7 +19,7 @@ export function inventoryApi(workspaceId: string) {
     /** One stock change (issue, return, allocate, release, count, add), replayed safely by its id. */
     change: (input: Record<string, unknown>) => request<StockState>(at("stock"), "POST", input),
     movements: (filter: { itemId?: string; locationId?: string; projectId?: string } = {}) =>
-      request<{ movements: MovementRow[] }>(at("movements", Object.fromEntries(Object.entries(filter).filter(([, value]) => Boolean(value))) as Record<string, string>)),
+      request<{ movements: MovementRow[]; canSeeCosts?: boolean }>(at("movements", Object.fromEntries(Object.entries(filter).filter(([, value]) => Boolean(value))) as Record<string, string>)),
     transfers: () => request<TransfersState>(at("transfers")),
     transfer: (id: string) => request<TransferState>(at(`transfers/${id}`)),
     send: (input: Record<string, unknown>) => request<TransferState>(at("transfers"), "POST", input),
