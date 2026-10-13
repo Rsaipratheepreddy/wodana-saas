@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
-import { currencyDecimals } from "../catalog-core/catalog-v2.service";
+import { currencyDecimals } from "../common/currency";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { LIVE_TITLE_SQL } from "./approval-titles";
