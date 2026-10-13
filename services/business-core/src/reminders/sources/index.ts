@@ -9,6 +9,7 @@ import { postingIssueSource, productionDueSource, siteReportSource } from "./ope
 import { permitExpirySource } from "./permits";
 import { orderLateSource } from "./purchasing";
 import { quoteDecisionSource, quoteExpiringSource } from "./quotes";
+import { valueEngineeringIdleSource } from "./value-engineering";
 import { workDueSource } from "./work";
 
 /**
@@ -39,4 +40,5 @@ export const BUILTIN_REMINDER_SOURCES: readonly ReminderSource[] = [
   productionDueSource,
   postingIssueSource,
   minutesDueSource,
+  valueEngineeringIdleSource,
 ];
