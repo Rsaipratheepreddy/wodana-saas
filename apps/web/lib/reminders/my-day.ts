@@ -38,6 +38,7 @@ const MY_DAY_ROWS: Record<ReminderKind, { action: MessageKey | null; lead: "titl
   "permit.expiry": { action: null, lead: "title" },
   "finance_request.waiting": { action: null, lead: "title" },
   "meeting.minutes_due": { action: tKey("Write the minutes · {subject}"), lead: "title" },
+  "factory.inspection_due": { action: tKey("Inspect · {subject}"), lead: "title" },
   "crm.first_response": { action: tKey("Respond to enquiry · {subject}"), lead: "title" },
   "crm.unowned": { action: tKey("Assign enquiry · {subject}"), lead: "title" },
   "crm.confirm_client": { action: tKey("Confirm the client · {subject}"), lead: "title" },

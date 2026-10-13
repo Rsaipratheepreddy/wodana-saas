@@ -44,3 +44,6 @@
 .selectionBar { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3);
   border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
 .selectionActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin-inline-start: auto; }
+/* PLM-150: a snag line of a failed inspection: what to fix, and how serious it is (one above the other on a phone). */
+.snagLine { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 10rem); align-items: end; gap: var(--wd-space-3); }
+@media (max-width: 640px) { .snagLine { grid-template-columns: minmax(0, 1fr); } }

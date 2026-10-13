@@ -5,12 +5,12 @@ import Link from "next/link";
 import { Badge, Button, EditableField, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, StageTracker, Tabs, type WorkflowStage } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
-import type { ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
+import type { InspectionStageKind, ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
 import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { SavedPhotos } from "../purchasing/delivery-photos";
 import { quantityText } from "../purchasing/order-labels";
-import { WorkOrderStatusLabel, orderNumber, useFactoryLabels } from "./factory-labels";
+import { INSPECTION_TONE, WorkOrderStatusLabel, inspectionToAsk, orderNumber, useFactoryLabels, useInspectionLabels } from "./factory-labels";
 import { CheckDialog, DispatchDialog, DrawingDialog, QuantityDialog, ReportDialog, ScheduleDialog, SendOutDialog, TextDialog } from "./work-order-dialogs";
 import { RecordHistory } from "../history/record-history";
 import { WorkOrderMaterials } from "./work-order-materials";
@@ -82,11 +82,19 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
   const open = order ? ["planned", "released", "in_production", "on_hold"].includes(order.status) : false;
   const failing = state?.releaseChecks.filter((check) => !check.passed) ?? [];
   const pendingReports = state?.reports.filter((report) => report.status === "pending") ?? [];
-  const canSend = Boolean(state && (state.canManage || state.canIssue) && Number(state.atFactory) > 0);
+  // PLM-150: nothing goes to site before its last design inspection passed.
+  const finalWaiting = Boolean(state?.inspection && !["not_needed", "passed"].includes(state.inspection.final));
+  const canSend = Boolean(state && (state.canManage || state.canIssue) && Number(state.atFactory) > 0 && !finalWaiting);
   const producing = order?.status === "in_production";
   const canCheck = Boolean(state?.canApprove && state.settings.requireCheck && order && ["in_production", "ready"].includes(order.status) && Number(order.toCheck) > 0);
-  const canReport = Boolean(producing && state?.canReport && Number(order?.left) > 0);
+  // PLM-150: finished output waits for Inspection 1; where the item's inspections stand, and the one it's marked ready for.
+  const inspection = state?.inspection ?? null;
+  const rawWaiting = Boolean(inspection && !["not_needed", "passed"].includes(inspection.raw));
+  const canReport = Boolean(producing && state?.canReport && Number(order?.left) > 0 && !rawWaiting);
   const drawingDecider = Boolean(state?.canApprove);
+  const inspectionLabels = useInspectionLabels();
+  const inspectionStage = (kind: InspectionStageKind) => inspectionLabels.stage(kind, state?.settings.inspectionStages);
+  const asked = order ? inspectionToAsk({ status: order.status, inspection }) : "final";
 
   // Where the work order is: planned, released, in production, checked, at site.
   const stages = (): WorkflowStage[] => {
@@ -136,6 +144,16 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
       case "decide_drawing": return { title: order.drawingNewer ? t("A newer drawing (R{number}) is in", { number: order.drawingNewer }) : t("The drawing changed: decide whether it goes on"),
         detail: order.drawingNewer ? t("Record the new drawing, then someone who approves factory work lets it go on.") : drawingDecider ? order.holdReason : t("Waiting for someone who approves factory work."),
         tone: "warning" };
+      // PLM-150: the design inspections.
+      case "request_inspection": return { title: t("Mark it ready for {stage}", { stage: inspectionStage(asked) }),
+        detail: asked === "raw" ? t("In raw material, before the final finish.") : t("After finishing, before it goes to site.") };
+      case "inspection": return { title: t("{stage} is with the design team", { stage: inspectionStage(inspection?.dueStage ?? "final") }),
+        detail: [inspection?.inspectorName ?? t("Nobody on the team inspects"), inspection?.dueOn ? t("Due {date}", { date: format.day(inspection.dueOn) }) : ""].filter(Boolean).join(" · "),
+        tone: inspection?.dueOn && inspection.dueOn < format.today() ? "danger" : undefined,
+        actions: inspection?.dueId ? <Link className={ops.projectLink} href={`/workspace/inspections/${inspection.dueId}`}>{t("Open the inspection")}</Link> : null };
+      case "snags": return { title: inspection?.openSnags === 1 ? t("1 snag to fix") : t("{count} snags to fix", { count: inspection?.openSnags ?? 0 }),
+        detail: t("Mark each one fixed: it then goes back for inspection."), tone: "warning",
+        actions: inspection?.latestId ? <Link className={ops.projectLink} href={`/workspace/inspections/${inspection.latestId}`}>{t("Open the snags")}</Link> : null };
       default:
         if (order.status === "ready") return { title: t("Made and at site") };
         return null;
@@ -153,8 +171,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
   // Reports someone else made, which this viewer can approve.
   const approvable = pendingReports.filter((report) => state?.canApprove && report.reportedBy !== state.me);
   // The one primary action: the next step when it's the viewer's to do (fixing a release check happens where it's missing).
-  type Act = "release" | "start" | "resume" | "use_drawing" | "decide_drawing" | "approve" | "check" | "report" | "send" | null;
+  type Act = "release" | "start" | "resume" | "use_drawing" | "decide_drawing" | "approve" | "check" | "report" | "send" | "request_inspection" | null;
   const act: Act = !order || !state ? null
+    : state.next === "request_inspection" && (state.canManage || state.canReport) ? "request_inspection"
     : state.next === "release" && state.canManage ? "release"
     : state.next === "start" && state.canManage ? "start"
     : state.next === "resume" && state.canManage ? "resume"
@@ -162,7 +181,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
     : state.next === "decide_drawing" && !order.drawingNewer && drawingDecider ? "decide_drawing"
     : state.next === "approve" && approvable.length ? "approve"
     : canCheck ? "check" : canReport ? "report" : canSend ? "send" : null;
-  const primary = act === "release" ? <Button variant="primary" isLoading={busy} onPress={() => void run("release")}>{t("Release")}</Button>
+  const primary = act === "request_inspection" ? <Button variant="primary" isLoading={busy} onPress={() => void run("request_inspection", { stage: asked })}>
+      {t("Ready for {stage}", { stage: inspectionStage(asked) })}</Button>
+    : act === "release" ? <Button variant="primary" isLoading={busy} onPress={() => void run("release")}>{t("Release")}</Button>
     : act === "start" ? <Button variant="primary" isLoading={busy} onPress={() => void run("start")}>{t("Start")}</Button>
     : act === "resume" ? <Button variant="primary" isLoading={busy} onPress={() => void run("resume")}>{t("Resume")}</Button>
     : act === "use_drawing" ? <Button variant="primary" onPress={() => setDialog("revise")}>{t("Use the new drawing")}</Button>
@@ -271,6 +292,17 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
           meta={[check.checkedByName, format.when(check.checkedAt), check.note].filter(Boolean).join(" · ")} tone={Number(check.failed) ? "danger" : undefined}>
           {check.photoId ? <SavedPhotos photos={[{ id: check.photoId, name: t("Check photo"), byName: check.checkedByName, at: check.checkedAt }]} url={api.photoUrl} /> : null}
         </Cell>
+      </li>)}</ul>
+    </Section> : null}
+    {state.inspections?.length ? <Section title={t("Design inspections")}>
+      <ul className={ops.list}>{state.inspections.map((round) => <li key={round.id}>
+        <Cell title={<Link className={ops.projectLink} href={`/workspace/inspections/${round.id}`}>
+            {round.round > 1 ? t("{stage}, round {round}", { stage: inspectionStage(round.stage), round: round.round }) : inspectionStage(round.stage)}</Link>}
+          meta={[round.status === "due" ? [round.inspectorName ?? t("Nobody on the team inspects"), t("Due {date}", { date: format.day(round.dueOn) })].join(" · ")
+            : round.resultAt ? [round.resultByName, format.when(round.resultAt)].filter(Boolean).join(" · ") : "",
+            round.snags ? (round.openSnags ? t("{open} of {count} snags to fix", { open: round.openSnags, count: round.snags }) : t("{count} snags fixed", { count: round.snags })) : "",
+            round.comments].filter(Boolean).join(" · ")} tone={round.status === "failed" && round.openSnags ? "danger" : undefined} />
+        <Badge tone={INSPECTION_TONE[round.status]}>{inspectionLabels.round[round.status]}</Badge>
       </li>)}</ul>
     </Section> : null}
     {reworks.length ? <Section title={t("Made again")}>

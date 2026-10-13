@@ -50,3 +50,32 @@ describe("factory proxy: production and sample requests", () => {
     expect((await POST(new Request(`http://localhost/api/factory/samples/nope?workspaceId=${w}`, { method: "POST", body: "{}" }), params("samples", "nope"))).status).toBe(400);
   });
 });
+
+describe("factory proxy: design inspections (PLM-150)", () => {
+  beforeEach(() => { forward.mockReset(); backend.mockReset(); });
+
+  it("reads the open inspections and one round, records a result, and takes only a photo for a round", async () => {
+    forward.mockResolvedValue(new Response("{}"));
+    await GET(new Request(`http://localhost/api/factory/inspections?workspaceId=${w}&projectId=${c}&mine=1&from=2026-10-01&to=2026-10-31`), params("inspections"));
+    expect(forward).toHaveBeenLastCalledWith(`/workspaces/${w}/factory/inspections?from=2026-10-01&projectId=${c}&mine=1&to=2026-10-31`, expect.objectContaining({ method: "GET" }), expect.any(String));
+    await GET(new Request(`http://localhost/api/factory/inspections/${o}?workspaceId=${w}`), params("inspections", o));
+    expect(forward).toHaveBeenLastCalledWith(`/workspaces/${w}/factory/inspections/${o}`, expect.objectContaining({ method: "GET" }), expect.any(String));
+    await POST(new Request(`http://localhost/api/factory/inspections/${o}?workspaceId=${w}`, { method: "POST", body: JSON.stringify({ action: "pass", version: 1 }) }), params("inspections", o));
+    expect(forward).toHaveBeenLastCalledWith(`/workspaces/${w}/factory/inspections/${o}`, expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "pass", version: 1 }) }), expect.any(String));
+    const form = new FormData();
+    form.set("file", new File(["x"], "door.jpg", { type: "image/jpeg" }));
+    await POST(new Request(`http://localhost/api/factory/inspections/${o}/photos/${f}?workspaceId=${w}`, { method: "POST", body: form }), params("inspections", o, "photos", f));
+    expect(forward).toHaveBeenLastCalledWith(`/workspaces/${w}/factory/inspections/${o}/photos/${f}`, expect.objectContaining({ method: "POST", body: expect.any(FormData) }), expect.any(String));
+    const text = new FormData();
+    text.set("file", new File(["x"], "notes.txt", { type: "text/plain" }));
+    expect((await POST(new Request(`http://localhost/api/factory/inspections/${o}/photos/${f}?workspaceId=${w}`, { method: "POST", body: text }), params("inspections", o, "photos", f))).status).toBe(400);
+    expect((await POST(new Request(`http://localhost/api/factory/inspections?workspaceId=${w}`, { method: "POST", body: "{}" }), params("inspections"))).status).toBe(400);
+  });
+
+  it("streams a round's photo back", async () => {
+    backend.mockResolvedValue({ upstream: new Response("img", { headers: { "content-type": "image/jpeg" } }), rotatedSession: null });
+    const response = await GET(new Request(`http://localhost/api/factory/inspection-photos/${f}?workspaceId=${w}`), params("inspection-photos", f));
+    expect(backend).toHaveBeenCalledWith(`/workspaces/${w}/factory/inspection-photos/${f}`, { cache: "no-store" });
+    expect(response.status).toBe(200);
+  });
+});

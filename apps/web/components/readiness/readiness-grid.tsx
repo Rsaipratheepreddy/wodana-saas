@@ -26,6 +26,8 @@ export function useReadinessLabels() {
       catalogue_drawing: t("Catalogue drawing"), approved: t("Approved"), uploaded: t("Uploaded"), site_checked: t("Site checked"), design_checked: t("Matches the design"), sent: t("Sent to client"),
       changes_requested: t("Changes requested"), signed_off: t("Signed off"), ordered: t("Ordered"), received: t("Received"), installed: t("Installed"),
       scheduled: t("Scheduled"), in_production: t("In production"), on_hold: t("On hold"), ready: t("Ready"), part_installed: t("Part installed"), not_installed: t("Not installed"),
+      // PLM-150: a made item at its design inspection, or with snags the factory fixes.
+      inspection_due: t("Waiting for inspection"), inspection_snags: t("Snags to fix"),
     };
     return { column, state, note: (value?: string) => (value ? notes[value] ?? null : null) };
   }, [t]);

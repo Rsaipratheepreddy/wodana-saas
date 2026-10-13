@@ -1,4 +1,4 @@
-import type { Batch, FactorySettingsState, FactoryState, ProductionState, SamplesState, ScheduleState, WorkOrderRow, WorkOrderState } from "./types";
+import type { Batch, FactorySettingsState, FactoryState, InspectionState, OpenInspection, ProductionState, SamplesState, ScheduleState, WorkOrderRow, WorkOrderState } from "./types";
 
 export class FactoryRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -50,6 +50,16 @@ export function factoryApi(workspaceId: string) {
     requestSample: (input: { id: string; caseId: string; title: string; note: string; dueOn: string }) => request<SamplesState>(at("samples"), "POST", input),
     /** Marks a sample ready, opens it again, or withdraws it (version-checked); `caseId` keeps the answer to that case. */
     sampleCommand: (id: string, action: "ready" | "reopen" | "cancel", input: Record<string, unknown>) => request<SamplesState>(at(`samples/${id}`), "POST", { ...input, action }),
+    /** PLM-150: the open design inspections (one project's, or the viewer's own), with who, which item and by when. */
+    inspections: (filter: { projectId?: string | null; mine?: boolean; from?: string; to?: string } = {}) => request<{ inspections: OpenInspection[] }>(at("inspections", {
+      ...(filter.projectId ? { projectId: filter.projectId } : {}), ...(filter.mine ? { mine: "1" } : {}), ...(filter.from ? { from: filter.from } : {}), ...(filter.to ? { to: filter.to } : {}) })),
+    /** One round of a design inspection, with its photos, snags and every round of the item. */
+    inspection: (id: string) => request<InspectionState>(at(`inspections/${id}`)),
+    /** Passes or fails a round (version-checked); failing takes comments and the snag lines. */
+    recordInspection: (id: string, action: "pass" | "fail", input: Record<string, unknown>) => request<InspectionState>(at(`inspections/${id}`), "POST", { ...input, action }),
+    /** A photo taken at an open round, uploaded once by its id. */
+    uploadInspectionPhoto: (id: string, photoId: string, file: File) => upload<InspectionState>(at(`inspections/${id}/photos/${photoId}`), file),
+    inspectionPhotoUrl: (photoId: string, preview = true) => at(`inspection-photos/${photoId}`, preview ? { preview: "1" } : {}),
   };
 }
 export type FactoryApi = ReturnType<typeof factoryApi>;

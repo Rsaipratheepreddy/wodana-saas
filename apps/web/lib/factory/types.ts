@@ -8,6 +8,40 @@ export type FactorySettings = {
   productionSteps?: ProductionStep[]; productionWeeks?: number | null;
   /** PLM-067: days before the latest planned ready date of a payment stage's work orders that the client is reminded to pay. */
   balanceReminderDays?: number;
+  /**
+   * PLM-150: design inspections of made items: on or off, the stages kept with the firm's names, the trades that need them
+   * (none: every made item), the project role that inspects (and the role that does on the listed design packages), and
+   * the working days to do it.
+   */
+  inspectionsEnabled?: boolean; inspectionStages?: InspectionStage[]; inspectionWorkPackages?: string[]; inspectorRole?: string; directorRole?: string | null;
+  directorPackages?: string[]; inspectionDays?: number;
+};
+
+/** PLM-150: a design inspection stage: in raw material before the final finish, or after finishing (before dispatch). */
+export type InspectionStageKind = "raw" | "final";
+export type InspectionStage = { kind: InspectionStageKind; label: string };
+/** Where a stage of an item stands: not needed, to mark ready for, with the design team, snags to fix, or passed. */
+export type InspectionStep = "not_needed" | "to_request" | "due" | "snags" | "passed";
+export type OrderInspection = { raw: InspectionStep; final: InspectionStep; dueId: string | null; dueStage: InspectionStageKind | null; dueOn: string | null; latestId: string | null;
+  /** Who the open round is with (null: nobody on the team inspects), and the snags the factory still has to fix. */
+  inspectorName?: string | null; openSnags: number };
+/** One round of an inspection as a work order lists it. */
+export type InspectionRound = { id: string; stage: InspectionStageKind; round: number; status: "due" | "passed" | "failed" | "cancelled"; dueOn: string; resultAt: string | null;
+  resultByName: string | null; inspectorName?: string | null; comments: string; openSnags?: number; snags: number };
+/** An open inspection (with the design team): who, which item, which project, by when (the design calendar reads these, PLM-152). */
+export type OpenInspection = { id: string; workOrderId: string; order: string; item: string; projectId: string; projectReference: string; projectName: string;
+  stage: InspectionStageKind; stageLabel: string; round: number; inspectorMembershipId: string | null; inspectorName: string | null; inspectorRole: string | null;
+  dueOn: string; requestedAt: string; overdue: boolean };
+/** One round, as its record page shows it. */
+export type InspectionState = {
+  row: { id: string; workOrderId: string; projectId: string; stage: InspectionStageKind; round: number; status: "due" | "passed" | "failed" | "cancelled"; dueOn: string; requestedAt: string;
+    requestedByName: string; requestedByMe: boolean; inspectorMembershipId: string | null; inspectorName: string | null; inspectorRole: string | null; resultByName: string | null;
+    resultAt: string | null; comments: string; version: number; number: number; title: string; specification: string; quantity: string; unit: string; orderStatus: WorkOrderStatus;
+    projectReference: string; projectName: string; projectStatus: string };
+  photos: Array<{ id: string; name: string; byName: string; at: string }>;
+  snags: Array<{ id: string; number: number; title: string; severity: "minor" | "major" | "critical"; status: string; dueDate: string | null; assigneeName: string | null; inspectionId: string }>;
+  rounds: InspectionRound[]; stages: InspectionStage[]; managers: string[];
+  canRecord: boolean; why: string | null; canSeeFactory: boolean;
 };
 
 export type { ProductionRow, ProductionState, ProductionStep, ProductionStepKind, ProductionSummary, ProductionWindow } from "./production";
@@ -35,7 +69,8 @@ export type MakeLine = {
 };
 
 /** The one step a work order waits for, and whether it's the viewer's to do. */
-export type WorkOrderNext = "fix" | "release" | "start" | "approve" | "check" | "report" | "send" | "resume" | "decide_drawing" | null;
+export type WorkOrderNext = "fix" | "release" | "start" | "approve" | "check" | "report" | "send" | "resume" | "decide_drawing"
+  | "request_inspection" | "inspection" | "snags" | null;
 
 export type WorkOrderRow = {
   id: string; number: number; projectId: string; projectReference: string; projectName: string; packageId: string | null; packageName: string | null; boqLineId: string;
@@ -55,6 +90,8 @@ export type WorkOrderRow = {
   drawingVersionId?: string | null; drawingNewer?: number | null;
   /** In lists: why a planned work order can't be released, what's made and still at the factory, and its next step (mine when it's the viewer's to do). */
   blocked?: Array<{ key: ReleaseCheck["key"]; missing: string }>; atFactory?: string; next?: WorkOrderNext; mine?: boolean;
+  /** PLM-150: where its design inspections stand (none when it needs none). */
+  inspection?: OrderInspection | null;
 };
 
 /** Work orders from any projects run together on a workcenter and day. */
@@ -85,7 +122,9 @@ export type WorkOrderMaterial = {
   replacesId: string | null; replacesName: string | null; reason: string; requestedBy: string; requestedByName: string; decidedByName: string | null; decisionNote: string;
   issued: string; issuedValue: string; projectOnHand: string; freeOnHand: string;
 };
-export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrderRow[]; workcenters: Workcenter[]; batches: Batch[]; requireCheck?: boolean; today?: string };
+export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrderRow[]; workcenters: Workcenter[]; batches: Batch[]; requireCheck?: boolean; today?: string;
+  /** PLM-150: the firm's names for its design inspections. */
+  inspectionStages?: InspectionStage[] };
 /** Goods the site refused and sent back to be made again. */
 export type WorkOrderRework = { id: string; quantity: string; reason: string; source: "site" | "factory"; at: string; byName: string };
 export type WorkOrderState = FactoryRights & {
@@ -108,6 +147,8 @@ export type WorkOrderState = FactoryRights & {
     rejected?: string | null; rejectReason?: string; returnId?: string | null; returnNumber?: number | null; returnStatus?: "in_transit" | "received" | "cancelled" | null }>;
   atFactory: string;
   next?: WorkOrderNext; reworks?: WorkOrderRework[];
+  /** PLM-150: where its design inspections stand, and every round so far. */
+  inspection?: OrderInspection | null; inspections?: InspectionRound[];
   /** The project's designs with an approved revision (the latest of each), to make it to. */
   designs?: Array<{ designId: string; versionId: string; title: string; number: number; documentType: string }>;
   /**
@@ -127,4 +168,6 @@ export type WorkOrderState = FactoryRights & {
 /** Settings → Factory; hourly rates (oldest first) only for people who set them or see costs. */
 export type FactorySettingsState = {
   settings: FactorySettings; workcenters: Workcenter[]; canManage: boolean; canSeeRates: boolean; rates: WorkcenterRate[]; currency: string; today: string;
+  /** PLM-150: what the inspection settings choose from: the firm's project roles, trades and design packages. */
+  inspectionChoices?: { roles: Array<{ key: string; label: string }>; workPackages: Array<{ id: string; name: string }>; designPackages: Array<{ code: string; name: string }> };
 };

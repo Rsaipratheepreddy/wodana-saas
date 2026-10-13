@@ -9,14 +9,16 @@ import type { FactoryState, WorkOrderNext, WorkOrderRow, Workcenter } from "@/li
 import { Cell, ProjectFilterChip, ProjectLinks } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
-import { WorkOrderStatusLabel, orderNumber, useFactoryLabels } from "./factory-labels";
+import { WorkOrderStatusLabel, inspectionToAsk, orderNumber, useFactoryLabels, useInspectionLabels } from "./factory-labels";
 import { WorkOrderSheet, type WorkOrderIntent } from "./work-order-sheet";
 import styles from "./factory.module.css";
 
-type View = "mine" | "blocked" | "making" | "send" | "open" | "all";
+type View = "mine" | "blocked" | "making" | "inspection" | "send" | "open" | "all";
 const OPEN = ["planned", "released", "in_production", "on_hold"];
-// The row's next step, done in place (release, start) or by opening the work order into its dialog.
+// The row's next step, done in place (release, start, ready for inspection) or by opening the work order into its dialog.
 const INTENT: Partial<Record<Exclude<WorkOrderNext, null>, WorkOrderIntent>> = { report: "report", check: "check", send: "dispatch" };
+/** PLM-150: the steps of a design inspection: marking it ready, the design team inspecting, the factory fixing its snags. */
+const INSPECTING: WorkOrderNext[] = ["request_inspection", "inspection", "snags"];
 
 /**
  * Work orders: what waits for me first, then what's blocked (and why), what's being made and what's ready
@@ -29,6 +31,7 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
   const t = useT();
   const format = useProjectFormat();
   const labels = useFactoryLabels();
+  const inspections = useInspectionLabels();
   const [view, setView] = useState<View | null>(null);
   const [search, setSearch] = useState("");
   const [grouping, setGrouping] = useState<WorkOrderRow[] | null>(null);
@@ -41,7 +44,8 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
   const late = (row: WorkOrderRow) => Boolean(row.plannedEnd && row.plannedEnd < today && OPEN.includes(row.status));
   const queues: Record<View, (row: WorkOrderRow) => boolean> = {
     mine: (row) => Boolean(row.mine && row.next), blocked: (row) => row.next === "fix" || row.status === "on_hold",
-    making: (row) => ["released", "in_production"].includes(row.status), send: (row) => row.next === "send", open: (row) => OPEN.includes(row.status), all: () => true,
+    making: (row) => ["released", "in_production"].includes(row.status), inspection: (row) => INSPECTING.includes(row.next ?? null), send: (row) => row.next === "send",
+    open: (row) => OPEN.includes(row.status), all: () => true,
   };
   const counts = Object.fromEntries((Object.keys(queues) as View[]).map((key) => [key, scoped.filter(queues[key]).length])) as Record<View, number>;
   // Start where there's something to do.
@@ -49,22 +53,24 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
   // Late first, then by when it's due.
   const rows = scoped.filter(queues[current]).sort((a, b) => Number(late(b)) - Number(late(a)) || (a.plannedEnd ?? "9999").localeCompare(b.plannedEnd ?? "9999") || a.number - b.number);
 
-  /** Releases or starts work orders one at a time, saying which didn't go and why. */
-  const runAll = async (orders: WorkOrderRow[], action: "release" | "start") => {
+  /** Releases, starts or marks ready for inspection work orders one at a time, saying which didn't go and why. */
+  const runAll = async (orders: WorkOrderRow[], action: "release" | "start" | "request_inspection") => {
     setNotice(null);
     const failed: string[] = [];
     for (const order of orders) {
       setBusy(order.id);
-      try { await api.command(order.id, action, { version: order.version }); } catch (cause) { failed.push(`${orderNumber(order.number)}: ${cause instanceof Error ? cause.message : t("Could not save.")}`); }
+      try { await api.command(order.id, action, { version: order.version, ...(action === "request_inspection" ? { stage: inspectionToAsk(order) } : {}) }); }
+      catch (cause) { failed.push(`${orderNumber(order.number)}: ${cause instanceof Error ? cause.message : t("Could not save.")}`); }
     }
     setBusy(null);
     onReload();
     const done = orders.length - failed.length;
-    const said = action === "release" ? t("Released {count}.", { count: done }) : t("Started {count}.", { count: done });
+    const said = action === "release" ? t("Released {count}.", { count: done }) : action === "start" ? t("Started {count}.", { count: done })
+      : t("The design team was told.");
     setNotice(failed.length ? { tone: "error", text: [done ? said : "", t("Not done: {orders}", { orders: failed.join("; ") })].filter(Boolean).join(" ") } : { tone: "success", text: said });
   };
   const act = (row: WorkOrderRow) => {
-    if (row.next === "release" || row.next === "start") void runAll([row], row.next);
+    if (row.next === "release" || row.next === "start" || row.next === "request_inspection") void runAll([row], row.next);
     else onOpen(row.id, row.next ? INTENT[row.next] ?? null : null);
   };
 
@@ -87,8 +93,15 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
         : row.blocked?.length ? row.blocked.map((check) => labels.blocked[check.key]).join(" · ")
         : row.status === "on_hold" ? (row.holdKind === "drawing" ? t("Drawing changed") : t("Put on hold"))
         : row.drawingNewer && OPEN.includes(row.status) ? t("Newer drawing R{number}", { number: row.drawingNewer })
+        // PLM-150: the design inspection it waits for, and with whom; or the snags the factory fixes.
+        : row.next === "inspection" && row.inspection?.dueStage ? t("{stage} with {name}", { stage: inspections.stage(row.inspection.dueStage, state?.inspectionStages),
+          name: row.inspection.inspectorName ?? t("nobody on the team") })
+        : row.next === "snags" ? (row.inspection?.openSnags === 1 ? t("1 snag to fix") : t("{count} snags to fix", { count: row.inspection?.openSnags ?? 0 }))
+        : row.next === "request_inspection" ? t("Not inspected yet")
         : Number(row.reworked) > 0 && row.status === "in_production" ? t("{quantity} to make again", { quantity: quantityText(row.reworked ?? "0") }) : null;
-      return <Cell title={<WorkOrderStatusLabel status={row.status} />} meta={why} tone={why && (row.blocked?.length || row.lineStatus === "omitted" || Number(row.scopeOver) > 0) ? "danger" : why ? "warning" : undefined} />;
+      const overdue = row.next === "inspection" && Boolean(row.inspection?.dueOn && row.inspection.dueOn < today);
+      return <Cell title={<WorkOrderStatusLabel status={row.status} />} meta={overdue ? `${why} · ${t("Late")}` : why}
+        tone={why && (row.blocked?.length || row.lineStatus === "omitted" || Number(row.scopeOver) > 0 || overdue || row.next === "snags") ? "danger" : why ? "warning" : undefined} />;
     } } },
     { id: "next", header: t("Next"), accessorFn: () => "", size: 150, meta: { align: "end", renderCell: (row) => {
       if (!row.next || !row.mine) return null;
@@ -97,7 +110,7 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
         aria-label={`${label} ${orderNumber(row.number)}`} onPress={() => act(row)}>{label}</Button>;
     } } },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [t, format, labels, busy, today]);
+  ], [t, format, labels, inspections, state?.inspectionStages, busy, today]);
 
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   const bulk = (chosen: WorkOrderRow[]) => {
@@ -108,7 +121,8 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
       {batchable.length ? <Button size="compact" onPress={() => setGrouping(batchable)}>{t("Run together ({count})", { count: batchable.length })}</Button> : null}
     </>;
   };
-  const emptyTitle = { mine: t("Nothing waits for you"), blocked: t("Nothing is blocked"), making: t("Nothing is being made"), send: t("Nothing to send to site"),
+  const emptyTitle = { mine: t("Nothing waits for you"), blocked: t("Nothing is blocked"), making: t("Nothing is being made"), inspection: t("Nothing waits for inspection"),
+    send: t("Nothing to send to site"),
     open: t("No open work orders"), all: t("No work orders yet") }[current];
   const project = projectId ? (state?.orders.find((row) => row.projectId === projectId) ?? state?.toMake.find((line) => line.projectId === projectId)) : null;
   return <div className={styles.stack}>
@@ -121,6 +135,7 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
           { id: "mine", label: t("Needs me"), count: counts.mine },
           { id: "blocked", label: t("Blocked"), count: counts.blocked },
           { id: "making", label: t("In production"), count: counts.making },
+          { id: "inspection", label: t("Inspections"), count: counts.inspection },
           { id: "send", label: t("To send"), count: counts.send },
           { id: "open", label: t("Open"), count: counts.open },
           { id: "all", label: t("All") },

@@ -13,6 +13,11 @@ function allowed(path: string[], method: string) {
   if (path.length === 2 && path[0] === "orders" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 6 && path[0] === "orders" && UUID.test(path[1]) && path[2] === "checks" && UUID.test(path[3]) && path[4] === "photos" && UUID.test(path[5])) return method === "POST";
   if (path.length === 2 && path[0] === "photos" && UUID.test(path[1])) return method === "GET";
+  // PLM-150: design inspections: the list, one round (read, pass or fail), its photos.
+  if (path.length === 1 && path[0] === "inspections") return method === "GET";
+  if (path.length === 2 && path[0] === "inspections" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
+  if (path.length === 4 && path[0] === "inspections" && UUID.test(path[1]) && path[2] === "photos" && UUID.test(path[3])) return method === "POST";
+  if (path.length === 2 && path[0] === "inspection-photos" && UUID.test(path[1])) return method === "GET";
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "workcenters") return method === "POST";
   return false;
@@ -24,10 +29,10 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid factory resource.") }, { status: 400 });
-  // A quality check's photo streams back as a file.
-  if (path[0] === "photos") {
+  // A quality check's (or an inspection's) photo streams back as a file.
+  if (path[0] === "photos" || path[0] === "inspection-photos") {
     const preview = url.searchParams.get("preview") === "1";
-    const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/factory/photos/${path[1]}${preview ? "?preview=1" : ""}`, { cache: "no-store" });
+    const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/factory/${path[0]}/${path[1]}${preview ? "?preview=1" : ""}`, { cache: "no-store" });
     if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: t("The photo could not be loaded.") }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
     const response = new NextResponse(result.upstream.body, { status: 200, headers: { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream",
       "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" } });
@@ -35,7 +40,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
     return response;
   }
   if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: t("Use your workspace to make this change.") }, { status: 403 });
-  if (path[4] === "photos") {
+  if (path[4] === "photos" || (path[0] === "inspections" && path[2] === "photos")) {
     if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ message: t("Choose a file up to 20 MB.") }, { status: 400 });
     const input = await request.formData().catch(() => null);
     const file = input?.get("file");
@@ -54,6 +59,12 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   // One case's sample requests.
   const caseId = url.searchParams.get("caseId");
   if (caseId && UUID.test(caseId)) query.set("caseId", caseId);
+  // PLM-150: the open inspections: one project's, the viewer's own, or due in a date range (as the design calendar reads them).
+  const projectId = url.searchParams.get("projectId");
+  if (projectId && UUID.test(projectId)) query.set("projectId", projectId);
+  if (url.searchParams.get("mine") === "1") query.set("mine", "1");
+  const to = url.searchParams.get("to");
+  if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) query.set("to", to);
   return workspaceJsonResponse(`/workspaces/${workspaceId}/factory/${path.join("/")}${query.size ? `?${query}` : ""}`,
     { method: request.method, headers: { "content-type": "application/json" }, body }, t("Could not save."));
 }

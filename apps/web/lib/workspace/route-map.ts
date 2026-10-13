@@ -71,6 +71,8 @@ function routeTable() {
     { id: "home", label: "Home", href: "/workspace", nav: "home", paths: ["/workspace"], exact: true },
     // Everything due on the person across the modules (plan §6.24a).
     { id: "my-day", label: "My day", href: "/workspace/my-day", parent: "home", homeTab: true, paths: ["/workspace/my-day"] },
+    // PLM-150: a design inspection at the factory (opened from My day, its notice or the work order).
+    { id: "inspection", label: "Design inspection", href: "/workspace/my-day", parent: "my-day", paths: ["/workspace/inspections"] },
     { id: "tasks", label: "Tasks", href: "/workspace/tasks", parent: "home", homeTab: true, paths: ["/workspace/tasks"] },
     { id: "approvals", label: "Approvals", href: "/workspace/approvals", parent: "home", homeTab: true, paths: ["/workspace/approvals"] },
     // A change an AI app prepared, waiting for the person's OK (opened from Approvals or its notice).

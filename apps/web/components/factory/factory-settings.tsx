@@ -2,16 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, EmptyState, InlineNotice, NumericInput, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState, FormDialog, MoneyField } from "@/design-system";
+import {
+  Button, Checkbox, DateField, EmptyState, Fieldset, InlineNotice, NumericInput, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError,
+  NoAccessState, FormDialog, MoneyField,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
-import type { FactorySettings, FactorySettingsState, ProductionStep, Workcenter, WorkcenterRate } from "@/lib/factory/types";
+import type { FactorySettings, FactorySettingsState, InspectionStage, InspectionStageKind, ProductionStep, Workcenter, WorkcenterRate } from "@/lib/factory/types";
 import { PRODUCTION_STEP_KINDS } from "@/lib/factory/production";
 import { addExact } from "@/lib/purchasing/amounts";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
 import { LogisticsSettingsSections } from "../logistics/vehicles-settings";
-import { useProductionStepLabel } from "./factory-labels";
+import { useInspectionLabels, useProductionStepLabel } from "./factory-labels";
 import styles from "./factory.module.css";
 
 type Flag = "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck";
@@ -31,7 +34,10 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editingSteps, setEditingSteps] = useState(false);
   const [reminderDays, setReminderDays] = useState<number | null>(null);
+  const [editingInspections, setEditingInspections] = useState(false);
+  const [inspectionDays, setInspectionDays] = useState<number | null>(null);
   const stepLabel = useProductionStepLabel();
+  const inspectionLabels = useInspectionLabels();
   const load = useCallback(async () => {
     try { setData(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
@@ -39,6 +45,8 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   if (error && !data) return isNoAccessError(error) ? <NoAccessState area={t("Factory")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!data) return <Skeleton lines={6} shape="form" />;
   const readOnly = !data.canManage;
+  const choices = data.inspectionChoices ?? { roles: [], workPackages: [], designPackages: [] };
+  const roleName = (key: string) => choices.roles.find((role) => role.key === key)?.label ?? key;
   const save = async (patch: Record<string, unknown>) => {
     setError("");
     try { setData(await api.saveSettings({ version: data.settings.version, ...patch })); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); await load(); }
@@ -79,6 +87,34 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
           onBlur={() => { if (reminderDays !== null && reminderDays !== (data.settings.balanceReminderDays ?? 7)) void save({ balanceReminderDays: reminderDays }); }} />
       </SettingsRow>
     </SettingsSection>
+    {/* PLM-150: the design team inspects made items at the factory before they go to site. */}
+    <SettingsSection id="inspections" title={t("Design inspections")}>
+      <SettingsRow label={t("Design inspections")} hint={t("Dispatch waits until the last one passed.")}>
+        <Switch aria-label={t("Design inspections")} isDisabled={readOnly} isSelected={Boolean(data.settings.inspectionsEnabled)} onChange={(value) => void save({ inspectionsEnabled: value })} />
+      </SettingsRow>
+      {data.settings.inspectionsEnabled ? <>
+        <SettingsRow label={t("Inspections")} hint={t("Before the final finish, and after finishing.")}>
+          <span className={styles.filters}>
+            <span>{(data.settings.inspectionStages ?? []).map((stage) => inspectionLabels.stage(stage.kind, data.settings.inspectionStages)).join(" → ")}</span>
+            {data.canManage ? <Button size="compact" variant="quiet" aria-label={t("Edit design inspections")} onPress={() => setEditingInspections(true)}>{t("Edit")}</Button> : null}
+          </span>
+        </SettingsRow>
+        <SettingsRow label={t("Items")} hint={t("The trades whose made items are inspected.")}>
+          <span>{(data.settings.inspectionWorkPackages ?? []).length ? (data.settings.inspectionWorkPackages ?? [])
+            .map((id) => choices.workPackages.find((entry) => entry.id === id)?.name ?? "").filter(Boolean).join(", ") : t("Every made item")}</span>
+        </SettingsRow>
+        <SettingsRow label={t("Who inspects")} hint={t("From the project team; the designer when nobody holds the role.")}>
+          <span>{[roleName(data.settings.inspectorRole ?? "designer"), data.settings.directorRole && (data.settings.directorPackages ?? []).length
+            ? t("{role} on {packages}", { role: roleName(data.settings.directorRole), packages: (data.settings.directorPackages ?? [])
+              .map((code) => choices.designPackages.find((entry) => entry.code === code)?.name ?? code).join(", ") }) : ""].filter(Boolean).join(" · ")}</span>
+        </SettingsRow>
+        <SettingsRow label={t("Days to inspect")} hint={t("Working days after the factory marks it ready.")}>
+          <NumericInput label={<span className="wd-visually-hidden">{t("Days to inspect")}</span>} aria-label={t("Days to inspect")} minValue={1} maxValue={30}
+            isDisabled={readOnly} suffix={t("days")} value={inspectionDays ?? data.settings.inspectionDays ?? 2} onChange={(value) => setInspectionDays(Number.isFinite(value) ? value : null)}
+            onBlur={() => { if (inspectionDays !== null && inspectionDays !== (data.settings.inspectionDays ?? 2)) void save({ inspectionDays }); }} />
+        </SettingsRow>
+      </> : null}
+    </SettingsSection>
     <SettingsSection id="workcenters" title={t("Workcenters")}>
       {!data.workcenters.length ? <EmptyState illustration={null} title={t("No workcenters yet")} description={t("Add where work is made, such as joinery or paint.")} />
         : <ul className={styles.places}>{data.workcenters.map((center) => {
@@ -98,6 +134,8 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
     </SettingsSection>
     {/* Palm, 6 Oct: deliveries record the vehicle; a missing building permit is raised ahead of the delivery. */}
     <LogisticsSettingsSections workspaceId={workspaceId} />
+    {editingInspections ? <InspectionsDialog settings={data.settings} choices={choices} onClose={() => setEditingInspections(false)}
+      onSave={async (patch) => { setData(await api.saveSettings({ version: data.settings.version, ...patch })); setEditingInspections(false); }} /> : null}
     {editingSteps ? <ProductionStepsDialog steps={data.settings.productionSteps ?? []} weeks={data.settings.productionWeeks ?? null} onClose={() => setEditingSteps(false)}
       onSave={async (productionSteps, productionWeeks) => { setData(await api.saveSettings({ version: data.settings.version, productionSteps, productionWeeks })); setEditingSteps(false); }} /> : null}
     {draft ? <WorkcenterDialog draft={draft} currency={data.currency} current={rateOn(ratesOf(data.rates, draft.id), data.today)} onClose={() => setDraft(null)} onSave={async (next) => {
@@ -126,6 +164,59 @@ function WorkcenterDialog({ draft, currency, current, onClose, onSave }: { draft
       {!draft.isNew ? <Switch isSelected={value.active} onChange={(active) => setValue({ ...value, active })}>{t("In use")}</Switch> : null}
   </FormDialog>;
 }
+
+type InspectionChoices = NonNullable<FactorySettingsState["inspectionChoices"]>;
+
+/**
+ * PLM-150: the design inspections the firm keeps (the one after finishing always; the one before the final finish if it
+ * wants) with its own names, the trades whose made items are inspected, and who inspects: a project role, and the role
+ * that inspects instead on projects of the chosen design packages.
+ */
+function InspectionsDialog({ settings, choices, onClose, onSave }: { settings: FactorySettings; choices: InspectionChoices; onClose: () => void;
+  onSave: (patch: Record<string, unknown>) => Promise<void> }) {
+  const t = useT();
+  const labels = useInspectionLabels();
+  const stages = settings.inspectionStages ?? [];
+  const [raw, setRaw] = useState(stages.some((stage) => stage.kind === "raw"));
+  const [names, setNames] = useState<Record<InspectionStageKind, string>>({ raw: stages.find((stage) => stage.kind === "raw")?.label ?? "", final: stages.find((stage) => stage.kind === "final")?.label ?? "" });
+  const [trades, setTrades] = useState<string[]>(settings.inspectionWorkPackages ?? []);
+  const [inspector, setInspector] = useState(settings.inspectorRole ?? "designer");
+  const [director, setDirector] = useState(settings.directorRole ?? "");
+  const [packages, setPackages] = useState<string[]>(settings.directorPackages ?? []);
+  const [error, setError] = useState("");
+  const toggle = (list: string[], value: string, on: boolean) => (on ? [...new Set([...list, value])] : list.filter((entry) => entry !== value));
+  const roles = choices.roles.map((role) => ({ id: role.key, label: role.label }));
+  return <FormDialog size="md" title={t("Design inspections")} onClose={onClose} error={error || undefined} submitLabel={t("Save")} isSubmitDisabled={Boolean(director && !packages.length)}
+    onSubmit={async () => {
+      setError("");
+      try {
+        await onSave({ inspectionStages: [...(raw ? [{ kind: "raw", label: names.raw.trim() }] : []), { kind: "final", label: names.final.trim() }],
+          inspectionWorkPackages: trades, inspectorRole: inspector, directorRole: director || null, directorPackages: director ? packages : [] });
+      } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    }}>
+    <div className={styles.filters}>
+      <Switch isSelected={raw} onChange={setRaw}>{t("Before the final finish")}</Switch>
+      <TextInput label={t("Name it")} placeholder={labels.stage("raw", DEFAULT_STAGES)} maxLength={60} isDisabled={!raw} value={names.raw} onChange={(raw) => setNames({ ...names, raw })} />
+    </div>
+    <div className={styles.filters}>
+      <Switch isSelected isDisabled>{t("After finishing")}</Switch>
+      <TextInput label={t("Name it")} placeholder={labels.stage("final", raw ? DEFAULT_STAGES : [{ kind: "final", label: "" }])} maxLength={60} value={names.final}
+        onChange={(final) => setNames({ ...names, final })} />
+    </div>
+    {choices.workPackages.length ? <Fieldset legend={t("Items")}>
+      {choices.workPackages.map((trade) => <Checkbox key={trade.id} isSelected={trades.includes(trade.id)} onChange={(on) => setTrades(toggle(trades, trade.id, on))}>{trade.name}</Checkbox>)}
+    </Fieldset> : null}
+    <SelectField label={t("Who inspects")} selectedKey={inspector} onSelectionChange={(key) => setInspector(key ? String(key) : "designer")} items={roles} />
+    <SelectField label={t("Who inspects on some design packages")} placeholder={t("Nobody else")} selectedKey={director || "none"}
+      onSelectionChange={(key) => setDirector(!key || key === "none" ? "" : String(key))} items={[{ id: "none", label: t("Nobody else") }, ...roles]} />
+    {director ? <Fieldset legend={t("Design packages")}>
+      {choices.designPackages.map((option) => <Checkbox key={option.code} isSelected={packages.includes(option.code)} onChange={(on) => setPackages(toggle(packages, option.code, on))}>
+        {option.name}</Checkbox>)}
+    </Fieldset> : null}
+  </FormDialog>;
+}
+
+const DEFAULT_STAGES: InspectionStage[] = [{ kind: "raw", label: "" }, { kind: "final", label: "" }];
 
 /** PLM-063: which production steps the firm keeps (Ready always) and its own word for each, and its internal target in weeks. */
 function ProductionStepsDialog({ steps, weeks, onClose, onSave }: { steps: ProductionStep[]; weeks: number | null; onClose: () => void;

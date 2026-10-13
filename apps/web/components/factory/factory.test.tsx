@@ -612,4 +612,80 @@ describe("factory", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ version: 1, productionWeeks: 8,
       productionSteps: [{ kind: "scheduled", label: "" }, { kind: "in_production", label: "Making" }, { kind: "ready", label: "" }] }));
   });
+
+  it("marks an item ready for Inspection 1 before finishing, then waits on the design team (PLM-150)", async () => {
+    nav.query = "order=w1";
+    const making = { status: "in_production" as const, releasedAt: "2026-10-01T08:00:00Z", left: "3.0000" };
+    let current = order(making, { next: "request_inspection", inspection: { raw: "to_request", final: "to_request", dueId: null, dueStage: null, dueOn: null, latestId: null, openSnags: 0 } });
+    const fetcher = mount((url, body) => {
+      if (url.includes("/orders/w1")) {
+        if (body?.action === "request_inspection") current = order({ ...making, version: 3 }, { next: "inspection", inspection: { raw: "due", final: "to_request", dueId: "i1", dueStage: "raw",
+          dueOn: "2099-10-08", latestId: "i1", inspectorName: "Dana Designer", openSnags: 0 },
+          inspections: [{ id: "i1", stage: "raw", round: 1, status: "due", dueOn: "2099-10-08", resultAt: null, resultByName: null, inspectorName: "Dana Designer", comments: "", openSnags: 0, snags: 0 }] });
+        return current;
+      }
+      return factory();
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(within(sheet).getByRole("status", { name: "Next step" })).toHaveTextContent("Mark it ready for Inspection 1");
+    // Finished output waits for Inspection 1.
+    expect(within(sheet).queryByRole("button", { name: "Report output" })).toBeNull();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Ready for Inspection 1" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "request_inspection", stage: "raw", version: 2 }));
+    const step = await within(sheet).findByRole("status", { name: "Next step" });
+    await waitFor(() => expect(step).toHaveTextContent("Inspection 1 is with the design team"));
+    expect(step).toHaveTextContent("Dana Designer");
+    expect(within(step).getByRole("link", { name: "Open the inspection" })).toHaveAttribute("href", "/workspace/inspections/i1");
+  });
+
+  it("doesn't offer to send an item to site until its last inspection passed, and lists every round (PLM-150)", async () => {
+    nav.query = "order=w1";
+    const ready = { status: "ready" as const, releasedAt: "2026-10-01T08:00:00Z", passed: "3.0000", left: "0" };
+    mount((url) => url.includes("/orders/w1") ? order(ready, { next: "snags", atFactory: "3.0000",
+      inspection: { raw: "passed", final: "snags", dueId: null, dueStage: null, dueOn: null, latestId: "i3", openSnags: 2 },
+      settings: { ...settings, inspectionStages: [{ kind: "raw", label: "" }, { kind: "final", label: "Before dispatch" }] },
+      inspections: [
+        { id: "i1", stage: "raw", round: 1, status: "passed", dueOn: "2099-10-08", resultAt: "2026-10-08T09:00:00Z", resultByName: "Dana Designer", comments: "", openSnags: 0, snags: 0 },
+        { id: "i3", stage: "final", round: 1, status: "failed", dueOn: "2099-10-20", resultAt: "2026-10-20T09:00:00Z", resultByName: "Dana Designer", comments: "Veneer lifting", openSnags: 2, snags: 2 },
+      ] }) : factory());
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(within(sheet).getByRole("status", { name: "Next step" })).toHaveTextContent("2 snags to fix");
+    expect(within(sheet).queryByRole("button", { name: "Send to site" })).toBeNull();
+    await userEvent.click(within(sheet).getByRole("tab", { name: /Output/ }));
+    const rounds = await within(sheet).findByRole("region", { name: "Design inspections" });
+    expect(within(rounds).getByRole("link", { name: "Inspection 1" })).toHaveAttribute("href", "/workspace/inspections/i1");
+    expect(within(rounds).getByRole("link", { name: "Before dispatch" })).toHaveAttribute("href", "/workspace/inspections/i3");
+    expect(rounds).toHaveTextContent("2 of 2 snags to fix");
+  });
+
+  it("turns design inspections on and keeps only the one after finishing, for the trades and roles chosen (PLM-150)", async () => {
+    let data: FactorySettingsState = { settings: { ...settings, inspectionsEnabled: false, inspectionStages: [{ kind: "raw", label: "" }, { kind: "final", label: "" }], inspectionWorkPackages: [],
+      inspectorRole: "designer", directorRole: null, directorPackages: [], inspectionDays: 2 }, workcenters: [joinery], canManage: true, canSeeRates: false, currency: "AED",
+      today: "2026-09-27", rates: [], inspectionChoices: { roles: [{ key: "designer", label: "Lead Interior Designer" }, { key: "creative_director", label: "Creative Director" }],
+        workPackages: [{ id: "wp1", name: "Joinery" }, { id: "wp2", name: "Glass" }], designPackages: [{ code: "creative_director", name: "Designed by the Creative Director" }] } };
+    const fetcher = mount((url, body) => {
+      if (body) data = { ...data, settings: { ...data.settings, ...body, version: data.settings.version + 1 } as never };
+      return data;
+    });
+    render(<DesignSystemProvider><FactorySettingsPage workspaceId="w" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("switch", { name: "Design inspections" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ version: 1, inspectionsEnabled: true }));
+    expect(await screen.findByText("Inspection 1 → Inspection 2")).toBeInTheDocument();
+    expect(screen.getByText("Every made item")).toBeInTheDocument();
+    expect(screen.getByText("Lead Interior Designer")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Edit design inspections" }));
+    const dialog = await screen.findByRole("dialog", { name: "Design inspections" });
+    await userEvent.click(within(dialog).getByRole("switch", { name: "Before the final finish" }));
+    await userEvent.type(within(dialog).getAllByRole("textbox", { name: "Name it" })[1], "Before dispatch");
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: "Joinery" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ version: 2, inspectionStages: [{ kind: "final", label: "Before dispatch" }], inspectionWorkPackages: ["wp1"],
+      inspectorRole: "designer", directorRole: null, directorPackages: [] }));
+    expect(await screen.findByText("Before dispatch")).toBeInTheDocument();
+    // Only the joinery trade's items now (the workcenter is also called Joinery).
+    expect(screen.queryByText("Every made item")).toBeNull();
+    expect(screen.getAllByText("Joinery")).toHaveLength(2);
+  });
 });

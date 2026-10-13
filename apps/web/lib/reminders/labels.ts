@@ -18,6 +18,7 @@ export const REMINDER_KIND_LABELS: Record<ReminderKind, MessageKey> = {
   "permit.expiry": tKey("Permit expiring"),
   "finance_request.waiting": tKey("Finance request waiting"),
   "meeting.minutes_due": tKey("Meeting minutes"),
+  "factory.inspection_due": tKey("Design inspection due"),
   "crm.first_response": tKey("First response"),
   "crm.unowned": tKey("No owner yet"),
   "crm.confirm_client": tKey("Confirm the client"),

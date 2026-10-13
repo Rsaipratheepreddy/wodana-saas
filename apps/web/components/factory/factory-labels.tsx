@@ -3,7 +3,9 @@
 import { useMemo } from "react";
 import { Badge } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { ProductionStep, ProductionStepKind, ReleaseCheck, WorkOrderNext, WorkOrderStatus } from "@/lib/factory/types";
+import type {
+  InspectionRound, InspectionStage, InspectionStageKind, InspectionStep, ProductionStep, ProductionStepKind, ReleaseCheck, WorkOrderNext, WorkOrderStatus,
+} from "@/lib/factory/types";
 
 /** "WO-0007". */
 export const orderNumber = (number: number) => `WO-${String(number).padStart(4, "0")}`;
@@ -23,6 +25,7 @@ export function useFactoryLabels() {
     next: {
       fix: t("Fix what's missing"), release: t("Release"), start: t("Start"), approve: t("Approve output"), check: t("Check quality"), report: t("Report output"),
       send: t("Send to site"), resume: t("Resume"), decide_drawing: t("Go on with the new drawing"),
+      request_inspection: t("Ready for inspection"), inspection: t("Waiting for inspection"), snags: t("Fix the snags"),
     } satisfies Record<Exclude<WorkOrderNext, null>, string>,
     check: {
       running: t("Project running"), scope: t("Scope unchanged"), client_drawings: t("Client approved the drawings"), drawing: t("Drawing approved"), payment: t("Payment before production verified"), materials: t("Materials in"),
@@ -52,3 +55,27 @@ export function useProductionStepLabel() {
 }
 
 export const PRODUCTION_TONE: Record<ProductionStepKind, "neutral" | "info" | "warning" | "success"> = { scheduled: "neutral", in_production: "info", quality_check: "warning", ready: "success" };
+
+/**
+ * PLM-150: a design inspection stage in the firm's words (else Inspection 1 / 2, or "Design inspection" when it keeps
+ * one), where a stage stands, and a round's result.
+ */
+export function useInspectionLabels() {
+  const t = useT();
+  return useMemo(() => ({
+    stage: (kind: InspectionStageKind, stages: InspectionStage[] | undefined) => {
+      const kept = stages?.find((stage) => stage.kind === kind);
+      if (kept?.label) return kept.label;
+      if (stages && stages.length === 1) return t("Design inspection");
+      return kind === "raw" ? t("Inspection 1") : t("Inspection 2");
+    },
+    step: { not_needed: t("Not needed"), to_request: t("Not inspected yet"), due: t("Waiting for inspection"), snags: t("Snags to fix"), passed: t("Passed") } satisfies Record<InspectionStep, string>,
+    round: { due: t("Waiting for inspection"), passed: t("Passed"), failed: t("Failed"), cancelled: t("Withdrawn") } satisfies Record<InspectionRound["status"], string>,
+  }), [t]);
+}
+
+export const INSPECTION_TONE: Record<InspectionRound["status"], "neutral" | "info" | "warning" | "success" | "danger"> = { due: "warning", passed: "success", failed: "danger", cancelled: "neutral" };
+
+/** The inspection a work order is marked ready for: Inspection 1 while it's made, else the last one. */
+export const inspectionToAsk = (row: { status: WorkOrderStatus; inspection?: { raw: InspectionStep } | null }): InspectionStageKind =>
+  (row.status === "in_production" && row.inspection?.raw === "to_request" ? "raw" : "final");
