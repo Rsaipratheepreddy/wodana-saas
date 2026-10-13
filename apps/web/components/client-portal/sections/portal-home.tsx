@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  CalendarCheck, ClipboardCheck, FileSignature, FileText, Images, MessageCircleReply, Package, PenLine, Receipt, Sparkles, Sun, Wallet, type LucideIcon,
+  CalendarCheck, ClipboardCheck, FileSignature, FileText, Images, MessageCircleReply, NotebookPen, Package, PenLine, Receipt, Sparkles, Sun, Wallet, type LucideIcon,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalBudget, PortalDigest, PortalFeedCard, PortalFeedKind } from "@/lib/client-portal/types";
@@ -12,7 +12,7 @@ import type { PortalTarget } from "./section-types";
 
 const ICONS: Record<PortalFeedKind, LucideIcon> = {
   day: Sun, update: ClipboardCheck, design: Images, presentation: Sparkles, document: FileText, quote: FileSignature, change: PenLine, invoice: Receipt, payment: Wallet,
-  reply: MessageCircleReply, handover: Package, choice: CalendarCheck,
+  reply: MessageCircleReply, handover: Package, choice: CalendarCheck, minutes: NotebookPen,
 };
 
 /** The names of each card kind, for the feed's small label and the digest's lines. */
@@ -21,12 +21,14 @@ function useKindText() {
   const kind: Record<PortalFeedKind, string> = {
     day: t("Day on site"), update: t("Update"), design: t("Design shared"), presentation: t("Concepts to choose"), document: t("Document"), quote: t("Quotation"),
     change: t("Change request"), invoice: t("Invoice"), payment: t("Payment received"), reply: t("Reply from your team"), handover: t("Handover"), choice: t("Choice changed"),
+    minutes: t("Meeting notes"),
   };
   // One, or a count: "1 change request", "3 change requests".
   const count = (item: PortalDigest["items"][number]) => {
     const one: Record<PortalFeedKind, string> = {
       day: t("1 day on site"), update: t("1 update"), design: t("1 design shared"), presentation: t("1 set of concepts to choose"), document: t("1 document"), quote: t("1 quotation"),
       change: t("1 change request"), invoice: t("1 invoice"), payment: t("1 payment received"), reply: t("1 reply from your team"), handover: t("1 handover pack"), choice: t("1 choice changed"),
+      minutes: t("Notes from 1 meeting"),
     };
     if (item.count === 1) return one[item.kind];
     return ({
@@ -34,6 +36,7 @@ function useKindText() {
       presentation: t("{count} concepts to choose", { count: item.count }), document: t("{count} documents", { count: item.count }), quote: t("{count} quotations", { count: item.count }),
       change: t("{count} change requests", { count: item.count }), invoice: t("{count} invoices", { count: item.count }), payment: t("{count} payments received", { count: item.count }),
       reply: t("{count} replies from your team", { count: item.count }), handover: t("{count} handover packs", { count: item.count }), choice: t("{count} choices changed", { count: item.count }),
+      minutes: t("Notes from {count} meetings", { count: item.count }),
     } satisfies Record<PortalFeedKind, string>)[item.kind];
   };
   return { kind, count };
@@ -64,6 +67,7 @@ export function feedTarget(card: PortalFeedCard): { target?: PortalTarget; secti
     case "change": return { target: { kind: "change", id: card.id } };
     case "handover": return { target: { kind: "handover", id: card.id } };
     case "reply": return { target: { kind: "thread", id: card.id } };
+    case "minutes": return { target: { kind: "minutes", id: card.id } };
     case "presentation": case "choice": return { section: "decisions" };
     case "document": return { section: "documents" };
     case "invoice": case "payment": return { section: "payments" };

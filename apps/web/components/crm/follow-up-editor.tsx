@@ -10,6 +10,7 @@ import { crmRequest, CrmRequestError, label, rows, type RecordData } from "@/lib
 import { tKey, translateKnown } from "@/lib/i18n/keys";
 import { zonedDateTime, zonedDateTimeToIso, zonedToday } from "@/lib/crm/zoned-time";
 import { useCrmResource } from "./crm-workbench";
+import { MeetingMinutes } from "../meetings/meeting-minutes";
 import styles from "./follow-up-editor.module.css";
 
 /** "Aisha Karim · Jumeirah, Dubai": an enquiry titled after its customer doesn't repeat the name. */
@@ -92,7 +93,9 @@ export function FollowUpSheet({ workspaceId, recordId, summary, onClose, onSaved
   const data = sample ? summary : resource.data;
   const content = <>
     {sample ? <p className={styles.hint}>{t("Sample preview · Changes stay in this preview.")}</p> : null}
-    {resource.loading ? <p role="status">{t("Loading follow-up…")}</p> : resource.failure ? <Callout title={t("Could not open follow-up")} tone="warning">{translateKnown(t, resource.failure)}<Button size="compact" onPress={resource.refresh}>{t("Retry")}</Button></Callout> : data ? <FollowUpForm sample={sample} key={`${recordId}:${data.version}`} workspaceId={workspaceId} initial={{ ...summary, ...data }} onSaved={onSaved} onEditingChange={editingChanged} onReload={resource.refresh} onClose={close} returnAfterSave={inline ? onClose : undefined} /> : null}</>;
+    {resource.loading ? <p role="status">{t("Loading follow-up…")}</p> : resource.failure ? <Callout title={t("Could not open follow-up")} tone="warning">{translateKnown(t, resource.failure)}<Button size="compact" onPress={resource.refresh}>{t("Retry")}</Button></Callout> : data ? <FollowUpForm sample={sample} key={`${recordId}:${data.version}`} workspaceId={workspaceId} initial={{ ...summary, ...data }} onSaved={onSaved} onEditingChange={editingChanged} onReload={resource.refresh} onClose={close} returnAfterSave={inline ? onClose : undefined} /> : null}
+    {/* PLM-153: a meeting or call on the calendar carries its minutes, shared with the client through the portal. */}
+    {data && !sample && (data.type === "meeting" || data.type === "call") && data.appointment ? <MeetingMinutes workspaceId={workspaceId} activityId={recordId} /> : null}</>;
   return <>{inline ? <EditorPage title={t("Follow-up")} onClose={close}>{content}</EditorPage> : <InspectorSheet isOpen title={t("Follow-up")} size="md" onOpenChange={(open) => { if (!open) close(); }}>{content}</InspectorSheet>}{confirmationDialog}</>;
 }
 

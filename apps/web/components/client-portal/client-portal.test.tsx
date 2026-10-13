@@ -18,7 +18,7 @@ const site: PortalSite = {
 
 const project = (patch: Partial<PortalProject> = {}): PortalProject => ({
   id: "c1", title: "Villa 12", reference: "PRJ-0042", role: "approver", status: "active", paused: false,
-  sections: { progress: true, moodboard: true, decisions: true, payments: true, documents: true, warranty: false, messages: true },
+  sections: { progress: true, moodboard: true, decisions: true, payments: true, documents: true, warranty: false, meetings: true, messages: true },
   manager: "Omar Manager", stage: { number: 2, total: 5, name: "Production" }, handoverDate: "2026-12-01", handedOverOn: null, warrantyUntil: null,
   rooms: [{ id: "k1", name: "Kitchen" }], unread: 0,
   next: [{ kind: "materials", id: "r1", title: "R1", due: null }],

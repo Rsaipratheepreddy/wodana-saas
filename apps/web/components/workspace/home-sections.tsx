@@ -62,6 +62,7 @@ type KindLook = { icon: LucideIcon; action: string };
 function kindLook(kind: ReminderKind, t: T): KindLook {
   const looks: Partial<Record<ReminderKind, KindLook>> = {
     "crm.follow_up": { icon: CalendarClock, action: t("Update") },
+    "meeting.minutes_due": { icon: CalendarClock, action: t("Write") },
     "crm.first_response": { icon: Clock3, action: t("Respond") },
     "crm.unowned": { icon: UserPlus, action: t("Assign") },
     "crm.confirm_client": { icon: UserCheck, action: t("Confirm") },

@@ -8,6 +8,8 @@ export type PortalTarget =
   /** The client asks for a change (R11). */
   | { kind: "raise-change" }
   | { kind: "thread"; id: string }
+  /** PLM-153: the notes of a meeting and the conversation on them. */
+  | { kind: "minutes"; id: string }
   | { kind: "new-message" }
   | { kind: "claim"; areaId?: string | null }
   | { kind: "board" | "pin"; id: string }

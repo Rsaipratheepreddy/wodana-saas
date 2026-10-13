@@ -32,6 +32,8 @@ import { DecisionsSection } from "./sections/decisions-section";
 import { DocumentsSection } from "./sections/documents-section";
 import { HomeSection } from "./sections/home-section";
 import { MessagesSection } from "./sections/messages-section";
+import { MeetingsSection } from "./sections/meetings-section";
+import { MeetingNotes } from "./forms/meeting-notes";
 import { MoodboardSection } from "./sections/moodboard-section";
 import { PaymentsSection } from "./sections/payments-section";
 import { ProgressSection } from "./sections/progress-section";
@@ -39,9 +41,9 @@ import type { PortalTarget, SectionProps } from "./sections/section-types";
 import { WarrantySection } from "./sections/warranty-section";
 
 const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: MoodboardSection, decisions: DecisionsSection, payments: PaymentsSection, documents: DocumentsSection,
-  warranty: WarrantySection, messages: MessagesSection } as const;
-/** The order the client reads them in: where it stands, what to decide, the ideas, then money, papers, cover and talk. */
-const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "payments", "documents", "warranty", "messages"];
+  warranty: WarrantySection, meetings: MeetingsSection, messages: MessagesSection } as const;
+/** The order the client reads them in: where it stands, what to decide, the ideas, then money, papers, cover, meeting notes and talk. */
+const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "payments", "documents", "warranty", "meetings", "messages"];
 const DECISION_STEPS = ["quote", "design", "definition", "materials", "drawings", "handover", "request", "change", "presentation", "choice"];
 /** The side column opens from a small laptop up; below it the profile is a card above the sections. */
 const WIDE = "(min-width: 64rem)";
@@ -200,6 +202,10 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
   if (target.kind === "thread") {
     const request = project.messages?.requests.find((item) => item.id === target.id);
     return request ? { title: request.title, body: <Thread request={request} caseId={project.id} api={api} format={format} onReplied={() => void reload()} /> } : null;
+  }
+  if (target.kind === "minutes") {
+    const meeting = project.meetings?.meetings.find((item) => item.id === target.id);
+    return meeting ? { title: meeting.title, body: <MeetingNotes meeting={meeting} caseId={project.id} api={api} format={format} onCommented={() => void reload()} /> } : null;
   }
   if (target.kind === "new-message") return { title: t("New message"), body: <NewMessage caseId={project.id} api={api} onDone={done(t("Your message was sent to your project team."))} /> };
   if (target.kind === "claim" && project.warranty)

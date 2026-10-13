@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarPlus, Check, CheckCircle2, Play, UserPlus } from "lucide-react";
+import { CalendarPlus, Check, CheckCircle2, NotebookPen, Play, UserPlus } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
 import {
   Badge, Button, DateField, EmptyState, FormDialog, FormRow, InlineNotice, PersonName, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar,
@@ -14,6 +14,7 @@ import type { JourneyStageView, JourneyView as JourneyData } from "@/lib/pre-pro
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { factoryApi } from "@/lib/factory/client";
 import { SampleRequests } from "../factory/samples";
+import { MeetingMinutesSheet } from "../meetings/meeting-minutes";
 import styles from "./design-journey.module.css";
 
 export type JourneyStage = JourneyStageView;
@@ -30,6 +31,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
   const [dialog, setDialog] = useState<Dialog>(null);
   const [notice, setNotice] = useState("");
   const [starting, setStarting] = useState(false);
+  const [minutes, setMinutes] = useState<JourneyStage | null>(null);
   const load = useCallback(() => caseRequest<JourneyView>(workspaceId, caseId, "design-journey").then(setView).catch((error: Error) => setFailure(error.message)), [workspaceId, caseId]);
   // PLM-061: samples asked of the factory for the material selection.
   const samplesApi = useMemo(() => factoryApi(workspaceId), [workspaceId]);
@@ -118,13 +120,18 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                 {stage.stage === "approval" ? <Link className="wd-button" data-size="compact" data-variant="primary" href={designLink("approval")}>{t("Record the approval")}</Link> : null}
               </div>
             </> : null}
+            {/* PLM-153: the minutes of the stage's meeting with the client, once it is booked. */}
+            {stage.activityId && stage.scheduledAt && stage.status !== "locked" ? <div className={styles.actions}>
+              <Button size="compact" variant="quiet" onPress={() => setMinutes(stage)}><NotebookPen aria-hidden="true" size={13} />{t("Minutes")}</Button>
+            </div> : null}
             {stage.stage === "material_selection" && stage.status !== "locked" ? <SampleRequests api={samplesApi} caseId={caseId} /> : null}
           </div>
         </li>;
       })}
     </ol>}
     {view.journey?.estimateDueAt && view.stages.find((stage) => stage.stage === "approval")?.status === "done" ? <p className={styles.muted}>{t("Estimate due {date}", { date: time(view.journey.estimateDueAt) })} · <Link href={`/workspace/pre-projects/cases/${caseId}/quotations`}>{view.journey.estimateQuoteId ? t("Open the estimate") : t("Open quotations")}</Link></p> : null}
-    {dialog?.kind === "close_inspiration" ? <CloseInspirationDialog onClose={() => setDialog(null)} onSubmit={async (note) => saved(t("Inspiration closed. The site visit is next."), await post("design-journey/inspiration/close", { version: dialog.stage.version, note: note || null }))} /> : null}
+    {minutes?.activityId ? <MeetingMinutesSheet workspaceId={workspaceId} activityId={minutes.activityId} title={labels[minutes.stage] ?? minutes.label} onClose={() => setMinutes(null)} /> : null}
+    {dialog?.kind === "close_inspiration" ?<CloseInspirationDialog onClose={() => setDialog(null)} onSubmit={async (note) => saved(t("Inspiration closed. The site visit is next."), await post("design-journey/inspiration/close", { version: dialog.stage.version, note: note || null }))} /> : null}
     {dialog?.kind === "schedule" ? <ScheduleVisitDialog title={t("Book site visit")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Site visit booked. The Account Manager has been invited."), await post("design-journey/site-visit/schedule", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "schedule_materials" ? (view.showroomBooking
       ? <ShowroomSlotDialog workspaceId={workspaceId} caseId={caseId} locale={locale} onClose={() => setDialog(null)} onSubmit={async (slot, timezone) => saved(t("Material selection booked. The design team has been invited."), await post("design-journey/material-selection/schedule", { version: dialog.stage.version, startsAt: slot.start, endsAt: slot.end, timezone }))} />

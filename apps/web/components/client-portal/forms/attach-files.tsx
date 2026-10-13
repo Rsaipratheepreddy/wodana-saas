@@ -75,14 +75,16 @@ export function AttachFiles({ caseId, api, onChange, onBusy, photosOnly = false,
 }
 
 /** Files someone on the client's side added, as small pictures (or a named PDF) that open in full. */
-export function FileStrip({ files, api }: { files: PortalFile[]; api: PortalApi }) {
+export function FileStrip({ files, api, kind = "asset" }: { files: Array<Pick<PortalFile, "id" | "name" | "hasPreview">>; api: PortalApi;
+  /** Where the files come from: the client's own uploads, or a meeting's shared notes (PLM-153). */
+  kind?: "asset" | "minutes" }) {
   const t = useT();
   if (!files.length) return null;
   return <ul className={styles.fileStrip}>{files.map((file) => <li key={file.id}>
-    <a className={styles.fileTile} href={api.file("asset", file.id)} rel="noreferrer" target="_blank" title={file.name}>
+    <a className={styles.fileTile} href={api.file(kind, file.id)} rel="noreferrer" target="_blank" title={file.name}>
       {file.hasPreview
         // eslint-disable-next-line @next/next/no-img-element -- a private file streamed through the signed-in portal route
-        ? <img alt={t("Photo: {name}", { name: file.name })} loading="lazy" src={api.file("asset", file.id, true)} />
+        ? <img alt={t("Photo: {name}", { name: file.name })} loading="lazy" src={api.file(kind, file.id, true)} />
         : <><FileText aria-hidden="true" size={18} /><span dir="auto">{file.name}</span></>}
     </a>
   </li>)}</ul>;
