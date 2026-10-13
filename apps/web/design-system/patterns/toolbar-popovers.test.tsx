@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
@@ -60,5 +62,11 @@ describe("toolbar popovers close the right way round", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Filter records" })).not.toBeInTheDocument());
     expect(screen.getByText("Palm Villa")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Filter" })).not.toHaveTextContent("1");
+  });
+
+  it("an icon-only (compact) toolbar hides the Filter word but still shows the count beside the icon", () => {
+    const css = readFileSync(join(__dirname, "../styles/system.css"), "utf8");
+    expect(css).toContain(".wd-record-toolbar[data-compact] .wd-record-controls > button > span:not(.wd-count-chip),");
+    expect(css).toContain(".wd-record-toolbar[data-compact] .wd-record-controls > button.wd-filter-button:has(> .wd-count-chip) { inline-size: auto; }");
   });
 });

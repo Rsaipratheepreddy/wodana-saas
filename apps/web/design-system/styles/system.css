@@ -1272,10 +1272,12 @@ th:last-child .wd-resizer { inset-inline-end: 0; }
 .wd-picker-item:has(.wd-option-icon) { display:flex; align-items:center; gap:var(--wd-space-2); }
 .wd-option-icon .fi, .wd-input-affix .fi { inline-size:20px; block-size:15px; border-radius:var(--wd-radius-2xs); flex-shrink:0; }
 /* Compact record toolbars retain labelled controls for assistive technology. */
-.wd-record-toolbar[data-compact] .wd-record-controls > button > span,
+.wd-record-toolbar[data-compact] .wd-record-controls > button > span:not(.wd-count-chip),
 .wd-record-toolbar[data-compact] .wd-record-actions > button[aria-label^="Export"] > span { display: none; }
 .wd-record-toolbar[data-compact] .wd-record-controls > button,
 .wd-record-toolbar[data-compact] .wd-record-actions > button[aria-label^="Export"] { inline-size: 34px; min-inline-size: 34px; padding-inline: var(--wd-space-2); }
+/* A filter in use keeps its count beside the icon. */
+.wd-record-toolbar[data-compact] .wd-record-controls > button.wd-filter-button:has(> .wd-count-chip) { inline-size: auto; }
 
 /* Shared date/time controls: centered calendar days and keyboard-editable time. */
 .wd-calendar table { table-layout: fixed; border-collapse: separate; border-spacing: 2px; }
