@@ -135,6 +135,9 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     expect(view.tasks.map((task) => [task.task, task.status, task.ownerName])).toEqual([["team_allocation", "open", "Aisha AM"]]);
     expect(await told(ids, "design.team_to_allocate")).toEqual([ids.people.am.user]);
     expect(view.team?.missing).toEqual(["lead_designer", "junior_designer", "sales_admin"]);
+    // The Account Manager picks from the workspace's people without the People module's permission; someone who sets nothing gets no list.
+    expect((await am.journey.get(actor, ids.workspaceId, ids.caseId)).team?.candidates.map((person) => person.displayName)).toEqual(expect.arrayContaining(["Jad Junior", "Sara Sales Admin"]));
+    expect((await junior.journey.get(actor, ids.workspaceId, ids.caseId)).team?.candidates).toEqual([]);
 
     // Inspiration closes; the kick-off can't be booked before the lead designer is allocated.
     view = await ops.journey.closeInspiration(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "inspiration").version });

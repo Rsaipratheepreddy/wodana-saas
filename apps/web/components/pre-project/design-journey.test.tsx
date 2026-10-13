@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { DesignJourney, type JourneyStage, type JourneyView } from "./design-journey";
@@ -77,6 +77,21 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     // Changing an allocated designer asks for the reason.
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("offers the job's people to an Account Manager who can't read People: the team view brings them (PLM-151)", async () => {
+    const fetch = vi.fn(async () => ({ ok: true, json: async () => view({ journey: { packageName: "Bespoke Interior Design", includedRevisions: 2, flowVersion: 2, includesRenders: true },
+      team: { version: 4, reviewRole: null, missing: ["junior_designer"], candidates: [{ id: "m1", displayName: "Lina Lead" }, { id: "m2", displayName: "Jad Junior" }], slots: [
+        { slot: "lead_designer", role: "designer", label: "Lead Interior Designer", member: { membershipId: "m1", name: "Lina Lead" }, notApplicable: false, canSet: true },
+        { slot: "junior_designer", role: "junior_designer", label: "Junior Interior Designer", member: null, notApplicable: false, canSet: true }] },
+      stages: [stage({ stage: "inspiration", status: "active" })] }) }));
+    vi.stubGlobal("fetch", fetch);
+    renderJourney();
+    fireEvent.click(await screen.findByRole("button", { name: "Choose" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /Junior Interior Designer/ }));
+    expect(await screen.findByRole("option", { name: "Jad Junior" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Not needed on this job" })).toBeInTheDocument();
   });
 
   it("books the showroom on the booking engine's free slots when the firm set a showroom booking type", async () => {

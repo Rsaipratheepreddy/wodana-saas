@@ -751,7 +751,13 @@ export class DesignJourneyService {
       const name = holder ? (await this.names(client, workspaceId, [holder])).get(holder) ?? null : null;
       slots.push({ slot, role, label: labels.get(role) ?? null, member: holder ? { membershipId: holder, name } : null, notApplicable: !holder && marked.has(role), canSet: allowed.includes(slot) });
     }
-    return { slots, missing: allocationMissing(config, settled), reviewRole, version: (await client.query<{ version: number }>(`SELECT version FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.version ?? 0 };
+    // Whoever sets a part of the team (the Account Manager, the lead designer, the reviewer, the technical lead) picks from
+    // the workspace's active people here: they don't need the People module's permission to see who they can choose.
+    const candidates = allowed.length ? (await client.query<{ id: string; displayName: string }>(
+      `SELECT membership.id, account.display_name AS "displayName" FROM workspace_memberships membership
+         JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+        WHERE membership.workspace_id = $1 AND membership.status = 'active' ORDER BY account.display_name, membership.id`, [workspaceId])).rows : [];
+    return { slots, candidates, missing: allocationMissing(config, settled), reviewRole, version: (await client.query<{ version: number }>(`SELECT version FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.version ?? 0 };
   }
 
   /** The slots a person may set on this job: from being its Account Manager, lead designer, the package's reviewer, a technical lead or an admin. */

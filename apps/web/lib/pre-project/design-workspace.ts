@@ -54,7 +54,8 @@ export type JourneyView = {
   tasks?: JourneyTaskView[];
   siteVisit?: SiteVisitState | null;
   checklistGroups?: SiteChecklistGroup[];
-  team?: { slots: TeamSlotView[]; missing: TeamSlotKey[]; reviewRole: string | null; version: number } | null;
+  /** PLM-151: the people a team-setter picks from (sent only to someone who may set a part of the team). */
+  team?: { slots: TeamSlotView[]; candidates?: Array<{ id: string; displayName: string }>; missing: TeamSlotKey[]; reviewRole: string | null; version: number } | null;
   /** What the journey will be before it starts: a design package, or a furniture/joinery order's site visit and materials. */
   startsAs?: "design" | "site_and_materials" | null;
   stages: JourneyStageView[]; canStart?: boolean; canManage?: boolean; canEdit?: boolean; canReview?: boolean; canRecordClient?: boolean; timezone: string;
