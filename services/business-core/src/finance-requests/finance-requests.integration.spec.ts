@@ -180,7 +180,51 @@ integration("Finance requests on real Postgres (raise, Finance's board, approval
 
   const plusDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
+  /** The client paid 10,000 on the deal (Finance verified it) and reported 2,000 more that Finance hasn't verified: refunds come out of the 10,000. */
+  const paidCase = randomUUID();
+  async function received() {
+    const fixture = await pool.connect();
+    try {
+      await fixture.query("BEGIN");
+      await fixture.query("SET LOCAL session_replication_role = replica");
+      if ((await fixture.query("SELECT 1 FROM pre_project_cases WHERE id = $1", [paidCase])).rowCount) { await fixture.query("ROLLBACK"); return; }
+      await fixture.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [paidCase, workspaceId, ids.opportunity, people.sales]);
+      await fixture.query("INSERT INTO commercial_cases(workspace_id,case_id,content) VALUES($1,$2,'{}'::jsonb)", [workspaceId, paidCase]);
+      await fixture.query("INSERT INTO commercial_payments(workspace_id,case_id,id,sort_order,title,amount,currency,status) VALUES ($1,$2,'advance',0,'Advance',12000,'AED','verified')", [workspaceId, paidCase]);
+      await fixture.query(`INSERT INTO commercial_receipts(workspace_id,case_id,id,sort_order,payment_id,legal_entity_id,currency,amount,source,status) VALUES
+        ($1,$2,'r1',0,'advance',$3,'AED',10000,'manual','finance_verified'), ($1,$2,'r2',1,'advance',$3,'AED',2000,'manual','reported')`, [workspaceId, paidCase, ids.entity]);
+      await fixture.query("COMMIT");
+    } finally {
+      fixture.release();
+    }
+  }
+
+  it("QA-012: refunds only what the client paid: Finance-verified receipts on the deal, less the refunds already asked for", async () => {
+    const method = randomUUID();
+    await tenant(workspaceId, people.finance, (client) => saveRequestSettings(client, ctx(client, "finance"), { action: "save_method", id: method, label: "Card refund" }));
+    const refund = (amount: string) => ({ action: "submit", id: randomUUID(), kind: "refund", opportunityId: ids.opportunity, currency: "AED", invoiceNumber: "QA-INV-2026-00001",
+      reason: "Order cancelled", paymentMethodId: method, lines: [{ description: "Refund", unitPrice: amount }] });
+    await expect(run("sales", refund("1500"))).rejects.toThrow("Nothing has been received on this deal in AED yet, so there is nothing to refund.");
+    await received();
+    await expect(run("sales", refund("99999999"))).rejects.toThrow("A refund can't be more than was received: AED 10,000.00 came in on this deal, so at most AED 10,000.00 can be refunded.");
+    await expect(run("sales", refund("1000000000000"))).rejects.toThrow(/at most AED 10,000\.00/);
+    const first = await run("sales", refund("6000"));
+    expect(first.request).toMatchObject({ total: "6000.0000", status: "new" });
+    // What is already asked back counts; the same request sent again is not counted twice.
+    await expect(run("sales", refund("4500"))).rejects.toThrow("A refund can't be more than was received: AED 10,000.00 came in on this deal and AED 6,000.00 is already asked back, so at most AED 4,000.00 can be refunded.");
+    expect((await run("sales", { ...refund("6000"), id: first.request.id })).request.id).toBe(first.request.id);
+    // A rejected refund gives its amount back.
+    const finance = await view("finance", first.request.id);
+    await run("finance", { action: "reject", id: first.request.id, version: finance.request.version, note: "Raised by mistake" });
+    const second = await run("sales", refund("4500"));
+    expect(second.request.total).toBe("4500.0000");
+    // Leave room for the refunds below.
+    const again = await view("finance", second.request.id);
+    await run("finance", { action: "reject", id: second.request.id, version: again.request.version, note: "Test" });
+  });
+
   it("holds a refund until it's approved, keeps the bank details with Finance and shows the expected refund day", async () => {
+    await received();
     const methodId = randomUUID();
     await tenant(workspaceId, people.finance, (client) => saveRequestSettings(client, ctx(client, "finance"), { action: "save_method", id: methodId, label: "Bank transfer",
       refundGuidance: "Beneficiary is added within 24 hours.", needsBankDetails: true, refundDays: 15 }));
@@ -206,6 +250,7 @@ integration("Finance requests on real Postgres (raise, Finance's board, approval
   });
 
   it("gives each refund method its own timeline (PLM-109): the request keeps the days of the method chosen when it was raised", async () => {
+    await received();
     const stripe = randomUUID(), tabby = randomUUID();
     const save = (body: Record<string, unknown>) => tenant(workspaceId, people.finance, (client) => saveRequestSettings(client, ctx(client, "finance"), body));
     await save({ action: "save_method", id: stripe, label: "Stripe", refundGuidance: "Refunded to the card through Stripe.", refundDays: "7" });
@@ -267,13 +312,13 @@ integration("Finance requests on real Postgres (raise, Finance's board, approval
   });
 
   it("raises a reached payment stage's invoice request once, in the salesperson's name, only when the firm turned it on", async () => {
-    const caseId = randomUUID(), projectId = randomUUID();
+    // The deal's planning case (the refunds above may have made it already: one case per deal).
+    await received();
+    const caseId = paidCase, projectId = randomUUID();
     const fixture = await pool.connect();
     try {
       await fixture.query("BEGIN");
       await fixture.query("SET LOCAL session_replication_role = replica");
-      await fixture.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, ids.opportunity, people.sales]);
-      await fixture.query("INSERT INTO commercial_cases(workspace_id,case_id,content) VALUES($1,$2,'{}'::jsonb)", [workspaceId, caseId]);
       await fixture.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,created_by,reference,quote_id,started_at,currency) VALUES($1,$2,$3,'Villa 12',$4,'P-7','q1',now(),'AED')",
         [projectId, workspaceId, caseId, people.sales]);
       await fixture.query(`INSERT INTO project_scope_seals(id,workspace_id,project_id,quote_id,quote_number,revision_label,quote_hash,snapshot,content_hash,currency,total,accepted_at,accepted_by_name,sealed_by)

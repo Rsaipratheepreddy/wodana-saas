@@ -21,7 +21,7 @@ import { applyFinanceRequestDecision } from "./finance-request-approval";
 import { addEvent, recordOnLinkedRecords, requestLink, tellRequest } from "./finance-request-notices";
 import { cancelDealOnFullRefund } from "../fulfilment/deal-cancel";
 import {
-  KIND_NAME, present, readEvents, readFiles, readLines, readPaymentMethods, readRequests, readSettings, today, type RequestRow,
+  KIND_NAME, moneyText, present, readEvents, readFiles, readLines, readPaymentMethods, readRequests, readSettings, today, type RequestRow,
 } from "./finance-requests.store";
 
 type Db = PoolClient;
@@ -101,7 +101,7 @@ async function submit(db: Db, ctx: Ctx, id: string, body: Record<string, unknown
   if (!(await ctx.can(RAISE)) && !(await ctx.can(MANAGE))) throw new ForbiddenException("You can't raise finance requests.");
   if ((await db.query(`SELECT 1 FROM finance_requests WHERE workspace_id = $1 AND id = $2`, [ctx.workspaceId, id])).rowCount) return;
   const kind = oneOf(body.kind, REQUEST_KINDS, "Choose an invoice, a refund or a payable.");
-  const fields = await parseFields(db, ctx, kind, body, "manual");
+  const fields = await parseFields(db, ctx, kind, body, "manual", id);
   await db.query(`SELECT pg_advisory_xact_lock(hashtextextended('finance-request-number:' || $1::text, 0))`, [ctx.workspaceId]);
   const number = (await db.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM finance_requests WHERE workspace_id = $1`, [ctx.workspaceId])).rows[0].next;
   await insertRequest(db, ctx.workspaceId, id, number, kind, "manual", ctx.userId, "new", fields);
@@ -140,7 +140,7 @@ async function resubmit(db: Db, ctx: Ctx, id: string, body: Record<string, unkno
   if (row.requestedBy !== ctx.userId) throw new ForbiddenException("Only who raised it sends it again.");
   if (row.status !== "needs_info") throw new ConflictException("Finance hasn't asked for anything on this request.");
   // A person answers, so the rules for a person's request apply (the client's email, a company's tax number).
-  const fields = await parseFields(db, ctx, row.kind, body, "manual");
+  const fields = await parseFields(db, ctx, row.kind, body, "manual", id);
   const { lines, ...columns } = fields;
   const keys = Object.keys(columns);
   const status = row.handledBy ? "in_progress" : "new";
@@ -245,7 +245,7 @@ export type Fields = { lines: Array<LineInput & { amount: string }>; [column: st
 const snake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 
 /** Everything a request says, checked against the records it points to. Links fill each other (project → deal → client). */
-export async function parseFields(db: Db, ctx: Pick<Ctx, "workspaceId" | "userId">, kind: RequestKind, body: Record<string, unknown>, source: "manual" | "stage"): Promise<Fields> {
+export async function parseFields(db: Db, ctx: Pick<Ctx, "workspaceId" | "userId">, kind: RequestKind, body: Record<string, unknown>, source: "manual" | "stage", requestId: string | null = null): Promise<Fields> {
   const workspaceId = ctx.workspaceId;
   const link = await links(db, workspaceId, { partyId: optionalUuid(body.partyId, "Client"), opportunityId: optionalUuid(body.opportunityId, "Deal"), projectId: optionalUuid(body.projectId, "Project") });
   const currency = typeof body.currency === "string" && /^[A-Z]{3}$/.test(body.currency) ? body.currency : null;
@@ -255,7 +255,11 @@ export async function parseFields(db: Db, ctx: Pick<Ctx, "workspaceId" | "userId
   if (kind === "payable") return { ...common, ...(await payableFields(db, workspaceId, body, currency, link.projectId)) };
   if (!link.party) throw new BadRequestException("Choose the client from your clients.");
   const clientEmail = email(body.clientEmail, "Client email");
-  if (kind === "refund") return { ...common, ...(await refundFields(db, workspaceId, body, currency)), clientEmail };
+  if (kind === "refund") {
+    const fields = await refundFields(db, workspaceId, body, currency);
+    await assertRefundable(db, workspaceId, link, currency, fields.totalAmount, requestId);
+    return { ...common, ...fields, clientEmail };
+  }
   if (!clientEmail && source === "manual") throw new BadRequestException("Add the client's email: the invoice and its reminders are sent to it.");
   let clientTaxNumber = text(body.clientTaxNumber, 120, "Client tax number");
   if (clientTaxNumber) clientTaxNumber = checkTaxNumber(clientTaxNumber, await readTaxNumberRule(db, workspaceId));
@@ -352,6 +356,31 @@ async function invoiceFields(db: Db, workspaceId: string, body: Record<string, u
     contractReference, orderNumber: invoiceKind === "web_order" ? orderNumber : "", orderGross, paymentMethodId: method.id, paymentMethod: method.label,
     taxCode: rate.code, taxLabel: tax.taxLabel, taxRate: rate.rate, netAmount: amounts.net, taxAmount: amounts.tax, totalAmount: amounts.total, lines: amounts.lines,
   };
+}
+
+/**
+ * QA-012: a refund gives back money the client paid. What can still be refunded is what Finance verified as received
+ * from them in the request's currency (on its deal, else on all their deals), less the refunds already asked for and
+ * not rejected; a refund beyond it is refused before it reaches approval, with what was received.
+ */
+async function assertRefundable(db: Db, workspaceId: string, link: Links, currency: string, total: string, requestId: string | null) {
+  const scope = link.opportunityId ? { cases: "pre_case.opportunity_id = $2", requests: "request.opportunity_id = $2", id: link.opportunityId, what: "on this deal" }
+    : link.caseId ? { cases: "pre_case.id = $2", requests: "request.case_id = $2", id: link.caseId, what: "on this deal" }
+    : { cases: "opportunity.party_id = $2", requests: "request.party_id = $2", id: link.partyId!, what: "from this client" };
+  const row = (await db.query<{ received: string; asked: string }>(
+    `SELECT coalesce((SELECT sum(receipt.amount) FROM commercial_receipts receipt
+                        JOIN pre_project_cases pre_case ON pre_case.workspace_id = receipt.workspace_id AND pre_case.id = receipt.case_id
+                        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+                       WHERE receipt.workspace_id = $1 AND ${scope.cases} AND receipt.status = 'finance_verified' AND btrim(receipt.currency) = $3), 0)::text AS received,
+            coalesce((SELECT sum(request.total_amount) FROM finance_requests request
+                       WHERE request.workspace_id = $1 AND ${scope.requests} AND request.kind = 'refund' AND request.status <> 'rejected' AND request.currency = $3
+                         AND request.id IS DISTINCT FROM $4::uuid), 0)::text AS asked`,
+    [workspaceId, scope.id, currency, requestId])).rows[0];
+  const left = Dec.of(row.received).sub(row.asked);
+  if (Dec.of(total).cmp(left) <= 0) return;
+  if (Dec.of(row.received).isZero()) throw new BadRequestException(`Nothing has been received ${scope.what} in ${currency} yet, so there is nothing to refund.`);
+  throw new BadRequestException(`A refund can't be more than was received: ${moneyText(row.received, currency)} came in ${scope.what}`
+    + `${Dec.of(row.asked).isZero() ? "" : ` and ${moneyText(row.asked, currency)} is already asked back`}, so at most ${moneyText(left.cmp(0) > 0 ? left.toString() : "0", currency)} can be refunded.`);
 }
 
 async function refundFields(db: Db, workspaceId: string, body: Record<string, unknown>, currency: string) {
