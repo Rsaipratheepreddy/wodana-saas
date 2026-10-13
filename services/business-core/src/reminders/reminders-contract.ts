@@ -18,6 +18,7 @@ export const ENGINE_REMINDER_KINDS = [
   "finance_request.waiting",
   "change_request.client_decision",
   "meeting.minutes_due",
+  "factory.inspection_due",
 ] as const;
 export type EngineReminderKind = (typeof ENGINE_REMINDER_KINDS)[number];
 
@@ -119,6 +120,7 @@ export const REMINDER_KIND_INFO: Record<ReminderKind, ReminderKindInfo> = {
   "finance_request.waiting": { module: "finance", audience: "staff", critical: false, notify: "engine", eventType: "finance_request.waiting" },
   "change_request.client_decision": { module: "projects", audience: "client", critical: false, notify: "engine", eventType: "change_request.client_decision" },
   "meeting.minutes_due": { module: "sales", audience: "staff", critical: false, notify: "engine", eventType: "meeting.minutes_due" },
+  "factory.inspection_due": { module: "factory", audience: "staff", critical: false, notify: "engine", eventType: "factory.inspection_due" },
   "crm.first_response": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.unowned": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.confirm_client": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
@@ -170,6 +172,7 @@ export const REMINDER_KIND_DEFAULTS: Record<EngineReminderKind, ReminderRuleDefa
   "change_request.client_decision": { offsets: [2, 5], unit: "day", workingDays: false, escalateAfter: 2, chain: [], channels: CLIENT_CHANNELS, digest: false, priority: CLIENT_REMINDER_PRIORITY.decision },
   // PLM-153: hours after a client meeting ended without minutes.
   "meeting.minutes_due": { offsets: [2, 24], unit: "hour", workingDays: false, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
+  "factory.inspection_due": { offsets: [0, 1, 3], unit: "day", workingDays: true, escalateAfter: 2, chain: ["project_manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
 };
 
 /** Bounds a rule must keep (the database checks the same). */

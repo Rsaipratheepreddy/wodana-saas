@@ -94,7 +94,7 @@ integration("built-in reminder sources on real Postgres", { timeout: 120_000 }, 
   }, 120_000);
 
   it("every built-in source lists and checks on the real schema, as the app role", async () => {
-    const sample = ["work", "activity", "sla", "lead", "conversation", "invoice", "bill", "po", "finance_request", "work_order", "posting_issue", "design", "drawings"]
+    const sample = ["work", "activity", "sla", "lead", "conversation", "invoice", "bill", "po", "finance_request", "work_order", "posting_issue", "design", "drawings", "inspection"]
       .map((prefix) => `${prefix}:${randomUUID()}`)
       .concat([`approval:order:${randomUUID()}:${membership}`, `quote:${randomUUID()}:q1`, `payment:${randomUUID()}:p1`, `design_stage:${randomUUID()}:concepts`,
         `site_report:${randomUUID()}:2030-01-09`, `permit:project:${randomUUID()}:delivery:2099-01-01`, `permit_renewal:${randomUUID()}`]);

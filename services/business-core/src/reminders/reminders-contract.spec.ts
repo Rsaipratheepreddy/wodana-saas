@@ -25,6 +25,14 @@ const checkList = (constraint: string, column: string) => {
   const base = list ? [...list[1].matchAll(/'([a-z_.]+)'/g)].map((value) => value[1]) : [];
   return [...base, ...added(constraint).filter((value, index, all) => !base.includes(value) && all.indexOf(value) === index)];
 };
+/**
+ * Later migrations extend the kind lists in place (so a kind another migration added stays); each says what it adds:
+ * "Adds reminder kind <kind> (engine)" joins both lists, "(my_day)" only the subjects'.
+ */
+const addedKinds = (lists: "engine" | "all") => later.flatMap((text) => [...text.matchAll(/Adds reminder kind ([a-z_.]+) \((engine|my_day)\)/g)])
+  .filter((match) => lists === "all" || match[2] === "engine").map((match) => match[1]);
+const kinds = (constraint: "reminder_rules_kind_check" | "reminder_subjects_kind_check") =>
+  [...new Set([...checkList(constraint, "kind"), ...addedKinds(constraint === "reminder_rules_kind_check" ? "engine" : "all")])].sort();
 
 describe("reminder contract", () => {
   it("is the same in business-core as in packages/contracts", () => {
@@ -43,8 +51,8 @@ describe("reminder contract", () => {
   });
 
   it("matches the database's lists", () => {
-    expect(checkList("reminder_rules_kind_check", "kind")).toEqual([...shared.ENGINE_REMINDER_KINDS]);
-    expect(checkList("reminder_subjects_kind_check", "kind").sort()).toEqual([...shared.REMINDER_KINDS].sort());
+    expect(kinds("reminder_rules_kind_check")).toEqual([...shared.ENGINE_REMINDER_KINDS].sort());
+    expect(kinds("reminder_subjects_kind_check")).toEqual([...shared.REMINDER_KINDS].sort());
     expect(checkList("reminder_rules_unit_check", "unit")).toEqual([...shared.REMINDER_UNITS]);
     expect(checkList("reminder_rules_chain_check", "chain")).toEqual([...shared.REMINDER_CHAIN_LINKS]);
     expect(checkList("reminder_rules_channels_check", "channels")).toEqual([...shared.REMINDER_CHANNELS]);

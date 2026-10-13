@@ -3,6 +3,7 @@ import { approvalWaitingSource } from "./approvals";
 import { minutesDueSource } from "./meetings";
 import { confirmClientSource, firstResponseSource, followUpSource, replyWaitingSource, unownedSource } from "./crm";
 import { designDecisionSource, designStageSource } from "./designs";
+import { inspectionDueSource } from "./inspections";
 import { financeRequestSource, invoiceOverdueSource, payablesDueSource, paymentDueSource } from "./money";
 import { postingIssueSource, productionDueSource, siteReportSource } from "./operations";
 import { permitExpirySource } from "./permits";
@@ -29,6 +30,7 @@ export const BUILTIN_REMINDER_SOURCES: readonly ReminderSource[] = [
   designStageSource,
   permitExpirySource,
   financeRequestSource,
+  inspectionDueSource,
   firstResponseSource,
   unownedSource,
   confirmClientSource,
