@@ -11,6 +11,15 @@ describe("pre-execution browser gateway", () => {
     expect(allowedCasePath([caseId, "design-journey", "stages", "approval", "skip"], "POST")).toBe(false);
     expect(allowedCasePath([caseId, "design-journey", "stages", "concepts", "skip"], "GET")).toBe(false);
   });
+  it("passes value engineering's view and commands, and nothing else on it (PLM-147)", () => {
+    expect(allowedCasePath([caseId, "value-engineering"], "GET")).toBe(true);
+    expect(allowedCasePath([caseId, "value-engineering", "start"], "POST")).toBe(true);
+    for (const action of ["options", "meeting", "keep-price", "withdraw"]) expect(allowedCasePath([caseId, "value-engineering", baselineId, action], "POST")).toBe(true);
+    expect(allowedCasePath([caseId, "value-engineering"], "POST")).toBe(false);
+    expect(allowedCasePath([caseId, "value-engineering", "not-an-id", "options"], "POST")).toBe(false);
+    expect(allowedCasePath([caseId, "value-engineering", baselineId, "delete"], "POST")).toBe(false);
+    expect(allowedCasePath([caseId, "value-engineering", baselineId, "options"], "GET")).toBe(false);
+  });
   it("no longer passes the removed folder review commands", () => {
     for (const action of ["reviewer", "approve", "delete"]) expect(allowedCasePath([caseId, "design-folders", baselineId, action], "POST")).toBe(false);
   });

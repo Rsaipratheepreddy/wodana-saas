@@ -17,6 +17,8 @@ export function allowedCasePath(path:string[],method:string) {
   // Plan §6.20: change requests (raise, assess, send for approval, decide, send to sign, withdraw).
   if(path[1]==='change-requests')return (path.length===2&&['GET','POST'].includes(method))||(path.length===3&&UUID.test(path[2])&&method==='PUT')
     ||(path.length===4&&UUID.test(path[2])&&method==='POST'&&['submit','decide','send','withdraw'].includes(path[3]));
+  // PLM-147: value engineering on the job's estimate (start, the savings, the meeting, the client's decision, stop).
+  if(path[1]==='value-engineering')return (path.length===2&&method==='GET')||(method==='POST'&&((path.length===3&&path[2]==='start')||(path.length===4&&UUID.test(path[2])&&['options','meeting','keep-price','withdraw'].includes(path[3]))));
   // PLM-046: the job's recurring client update call.
   if(path[1]==='client-calls')return path.length===2&&['GET','PUT'].includes(method);
   if(path[1]==='site')return (path.length===2&&method==='GET')||(path.length===3&&['visits','measurements','observations'].includes(path[2])&&method==='PUT')||(path.length===4&&UUID.test(path[2])&&((path[3]==='history'&&method==='GET')||(path[3]==='review'&&method==='POST')));

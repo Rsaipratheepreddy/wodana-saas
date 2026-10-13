@@ -18,6 +18,7 @@ import { LineDetails } from "./line-details";
 import { QuoteRow, readNumber, type RowColumn, type RowColumns } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, QuotePayments, RevisionChanges } from "./quote-flow";
+import { ValueEngineering } from "./value-engineering";
 import { QuoteNextSteps } from "./quote-next-steps";
 import { QuoteTerms } from "./quote-terms";
 import { QuoteProposal } from "./quote-proposal";
@@ -533,6 +534,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           how: state.quote.clientDecision.recordedBy ? t(" · recorded by {name}", { name: state.quote.clientDecision.recordedBy }) : "",
         }) + (state.quote.clientDecision.note ? `: ${state.quote.clientDecision.note}` : "")} /> : null}
         <RevisionChanges key={state.quote.id} state={state} api={api} />
+        {/* PLM-147: value engineering on the estimate, led by the lead designer with the QS. */}
+        <ValueEngineering key={`ve:${state.quote.id}`} workspaceId={workspaceId} caseId={caseId} state={state} />
         {["accepted", "declined"].includes(state.quote.status) && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round, status: state.quote.status }} projectStarted={Boolean(state.project)} /> : null}
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {flowNotice ? <InlineNotice tone={flowNotice.tone} message={flowNotice.message} /> : null}
