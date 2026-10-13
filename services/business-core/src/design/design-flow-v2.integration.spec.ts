@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { approvalStatus, decideApproval } from "../approvals/approval-engine.api";
 import { APPROVAL_OUTCOMES } from "../approvals/approval-outcomes";
 import { OpportunityDiscoveryService } from "../crm/opportunities/discovery.service";
+import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
+import { workingDeadline } from "../project-core/work-calendar";
 import { designStageSource } from "../reminders/sources/designs";
 import { readDesignEntries } from "../team-calendars/team-calendars.store";
 import { workspaceClock } from "../team-calendars/workspace-clock";
@@ -176,13 +178,18 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     expect(view.journey).toMatchObject({ renderSignoffDueOn: day(40) });
     const concept = stageRow(view, "concepts");
     expect(concept.status).toBe("active");
-    // The first concept a week after the meeting; the client was promised the development window (1 room: the 14-day minimum).
-    expect(Math.round((new Date(concept.dueAt).getTime() - Date.now()) / 3_600_000)).toBe(7 * 24 - 2);
+    // The first concept 7 working days after the meeting, at the close of that working day (the firm's week and hours);
+    // the client was promised the development window in calendar days (1 room: the 14-day minimum).
+    const kickoffAt = new Date((await sql<{ at: Date }>(ids, `SELECT appointment.starts_at AS at FROM design_journey_stages stage JOIN crm_appointments appointment
+      ON appointment.workspace_id = stage.workspace_id AND appointment.activity_id = stage.activity_id WHERE stage.workspace_id = $1 AND stage.case_id = $2 AND stage.stage = 'kickoff'`,
+      [ids.workspaceId, ids.caseId]))[0].at);
+    const hours = await asApp(ids.workspaceId, ids.people.ops.user, (client) => workspaceHours(client, ids.workspaceId));
+    expect(new Date(concept.dueAt).toISOString()).toBe(workingDeadline(kickoffAt, 7, hours).toISOString());
     expect(Math.round((new Date(concept.clientDueAt!).getTime() - Date.now()) / 3_600_000)).toBe(14 * 24 - 2);
-    // PLM-141: the design site measure opens beside it, due 3 days after the kick-off, for the lead and the junior.
+    // PLM-141: the design site measure opens beside it, due 3 working days after the kick-off, for the lead and the junior.
     const measure = view.tasks.find((task) => task.task === "site_measure")!;
     expect(measure).toMatchObject({ status: "open", ownerName: "Lina Lead" });
-    expect(Math.round((new Date(measure.dueAt!).getTime() - Date.now()) / 3_600_000)).toBe(3 * 24 - 2);
+    expect(new Date(measure.dueAt!).toISOString()).toBe(workingDeadline(kickoffAt, 3, hours).toISOString());
     expect(view.siteVisit).toMatchObject({ within: "task", open: true });
     expect(await told(ids, "design.site_measure_due")).toEqual([ids.people.lead.user, ids.people.junior.user].sort());
 

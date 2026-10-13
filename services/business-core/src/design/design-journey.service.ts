@@ -5,6 +5,8 @@ import { recordAudit } from "../audit/record-audit";
 import { loadTypeById, recheckSlot, slotsFor } from "../booking/booking-store";
 import { addDays as addCalendarDays, isDate } from "../booking/booking.domain";
 import { assertMemberFree } from "../crm/shared/calendar-clash";
+import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
+import { endOfWorkingDay } from "../team-calendars/workspace-clock";
 import { checkIntroSlot, meetingLocation, meetingWhen } from "../crm/opportunities/intro-meeting.domain";
 import { confirmAppointment } from "../crm/conversations/inbox/client-followups";
 import { setDedicatedDesigner } from "../crm/opportunities/dedicated-designer";
@@ -225,11 +227,12 @@ export class DesignJourneyService {
       await this.activeStage(client, workspaceId, caseId, stage, input.version);
       const before = (await client.query<{ dueAt: Date | null; activityId: string | null }>(`SELECT due_at AS "dueAt", activity_id AS "activityId" FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = $3`,
         [workspaceId, caseId, stage])).rows[0];
+      // Due at the end of that working day (the firm's hours, in its time zone), as the steps' own deadlines are.
+      const dueAt = endOfWorkingDay(input.dueOn, await workspaceHours(client, workspaceId));
       const due = (await client.query<{ dueAt: Date }>(
-        `UPDATE design_journey_stages stage SET due_at = (($3::date + 1)::timestamp AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC')) - interval '1 minute',
-                overdue_notified_at = NULL, version = stage.version + 1
-           FROM workspaces workspace WHERE stage.workspace_id = $1 AND stage.case_id = $2 AND stage.stage = $4 AND workspace.id = stage.workspace_id RETURNING stage.due_at AS "dueAt"`,
-        [workspaceId, caseId, input.dueOn, stage])).rows[0];
+        `UPDATE design_journey_stages SET due_at = $3, overdue_notified_at = NULL, version = version + 1
+          WHERE workspace_id = $1 AND case_id = $2 AND stage = $4 RETURNING due_at AS "dueAt"`,
+        [workspaceId, caseId, dueAt, stage])).rows[0];
       if (before?.activityId) await client.query(`UPDATE crm_activities SET due_at = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND status = 'pending'`, [workspaceId, before.activityId, due.dueAt]);
       await event(client, workspaceId, caseId, stage, "deadline_set", `Due ${formatDay(input.dueOn, "en")}`, userId);
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.deadline_set.v1", entityType: "pre_project_case", entityId: caseId,

@@ -93,6 +93,7 @@ describe("design flow after Won (PLM-049/050/051/053/128, PLM-081)", () => {
 });
 
 import { developmentWindowDays, groupSiteQuestions, kickoffProblem, renderSignOffProblem, requiredSiteQuestions, samplesProblem, scopeMatches } from "./design-journey.domain";
+import { workingDeadline } from "../project-core/work-calendar";
 
 describe("the design order of 13 Oct 2026 (PLM-140–144, PLM-154)", () => {
   const now = new Date("2026-10-13T08:00:00Z");
@@ -110,6 +111,20 @@ describe("the design order of 13 Oct 2026 (PLM-140–144, PLM-154)", () => {
     expect([renders.dueAt?.toISOString(), renders.clientDueAt?.toISOString()]).toEqual(["2026-11-03T08:00:00.000Z", "2026-12-01T12:00:00.000Z"]);
     const samples = stageDeadlines("samples", now, timings);
     expect([samples.dueAt?.toISOString(), samples.bookingReminderAt?.toISOString()]).toEqual(["2026-10-27T08:00:00.000Z", "2026-10-20T08:00:00.000Z"]);
+  });
+
+  it("counts the team's deadlines in the firm's working days, ending at the close of a working day; the client's windows stay calendar days", () => {
+    // Tuesday 13 Oct 2026 at noon in Dubai; Monday to Friday, 9:00 to 18:00.
+    const hours = { workingDays: [1, 2, 3, 4, 5], holidays: [], end: "18:00", timeZone: "Asia/Dubai" };
+    const due = (from: Date, days: number) => workingDeadline(from, days, hours);
+    // 5 working days: Tuesday 20 Oct at 18:00 (not Sunday 18 Oct at the hour it was paid).
+    expect(stageDeadlines("kickoff", now, timings, { due }).dueAt?.toISOString()).toBe("2026-10-20T14:00:00.000Z");
+    // The concept 7 working days after a kick-off held on a Friday evening: Tuesday 20 Oct at 18:00; the client window stays 28 days.
+    const concept = stageDeadlines("concepts", now, timings, { kickoffAt: new Date("2026-10-09T16:13:00Z"), developmentDays: 28, due });
+    expect([concept.dueAt?.toISOString(), concept.clientDueAt?.toISOString()]).toEqual(["2026-10-20T14:00:00.000Z", "2026-11-06T16:13:00.000Z"]);
+    const samples = stageDeadlines("samples", now, timings, { due });
+    expect([samples.dueAt?.toISOString(), samples.bookingReminderAt?.toISOString()]).toEqual(["2026-11-02T14:00:00.000Z", "2026-10-22T14:00:00.000Z"]);
+    for (const at of [samples.dueAt!, samples.bookingReminderAt!, stageDeadlines("renders", now, timings, { due }).dueAt!]) expect([0, 6]).not.toContain(new Date(at.getTime() + 4 * 3_600_000).getUTCDay());
   });
 
   it("sizes the client-facing development window by the rooms in scope, between its shortest and longest", () => {

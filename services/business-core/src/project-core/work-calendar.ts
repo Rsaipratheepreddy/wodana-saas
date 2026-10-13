@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { wallClock, zonedInstant } from "../booking/booking.domain";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -50,6 +51,29 @@ export function workdays(calendar: WorkCalendar) {
     return Math.max(1, count);
   };
   return { isWorking, onOrAfter, shift, span, next: (date: string) => onOrAfter(step(date, 1)) };
+}
+
+/** A workspace's working time: its week and days off, when its working day ends ("18:00") and its time zone. */
+export type WorkingTime = WorkCalendar & { end: string; timeZone: string };
+
+/**
+ * A deadline `days` working days after a moment: the days are counted on the workspace's working week and days off from
+ * the day after the moment's own day (in the workspace's time zone), and the deadline is the end of that working day, so
+ * none lands on a day off or at an odd hour. Nought days: the end of the moment's day, or of the next working day when
+ * that day isn't worked or is already over.
+ */
+export function workingDeadline(from: Date, days: number, time: WorkingTime): Date {
+  const math = workdays(time);
+  const [hour, minute] = time.end.split(":").map(Number);
+  const endOf = (day: string) => new Date(zonedInstant(day, (hour || 0) * 60 + (minute || 0), time.timeZone, "compatible") ?? Date.parse(`${day}T23:59:00Z`));
+  let day = wallClock(from.getTime(), time.timeZone).date;
+  const count = Number.isFinite(days) ? Math.max(0, Math.round(days)) : 0;
+  if (!count) {
+    day = math.onOrAfter(day);
+    return endOf(day).getTime() > from.getTime() ? endOf(day) : endOf(math.next(day));
+  }
+  for (let left = count; left > 0; left--) day = math.next(day);
+  return endOf(day);
 }
 
 export type PlanNode = { id: string; number: number; title: string; status: string; startDate: string | null; dueDate: string | null };

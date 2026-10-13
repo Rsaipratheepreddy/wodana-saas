@@ -5,9 +5,11 @@ import { notApplicableRoles } from "../project-core/project-team";
 import { projectRepository } from "../projects/project-repository";
 import type { ProjectData } from "../projects/execution.types";
 import { formatCalendarDay } from "../common/calendar-day";
+import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
+import { workingDeadline } from "../project-core/work-calendar";
 import {
   addDays, CURRENT_FLOW, DEFAULT_SITE_VISIT_QUESTIONS, developmentWindowDays, journeyStages, nextStage, normaliseSiteQuestions, SITE_AND_MATERIALS_STAGES, stageDeadlines,
-  STAGE_LABELS, TASK_LABELS, TASK_STAGE, type FlowVersion, type JourneyKind, type JourneyStage, type JourneyTask, type StageTimings,
+  STAGE_LABELS, TASK_LABELS, TASK_STAGE, type DueRule, type FlowVersion, type JourneyKind, type JourneyStage, type JourneyTask, type StageTimings,
 } from "./design-journey.domain";
 import { allocationSlots, DEFAULT_DESIGN_TEAM, type DesignTeamConfig } from "./design-team.domain";
 
@@ -209,15 +211,27 @@ const TASK_TITLES: Record<JourneyTask, string> = {
   finishes_to_qs: "Mark the finishes on the render snapshots and send them to QS",
 };
 
+/**
+ * How the team's deadlines in a journey count their days: on the current order, the firm's working days (its work
+ * calendar, else its region pack), due at the end of that working day in its time zone, so no step falls due on a day
+ * off or late in the evening. Journeys of the old order keep calendar days.
+ */
+export async function journeyDueRule(db: Db, workspaceId: string, current: boolean): Promise<DueRule> {
+  if (!current) return addDays;
+  const hours = await workspaceHours(db, workspaceId);
+  return (from, days) => workingDeadline(from, days, hours);
+}
+
 async function activateStage(db: Db, workspaceId: string, caseId: string, stage: JourneyStage, userId: string | null) {
   const timings = await journeyTimings(db, workspaceId, caseId);
   const now = new Date();
   const current = timings.flowVersion === 2;
+  const due = await journeyDueRule(db, workspaceId, current);
   // The kick-off meeting the concept counts from, and the development window from the rooms in scope (PLM-142).
   const kickoffAt = current && stage === "concepts" ? await kickoffMoment(db, workspaceId, caseId) : null;
   const developmentDays = current && stage === "concepts" ? developmentWindowDays(await roomCount(db, workspaceId, caseId),
     { minDays: timings.developmentMinDays, maxDays: timings.developmentMaxDays, daysPerRoom: timings.developmentDaysPerRoom }) : null;
-  const { dueAt, clientDueAt, bookingReminderAt } = stageDeadlines(stage, now, timings, { kickoffAt, developmentDays, renderSignoffDueOn: timings.renderSignoffDueOn });
+  const { dueAt, clientDueAt, bookingReminderAt } = stageDeadlines(stage, now, timings, { kickoffAt, developmentDays, renderSignoffDueOn: timings.renderSignoffDueOn, due });
   const facts = await caseFacts(db, workspaceId, caseId);
   let owner = (await db.query<{ owner: string | null }>(`SELECT owner_membership_id AS owner FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = $3`, [workspaceId, caseId, stage])).rows[0]?.owner ?? null;
   if (current) owner = await leadDesigner(db, workspaceId, caseId) ?? owner;
@@ -238,11 +252,11 @@ async function activateStage(db: Db, workspaceId: string, caseId: string, stage:
   if (!current || !facts) return;
   if (stage === "concepts") {
     // PLM-141: the design site measure runs beside the concept, due within its days of the kick-off.
-    const due = addDays(kickoffAt && kickoffAt.getTime() < now.getTime() ? kickoffAt : now, (await db.query<{ days: number }>(
+    const measureDue = due(kickoffAt && kickoffAt.getTime() < now.getTime() ? kickoffAt : now, (await db.query<{ days: number }>(
       `SELECT site_measure_days AS days FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.days ?? 3);
     const designers = await caseDesigners(db, workspaceId, caseId);
-    await openTask(db, workspaceId, caseId, "site_measure", { owner: owner ?? designers[0] ?? facts.accountManagerId, dueAt: due, userId });
-    await tellMembers(db, workspaceId, designers.length ? designers : [owner], "design.site_measure_due", { clientName: facts.clientName, due: await dueText(db, workspaceId, due) },
+    await openTask(db, workspaceId, caseId, "site_measure", { owner: owner ?? designers[0] ?? facts.accountManagerId, dueAt: measureDue, userId });
+    await tellMembers(db, workspaceId, designers.length ? designers : [owner], "design.site_measure_due", { clientName: facts.clientName, due: await dueText(db, workspaceId, measureDue) },
       `/workspace/pre-projects/cases/${caseId}/site`, `design:${caseId}:site_measure:due`, true);
   }
   if (stage === "renders") {
@@ -264,20 +278,20 @@ async function activateStage(db: Db, workspaceId: string, caseId: string, stage:
     const config = await designTeamConfig(db, workspaceId);
     const coordinator = await caseRoleHolder(db, workspaceId, caseId, config.material_coordinator)
       ?? (await membersWithRole(db, workspaceId, config.material_coordinator))[0] ?? owner;
-    const due = addDays(now, timings.sampleCollectionDays ?? 7);
-    await openTask(db, workspaceId, caseId, "sample_collection", { owner: coordinator ?? facts.accountManagerId, dueAt: due, userId });
-    await tellMembers(db, workspaceId, [coordinator], "design.samples_to_collect", { clientName: facts.clientName, due: await dueText(db, workspaceId, due) },
+    const collectionDue = due(now, timings.sampleCollectionDays ?? 7);
+    await openTask(db, workspaceId, caseId, "sample_collection", { owner: coordinator ?? facts.accountManagerId, dueAt: collectionDue, userId });
+    await tellMembers(db, workspaceId, [coordinator], "design.samples_to_collect", { clientName: facts.clientName, due: await dueText(db, workspaceId, collectionDue) },
       `/workspace/pre-projects/cases/${caseId}/overview`, `design:${caseId}:sample_collection:due`, true);
   }
   if (stage === "approval" && (await db.query(`SELECT 1 FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'samples' AND status = 'done'`, [workspaceId, caseId])).rowCount) {
     // PLM-146: the samples are approved; the lead designer marks the exact finishes on the render snapshots and sends
     // them to QS within the firm's days (Settings › Design; 3 when not set). The reminder engine chases it (design.stage_due).
     const days = (await db.query<{ days: number }>(`SELECT finishes_to_qs_days AS days FROM workspace_finish_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.days ?? 3;
-    const due = addDays(now, days);
+    const finishesDue = due(now, days);
     const lead = await leadDesigner(db, workspaceId, caseId);
-    await openTask(db, workspaceId, caseId, "finishes_to_qs", { owner: lead ?? owner ?? facts.accountManagerId, dueAt: due, userId });
+    await openTask(db, workspaceId, caseId, "finishes_to_qs", { owner: lead ?? owner ?? facts.accountManagerId, dueAt: finishesDue, userId });
     await tellMembers(db, workspaceId, [lead ?? owner], "finishes.to_mark",
-      { clientName: facts.clientName, project: "", actor: "", title: "", count: "", items: "", note: "", due: await dueText(db, workspaceId, due) },
+      { clientName: facts.clientName, project: "", actor: "", title: "", count: "", items: "", note: "", due: await dueText(db, workspaceId, finishesDue) },
       `/workspace/pre-projects/cases/${caseId}/designs?stage=finishes`, `design:${caseId}:finishes_to_qs:due`, true);
   }
 }
@@ -350,7 +364,8 @@ async function openAllocation(db: Db, workspaceId: string, caseId: string, userI
   const config = await designTeamConfig(db, workspaceId);
   const slots = allocationSlots(config);
   if (!slots.length) return;
-  const due = addDays(new Date(), days);
+  // Only journeys of the current order allocate the team: the firm's working days.
+  const due = (await journeyDueRule(db, workspaceId, true))(new Date(), days);
   await openTask(db, workspaceId, caseId, "team_allocation", { owner: facts.accountManagerId, dueAt: due, userId });
   const labels = await roleLabels(db, workspaceId);
   const label = (key: string | null) => (key ? labels.get(key) ?? key.replace(/_/g, " ") : "");

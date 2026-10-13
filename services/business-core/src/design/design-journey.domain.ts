@@ -100,6 +100,8 @@ export function nextStage(order: JourneyStage[], current: JourneyStage): Journey
 
 export const addDays = (from: Date, days: number) => new Date(from.getTime() + days * 86_400_000);
 export const addHours = (from: Date, hours: number) => new Date(from.getTime() + hours * 3_600_000);
+/** How a step's deadline counts its days from a moment (calendar days, or the firm's working days). */
+export type DueRule = (from: Date, days: number) => Date;
 
 /** Stages with a design deadline: internal (the team's) and client-facing (what the client was promised) run separately (PLM-049/051). */
 export const DESIGN_DEADLINE_STAGES: JourneyStage[] = ["concepts", "space_planning", "renders"];
@@ -115,31 +117,35 @@ export type StageTimings = {
 /**
  * The internal deadline, the client-facing one and the booking reminder a stage starts with. `context` carries what the
  * current order counts from: the kick-off meeting (the concept), the client-facing window it set, and the render
- * sign-off day agreed with the client.
+ * sign-off day agreed with the client. `context.due` counts the team's own deadlines: the firm's working days, due at the
+ * end of the working day, on journeys of the current order (the store passes it); calendar days without it. The
+ * client-facing windows stay calendar days.
  */
-export function stageDeadlines(stage: JourneyStage, now: Date, timings: StageTimings, context: { kickoffAt?: Date | null; developmentDays?: number | null; renderSignoffDueOn?: string | null } = {}):
+export function stageDeadlines(stage: JourneyStage, now: Date, timings: StageTimings,
+  context: { kickoffAt?: Date | null; developmentDays?: number | null; renderSignoffDueOn?: string | null; due?: DueRule } = {}):
   { dueAt: Date | null; clientDueAt: Date | null; bookingReminderAt: Date | null } {
   const current = timings.flowVersion === 2;
+  const due = context.due ?? addDays;
   if (stage === "site_visit") return { dueAt: addHours(now, timings.siteVisitHours), clientDueAt: null, bookingReminderAt: null };
   // PLM-140: the kick-off is booked and held within its days of inspiration ending.
-  if (stage === "kickoff") return { dueAt: addDays(now, timings.kickoffDays ?? 5), clientDueAt: null, bookingReminderAt: null };
+  if (stage === "kickoff") return { dueAt: due(now, timings.kickoffDays ?? 5), clientDueAt: null, bookingReminderAt: null };
   if (stage === "concepts" && current) {
     // PLM-142: the first concept 4–7 days after the kick-off (the firm's days); the client was promised the development window.
     const base = context.kickoffAt && context.kickoffAt.getTime() < now.getTime() ? context.kickoffAt : now;
-    return { dueAt: addDays(base, timings.conceptDays ?? 7), clientDueAt: context.developmentDays ? addDays(base, context.developmentDays) : null, bookingReminderAt: null };
+    return { dueAt: due(base, timings.conceptDays ?? 7), clientDueAt: context.developmentDays ? addDays(base, context.developmentDays) : null, bookingReminderAt: null };
   }
   if (stage === "renders") {
     const agreed = current && isCalendarDay(context.renderSignoffDueOn) ? new Date(`${context.renderSignoffDueOn}T12:00:00Z`) : null;
-    return { dueAt: addDays(now, timings.renderInternalDays ?? timings.designInternalDays), clientDueAt: agreed ?? addDays(now, timings.renderClientDays ?? timings.designClientDays),
+    return { dueAt: due(now, timings.renderInternalDays ?? timings.designInternalDays), clientDueAt: agreed ?? addDays(now, timings.renderClientDays ?? timings.designClientDays),
       bookingReminderAt: null };
   }
-  if (DESIGN_DEADLINE_STAGES.includes(stage)) return { dueAt: addDays(now, timings.designInternalDays), clientDueAt: addDays(now, timings.designClientDays), bookingReminderAt: null };
+  if (DESIGN_DEADLINE_STAGES.includes(stage)) return { dueAt: due(now, timings.designInternalDays), clientDueAt: addDays(now, timings.designClientDays), bookingReminderAt: null };
   // PLM-050: a week for the showroom appointment; the reminder to book it starts straight away and repeats daily until booked.
-  if (stage === "material_selection") return { dueAt: addDays(now, timings.materialSelectionDays), clientDueAt: null, bookingReminderAt: now };
+  if (stage === "material_selection") return { dueAt: due(now, timings.materialSelectionDays), clientDueAt: null, bookingReminderAt: now };
   // PLM-144: samples collected within their week, the sample meeting the week after; the reminder to book it starts when collection is due.
   if (stage === "samples") {
     const collection = timings.sampleCollectionDays ?? 7;
-    return { dueAt: addDays(now, collection + (timings.sampleMeetingDays ?? 7)), clientDueAt: null, bookingReminderAt: addDays(now, collection) };
+    return { dueAt: due(now, collection + (timings.sampleMeetingDays ?? 7)), clientDueAt: null, bookingReminderAt: due(now, collection) };
   }
   return { dueAt: null, clientDueAt: null, bookingReminderAt: null };
 }

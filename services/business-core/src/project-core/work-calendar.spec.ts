@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticalPath, ripple, workdays, type PlanLink, type PlanNode } from "./work-calendar";
+import { criticalPath, ripple, workdays, workingDeadline, type PlanLink, type PlanNode } from "./work-calendar";
 
 const weekdays = { workingDays: [1, 2, 3, 4, 5], holidays: [] };
 const gulf = { workingDays: [0, 1, 2, 3, 4], holidays: ["2026-10-06"] };
@@ -16,6 +16,26 @@ describe("working days", () => {
     const gulfMath = workdays(gulf);
     expect(gulfMath.onOrAfter("2026-10-02")).toBe("2026-10-04"); // Friday → Sunday
     expect(gulfMath.shift("2026-10-05", 1)).toBe("2026-10-07"); // the holiday is skipped
+  });
+});
+
+describe("working-day deadlines", () => {
+  const dubai = { workingDays: [1, 2, 3, 4, 5], holidays: ["2026-10-20"], end: "18:00", timeZone: "Asia/Dubai" };
+  it("counts the firm's working days from the day after the action and ends at the close of that working day", () => {
+    // Friday 16 Oct 2026, 20:13 in Dubai: 2 working days is Tuesday 20 Oct, a day off, so Wednesday 21 Oct at 18:00.
+    expect(workingDeadline(new Date("2026-10-16T16:13:00Z"), 2, dubai).toISOString()).toBe("2026-10-21T14:00:00.000Z");
+    // Sunday (a day off): Monday is the first working day after it.
+    expect(workingDeadline(new Date("2026-10-18T08:00:00Z"), 1, dubai).toISOString()).toBe("2026-10-19T14:00:00.000Z");
+    // Monday morning: 3 working days is Friday (Tuesday, a holiday, is skipped).
+    expect(workingDeadline(new Date("2026-10-19T05:00:00Z"), 3, dubai).toISOString()).toBe("2026-10-23T14:00:00.000Z");
+    // A Sunday-to-Thursday week: never a Friday or Saturday.
+    const riyadh = { workingDays: [0, 1, 2, 3, 4], holidays: [], end: "17:00", timeZone: "Asia/Riyadh" };
+    expect(workingDeadline(new Date("2026-10-15T10:00:00Z"), 1, riyadh).toISOString()).toBe("2026-10-18T14:00:00.000Z");
+  });
+
+  it("gives the end of today for nought days, or of the next working day once today is over", () => {
+    expect(workingDeadline(new Date("2026-10-19T05:00:00Z"), 0, dubai).toISOString()).toBe("2026-10-19T14:00:00.000Z");
+    expect(workingDeadline(new Date("2026-10-19T16:00:00Z"), 0, dubai).toISOString()).toBe("2026-10-21T14:00:00.000Z");
   });
 });
 
