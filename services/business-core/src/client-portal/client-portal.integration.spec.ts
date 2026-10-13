@@ -144,6 +144,15 @@ projects[].warranty.claims projects[].warranty.claims[] projects[].warranty.clai
 projects[].warranty.claims[].description projects[].warranty.claims[].status projects[].warranty.claims[].reason projects[].warranty.areas
 projects[].warranty.areas[] projects[].warranty.areas[].id projects[].warranty.areas[].name projects[].warranty.lines projects[].warranty.lines[]
 projects[].warranty.lines[].id projects[].warranty.lines[].title projects[].warranty.lines[].areaId projects[].warranty.canClaim
+projects[].sections.designs projects[].designs projects[].designs.groups projects[].designs.groups[] projects[].designs.groups[].key projects[].designs.groups[].designs
+projects[].designs.groups[].designs[] projects[].designs.groups[].designs[].id projects[].designs.groups[].designs[].title projects[].designs.groups[].designs[].room
+projects[].designs.groups[].designs[].sharedAt projects[].designs.groups[].designs[].files projects[].designs.groups[].designs[].files[]
+projects[].designs.groups[].designs[].files[].id projects[].designs.groups[].designs[].files[].number projects[].designs.groups[].designs[].files[].status
+projects[].designs.groups[].designs[].files[].sharedAt projects[].designs.groups[].designs[].files[].mimeType projects[].designs.groups[].designs[].files[].hasPreview
+projects[].designs.groups[].designs[].files[].canComment projects[].designs.groups[].designs[].files[].comments projects[].designs.groups[].designs[].files[].comments[]
+projects[].designs.groups[].designs[].files[].comments[].id projects[].designs.groups[].designs[].files[].comments[].at projects[].designs.groups[].designs[].files[].comments[].text
+projects[].designs.groups[].designs[].files[].comments[].fromClient projects[].designs.groups[].designs[].files[].comments[].mine
+projects[].designs.groups[].designs[].files[].comments[].author
 projects[].sections.meetings projects[].meetings projects[].meetings.meetings projects[].meetings.meetings[] projects[].meetings.meetings[].id
 projects[].meetings.meetings[].title projects[].meetings.meetings[].meetingAt projects[].meetings.meetings[].text projects[].meetings.meetings[].sharedAt
 projects[].meetings.meetings[].updatedAt projects[].meetings.meetings[].files projects[].meetings.meetings[].files[] projects[].meetings.meetings[].files[].id
@@ -874,7 +883,7 @@ integration("client portal (plan §6.22)", () => {
       const access = await w.admin.project(actor, w.workspaceId, projectId);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version, sections: ["progress", "decisions"] });
       const narrow = (await w.portal.view(w.slug, token)).projects[0];
-      expect(narrow.sections).toEqual({ progress: true, moodboard: false, decisions: true, payments: false, documents: false, warranty: false, meetings: false, messages: false });
+      expect(narrow.sections).toEqual({ progress: true, moodboard: false, designs: false, decisions: true, payments: false, documents: false, warranty: false, meetings: false, messages: false });
       expect([narrow.payments, narrow.documents, narrow.messages]).toEqual([null, null, null]);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version + 1, paused: true });
       const paused = (await w.portal.view(w.slug, token)).projects[0];

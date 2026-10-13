@@ -227,7 +227,7 @@ export class DesignService {
    await client.query(`INSERT INTO pre_project_design_messages(id,workspace_id,case_id,design_id,thread_id,body,created_by) VALUES($1,$2,$3,$4,$1,$5,$6)`,[input.id,w,c,id,input.body,userId]);
    await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_started',input);
    await noticeDesignMentions(client,{workspaceId:w,caseId:c,designId:id,title:design.title,actorUserId:userId,mentions:input.mentions??[],body:input.body,threadId:input.id});
-   if(input.clientVisible===true)await tellClients(client,{workspaceId:w,caseId:c,event:'team_replied',recordId:`design-thread:${input.id}`,title:design.title});
+   if(input.clientVisible===true)await tellClients(client,{workspaceId:w,caseId:c,event:'design_replied',recordId:`design-thread:${input.id}`,title:design.title});
    return this.read(client,w,c,id);
   });
  }
@@ -241,7 +241,7 @@ export class DesignService {
    await client.query(`UPDATE pre_project_design_threads SET version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND design_id=$3 AND id=$4`,[w,c,id,threadId]);
    await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_replied',{threadId,...input});
    // A reply in a thread the client sees reaches them (their portal and a nudge), never an internal one.
-   if(thread.clientVisible)await tellClients(client,{workspaceId:w,caseId:c,event:'team_replied',recordId:`design-reply:${input.id}`,title:design.title});
+   if(thread.clientVisible)await tellClients(client,{workspaceId:w,caseId:c,event:'design_replied',recordId:`design-reply:${input.id}`,title:design.title,note:input.body});
    return this.read(client,w,c,id);
   });
  }
@@ -267,7 +267,7 @@ export class DesignService {
    if(!input.clientVisible&&thread.messages.some((m:{fromClient?:boolean})=>m.fromClient))throw new ConflictException('The client has replied here; it stays with them.');
    await client.query(`UPDATE pre_project_design_threads SET client_visible=$5,version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND design_id=$3 AND id=$4`,[w,c,id,threadId,input.clientVisible]);
    await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,input.clientVisible?'design_thread_shared':'design_thread_internal',{threadId});
-   if(input.clientVisible)await tellClients(client,{workspaceId:w,caseId:c,event:'team_replied',recordId:`design-thread:${threadId}`,title:design.title});
+   if(input.clientVisible)await tellClients(client,{workspaceId:w,caseId:c,event:'design_replied',recordId:`design-thread:${threadId}`,title:design.title});
    return this.read(client,w,c,id);
   });
  }

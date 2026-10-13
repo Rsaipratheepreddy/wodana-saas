@@ -10,6 +10,7 @@ import { ASSUME_PRESENT, readAttachments, type FilePresence } from "./portal-fil
 import { readIssues } from "./portal-issues";
 import { readMessages } from "./portal-messages";
 import { readMeetings } from "./portal-meetings";
+import { readDesignFolder } from "./portal-designs";
 import { readMoodboard, takesIdeas } from "./portal-moodboard";
 import { readDesignChoices } from "./portal-design-decisions";
 import { readPayments } from "./portal-payments";
@@ -82,7 +83,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   };
   if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, address: null, startDate: null,
     team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, updates: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
-    messages: null, meetings: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
+    messages: null, meetings: null, designs: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
   const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, grant.id, today) : null;
@@ -94,6 +95,8 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   const messages = on("messages") ? await readMessages(db, workspaceId, grant, row.caseId, commercial) : null;
   // PLM-153: the notes of the meetings the team shared, with the conversation on each.
   const meetings = on("meetings") ? await readMeetings(db, workspaceId, grant, row.caseId) : null;
+  // PLM-153: every design file shared with the client, by stage, to view and comment on.
+  const designs = on("designs") ? await readDesignFolder(db, workspaceId, grant, row, files) : null;
   // The designs and their pinned comments, one conversation with the design team (part of what the client decides on).
   const design = on("decisions") ? await readDesignReview(db, workspaceId, grant, row, files) : null;
   // The concepts shown to the client to pick from, and the materials and decisions they confirm (plan §6.7a).
@@ -123,7 +126,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
     next: nextSteps(decisions, payments, progress, choices, changes),
     unread: messages?.unread ?? 0,
-    latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, meetings, design, choices, changes, budget,
+    latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, meetings, designs, design, choices, changes, budget,
     feed: feedCards(source), digest: since === undefined ? null : whatChanged(source, since),
   };
 }

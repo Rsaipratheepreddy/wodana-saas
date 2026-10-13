@@ -24,12 +24,12 @@ const BOARD_TYPES = ["Concept / mood board", "Material / finish board"];
 const BOARD_STAGES = ["concepts", "material_selection"];
 
 type Anchor = { x: number; y: number };
-type VersionRow = { id: string; designId: string; title: string; type: string; board: boolean; number: number; status: string; dueAt: string | null; room: string | null;
+export type VersionRow = { id: string; designId: string; title: string; type: string; board: boolean; number: number; status: string; dueAt: string | null; room: string | null;
   item: string | null; mimeType: string; objectKey: string; previewKey: string | null; sharedAt: string };
 type ThreadRow = { id: string; versionId: string; anchor: Anchor | null; status: "open" | "resolved"; version: number; grantId: string | null; createdAt: string; resolvedAt: string | null };
 type MessageRow = { id: string; threadId: string; body: string; createdAt: string; grantId: string | null; author: string | null };
 
-async function sharedVersions(db: Db, workspaceId: string, caseId: string) {
+export async function sharedVersions(db: Db, workspaceId: string, caseId: string) {
   return (await db.query<VersionRow>(
     `SELECT version.id, design.id AS "designId", design.title, design.document_type AS type,
             (design.stage = ANY($4::text[]) OR design.document_type = ANY($5::text[])) AS board, version.number,
@@ -48,7 +48,7 @@ async function sharedVersions(db: Db, workspaceId: string, caseId: string) {
     .map((row) => ({ ...row, sharedAt: new Date(row.sharedAt).toISOString(), dueAt: row.dueAt ? new Date(row.dueAt).toISOString() : null }));
 }
 
-async function clientThreads(db: Db, workspaceId: string, caseId: string) {
+export async function clientThreads(db: Db, workspaceId: string, caseId: string) {
   const threads = (await db.query<ThreadRow>(
     `SELECT thread.id, thread.version_id AS "versionId", thread.anchor, thread.status, thread.version, thread.client_grant_id AS "grantId",
             thread.created_at AS "createdAt", thread.resolved_at AS "resolvedAt"
@@ -152,7 +152,7 @@ async function designPeople(db: Db, workspaceId: string, caseId: string, version
   return active.length ? active : caseTeam(db, workspaceId, caseId, ["design"]);
 }
 
-async function tellDesignTeam(ctx: DecisionContext, grant: Grant, caseId: string, version: VersionRow, threadId: string, key: string, text: string, email: boolean) {
+export async function tellDesignTeam(ctx: DecisionContext, grant: Grant, caseId: string, version: Pick<VersionRow, "id" | "designId" | "title" | "number">, threadId: string, key: string, text: string, email: boolean) {
   const facts = await caseTitle(ctx.db, ctx.workspaceId, caseId);
   await tellStaff(ctx.db, { workspaceId: ctx.workspaceId, recipients: await designPeople(ctx.db, ctx.workspaceId, caseId, version.id, threadId), code: "design.client_commented",
     variables: { title: facts.title, clientName: facts.clientName, actor: grant.name, item: `${version.title} · V${version.number}`, note: text.slice(0, 480) },

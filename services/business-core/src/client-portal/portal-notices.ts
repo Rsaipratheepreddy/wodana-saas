@@ -21,7 +21,7 @@ type Db = Pick<PoolClient, "query">;
  * Each email opens the portal where the thing is.
  */
 export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "message_replied" | "payment_checked" | "issue_triaged"
-  | "payment_due" | "site_access" | "daily_progress" | "weekly_rollup" | "minutes_shared" | "minutes_replied";
+  | "payment_due" | "site_access" | "daily_progress" | "weekly_rollup" | "minutes_shared" | "minutes_replied" | "design_replied";
 
 //   team_replied       the team answered them on the moodboard   everyone on the project
 //   message_replied    the team answered them in Messages        everyone on the project
@@ -33,13 +33,15 @@ export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting"
 //   weekly_rollup      the week's sent days in one digest        everyone on the project (WhatsApp and email)
 //   minutes_shared     the notes of a meeting are shared (PLM-153) everyone on the project (email)
 //   minutes_replied    the team answered them on a meeting's notes  everyone on the project (email)
-const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress",
+//   design_replied     the team answered them on a design file      everyone on the project (email; Designs, Decisions or the Moodboard)
+const SECTION: Record<ClientEvent, Section | readonly Section[]> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress",
   team_replied: "moodboard", message_replied: "messages", payment_checked: "payments", issue_triaged: "progress", payment_due: "payments", site_access: "progress", daily_progress: "progress", weekly_rollup: "progress",
-  minutes_shared: "meetings", minutes_replied: "meetings" };
+  minutes_shared: "meetings", minutes_replied: "meetings", design_replied: ["designs", "decisions", "moodboard"] };
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
   team_replied: "portal.team_replied", message_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged", payment_due: "portal.payment_due", site_access: "portal.site_access",
   daily_progress: "portal.daily_progress", weekly_rollup: "portal.weekly_rollup", minutes_shared: "portal.minutes_shared", minutes_replied: "portal.team_replied",
+  design_replied: "portal.team_replied",
 };
 /** The WhatsApp client message a portal event is (the others go by email only). */
 const WHATSAPP_EVENT: Partial<Record<ClientEvent, StarterEvent>> = {
@@ -80,8 +82,10 @@ export async function tellClients(db: Db, input: {
   if (!facts) return { queued: 0, reason: "not_found" as const };
   const access = facts.projectId ? await readProjectAccess(db, input.workspaceId, facts.projectId) : null;
   if (access?.paused) return { queued: 0, reason: "paused" as const };
-  const section = SECTION[input.event];
-  if (!effectiveSections(settings, access)[section]) return { queued: 0, reason: "hidden" as const };
+  // An event that shows in several sections (a design reply: Designs, Decisions or the Moodboard) goes when any is shown, and opens the first.
+  const shown = effectiveSections(settings, access);
+  const section = ([] as Section[]).concat(SECTION[input.event]).find((candidate) => shown[candidate]);
+  if (!section) return { queued: 0, reason: "hidden" as const };
   if (input.gate) {
     const party = await partyOfCase(db, input.workspaceId, input.caseId);
     if (party.partyId && !(await clientDailyGate(db, input.workspaceId, { partyId: party.partyId, priority: input.gate.priority, key: input.gate.key })).allowed) {

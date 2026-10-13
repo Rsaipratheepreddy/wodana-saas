@@ -26,6 +26,7 @@ import { openInvitation } from "./portal-invitations";
 import { reportIssue } from "./portal-issues";
 import { comment, raiseRequest, readThread } from "./portal-messages";
 import { minutesComment } from "./portal-meetings";
+import { designFileComment } from "./portal-designs";
 import { readMeeting } from "../meetings/meeting-minutes";
 import { addInspiration, boardComment, react, removeInspiration } from "./portal-moodboard";
 import { tellStaffClientSignedIn } from "./portal-notices";
@@ -54,7 +55,7 @@ const COMMANDS: Record<string, [Handler, Section]> = {
   design_comment: [designComment, "decisions"], design_reply: [designReply, "decisions"], design_resolve: [designResolve, "decisions"],
   presentation_choice: [presentationChoice, "decisions"], ledger_decision: [ledgerDecision, "decisions"],
   change_raise: [raiseChange, "decisions"], change_decision: [decidePortalChange, "decisions"], ledger_alternative: [chooseAlternative, "decisions"],
-  minutes_comment: [minutesComment, "meetings"],
+  minutes_comment: [minutesComment, "meetings"], design_file_comment: [designFileComment, "designs"],
 };
 
 /**
@@ -304,7 +305,8 @@ export class ClientPortalService {
              OR EXISTS (SELECT 1 FROM design_presentation_options option JOIN design_presentations presentation ON presentation.workspace_id = option.workspace_id AND presentation.id = option.presentation_id
                          WHERE option.workspace_id = version.workspace_id AND option.design_id = version.design_id AND presentation.status IN ('presented', 'chosen', 'changes_requested')))`, [workspaceId, id])).rows[0];
       if (!row) return null;
-      const sections: Section[] = row.status === "approved" ? ["documents", "decisions"] : ["decisions"];
+      // Every shared design file is also in the client's Designs (PLM-153).
+      const sections: Section[] = row.status === "approved" ? ["documents", "decisions", "designs"] : ["decisions", "designs"];
       return { ...row, sections: row.board ? [...sections, "moodboard" as const] : sections };
     }
     if (kind === "photo") {

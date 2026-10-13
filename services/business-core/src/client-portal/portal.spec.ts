@@ -7,7 +7,7 @@ import { effectiveSections, type PortalSettings } from "./portal-settings";
 
 const settings = (sections: Partial<PortalSettings["sections"]> = {}): PortalSettings => ({
   workspaceId: "w", slug: "s", enabled: true, version: 1,
-  sections: { progress: true, moodboard: true, decisions: true, payments: true, documents: true, warranty: true, meetings: true, messages: true, ...sections },
+  sections: { progress: true, moodboard: true, decisions: true, payments: true, documents: true, warranty: true, meetings: true, designs: true, messages: true, ...sections },
   progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, welcomeTitle: "", welcomeText: "", support: { phone: "", email: "", whatsapp: "" },
 });
 
@@ -15,8 +15,8 @@ describe("client portal rules", () => {
   it("shows a project the workspace's sections, narrowed by the project, and nothing while it's paused", () => {
     expect(effectiveSections(settings({ payments: false }), null)).toMatchObject({ progress: true, payments: false });
     expect(effectiveSections(settings(), { sections: ["progress", "payments"], paused: false, pausedAt: null, version: 1 }))
-      .toEqual({ progress: true, moodboard: false, decisions: false, payments: true, documents: false, warranty: false, meetings: false, messages: false });
-    expect(Object.values(effectiveSections(settings(), { sections: null, paused: true, pausedAt: "2026-09-27", version: 1 }))).toEqual(Array(8).fill(false));
+      .toEqual({ progress: true, moodboard: false, decisions: false, payments: true, documents: false, warranty: false, meetings: false, designs: false, messages: false });
+    expect(Object.values(effectiveSections(settings(), { sections: null, paused: true, pausedAt: "2026-09-27", version: 1 }))).toEqual(Array(9).fill(false));
   });
 
   it("takes a mobile number in international form and never shows an email in full", () => {
