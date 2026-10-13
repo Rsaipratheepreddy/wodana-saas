@@ -372,6 +372,31 @@ describe("factory", () => {
     expect(grid).not.toHaveTextContent("Vanity");
   });
 
+  it("keeps work orders to six tabs, with the design inspections as a filter on any tab (PLM-150)", async () => {
+    const tooMany = vi.spyOn(console, "error");
+    const asked = { ...row({ id: "w1", title: "Wardrobes", status: "in_production" }), next: "request_inspection" as const, mine: true };
+    const snagged = { ...row({ id: "w2", number: 8, title: "Vanity", status: "ready" }), next: "snags" as const, mine: true,
+      inspection: { raw: "passed" as const, final: "snags" as const, dueId: null, dueStage: null, dueOn: null, latestId: "i3", openSnags: 1 } };
+    const doors = { ...row({ id: "w3", number: 9, title: "Doors", status: "in_production" }), next: "report" as const, mine: true };
+    mount(() => factory({ orders: [asked, snagged, doors] }));
+    page("orders");
+    const grid = await screen.findByRole("grid", { name: "Work orders" }).catch(() => screen.findByRole("table", { name: "Work orders" }));
+    await within(grid).findByText("Doors");
+    const tabs = screen.getByRole("group", { name: "Work orders" });
+    expect(within(tabs).getAllByRole("button").map((tab) => tab.textContent?.replace(/\d+$/, ""))).toEqual(["Needs me", "Blocked", "In production", "To send", "Open", "All"]);
+    expect(tooMany.mock.calls.some((call) => String(call[0]).includes("tabs; at most"))).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Filter by design inspection/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Snags to fix" }));
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(grid).not.toHaveTextContent("Doors"));
+    expect(grid).toHaveTextContent("Vanity");
+    expect(grid).not.toHaveTextContent("Wardrobes");
+    await userEvent.click(screen.getByRole("button", { name: "Remove filter Design inspection" }));
+    expect(await within(grid).findByText("Doors")).toBeInTheDocument();
+    tooMany.mockRestore();
+  });
+
   it("plans a work order for each selected line, for all that's left, when its work needs it (D-22)", async () => {
     const second = { ...line, lineId: "l2", title: "Wardrobes", left: "2.0000", planned: "0", quantity: "2.0000", suggestedStart: "2099-10-10", suggestedEnd: "2099-10-20" };
     const held = { ...line, lineId: "l3", projectId: "p2", projectReference: "PRJ-0008", projectName: "Villa 14", title: "Vanity", projectStatus: "on_hold" as const };

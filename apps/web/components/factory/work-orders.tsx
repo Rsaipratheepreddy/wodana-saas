@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, ListTabs, NoResultsState, SelectField, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
+import { Button, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, ListTabs, NoResultsState, SelectField, TextInput, type DataGridColumn, FormDialog, type ToolbarFilter } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { FactoryState, WorkOrderNext, WorkOrderRow, Workcenter } from "@/lib/factory/types";
@@ -13,7 +13,9 @@ import { WorkOrderStatusLabel, inspectionToAsk, orderNumber, useFactoryLabels, u
 import { WorkOrderSheet, type WorkOrderIntent } from "./work-order-sheet";
 import styles from "./factory.module.css";
 
-type View = "mine" | "blocked" | "making" | "inspection" | "send" | "open" | "all";
+type View = "mine" | "blocked" | "making" | "send" | "open" | "all";
+/** PLM-150: where a work order is in its design inspections, as a filter on any tab (the tabs stay at six). */
+type InspectionFilter = "any" | "request_inspection" | "inspection" | "snags";
 const OPEN = ["planned", "released", "in_production", "on_hold"];
 // The row's next step, done in place (release, start, ready for inspection) or by opening the work order into its dialog.
 const INTENT: Partial<Record<Exclude<WorkOrderNext, null>, WorkOrderIntent>> = { report: "report", check: "check", send: "dispatch" };
@@ -33,6 +35,7 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
   const labels = useFactoryLabels();
   const inspections = useInspectionLabels();
   const [view, setView] = useState<View | null>(null);
+  const [inspecting, setInspecting] = useState<InspectionFilter | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [grouping, setGrouping] = useState<WorkOrderRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -44,14 +47,15 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
   const late = (row: WorkOrderRow) => Boolean(row.plannedEnd && row.plannedEnd < today && OPEN.includes(row.status));
   const queues: Record<View, (row: WorkOrderRow) => boolean> = {
     mine: (row) => Boolean(row.mine && row.next), blocked: (row) => row.next === "fix" || row.status === "on_hold",
-    making: (row) => ["released", "in_production"].includes(row.status), inspection: (row) => INSPECTING.includes(row.next ?? null), send: (row) => row.next === "send",
+    making: (row) => ["released", "in_production"].includes(row.status), send: (row) => row.next === "send",
     open: (row) => OPEN.includes(row.status), all: () => true,
   };
   const counts = Object.fromEntries((Object.keys(queues) as View[]).map((key) => [key, scoped.filter(queues[key]).length])) as Record<View, number>;
   // Start where there's something to do.
   const current: View = view ?? (counts.mine ? "mine" : "open");
+  const inInspection = (row: WorkOrderRow) => !inspecting || (inspecting === "any" ? INSPECTING.includes(row.next ?? null) : row.next === inspecting);
   // Late first, then by when it's due.
-  const rows = scoped.filter(queues[current]).sort((a, b) => Number(late(b)) - Number(late(a)) || (a.plannedEnd ?? "9999").localeCompare(b.plannedEnd ?? "9999") || a.number - b.number);
+  const rows = scoped.filter(queues[current]).filter(inInspection).sort((a, b) => Number(late(b)) - Number(late(a)) || (a.plannedEnd ?? "9999").localeCompare(b.plannedEnd ?? "9999") || a.number - b.number);
 
   /** Releases, starts or marks ready for inspection work orders one at a time, saying which didn't go and why. */
   const runAll = async (orders: WorkOrderRow[], action: "release" | "start" | "request_inspection") => {
@@ -121,28 +125,31 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
       {batchable.length ? <Button size="compact" onPress={() => setGrouping(batchable)}>{t("Run together ({count})", { count: batchable.length })}</Button> : null}
     </>;
   };
-  const emptyTitle = { mine: t("Nothing waits for you"), blocked: t("Nothing is blocked"), making: t("Nothing is being made"), inspection: t("Nothing waits for inspection"),
+  const emptyTitle = { mine: t("Nothing waits for you"), blocked: t("Nothing is blocked"), making: t("Nothing is being made"),
     send: t("Nothing to send to site"),
     open: t("No open work orders"), all: t("No work orders yet") }[current];
+  // PLM-150: the design inspections are a step of the work, so they filter any tab (marking ready, with the design team, snags to fix).
+  const inspectionFilter: ToolbarFilter = { id: "inspection", label: t("Design inspection"), value: inspecting, onChange: (value) => setInspecting(value as InspectionFilter | undefined),
+    options: [{ id: "any", label: t("Any inspection step") }, { id: "request_inspection", label: t("Not inspected yet") }, { id: "inspection", label: t("With the design team") },
+      { id: "snags", label: t("Snags to fix") }] };
   const project = projectId ? (state?.orders.find((row) => row.projectId === projectId) ?? state?.toMake.find((line) => line.projectId === projectId)) : null;
   return <div className={styles.stack}>
     {notice ? <InlineNotice tone={notice.tone} message={notice.text} /> : null}
     <DataGrid<WorkOrderRow> ariaLabel={t("Work orders")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search work orders")} rowNumbers={false} selectable={Boolean(state?.canManage)} wrapText
-      selectionResetKey={`${current}:${projectId ?? ""}`} bulkActions={bulk}
-      toolbarLeading={<div className={styles.filters}>
+      selectionResetKey={`${current}:${inspecting ?? ""}:${projectId ?? ""}`} bulkActions={bulk}
+      filters={[inspectionFilter]} toolbarLeading={<div className={styles.filters}>
         <ListTabs label={t("Work orders")} value={current} onChange={setView} items={[
           { id: "mine", label: t("Needs me"), count: counts.mine },
           { id: "blocked", label: t("Blocked"), count: counts.blocked },
           { id: "making", label: t("In production"), count: counts.making },
-          { id: "inspection", label: t("Inspections"), count: counts.inspection },
           { id: "send", label: t("To send"), count: counts.send },
           { id: "open", label: t("Open"), count: counts.open },
           { id: "all", label: t("All") },
         ]} />
         <ProjectFilterChip project={projectId ? { id: projectId, reference: project?.projectReference ?? t("This project"), name: project?.projectName } : null} onClear={() => onProject(null)} />
       </div>}
-      emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={emptyTitle} description={current === "all" ? t("Plan one from a line in To make.") : null} />} />
+      emptyContent={needle || inspecting ? <NoResultsState onClear={() => { setSearch(""); setInspecting(undefined); }} /> : <EmptyState title={emptyTitle} description={current === "all" ? t("Plan one from a line in To make.") : null} />} />
     {openId ? <WorkOrderSheet key={openId} api={api} orderId={openId} intent={intent} onChanged={onReload} onClose={() => onOpen(null)} /> : null}
     {grouping && state ? <BatchDialog api={api} orders={grouping} workcenters={state.workcenters} onClose={() => setGrouping(null)} onSaved={(id) => { setGrouping(null); onBatched(id); }} /> : null}
   </div>;

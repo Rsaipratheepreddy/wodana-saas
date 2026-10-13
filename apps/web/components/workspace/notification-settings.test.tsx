@@ -98,4 +98,28 @@ describe("Home › Notifications", () => {
     expect(posts[0]).toMatchObject({ recipientId: userId, eventType: "work.due_soon", enabled: false });
     expect(await screen.findByText("Muted. Turn it back on in Notification settings.")).toBeInTheDocument();
   });
+
+  it("keeps two tabs however many modules notify, with the module as a filter beside them, and no tab warning", async () => {
+    const tooMany = vi.spyOn(console, "error");
+    const at = new Date().toISOString();
+    const notice = (id: string, eventType: string, subject: string, readAt: string | null = null) => ({ id, eventType, subject, body: "", deepLink: null, readAt, createdAt: at });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => [
+      notice("n1", "crm.lead.assigned", "New enquiry"), notice("n2", "design.review_requested", "Review the concept"), notice("n3", "work.due_soon", "Task due tomorrow", at),
+      notice("n4", "factory.inspection_ready", "Wardrobe ready"), notice("n5", "payables.approval_needed", "Bill to approve"), notice("n6", "books.lock_moved", "Lock date moved"),
+      notice("n7", "hrms.leave_requested", "Leave request"),
+    ] })));
+    render(<NotificationsPage workspaceId={workspaceId} userId={userId} />);
+    expect(await screen.findByText("Leave request")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Filter notifications" }).querySelectorAll("button")).toHaveLength(2);
+    expect(tooMany.mock.calls.some((call) => String(call[0]).includes("tabs; at most"))).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: /Module/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Operations" }));
+    await waitFor(() => expect(screen.queryByText("Leave request")).not.toBeInTheDocument());
+    expect(screen.getByText("Wardrobe ready")).toBeInTheDocument();
+    // Unread within the module: the factory notice is unread, so it stays; the read task (another module) stays hidden.
+    await userEvent.click(screen.getByRole("button", { name: /^Unread/ }));
+    expect(screen.getByText("Wardrobe ready")).toBeInTheDocument();
+    expect(screen.queryByText("Task due tomorrow")).not.toBeInTheDocument();
+    tooMany.mockRestore();
+  });
 });
