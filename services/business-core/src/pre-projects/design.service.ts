@@ -9,11 +9,24 @@ import { syncDesignStages } from "../design/design-stage-sync";
 import { tellClients } from "../client-portal/portal-notices";
 import { designQueue, noticeDesignMentions, noticeDesignStep, noticeExtraRevision } from "./design-notices";
 import { STAGE_LABELS, type JourneyStage } from "../design/design-journey.domain";
+import { membersWithRole } from "../design/design-journey.store";
 import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto, DesignThreadAudienceDto } from "./design.dto";
 
-export function validateDesignTransition(status:string,action:string,note:string,decisionBy:string) {
+/**
+ * PLM-145: the internal review before a client sees a design file is the firm's configuration. A case whose design
+ * package names a review role (Palm: the Creative Director on its own package) keeps it, with that role's holders as the
+ * reviewers; on any other package the lead designer shares the file with the client directly. A case without design
+ * stages (files kept before they existed) keeps the review it always had.
+ */
+export async function designFileReview(client:Pick<PoolClient,'query'>,workspaceId:string,caseId:string):Promise<{internal:boolean;role:string|null}> {
+ const journey=(await client.query<{role:string|null}>(`SELECT reviewer_role_code AS role FROM design_journeys WHERE workspace_id=$1 AND case_id=$2`,[workspaceId,caseId])).rows[0];
+ if(!journey)return{internal:true,role:null};
+ return{internal:Boolean(journey.role),role:journey.role};
+}
+export function validateDesignTransition(status:string,action:string,note:string,decisionBy:string,internalReview=true) {
  if(action==='comment') { if(!note.trim()) throw new BadRequestException('Enter a comment.'); return; }
- const allowed:Record<string,string[]>={draft:['internal_review'],internal_review:['internal_approved','changes_requested'],internal_approved:['client_review'],client_review:['approved','changes_requested'],approved:[],changes_requested:[]};
+ if(!internalReview&&action==='internal_review') throw new ConflictException('This package has no internal review. Share the design with the client.');
+ const allowed:Record<string,string[]>={draft:internalReview?['internal_review']:['client_review'],internal_review:['internal_approved','changes_requested'],internal_approved:['client_review'],client_review:['approved','changes_requested'],approved:[],changes_requested:[]};
  if(!allowed[status]?.includes(action)) throw new ConflictException('This review action is no longer available. Reopen the latest design.');
  if(action==='changes_requested'&&!note.trim()) throw new BadRequestException('Describe the changes needed.');
  if((action==='approved'||(status==='client_review'&&action==='changes_requested'))&&(!decisionBy.trim()||!note.trim())) throw new BadRequestException('Record the client name and how their decision was received.');
@@ -49,10 +62,12 @@ export class DesignService {
     LEFT JOIN pre_project_rooms r ON r.workspace_id=f.workspace_id AND r.case_id=f.case_id AND r.id=f.room_id
     LEFT JOIN pre_project_brief_entries e ON e.workspace_id=f.workspace_id AND e.case_id=f.case_id AND e.id=f.scope_entry_id
     WHERE f.workspace_id=$1 AND f.case_id=$2 ORDER BY lower(f.name),f.id`,[workspaceId,caseId]);
-   const reviewers=await client.query(`SELECT DISTINCT u.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id JOIN effective_member_roles mr ON mr.membership_id=m.id JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' AND p.code='pre_projects.review_designs' ORDER BY name`,[workspaceId]);
+   // PLM-145: reviewers only where the firm keeps an internal review; none on a package the lead designer shares directly.
+   const review=await designFileReview(client,workspaceId,caseId);
+   const reviewers=review.internal?await this.reviewers(client,workspaceId,review.role):[];
    const portal=await this.portalReadiness(client,workspaceId,caseId);
    const members=await client.query(`SELECT u.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' ORDER BY u.display_name`,[workspaceId]);
-   return {members:members.rows,folders:folders.rows,reviewers:reviewers.rows,portal,actorId:user.userId,canReview:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.review_designs'),canRecordClient:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.record_client_design_decisions'),items:(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 ORDER BY d.updated_at DESC,d.id`,[workspaceId,caseId])).rows};
+   return {members:members.rows,folders:folders.rows,reviewers,internalReview:review.internal,portal,actorId:user.userId,canReview:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.review_designs'),canRecordClient:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.record_client_design_decisions'),items:(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 ORDER BY d.updated_at DESC,d.id`,[workspaceId,caseId])).rows};
   });
  }
  /** Designs waiting on this person across the workspace's active planning cases (Home → Approvals). */
@@ -115,7 +130,8 @@ export class DesignService {
    if(!latest||!design.versions.some((v:{id:string})=>v.id===input.versionId)||(input.action!=='comment'&&latest.id!==input.versionId)) throw new ConflictException('Review the latest version. Earlier versions stay in history.');
    // Without the edit permission only the internal review decision is open (the reviewer checks follow).
    if(limited&&latest.status!=='internal_review')throw new ForbiddenException('Permissions required: pre_projects.view, pre_projects.edit');
-   validateDesignTransition(latest.status,input.action,input.note,input.decisionBy);
+   const review=await designFileReview(client,workspaceId,caseId);
+   validateDesignTransition(latest.status,input.action,input.note,input.decisionBy,review.internal);
    const clientDecision=latest.status==='client_review'&&input.action!=='comment';
    if(!clientDecision&&(input.decisionBy||input.decisionSource||input.decisionAt))throw new BadRequestException('Client decision details belong only to a client approval or change request.');
    if(input.action!=='client_review'&&input.reviewExpiresAt)throw new BadRequestException('A client decision deadline belongs only to a client review request.');
@@ -124,6 +140,7 @@ export class DesignService {
     if(input.contextConfirmed!==true)throw new BadRequestException('Confirm that the preview matches its folder, room, item and design type before review.');
     if(!input.reviewerId||!await this.access.hasPermission(client,workspaceId,input.reviewerId,'pre_projects.review_designs'))throw new BadRequestException('Choose an active internal reviewer with design review permission.');
     const active=await client.query(`SELECT id FROM users WHERE id=$1 AND status='active'`,[input.reviewerId]);if(!active.rowCount)throw new BadRequestException('Choose an active reviewer.');
+    if(review.role&&!(await this.reviewers(client,workspaceId,review.role)).some((row)=>row.id===input.reviewerId))throw new BadRequestException("Choose a reviewer who holds the package's review role.");
    }
    if(latest.status==='internal_review'&&input.action!=='comment') {
     if(!await this.access.hasPermission(client,workspaceId,userId,'pre_projects.review_designs'))throw new ForbiddenException('Design review permission is required.');
@@ -270,6 +287,13 @@ export class DesignService {
    if(input.clientVisible)await tellClients(client,{workspaceId:w,caseId:c,event:'design_replied',recordId:`design-thread:${threadId}`,title:design.title});
    return this.read(client,w,c,id);
   });
+ }
+ /** Who reviews a design file: members with design review permission; on a package with a review role, those holding it (everyone with the permission when nobody does). */
+ private async reviewers(client:PoolClient,workspaceId:string,role:string|null):Promise<Array<{id:string;name:string}>> {
+  const all=(await client.query<{id:string;name:string;membershipId:string}>(`SELECT DISTINCT u.id,u.display_name AS name,m.id AS "membershipId" FROM workspace_memberships m JOIN users u ON u.id=m.user_id JOIN effective_member_roles mr ON mr.membership_id=m.id JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' AND p.code='pre_projects.review_designs' ORDER BY name`,[workspaceId])).rows;
+  const holders=role?new Set(await membersWithRole(client,workspaceId,role)):null;
+  const held=holders?all.filter((row)=>holders.has(row.membershipId)):[];
+  return (held.length?held:all).map(({id,name})=>({id,name}));
  }
  private async portalReadiness(client:PoolClient,w:string,c:string){
   const result=await client.query(`SELECT s.enabled,s.slug,EXISTS(SELECT 1 FROM client_portal_grants g WHERE g.workspace_id=$1 AND g.case_id=$2 AND g.active=true AND g.role='approver') AS "hasApprover" FROM client_portal_settings s WHERE s.workspace_id=$1`,[w,c]);

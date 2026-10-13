@@ -4,6 +4,7 @@ import { DesignSystemProvider } from "@/design-system";
 import type { CaseContent, CaseDesign, DesignOptions } from "@/lib/pre-project/content";
 import { DesignWorkspace } from "./design-workspace";
 import { DesignActions } from "./design-actions";
+import { nextStep } from "@/lib/pre-project/design-workspace";
 import { READ_TIMEOUT_MS } from "@/lib/workspace/read-within";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }), usePathname: () => "/workspace/pre-projects/cases/c1/designs", useSearchParams: () => new URLSearchParams() }));
@@ -115,6 +116,17 @@ describe("design review actions", () => {
   ])("offers the next steps for %s", (status, labels) => {
     mountActions(design("D", "concepts", "r1", status));
     for (const label of labels) expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+  });
+  it("PLM-145: on a package without an internal review, the designer presents the draft to the client and no reviewer is asked for", async () => {
+    const fetcher = serve(design("D", "concepts", "r1", "client_review"));
+    mountActions(design("D", "concepts", "r1", "draft"), { internalReview: false, reviewers: [] });
+    expect(screen.queryByRole("button", { name: "Send for review" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Present to client" }));
+    expect(screen.queryByRole("button", { name: /Reviewer/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Present to client" }).at(-1)!);
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(JSON.parse(String(fetcher.mock.calls.at(-1)![1]!.body))).toMatchObject({ action: "client_review" });
+    expect(nextStep(design("E", "concepts", "r1", "draft"), { reviewers: [], internalReview: false })).toEqual({ key: "Present to the client" });
   });
   it("hides steps from people without the right", () => {
     mountActions(design("D", "concepts", "r1", "internal_review", { reviewerId: "u9" }));

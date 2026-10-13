@@ -94,7 +94,7 @@ export function chooseItemMaterial(current:ItemMaterial,value:CatalogChoice|null
 }
 
 export type DesignFolder={reviewerId?:string|null;approvedVersions?:string[]|null;approvedAt?:string|null;id:string;name:string;description:string;roomId:string|null;roomName?:string|null;scopeEntryId:string|null;scopeTitle?:string|null;version:number};
-export type DesignOptions={members?:Array<{id:string;name:string}>;folders:DesignFolder[];reviewers:Array<{id:string;name:string}>;actorId:string;canReview:boolean;canRecordClient:boolean;portal?:{enabled:boolean;slug:string|null;hasApprover:boolean}};
+export type DesignOptions={members?:Array<{id:string;name:string}>;folders:DesignFolder[];reviewers:Array<{id:string;name:string}>;/** PLM-145: false when the package has no internal review (the lead designer shares with the client directly). */internalReview?:boolean;actorId:string;canReview:boolean;canRecordClient:boolean;portal?:{enabled:boolean;slug:string|null;hasApprover:boolean}};
 
 export type DesignThread={anchor?:{x:number;y:number}|null;mentions?:string[];id:string;versionId:string;title:string;blocking:boolean;status:string;version:number;createdBy:string;createdByName:string;/** The audience switch: the client sees it in their portal. */clientVisible?:boolean;/** Started by the client in their portal. */fromClient?:boolean;createdAt:string;resolvedAt:string|null;resolvedByName:string|null;messages:Array<{id:string;body:string;createdBy:string;createdByName:string;createdAt:string;fromClient?:boolean}>};
 

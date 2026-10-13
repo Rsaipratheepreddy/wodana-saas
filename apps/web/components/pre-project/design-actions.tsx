@@ -81,9 +81,11 @@ export function DesignActions({ data, design, options, onUpdate, onRoomAdded }: 
   };
   const locked = status !== "draft";
   const steps: React.ReactNode[] = [];
-  if (writable && status === "draft") steps.push(<Button key="review" size="compact" variant="primary" onPress={() => open("review")}>{t("Send for review")}</Button>);
+  // PLM-145: an internal review only where the package has one; otherwise the designer presents the draft to the client.
+  const reviewed = options.internalReview !== false;
+  if (writable && status === "draft" && reviewed) steps.push(<Button key="review" size="compact" variant="primary" onPress={() => open("review")}>{t("Send for review")}</Button>);
   if (status === "internal_review" && isReviewer) steps.push(<Button key="approve" size="compact" variant="primary" isLoading={busy && mode === null} onPress={() => void send("internal_approved")}>{t("Approve")}</Button>, <Button key="back" size="compact" onPress={() => open("send_back")}>{t("Send back")}</Button>);
-  if (writable && status === "internal_approved") steps.push(<Button key="present" size="compact" variant="primary" onPress={() => open("present")}>{t("Present to client")}</Button>);
+  if (writable && (status === "internal_approved" || (status === "draft" && !reviewed))) steps.push(<Button key="present" size="compact" variant="primary" onPress={() => open("present")}>{t("Present to client")}</Button>);
   if (status === "client_review" && options.canRecordClient) steps.push(<Button key="yes" size="compact" variant="primary" onPress={() => open("client_approved")}>{t("Client approved")}</Button>, <Button key="no" size="compact" onPress={() => open("client_changes")}>{t("Client wants changes")}</Button>);
   if (writable) steps.push(<Button key="details" size="compact" variant="quiet" onPress={() => { setTitle(design.title); setRoomId(design.roomId); setStage(design.stage ?? null); open("details"); }}>{t("Edit details")}</Button>);
   if (writable && ["approved", "changes_requested", "rejected", "expired"].includes(status)) steps.push(<Button key="revision" size="compact" variant={status === "approved" ? "secondary" : "primary"} isLoading={busy} onPress={() => fileInput.current?.click()}>{t("Upload revision")}</Button>);

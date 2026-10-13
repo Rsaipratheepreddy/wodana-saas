@@ -121,6 +121,37 @@ integration("QA-004: the assigned design reviewer decides without editing the ca
     });
   });
 
+  const step = async (w: World, userId: string, design: { id: string; versionId: string }, action: string, extra: Record<string, unknown> = {}) =>
+    w.as(userId).activity(actor, w.workspaceId, w.caseId, design.id, { id: randomUUID(), version: await versionOf(w, design.id), versionId: design.versionId, action, note: "", decisionBy: "", ...extra });
+  const journey = (w: World, role: string | null) => w.client.query("INSERT INTO design_journeys(workspace_id,case_id,package_name,reviewer_role_code) VALUES($1,$2,'Package',$3)", [w.workspaceId, w.caseId, role]);
+
+  it("PLM-145: on a package without a review role the lead designer shares the file with the client directly, and no reviewer is offered", async () => {
+    await world(async (w) => {
+      await journey(w, null);
+      const concept = await w.design("Majlis concept", "draft", null);
+      const options = await w.as(w.designer).list(actor, w.workspaceId, w.caseId);
+      expect(options).toMatchObject({ internalReview: false, reviewers: [] });
+      await expect(step(w, w.designer, concept, "internal_review", { reviewerId: w.director, contextConfirmed: true })).rejects.toThrow(/no internal review/);
+      const shared = await step(w, w.designer, concept, "client_review");
+      expect(shared.versions[0]).toMatchObject({ status: "client_review" });
+      expect((await w.client.query(`SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND event_type::text = 'design.review_requested'`, [w.workspaceId])).rows[0].n).toBe(0);
+    });
+  });
+
+  it("PLM-145: keeps the internal review on a package with a review role, with only that role's holders as reviewers", async () => {
+    await world(async (w) => {
+      await journey(w, "team_creative_director");
+      const concept = await w.design("Majlis concept", "draft", null);
+      const options = await w.as(w.designer).list(actor, w.workspaceId, w.caseId);
+      expect(options.internalReview).toBe(true);
+      expect(options.reviewers.map((row: { id: string }) => row.id)).toEqual([w.director]);
+      await expect(step(w, w.designer, concept, "client_review")).rejects.toThrow(/no longer available/);
+      await expect(step(w, w.designer, concept, "internal_review", { reviewerId: w.otherReviewer, contextConfirmed: true })).rejects.toThrow(/review role/);
+      const sent = await step(w, w.designer, concept, "internal_review", { reviewerId: w.director, contextConfirmed: true });
+      expect(sent.versions[0]).toMatchObject({ status: "internal_review", reviewerId: w.director });
+    });
+  });
+
   it("keeps the decision with the assigned reviewer and everything else with editors", async () => {
     await world(async (w) => {
       const concept = await w.design("Majlis concept", "internal_review", w.director);

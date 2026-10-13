@@ -112,10 +112,11 @@ export const designStatusTone = (status: string): "neutral" | "info" | "warning"
 export const latestOf = (design: CaseDesign) => design.versions[0];
 
 /** What happens next on a design, as a translation key and its values. */
-export function nextStep(design: CaseDesign, options: Pick<DesignOptions, "reviewers">): { key: string; values?: Record<string, string> } {
+export function nextStep(design: CaseDesign, options: Pick<DesignOptions, "reviewers" | "internalReview">): { key: string; values?: Record<string, string> } {
   const latest = latestOf(design);
   if (!latest) return { key: tKey("Upload a file") };
-  if (latest.status === "draft") return { key: tKey("Send for review") };
+  // PLM-145: without an internal review on the package, the designer shares it with the client directly.
+  if (latest.status === "draft") return options.internalReview === false ? { key: tKey("Present to the client") } : { key: tKey("Send for review") };
   if (latest.status === "internal_review") {
     const name = personDisplayName(options.reviewers.find((item) => item.id === latest.reviewerId)?.name);
     return name ? { key: tKey("With {name}"), values: { name } } : { key: tKey("With the reviewer") };
