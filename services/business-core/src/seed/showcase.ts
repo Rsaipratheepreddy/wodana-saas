@@ -8,7 +8,7 @@ import { ClientPortalService } from "../client-portal/client-portal.service";
 import { CommercialService } from "../commercial/commercial.service";
 import { isOperationalEvidence } from "../commercial/release-integrity";
 import { CrmActivitiesService } from "../crm/activities/crm-activities.service";
-import { CreateActivityDto } from "../crm/activities/dto/activities.dto";
+import { CompleteActivityDto, CreateActivityDto } from "../crm/activities/dto/activities.dto";
 import { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
 import { CrmInboxService } from "../crm/conversations/crm-inbox.service";
 import { ProviderInboundMessageDto } from "../crm/conversations/dto/conversations.dto";
@@ -17,8 +17,12 @@ import { CreateIntakeEventDto, UpdateLeadDetailsDto } from "../crm/intake/dto/in
 import { CrmLeadsService } from "../crm/leads/crm-leads.service";
 import { LogContactDto } from "../crm/leads/dto/leads.dto";
 import { hasResolvedEnquiryType } from "../crm/leads/lead-options";
+import { RequirementNotesService, SaveRequirementNoteDto } from "../crm/leads/requirement-notes.service";
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
+import { OpportunityDiscoveryService } from "../crm/opportunities/discovery.service";
+import { BookIntroDto, SaveDiscoveryDto } from "../crm/opportunities/dto/discovery.dto";
 import { QualifyLeadDto, TransitionOpportunityDto } from "../crm/opportunities/dto/opportunities.dto";
+import { IntroMeetingService } from "../crm/opportunities/intro-meeting.service";
 import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { FactoryService } from "../factory/factory.service";
@@ -573,6 +577,25 @@ type Upload = { buffer: Buffer; originalname: string; mimetype: string; size: nu
 export type ShowcaseCtx = { s: Scenario; rooms: Map<string, string>; ids: ScenarioIds };
 type Ctx = ShowcaseCtx;
 type ProgressDay = { summary: string; tasks?: Array<{ key: string; progress: number }>; next?: string[]; rooms: string[]; pair?: boolean; note?: { text: string; internal: boolean } };
+
+/** A job on the sales board, as its flow's steps need it: the opportunity, its enquiry, who sells it, the client's email and the property. */
+export type FlowJob = { ns: string; opportunityId: string; leadId: string; owner: Actor; email: string; place: string };
+/** One thing the job's flow still needs (the Now card's missing items). */
+export type FlowNeed = { key: string; label: string };
+/** The flow's needs the discovery form answers: the client details. */
+const DISCOVERY_NEEDS = new Set(["clientEmail", "propertyLocation", "floorPlanOrArea"]);
+/** The home's size on the discovery form, by unit (about the same floor area). */
+const DISCOVERY_AREA = { sqm: "160", sqft: "1720" } as const;
+
+/** An answer to a required discovery question, by its kind. */
+function discoveryAnswer(question: { dataType?: string; options?: Array<{ id: string }> }, today: string): unknown {
+  if (question.dataType === "multi_select") return question.options?.length ? [question.options[0].id] : ["Discussed with the client"];
+  if (question.options?.length) return question.options[0].id;
+  if (question.dataType === "boolean") return true;
+  if (question.dataType === "number") return 1;
+  if (question.dataType === "date") return today;
+  return "Discussed with the client on the intro call.";
+}
 
 /** A stage that can't go on in this run: reported, never a failure. */
 export class Skip extends Error {
@@ -1195,6 +1218,8 @@ export class ShowcaseSeed {
     if (!ids.leadId || !after("enquiry")) return;
     await this.stage(at("opportunity"), async () => { ids.opportunityId = await this.opportunity(ctx, ids.leadId!, ids.partyId!); });
     if (!ids.opportunityId || !after("qualified")) return;
+    // What the job's flow asks of the salesperson before design work starts (the client details, discovery, the intro meeting).
+    await this.stage(at("sales steps"), () => this.salesSteps(ctx));
     await this.stage(at("planning"), async () => { ids.caseId = await this.planningCase(ctx, ids.opportunityId!); });
     if (!ids.caseId) return;
     const caseId = ids.caseId;
@@ -1381,6 +1406,162 @@ export class ShowcaseSeed {
     const { s } = ctx;
     const opportunity = await this.qualify(leadId, partyId, await this.as(s.owner), { title: s.title, summary: s.summary, amount: s.amount, daysAgo: s.daysAgo });
     return opportunity.id;
+  }
+
+  // ---------------------------------------------------------------- the job's flow: the salesperson's steps
+
+  /** A story's job on the sales board, for its flow's steps. */
+  protected async storyJob(ctx: Ctx): Promise<FlowJob> {
+    const { s, ids } = ctx;
+    return { ns: s.ns || `${s.key}:`, opportunityId: ids.opportunityId!, leadId: ids.leadId!, owner: await this.as(s.owner), email: s.client.email,
+      place: s.title.includes(s.area) ? s.title : `${s.title}, ${s.area}` };
+  }
+
+  /** The opportunity as its owner sees it: its stage, version and status, and its flow (what the next column and Won still need). */
+  protected async opportunityView(job: FlowJob) {
+    return (await this.get(CrmOpportunitiesService).get(job.owner, this.w, job.opportunityId)) as unknown as {
+      stageId: string; status: string; version: number; flow: { next: { stageId: string; name: string } | null; missing: FlowNeed[]; toWon: FlowNeed[] } };
+  }
+
+  /** Before design work starts, the steps the job's flow asks of the salesperson that the story can already do. */
+  protected async salesSteps(ctx: Ctx) {
+    const job = await this.storyJob(ctx);
+    const view = await this.opportunityView(job);
+    if (view.status === "open") await this.flowSteps(job, view.flow.toWon);
+  }
+
+  /**
+   * The steps the job's flow still asks for, done the way the salesperson does them (plan §5a): the first contact
+   * logged, the client details and the discovery form (the floor plan put in the enquiry's files first), and the intro
+   * meeting booked in a designer's calendar and held. The rest of a flow (a quotation, the client's acceptance, the
+   * payment proof) comes from the records the story makes later. Nothing here moves the job or writes past its gates.
+   */
+  protected async flowSteps(job: FlowJob, needs: readonly FlowNeed[]) {
+    const keys = new Set(needs.map((item) => item.key));
+    if (keys.has("contact")) await this.firstContact(job);
+    // The intro can only be booked once the floor plan, the area and the client's email are in.
+    if (keys.has("introMeeting") || needs.some((item) => DISCOVERY_NEEDS.has(item.key) || item.key.startsWith("discovery:"))) await this.discoveryForm(job);
+    if (keys.has("introMeeting")) await this.introMeeting(job);
+  }
+
+  /**
+   * Moves the job along the board to a stage, one column at a time, each column's steps done before the move (the
+   * board's own gates decide). A stage the flow passes over (an optional column) is moved to directly.
+   */
+  protected async walkTo(job: FlowJob, stages: ReadonlyArray<{ id: string; label: string }>, targetId: string) {
+    const opportunities = this.get(CrmOpportunitiesService);
+    const at = (id: string) => stages.findIndex((stage) => stage.id === id);
+    const target = at(targetId);
+    for (let hop = 0; hop < stages.length; hop += 1) {
+      let view = await this.opportunityView(job);
+      if (view.stageId === targetId) return;
+      if (view.status !== "open" || at(view.stageId) > target) throw new Skip("the opportunity is already past this stage");
+      const next = view.flow.next && at(view.flow.next.stageId) >= 0 && at(view.flow.next.stageId) <= target ? view.flow.next : null;
+      const to = next ?? { stageId: targetId, name: stages[target].label };
+      if (next) {
+        await this.flowSteps(job, view.flow.missing);
+        view = await this.opportunityView(job);
+        if (view.flow.missing.length) throw new Skip(`${to.name} still needs: ${view.flow.missing.map((item) => item.label).join(", ")}`);
+      }
+      await this.advance(`opportunity moved to ${to.name}`, false, () => this.tryAs(job.owner, async (who) => opportunities.transition(who, this.w, job.opportunityId,
+        await this.validated(TransitionOpportunityDto, { version: view.version, stageId: to.stageId, nextActionAt: `${this.day(3)}T09:00:00.000Z` }))));
+    }
+  }
+
+  /** The first contact: a call logged on the enquiry while it is open, else on the opportunity (a completed call). */
+  protected async firstContact(job: FlowJob) {
+    const leads = this.get(CrmLeadsService);
+    const lead = (await leads.get(job.owner, this.w, job.leadId)) as unknown as { status: string; version: number };
+    const note = "First call: the client described the work and would like to meet.";
+    if (!["qualified", "disqualified", "duplicate"].includes(lead.status)) {
+      await this.advance("first contact logged (call)", false, () => this.tryAs(job.owner, async (who) => leads.logContact(who, this.w, job.leadId,
+        await this.validated(LogContactDto, { version: lead.version, channel: "call", outcome: "willing_to_talk", note }))));
+      return;
+    }
+    const activities = this.get(CrmActivitiesService);
+    await this.advance("first contact logged (call)", false, () => this.tryAs(job.owner, async (who) => {
+      const call = (await activities.create(who, this.w, await this.validated(CreateActivityDto, { opportunityId: job.opportunityId, type: "call", interactionDirection: "outbound",
+        title: "First call with the client", description: note, ...(job.owner.membershipId ? { ownerMembershipId: job.owner.membershipId } : {}) }))) as { id: string; version: number };
+      await activities.complete(who, this.w, call.id, await this.validated(CompleteActivityDto, { version: call.version, outcome: "willing_to_talk" }));
+    }));
+  }
+
+  /**
+   * The discovery form as the salesperson fills it in: the floor plan from the enquiry's files, the area (in the unit
+   * the firm's design packages use, square metres otherwise, as the form does), the property's location, the client's
+   * email and an answer to every required question. The enquiry and client types come from the enquiry itself.
+   */
+  protected async discoveryForm(job: FlowJob) {
+    const discovery = this.get(OpportunityDiscoveryService);
+    type Question = { key: string; required: boolean; dataType?: string; options?: Array<{ id: string }> };
+    const view = (await discovery.get(job.owner, this.w, job.opportunityId)) as unknown as { version: number; questions: Question[]; answers: Record<string, unknown>;
+      facts: { area: string | null; areaUnit: "sqft" | "sqm" | null; propertyLocation: string | null; clientEmail: string | null; floorPlanAssetId: string | null };
+      missing: Array<{ key: string }> };
+    if (!view.missing.some((item) => !["enquiryType", "clientType"].includes(item.key))) { this.kept("discovery form"); return; }
+    const floorPlanAssetId = view.facts.floorPlanAssetId ?? await this.floorPlan(job);
+    const unit = view.facts.areaUnit ?? await this.areaUnit();
+    const blank = (value: unknown) => value === undefined || value === null || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && !value.length);
+    const answers = Object.fromEntries(view.questions.filter((question) => question.required && blank(view.answers[question.key]))
+      .map((question) => [question.key, discoveryAnswer(question, this.day(0))]));
+    await this.advance("discovery form (floor plan, area, property location, client email)", false, () => this.tryAs(job.owner, async (who) => discovery.save(who, this.w, job.opportunityId,
+      await this.validated(SaveDiscoveryDto, { version: view.version, area: view.facts.area ?? DISCOVERY_AREA[unit], areaUnit: unit, propertyLocation: view.facts.propertyLocation ?? job.place,
+        clientEmail: view.facts.clientEmail ?? job.email, floorPlanAssetId, ...(Object.keys(answers).length ? { answers } : {}) }))));
+  }
+
+  /** The area unit the discovery form starts from: the firm's first design package priced by area, else square metres. */
+  protected async areaUnit(): Promise<"sqft" | "sqm"> {
+    const owner = await this.actor(this.input.actorUserId);
+    const { DesignPackagesService } = await import("../design/design-packages.service");
+    const packages = ((await this.get(DesignPackagesService).get(owner, this.w)) as { packages: Array<{ status: string; areaUnit: "sqft" | "sqm" | null }> }).packages;
+    return packages.find((pkg) => pkg.status === "active" && pkg.areaUnit)?.areaUnit ?? "sqm";
+  }
+
+  /** The floor plan in the enquiry's files, as the discovery form adds it: a note of its own on the enquiry, the file on it. */
+  protected async floorPlan(job: FlowJob) {
+    const notes = this.get(RequirementNotesService);
+    const target = { leadId: job.leadId };
+    const noteId = this.id(job.ns, "note:floor-plan"), assetId = this.id(job.ns, "asset:floor-plan");
+    const note = ((await notes.run(job.owner, this.w, target)) as { items: Array<{ id: string; assetIds?: string[] }> }).items.find((row) => row.id === noteId);
+    await this.advance("floor plan in the enquiry's files", Boolean(note?.assetIds?.includes(assetId)), () => this.tryAs(job.owner, async (who) => {
+      await notes.upload(who, this.w, target, noteId, assetId, { ...tile(`${job.ns}floor-plan`), originalname: "Floor plan.png" });
+      await notes.run(who, this.w, target, await this.validated(SaveRequirementNoteDto, { id: noteId, version: 0, title: "Floor plan", note: "", archived: false, pinned: false, assetIds: [assetId], links: [] }));
+    }));
+    return assetId;
+  }
+
+  /** The intro meeting booked in the designer's calendar (the job's designer, else the test designer) and held. */
+  protected async introMeeting(job: FlowJob) {
+    const intro = this.get(IntroMeetingService), activities = this.get(CrmActivitiesService);
+    type View = { designer: { membershipId: string } | null; intro: { activityId: string; status: string } | null };
+    let view = (await intro.get(job.owner, this.w, job.opportunityId)) as unknown as View;
+    if (view.intro?.status === "completed") { this.kept("intro meeting held"); return; }
+    if (view.intro?.status !== "pending") {
+      const designers = ((await intro.designers(job.owner, this.w, job.opportunityId)) as { items: Array<{ id: string; displayName: string }> }).items;
+      const preferred = (await this.as("designer")).membershipId;
+      const designer = designers.find((row) => row.id === view.designer?.membershipId) ?? designers.find((row) => row.id === preferred) ?? designers[0];
+      if (!designer) throw new Skip("nobody who does design work to hold the intro meeting with");
+      // Now, or the next hour the designer is free: the meeting is held there and then.
+      let booked = false;
+      for (let hour = 0; hour < 12 && !booked; hour += 1) {
+        const start = new Date(Date.now() + 60_000 + hour * 3_600_000);
+        try {
+          await this.tryAs(job.owner, async (who) => intro.book(who, this.w, job.opportunityId, await this.validated(BookIntroDto, {
+            designerMembershipId: designer.id, startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 3_600_000).toISOString(), timezone: this.timezone,
+            mode: "in_person", place: job.place, note: "The brief, the budget and how we work." })));
+          booked = true;
+        } catch (error) {
+          if (!(error instanceof HttpException) || error.getStatus() !== 409 || !/busy/i.test(describe(error))) throw new Error(`intro meeting booked: ${describe(error)}`, { cause: error });
+        }
+      }
+      if (!booked) throw new Skip("the designer has no free hour for the intro meeting today");
+      this.made(`intro meeting booked with ${designer.displayName}`);
+      view = (await intro.get(job.owner, this.w, job.opportunityId)) as unknown as View;
+    }
+    const activityId = view.intro?.activityId;
+    if (!activityId) throw new Skip("the intro meeting was booked but isn't on the opportunity");
+    const activity = (await activities.get(job.owner, this.w, activityId)) as unknown as { status: string; version: number };
+    await this.advance("intro meeting held", activity.status === "completed", () => this.tryAs(job.owner, async (who) => activities.complete(who, this.w, activityId,
+      await this.validated(CompleteActivityDto, { version: activity.version, outcome: "held" }))));
   }
 
   protected async planningCase(ctx: Ctx, opportunityId: string) {
@@ -1885,9 +2066,18 @@ export class ShowcaseSeed {
     if (!release) throw new Skip("the accepted quotation has no release payment");
     await this.payment(ctx, caseId, release, "advance", `RCPT-${ctx.s.key.toUpperCase().replace(/[^A-Z0-9]+/g, "")}-ADV-1`);
 
-    // Sales marks the opportunity won once the client accepted and paid.
+    // Sales marks the opportunity won once the client accepted and paid: every step its flow asks for is done first.
     const opportunities = this.get(CrmOpportunitiesService);
     const sales = await this.as(ctx.s.owner);
+    if (ctx.ids.leadId) {
+      const job = await this.storyJob(ctx);
+      const view = await this.opportunityView(job);
+      if (view.status === "open") {
+        await this.flowSteps(job, view.flow.toWon);
+        const left = (await this.opportunityView(job)).flow.toWon;
+        if (left.length) throw new Skip(`Won still needs: ${left.map((item) => item.label).join(", ")}`);
+      }
+    }
     const opportunity = (await opportunities.get(sales, this.w, opportunityId)) as unknown as { status: string; version: number; pipelineId: string };
     await this.advance("opportunity won", opportunity.status === "won", async () => {
       const pipelines = (await opportunities.listPipelines(sales, this.w)) as Array<{ id: string; stages: Array<{ id: string; code: string }> }>;

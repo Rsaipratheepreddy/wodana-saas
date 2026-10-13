@@ -1,7 +1,6 @@
 import { ApprovalsService } from "../../approvals/approvals.service";
 import { CrmConversationsService } from "../../crm/conversations/crm-conversations.service";
 import { ProviderInboundMessageDto } from "../../crm/conversations/dto/conversations.dto";
-import { CrmLeadsService } from "../../crm/leads/crm-leads.service";
 import { CrmOpportunitiesService } from "../../crm/opportunities/crm-opportunities.service";
 import { TransitionOpportunityDto } from "../../crm/opportunities/dto/opportunities.dto";
 import { DatabaseService } from "../../database/database.service";
@@ -30,10 +29,14 @@ import type { StoryKey } from "./scenario-stories";
 export class ScenarioSeedTwo extends ScenarioSeed {
   // ---------------------------------------------------------------- the sales pipeline
 
-  /** An opportunity at each stage of the organization's pipeline (as far as its enquiry type's steps allow). */
+  /**
+   * An opportunity at each stage of the organization's pipeline. The salesperson walks it along the board one column at
+   * a time, doing what its enquiry type's flow asks before each move (walkTo); a lost one is closed with its reason.
+   */
   async pipeline(stages: ReadonlyArray<{ id: string; code: string; label: string }>) {
-    const opportunities = this.get(CrmOpportunitiesService), leads = this.get(CrmLeadsService);
+    const opportunities = this.get(CrmOpportunitiesService);
     const actor = await this.actor(this.input.actorUserId);
+    const working = stages.filter((stage) => stage.code !== "won" && stage.code !== "lost");
     for (const [index, stage] of stages.entries()) {
       await this.softly(`sales.opportunity.${stage.code}`, async () => {
         const person = regionPerson(this.scenarioInput.fixture, 70 + index, this.scenarioInput.country);
@@ -48,11 +51,14 @@ export class ScenarioSeedTwo extends ScenarioSeed {
         const opportunity = await this.qualify(lead.id, lead.partyId, owner, { title, summary: facts.summary, amount: Number(regionAmount(this.scenarioInput.fixture, "80000")), daysAgo: 5 });
         const current = (await opportunities.get(owner, this.w, opportunity.id)) as unknown as { version: number; stageId: string; status: string };
         if (current.stageId === stage.id) return;
-        const terminal = stage.code === "won" || stage.code === "lost";
         if (stage.code === "won") throw new Skip("an opportunity is won by its client's acceptance and payment (the projects show those)");
-        await this.advance(`opportunity moved to ${stage.label}`, false, async () => this.tryAs(owner, async (who) => opportunities.transition(who, this.w, opportunity.id,
-          await this.validated(TransitionOpportunityDto, { version: current.version, stageId: stage.id, ...(terminal ? { status: "lost", reason: "Budget moved to next year." } : { nextActionAt: this.day(3) + "T09:00:00.000Z" }) }))));
-        void leads;
+        if (stage.code === "lost") {
+          await this.advance(`opportunity moved to ${stage.label}`, false, async () => this.tryAs(owner, async (who) => opportunities.transition(who, this.w, opportunity.id,
+            await this.validated(TransitionOpportunityDto, { version: current.version, stageId: stage.id, status: "lost", reason: "Budget moved to next year." }))));
+          return;
+        }
+        const job = { ns: `scenario:opp-${stage.code}:`, opportunityId: opportunity.id, leadId: lead.id, owner, email: person.email, place: `${person.place.area}, ${person.place.city}` };
+        await this.walkTo(job, working, stage.id);
       });
     }
   }
