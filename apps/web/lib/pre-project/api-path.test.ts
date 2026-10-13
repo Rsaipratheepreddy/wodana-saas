@@ -21,6 +21,12 @@ describe("pre-execution browser gateway", () => {
     expect(allowedCasePath([caseId, "design-journey", "stages", "approval", "deadline"], "POST")).toBe(false);
     expect(allowedCasePath([caseId, "design-journey", "samples", "approve"], "GET")).toBe(false);
   });
+  it("passes the reviewer's approval of a presentation round before the client sees it (PLM-145)", () => {
+    const round = "9b1f0c2e-5d4a-4c3b-8a2e-1f0e9d8c7b6a";
+    expect(allowedCasePath([caseId, "design-presentations", round, "review"], "POST")).toBe(true);
+    expect(allowedCasePath([caseId, "design-presentations", round, "review"], "GET")).toBe(false);
+    expect(allowedCasePath([caseId, "design-presentations", "not-a-round", "review"], "POST")).toBe(false);
+  });
   it("passes value engineering's view and commands, and nothing else on it (PLM-147)", () => {
     expect(allowedCasePath([caseId, "value-engineering"], "GET")).toBe(true);
     expect(allowedCasePath([caseId, "value-engineering", "start"], "POST")).toBe(true);

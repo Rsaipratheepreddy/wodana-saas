@@ -13,7 +13,7 @@ export function allowedCasePath(path:string[],method:string) {
       ||(path.length===5&&path[2]==='stages'&&['space_planning','concepts','material_selection','renders'].includes(path[3])&&['skip','assign'].includes(path[4]))
       ||(path.length===4&&((path[2]==='inspiration'&&path[3]==='close')||(path[2]==='site-visit'&&['schedule','complete'].includes(path[3]))||(path[2]==='material-selection'&&['schedule','confirm','not-required'].includes(path[3]))))));
   // Plan §6.7a: concept presentations and the materials and decisions ledger.
-  if(path[1]==='design-presentations')return (path.length===2&&['GET','POST'].includes(method))||(method==='POST'&&path.length===4&&UUID.test(path[2])&&['present','withdraw','decision'].includes(path[3]));
+  if(path[1]==='design-presentations')return (path.length===2&&['GET','POST'].includes(method))||(method==='POST'&&path.length===4&&UUID.test(path[2])&&['present','withdraw','decision','review'].includes(path[3]));
   if(path[1]==='design-ledger')return (method==='GET'&&(path.length===2||(path.length===3&&path[2]==='catalog')))||(method==='POST'&&((path.length===3&&['entries','approve-changes'].includes(path[2]))
     ||(path.length===5&&path[2]==='entries'&&UUID.test(path[3])&&['versions','archive'].includes(path[4]))
     ||(path.length===7&&path[2]==='entries'&&UUID.test(path[3])&&path[4]==='versions'&&UUID.test(path[5])&&path[6]==='decision')));
