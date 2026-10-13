@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import { DesignJourney, type JourneyStage, type JourneyView } from "./design-journey";
+import { DesignJourney, ScheduleVisitDialog, type JourneyStage, type JourneyView } from "./design-journey";
 
 afterEach(() => vi.unstubAllGlobals());
 const stage = (over: Partial<JourneyStage>): JourneyStage => ({ stage: "concepts", label: "Concepts", status: "locked", ownerName: "Dana", dueAt: null, completedAt: null, overdue: false, version: 1, scheduledAt: null, scheduledEnd: null, scheduledTimezone: null, scheduledLocation: null, ...over });
@@ -149,5 +149,15 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     // The client's home is the other choice, with their address.
     fireEvent.click(screen.getByRole("button", { name: "At the client's home" }));
     expect(await screen.findByText("Client's address")).toBeInTheDocument();
+  });
+});
+
+describe("meeting times on the workspace's clock", () => {
+  it("books a meeting (kick-off, site visit, value engineering) with the time field of the workspace locale: AM/PM where it uses them", () => {
+    const { unmount } = render(<DesignSystemProvider locale="en-AE"><ScheduleVisitDialog title="Book value engineering meeting" timezone="Asia/Dubai" onClose={vi.fn()} onSubmit={vi.fn()} /></DesignSystemProvider>);
+    expect(within(screen.getByRole("group", { name: "Start" })).getByText("AM")).toBeInTheDocument();
+    unmount();
+    render(<DesignSystemProvider locale="en-GB"><ScheduleVisitDialog title="Book value engineering meeting" timezone="Europe/London" onClose={vi.fn()} onSubmit={vi.fn()} /></DesignSystemProvider>);
+    expect(within(screen.getByRole("group", { name: "Start" })).queryByText("AM")).toBeNull();
   });
 });

@@ -251,8 +251,15 @@ export function DateField({ description, errorMessage, label, firstDayOfWeek, qu
   return <DatePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label={t("Open calendar")}><CalendarDays size={15} /></AriaButton></Group>{quickPicks === "inline" ? picks : null}<FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><DialogCalendar firstDayOfWeek={firstDayOfWeek} picks={picks} /></Popover></DatePicker>;
 }
 
-export function TimeField({ description, errorMessage, label, ...props }: TimeFieldProps<TimeValue> & FieldChromeProps) {
-  return <AriaTimeField {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><DateInput className="wd-date-group wd-date-input wd-time-input wd-focus-frame">{segment => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><FieldMeta description={description} errorMessage={errorMessage} /></AriaTimeField>;
+/** The clock a locale writes times with: 12 (with AM/PM) or 24 hours. */
+export function localeHourCycle(locale: string): 12 | 24 {
+  try { const cycle = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle; return cycle === "h23" || cycle === "h24" ? 24 : 12; } catch { return 12; }
+}
+
+/** A time of day, on the workspace locale's clock (12-hour with AM/PM, or 24-hour) unless the field says otherwise. */
+export function TimeField({ description, errorMessage, label, hourCycle, ...props }: TimeFieldProps<TimeValue> & FieldChromeProps) {
+  const { locale } = useDesignSystem();
+  return <AriaTimeField {...props} hourCycle={hourCycle ?? localeHourCycle(locale)} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><DateInput className="wd-date-group wd-date-input wd-time-input wd-focus-frame">{segment => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><FieldMeta description={description} errorMessage={errorMessage} /></AriaTimeField>;
 }
 
 function DialogCalendar({ firstDayOfWeek, picks }: CalendarStart & { picks?: ReactNode }) {

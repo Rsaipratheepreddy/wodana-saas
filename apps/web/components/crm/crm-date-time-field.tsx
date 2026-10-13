@@ -12,6 +12,6 @@ export function CrmDateTimeField({ label, value = "", onChange, isRequired = fal
   const [date = "", time = ""] = value.split("T");
   return <div className={styles.dateFields}>
     <DateField label={t("{label} date", { label })} isRequired={isRequired} isDisabled={isDisabled} value={date ? parseDate(date) : null} onChange={next => onChange(`${next?.toString() ?? ""}T${time}`)} />
-    <TimeField label={t("{label} time", { label })} isRequired={isRequired} isDisabled={isDisabled} granularity="minute" hourCycle={12} value={time ? parseTime(time) : null} onChange={next => onChange(`${date}T${next?.toString().slice(0, 5) ?? ""}`)} />
+    <TimeField label={t("{label} time", { label })} isRequired={isRequired} isDisabled={isDisabled} granularity="minute" value={time ? parseTime(time) : null} onChange={next => onChange(`${date}T${next?.toString().slice(0, 5) ?? ""}`)} />
   </div>;
 }
