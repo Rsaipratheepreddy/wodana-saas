@@ -6,7 +6,7 @@ import { FileText, Plus } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
   Badge, Button, ComboboxField, DateField, EmptyState, ErrorState, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, NumericInput, RecordTable, SegmentedControl,
-  SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem, type DataGridColumn,
+  SelectField, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
@@ -22,6 +22,8 @@ import styles from "./design-decisions.module.css";
 type Draft = {
   kind: "material" | "design"; roomId: string | null; catalogItemId: string | null; title: string; specification: string; supplier: string; quantity: string; unit: string; unitPrice: string;
   timeImpactDays: number; source: string; saidOn: string; evidence: CaseAsset | null; evidenceNote: string; note: string;
+  /** PLM-144: from a local supplier instead of the firm's own stock or brands. */
+  outsourced: boolean;
 };
 /** A catalog item a choice can be tied to (the quotation's catalog search), with its preferred supplier. */
 type CatalogChoice = { id: string; code: string; name: string; categoryName: string | null; description: string | null; unitCode: string; supplier: string | null };
@@ -100,7 +102,11 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
     { id: "impact", header: t("Impact"), accessorFn: (row) => row.current?.priceImpact ?? "", meta: { priority: "low" }, cell: ({ row }: { row: { original: LedgerEntry } }) => <span className={styles.amount}>{impact(row.original.current)}</span> },
     { id: "client", header: t("Client"), accessorFn: (row) => row.current?.status ?? "", cell: ({ row }: { row: { original: LedgerEntry } }) => {
       const status = clientStatus(row.original.current);
-      return <Badge tone={status.tone}>{t(status.key)}</Badge>;
+      const current = row.original.current;
+      // PLM-144: a material from a local supplier counts once it is signed off.
+      const signOff = current?.outsourced ? current.signOff === "approved" ? <Badge tone="success">{t("Outsourced · signed off")}</Badge>
+        : current.signOff === "rejected" || current.signOff === "returned" ? <Badge tone="danger">{t("Outsourced · not approved")}</Badge> : <Badge tone="warning">{t("Outsourced · waiting for sign-off")}</Badge> : null;
+      return <span className={styles.inline}><Badge tone={status.tone}>{t(status.key)}</Badge>{signOff}</span>;
     } },
     { id: "procurement", header: t("Procurement uses"), accessorFn: (row) => row.locked?.number ?? 0, meta: { priority: "low" },
       cell: ({ row }: { row: { original: LedgerEntry } }) => row.original.locked ? <span>V{row.original.locked.number}</span> : <span className={styles.muted}>{t("Not yet")}</span> },
@@ -130,7 +136,7 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
       onClose={() => setDialog(null)} onSubmit={async (draft) => {
         const fields = { catalogItemId: draft.catalogItemId, title: draft.title.trim(), specification: draft.specification.trim() || null, supplier: draft.supplier.trim() || null, quantity: draft.quantity || null, unit: draft.unit.trim() || null,
           unitPrice: draft.unitPrice || null, timeImpactDays: draft.timeImpactDays || 0, source: draft.source, saidAt: saidAt(draft.saidOn), evidenceAssetId: draft.evidence?.id ?? null,
-          evidenceNote: draft.evidenceNote.trim() || null, note: draft.note.trim() || null };
+          evidenceNote: draft.evidenceNote.trim() || null, note: draft.note.trim() || null, outsourced: draft.outsourced };
         if (dialog.kind === "add") saved(t("Choice added. It waits for the client's confirmation."), await caseRequest<LedgerView>(workspaceId, caseId, "design-ledger/entries", "POST",
           { id: crypto.randomUUID(), versionId: crypto.randomUUID(), kind: draft.kind, roomId: draft.roomId, ...fields }));
         else saved(t("New version recorded."), await caseRequest<LedgerView>(workspaceId, caseId, `design-ledger/entries/${dialog.entry.id}/versions`, "POST",
@@ -229,7 +235,7 @@ function EntryForm({ workspaceId, caseId, rooms, currency, entry, onClose, onSub
   const current = entry?.current;
   const [draft, setDraft] = useState<Draft>(() => ({ kind: entry?.kind ?? "material", roomId: entry?.roomId ?? null, catalogItemId: current?.catalogItemId ?? null, title: current?.title ?? "", specification: current?.specification ?? "",
     supplier: current?.supplier ?? "", quantity: current?.quantity ?? "", unit: current?.unit ?? "", unitPrice: current?.unitPrice ?? "", timeImpactDays: 0, source: "showroom",
-    saidOn: new Date().toISOString().slice(0, 10), evidence: null, evidenceNote: "", note: "" }));
+    saidOn: new Date().toISOString().slice(0, 10), evidence: null, evidenceNote: "", note: "", outsourced: current?.outsourced ?? false }));
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const set = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft((value0) => ({ ...value0, [key]: value }));
@@ -256,6 +262,7 @@ function EntryForm({ workspaceId, caseId, rooms, currency, entry, onClose, onSub
       <MoneyField label={t("Unit price")} currency={currency} value={draft.unitPrice} onChange={set("unitPrice")} />
       <NumericInput label={t("Time impact (days)")} minValue={-365} maxValue={365} step={1} value={draft.timeImpactDays} onChange={(value) => set("timeImpactDays")(Number.isFinite(value) ? Math.trunc(value) : 0)} />
       <TextInput label={t("Supplier")} maxLength={200} value={draft.supplier} onChange={set("supplier")} />
+      {draft.kind === "material" ? <Switch isSelected={draft.outsourced} onChange={set("outsourced")}>{t("From a local supplier (needs sign-off)")}</Switch> : null}
     </FormSection>
     <FormSection title={t("Where it came from")}>
       <FormRow>

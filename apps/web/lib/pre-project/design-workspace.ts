@@ -2,7 +2,20 @@ import { personDisplayName } from "@/design-system/components/person";
 import type { CaseDesign, DesignOptions } from "./content";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
-export type JourneyStageKey = "inspiration" | "site_visit" | "concepts" | "space_planning" | "material_selection" | "renders" | "approval";
+export type JourneyStageKey = "inspiration" | "kickoff" | "site_visit" | "concepts" | "space_planning" | "material_selection" | "renders" | "samples" | "approval";
+/** Work inside a step (PLM-141, PLM-144, PLM-151): the design team to allocate, the design site measure, the sample collection. */
+export type JourneyTaskKey = "team_allocation" | "site_measure" | "sample_collection";
+export type JourneyTaskView = {
+  task: JourneyTaskKey; label: string; status: "open" | "done"; ownerId: string | null; ownerName: string | null; dueAt: string | null; completedAt: string | null;
+  completedByName: string | null; note: string | null; version: number; overdue: boolean;
+};
+/** A part of the design team (PLM-151): who holds it on this job, and whether this person may set it. */
+export type TeamSlotKey = "lead_designer" | "junior_designer" | "sales_admin" | "visualiser" | "draftsman" | "material_coordinator";
+export type TeamSlotView = { slot: TeamSlotKey; role: string; label: string | null; member: { membershipId: string; name: string | null } | null; notApplicable: boolean; canSet: boolean };
+/** The site visit as one thing: the old order's stage, or the design site measure inside the concept (PLM-141). */
+export type SiteVisitState = {
+  within: "stage" | "task"; open: boolean; done: boolean; version: number; dueAt: string | null; ownerName: string | null; scheduledAt: string | null; completedAt: string | null; overdue: boolean;
+};
 export const DELIVERABLE_STAGES: JourneyStageKey[] = ["space_planning", "concepts", "material_selection", "renders"];
 export const isDeliverableStage = (stage: string | null | undefined) => DELIVERABLE_STAGES.includes(stage as JourneyStageKey);
 
@@ -19,7 +32,9 @@ export type JourneyStageView = {
   activityId?: string | null; bookingReminder?: boolean;
   scheduledAt?: string | null; scheduledEnd?: string | null; scheduledTimezone?: string | null; scheduledLocation?: { address?: string | null } | null;
 };
-export type SiteChecklistItem = { key: string; question: string; answer: string | null; answeredByName: string | null; answeredAt: string | null };
+export type SiteChecklistItem = { key: string; question: string; scope?: string | null; required?: boolean; answer: string | null; answeredByName: string | null; answeredAt: string | null };
+/** PLM-154: the question list by scope, the job's scopes first; a scope the job doesn't have is optional. */
+export type SiteChecklistGroup = { scope: string | null; matches: boolean; required: boolean; keys: string[] };
 export type SiteMeasurement = { title: string; status: string; files: number; roomId?: string | null };
 export type JourneyView = {
   journey: {
@@ -28,20 +43,53 @@ export type JourneyView = {
     kind?: "design" | "site_and_materials"; version?: number;
     approvedOn?: string | null; approvalAssetName?: string | null; approvalSigner?: string | null; approvalMethod?: string | null;
     estimateDueAt?: string | null; estimateQuoteId?: string | null;
+    /** 2: the order of 13 Oct 2026 (kick-off, concept with the site measure, renders, samples); 1: the order before. */
+    flowVersion?: number; reviewerRoleCode?: string | null; conceptOptionsMax?: number | null;
+    /** PLM-140/143: the render sign-off date agreed at the kick-off, and the client's sign-off once recorded. */
+    renderSignoffDueOn?: string | null; renderSignedOn?: string | null; renderSignoffSigner?: string | null; renderSignoffAssetName?: string | null;
   } | null;
+  tasks?: JourneyTaskView[];
+  siteVisit?: SiteVisitState | null;
+  checklistGroups?: SiteChecklistGroup[];
+  team?: { slots: TeamSlotView[]; missing: TeamSlotKey[]; reviewRole: string | null; version: number } | null;
   /** What the journey will be before it starts: a design package, or a furniture/joinery order's site visit and materials. */
   startsAs?: "design" | "site_and_materials" | null;
   stages: JourneyStageView[]; canStart?: boolean; canManage?: boolean; canEdit?: boolean; canReview?: boolean; canRecordClient?: boolean; timezone: string;
   measurements?: SiteMeasurement[]; siteEvidenceProblem?: string | null;
   checklist?: SiteChecklistItem[]; siteChecklistProblem?: string | null;
   /** The materials and decisions ledger in one line (plan §6.7a). */
-  ledger?: { state: "empty" | "open" | "locked" | "changes_pending"; lockProblem: string | null; materials: number; waiting: number; lock: { number: number } | null } | null;
+  ledger?: { state: "empty" | "open" | "locked" | "changes_pending"; lockProblem: string | null; materials: number; waiting: number; outsourcedWaiting?: number; lock: { number: number } | null } | null;
   /** The firm books the showroom on its booking engine (Settings › Design). */
   showroomBooking?: boolean;
   /** After the sign-off: the Proposal 2 estimate it handed off to, or why not yet. */
   handoff?: { quoteId: string | null; problem: string | null };
   /** Where the site is: the property's address and position from the opportunity. */
   site?: { address: string | null; latitude: number | null; longitude: number | null } | null;
+};
+
+/**
+ * The site visit open now, as a stage the visit flow works with: the old order's site visit stage, or the design site
+ * measure inside the concept (PLM-141), whose version its commands carry.
+ */
+export function openSiteVisit(view: Pick<JourneyView, "stages" | "siteVisit"> | null | undefined): JourneyStageView | null {
+  if (!view) return null;
+  const stage = (Array.isArray(view.stages) ? view.stages : []).find((item) => item.stage === "site_visit" && item.status === "active");
+  if (stage) return stage;
+  const visit = view.siteVisit;
+  if (!visit || visit.within !== "task" || !visit.open) return null;
+  return { stage: "site_visit", label: "", status: "active", ownerName: visit.ownerName, dueAt: visit.dueAt, completedAt: visit.completedAt, version: visit.version, overdue: visit.overdue,
+    scheduledAt: visit.scheduledAt };
+}
+
+/** The labels of the work inside a step. */
+export const TASK_LABEL: Record<JourneyTaskKey, MessageKey> = {
+  team_allocation: tKey("Design team"), site_measure: tKey("Design site measure"), sample_collection: tKey("Sample collection"),
+};
+
+/** The design team's parts as the firm names them by default (its own role labels come from Settings › Projects). */
+export const TEAM_SLOT_LABEL: Record<TeamSlotKey, MessageKey> = {
+  lead_designer: tKey("Lead designer"), junior_designer: tKey("Junior designer"), sales_admin: tKey("Sales Admin"), visualiser: tKey("Visualiser"), draftsman: tKey("Draftsman"),
+  material_coordinator: tKey("Material Coordinator"),
 };
 
 /** The document type a new file in a stage starts with; the designer can change it. */

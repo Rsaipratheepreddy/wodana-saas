@@ -73,8 +73,8 @@ export function plannedPhase(phase: PreProjectCase["phase"], plan?: CasePlan | n
 }
 
 export const JOURNEY_STAGE_LABEL: Record<JourneyStageKey, MessageKey> = {
-  inspiration: tKey("Inspiration"), site_visit: tKey("Site visit"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"),
-  material_selection: tKey("Material selection"), renders: tKey("3D renders"), approval: tKey("Design approval"),
+  inspiration: tKey("Inspiration"), kickoff: tKey("Kick-off meeting"), site_visit: tKey("Site visit"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"),
+  material_selection: tKey("Material selection"), renders: tKey("Renders"), samples: tKey("Samples"), approval: tKey("Design approval"),
 };
 const DELIVERABLE: JourneyStageKey[] = ["concepts", "space_planning", "material_selection", "renders"];
 

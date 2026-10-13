@@ -17,7 +17,7 @@ export const FLOW_FIELDS = ["enquiryType", "clientEmail", "propertyLocation", "f
 export type FlowField = (typeof FLOW_FIELDS)[number];
 export const BRANCH_QUESTIONS = ["subPath", "package", "budgetBand", "clientType"] as const;
 export type BranchQuestion = (typeof BRANCH_QUESTIONS)[number];
-export const DESIGN_STAGES = ["inspiration", "site_visit", "concepts", "space_planning", "material_selection", "renders", "approval"] as const;
+export const DESIGN_STAGES = ["inspiration", "kickoff", "site_visit", "concepts", "space_planning", "material_selection", "renders", "samples", "approval"] as const;
 export type DesignStage = (typeof DESIGN_STAGES)[number];
 export const DEADLINE_UNITS = ["working_hours", "hours", "days"] as const;
 export type DeadlineUnit = (typeof DEADLINE_UNITS)[number];
@@ -120,8 +120,8 @@ export const QUESTION_LABELS: Record<BranchQuestion, MessageKey> = {
   subPath: tKey("Which sub-path?"), package: tKey("Which design package?"), budgetBand: tKey("Which budget band?"), clientType: tKey("Which client type?"),
 };
 export const DESIGN_STAGE_LABELS: Record<DesignStage, MessageKey> = {
-  inspiration: tKey("Inspiration"), site_visit: tKey("Site visit"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"),
-  material_selection: tKey("Material selection"), renders: tKey("Renders"), approval: tKey("Design approval"),
+  inspiration: tKey("Inspiration"), kickoff: tKey("Kick-off meeting"), site_visit: tKey("Site visit"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"),
+  material_selection: tKey("Material selection"), renders: tKey("Renders"), samples: tKey("Samples"), approval: tKey("Design approval"),
 };
 export const DEADLINE_UNIT_LABELS: Record<DeadlineUnit, MessageKey> = { working_hours: tKey("Working hours"), hours: tKey("Hours"), days: tKey("Days") };
 const COLUMN_LABELS: Record<string, MessageKey> = {

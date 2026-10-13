@@ -44,12 +44,16 @@ export function DesignPresentations({ workspaceId, caseId, stage, designs, canEd
   const revision = revisionDetail(view.revisions?.[stage]);
   const day = (iso: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short" }).format(new Date(iso)); } catch { return iso; } };
   const done = (message: string, next: PresentationsView) => { setView(next); setNotice(message); setFailure(""); onChanged?.(); };
-  const act = async (round: Presentation, path: "present" | "withdraw") => {
+  const act = async (round: Presentation, path: "present" | "withdraw" | "review") => {
     setBusy(round.id); setFailure("");
-    try { done(path === "present" ? t("Shown to the client. They choose in their portal.") : t("Draft discarded."), await caseRequest<PresentationsView>(workspaceId, caseId, `design-presentations/${round.id}/${path}`, "POST", { version: round.version })); }
+    const message = path === "present" ? t("Shown to the client. They choose in their portal.") : path === "review" ? t("Approved. It can be shown to the client.") : t("Draft discarded.");
+    try { done(message, await caseRequest<PresentationsView>(workspaceId, caseId, `design-presentations/${round.id}/${path}`, "POST", { version: round.version })); }
     catch (error) { setFailure(error instanceof Error ? error.message : t("Could not save.")); }
     finally { setBusy(null); }
   };
+  // PLM-145: on a reviewed package a round waits for the reviewer; a reviewer who shows it approves it as they do.
+  const review = view.review ?? null;
+  const waitsForReview = (round: Presentation) => Boolean(review && !round.reviewedAt && !review.canReview);
   const stageDesigns = designs.filter((design) => !design.archivedAt && design.stage === stage && design.versions.length);
 
   return <section className={styles.section} aria-label={t("Presentations")}>
@@ -64,10 +68,13 @@ export function DesignPresentations({ workspaceId, caseId, stage, designs, canEd
       action={canEdit ? <Button variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("New presentation")}</Button> : undefined} /> : <div className={styles.rounds}>
       {rounds.map((round) => <Card key={round.id} title={round.round === 1 ? t("Presentation") : t("Revision {number}", { number: round.round - 1 })}
         chip={<span className={styles.inline}><Badge tone={round.status === "chosen" ? "success" : round.status === "presented" ? "info" : round.status === "changes_requested" ? "warning" : "neutral"}>{t(PRESENTATION_STATUS_LABEL[round.status])}</Badge>
-          {round.chargeable ? <Badge tone="warning">{t("Chargeable")}</Badge> : null}</span>}
-        action={round.status === "draft" && canEdit ? <span className={styles.inline}>
+          {round.chargeable ? <Badge tone="warning">{t("Chargeable")}</Badge> : null}
+          {review && round.status === "draft" ? <Badge tone={round.reviewedAt ? "success" : "warning"}>{round.reviewedAt ? t("Approved by {name}", { name: round.reviewedByName ?? "" }) : t("Waiting for the reviewer")}</Badge> : null}</span>}
+        action={round.status === "draft" && review?.canReview && !round.reviewedAt && !canEdit ? <Button size="compact" variant="primary" isLoading={busy === round.id} onPress={() => void act(round, "review")}>{t("Approve for the client")}</Button>
+          : round.status === "draft" && canEdit ? <span className={styles.inline}>
           <Button size="compact" variant="quiet" isLoading={busy === round.id} onPress={() => void act(round, "withdraw")}>{t("Discard")}</Button>
-          <Button size="compact" variant="primary" isLoading={busy === round.id} onPress={() => void act(round, "present")}>{t("Present to client")}</Button>
+          {review?.canReview && !round.reviewedAt ? <Button size="compact" variant="secondary" isLoading={busy === round.id} onPress={() => void act(round, "review")}>{t("Approve for the client")}</Button> : null}
+          <Button size="compact" variant="primary" isLoading={busy === round.id} isDisabled={waitsForReview(round)} onPress={() => void act(round, "present")}>{t("Present to client")}</Button>
         </span> : round.status === "presented" && canRecordClient ? <Button size="compact" onPress={() => setDeciding(round)}>{t("Record client's decision")}</Button> : undefined}
         footer={round.decidedAt ? <p className={styles.muted}>{[round.decidedByName, round.decisionSource ? t(SOURCE_LABEL[round.decisionSource] ?? round.decisionSource as never) : "", day(round.decidedAt), round.decisionNote].filter(Boolean).join(" · ")}</p>
           : round.presentedAt ? <p className={styles.muted}>{t("Presented {date}", { date: day(round.presentedAt) })}</p> : undefined}>
@@ -85,7 +92,7 @@ export function DesignPresentations({ workspaceId, caseId, stage, designs, canEd
         </li>)}</ul>
       </Card>)}
     </div>}
-    {creating ? <PresentationForm workspaceId={workspaceId} stageDesigns={stageDesigns} onClose={() => setCreating(false)} onSubmit={async (options) => {
+    {creating ? <PresentationForm workspaceId={workspaceId} stageDesigns={stageDesigns} maxOptions={stage === "concepts" ? view.conceptOptionsMax ?? null : null} onClose={() => setCreating(false)} onSubmit={async (options) => {
       done(t("Presentation ready. Present it when the reviewer is happy."), await caseRequest<PresentationsView>(workspaceId, caseId, "design-presentations", "POST", {
         id: crypto.randomUUID(), stage, options: options.map((option) => ({ id: option.id, title: option.title.trim(), linkUrl: option.mode === "link" ? option.linkUrl.trim() : null, designId: option.mode === "file" ? option.designId : null })),
       }));
@@ -98,9 +105,11 @@ export function DesignPresentations({ workspaceId, caseId, stage, designs, canEd
   </section>;
 }
 
-function PresentationForm({ workspaceId, stageDesigns, onClose, onSubmit }: { workspaceId: string; stageDesigns: CaseDesign[]; onClose: () => void; onSubmit: (options: OptionDraft[]) => Promise<unknown> }) {
+function PresentationForm({ workspaceId, stageDesigns, maxOptions = null, onClose, onSubmit }: { workspaceId: string; stageDesigns: CaseDesign[]; maxOptions?: number | null; onClose: () => void; onSubmit: (options: OptionDraft[]) => Promise<unknown> }) {
   const t = useT();
-  const [options, setOptions] = useState<OptionDraft[]>(() => [newOption(), newOption()]);
+  // PLM-142: the firm's number of concept options (Palm: 1 or 2).
+  const most = Math.min(maxOptions ?? 12, 12);
+  const [options, setOptions] = useState<OptionDraft[]>(() => (most > 1 ? [newOption(), newOption()] : [newOption()]));
   const patch = (id: string, value: Partial<OptionDraft>) => setOptions((items) => items.map((item) => item.id === id ? { ...item, ...value } : item));
   const valid = options.length > 0 && options.every((option) => option.title.trim() && (option.mode === "link" ? /^https:\/\/\S+$/.test(option.linkUrl.trim()) : Boolean(option.designId)));
   return <FormDialog title={t("New presentation")} onClose={onClose} isDirty submitLabel={t("Save")} isSubmitDisabled={!valid} onSubmit={() => onSubmit(options)}>
@@ -115,7 +124,7 @@ function PresentationForm({ workspaceId, stageDesigns, onClose, onSubmit }: { wo
         <LinkPreview workspaceId={workspaceId} url={option.linkUrl} title={option.title} /></>
         : <SelectField isRequired label={t("Design")} items={stageDesigns.map((design) => ({ id: design.id, label: design.title }))} selectedKey={option.designId} onSelectionChange={(key) => patch(option.id, { designId: String(key) })} />}
     </div>)}
-    {options.length < 12 ? <Button size="compact" variant="quiet" onPress={() => setOptions((items) => [...items, newOption()])}><Plus aria-hidden="true" size={14} />{t("Add option")}</Button> : null}
+    {options.length < most ? <Button size="compact" variant="quiet" onPress={() => setOptions((items) => [...items, newOption()])}><Plus aria-hidden="true" size={14} />{t("Add option")}</Button> : null}
   </FormDialog>;
 }
 

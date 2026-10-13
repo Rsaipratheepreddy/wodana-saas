@@ -60,10 +60,15 @@ export async function teamRequest<T>(workspaceId: string, path: string, method =
 
 const days = (t: Translate, count: number | null) => (count === null ? "" : count === 1 ? t("1 day") : t("{count} days", { count }));
 
+/** PLM-152: the work inside a design step that has its own deadline on the calendar. */
+const DESIGN_TASK_LABELS: Record<string, MessageKey> = {
+  team_allocation: tKey("Design team"), site_measure: tKey("Design site measure"), sample_collection: tKey("Sample collection"),
+};
+
 /** An entry's title in the viewer's language: what it is and for whom (and how many days render or 2D time needs). */
 export function teamEntryTitle(entry: TeamEntry, t: Translate) {
   if (entry.kind === "render" || entry.kind === "drawing") return [t(ENTRY_LABEL[entry.kind]), entry.subject, days(t, entry.days)].filter(Boolean).join(" · ");
-  if (entry.kind === "design_deadline") return t("{stage} due · {client}", { stage: t(DESIGN_STAGE_LABELS[entry.detail as DesignStage] ?? tKey("Design deadline")), client: entry.subject });
+  if (entry.kind === "design_deadline") return t("{stage} due · {client}", { stage: t(DESIGN_STAGE_LABELS[entry.detail as DesignStage] ?? DESIGN_TASK_LABELS[entry.detail ?? ""] ?? tKey("Design deadline")), client: entry.subject });
   if (entry.kind === "appointment" || entry.kind === "production") return [entry.detail, entry.subject].filter(Boolean).join(" · ");
   return `${t(ENTRY_LABEL[entry.kind])} · ${entry.subject}`;
 }

@@ -128,9 +128,9 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
 
     {shown === "history" ? <RecordHistory workspaceId={workspaceId} recordType="design" recordId={caseId} />
     : shown === "ledger" ? <DesignLedger workspaceId={workspaceId} caseId={caseId} rooms={data.rooms} />
-    : shown === "approval" ? <SignOff data={data} designs={current} journey={journey} canReview={review.canReview} busy={busy}
+    : shown === "approval" ? <SignOff data={data} designs={current} journey={journey} canReview={review.canRecordClient} busy={busy}
       onSignOff={(input) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, ...input })} /> : <>
-      {shown === "concepts" && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage="concepts" designs={current} canEdit={data.canEdit}
+      {(shown === "concepts" || (shown === "renders" && journey.journey?.flowVersion === 2)) && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage={shown} designs={current} canEdit={data.canEdit}
         canRecordClient={review.canRecordClient} onChanged={() => void loadJourney()} /> : null}
       <div className={styles.toolbar}>
         {stageView && shown !== "other" ? <span className={styles.stageNote} data-overdue={stageView.overdue && stageView.status === "active" || undefined}>{(() => { const detail = stageDetail(stageView); return t(detail.key as never, detail.values); })()}</span> : null}

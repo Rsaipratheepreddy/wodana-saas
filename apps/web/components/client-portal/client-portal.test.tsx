@@ -476,7 +476,8 @@ describe("client portal", () => {
     // The team: each by role, email where there is one, and the firm's own line to call, WhatsApp or email.
     const team = within(screen.getByRole("region", { name: "Your team" }));
     expect(team.getByText("Project manager")).toBeInTheDocument();
-    expect(team.getByText("Designer · Sales")).toBeInTheDocument();
+    // PLM-151: a designer is "Interior designer" to the client, whatever their role inside the firm.
+    expect(team.getByText("Interior designer · Sales")).toBeInTheDocument();
     expect(team.getByRole("link", { name: "Email Omar Manager" })).toHaveAttribute("href", "mailto:omar@studio.example");
     expect(team.queryByRole("link", { name: "Email Dana Designer" })).toBeNull();
     expect(team.getByRole("link", { name: "Call Studio Interiors" })).toHaveAttribute("href", "tel:+15550100100");

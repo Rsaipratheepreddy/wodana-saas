@@ -30,7 +30,8 @@ export function siteVisitProgress(view: Pick<JourneyView, "measurements" | "chec
     visit: Boolean(stage?.scheduledAt),
     measurements: measurements.length > 0 && measurements.every(measured),
     photos: measurements.length > 0 && measurements.every((item) => item.files > 0),
-    questions: checklist.every((item) => Boolean(item.answer)),
+    // PLM-154: a scope the job doesn't have is optional.
+    questions: checklist.filter((item) => item.required !== false).every((item) => Boolean(item.answer)),
     finish: stage?.status === "done",
   } satisfies Record<Exclude<SiteVisitStep, "access">, boolean>;
 }
@@ -64,7 +65,10 @@ export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure,
   const index = steps.indexOf(step);
   const run = async (work: () => Promise<unknown>) => { setBusy(true); setError(""); try { await work(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setBusy(false); } };
   const when = (iso: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone: view.timezone, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return iso; } };
-  const answered = checklist.filter((item) => item.answer).length;
+  const asked = checklist.filter((item) => item.required !== false);
+  const answered = asked.filter((item) => item.answer).length;
+  // PLM-154: the questions by scope, the general ones and the job's own scopes first; one group when the list has no scopes.
+  const groups = view.checklistGroups?.length ? view.checklistGroups : [{ scope: null, matches: true, required: true, keys: checklist.map((item) => item.key) }];
 
   return <CaseModal title={t("Site visit")} size="lg" layout="sheet" onClose={onClose} busy={busy} dirty={Boolean(summary.trim()) || unsaved.length > 0}
     footer={<div className={styles.footer}>
@@ -110,10 +114,18 @@ export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure,
     </div> : null}
 
     {step === "questions" ? <div className={styles.stack}>
-      <p className={styles.muted}>{t("{answered} of {total} answered", { answered, total: checklist.length })}</p>
-      {checklist.map((item) => <TextAreaField key={item.key} label={item.question} maxLength={2000} value={drafts[item.key] ?? ""}
-        onChange={(next) => setDrafts((current) => ({ ...current, [item.key]: next }))}
-        description={item.answer && item.answeredByName ? t("Answered by {name}", { name: item.answeredByName }) : undefined} />)}
+      <p className={styles.muted}>{t("{answered} of {total} answered", { answered, total: asked.length })}</p>
+      {groups.map((group) => {
+        const items = group.keys.map((key) => checklist.find((item) => item.key === key)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+        if (!items.length) return null;
+        const fields = items.map((item) => <TextAreaField key={item.key} label={item.question} maxLength={2000} value={drafts[item.key] ?? ""}
+          onChange={(next) => setDrafts((current) => ({ ...current, [item.key]: next }))}
+          description={item.answer && item.answeredByName ? t("Answered by {name}", { name: item.answeredByName }) : undefined} />);
+        return groups.length > 1 ? <section key={group.scope ?? ""} className={styles.stack} aria-label={group.scope ?? t("General")}>
+          <h4 className={styles.groupTitle}>{group.scope ?? t("General")}{group.required ? null : <span className={styles.muted}> · {t("Optional")}</span>}</h4>
+          {fields}
+        </section> : <div key={group.scope ?? ""} className={styles.stack}>{fields}</div>;
+      })}
     </div> : null}
 
     {step === "finish" ? <div className={styles.stack}>

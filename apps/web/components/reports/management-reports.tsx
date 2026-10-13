@@ -45,6 +45,8 @@ const KEY_LABELS: Record<string, MessageKey> = {
   not_due: tKey("Not due yet"), overdue_1_30: tKey("1–30 days overdue"), overdue_31_60: tKey("31–60 days overdue"), overdue_60_plus: tKey("Over 60 days overdue"), no_due_date: tKey("No due date"),
   estimate: tKey("Estimate"), production: tKey("Production"), delivery: tKey("Delivery"), snagging: tKey("Snagging"),
   inspiration: tKey("Inspiration"), site_visit: tKey("Site visit"), development: tKey("Development"), materials: tKey("Materials"), renders: tKey("Renders"),
+  kickoff: tKey("Kick-off"), concept: tKey("Concept"), samples: tKey("Samples"), site_measure: tKey("Design site measure"), sample_collection: tKey("Sample collection"),
+  team_allocation: tKey("Design team"),
   approval: tKey("Approval"), not_started: tKey("Not started"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"), material_selection: tKey("Material selection"),
   promise_date: tKey("Past the promised date"), tasks: tKey("Late tasks"), other: tKey("Other"), none: tKey("Not assigned"),
   overdue: tKey("Overdue"), due: tKey("Due"), designer: tKey("Designer"), visualiser: tKey("Visualiser"),

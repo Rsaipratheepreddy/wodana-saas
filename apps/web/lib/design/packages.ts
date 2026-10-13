@@ -3,17 +3,38 @@ export type DesignPackage = {
   id: string; code: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null;
   includedRevisions: number; includesSpacePlanning: boolean; includesRenders: boolean; requiredRoleCode: string | null; inclusions: string | null;
   position: number; status: "active" | "archived"; version: number;
+  /** PLM-145: the role that reviews concepts and renders before the client sees them and chooses the lead designer. */
+  reviewRoleCode?: string | null;
+  /** PLM-139: the rate is a starting price; a higher one agreed with the client is approved first. */
+  rateFrom?: boolean;
+  /** PLM-139: what one pricing unit is, e.g. "1 space = 1 room with a door". */
+  unitDefinition?: string | null;
 };
+/** The design order of 13 Oct 2026 (PLM-140–144, PLM-151): the days of each step. */
+export type DesignSteps = {
+  allocationDays: number; kickoffDays: number; conceptDays: number; siteMeasureDays: number; developmentMinDays: number; developmentMaxDays: number; developmentDaysPerRoom: number;
+  sampleCollectionDays: number; sampleMeetingDays: number; conceptOptionsMax: number | null;
+};
+/** PLM-151: the team role each part of the design team uses (null: not used), and who tags the Draftsman. */
+export type DesignTeamRoles = {
+  lead_designer: string; junior_designer: string | null; sales_admin: string | null; visualiser: string | null; draftsman: string | null; material_coordinator: string | null;
+  technicalLeadRoleCode: string | null;
+};
+/** PLM-154: a site visit question, grouped by its scope (none for the general ones). */
+export type SiteQuestion = { key: string; question: string; scope?: string | null };
 export type DesignTimings = { inspirationDays: number; siteVisitHours: number };
 /** Settings › Design: the design flow after Won (plan §6.7a): deadlines, the showroom booking type, the visualiser role and the site visit question list. */
 export type DesignFlow = {
   designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number; visualiserRoleCode: string;
-  showroomBookingTypeId: string | null; siteVisitQuestions: Array<{ key: string; question: string }>;
-  /** The 3D renders' own internal and client-facing days; null follows the design deadlines. */
+  showroomBookingTypeId: string | null; siteVisitQuestions: SiteQuestion[];
+  /** The renders' own internal and client-facing days; null follows the design deadlines. */
   renderInternalDays?: number | null; renderClientDays?: number | null;
+  steps?: DesignSteps; team?: DesignTeamRoles;
 };
 export type DesignSettings = { minimumDeposit: { amount: string; currency: string } | null; version: number; timings?: DesignTimings; packages: DesignPackage[];
-  flow?: DesignFlow; bookingTypes?: Array<{ id: string; name: string }> };
+  flow?: DesignFlow; bookingTypes?: Array<{ id: string; name: string }>;
+  /** The workspace's team roles (Settings › Projects), to name each part of the design team. */
+  roles?: Array<{ key: string; label: string }> };
 
 async function call<T>(workspaceId: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/workspace/design/${path}?workspaceId=${workspaceId}`, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });

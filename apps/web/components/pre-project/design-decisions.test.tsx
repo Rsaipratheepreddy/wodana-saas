@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type { CaseDesign } from "@/lib/pre-project/content";
 import { lineTotal, revisionDetail, signedAmount, type LedgerEntry, type LedgerVersion, type LedgerView, type PresentationsView } from "@/lib/pre-project/design-decisions";
-import type { JourneyStageView, JourneyView } from "@/lib/pre-project/design-workspace";
+import { openSiteVisit, type JourneyStageView, type JourneyView } from "@/lib/pre-project/design-workspace";
 import { DesignLedger } from "./design-ledger";
 import { DesignPresentations } from "./design-presentations";
 import { SiteVisitFlow, siteVisitProgress, type SiteVisitAccess } from "./site-visit-flow";
@@ -72,6 +72,33 @@ describe("the guided site visit (PLM-048/128)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /What was found on site/ }), { target: { value: "All walls measured" } });
     fireEvent.click(screen.getByRole("button", { name: "Complete site visit" }));
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith("All walls measured"));
+  });
+
+  it("asks the questions by scope, the job's scopes first, and doesn't wait for a scope the job doesn't have (PLM-154)", async () => {
+    const scoped = view({
+      checklist: [
+        { key: "access", question: "How do we get in?", answer: "Lift", answeredByName: "Dana", answeredAt: null, required: true },
+        { key: "family", question: "How big is the family?", scope: "Kitchen", answer: "Five", answeredByName: "Dana", answeredAt: null, required: true },
+        { key: "beds", question: "Bed sizes?", scope: "Bedrooms", answer: null, answeredByName: null, answeredAt: null, required: false },
+      ],
+      checklistGroups: [{ scope: null, matches: true, required: true, keys: ["access"] }, { scope: "Kitchen", matches: true, required: true, keys: ["family"] },
+        { scope: "Bedrooms", matches: false, required: false, keys: ["beds"] }],
+    });
+    expect(siteVisitProgress(scoped).questions).toBe(true);
+    render(<DesignSystemProvider><SiteVisitFlow view={scoped} stage={stage} onClose={vi.fn()} onBook={vi.fn()} onMeasure={vi.fn()} onAddPhotos={vi.fn()} onSaveAnswers={vi.fn()} onComplete={vi.fn()} /></DesignSystemProvider>);
+    fireEvent.click(within(await screen.findByRole("navigation", { name: "Site visit steps" })).getByRole("button", { name: /Questions/ }));
+    expect(screen.getByText("2 of 2 answered")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent)).toEqual(["General", "Kitchen", "Bedrooms · Optional"]);
+    expect(within(screen.getByRole("region", { name: "Kitchen" })).getByRole("textbox", { name: "How big is the family?" })).toBeInTheDocument();
+  });
+
+  it("opens the design site measure inside the concept as the visit to run (PLM-141)", () => {
+    const measure: JourneyView = { journey: { packageName: "Bespoke", includedRevisions: 2, flowVersion: 2 }, timezone: "Europe/London",
+      stages: [{ ...stage, stage: "concepts", label: "Concepts", version: 3 }],
+      siteVisit: { within: "task", open: true, done: false, version: 7, dueAt: "2031-04-05T10:00:00Z", ownerName: "Lina", scheduledAt: null, completedAt: null, overdue: false } };
+    expect(openSiteVisit(measure)).toMatchObject({ stage: "site_visit", status: "active", version: 7, dueAt: "2031-04-05T10:00:00Z", ownerName: "Lina" });
+    expect(openSiteVisit({ ...measure, siteVisit: { ...measure.siteVisit!, open: false, done: true } })).toBeNull();
+    expect(openSiteVisit(view())).toMatchObject({ stage: "site_visit", version: 5 });
   });
 });
 

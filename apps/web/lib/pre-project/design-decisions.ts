@@ -10,9 +10,17 @@ export type Presentation = {
   status: "draft" | "presented" | "chosen" | "changes_requested" | "withdrawn"; chargeable: boolean;
   presentedAt: string | null; presentedByName: string | null; chosenOptionId: string | null; decidedAt: string | null; decidedByName: string | null;
   decisionSource: string | null; decisionNote: string | null; fromPortal: boolean; version: number; options: PresentationOption[];
+  /** PLM-145: approved by the package's reviewer before the client sees it. */
+  reviewedAt?: string | null; reviewedByName?: string | null;
 };
 export type Revisions = { used: number; included: number; chargeable: boolean };
-export type PresentationsView = { presentations: Presentation[]; revisions: Record<string, Revisions> | null };
+export type PresentationsView = {
+  presentations: Presentation[]; revisions: Record<string, Revisions> | null;
+  /** PLM-145: rounds wait for the package's reviewer (its role), and whether this person is one. */
+  review?: { role: string; canReview: boolean } | null;
+  /** PLM-142: how many concept options a round shows at most. */
+  conceptOptionsMax?: number | null;
+};
 
 export type LedgerVersion = {
   id: string; entryId: string; number: number; title: string; specification: string; catalogItemId: string | null; supplier: string;
@@ -20,6 +28,8 @@ export type LedgerVersion = {
   source: string; saidAt: string; evidenceAssetId: string | null; evidenceName: string | null; evidenceNote: string; note: string; afterLock: boolean;
   status: "proposed" | "confirmed" | "declined" | "superseded"; confirmedAt: string | null; confirmationMethod: string | null; confirmedByName: string | null;
   fromPortal: boolean; recordedByName: string | null; recordedAt: string;
+  /** PLM-144: from a local supplier, and where its sign-off stands (pending, approved, returned, rejected). */
+  outsourced?: boolean; signOff?: string | null;
 };
 export type LedgerEntry = {
   id: string; kind: "material" | "design"; roomId: string | null; roomName: string | null; position: number; currentNumber: number;

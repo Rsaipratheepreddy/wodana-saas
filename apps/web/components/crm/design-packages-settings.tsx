@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Badge, Button, DataGrid, FormDialog, IconButton, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { loadDesignSettings, questionKey, saveDesignFlow, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignFlow, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
+import { loadDesignSettings, questionKey, saveDesignFlow, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignFlow, type DesignPackage, type DesignSettings, type DesignSteps, type DesignTeamRoles, type PricingMethod } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
 
 const amount = (value: string) => value.replace(/[^\d.]/g, "");
@@ -26,7 +26,9 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   useEffect(() => { void load(); }, [load]);
 
   const money = (value: string, code: string) => { try { return new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 2 }).format(Number(value)); } catch { return `${code} ${value}`; } };
-  const price = (pkg: DesignPackage) => pkg.pricingMethod === "per_space" ? `${money(pkg.rate, pkg.currency)} / ${t("space")}` : pkg.pricingMethod === "per_area" ? `${money(pkg.rate, pkg.currency)} / ${pkg.areaUnit === "sqm" ? t("sq m") : t("sq ft")}` : money(pkg.rate, pkg.currency);
+  const unitPrice = (pkg: DesignPackage) => pkg.pricingMethod === "per_space" ? `${money(pkg.rate, pkg.currency)} / ${t("space")}` : pkg.pricingMethod === "per_area" ? `${money(pkg.rate, pkg.currency)} / ${pkg.areaUnit === "sqm" ? t("sq m") : t("sq ft")}` : money(pkg.rate, pkg.currency);
+  // PLM-139: "from" a rate that can go higher with approval, and what one unit is.
+  const price = (pkg: DesignPackage) => [pkg.rateFrom ? t("From {price}", { price: unitPrice(pkg) }) : unitPrice(pkg), pkg.unitDefinition].filter(Boolean).join(" · ");
   const run = async (work: () => Promise<unknown>, success: string) => {
     setFailure(""); setNotice("");
     try { await work(); setNotice(success); await load(); } catch (error) { setFailure(error instanceof Error ? error.message : t("Design settings could not be saved.")); }
@@ -39,10 +41,23 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   const minimumChanged = minimum !== savedMinimum;
   const timingsChanged = timings.inspirationDays !== savedTimings.inspirationDays || timings.siteVisitHours !== savedTimings.siteVisitHours;
   const flowChanged = Boolean(flow && settings?.flow && JSON.stringify(flow) !== JSON.stringify(settings.flow));
+  const steps = flow?.steps;
   const flowValid = !flow || (flow.siteVisitQuestions.every((item) => item.question.trim()) && flow.designClientDays >= flow.designInternalDays
     && [flow.designInternalDays, flow.designClientDays, flow.materialSelectionDays, flow.estimateDays].every((days) => days >= 1)
-    && (flow.renderClientDays ?? flow.designClientDays) >= (flow.renderInternalDays ?? flow.designInternalDays));
+    && (flow.renderClientDays ?? flow.designClientDays) >= (flow.renderInternalDays ?? flow.designInternalDays)
+    && (!steps || ([steps.allocationDays, steps.kickoffDays, steps.conceptDays, steps.siteMeasureDays, steps.developmentMinDays, steps.developmentMaxDays, steps.sampleCollectionDays, steps.sampleMeetingDays]
+      .every((days) => days >= 1) && steps.developmentMaxDays >= steps.developmentMinDays))
+    && (!flow.team || Boolean(flow.team.lead_designer)));
   const setFlowValue = <K extends keyof DesignFlow>(key: K, value: DesignFlow[K]) => { setJustSaved(false); setFlow((current) => current ? { ...current, [key]: value } : current); };
+  /** PLM-140–144: the days of a step of the design order. */
+  const stepDays = (key: Exclude<keyof DesignSteps, "conceptOptionsMax">, max: number, label: string) =>
+    <TextInput aria-label={label} isDisabled={!canManage} label={null} inputMode="numeric" suffix={t("days")} value={String(steps?.[key] ?? "")}
+      onChange={(value) => steps && setFlowValue("steps", { ...steps, [key]: Math.min(max, Number(value.replace(/\D/g, "") || 0)) })} />;
+  const roleItems = (settings?.roles ?? []).map((role) => ({ id: role.key, label: role.label }));
+  /** PLM-151: which team role a part of the design team uses; every part but the lead can be left out. */
+  const teamRole = (key: keyof Omit<DesignTeamRoles, "technicalLeadRoleCode">, label: string) => flow?.team ? <SelectField aria-label={label} isDisabled={!canManage} label={null}
+    items={[...(key === "lead_designer" ? [] : [{ id: "none", label: t("Not used") }]), ...roleItems, ...(flow.team[key] && !roleItems.some((item) => item.id === flow.team![key]) ? [{ id: flow.team[key]!, label: flow.team[key]! }] : [])]}
+    selectedKey={flow.team[key] ?? "none"} onSelectionChange={(selected) => setFlowValue("team", { ...flow.team!, [key]: selected === "none" ? null : String(selected) })} /> : null;
   const days = (key: "designInternalDays" | "designClientDays" | "materialSelectionDays" | "estimateDays", max: number, label: string) =>
     <TextInput aria-label={label} isDisabled={!canManage} label={null} inputMode="numeric" suffix={t("days")} value={String(flow?.[key] ?? "")}
       onChange={(value) => setFlowValue(key, Math.min(max, Number(value.replace(/\D/g, "") || 0)))} />;
@@ -56,7 +71,7 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
       let version = settings?.version ?? 0;
       if (minimumChanged) version = (await saveMinimumDeposit(workspaceId, minimum ? { amount: Number(minimum).toFixed(2), currency: settings?.minimumDeposit?.currency ?? currency } : null, version)).version;
       if (timingsChanged) version = (await saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, version)).version;
-      if (flowChanged && flow) await saveDesignFlow(workspaceId, { ...flow, siteVisitQuestions: flow.siteVisitQuestions.map((item) => ({ key: item.key, question: item.question.trim() })) }, version);
+      if (flowChanged && flow) await saveDesignFlow(workspaceId, { ...flow, siteVisitQuestions: flow.siteVisitQuestions.map((item) => ({ key: item.key, question: item.question.trim(), scope: item.scope?.trim() || null })) }, version);
       await load();
       setJustSaved(true);
     } catch (error) { setFailure(error instanceof Error ? error.message : t("Design settings could not be saved.")); }
@@ -66,7 +81,7 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     { accessorKey: "name", header: t("Package"), size: 240, cell: ({ row: { original: pkg } }) => <span className={styles.name}><strong>{pkg.name}</strong>{pkg.inclusions ? <small>{pkg.inclusions}</small> : null}</span> },
     { id: "price", header: t("Price"), size: 170, accessorFn: price },
     { accessorKey: "includedRevisions", header: t("Revisions"), size: 110, cell: ({ getValue }) => t("{count} included", { count: Number(getValue()) }) },
-    { id: "includes", header: t("Includes"), size: 200, enableSorting: false, cell: ({ row: { original: pkg } }) => <span className={styles.chips}>{pkg.includesSpacePlanning ? <Badge tone="neutral">{t("Space planning")}</Badge> : null}{pkg.includesRenders ? <Badge tone="neutral">{t("3D renders")}</Badge> : null}{pkg.requiredRoleCode ? <Badge tone="info">{pkg.requiredRoleCode.replace(/_/g, " ")}</Badge> : null}</span> },
+    { id: "includes", header: t("Includes"), size: 200, enableSorting: false, cell: ({ row: { original: pkg } }) => <span className={styles.chips}>{pkg.includesSpacePlanning ? <Badge tone="neutral">{t("Space planning")}</Badge> : null}{pkg.includesRenders ? <Badge tone="neutral">{t("Renders")}</Badge> : null}{pkg.reviewRoleCode ? <Badge tone="info">{t("Reviewed by {role}", { role: pkg.reviewRoleCode.replace(/_/g, " ") })}</Badge> : null}{pkg.requiredRoleCode ? <Badge tone="info">{pkg.requiredRoleCode.replace(/_/g, " ")}</Badge> : null}</span> },
     { accessorKey: "status", header: t("Status"), size: 100, cell: ({ row: { original: pkg } }) => <Badge tone={pkg.status === "active" ? "success" : "neutral"}>{pkg.status === "active" ? t("Offered") : t("Archived")}</Badge> },
     ...(canManage ? [{ id: "actions", header: "", size: 170, enableSorting: false, cell: ({ row: { original: pkg } }: { row: { original: DesignPackage } }) => <span className={styles.rowActions}>
       <Button size="compact" variant="secondary" onPress={() => setEditing(pkg)}><Pencil aria-hidden="true" size={13} />{t("Edit")}</Button>
@@ -111,12 +126,41 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
         <TextInput aria-label={t("Visualiser role")} isDisabled={!canManage} label={null} value={flow.visualiserRoleCode} onChange={(value) => setFlowValue("visualiserRoleCode", value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 60))} />
       </SettingsRow>
     </SettingsSection> : null}
+    {steps ? <SettingsSection id="design-steps" title={t("Design steps")}>
+      <SettingsRow hint={t("From the paid design fee to the design team allocated.")} label={t("Design team")}>{stepDays("allocationDays", 30, t("Design team"))}</SettingsRow>
+      <SettingsRow hint={t("From the end of inspiration to the kick-off meeting.")} label={t("Kick-off")}>{stepDays("kickoffDays", 60, t("Kick-off"))}</SettingsRow>
+      <SettingsRow hint={t("From the kick-off to the first concept.")} label={t("First concept")}>{stepDays("conceptDays", 90, t("First concept"))}</SettingsRow>
+      <SettingsRow hint={t("From the kick-off to the design site measure.")} label={t("Site measure")}>{stepDays("siteMeasureDays", 30, t("Site measure"))}</SettingsRow>
+      <SettingsRow hint={t("What the client is promised for design development: the days per room, between the shortest and the longest.")} label={t("Development window")}>
+        <span className={styles.window}>{stepDays("developmentMinDays", 365, t("Shortest"))}{stepDays("developmentMaxDays", 365, t("Longest"))}{stepDays("developmentDaysPerRoom", 90, t("Per room"))}</span>
+      </SettingsRow>
+      <SettingsRow hint={t("From the render sign-off (or the concept, without renders) to the samples collected.")} label={t("Sample collection")}>{stepDays("sampleCollectionDays", 60, t("Sample collection"))}</SettingsRow>
+      <SettingsRow hint={t("From the samples collected to the sample meeting.")} label={t("Sample meeting")}>{stepDays("sampleMeetingDays", 60, t("Sample meeting"))}</SettingsRow>
+      <SettingsRow hint={t("Empty: as many as the designer adds.")} label={t("Concept options")}>
+        <TextInput aria-label={t("Concept options")} isDisabled={!canManage} label={null} inputMode="numeric" value={steps.conceptOptionsMax ? String(steps.conceptOptionsMax) : ""}
+          onChange={(value) => { const digits = value.replace(/\D/g, ""); setFlowValue("steps", { ...steps, conceptOptionsMax: digits ? Math.min(12, Math.max(1, Number(digits))) : null }); }} />
+      </SettingsRow>
+    </SettingsSection> : null}
+    {flow?.team ? <SettingsSection id="design-team" title={t("Design team")}>
+      <SettingsRow hint={t("Chosen by the Account Manager once the design fee is paid, or by the package's reviewer.")} label={t("Lead designer")}>{teamRole("lead_designer", t("Lead designer"))}</SettingsRow>
+      <SettingsRow hint={t("Chosen by the Account Manager. Clients see every designer as Interior designer.")} label={t("Junior designer")}>{teamRole("junior_designer", t("Junior designer"))}</SettingsRow>
+      <SettingsRow hint={t("Chosen by the Account Manager.")} label={t("Sales Admin")}>{teamRole("sales_admin", t("Sales Admin"))}</SettingsRow>
+      <SettingsRow hint={t("Tagged by the lead designer.")} label={t("Visualiser")}>{teamRole("visualiser", t("Visualiser"))}</SettingsRow>
+      <SettingsRow hint={t("Tagged by the technical lead.")} label={t("Draftsman")}>{teamRole("draftsman", t("Draftsman"))}</SettingsRow>
+      <SettingsRow hint={t("Collects the samples. Without one on the job, someone with this role.")} label={t("Material Coordinator")}>{teamRole("material_coordinator", t("Material Coordinator"))}</SettingsRow>
+      <SettingsRow hint={t("People with this role or team tag the Draftsman.")} label={t("Technical lead role")}>
+        <TextInput aria-label={t("Technical lead role")} isDisabled={!canManage} label={null} value={flow.team.technicalLeadRoleCode ?? ""}
+          onChange={(value) => setFlowValue("team", { ...flow.team!, technicalLeadRoleCode: value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 64) || null })} />
+      </SettingsRow>
+    </SettingsSection> : null}
     {flow ? <SettingsSection id="site-visit-questions" title={t("Site visit questions")}
-      actions={canManage && flow.siteVisitQuestions.length < 40 ? <Button size="compact" onPress={() => setFlowValue("siteVisitQuestions", [...flow.siteVisitQuestions, { key: "", question: "" }])}><Plus aria-hidden="true" size={14} />{t("Add question")}</Button> : null}>
+      actions={canManage && flow.siteVisitQuestions.length < 80 ? <Button size="compact" onPress={() => setFlowValue("siteVisitQuestions", [...flow.siteVisitQuestions, { key: "", question: "" }])}><Plus aria-hidden="true" size={14} />{t("Add question")}</Button> : null}>
       <ol className={styles.questions}>{flow.siteVisitQuestions.map((item, index) => <li key={item.key || `new-${index}`}>
+        <TextInput aria-label={t("Scope of question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} maxLength={60} placeholder={t("General")} value={item.scope ?? ""}
+          onChange={(scope) => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.map((current, position) => position === index ? { ...current, scope } : current))} />
         <TextInput aria-label={t("Question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} maxLength={500} value={item.question}
           onChange={(question) => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.map((current, position) => position === index
-            ? { question, key: current.key || questionKey(question, flow.siteVisitQuestions.filter((_, other) => other !== index).map((entry) => entry.key)) } : current))} />
+            ? { ...current, question, key: current.key || questionKey(question, flow.siteVisitQuestions.filter((_, other) => other !== index).map((entry) => entry.key)) } : current))} />
         {canManage ? <IconButton aria-label={t("Remove question {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.filter((_, position) => position !== index))}><Trash2 aria-hidden="true" size={14} /></IconButton> : null}
       </li>)}</ol>
     </SettingsSection> : null}
@@ -138,7 +182,8 @@ function PackageDialog({ initial, onClose, onSave }: { initial: Partial<DesignPa
   const save = async () => {
     if (!value.name?.trim()) throw new Error(t("Enter the package name."));
     if (!value.rate) throw new Error(t("Enter the rate."));
-    await onSave({ ...value, code: value.code || slug(value.name), rate: value.rate, areaUnit: value.pricingMethod === "per_area" ? value.areaUnit ?? "sqft" : null, requiredRoleCode: value.requiredRoleCode || null, inclusions: value.inclusions || null });
+    await onSave({ ...value, code: value.code || slug(value.name), rate: value.rate, areaUnit: value.pricingMethod === "per_area" ? value.areaUnit ?? "sqft" : null, requiredRoleCode: value.requiredRoleCode || null, inclusions: value.inclusions || null,
+      reviewRoleCode: value.reviewRoleCode || null, rateFrom: value.pricingMethod !== "fixed" && Boolean(value.rateFrom), unitDefinition: value.pricingMethod === "fixed" ? null : value.unitDefinition?.trim() || null });
   };
   const per = value.pricingMethod === "per_area" ? (value.areaUnit === "sqm" ? t("Per sq m") : t("Per sq ft")) : value.pricingMethod === "per_space" ? t("Per space") : undefined;
   return <FormDialog isDirty={JSON.stringify(value) !== JSON.stringify(start)} onClose={onClose} onSubmit={save} submitLabel={t("Save package")} title={initial.id ? t("Edit package") : t("New package")}>
@@ -146,12 +191,18 @@ function PackageDialog({ initial, onClose, onSave }: { initial: Partial<DesignPa
     <SelectField isRequired items={methods} label={t("Priced")} onSelectionChange={(key) => set("pricingMethod")(String(key) as PricingMethod)} selectedKey={value.pricingMethod ?? "per_area"} />
     <MoneyField currency={value.currency ?? undefined} description={per} isRequired label={t("Rate")} min="0" onChange={(next) => set("rate")(next)} value={value.rate ?? ""} />
     {value.pricingMethod === "per_area" ? <SelectField items={[{ id: "sqft", label: t("Square feet") }, { id: "sqm", label: t("Square metres") }]} label={t("Area unit")} onSelectionChange={(key) => set("areaUnit")(String(key) as "sqft" | "sqm")} selectedKey={value.areaUnit ?? "sqft"} /> : null}
-    <MoreDetails filled={[value.requiredRoleCode, value.inclusions, value.includesSpacePlanning, value.includesRenders].filter(Boolean).length}>
+    {value.pricingMethod && value.pricingMethod !== "fixed" ? <>
+      <TextInput description={t("Shown with the rate, e.g. 1 space = 1 room with a door.")} label={t("One unit is")} maxLength={200} onChange={set("unitDefinition")} value={value.unitDefinition ?? ""} />
+      <Switch isSelected={Boolean(value.rateFrom)} onChange={set("rateFrom")}>{t("Priced from this rate (a higher rate is approved first)")}</Switch>
+    </> : null}
+    <MoreDetails filled={[value.requiredRoleCode, value.reviewRoleCode, value.inclusions, value.includesSpacePlanning, value.includesRenders].filter(Boolean).length}>
       <TextInput inputMode="numeric" label={t("Included revisions")} onChange={(next) => set("includedRevisions")(Math.min(20, Number(next.replace(/\D/g, "") || 0)))} value={String(value.includedRevisions ?? 2)} />
-      <TextInput description={t("Added to the project automatically, e.g. creative_director.")} label={t("Required role")} onChange={(next) => set("requiredRoleCode")(next.toLowerCase().replace(/[^a-z0-9_]/g, ""))} value={value.requiredRoleCode ?? ""} />
+      <TextInput description={t("Concepts and renders wait for someone with this role before the client sees them; they choose the lead designer. E.g. creative_director.")} label={t("Reviewed by")}
+        onChange={(next) => set("reviewRoleCode")(next.toLowerCase().replace(/[^a-z0-9_]/g, ""))} value={value.reviewRoleCode ?? ""} />
+      <TextInput description={t("The designer at the intro meeting must hold this role.")} label={t("Required role")} onChange={(next) => set("requiredRoleCode")(next.toLowerCase().replace(/[^a-z0-9_]/g, ""))} value={value.requiredRoleCode ?? ""} />
       <div className={styles.toggles}>
         <Switch isSelected={Boolean(value.includesSpacePlanning)} onChange={set("includesSpacePlanning")}>{t("Space planning")}</Switch>
-        <Switch isSelected={Boolean(value.includesRenders)} onChange={set("includesRenders")}>{t("3D renders")}</Switch>
+        <Switch isSelected={Boolean(value.includesRenders)} onChange={set("includesRenders")}>{t("Renders")}</Switch>
       </div>
       <TextAreaField label={t("What's included")} maxLength={2000} onChange={set("inclusions")} value={value.inclusions ?? ""} />
     </MoreDetails>

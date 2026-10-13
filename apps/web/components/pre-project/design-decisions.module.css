@@ -3,6 +3,7 @@
 .spacer { flex: 1 1 auto; }
 .muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .stack { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.groupTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
 .cell { display: flex; flex-direction: column; gap: var(--wd-space-1); min-inline-size: 0; }
 .cell small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); }

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { LocateFixed } from "lucide-react";
-import { Button, DateField, FileUploader, InlineNotice, InspectorSheet, NumericInput, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, DateField, FileUploader, InlineNotice, InspectorSheet, MoneyField, NumericInput, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
 import { OpenInMaps } from "@/components/ui/site-location";
 import { parseMapLink, validCoordinates } from "@/lib/geo/map-link";
 import { useCurrentPosition } from "@/lib/geo/use-current-position";
@@ -18,16 +18,20 @@ import styles from "./opportunity-discovery.module.css";
 type AreaUnit = "sqft" | "sqm";
 type Facts = { area: string | null; areaUnit: AreaUnit | null; spaces: number | null; propertyLocation: string | null; clientEmail: string | null; floorPlanAssetId: string | null; designPackageId: string | null;
   /** The property's position (WGS 84 degrees): both or neither. */
-  latitude: number | null; longitude: number | null };
+  latitude: number | null; longitude: number | null;
+  /** PLM-139: the rate agreed with the client on a package priced from its rate. */
+  designRate?: string | null };
 type Question = { key: string; label: string; required: boolean; dataType?: string; options?: Array<{ id: string; label: string }> };
 type FileItem = { id: string; name: string; mimeType: string };
 export type DiscoveryView = {
   facts: Facts; designFee: { amount: string; currency: string } | null; package: { id: string; name: string } | null;
+  /** PLM-139: an agreed rate above the package's and where its approval stands. */
+  designRate?: { requested: string; rate: string; approval: "pending" | "approved" | "rejected" | "returned"; waitingFor: string[] } | null;
   enquiryType: string | null; clientType: string | null; questions: Question[]; answers: Record<string, unknown>;
   files: FileItem[]; missing: Array<{ key: string; label: string }>; version: number;
 };
 /** Latitude and longitude are NaN while empty (the number field's empty value). */
-type Draft = { area: string; areaUnit: AreaUnit; spaces: string; propertyLocation: string; latitude: number; longitude: number; clientEmail: string; floorPlanAssetId: string; designPackageId: string; answers: Record<string, unknown> };
+type Draft = { area: string; areaUnit: AreaUnit; spaces: string; propertyLocation: string; latitude: number; longitude: number; clientEmail: string; floorPlanAssetId: string; designPackageId: string; designRate: string; answers: Record<string, unknown> };
 /** The parts of discovery a side sheet edits. */
 export type DiscoveryGroup = "property" | "package" | "questions";
 
@@ -43,7 +47,7 @@ function draftOf(view: DiscoveryView, fallbackUnit: AreaUnit): Draft {
   return {
     area: facts.area ? String(Number(facts.area)) : "", areaUnit: facts.areaUnit ?? fallbackUnit, spaces: facts.spaces ? String(facts.spaces) : "",
     propertyLocation: facts.propertyLocation ?? "", latitude: facts.latitude ?? Number.NaN, longitude: facts.longitude ?? Number.NaN, clientEmail: facts.clientEmail ?? "", floorPlanAssetId: facts.floorPlanAssetId ?? "",
-    designPackageId: facts.designPackageId ?? "", answers: { ...view.answers },
+    designPackageId: facts.designPackageId ?? "", designRate: facts.designRate ? String(Number(facts.designRate)) : "", answers: { ...view.answers },
   };
 }
 
@@ -147,6 +151,7 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
         propertyLocation: draft.propertyLocation.trim() || null,
         latitude: located ? draft.latitude : null, longitude: located ? draft.longitude : null, clientEmail: draft.clientEmail.trim() || null,
         floorPlanAssetId: draft.floorPlanAssetId || null, designPackageId: draft.designPackageId || null, answers: draft.answers,
+        designRate: pkg?.rateFrom && draft.designRate ? Number(draft.designRate).toFixed(2) : null,
       });
       discovery.refresh();
       await onSaved?.();
@@ -200,6 +205,14 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
           {offered.length
             ? <SelectField items={offered.map((item) => ({ id: item.id, label: item.name }))} label={t("Package")} onSelectionChange={(key) => set("designPackageId")(String(key ?? ""))} placeholder={t("Choose a package")} selectedKey={draft.designPackageId || null} />
             : <p className={styles.empty}>{t("No design packages are offered yet.")}</p>}
+          {pkg?.unitDefinition ? <p className={styles.empty}>{pkg.unitDefinition}</p> : null}
+          {pkg?.rateFrom ? <>
+            <MoneyField currency={pkg.currency} description={t("Above {rate}, it is approved before the fee uses it.", { rate: formatMoney(pkg.rate, pkg.currency, locale) })} label={t("Agreed rate")} min="0"
+              onChange={(next) => set("designRate")(decimal(next))} value={draft.designRate} />
+            {view.designRate && !dirty ? <InlineNotice tone={view.designRate.approval === "approved" ? "success" : view.designRate.approval === "pending" ? "info" : "error"}
+              message={view.designRate.approval === "approved" ? t("Rate approved") : view.designRate.approval === "pending"
+                ? (view.designRate.waitingFor.length ? t("Rate waiting for {names}", { names: view.designRate.waitingFor.join(", ") }) : t("Rate waiting for approval")) : t("Rate not approved. Change it or agree the package rate.")} /> : null}
+          </> : null}
           <div className={styles.field}>
             <span className={styles.label}>{t("Design fee")}</span>
             {(() => { const shown = fee ?? (view.designFee && !dirty ? view.designFee : null); return <strong className={styles.fee} data-empty={!shown || undefined}>{shown ? formatMoney(shown.amount, shown.currency, locale) : t("Not priced yet")}</strong>; })()}

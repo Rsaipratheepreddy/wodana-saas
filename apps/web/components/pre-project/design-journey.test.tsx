@@ -52,6 +52,33 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     expect(screen.getByRole("link", { name: "Material list" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c1/designs?stage=ledger");
   });
 
+  it("runs the order of 13 Oct 2026: the team to allocate, the kick-off, the site measure inside the concept (PLM-140, PLM-141, PLM-151)", async () => {
+    const fetch = vi.fn(async () => ({ ok: true, json: async () => view({ canEdit: true, journey: { packageName: "Bespoke Interior Design", includedRevisions: 2, flowVersion: 2, includesRenders: true, renderSignoffDueOn: "2031-05-20" },
+      team: { version: 4, reviewRole: null, missing: ["junior_designer"], slots: [
+        { slot: "lead_designer", role: "designer", label: "Lead Interior Designer", member: { membershipId: "m1", name: "Lina Lead" }, notApplicable: false, canSet: true },
+        { slot: "junior_designer", role: "junior_designer", label: "Junior Interior Designer", member: null, notApplicable: false, canSet: true },
+        { slot: "visualiser", role: "visualiser", label: "Visualiser", member: null, notApplicable: false, canSet: false }] },
+      tasks: [{ task: "team_allocation", label: "Design team", status: "open", ownerId: "a1", ownerName: "Aisha AM", dueAt: "2031-04-01T10:00:00Z", completedAt: null, completedByName: null, note: null, version: 1, overdue: false },
+        { task: "site_measure", label: "Design site measure", status: "open", ownerId: "m1", ownerName: "Lina Lead", dueAt: "2031-04-04T10:00:00Z", completedAt: null, completedByName: null, note: null, version: 2, overdue: true }],
+      stages: [stage({ stage: "inspiration", status: "done", completedAt: "2031-03-30T10:00:00Z" }), stage({ stage: "kickoff", label: "Kick-off meeting", status: "done", completedAt: "2031-04-01T10:00:00Z" }),
+        stage({ stage: "concepts", status: "active", dueAt: "2031-04-08T10:00:00Z", version: 6 }), stage({ stage: "renders", label: "Renders" }), stage({ stage: "samples", label: "Samples" })] }) }));
+    vi.stubGlobal("fetch", fetch);
+    render(<DesignSystemProvider><DesignJourney workspaceId="ws" caseId="c1" locale="en-GB" members={[{ id: "m1", displayName: "Lina Lead" }, { id: "m2", displayName: "Jad Junior" }]} /></DesignSystemProvider>);
+    // The team, the part still to choose, and who may set what.
+    expect(await screen.findByText("Lead Interior Designer")).toBeInTheDocument();
+    expect(screen.getAllByText("Not chosen")).toHaveLength(2);
+    expect(screen.getByText("To allocate by 1 Apr")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Choose|Change/ })).toHaveLength(2);
+    // The kick-off's agreed render date, and the site measure on the concept's line.
+    expect(screen.getByText("Render sign-off agreed for 20 May 2031")).toBeInTheDocument();
+    expect(screen.getByText(/Design site measure due/)).toBeInTheDocument();
+    expect(screen.getAllByText("Overdue").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Open the visit" })[0]).toHaveAttribute("href", "/workspace/pre-projects/cases/c1/site");
+    // Changing an allocated designer asks for the reason.
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
   it("books the showroom on the booking engine's free slots when the firm set a showroom booking type", async () => {
     const fetch = vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("material-selection/slots")
       ? { configured: true, timezone: "Europe/London", durationMinutes: 60, location: "Studio showroom", slots: [{ start: "2031-04-09T09:00:00.000Z", end: "2031-04-09T10:00:00.000Z", date: "2031-04-09" }, { start: "2031-04-09T11:00:00.000Z", end: "2031-04-09T12:00:00.000Z", date: "2031-04-09" }] }

@@ -134,7 +134,8 @@ function Balance({ project, format, go }: { project: PortalProject; format: Port
 
 function useRoleLabels() {
   const t = useT();
-  const labels: Record<PortalTeamRole, string> = { manager: t("Project manager"), designer: t("Designer"), sales: t("Sales") };
+  // PLM-151: every designer is "Interior designer" to the client, whatever their role inside the firm.
+  const labels: Record<PortalTeamRole, string> = { manager: t("Project manager"), designer: t("Interior designer"), sales: t("Sales") };
   return labels;
 }
 

@@ -10,7 +10,7 @@ import { newSiteRecord, siteLabel, sitePayload, type SiteData, type SiteRecord }
 import { AssetMarkup } from "./asset-markup";
 import { RoomPicker } from "./room-manager";
 import { measuredDimensions, SiteRecordEditor } from "./site-record-editor";
-import type { JourneyView } from "@/lib/pre-project/design-workspace";
+import { openSiteVisit, type JourneyView } from "@/lib/pre-project/design-workspace";
 import { ScheduleVisitDialog } from "./design-journey";
 import { accessMatters, SiteVisitFlow, siteVisitProgress } from "./site-visit-flow";
 import { AccessPointsEditor, FitCheckList } from "@/components/catalog/fit-check-panel";
@@ -59,7 +59,8 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
   const [booking, setBooking] = useState(false);
   const loadJourney = useCallback(() => caseRequest<JourneyView>(workspaceId, caseId, "design-journey").then(setJourney).catch(() => setJourney(null)), [workspaceId, caseId]);
   useEffect(() => { void loadJourney(); }, [loadJourney]);
-  const visitStage = (journey && Array.isArray(journey.stages) ? journey.stages : []).find((stage) => stage.stage === "site_visit" && stage.status === "active") ?? null;
+  // The open visit: the old order's site visit stage, or the design site measure inside the concept (PLM-141).
+  const visitStage = openSiteVisit(journey);
   // R5 fit check: the way in (access points) and how the case's chosen catalog items get through it.
   const [access, setAccess] = useState<{ count: number; unit: string } | null>(null);
   const [accessRefresh, setAccessRefresh] = useState(0);
@@ -182,7 +183,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
 
     {visitStage && journey ? (() => {
-      const progress = siteVisitProgress(journey);
+      const progress = siteVisitProgress({ ...journey, stages: [visitStage] });
       const steps = [progress.visit, progress.measurements, progress.photos, progress.questions].filter(Boolean).length;
       return <Card title={t("Site visit")} chip={<Badge tone={visitStage.overdue ? "danger" : "info"}>{visitStage.overdue ? t("Overdue") : t("{done} of {total} steps", { done: steps, total: 4 })}</Badge>}
         action={canEdit ? <Button size="compact" variant="primary" onPress={() => setVisitOpen(true)}>{steps ? t("Continue the visit") : t("Start the visit")}</Button> : undefined}>
@@ -250,8 +251,8 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       access={{ workspaceId, caseId, canEdit, count: access?.count ?? null, nudge: accessMatters(journey), onChanged: () => accessChanged(true), onLoaded: (count) => setAccess((current) => ({ count, unit: current?.unit ?? "cm" })) }}
       onMeasure={(roomId) => { setVisitOpen(false); const area = areas.find((item) => item.roomId === roomId); if (area) measure(area); else setPicking(true); }}
       onAddPhotos={(roomId) => { setVisitOpen(false); const area = areas.find((item) => item.roomId === roomId); if (area) pickFiles(area); }}
-      onSaveAnswers={async (answers) => setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT", { version: journey.stages.find((stage) => stage.stage === "site_visit")!.version, answers }))}
-      onComplete={async (summary) => { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/complete", "POST", { version: journey.stages.find((stage) => stage.stage === "site_visit")!.version, summary })); setVisitOpen(false); setNotice(t("Site visit completed.")); }} /> : null}
+      onSaveAnswers={async (answers) => setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT", { version: visitStage.version, answers }))}
+      onComplete={async (summary) => { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/complete", "POST", { version: visitStage.version, summary })); setVisitOpen(false); setNotice(t("Site visit completed.")); }} /> : null}
     {booking && visitStage && journey ? <ScheduleVisitDialog title={t("Book site visit")} timezone={journey.timezone} onClose={() => setBooking(false)}
       onSubmit={async (value) => { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/schedule", "POST", { version: visitStage.version, ...value })); setBooking(false); }} /> : null}
   </section>;
