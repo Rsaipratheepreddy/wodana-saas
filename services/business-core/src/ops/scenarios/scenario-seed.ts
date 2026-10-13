@@ -12,7 +12,7 @@ import { ReceivingService } from "../../purchasing/receiving.service";
 import { QuotationBuilderService } from "../../quotation/quotation-builder.service";
 import { ReceivablesService } from "../../receivables/receivables.service";
 import {
-  dateAt, dayFrom, describe, ShowcaseSeed, Skip, type Any, type ShowcaseActor, type ShowcaseCtx, type ShowcaseInput, type ShowcaseStory,
+  describe, ShowcaseSeed, Skip, type Any, type ShowcaseActor, type ShowcaseCtx, type ShowcaseInput, type ShowcaseStory,
 } from "../../seed/showcase";
 import type { RecipeKey } from "./scenario-matrix";
 import { regionAmount, regionPerson, type RegionFixture } from "./scenario-regions";
@@ -134,7 +134,7 @@ export class ScenarioSeed extends ShowcaseSeed {
           return;
         }
         if (plan.outcome === "today" || plan.outcome === "overdue") {
-          const due = plan.outcome === "today" ? dateAt(0, 17) : dateAt(-2, 11);
+          const due = plan.outcome === "today" ? this.moment(0, 17) : this.moment(-2, 11);
           if (current.status === "new") await this.advance(`${reference} · call logged, no answer`, false, async () => this.tryAs(owner, async (who) => leads.logContact(who, this.w, lead.id,
             await this.validated(LogContactDto, { version: current.version, channel: "call", outcome: "no_answer", note: "Called; left a voicemail.", nextActionAt: due.toISOString() }))));
           await this.followUp(lead.id, lead.partyId, owner, `Call ${person.displayName} back`, due.toISOString());
@@ -194,7 +194,7 @@ export class ScenarioSeed extends ShowcaseSeed {
     const projects = this.get(ProjectCoreService), pm = await this.as("projectManager");
     const detail = (await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number; status: string } };
     await this.advance("project on hold (client travelling)", detail.project.status === "on_hold", () => projects.command(pm, this.w, projectId,
-      { action: "hold", version: detail.project.version, reason: "The client is travelling; works resume when they are back.", reviewOn: dayFrom(14) }));
+      { action: "hold", version: detail.project.version, reason: "The client is travelling; works resume when they are back.", reviewOn: this.day(14) }));
   }
 
   async riskProject() {
@@ -235,7 +235,7 @@ export class ScenarioSeed extends ShowcaseSeed {
     const id = this.id(ctx, "petty:fixings");
     const read = async () => { try { return ((await petty.state(decider, this.w, projectId)) as unknown as { claims: Array<{ id: string; status: string; version: number }> }).claims.find((row) => row.id === id) ?? null; } catch { return null; } };
     let claim = await this.step("petty cash · fixings from the hardware shop", read, async () => {
-      await petty.command(claimant, this.w, projectId, { action: "save", commandId: this.id(ctx, "petty:fixings:save"), id, spentOn: dayFrom(-2), amount: regionAmount(this.scenarioInput.fixture, "85"),
+      await petty.command(claimant, this.w, projectId, { action: "save", commandId: this.id(ctx, "petty:fixings:save"), id, spentOn: this.day(-2), amount: regionAmount(this.scenarioInput.fixture, "85"),
         description: "Screws, wall plugs and silicone from the hardware shop", category: "materials", noReceiptReason: "Receipt handed to the office." });
       return (await read())!;
     });
@@ -256,7 +256,7 @@ export class ScenarioSeed extends ShowcaseSeed {
     const orderId = this.id(ctx, `purchase-order:${key}`);
     const get = async () => { try { return (await orders.get(buyer, this.w, orderId)) as unknown as { order: Any; lines: Any[]; receipts?: Any[] }; } catch { return null; } };
     let order = await this.step(`purchase order · ${key}`, get, async () => {
-      await orders.create(buyer, this.w, { id: orderId, vendorId: supplier.id, expectedDate: dayFrom(expected), notes,
+      await orders.create(buyer, this.w, { id: orderId, vendorId: supplier.id, expectedDate: this.day(expected), notes,
         lines: lines.map((line) => ({ source: "free", projectId, ...line })) });
       return (await get())!;
     });
@@ -277,7 +277,7 @@ export class ScenarioSeed extends ShowcaseSeed {
         const open = form.lines.filter((line) => Number(line.outstanding) > 0);
         const take = state === "partly_received" ? open.slice(0, 1).map((line) => ({ orderLineId: line.id, received: DecOf(line.outstanding).div(2).toFixed(2) }))
           : open.map((line) => ({ orderLineId: line.id, received: line.outstanding }));
-        await receiving.receive(buyer, this.w, { id: receiptId, orderId, place, receivedOn: dayFrom(Math.min(expected, 0)), deliveryNote: `DN-${key.toUpperCase()}`, lines: take });
+        await receiving.receive(buyer, this.w, { id: receiptId, orderId, place, receivedOn: this.day(Math.min(expected, 0)), deliveryNote: `DN-${key.toUpperCase()}`, lines: take });
       });
     }
     const inspector = await this.other(buyer, ["owner", "manager", "projectManager", "factory"]);
@@ -300,8 +300,8 @@ export class ScenarioSeed extends ShowcaseSeed {
     if (!bill) {
       const number = `INV-${order.order.number.replace(/[^A-Z0-9]/gi, "").slice(-6)}`;
       await this.advance(`supplier bill ${number}`, false, () => this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "save", commandId: this.id(ctx, `bill:${key}:save`), id: billId,
-        vendorId: order.order.vendorId, legalEntityId: order.order.legalEntityId, currency: order.order.currency, number, invoiceDate: dayFrom(-dates.invoiceDaysAgo),
-        dueDate: dayFrom(-dates.invoiceDaysAgo + dates.dueDays),
+        vendorId: order.order.vendorId, legalEntityId: order.order.legalEntityId, currency: order.order.currency, number, invoiceDate: this.day(-dates.invoiceDaysAgo),
+        dueDate: this.day(-dates.invoiceDaysAgo + dates.dueDays),
         lines: order.lines.filter((line) => Number(line.accepted ?? line.received ?? 0) > 0).map((line) => ({ orderLineId: line.id, quantity: String(line.accepted ?? line.received),
           unitPrice: options.held ? DecOf(line.unitPrice).mul("1.25").toFixed(2) : line.unitPrice, ...(line.taxRate !== undefined && line.taxRate !== null ? { taxRate: line.taxRate } : {}) })) })));
       bill = (await overview()).find((row) => row.id === billId);
@@ -480,7 +480,7 @@ export class ScenarioSeed extends ShowcaseSeed {
         if (!milestone) throw new Skip(`no milestone to invoice for ${plan.scenario}`);
         await this.advance(`client invoice · ${milestone.title}`, false, () => this.tryAs(finance, (actor) => receivables.command(actor, this.w, { action: "issue",
           commandId: this.id(ctx, `invoice:${plan.scenario}:issue`), id: invoiceId, caseId: milestone.caseId, paymentId: milestone.paymentId,
-          issueDate: dayFrom(-plan.issueDaysAgo), dueDate: dayFrom(-plan.issueDaysAgo + plan.dueDays) })));
+          issueDate: this.day(-plan.issueDaysAgo), dueDate: this.day(-plan.issueDaysAgo + plan.dueDays) })));
       });
     }
     // The handover payment reported by Sales and waiting for Finance's verification.
@@ -514,7 +514,7 @@ export class ScenarioSeed extends ShowcaseSeed {
       templates: Array<{ code: string; recommended?: boolean }> }> };
     const company = overview.companies[0];
     if (!company) throw new Skip("the organization has no company");
-    const start = monthStart(-4);
+    const start = monthStart(-4, new Date(`${this.day(0)}T00:00:00Z`));
     if (!company.settings?.enabled) {
       const template = company.templates.find((row) => row.recommended) ?? company.templates.find((row) => row.code === this.scenarioInput.country) ?? company.templates[0];
       if (!template) throw new Skip("no Ledger chart is offered for the company's country");

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { HttpException, ValidationPipe, type INestApplicationContext, type Type } from "@nestjs/common";
 import type { RequestActor } from "../auth/actor";
+import { zonedInstant } from "../booking/booking.domain";
 import { ClientPortalAdminService } from "../client-portal/client-portal-admin.service";
 import { ClientPortalService } from "../client-portal/client-portal.service";
 import { CommercialService } from "../commercial/commercial.service";
@@ -618,6 +619,10 @@ export class ShowcaseSeed {
 
   protected get w() { return this.input.workspaceId; }
   protected get<T>(type: Type<T>): T { return this.input.app.get(type, { strict: false }); }
+  /** A date `days` from the workspace's today: the product checks dates on the workspace's calendar, not UTC's. */
+  protected day(days: number) { return dayFrom(days, this.timezone); }
+  /** A moment `days` from the workspace's today at `hour` on its clock. */
+  protected moment(days: number, hour: number) { return dateAt(days, hour, this.timezone); }
   protected get db() { return this.get(DatabaseService); }
 
   protected log(line: string) { (this.input.log ?? ((text: string) => process.stdout.write(`${text}\n`)))(line); }
@@ -847,7 +852,7 @@ export class ShowcaseSeed {
     const orders = state.orders.filter((row) => ["planned", "released"].includes(row.status) && !row.batchId).map((row) => row.id);
     if (!orders.length) throw new Skip("no planned or released work order to batch");
     await this.advance(`factory batch · Joinery · next week (${orders.length} work orders)`, false, () =>
-      factory.saveBatch(maker, this.w, { id: batchId, action: "create", name: "Joinery · next week", workcenterId: state.workcenters[0]?.id, plannedOn: dayFrom(3), orderIds: orders }));
+      factory.saveBatch(maker, this.w, { id: batchId, action: "create", name: "Joinery · next week", workcenterId: state.workcenters[0]?.id, plannedOn: this.day(3), orderIds: orders }));
   }
 
   /** People's leave: one request waiting for the manager, one approved last week. */
@@ -874,9 +879,9 @@ export class ShowcaseSeed {
       if (!person.membershipId) continue;
       const actionId = this.id("people:", `leave:${item.key}`);
       const find = async () => firstArray<{ id: string; status: string; reason: string; startDate: string }>(await leave.list(person, this.w, { scope: "self" } as never).catch(() => ({})))
-        .find((row) => row.reason === item.reason && row.startDate === dayFrom(item.start)) ?? null;
-      const request = await this.step(`leave · ${person.displayName}: ${item.days} day(s) from ${dayFrom(item.start)}`, find, async () => {
-        const made = (await leave.request(person, this.w, { actionId, leaveTypeId: type.id, startDate: dayFrom(item.start), endDate: dayFrom(item.start + item.days - 1), dayPart: "full", reason: item.reason } as never)) as unknown as { id: string; status: string; reason: string; startDate: string };
+        .find((row) => row.reason === item.reason && row.startDate === this.day(item.start)) ?? null;
+      const request = await this.step(`leave · ${person.displayName}: ${item.days} day(s) from ${this.day(item.start)}`, find, async () => {
+        const made = (await leave.request(person, this.w, { actionId, leaveTypeId: type.id, startDate: this.day(item.start), endDate: this.day(item.start + item.days - 1), dayPart: "full", reason: item.reason } as never)) as unknown as { id: string; status: string; reason: string; startDate: string };
         return made.id ? made : (await find())!;
       });
       if (item.approve && request?.status === "pending") {
@@ -896,7 +901,7 @@ export class ShowcaseSeed {
     // Hours start from the day each person joined: days before that are left out.
     const people = firstArray<{ membershipId?: string; id?: string; activeFrom?: string | null }>(await this.get(HrmsSettingsService).people(await this.actor(this.input.actorUserId), this.w).catch(() => ({})));
     const joined = (membershipId: string) => people.find((row) => (row.membershipId ?? row.id) === membershipId)?.activeFrom?.slice(0, 10) ?? "0000-00-00";
-    const weekStart = mondayOf(0), lastWeek = mondayOf(-7);
+    const weekStart = mondayOf(0, this.timezone), lastWeek = mondayOf(-7, this.timezone);
     const sheets: Array<{ role: ShowcaseRole; week: string; entries: Array<{ day: number; projectId: string; minutes: number; note: string }>; submit: boolean; approve: boolean }> = [
       { role: "designer", week: lastWeek, submit: true, approve: true, entries: [{ day: 0, projectId: marina, minutes: 420, note: "Niche lighting detail" }, { day: 1, projectId: marina, minutes: 480, note: "Styling board" }, { day: 2, projectId: ranches, minutes: 360, note: "Study shelf drawing" }] },
       { role: "site", week: weekStart, submit: false, approve: false, entries: [{ day: 0, projectId: ranches, minutes: 540, note: "Cabinet installation" }, { day: 1, projectId: ranches, minutes: 510, note: "Cabinet installation" }] },
@@ -906,7 +911,7 @@ export class ShowcaseSeed {
       const person = await this.as(sheet.role);
       if (!person.membershipId) continue;
       const from = joined(person.membershipId);
-      const entries = sheet.entries.map((entry) => ({ workDate: addDays(sheet.week, entry.day), projectId: entry.projectId, minutes: entry.minutes, note: entry.note })).filter((entry) => entry.workDate <= dayFrom(0) && entry.workDate >= from);
+      const entries = sheet.entries.map((entry) => ({ workDate: addDays(sheet.week, entry.day), projectId: entry.projectId, minutes: entry.minutes, note: entry.note })).filter((entry) => entry.workDate <= this.day(0) && entry.workDate >= from);
       if (!entries.length) { this.kept(`timesheet · ${person.displayName}, week of ${sheet.week} (no days since they joined)`); continue; }
       const mine = async () => (await time.mine(person, this.w, sheet.week).catch(() => null)) as unknown as { timesheet?: { id: string; version: number; status: string } | null; id?: string; version?: number; status?: string } | null;
       let current = await mine();
@@ -939,7 +944,7 @@ export class ShowcaseSeed {
       const current = (await attendance.current(person, this.w).catch(() => null)) as unknown as { id?: string; session?: unknown | null; open?: boolean } | null;
       if (current?.id || current?.session || current?.open) { this.kept(`attendance · ${person.displayName} is checked in`); continue; }
       // Captures belong to a person: their ids carry the membership, so a role that changed hands doesn't collide.
-      const captureId = this.id("people:", `capture:${person.membershipId}:${dayFrom(0)}`), actionId = this.id("people:", `check-in:${person.membershipId}:${dayFrom(0)}`);
+      const captureId = this.id("people:", `capture:${person.membershipId}:${this.day(0)}`), actionId = this.id("people:", `check-in:${person.membershipId}:${this.day(0)}`);
       await this.advance(`attendance · ${person.displayName} checked in (${role === "factory" ? "factory" : "site"})`, false, async () => {
         try { await attendance.capture(person, this.w, captureId); } catch (error) { throw new Skip(`${person.displayName} can't check in: ${describe(error)}`); }
         const at = new Date(); at.setHours(8, 30, 0, 0);
@@ -969,7 +974,7 @@ export class ShowcaseSeed {
     const requestId = this.id("operations:", "price-request:marina-lighting");
     const detail = async () => { try { return (await service.get(buyer, this.w, requestId)) as unknown as Any; } catch { return null; } };
     let current = await this.step("price request · Marina niche lighting (2 suppliers)", detail, async () => {
-      await service.create(buyer, this.w, { id: requestId, vendorIds: [usable[1].id, usable[2 % usable.length].id].filter((id, index, all) => all.indexOf(id) === index), neededBy: dayFrom(10),
+      await service.create(buyer, this.w, { id: requestId, vendorIds: [usable[1].id, usable[2 % usable.length].id].filter((id, index, all) => all.indexOf(id) === index), neededBy: this.day(10),
         notes: "Back-lit niches for the TV wall: LED profiles and drivers.",
         lines: [{ source: "free", projectId, description: "Aluminium LED profile with diffuser, 2 m", quantity: "8", unit: "nos" }, { source: "free", projectId, description: "24 V dimmable LED driver, 60 W", quantity: "4", unit: "nos" }] });
       return (await detail())!;
@@ -982,7 +987,7 @@ export class ShowcaseSeed {
       await this.advance(`price request · reply from supplier ${index + 1}`, supplier.status === "replied", async () => {
         const fresh = (await detail())!;
         const version = (fresh.request ?? fresh).version;
-        await service.command(buyer, this.w, requestId, { action: "record_reply", version, vendorId: supplier.vendorId, leadTimeDays: 7 + index * 5, validUntil: dayFrom(21), note: index ? "Ex stock, delivery included." : "Two weeks; drivers on order.",
+        await service.command(buyer, this.w, requestId, { action: "record_reply", version, vendorId: supplier.vendorId, leadTimeDays: 7 + index * 5, validUntil: this.day(21), note: index ? "Ex stock, delivery included." : "Two weeks; drivers on order.",
           prices: lines.map((line, at) => ({ lineId: line.id, unitPrice: String((at ? 95 : 48) + index * 6) })) });
       });
       current = (await detail())!;
@@ -997,7 +1002,7 @@ export class ShowcaseSeed {
     const unmatchedId = this.id("operations:", "unmatched:sample-boards");
     const deliveries = async () => (await receiving.deliveries(buyer, this.w)) as unknown as { unmatched: Array<{ id: string }>; received: Array<{ id: string; orderId: string }> };
     await this.step("delivery without an order · sample boards at the factory", async () => (await deliveries()).unmatched.find((row) => row.id === unmatchedId) ?? null, async () => {
-      await receiving.recordUnmatched(buyer, this.w, { id: unmatchedId, ...(usable[0] ? { vendorId: usable[0].id } : { supplierName: "Sample courier" }), place: "factory", receivedOn: dayFrom(-1), handedOverBy: "Courier",
+      await receiving.recordUnmatched(buyer, this.w, { id: unmatchedId, ...(usable[0] ? { vendorId: usable[0].id } : { supplierName: "Sample courier" }), place: "factory", receivedOn: this.day(-1), handedOverBy: "Courier",
         deliveryNote: "DN-SAMPLES-77", notes: "Veneer and laminate sample boards; no order number on the note.", lines: [{ description: "Veneer sample boards A4", quantity: "12", unit: "nos" }, { description: "Laminate sample chips", quantity: "40", unit: "nos" }] });
       return { id: unmatchedId };
     });
@@ -1044,7 +1049,7 @@ export class ShowcaseSeed {
     for (const item of free) {
       const id = this.id("operations:", `stock:add:${item.key}`);
       const have = current.rows.find((row) => row.name === item.name && row.locationId === warehouse!.id && !row.projectId);
-      await this.advance(`free stock · ${item.name} ×${item.quantity}`, Boolean(have), () => inventory.command(actor, this.w, { id, action: "add", locationId: warehouse!.id, name: item.name, unit: item.unit, quantity: item.quantity, unitCost: item.unitCost, reason: item.reason, movedOn: dayFrom(-6) }));
+      await this.advance(`free stock · ${item.name} ×${item.quantity}`, Boolean(have), () => inventory.command(actor, this.w, { id, action: "add", locationId: warehouse!.id, name: item.name, unit: item.unit, quantity: item.quantity, unitCost: item.unitCost, reason: item.reason, movedOn: this.day(-6) }));
     }
     current = await state();
     const veneer = current.rows.find((row) => row.name === free[0].name && row.locationId === warehouse.id && !row.projectId);
@@ -1057,7 +1062,7 @@ export class ShowcaseSeed {
     if (hinges && ranches) {
       const issued = this.id("operations:", "stock:issue:ranches-hinges");
       const known = (await this.db.tenantTransaction(this.w, actor.userId, (client) => client.query(`SELECT 1 FROM stock_commands WHERE workspace_id = $1 AND id = $2`, [this.w, issued]))).rowCount;
-      await this.advance("stock issued to the Ranches site · 24 hinges", Boolean(known), () => inventory.command(actor, this.w, { id: issued, action: "issue", locationId: warehouse!.id, itemId: hinges.itemId, projectId: null, forProjectId: ranches, quantity: "24", reason: "Kitchen cabinet doors", movedOn: dayFrom(-3) }));
+      await this.advance("stock issued to the Ranches site · 24 hinges", Boolean(known), () => inventory.command(actor, this.w, { id: issued, action: "issue", locationId: warehouse!.id, itemId: hinges.itemId, projectId: null, forProjectId: ranches, quantity: "24", reason: "Kitchen cabinet doors", movedOn: this.day(-3) }));
     }
     const factory = current.locations.find((row) => row.kind === "factory");
     const mdf = current.rows.find((row) => row.name === free[2].name && row.locationId === warehouse.id && !row.projectId);
@@ -1065,7 +1070,7 @@ export class ShowcaseSeed {
       const transferId = this.id("operations:", "transfer:mdf-to-factory");
       const transfers = (await inventory.transfers(actor, this.w)) as unknown as { transfers?: Array<{ id: string }>; items?: Array<{ id: string }> };
       const known = [...(transfers.transfers ?? []), ...(transfers.items ?? [])].some((row) => row.id === transferId);
-      await this.advance("transfer on its way · 10 MDF sheets to the factory", known, () => inventory.send(actor, this.w, { id: transferId, fromLocationId: warehouse!.id, toLocationId: factory.id, note: "For the Marina wardrobe carcasses", sentOn: dayFrom(-1), lines: [{ itemId: mdf.itemId, projectId: null, quantity: "10" }] }));
+      await this.advance("transfer on its way · 10 MDF sheets to the factory", known, () => inventory.send(actor, this.w, { id: transferId, fromLocationId: warehouse!.id, toLocationId: factory.id, note: "For the Marina wardrobe carcasses", sentOn: this.day(-1), lines: [{ itemId: mdf.itemId, projectId: null, quantity: "10" }] }));
     } else this.skip("stock transfer", "no factory location or no MDF in the warehouse");
   }
 
@@ -1090,7 +1095,7 @@ export class ShowcaseSeed {
       const order = (await orders.get(buyer, this.w, orderId).catch(() => null)) as unknown as { order: { id: string; vendorId: string; legalEntityId: string; currency: string; status: string }; lines: Array<{ id: string; quantity: string; unitPrice: string; taxRate?: string | null; received?: string; accepted?: string }> } | null;
       if (!order || !["received", "closed", "partly_received"].includes(order.order.status)) { this.skip(`bill · ${plan.key}`, "its order isn't received"); continue; }
       const billId = this.id("finance:", `bill:${plan.key}`);
-      const invoiceDate = dayFrom(-plan.invoiceDaysAgo), dueDate = dayFrom(-plan.invoiceDaysAgo + plan.dueDays);
+      const invoiceDate = this.day(-plan.invoiceDaysAgo), dueDate = this.day(-plan.invoiceDaysAgo + plan.dueDays);
       let bill = current.bills.find((row) => row.id === billId);
       if (!bill) {
         await this.advance(`bill · ${plan.number} for ${plan.key}`, false, () => this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "save", commandId: this.id("finance:", `bill:${plan.key}:save`), id: billId, vendorId: order.order.vendorId, legalEntityId: order.order.legalEntityId, currency: order.order.currency, number: plan.number, invoiceDate, dueDate,
@@ -1112,7 +1117,7 @@ export class ShowcaseSeed {
       const paymentId = this.id("finance:", `payment:${plan.key}`);
       const amount = plan.pay === "full" ? Number(bill.total) : Math.round(Number(bill.total) / 2);
       await this.advance(`payment · ${plan.pay === "full" ? "in full" : "half"} of ${plan.number} by cheque`, current.payments.some((row) => row.id === paymentId) || Number(bill.paid) > 0, () => this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "pay", commandId: this.id("finance:", `payment:${plan.key}:pay`), id: paymentId, vendorId: bill!.vendorId, legalEntityId: bill!.legalEntityId, currency: bill!.currency,
-        paidOn: dayFrom(-2), amount: String(amount), method: "cheque", reference: `CHQ-${plan.number.replace(/[^A-Z0-9]/gi, "").slice(-6)}`, allocations: [{ invoiceId: billId, amount: String(amount) }] })));
+        paidOn: this.day(-2), amount: String(amount), method: "cheque", reference: `CHQ-${plan.number.replace(/[^A-Z0-9]/gi, "").slice(-6)}`, allocations: [{ invoiceId: billId, amount: String(amount) }] })));
       current = await overview();
     }
     // This week's payment run, still being prepared: the approved bills with a balance go on it.
@@ -1140,7 +1145,7 @@ export class ShowcaseSeed {
     for (const milestone of milestones) {
       const invoiceId = this.id("finance:", `invoice:${milestone.paymentId}`);
       const overdue = /delivery/i.test(milestone.title);
-      const issueDate = dayFrom(overdue ? -12 : -3), dueDate = overdue ? dayFrom(-5) : dayFrom(11);
+      const issueDate = this.day(overdue ? -12 : -3), dueDate = overdue ? this.day(-5) : this.day(11);
       await this.advance(`client invoice · ${milestone.projectName ?? milestone.caseId.slice(0, 8)} · ${milestone.title}${overdue ? " (overdue)" : ""}`, false, () =>
         this.tryAs(finance, (actor) => receivables.command(actor, this.w, { action: "issue", commandId: this.id("finance:", `invoice:${milestone.paymentId}:issue`), id: invoiceId, caseId: milestone.caseId, paymentId: milestone.paymentId, issueDate, dueDate })));
     }
@@ -1166,7 +1171,7 @@ export class ShowcaseSeed {
       // Whoever decides sees every claim on the project; a claim an earlier site person made stays theirs.
       const read = async () => { try { const state = (await petty.state(decider, this.w, projectId)) as unknown as { claims: Array<{ id: string; status: string; version: number; claimedBy?: string }> }; return state.claims.find((row) => row.id === id) ?? null; } catch { return null; } };
       let row = await this.step(`petty cash · ${claim.description} (${claim.amount})`, read, async () => {
-        await petty.command(claimant, this.w, projectId, { action: "save", commandId: this.id("finance:", `petty:${claim.key}:save`), id, spentOn: dayFrom(-claim.daysAgo), amount: claim.amount, description: claim.description, category: claim.category, noReceiptReason: "Receipt handed to the office; copy to follow." });
+        await petty.command(claimant, this.w, projectId, { action: "save", commandId: this.id("finance:", `petty:${claim.key}:save`), id, spentOn: this.day(-claim.daysAgo), amount: claim.amount, description: claim.description, category: claim.category, noReceiptReason: "Receipt handed to the office; copy to follow." });
         const made = await read();
         if (!made) throw new Skip(`the claim ${claim.key} was recorded but is not listed`);
         return made;
@@ -1994,7 +1999,7 @@ export class ShowcaseSeed {
       const readiness = (await projects.startState(actor, this.w, caseId)) as { canStart: boolean; checks: Array<{ key: string; ok: boolean }> };
       if (!readiness.canStart) throw new Skip(`start rules: ${readiness.checks.filter((check) => !check.ok).map((check) => check.key).join(", ") || "not startable"}`);
       const lead = pm.membershipId ?? actor.membershipId;
-      return this.tryAs(pm, (who) => projects.start(who, this.w, caseId, { quoteId, leadMembershipId: lead, name: s.title, startDate: dayFrom(-s.execution.startDaysAgo), promiseDate: dayFrom(s.execution.promiseDays) }) as Promise<{ projectId: string }>);
+      return this.tryAs(pm, (who) => projects.start(who, this.w, caseId, { quoteId, leadMembershipId: lead, name: s.title, startDate: this.day(-s.execution.startDaysAgo), promiseDate: this.day(s.execution.promiseDays) }) as Promise<{ projectId: string }>);
     });
     const projectId = started.projectId;
     await this.team(projectId);
@@ -2051,7 +2056,7 @@ export class ShowcaseSeed {
       const due = (data.payments as Any[]).find((payment) => payment.title === s.execution.overdue!.title);
       if (!due) { this.skip("overdue payment", `no milestone "${s.execution.overdue.title}"`); return; }
       const salesAdmin = await this.as("salesAdmin");
-      const dueDate = dayFrom(-s.execution.overdue.daysAgo);
+      const dueDate = this.day(-s.execution.overdue.daysAgo);
       await this.advance(`milestone "${due.title}" due ${dueDate}, unpaid`, due.dueDate === dueDate || due.status !== "pending", () => this.commercialCommand(caseId, salesAdmin, "payment", {
         paymentId: due.id, title: due.title, amount: due.amount, dueDate, requiredForRelease: due.requiredForRelease === true, requiredForProduction: due.requiredForProduction === true, reference: due.reference ?? "",
       }));
@@ -2090,7 +2095,7 @@ export class ShowcaseSeed {
       const assignee = await this.as(task.role);
       await this.step(`task · ${task.title}`, async () => items.find((row) => row.id === id) ?? null, async () => {
         await work.command(pm, this.w, projectId, { action: "create", id, type: "task", title: task.title, packageId: task.made ? made!.id : null, assigneeId: assignee.membershipId,
-          startDate: dayFrom(task.start), dueDate: dayFrom(task.due), needsMaterials: task.needsMaterials === true });
+          startDate: this.day(task.start), dueDate: this.day(task.due), needsMaterials: task.needsMaterials === true });
         items = await board();
         return items.find((row) => row.id === id)!;
       });
@@ -2190,7 +2195,7 @@ export class ShowcaseSeed {
         if (blocked) throw new Skip(`purchasing is blocked: ${blocked.blocked}`);
         lines = mine.map((need) => ({ source: need.source, ...(need.source === "material" ? { materialItemId: need.sourceId } : { boqLineId: need.sourceId }), quantity: need.remaining, unitPrice: price(need) }));
       }
-      await orders.create(buyer, this.w, { id: orderId, vendorId: supplier.id, expectedDate: dayFrom(plan.expected), notes: detail.notes, lines });
+      await orders.create(buyer, this.w, { id: orderId, vendorId: supplier.id, expectedDate: this.day(plan.expected), notes: detail.notes, lines });
       return (await get())!;
     });
     const command = async (actor: Actor, action: string, extra: Record<string, unknown> = {}) => {
@@ -2211,7 +2216,7 @@ export class ShowcaseSeed {
       status = "approved";
     }
     if (status === "approved" && wants("sent")) { await this.advance(`${key} · sent to the supplier (no email)`, false, () => command(buyer, "send", { to: null })); status = "sent"; }
-    if (status === "sent" && wants("confirmed")) { await this.advance(`${key} · supplier confirmation recorded`, false, () => command(buyer, "confirm", { promisedDate: dayFrom(plan.promised), supplierReference: detail.supplierReference })); status = "confirmed"; }
+    if (status === "sent" && wants("confirmed")) { await this.advance(`${key} · supplier confirmation recorded`, false, () => command(buyer, "confirm", { promisedDate: this.day(plan.promised), supplierReference: detail.supplierReference })); status = "confirmed"; }
     if (!receive(plan.state)) { this.kept(`${key} · ${plan.state.replace("_", " ")}`); return orderId; }
     order = (await get())!;
     const receiptId = this.id(ctx, `receipt:${key}`);
@@ -2222,7 +2227,7 @@ export class ShowcaseSeed {
       const open = form.lines.filter((line) => Number(line.outstanding) > 0);
       const lines = (partial ? open.slice(0, 1) : open).map((line) => ({ orderLineId: line.id, received: line.outstanding }));
       if (!lines.length) throw new Skip("everything on the order has arrived");
-      return receiving.receive(buyer, this.w, { id: receiptId, orderId, place, receivedOn: dayFrom(Math.min(plan.promised, 0)), deliveryNote: detail.deliveryNote, lines });
+      return receiving.receive(buyer, this.w, { id: receiptId, orderId, place, receivedOn: this.day(Math.min(plan.promised, 0)), deliveryNote: detail.deliveryNote, lines });
     });
     // A part delivery waits for its inspection (the "To inspect" list); the rest is inspected by someone other than the receiver.
     if (partial) { this.kept(`${key} · waiting for inspection`); return orderId; }
@@ -2272,7 +2277,7 @@ export class ShowcaseSeed {
       const get = async () => { try { return (await factory.order(maker, this.w, orderId)) as unknown as { order: Any; releaseChecks: Array<{ key: string; passed: boolean; missing: string }>; reports: Any[] }; } catch { return null; } };
       let order = await this.step(`factory work order · ${short}`, get, async () => {
         if (Number(line.left) <= 0) throw new Skip(`${short} is fully planned already`);
-        await factory.plan(maker, this.w, { id: orderId, lineId: line.lineId, quantity: line.left, workcenterId: workcenter!.id, plannedStart: dayFrom(s.execution.factory === "done" ? -7 : -2), plannedEnd: dayFrom(s.execution.factory === "done" ? -1 : 6) });
+        await factory.plan(maker, this.w, { id: orderId, lineId: line.lineId, quantity: line.left, workcenterId: workcenter!.id, plannedStart: this.day(s.execution.factory === "done" ? -7 : -2), plannedEnd: this.day(s.execution.factory === "done" ? -1 : 6) });
         return (await get())!;
       });
       const command = async (who: Actor, action: string, extra: Record<string, unknown> = {}) => {
@@ -2316,7 +2321,7 @@ export class ShowcaseSeed {
     type Row = { id: string; version: number; status: string; delivery?: string; summarySource?: string; photos: Array<{ id: string; forClient?: boolean }> };
     const state = async () => (await site.state(pm, this.w, projectId)) as unknown as { site: { startedOn: string | null }; reports: Row[] };
     let current = await state();
-    await this.advance("site work started", Boolean(current.site.startedOn), () => site.command(pm, this.w, projectId, { action: "start_site", on: dayFrom(-(s.execution.siteStartDaysAgo ?? 0)) }));
+    await this.advance("site work started", Boolean(current.site.startedOn), () => site.command(pm, this.w, projectId, { action: "start_site", on: this.day(-(s.execution.siteStartDaysAgo ?? 0)) }));
     current = await state();
     const approver = await this.other(supervisor, ["projectManager", "owner", "manager"]);
     const notes = [
@@ -2363,7 +2368,7 @@ export class ShowcaseSeed {
       const reportId = this.id(ctx, `site-report:${day}`);
       const plan = s.execution.days?.[day - 1];
       // The first days on site, one report each; a report a person already wrote for that day is theirs to keep.
-      const on = dayFrom(Math.min(-(s.execution.siteStartDaysAgo ?? 0) + day, -1));
+      const on = this.day(Math.min(-(s.execution.siteStartDaysAgo ?? 0) + day, -1));
       let report = current.reports.find((row) => row.id === reportId);
       if (!report) {
         await this.step(`daily progress ${on} with photos by room (${supervisor.email})`, async () => null, async () => {
@@ -2381,7 +2386,7 @@ export class ShowcaseSeed {
     // Two days ago: sent back to the supervisor with what to change (the phone shows it to fix).
     if (s.execution.reportReturned) {
       const reportId = this.id(ctx, "site-report:returned");
-      const on = dayFrom(-2);
+      const on = this.day(-2);
       if (!current.reports.some((row) => row.id === reportId)) {
         await this.step(`daily progress ${on} to send back (${supervisor.email})`, async () => null, async () => {
           try {
@@ -2405,7 +2410,7 @@ export class ShowcaseSeed {
     if (s.execution.reportAwaitingApproval) {
       const reportId = this.id(ctx, "site-report:awaiting-approval");
       if (!current.reports.some((row) => row.id === reportId)) {
-        const on = dayFrom(-1);
+        const on = this.day(-1);
         await this.step(`daily site report ${on} waiting for approval (${supervisor.email})`, async () => null, async () => {
           try {
             await site.command(supervisor, this.w, projectId, { id: reportId, action: "save_report", reportDate: on, weather: "Clear", workforce: [{ trade: "Stone fitters", people: 2 }, { trade: "Painters", people: 2 }],
@@ -2430,7 +2435,7 @@ export class ShowcaseSeed {
       if (!snag) {
         await this.step(`snag · ${item.title}`, async () => null, async () => {
           await work.command(pm, this.w, projectId, { action: "create", id: snagId, type: "snag", title: item.title, severity: item.severity, source: item.source,
-            areaId: rooms.get(item.room) ?? null, assigneeId: supervisor.membershipId, dueDate: dayFrom(item.close ? 2 : 3) });
+            areaId: rooms.get(item.room) ?? null, assigneeId: supervisor.membershipId, dueDate: this.day(item.close ? 2 : 3) });
           return (await board()).find((row) => row.id === snagId)!;
         });
         snag = (await board()).find((row) => row.id === snagId);
@@ -2563,7 +2568,7 @@ export class ShowcaseSeed {
       const existing = (data.tasks ?? []).find((row: Any) => row.id === id) as Any | undefined;
       // The task is the person's; one made earlier for someone else in that role (the role changed hands) moves to them.
       if (existing && existing.ownerId === person.membershipId) { this.kept(`task · ${task.title}`); continue; }
-      const start = existing?.start ?? dayFrom(Math.min(task.due, 0) - 2), end = existing?.end ?? dayFrom(task.due);
+      const start = existing?.start ?? this.day(Math.min(task.due, 0) - 2), end = existing?.end ?? this.day(task.due);
       await this.advance(`task · ${task.title} (${person.displayName}, ${task.due === 0 ? "today" : task.due < 0 ? `${-task.due}d overdue` : `in ${task.due}d`})`, false, () =>
         execution.command(actor, this.w, projectId, { action: "task", requestId: existing ? this.id(`home:${task.role}:`, `${task.key}:to:${person.membershipId}`) : id, revision: data.revision,
           task: { id, title: task.title, package: "Coordination", area: "", location: task.location, ownerId: person.membershipId, assigneeIds: [person.membershipId], start, end, quantity: 1, unit: "nos", weight: 1,
@@ -2593,7 +2598,7 @@ export class ShowcaseSeed {
         }
       }
       if (!target) { this.skip(`follow-up · ${item.title}`, "its enquiry or opportunity is not open"); continue; }
-      const dueAt = dateAt(item.due, item.hour).toISOString();
+      const dueAt = this.moment(item.due, item.hour).toISOString();
       const find = async () => {
         const list = (await activities.list(person, this.w, { ...(target!.opportunityId ? { opportunityId: target!.opportunityId } : { leadId: target!.leadId }), limit: 100 } as never)) as unknown as { data: Array<{ id: string; title: string; status: string }> };
         return list.data.find((row) => row.title === item.title && row.status === "pending") ?? null;
@@ -2701,32 +2706,32 @@ export class ShowcaseSeed {
       if (revision?.status === "sent") {
         await this.advance("client's signed approval of the drawings recorded", false, async () => {
           await drawings.upload(pm, this.w, projectId, revision!.id, this.id(ctx, `drawings:${revision!.id}:approval`), "approval", tile(`${ctx.s.key}-drawings-approval`));
-          await projects.command(pm, this.w, projectId, { action: "decide_drawings", version: await version(), revisionId: revision!.id, decision: "approve", decidedOn: dayFrom(0),
+          await projects.command(pm, this.w, projectId, { action: "decide_drawings", version: await version(), revisionId: revision!.id, decision: "approve", decidedOn: this.day(0),
             decidedBy: ctx.s.client.displayName, note: "Signed on site." });
         });
       }
     }
     if (want("factory_slot_booked"))
-      await this.advance("factory slot booked", false, async () => projects.command(pm, this.w, projectId, { action: "book_factory_slot", version: await version(), date: dayFrom(2), note: "Joinery line." }));
+      await this.advance("factory slot booked", false, async () => projects.command(pm, this.w, projectId, { action: "book_factory_slot", version: await version(), date: this.day(2), note: "Joinery line." }));
     if (want("permit_collected") || want("installation_scheduled")) {
       const { LogisticsService } = await import("../logistics/logistics.service");
       const permitId = this.id(ctx, "permit:main");
       const known = (await this.db.tenantTransaction(this.w, pm.userId, (client) => client.query(
         `SELECT 1 FROM building_permits WHERE workspace_id = $1 AND id = $2 AND status = 'collected'`, [this.w, permitId]))).rowCount;
       if (!known) await this.advance("building permit collected", false, () => this.get(LogisticsService).collectPermit(pm, this.w, { projectId } as never, permitId,
-        { permitType: "Access and works permit", permitNumber: `PRM-${ctx.s.reference.replace(/[^A-Z0-9]/gi, "").slice(-8)}`, validFrom: dayFrom(-3), validTo: dayFrom(30), collectedOn: dayFrom(-2) } as never,
+        { permitType: "Access and works permit", permitNumber: `PRM-${ctx.s.reference.replace(/[^A-Z0-9]/gi, "").slice(-8)}`, validFrom: this.day(-3), validTo: this.day(30), collectedOn: this.day(-2) } as never,
         tile(`${ctx.s.key}-permit`) as never));
     }
     if (want("installation_scheduled"))
       await this.advance("delivery and installation scheduled", false, async () => projects.command(pm, this.w, projectId, { action: "schedule_installation", version: await version(),
-        deliveryOn: dayFrom(-1), installationOn: dayFrom(0), note: "Lift booked for the morning." }));
+        deliveryOn: this.day(-1), installationOn: this.day(0), note: "Lift booked for the morning." }));
     if (want("goods_delivered")) await this.deliverToSite(ctx, projectId);
     if (want("installation_done")) {
       const site = this.get(SiteService);
       const started = (await this.db.tenantTransaction(this.w, pm.userId, (client) => client.query<{ started: string | null; finished: string | null }>(
         `SELECT site_started_on::text AS started, site_finished_on::text AS finished FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [this.w, projectId]))).rows[0];
-      if (!started?.started) await this.advance("site work started", false, () => site.command(pm, this.w, projectId, { action: "start_site", on: dayFrom(-1) }));
-      if (!started?.finished) await this.advance("installation signed off (site work finished)", false, () => site.command(pm, this.w, projectId, { action: "finish_site", on: dayFrom(0),
+      if (!started?.started) await this.advance("site work started", false, () => site.command(pm, this.w, projectId, { action: "start_site", on: this.day(-1) }));
+      if (!started?.finished) await this.advance("installation signed off (site work finished)", false, () => site.command(pm, this.w, projectId, { action: "finish_site", on: this.day(0),
         owedReason: "Balance agreed with the client at handover." }));
     }
   }
@@ -2815,7 +2820,7 @@ export class ShowcaseSeed {
           return;
         }
         const contact = enquiry.outcome;
-        const followUp = contact.followUp ? dateAt(contact.followUp.days, contact.followUp.hour).toISOString() : undefined;
+        const followUp = contact.followUp ? this.moment(contact.followUp.days, contact.followUp.hour).toISOString() : undefined;
         if (current.status === "new") {
           await this.advance(`${reference} · ${contact.channel} logged (${contact.outcome.replace(/_/g, " ")})`, false, async () =>
             this.tryAs(owner, async (actor) => leads.logContact(actor, this.w, lead.id, await this.validated(LogContactDto, {
@@ -2861,9 +2866,17 @@ export function daysAgo(days: number) {
   return new Date(Date.now() - days * 86_400_000);
 }
 
-/** A calendar date `days` from today (negative: in the past). */
-export function dayFrom(days: number) {
-  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+/** Today's date on a time zone's calendar (YYYY-MM-DD). */
+export function todayIn(timeZone: string, now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+/**
+ * A calendar date `days` from today (negative: in the past) on the time zone's calendar. The product checks dates
+ * against the workspace's today, which is a day ahead of (or behind) UTC's for part of every night.
+ */
+export function dayFrom(days: number, timeZone = "UTC", now = new Date()) {
+  return addDays(todayIn(timeZone, now), days);
 }
 
 /** The first array of records in a service's reply, whatever it is called. */
@@ -2874,22 +2887,19 @@ export function firstArray<T>(value: unknown): T[] {
   return [];
 }
 
-/** The Monday of the week `offset` days from today (weeks start on Monday for the showcase's timesheets). */
-function mondayOf(offset: number) {
-  const day = new Date(Date.now() + offset * 86_400_000);
-  const weekday = (day.getUTCDay() + 6) % 7;
-  return new Date(day.getTime() - weekday * 86_400_000).toISOString().slice(0, 10);
+/** The Monday of the week `offset` days from today, on the time zone's calendar (weeks start on Monday for the showcase's timesheets). */
+function mondayOf(offset: number, timeZone: string) {
+  const day = dayFrom(offset, timeZone);
+  return addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7));
 }
 
 function addDays(date: string, days: number) {
   return new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** A moment `days` from today at the given hour (local to the process; enough for a follow-up). */
-export function dateAt(days: number, hour: number) {
-  const at = new Date(Date.now() + days * 86_400_000);
-  at.setHours(hour, 0, 0, 0);
-  return at;
+/** A moment `days` from today at the given hour, on the time zone's clock. */
+export function dateAt(days: number, hour: number, timeZone = "UTC") {
+  return new Date(zonedInstant(dayFrom(days, timeZone), hour * 60, timeZone, "compatible") ?? Date.parse(`${dayFrom(days, timeZone)}T${String(hour).padStart(2, "0")}:00:00Z`));
 }
 
 /** A small, valid PNG for demonstration pictures (the seed carries no camera): a 64×64 tile whose colour comes from its label. */

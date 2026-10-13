@@ -15,7 +15,7 @@ import { PaymentRunsService } from "../../purchasing/payment-runs.service";
 import { PayablesService } from "../../purchasing/payables.service";
 import { SupplierControlsService } from "../../purchasing/supplier-controls.service";
 import { QuotationBuilderService } from "../../quotation/quotation-builder.service";
-import { dayFrom, describe, Skip, tile, type Any, type ShowcaseCtx } from "../../seed/showcase";
+import { describe, Skip, tile, type Any, type ShowcaseCtx } from "../../seed/showcase";
 import { regionAmount, regionPerson } from "./scenario-regions";
 import { ScenarioSeed } from "./scenario-seed";
 import type { StoryKey } from "./scenario-stories";
@@ -51,7 +51,7 @@ export class ScenarioSeedTwo extends ScenarioSeed {
         const terminal = stage.code === "won" || stage.code === "lost";
         if (stage.code === "won") throw new Skip("an opportunity is won by its client's acceptance and payment (the projects show those)");
         await this.advance(`opportunity moved to ${stage.label}`, false, async () => this.tryAs(owner, async (who) => opportunities.transition(who, this.w, opportunity.id,
-          await this.validated(TransitionOpportunityDto, { version: current.version, stageId: stage.id, ...(terminal ? { status: "lost", reason: "Budget moved to next year." } : { nextActionAt: dayFrom(3) + "T09:00:00.000Z" }) }))));
+          await this.validated(TransitionOpportunityDto, { version: current.version, stageId: stage.id, ...(terminal ? { status: "lost", reason: "Budget moved to next year." } : { nextActionAt: this.day(3) + "T09:00:00.000Z" }) }))));
         void leads;
       });
     }
@@ -197,9 +197,10 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const state = (await factory.state(maker, this.w)) as unknown as { orders: Array<{ id: string; projectId: string; status: string; version: number }> };
     const planned = state.orders.find((row) => row.projectId === projectId && row.status === "planned");
     if (!planned) throw new Skip("the project has no planned work order");
-    const detail = (await factory.order(maker, this.w, planned.id)) as unknown as { order: Any; materials?: Array<{ name?: string }> };
+    const detail = (await factory.order(maker, this.w, planned.id)) as unknown as { order: Any; materials?: Array<{ id: string; itemName?: string; status?: string }> };
     const materialId = this.id(projectId, "factory:shortage:walnut");
-    await this.advance("work order needs 40 sheets of walnut veneer (not in yet)", (detail.materials ?? []).some((row) => /walnut veneer, spare/i.test(row.name ?? "")), () =>
+    const listed = (detail.materials ?? []).some((row) => row.id === materialId || (row.status === "active" && /walnut veneer, spare/i.test(row.itemName ?? "")));
+    await this.advance("work order needs 40 sheets of walnut veneer (not in yet)", listed, () =>
       factory.command(maker, this.w, planned.id, { action: "add_material", version: detail.order.version, materialId, name: "Walnut veneer, spare sheets", unit: "sheet", quantity: "40" }));
   }
 
@@ -229,12 +230,12 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const critical = this.id(projectId, "snag:critical");
     if (!(await board()).some((row) => row.id === critical))
       await this.advance("critical snag · water leak under the kitchen sink", false, () => work.command(pm, this.w, projectId, { action: "create", id: critical, type: "snag",
-        title: "Water leak under the kitchen sink", severity: "critical", source: "inspection", assigneeId: supervisor.membershipId, dueDate: dayFrom(1) }));
+        title: "Water leak under the kitchen sink", severity: "critical", source: "inspection", assigneeId: supervisor.membershipId, dueDate: this.day(1) }));
     const review = this.id(projectId, "snag:in-review");
     let item = (await board()).find((row) => row.id === review);
     if (!item) {
       await this.advance("snag · cabinet door alignment", false, () => work.command(pm, this.w, projectId, { action: "create", id: review, type: "snag", title: "Cabinet door alignment",
-        severity: "minor", source: "client", assigneeId: supervisor.membershipId, dueDate: dayFrom(2) }));
+        severity: "minor", source: "client", assigneeId: supervisor.membershipId, dueDate: this.day(2) }));
       item = (await board()).find((row) => row.id === review);
     }
     if (item?.status === "todo") await this.advance("snag fixed, waiting for the project manager's check", false, () => work.command(supervisor, this.w, projectId,
@@ -274,7 +275,7 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const amount = (Number(bill.total) / 2).toFixed(2);
     await this.advance(`supplier payment · half of ${bill.number} by cheque`, overview.payments.some((row) => row.id === paymentId) || Number(bill.paid) > 0, () =>
       this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "pay", commandId: this.id(ctx, "payment:extra-materials:pay"), id: paymentId, vendorId: bill.vendorId,
-        legalEntityId: bill.legalEntityId, currency: bill.currency, paidOn: dayFrom(-1), amount, method: "cheque", reference: `CHQ-${bill.number.replace(/[^A-Z0-9]/gi, "").slice(-6)}`,
+        legalEntityId: bill.legalEntityId, currency: bill.currency, paidOn: this.day(-1), amount, method: "cheque", reference: `CHQ-${bill.number.replace(/[^A-Z0-9]/gi, "").slice(-6)}`,
         allocations: [{ invoiceId: billId, amount }] })));
   }
 
@@ -351,7 +352,7 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const id = this.id(projectId, `my-day:${member.key}`);
     const items = ((await work.board(pm, this.w, projectId)) as { items: Array<{ id: string }> }).items;
     await this.advance(`task due today · ${member.displayName}`, items.some((row) => row.id === id), () => work.command(pm, this.w, projectId, { action: "create", id, type: "task",
-      title: `Check the week's plan with the team (${member.displayName.split(" ")[0]})`, assigneeId: person.membershipId, startDate: dayFrom(-1), dueDate: dayFrom(0) }));
+      title: `Check the week's plan with the team (${member.displayName.split(" ")[0]})`, assigneeId: person.membershipId, startDate: this.day(-1), dueDate: this.day(0) }));
   }
 
   // ---------------------------------------------------------------- quotations and deals, after their stories
@@ -367,7 +368,7 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const salesAdmin = await this.as("salesAdmin");
     const read = async () => ((await this.commercialData(caseId)).quotes as Any[]).find((row) => row.id === quoteId)!;
     let quote = await read();
-    const today = dayFrom(0);
+    const today = this.day(0);
     if (quote.status === "draft" && quote.validUntil !== today) {
       // The quote form sends the whole draft back with the new date (its text fields as text, as the form keeps them).
       const asText = (value: unknown) => (typeof value === "string" ? value : "");
@@ -411,8 +412,8 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const data = await this.commercialData(caseId);
     const due = ((data.payments ?? []) as Any[]).find((payment) => /handover/i.test(payment.title) && payment.status === "pending");
     if (!due) throw new Skip("no unpaid handover milestone");
-    await this.advance(`milestone "${due.title}" due today`, due.dueDate === dayFrom(0), () => this.commercialCommand(caseId, salesAdmin, "payment", {
-      paymentId: due.id, title: due.title, amount: due.amount, dueDate: dayFrom(0), requiredForRelease: due.requiredForRelease === true, requiredForProduction: due.requiredForProduction === true,
+    await this.advance(`milestone "${due.title}" due today`, due.dueDate === this.day(0), () => this.commercialCommand(caseId, salesAdmin, "payment", {
+      paymentId: due.id, title: due.title, amount: due.amount, dueDate: this.day(0), requiredForRelease: due.requiredForRelease === true, requiredForProduction: due.requiredForProduction === true,
       reference: due.reference ?? "" }));
   }
 
@@ -442,7 +443,7 @@ export class ScenarioSeedTwo extends ScenarioSeed {
     const id = this.id(ctx, "petty:taxi");
     const read = async () => { try { return ((await petty.state(decider, this.w, projectId)) as unknown as { claims: Array<{ id: string; status: string; version: number }> }).claims.find((row) => row.id === id) ?? null; } catch { return null; } };
     const claim = await this.step("petty cash · taxi to the stone supplier", read, async () => {
-      await petty.command(claimant, this.w, projectId, { action: "save", commandId: this.id(ctx, "petty:taxi:save"), id, spentOn: dayFrom(-1), amount: regionAmount(this.scenarioInput.fixture, "60"),
+      await petty.command(claimant, this.w, projectId, { action: "save", commandId: this.id(ctx, "petty:taxi:save"), id, spentOn: this.day(-1), amount: regionAmount(this.scenarioInput.fixture, "60"),
         description: "Taxi to the stone supplier and back", category: "transport", noReceiptReason: "Paid in cash; the driver had no receipt." });
       return (await read())!;
     });
