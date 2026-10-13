@@ -67,3 +67,24 @@ describe("the client's name and phone on an enquiry", () => {
     expect(query.mock.calls.some(([sql]) => String(sql).startsWith("UPDATE crm_parties SET display_name"))).toBe(true);
   });
 });
+
+describe("a client's name and mobile typed on an enquiry edit", () => {
+  const missing = async (promise: Promise<unknown>) => {
+    try { await promise; return []; } catch (error) { return (error as { getResponse?: () => { missing?: unknown } }).getResponse?.()?.missing ?? (error as Error).message; }
+  };
+  it("refuses a new name with digits or symbols, on the name field", async () => {
+    const { intake } = service({ source: "company", channel: "call", party_name: "Amira" }, { identity: true });
+    expect(await missing(intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Amira 2" } } as never)))
+      .toEqual([{ key: "displayName", label: "Use letters and spaces only" }]);
+  });
+  it("keeps a name that came from a channel as it is when the edit does not change it", async () => {
+    const { intake, query } = service({ source: "company", channel: "call", party_name: "Ali 🙂" });
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Ali 🙂" }, summary: "Kitchen" } as never);
+    expect(enquiryUpdate(query)?.[2]).toBe("Kitchen");
+  });
+  it("puts a mobile that does not fit its country on the mobile field", async () => {
+    const { intake } = service({ source: "company", channel: "call", party_name: "Amira" }, { identity: true });
+    expect(await missing(intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, mobile: "987654321", mobileCountryCode: "IN" } } as never)))
+      .toEqual([{ key: "mobile", label: "Enter a valid mobile number for India (10 digits)" }]);
+  });
+});

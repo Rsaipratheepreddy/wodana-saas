@@ -39,7 +39,8 @@ import { assertCustomerType, assertSourceAllowed, resolveReferral } from "../lea
 import { classifyRepeat } from "../leads/repeat-rules";
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { enquiryTitle, refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
-import { countryFromLocale, needsWorkspacePhoneCountry, normalizeIntakePartyPhones } from "./intake-phone";
+import { countryFromLocale, needsWorkspacePhoneCountry, normalizeIntakePartyPhones, staffPhoneProblems } from "./intake-phone";
+import { PERSON_NAME_MESSAGE, personNameProblem, typedNameProblem } from "../../common/person-name";
 import { recordClientMessageSkipped, sendClientEvent } from "../conversations/inbox/client-messages";
 import { loadSalesSettings, salesSchedule } from "../leads/sales-attention";
 import { addSlaMinutes } from "../leads/sla-schedule";
@@ -91,16 +92,18 @@ export class CrmIntakeService {
 
   updateDetails(actor: RequestActor, workspaceId: string, leadId: string, input: UpdateLeadDetailsDto) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
+      const workspaceCountry = needsWorkspacePhoneCountry(input.party)
+        ? countryFromLocale((await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.defaultLocale)
+        : undefined;
       // PLM-092: every problem at once, each with its field; PLM-096: what this enquiry type requires from the start.
+      // Numbers are checked against their country, each on its field (the same rule as the form).
       new ProblemList()
         .when(!input.party?.displayName?.trim(), "displayName", "Enter a customer name")
         .when(!input.party?.mobile?.trim(), "mobile", "Enter a mobile number")
         .when(input.party?.email?.trim() && !/^\S+@\S+\.\S+$/.test(input.party.email.trim()), "email", "Enter a valid email")
+        .addAll(staffPhoneProblems(input.party, workspaceCountry))
         .addAll(await this.createProblems(client, workspaceId, input as never))
         .throwIfAny();
-      const workspaceCountry = needsWorkspacePhoneCountry(input.party)
-        ? countryFromLocale((await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.defaultLocale)
-        : undefined;
       const party = normalizeIntakePartyPhones(input.party, workspaceCountry);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
       const found = await client.query(`SELECT lead.version, lead.party_id, lead.enquiry_id, enquiry.title,
@@ -113,6 +116,9 @@ export class CrmIntakeService {
       if (!found.rowCount) throw new NotFoundException("Lead not found");
       const before = found.rows[0];
       if (Number(before.version) !== input.version) throw new ConflictException("Lead changed; reload before saving");
+      // A name typed here is letters and spaces (with the punctuation names need); one kept as it came is not checked.
+      const wrongName = typedNameProblem(before.party_name, party.displayName);
+      new ProblemList().when(wrongName, "displayName", wrongName ?? "").throwIfAny();
       // The client's name and phones are their identity: only those who may change it do (Sales edits everything else).
       await assertClientIdentityChange(this.access, client, workspaceId, actorUser.userId, nameChanged(before.party_name, party.displayName)
         || await this.phonesChanged(client, workspaceId, before.party_id, party));
@@ -597,12 +603,20 @@ export class CrmIntakeService {
     // Staff entry is checked against what its enquiry type requires from the start; a form or import is the sender's.
     // A spam chat's enquiry (PLM-138) is kept as it came: nobody fills it in.
     if (sourceActor === "user" && input.intakeMethod !== "import" && !internal.spamChat) problems.addAll(await this.createProblems(client, workspaceId, input));
-    problems.throwIfAny();
-    await validateLeadOptions(client, workspaceId, input, undefined, { requireEmirate: !internal.spamChat });
-    const submittedParty = input.party;
     const workspaceCountry = needsWorkspacePhoneCountry(input.party)
       ? countryFromLocale((await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.defaultLocale)
       : undefined;
+    // Typed by staff (the enquiry form, the app): the numbers fit their country and the name is letters and spaces, each
+    // problem on its field. What came from a channel is kept as it came: imports, forms, Woddy's enquiry from a chat,
+    // an existing client's name, and a name the form took from a chat unchanged.
+    const origin = input.originalPayload ?? {};
+    if (sourceActor === "user" && input.intakeMethod === "manual" && !internal.spamChat && origin.origin !== "woddy") {
+      problems.addAll(staffPhoneProblems(input.party, workspaceCountry));
+      if (input.identity !== "existing" && origin.nameFromChannel !== true && personNameProblem(input.party.displayName) === "characters") problems.add("displayName", PERSON_NAME_MESSAGE);
+    }
+    problems.throwIfAny();
+    await validateLeadOptions(client, workspaceId, input, undefined, { requireEmirate: !internal.spamChat });
+    const submittedParty = input.party;
     // A spam chat's enquiry keeps the number the provider gave (the contact already exists), whatever its country rules.
     input = { ...input, party: internal.spamChat ? input.party : normalizeIntakePartyPhones(input.party, workspaceCountry) };
     await this.assertScope(client, workspaceId, input.legalEntityId, input.businessUnitId);

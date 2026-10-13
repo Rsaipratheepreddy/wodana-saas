@@ -22,6 +22,8 @@ import { readView } from "./portal-read";
 import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSettings, saveProjectAccess, SECTIONS } from "./portal-settings";
 import { portalUrl, readSite } from "./portal-site";
 import { contactEmailSql } from "./contact-email";
+import { phoneProblem } from "../crm/intake/intake-phone";
+import { typedNameProblem } from "../common/person-name";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Names a case's client contacts and decision-makers (Sales sends its own quotes) without managing the portal. */
@@ -298,9 +300,15 @@ export class ClientPortalAdminService {
       const role = body.role === "approver" ? "approver" : "viewer";
       const active = body.active !== false;
       const testContact = this.demo && body.testContact === true;
-      const existing = typeof body.id === "string" ? (await client.query<Contact>(
-        `SELECT id, phone, role, active, version FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND id = $3 FOR UPDATE`, [workspaceId, id, body.id])).rows[0] : undefined;
+      const existing = typeof body.id === "string" ? (await client.query<Contact & { name: string }>(
+        `SELECT id, name, phone, role, active, version FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND id = $3 FOR UPDATE`, [workspaceId, id, body.id])).rows[0] : undefined;
       if (typeof body.id === "string" && !existing) throw new NotFoundException("Contact not found.");
+      // Staff type this contact: a new name is letters and spaces, a new mobile a valid mobile of its country.
+      // What is kept as it is (a name or number that came from elsewhere) is not checked again.
+      const wrongName = typedNameProblem(existing?.name, name, !existing);
+      if (wrongName) throw new BadRequestException(wrongName);
+      const wrongMobile = !existing || existing.phone !== phone ? phoneProblem(phone, undefined, "mobile") : null;
+      if (wrongMobile) throw new BadRequestException(wrongMobile);
       const duplicate = (await client.query<{ id: string }>(`SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND phone = $3`, [workspaceId, id, phone])).rows[0];
       if (duplicate && duplicate.id !== existing?.id) throw new ConflictException("This mobile number is already a contact on this project.");
       let contactId = existing?.id ?? randomUUID();

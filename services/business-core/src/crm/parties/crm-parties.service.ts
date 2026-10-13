@@ -37,6 +37,9 @@ import {
 } from "./dto/parties.dto";
 import { queryClientTimeline } from "../shared/client-timeline";
 import { refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
+import { ProblemList } from "../leads/enquiry-problems";
+import { countryFromLocale, phoneProblem } from "../intake/intake-phone";
+import { PERSON_NAME_MESSAGE, personNameProblem, typedNameProblem } from "../../common/person-name";
 
 interface RelocationRecord { id: string; version: number }
 interface StakeholderRelocation { opportunityId: string; role: string }
@@ -163,6 +166,14 @@ export class CrmPartiesService {
       await this.assertScopedReferences(client, workspaceId, input);
       this.assertProfile(input);
       this.assertPrimarySelections(input);
+      // Staff type a client here: a person's name is letters and spaces, and each phone fits its country.
+      const problems = new ProblemList().when(input.type === "person" && personNameProblem(input.displayName) === "characters", "displayName", PERSON_NAME_MESSAGE);
+      for (const contact of input.contacts ?? []) {
+        if (contact.type !== "phone") continue;
+        const wrong = await this.staffPhoneProblem(client, workspaceId, contact.value, contact.countryCode);
+        if (wrong) problems.add("phone", wrong);
+      }
+      problems.throwIfAny();
       const partyId = randomUUID();
       await client.query(
         `INSERT INTO crm_parties
@@ -229,6 +240,9 @@ export class CrmPartiesService {
         await this.requireMembership(client, workspaceId, input.ownerMembershipId);
       }
       this.assertUpdateProfile(String(before.type), input);
+      // A person's new name is letters and spaces; a name kept as it came (from a channel) is not checked.
+      const wrongName = before.type === "person" ? typedNameProblem(before.displayName as string | null, input.displayName) : null;
+      new ProblemList().when(wrongName, "displayName", wrongName ?? "").throwIfAny();
       const result = await client.query(
         `UPDATE crm_parties SET
            display_name = COALESCE($1, display_name),
@@ -303,6 +317,10 @@ export class CrmPartiesService {
   ) {
     return this.access.withPermission(actor, workspaceId, "crm.parties.manage", async (client, actorUser) => {
       await this.requireParty(client, workspaceId, partyId, true);
+      if (input.type === "phone") {
+        const wrong = await this.staffPhoneProblem(client, workspaceId, input.value, input.countryCode);
+        new ProblemList().when(wrong, "value", wrong ?? "").throwIfAny();
+      }
       const contact = await this.insertContact(client, workspaceId, partyId, input);
       await this.events.record(client, {
         workspaceId, actorUserId: actorUser.userId, source: "user",
@@ -336,6 +354,11 @@ export class CrmPartiesService {
       if (type === "phone" && before.status === "active") {
         await assertClientIdentityChange(this.access, client, workspaceId, actorUser.userId,
           input.status === "archived" || phoneChanged(String(before.normalized_value ?? before.raw_value ?? ""), rawValue));
+      }
+      // A phone typed here fits its country; one left as it is (archived, made primary) is kept as it came.
+      if (type === "phone" && input.value !== undefined && phoneChanged(String(before.normalized_value ?? before.raw_value ?? ""), rawValue)) {
+        const wrong = await this.staffPhoneProblem(client, workspaceId, rawValue, input.countryCode ?? (before.country_code as string | null));
+        new ProblemList().when(wrong, "value", wrong ?? "").throwIfAny();
       }
       const { normalizedValue, invalidReason } = this.normalizeContact(type, rawValue);
       const nextVerified = input.status === "archived" ? false : input.isVerified ?? Boolean(before.is_verified);
@@ -1022,6 +1045,13 @@ export class CrmPartiesService {
       );
       if (!result.rowCount) throw new UnprocessableEntityException("Business unit is not active in the selected legal entity");
     }
+  }
+
+  /** A staff-typed phone against its country (or the workspace's region when none is given); the line to show, or null. */
+  private async staffPhoneProblem(client: PoolClient, workspaceId: string, value: string, countryCode?: string | null) {
+    const country = countryCode || value.trim().startsWith("+") ? countryCode ?? undefined
+      : countryFromLocale((await client.query<{ locale: string }>(`SELECT default_locale AS locale FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.locale);
+    return phoneProblem(value, country, "phone");
   }
 
   private assertProfile(input: CreatePartyDto) {
