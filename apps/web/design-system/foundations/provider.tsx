@@ -177,7 +177,10 @@ export function WorkspaceRegionProvider({ locale, currency, timeZone, workingDay
   const uiLanguage = useContext(UiLanguageContext);
   const value = useMemo(() => {
     const regionLocale = locale ?? parent.regionLocale;
-    return { ...parent, locale: formattingLocale(uiLanguage, regionLocale), regionLocale, currency: currency ?? parent.currency, timeZone: timeZone ?? parent.timeZone,
+    const formatting = formattingLocale(uiLanguage, regionLocale);
+    // The reading direction follows the person's language here too: a page that re-uses these settings for its own
+    // provider ({...useDesignSystem()}) must not inherit the default left-to-right in Arabic.
+    return { ...parent, locale: formatting, regionLocale, direction: languageDirection(uiLanguage ?? formatting), currency: currency ?? parent.currency, timeZone: timeZone ?? parent.timeZone,
       workingDays: workingDays?.length ? workingDays : parent.workingDays, holidays: holidays ?? parent.holidays, workingHours: workingHours ?? parent.workingHours };
   }, [parent, uiLanguage, locale, currency, timeZone, workingDays, holidays, workingHours]);
   return <DesignSystemContext.Provider value={value}>{children}</DesignSystemContext.Provider>;
