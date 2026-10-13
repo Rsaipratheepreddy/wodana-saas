@@ -1,4 +1,5 @@
 import { FURNITURE_PATHS } from "../crm/opportunities/flow-gates";
+import { checkDesignPackage } from "../design/design-packages.domain";
 import { parseInspectionStages, type InspectionStage } from "../factory/factory-inspections";
 import { PRODUCTION_STEP_KINDS, type ProductionStep } from "../factory/production-status";
 import { DEDUCT_EVENTS, LEAD_FROM, RESERVE_EVENTS } from "../fulfilment/fulfilment-rules";
@@ -115,7 +116,7 @@ export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 export const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 export class ProfileError extends Error {
-  constructor(readonly problems: string[]) { super(`The profile is not valid:\n  - ${problems.join("\n  - ")}`); }
+  constructor(readonly problems: string[], what = "profile") { super(`The ${what} is not valid:\n  - ${problems.join("\n  - ")}`); }
 }
 
 type Obj = Record<string, unknown>;
@@ -647,4 +648,103 @@ export function validateProfile(raw: unknown): Profile {
 
   if (problems.length) throw new ProfileError(problems);
   return profile;
+}
+
+// ---------- design packages file (configure --packages) ----------
+
+/**
+ * One design package as the file lists it (e.g. docs/fixtures/palm-design-packages.json), matched by code: the whole
+ * package, as Settings › Design saves it. Its code, name, pricing and rate are always given; another field left out
+ * takes the product's default (e.g. no required role, 2 revisions), and a currency left out is the workspace's.
+ */
+export type PackageSpec = {
+  code: string; name: string; pricingMethod: "per_space" | "per_area" | "fixed"; rate: string; currency?: string; areaUnit?: "sqft" | "sqm" | null;
+  includedRevisions?: number; includesSpacePlanning?: boolean; includesRenders?: boolean; requiredRoleCode?: string | null; inclusions?: string | null; position?: number;
+  reviewRoleCode?: string | null; rateFrom?: boolean; unitDefinition?: string | null;
+};
+/** The design packages file: the packages and, when given, the minimum design deposit (null: no minimum). */
+export type PackagesFile = { minimumDeposit?: { amount: string; currency?: string } | null; packages: PackageSpec[] };
+
+const PACKAGE_KEYS = ["code", "name", "pricingMethod", "rate", "currency", "areaUnit", "includedRevisions", "includesSpacePlanning", "includesRenders", "requiredRoleCode",
+  "inclusions", "position", "reviewRoleCode", "rateFrom", "unitDefinition"] as const;
+const AMOUNT = /^\d{1,12}(\.\d{1,2})?$/;
+const CURRENCY = /^[A-Z]{3}$/;
+const ROLE_CODE = /^[a-z][a-z0-9_]{1,59}$/;
+
+/** Validates a parsed design packages file; every problem is listed at once (the package rules are the app's own). */
+export function validatePackagesFile(raw: unknown): PackagesFile {
+  const problems: string[] = [];
+  const fail = (): never => { throw new ProfileError(problems, "design packages file"); };
+  if (!isObject(raw)) { problems.push("It is a JSON object with a list of packages (\"packages\")."); fail(); }
+  const file = raw as Obj;
+  const extra = Object.keys(file).filter((key) => !["packages", "minimumDeposit", "source", "description", "$schema"].includes(key) && !key.startsWith("_"));
+  if (extra.length) problems.push(`Unknown keys: ${extra.join(", ")}.`);
+  const result: PackagesFile = { packages: [] };
+
+  if (file.minimumDeposit !== undefined) {
+    const deposit = file.minimumDeposit;
+    if (deposit === null) result.minimumDeposit = null;
+    else if (!isObject(deposit) || Object.keys(deposit).some((key) => key !== "amount" && key !== "currency")) problems.push("minimumDeposit is null or { amount, currency }.");
+    else if (typeof deposit.amount !== "string" || !AMOUNT.test(deposit.amount)) problems.push("minimumDeposit.amount is an amount as text, e.g. \"15000.00\".");
+    else if (deposit.currency !== undefined && (typeof deposit.currency !== "string" || !CURRENCY.test(deposit.currency))) problems.push("minimumDeposit.currency is a currency code, e.g. EUR.");
+    else result.minimumDeposit = { amount: deposit.amount, ...(deposit.currency ? { currency: deposit.currency as string } : {}) };
+  }
+
+  if (!Array.isArray(file.packages) || !file.packages.length || file.packages.length > 50) problems.push("packages is a list of 1 to 50 packages.");
+  const seen = new Set<string>();
+  (Array.isArray(file.packages) ? file.packages : []).forEach((entry: unknown, index) => {
+    const path = `packages[${index}]`;
+    if (!isObject(entry)) { problems.push(`${path} is an object.`); return; }
+    const before = problems.length;
+    const unknown = Object.keys(entry).filter((key) => !(PACKAGE_KEYS as readonly string[]).includes(key) && !key.startsWith("_"));
+    if (unknown.length) problems.push(`${path} has unknown keys: ${unknown.join(", ")}.`);
+    for (const key of ["code", "name", "pricingMethod", "rate"]) if (entry[key] === undefined) problems.push(`${path}.${key} is required.`);
+    const text = (key: string, test: (value: string) => boolean, what: string, nullable = false) => {
+      const value = entry[key];
+      if (value === undefined || (nullable && value === null)) return;
+      if (typeof value !== "string" || !test(value)) problems.push(`${path}.${key} is ${what}${nullable ? " (or null)" : ""}.`);
+    };
+    text("code", (value) => /^[a-z][a-z0-9_]{1,39}$/.test(value.trim().toLowerCase()), "a code of letters, digits and _ (2 to 40)");
+    text("name", (value) => Boolean(value.trim()) && value.trim().length <= 120, "the package's name (at most 120 characters)");
+    text("pricingMethod", (value) => ["per_space", "per_area", "fixed"].includes(value), "per_space, per_area or fixed");
+    text("rate", (value) => AMOUNT.test(value), "an amount as text, e.g. \"40.00\" (never a number)");
+    text("currency", (value) => CURRENCY.test(value), "a currency code, e.g. EUR");
+    text("areaUnit", (value) => value === "sqft" || value === "sqm", "sqft or sqm", true);
+    text("requiredRoleCode", (value) => ROLE_CODE.test(value.trim()), "a role code like designer", true);
+    text("reviewRoleCode", (value) => ROLE_CODE.test(value.trim().toLowerCase()), "a role code like creative_director", true);
+    text("inclusions", (value) => value.trim().length <= 2000, "text of at most 2000 characters", true);
+    text("unitDefinition", (value) => value.trim().length <= 200, "text of at most 200 characters", true);
+    for (const key of ["includesSpacePlanning", "includesRenders", "rateFrom"]) if (entry[key] !== undefined && typeof entry[key] !== "boolean") problems.push(`${path}.${key} is true or false.`);
+    const int = (key: string, min: number, max: number) => {
+      if (entry[key] !== undefined && (!Number.isInteger(entry[key]) || (entry[key] as number) < min || (entry[key] as number) > max)) problems.push(`${path}.${key} is a whole number from ${min} to ${max}.`);
+    };
+    int("includedRevisions", 0, 20);
+    int("position", 0, 1000);
+    if (problems.length > before) return;
+    const spec = entry as unknown as PackageSpec;
+    const code = spec.code.trim().toLowerCase();
+    if (seen.has(code)) { problems.push(`${path}.code repeats ${code}.`); return; }
+    seen.add(code);
+    // The app's own rules for a package (e.g. a price per area names its unit), with the workspace's currency standing in.
+    try { checkDesignPackage({ ...spec, currency: spec.currency ?? "XXX" }); } catch (error) { problems.push(`${path} (${code}): ${(error as Error).message}.`); return; }
+    result.packages.push({ ...spec, code });
+  });
+  if (problems.length) fail();
+  return result;
+}
+
+/**
+ * Where a profile's design section would undo the packages file on every run (it sets the included revisions of the
+ * packages it covers): the file's packages and the profile must agree, or a second run would change them back.
+ */
+export function packagesAgainstProfile(file: PackagesFile, profile: Profile | null): string[] {
+  const revisions = profile?.design?.revisionsIncluded;
+  if (revisions === undefined) return [];
+  const covered = profile!.design!.packages?.map((code) => code.toLowerCase());
+  return file.packages.flatMap((entry) => {
+    // A package left without its revisions has the product's default.
+    const included = checkDesignPackage({ ...entry, currency: entry.currency ?? "XXX" }).includedRevisions;
+    return included !== revisions && (!covered || covered.includes(entry.code))
+      ? [`design package ${entry.code} includes ${included} revisions in the packages file but the profile's design.revisionsIncluded is ${revisions}; make them the same.`] : [];
+  });
 }

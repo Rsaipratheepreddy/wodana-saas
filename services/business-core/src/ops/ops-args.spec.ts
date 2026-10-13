@@ -19,7 +19,16 @@ describe("operator CLI arguments", () => {
   });
 
   it("parses configure", () => {
-    expect(parseArgs(["configure", ...base, "--profile", "p.json", "--json"])).toEqual({ command: "configure", workspace: "palm-living", as: "owner@example.test", apply: false, json: true, profile: "p.json" });
+    expect(parseArgs(["configure", ...base, "--profile", "p.json", "--json"])).toEqual({ command: "configure", workspace: "palm-living", as: "owner@example.test", apply: false, json: true,
+      profile: "p.json", teams: null, packages: null });
+  });
+
+  it("parses configure with a teams access file and a design packages file, with or without a profile", () => {
+    expect(parseArgs(["configure", ...base, "--teams", "teams.json", "--packages", "packages.json", "--profile", "p.json", "--apply"])).toEqual({ command: "configure",
+      workspace: "palm-living", as: "owner@example.test", apply: true, json: false, profile: "p.json", teams: "teams.json", packages: "packages.json" });
+    expect(parseArgs(["configure", ...base, "--teams", "teams.json"])).toMatchObject({ profile: null, teams: "teams.json", packages: null, apply: false });
+    expect(parseArgs(["configure", ...base, "--packages", " packages.json "])).toMatchObject({ profile: null, teams: null, packages: "packages.json" });
+    expect(USAGE).toContain("[--packages <design-packages.json>]");
   });
 
   it("shows help without other arguments", () => {
@@ -39,7 +48,14 @@ describe("operator CLI arguments", () => {
     [["import", ...base, "--target", "catalog", "--file", "a.xlsx", "--apply", "--dry-run"], "either --apply or --dry-run"],
     [["import", ...base, "--target", "catalog", "--file"], "--file needs a value"],
     [["import", ...base, "--target", "catalog", "--file", "a.xlsx", "--force"], "Unknown option --force"],
-    [["configure", ...base], "--profile is required"],
+    [["configure", ...base], "configure needs --profile, --teams or --packages"],
+    [["configure", ...base, "--teams"], "--teams needs a value"],
+    [["configure", ...base, "--packages", "--apply"], "--packages needs a value"],
+    [["configure", ...base, "--packages", "  "], "--packages is required"],
+    [["configure", ...base, "--teams", "a.json", "--teams", "b.json"], "--teams is given twice"],
+    [["configure", ...base, "--teams", "t.json", "--password-env", "PASSWORD"], "--password-env does not apply to configure"],
+    [["sandbox", "--slug", "iglo", "--name", "Igolo Test", "--region", "AE", "--packages", "p.json"], "--packages does not apply to sandbox"],
+    [["import", ...base, "--target", "stock", "--file", "a.xlsx", "--packages", "p.json"], "--packages does not apply to --target stock"],
     [["configure", ...base, "--profile", "p.json", "--target", "stock"], "--target does not apply to configure"],
     [["configure", "--workspace", "Palm Living", "--as", "a@b.test", "--profile", "p.json"], "workspace slug"],
     [["configure", "--workspace", "palm", "--as", "not-an-email", "--profile", "p.json"], "--as is the email"],

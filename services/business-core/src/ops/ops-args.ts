@@ -14,7 +14,11 @@ export type ImportArgs = Common & {
   /** Catalog: the file's prices are approved list prices (live at once); left out, the link keeps its setting. */
   approvedPrices: boolean;
 };
-export type ConfigureArgs = Common & { command: "configure"; profile: string };
+/**
+ * `configure`: a profile's sections, a teams access file and a design packages file (at least one), applied to an
+ * existing workspace; the teams and packages are only added or updated, never removed.
+ */
+export type ConfigureArgs = Common & { command: "configure"; profile: string | null; teams: string | null; packages: string | null };
 /** A test workspace with one member per role (ops-sandbox.ts); no --workspace or --as: the workspace may not exist yet. */
 export type SandboxArgs = {
   command: "sandbox"; slug: string; name: string; region: string; profile: string | null; teams: string | null;
@@ -54,7 +58,8 @@ Usage:
       [--tabs "A,B"] [--exclude-tabs "A,B"] [--mapping <json or file>] [--legal-entity <code>] [--fill-only]
       [--catalog <code|name>] [--location <place name>] [--name <import name>] [--item-type <kind>] [--no-sets-stock]
       [--pictures] [--approved-prices] [--apply] [--json]
-  node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> --profile <profile.json> [--apply] [--json]
+  node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> [--profile <profile.json>] [--teams <teams-access.json>]
+      [--packages <design-packages.json>] [--apply] [--json]
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> [--profile <profile.json>]
       [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--password-env <ENV VAR>] [--kit <firm kit code>]
       [--email-pattern "<local>+{role}@<domain>"] [--seed] [--scenarios] [--apply] [--json]
@@ -90,7 +95,20 @@ import
 
 configure
   Applies a workspace configuration profile (JSON) through the settings commands. Sections the profile leaves out are
-  skipped; a second run changes nothing. See docs/fixtures/palm-golive-config.json.
+  skipped; a second run changes nothing. See docs/fixtures/palm-golive-config.json. Needs at least one of:
+  --profile       a configuration profile
+  --teams         a teams access file (e.g. docs/fixtures/palm-teams-access.json), additive only: a missing team is
+                  created with its role (team_<code>, or a role the workspace has with the team's name) and no members,
+                  and a team's role missing some of the file's permissions gets them. No team, member, role or
+                  permission is ever removed and nobody joins or leaves a team. A new team goes in the workspace's first
+                  business unit (by name).
+  --packages      a design packages file (e.g. docs/fixtures/palm-design-packages.json), matched by code: each package
+                  is set to what the file says, as Settings › Design saves it (a field the file leaves out takes the
+                  product's default, a currency the workspace's), and only the fields that differ are changed and
+                  listed; a missing package is added, and the minimum design deposit is set when the file has one. A
+                  package the file doesn't list is left as it is (never archived or deleted); an archived one stays
+                  archived.
+  The teams and packages go first, then the profile's sections, which name their roles, teams and packages.
 
 sandbox
   A test workspace for end-to-end testing, created (or found) through the same provisioning as Wodana Control: the
@@ -158,7 +176,8 @@ Output is counts and messages only. Exit code 0 when everything succeeded, 1 whe
 const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--scenarios", "--retire",
   "--restore", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
-  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern"]);
+  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern",
+  "--packages"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ITEM_TYPES = ["product", "material", "assembly", "service", "package", "ready_made"];
@@ -203,8 +222,11 @@ export function parseArgs(argv: string[]): OpsArgs {
   };
 
   if (command === "configure") {
-    only(["--profile"], "configure");
-    return { command, ...common, profile: required("--profile") };
+    only(["--profile", "--teams", "--packages"], "configure");
+    const file = (name: string) => (values.has(name) ? required(name) : null);
+    const [profile, teams, packages] = [file("--profile"), file("--teams"), file("--packages")];
+    if (!profile && !teams && !packages) throw new UsageError("configure needs --profile, --teams or --packages (one or more).");
+    return { command, ...common, profile, teams, packages };
   }
 
   const target = required("--target");

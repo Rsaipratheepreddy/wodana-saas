@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLES, DEFAULT_STAGES } from "../project-core/project-checks";
 import { planRoute } from "./ops-configure";
-import { ProfileError, validateProfile } from "./ops-profile";
+import { packagesAgainstProfile, ProfileError, validatePackagesFile, validateProfile } from "./ops-profile";
 
 const json = (path: string) => JSON.parse(readFileSync(resolve(__dirname, path), "utf8"));
 const problems = (raw: unknown) => {
@@ -174,6 +174,58 @@ describe("route changes", () => {
       "inbox.closingMessages.closing can fill {{name}} and {{form_link}} only.", "inbox.closingFormUrl is a full https:// link, or null.",
       "inbox.closingAfterHours is a whole number from 1 to 72.", "sales.timelineCheckTeams are team codes like INTERIOR_DESIGN.",
       "enquiryRequirements[0].requiredAt is one of create, convert, book_intro."]);
+  });
+
+  it("reads Palm's design packages file (PLM-139, PLM-145): Concept per space, the Creative Director package priced from its rate and reviewed", () => {
+    const file = validatePackagesFile(json("../../../../docs/fixtures/palm-design-packages.json"));
+    expect(file.minimumDeposit).toEqual({ amount: "15000.00", currency: "AED" });
+    expect(file.packages.map((entry) => entry.code)).toEqual(["concept", "bespoke", "creative_director"]);
+    expect(file.packages[0]).toMatchObject({ pricingMethod: "per_space", rate: "10000.00", unitDefinition: "1 space = 1 room with a door" });
+    expect(file.packages[2]).toMatchObject({ pricingMethod: "per_area", areaUnit: "sqft", rate: "100.00", rateFrom: true, reviewRoleCode: "creative_director" });
+    // A field the file leaves out stays out (it takes the product's default when applied: the Creative Director package no longer requires its designer's role).
+    expect("reviewRoleCode" in file.packages[0]).toBe(false);
+    expect("requiredRoleCode" in file.packages[2]).toBe(false);
+    expect(validatePackagesFile({ packages: [{ code: "Basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] })).toEqual({ packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] });
+    expect(validatePackagesFile({ minimumDeposit: null, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] }).minimumDeposit).toBeNull();
+  });
+
+  it("lists every problem of a design packages file at once, with the app's own package rules", () => {
+    const problemsOf = (raw: unknown) => { try { validatePackagesFile(raw); return []; } catch (error) { if (error instanceof ProfileError) return error.problems; throw error; } };
+    expect(problemsOf([])).toEqual(["It is a JSON object with a list of packages (\"packages\")."]);
+    expect(problemsOf({ packages: [] })).toEqual(["packages is a list of 1 to 50 packages."]);
+    expect(problemsOf({ extra: 1, minimumDeposit: { amount: 15000 }, packages: [
+      { code: "concept", pricingMethod: "per_room", rate: 10000, colour: "red" },
+      { code: "area", name: "Area", pricingMethod: "per_area", rate: "40", rateFrom: "yes", includedRevisions: 30 },
+      { code: "area2", name: "Area", pricingMethod: "per_area", rate: "40" },
+      { code: "fixed", name: "Fixed", pricingMethod: "fixed", rate: "1.5", currency: "aed" },
+      { code: "fixed2", name: "Fixed", pricingMethod: "fixed", rate: "1" }, { code: "FIXED2", name: "Again", pricingMethod: "fixed", rate: "1" },
+    ] })).toEqual([
+      "Unknown keys: extra.", "minimumDeposit.amount is an amount as text, e.g. \"15000.00\".",
+      "packages[0] has unknown keys: colour.", "packages[0].name is required.", "packages[0].pricingMethod is per_space, per_area or fixed.",
+      "packages[0].rate is an amount as text, e.g. \"40.00\" (never a number).",
+      "packages[1].rateFrom is true or false.", "packages[1].includedRevisions is a whole number from 0 to 20.",
+      "packages[2] (area2): Choose square feet or square metres.",
+      "packages[3].currency is a currency code, e.g. EUR.",
+      "packages[5].code repeats fixed2.",
+    ]);
+    expect(() => validatePackagesFile({ packages: [{}] })).toThrow("The design packages file is not valid");
+  });
+
+  it("refuses a packages file and a profile that would undo each other on every run", () => {
+    const file = validatePackagesFile({ packages: [{ code: "concept", name: "Concept", pricingMethod: "fixed", rate: "1", includedRevisions: 3 },
+      { code: "other", name: "Other", pricingMethod: "fixed", rate: "1" }] });
+    expect(packagesAgainstProfile(file, null)).toEqual([]);
+    expect(packagesAgainstProfile(file, { design: { renderInternalDays: 20 } })).toEqual([]);
+    expect(packagesAgainstProfile(file, { design: { revisionsIncluded: 3, packages: ["concept"] } })).toEqual([]);
+    expect(packagesAgainstProfile(file, { design: { revisionsIncluded: 2, packages: ["other"] } })).toEqual([]);
+    // A package left without its revisions has the product's 2.
+    expect(packagesAgainstProfile(file, { design: { revisionsIncluded: 3 } })).toEqual([
+      "design package other includes 2 revisions in the packages file but the profile's design.revisionsIncluded is 3; make them the same."]);
+    expect(packagesAgainstProfile(file, { design: { revisionsIncluded: 2 } })).toEqual([
+      "design package concept includes 3 revisions in the packages file but the profile's design.revisionsIncluded is 2; make them the same."]);
+    // Palm's two files agree.
+    expect(packagesAgainstProfile(validatePackagesFile(json("../../../../docs/fixtures/palm-design-packages.json")),
+      validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")))).toEqual([]);
   });
 
   it("reports a stage it can't place", () => {

@@ -2,12 +2,13 @@ import "reflect-metadata";
 import { readFile } from "node:fs/promises";
 import { HttpException, type INestApplicationContext } from "@nestjs/common";
 import { runWithCommandOrigin } from "../database/command-origin";
-import { parseArgs, USAGE, UsageError, type OpsArgs } from "./ops-args";
+import { parseArgs, USAGE, UsageError, type ConfigureArgs, type OpsArgs } from "./ops-args";
 import { runConfigure } from "./ops-configure";
 import { openContext, OpsError, Report } from "./ops-context";
 import { runImport } from "./ops-import";
 import { runSandbox, runSandboxLifecycle } from "./ops-sandbox";
-import { ProfileError, validateProfile } from "./ops-profile";
+import { packagesAgainstProfile, ProfileError, validatePackagesFile, validateProfile } from "./ops-profile";
+import { parseTeamsFile, SandboxFileError, type TeamSpec } from "./ops-sandbox-plan";
 
 /**
  * The operator CLI (run in the business-core container: `node dist/ops/ops-cli.js …`). A platform operator with shell
@@ -35,11 +36,12 @@ export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs
         report.finish({ command: args.command, workspace: args.slug, ...(lifecycle ? { lifecycle } : {}), mode: args.apply ? "apply" : "dry-run" });
         return report.failed ? 1 : 0;
       }
-      const profile = args.command === "configure" ? await readProfile(args.profile) : null;
+      // Every file is read and checked whole before anything connects to the workspace.
+      const files = args.command === "configure" ? await readConfigureFiles(args) : null;
       const ctx = await openContext(app, args.workspace, args.as, args.apply);
       report.note(`${args.command} in ${ctx.workspace.slug} as ${args.as}: ${args.apply ? "APPLY" : "dry run"}`);
       if (args.command === "import") await runImport(ctx, args, report);
-      else await runConfigure(ctx, profile!, report);
+      else await runConfigure(ctx, files!.profile, report, files!);
       report.finish({ command: args.command, workspace: ctx.workspace.slug, mode: args.apply ? "apply" : "dry-run" });
       return report.failed ? 1 : 0;
     });
@@ -54,12 +56,26 @@ export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs
   }
 }
 
-async function readProfile(path: string) {
+async function readJson(path: string, what: string): Promise<unknown> {
   let text: string;
-  try { text = await readFile(path, "utf8"); } catch { throw new OpsError(`No profile at ${path}.`); }
-  let raw: unknown;
-  try { raw = JSON.parse(text); } catch { throw new OpsError(`${path} is not valid JSON.`); }
-  return validateProfile(raw);
+  try { text = await readFile(path, "utf8"); } catch { throw new OpsError(`No ${what} at ${path}.`); }
+  try { return JSON.parse(text); } catch { throw new OpsError(`${path} is not valid JSON.`); }
+}
+
+/** configure's profile, teams access file and design packages file, each checked whole (and against each other). */
+async function readConfigureFiles(args: ConfigureArgs) {
+  const profile = args.profile ? validateProfile(await readJson(args.profile, "profile")) : null;
+  let teams: TeamSpec[] | null = null;
+  if (args.teams) {
+    try { teams = parseTeamsFile(await readJson(args.teams, "teams file")); } catch (error) {
+      if (error instanceof SandboxFileError) throw new OpsError(error.message);
+      throw error;
+    }
+  }
+  const packages = args.packages ? validatePackagesFile(await readJson(args.packages, "design packages file")) : null;
+  const conflicts = packages ? packagesAgainstProfile(packages, profile) : [];
+  if (conflicts.length) throw new OpsError(`The design packages file and the profile disagree:\n  - ${conflicts.join("\n  - ")}`);
+  return { profile, teams, packages };
 }
 
 /** Boots the application context without an HTTP listener and without the background publishers. */

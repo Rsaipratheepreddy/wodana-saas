@@ -14,6 +14,9 @@ import { CrmSettingsService } from "../crm/settings/crm-settings.service";
 import { EnquiryFieldsService } from "../crm/settings/enquiry-fields.service";
 import { CrmClosingMessagesService } from "../crm/conversations/crm-closing-messages.service";
 import { REQUIREMENT_GATES } from "../crm/leads/enquiry-problems";
+import { Dec } from "../catalog-core/decimal";
+import { DesignPackageDto, DesignSettingsDto } from "../design/design-packages.controller";
+import { checkDesignPackage, effectiveMinimumDeposit, type DesignPackageInput } from "../design/design-packages.domain";
 import { DesignPackagesService } from "../design/design-packages.service";
 import { FinishesService } from "../design/finishes.service";
 import { FactoryService } from "../factory/factory.service";
@@ -26,7 +29,9 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
 import { WorkspacesService } from "../workspaces/workspaces.service";
 import type { OpsContext, Report } from "./ops-context";
-import { WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
+import { WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type PackagesFile, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
+import type { TeamSpec } from "./ops-sandbox-plan";
+import { applyTeams } from "./ops-teams";
 
 /**
  * `configure`: a workspace configuration profile applied through the settings commands each screen uses (with their
@@ -42,6 +47,8 @@ type Step = {
   missing(label: string, detail?: string): void;
   manual(label: string, detail: string): void;
   info(label: string, detail?: string): void;
+  /** A part that can't be applied as given; the rest of the section goes on. */
+  failed(label: string, detail: string): void;
   /** Changes made together by one command: reported as would change (dry run), or run once and reported as changed. */
   change(changes: Change[], run: () => Promise<unknown>): Promise<void>;
 };
@@ -597,6 +604,76 @@ const design: Section = async (ctx, profile, step) => {
   }
 };
 
+// ---------- design packages file (PLM-139, PLM-145) ----------
+
+const PACKAGE_FIELDS: Array<[keyof DesignPackageInput & keyof DesignPackage, string]> = [["name", "name"], ["pricingMethod", "priced"], ["rate", "rate"],
+  ["currency", "currency"], ["areaUnit", "area unit"], ["rateFrom", "priced from its rate"], ["unitDefinition", "one unit is"], ["includedRevisions", "revisions included"],
+  ["includesSpacePlanning", "space planning"], ["includesRenders", "renders"], ["requiredRoleCode", "required role"], ["reviewRoleCode", "reviewed by"],
+  ["inclusions", "inclusions"], ["position", "position"]];
+const samePackageValue = (key: keyof DesignPackageInput, before: unknown, after: unknown) =>
+  key === "rate" ? Dec.of(String(before)).cmp(String(after)) === 0 : key === "rateFrom" ? Boolean(before) === Boolean(after) : (before ?? null) === (after ?? null);
+const packageText = (entry: DesignPackageInput) => `${entry.name}: ${entry.rateFrom ? "from " : ""}${entry.rate} ${entry.currency}`
+  + `${entry.pricingMethod === "per_space" ? " per space" : entry.pricingMethod === "per_area" ? ` per ${entry.areaUnit}` : " fixed"}`
+  + `${entry.unitDefinition ? ` (${entry.unitDefinition})` : ""}${entry.reviewRoleCode ? `, reviewed by ${entry.reviewRoleCode}` : ""}`;
+
+/**
+ * A design packages file through Settings › Design's own commands (their validation, version checks and audit),
+ * matched by code. Each package listed is set to what the file says, as Settings › Design saves a package whole (a
+ * field the file leaves out takes the product's default, e.g. no required role), and only a package that differs is
+ * saved, field by field in the report; a missing package is added; the minimum design deposit is set when the file
+ * has one. A package the file doesn't list is never archived or deleted, and an archived one is not brought back.
+ * Money stays decimal text.
+ */
+async function designPackages(ctx: OpsContext, file: PackagesFile, step: Step) {
+  const service = ctx.get(DesignPackagesService);
+  const current = await service.get(ctx.actor, ctx.workspace.id) as DesignSettings & { minimumDeposit: { amount: string; currency: string } | null };
+  // A currency the file leaves out is the workspace's (from its region pack).
+  const currency = await ctx.read(async (client) => (await client.query<{ currency: string | null }>(
+    `SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [ctx.workspace.id])).rows[0]?.currency ?? null);
+
+  if (file.minimumDeposit !== undefined) {
+    const label = "minimum design deposit";
+    const wantedCurrency = file.minimumDeposit?.currency ?? currency;
+    const deposit = (value: { amount: string; currency: string } | null) => (value ? `${value.amount} ${value.currency}` : "none");
+    if (file.minimumDeposit && !wantedCurrency) step.failed(label, "the file gives no currency and the workspace has none");
+    else {
+      const wanted = effectiveMinimumDeposit(file.minimumDeposit ? { amount: file.minimumDeposit.amount, currency: wantedCurrency } : null);
+      if (deposit(current.minimumDeposit) === deposit(wanted)) step.same(label, deposit(wanted));
+      else await step.change([diff(label, deposit(current.minimumDeposit), deposit(wanted))], async () => {
+        const fresh = await service.get(ctx.actor, ctx.workspace.id) as { version: number };
+        const body = await ctx.validated(DesignSettingsDto, { minimumDeposit: wanted, version: fresh.version });
+        return service.saveMinimumDeposit(ctx.actor, ctx.workspace.id, { minimumDeposit: body.minimumDeposit ?? null, version: body.version });
+      });
+    }
+  }
+
+  // The package as it would be saved, through the app's own package rules (a currency left out is the workspace's).
+  const saved = (next: DesignPackageInput, found?: { id: string; version: number }) => ctx.validated(DesignPackageDto, { ...(found ? { id: found.id, version: found.version } : {}), ...next });
+
+  for (const spec of file.packages) {
+    const found = current.packages.find((entry) => lower(entry.code) === lower(spec.code));
+    const label = `design package ${spec.code}`;
+    let next: DesignPackageInput;
+    try { next = checkDesignPackage({ ...spec, currency: spec.currency ?? currency ?? "" }); } catch (error) { step.failed(label, (error as Error).message); continue; }
+    if (!found) {
+      await step.change([{ label, detail: `added: ${packageText(next)}` }], async () => service.savePackage(ctx.actor, ctx.workspace.id, await saved(next)));
+      continue;
+    }
+    if (found.status !== "active") { step.info(label, "archived: left as it is (restore it in Settings › Design to offer it again, then run again)"); continue; }
+    const changes = PACKAGE_FIELDS.filter(([key]) => !samePackageValue(key, found[key], next[key]))
+      .map(([key, words]): Change => key === "inclusions" ? { label: `${label} ${words}`, detail: "changed" } : diff(`${label} ${words}`, found[key], next[key]));
+    if (!changes.length) { step.same(label, packageText(next)); continue; }
+    await step.change(changes, async () => {
+      // Saved whole, on the version just read.
+      const now = (await service.get(ctx.actor, ctx.workspace.id) as DesignSettings).packages.find((entry) => entry.id === found.id)!;
+      return service.savePackage(ctx.actor, ctx.workspace.id, await saved({ ...next, code: now.code }, now));
+    });
+  }
+  for (const entry of current.packages) {
+    if (entry.status === "active" && !file.packages.some((spec) => lower(spec.code) === lower(entry.code))) step.info(`design package ${entry.code}`, "not in the file: left as it is");
+  }
+}
+
 // ---------- order paths ----------
 
 type Rule = { furniturePath: string | null; boqRequired: boolean | null; reserveOn: string; deductOn: string; leadMinDays: number | null; leadMaxDays: number | null; leadFrom: string;
@@ -941,25 +1018,46 @@ export const SECTIONS: Array<[ProfileSection, Section]> = [
   ["catalogCategories", catalogCategories], ["projects", projects], ["finishes", finishes], ["inbox", inbox], ["sales", sales], ["enquiryRequirements", enquiryRequirements],
 ];
 
-export async function runConfigure(ctx: OpsContext, profile: Profile, report: Report) {
-  for (const [name, section] of SECTIONS) {
-    if (profile[name] === undefined) continue;
+/** The files `configure` applies beside its profile (--teams, --packages). */
+export type ConfigureFiles = { teams?: TeamSpec[] | null; packages?: PackagesFile | null };
+
+/**
+ * The teams file, then the packages file, then the profile's sections: the sections name the teams' roles and teams
+ * (rolePermissions, sales) and the packages (design, factory), so those exist first when applied.
+ */
+export async function runConfigure(ctx: OpsContext, profile: Profile | null, report: Report, files: ConfigureFiles = {}) {
+  const run = async (name: string, work: (step: Step) => Promise<void>) => {
     const step: Step = {
       same: (label, detail) => report.add(name, "unchanged", label, detail),
       missing: (label, detail) => report.add(name, "not found", label, detail),
       manual: (label, detail) => report.add(name, "manual", label, `manual in Settings: ${detail}`),
       info: (label, detail) => report.add(name, "info", label, detail),
-      async change(changes, run) {
+      failed: (label, detail) => report.add(name, "failed", label, detail.slice(0, 300)),
+      async change(changes, apply) {
         if (!ctx.apply) { for (const entry of changes) report.add(name, "would change", entry.label, entry.detail); return; }
-        await run();
+        await apply();
         for (const entry of changes) report.add(name, "changed", entry.label, entry.detail);
       },
     };
     try {
-      await section(ctx, profile, step);
+      await work(step);
     } catch (error) {
       const message = error instanceof HttpException ? `${error.getStatus()} ${error.message}` : (error as Error).message;
       report.add(name, "failed", "section stopped", message.slice(0, 300));
     }
+  };
+  // Additive only on an existing workspace: no business unit is made for new teams (one missing is reported).
+  if (files.teams) await run("teams", async () => {
+    await applyTeams({ workspaces: ctx.get(WorkspacesService), actor: ctx.actor, workspaceId: ctx.workspace.id, apply: ctx.apply, report, validated: ctx.validated, newUnit: null },
+      files.teams!);
+  });
+  if (files.packages) await run("packages", (step) => designPackages(ctx, files.packages!, step));
+  if (!profile) return;
+  // A dry run writes nothing, so the sections read the workspace as it is now.
+  if (!ctx.apply && report.lines.some((line) => (line.section === "teams" || line.section === "packages") && line.status === "would change"))
+    report.add("profile", "info", "dry run", "a role, team or package the files above would add shows as not found below until --apply");
+  for (const [name, section] of SECTIONS) {
+    if (profile[name] === undefined) continue;
+    await run(name, (step) => section(ctx, profile, step));
   }
 }

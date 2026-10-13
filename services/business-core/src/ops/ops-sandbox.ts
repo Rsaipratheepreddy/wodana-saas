@@ -12,9 +12,6 @@ import { TransactionalEmailService } from "../email/transactional-email.service"
 import { SuppliersService } from "../purchasing/suppliers.service";
 import { stableId } from "../seed/palm-showcase/ids";
 import { CustomerAccountsService } from "../workspaces/customer-accounts.service";
-import { CreateBusinessUnitDto } from "../workspaces/dto/create-business-unit.dto";
-import { CreateRoleDto } from "../workspaces/dto/create-role.dto";
-import { CreateTeamDto } from "../workspaces/dto/create-team.dto";
 import { InviteMemberDto } from "../workspaces/dto/invite-member.dto";
 import { ApproveOrganizationRequestDto, CreateOrganizationRequestDto } from "../workspaces/dto/organization-request.dto";
 import { ProvisionTenantDto } from "../workspaces/dto/provision-tenant.dto";
@@ -23,7 +20,6 @@ import { UpdateAccountSecurityPolicyDto } from "../workspaces/dto/tenant-operati
 import { TenantContractContactDto, TenantSetupSelectionsDto } from "../workspaces/dto/tenant-provisioning-draft.dto";
 import { CompleteOnboardingDto, UpdateOnboardingDto, WorkspaceOnboardingStep } from "../workspaces/dto/update-onboarding.dto";
 import { UpdateMemberDto } from "../workspaces/dto/update-member.dto";
-import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
 import { UpdateTeamDto } from "../workspaces/dto/update-team.dto";
 import { UpdateWorkspaceDto } from "../workspaces/dto/update-workspace.dto";
 import { parseRoleTemplateCodes } from "../workspaces/role-templates";
@@ -43,6 +39,7 @@ import {
   sandboxExternalTenantId, SandboxFileError, sandboxLegalEntityCode, sandboxOrganizationKey, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan,
   type TaxonomySpec, type TeamSpec,
 } from "./ops-sandbox-plan";
+import { applyTeams } from "./ops-teams";
 
 /**
  * `sandbox`: a test workspace on the server, for end-to-end testing with one member per role. The workspace is made
@@ -268,7 +265,7 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
     const roles = await get(WorkspacesService).listRoles(owner.actor, workspaceId) as unknown as RoleRow[];
     const teamIds = new Map<string, string>();
     const teamRoles = new Map<string, string>();
-    if (teams) await guarded(report, "teams", "teams", () => ensureTeams(owner.actor, roles, teams, teamIds, teamRoles));
+    if (teams) await guarded(report, "teams", "teams", () => ensureTeams(owner.actor, teams, teamIds, teamRoles));
     if (leadOptions) await guarded(report, "crm", "lead options", () => ensureLeadOptions(owner.actor, leadOptions, teamRoles));
     // Each member at the address they sign in with now (a dry run's members are not moved yet).
     const plans = planMembers(people, new Set(roles.map((role) => role.code)), teams ?? [], scheme).map((plan) => ({ ...plan, email: emailOf(plan.key) }));
@@ -484,68 +481,10 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
       report.add("tax", "changed", "tax profile", shown);
     }
 
-    async function ensureTeams(actor: RequestActor, roles: RoleRow[], specs: TeamSpec[], teamIds: Map<string, string>, teamRoles: Map<string, string>) {
-      const workspaces = get(WorkspacesService);
-      const everyPermission = roles.find((role) => role.code === "administrator")?.permissions ?? [];
-      const roleIds = new Map<string, string>();
-      for (const team of specs) {
-        const code = `team_${team.code.toLowerCase()}`;
-        teamRoles.set(team.code, code);
-        const wanted = team.permissions.includes("*") ? everyPermission : team.permissions.filter((permission) => everyPermission.includes(permission));
-        const unknown = team.permissions.filter((permission) => permission !== "*" && !everyPermission.includes(permission));
-        if (unknown.length) report.add("teams", "info", `team ${team.code}`, `${unknown.length} permissions this workspace doesn't have: ${unknown.join(", ")}`.slice(0, 300));
-        // The team's own role, else a kit role of the same name (never a second role with that name); permissions are only added.
-        const existing = roles.find((role) => role.code === code) ?? roles.find((role) => !role.isSystem && role.name.trim().toLowerCase() === team.name.trim().toLowerCase());
-        if (existing) {
-          roleIds.set(team.code, existing.id);
-          teamRoles.set(team.code, existing.code);
-          const missing = wanted.filter((permission) => !existing.permissions.includes(permission));
-          if (!missing.length) { report.add("teams", "unchanged", `role ${existing.code}`); continue; }
-          if (!args.apply) { report.add("teams", "would change", `role ${existing.code}`, `${missing.length} permissions added`); continue; }
-          await workspaces.updateRole(actor, workspaceId, existing.id, await validated(UpdateRoleDto, { version: existing.version, permissionCodes: [...existing.permissions, ...missing].sort() }));
-          report.add("teams", "changed", `role ${existing.code}`, `${missing.length} permissions added`);
-          continue;
-        }
-        if (!args.apply) { report.add("teams", "would change", `role ${code}`, `created with ${wanted.length} permissions`); continue; }
-        const created = await workspaces.createRole(actor, workspaceId, await validated(CreateRoleDto, {
-          code, name: team.name, description: `${team.name} team: everyone in it has this role.`.slice(0, 500), permissionCodes: [...new Set(wanted)].sort(),
-        })) as unknown as { id: string };
-        roleIds.set(team.code, created.id);
-        report.add("teams", "changed", `role ${code}`, `created with ${wanted.length} permissions`);
-      }
-
-      const detail = await workspaces.get(actor, workspaceId) as unknown as { legalEntities: Array<{ id: string }>; businessUnits: Array<{ id: string; status: string }> };
-      let unitId = detail.businessUnits.find((unit) => unit.status === "active")?.id ?? null;
-      if (unitId) report.add("teams", "unchanged", "business unit");
-      else if (!args.apply) report.add("teams", "would change", "business unit", `${args.name} (MAIN)`);
-      else {
-        const unit = await workspaces.createBusinessUnit(actor, workspaceId, await validated(CreateBusinessUnitDto, {
-          legalEntityId: detail.legalEntities[0].id, code: "MAIN", name: args.name, type: "department", timezone: regionConfig.timezone,
-        })) as unknown as { id: string };
-        unitId = unit.id;
-        report.add("teams", "changed", "business unit", `${args.name} (MAIN)`);
-      }
-
-      const current = await workspaces.listTeams(actor, workspaceId) as unknown as TeamRow[];
-      for (const team of specs) {
-        const roleId = roleIds.get(team.code);
-        const found = current.find((row) => row.code === team.code);
-        if (found) {
-          teamIds.set(team.code, found.id);
-          if (!roleId || found.roleIds.includes(roleId)) { report.add("teams", "unchanged", `team ${team.code}`); continue; }
-          if (!args.apply) { report.add("teams", "would change", `team ${team.code}`, `gets role team_${team.code.toLowerCase()}`); continue; }
-          await workspaces.updateTeam(actor, workspaceId, found.id, await validated(UpdateTeamDto, { version: found.version, roleIds: [...found.roleIds, roleId] }));
-          report.add("teams", "changed", `team ${team.code}`, "role added");
-          continue;
-        }
-        if (!args.apply) { report.add("teams", "would change", `team ${team.code}`, `${team.name}: created`); continue; }
-        const created = await workspaces.createTeam(actor, workspaceId, await validated(CreateTeamDto, {
-          businessUnitId: unitId!, code: team.code, name: team.name, description: `Access is granted per team: everyone in ${team.name} has its role.`.slice(0, 500),
-          roleIds: [roleId!], memberIds: [],
-        })) as unknown as { id: string };
-        teamIds.set(team.code, created.id);
-        report.add("teams", "changed", `team ${team.code}`, `${team.name}: created`);
-      }
+    /** The teams file, additive only (ops-teams.ts, as configure --teams); a sandbox without a business unit gets one. */
+    async function ensureTeams(actor: RequestActor, specs: TeamSpec[], teamIds: Map<string, string>, teamRoles: Map<string, string>) {
+      await applyTeams({ workspaces: get(WorkspacesService), actor, workspaceId, apply: args.apply, report, validated,
+        newUnit: { name: args.name, timezone: regionConfig.timezone } }, specs, { teamIds, teamRoles });
     }
 
     /** The lead options (Settings → Lead options) as the CRM intake profile lists them; an option limited to teams is limited to their roles. */

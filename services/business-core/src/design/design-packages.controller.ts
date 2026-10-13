@@ -8,12 +8,12 @@ import { DesignPackagesService } from "./design-packages.service";
 
 class MinimumDepositDto { @Matches(/^\d{1,12}(\.\d{1,2})?$/) amount!: string; @Matches(/^[A-Z]{3}$/) currency!: string; }
 class DesignTimingsDto { @IsInt() @Min(1) @Max(60) inspirationDays!: number; @IsInt() @Min(1) @Max(720) siteVisitHours!: number; }
-class DesignSettingsDto {
+export class DesignSettingsDto {
   @IsOptional() @ValidateNested() @Type(() => MinimumDepositDto) minimumDeposit?: MinimumDepositDto | null;
   @IsOptional() @ValidateNested() @Type(() => DesignTimingsDto) timings?: DesignTimingsDto;
   @IsOptional() @IsInt() @Min(0) version?: number;
 }
-class DesignPackageDto {
+export class DesignPackageDto {
   @IsOptional() @IsString() id?: string;
   @IsOptional() @IsInt() @Min(1) version?: number;
   @IsString() @MaxLength(40) code!: string;
