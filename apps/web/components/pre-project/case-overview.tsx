@@ -21,6 +21,7 @@ import {
 import type { CommercialState } from "@/lib/commercial/types";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectDetail } from "@/lib/project-core/types";
+import { valueEngineeringApi, type ValueEngineeringView } from "@/lib/value-engineering/client";
 import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
 import { FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
@@ -67,6 +68,13 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
   const [journey, setJourney] = useState<JourneyView | null | undefined>(undefined);
   const [project, setProject] = useState<ProjectDetail | null | undefined>(record.projectId ? undefined : null);
   const [starting, setStarting] = useState(false);
+  // PLM-147: an open value engineering round is the job's step (a failure leaves it out).
+  const [valueEngineering, setValueEngineering] = useState<ValueEngineeringView | null>(null);
+  useEffect(() => {
+    let alive = true;
+    valueEngineeringApi(workspaceId, initial.id).view().then((next) => { if (alive) setValueEngineering(next); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [workspaceId, initial.id]);
 
   // What the next step needs beyond the case: its design stages, and the project it opened. A failure leaves the part out.
   const loadJourney = useCallback(() => caseRequest<JourneyView>(workspaceId, initial.id, "design-journey").then(setJourney).catch(() => setJourney(null)), [workspaceId, initial.id]);
@@ -152,7 +160,7 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
   return <>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
-    <CaseRecordView record={record} commercial={commercial} journey={journey ?? null} project={project ?? null} members={members} today={format.today()} loading={loading}
+    <CaseRecordView record={record} commercial={commercial} journey={journey ?? null} project={project ?? null} valueEngineering={valueEngineering} members={members} today={format.today()} loading={loading}
       historySlot={<RecordHistory workspaceId={workspaceId} recordType="planning_case" recordId={record.id} />}
       busy={starting} onCommand={(id) => void command(id)} actions={<>{portal}{menu}</>} details={details} journeySlot={journeySlot}
       callsSlot={<ClientCallsSection workspaceId={workspaceId} caseId={record.id} />}
@@ -167,8 +175,10 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
 }
 
 /** The case record itself, from data only: header, strip, next step, stages, activity and the sidebar. */
-export function CaseRecordView({ record, commercial, journey, project, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, historySlot, assetHref }: {
+export function CaseRecordView({ record, commercial, journey, project, valueEngineering = null, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, historySlot, assetHref }: {
   record: PreProjectCase; commercial?: CommercialState | null; journey: JourneyView | null; project: ProjectDetail | null; members: Member[]; today: string;
+  /** PLM-147: the job's value engineering (an open round is its step). */
+  valueEngineering?: Pick<ValueEngineeringView, "open"> | null;
   loading?: boolean; busy?: boolean; onCommand?: (command: CaseCommand) => void; actions?: ReactNode; details?: ReactNode; journeySlot?: ReactNode;
   /** The recurring client update call (PLM-046), in the sidebar. */
   callsSlot?: ReactNode;
@@ -178,7 +188,7 @@ export function CaseRecordView({ record, commercial, journey, project, members, 
 }) {
   const t = useT();
   const format = useProjectFormat();
-  const input = useMemo(() => ({ record, commercial, journey, project, today }), [record, commercial, journey, project, today]);
+  const input = useMemo(() => ({ record, commercial, journey, project, today, valueEngineering }), [record, commercial, journey, project, today, valueEngineering]);
   const next = useMemo(() => caseNextStep(input), [input]);
   const money = useMemo(() => caseMoney(commercial), [commercial]);
   const overdue = caseOverdue(input);

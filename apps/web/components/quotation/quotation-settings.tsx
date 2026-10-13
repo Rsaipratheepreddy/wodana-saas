@@ -151,6 +151,11 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
         <div className={styles.kinds}>{QS_ITEM_TYPES.map((type) => <Checkbox key={type} isDisabled={readOnly} isSelected={(form.qsReviewItemTypes ?? []).includes(type)}
           onChange={(on) => set("qsReviewItemTypes", QS_ITEM_TYPES.filter((item) => (item === type ? on : (form.qsReviewItemTypes ?? []).includes(item))))}>{kinds[type]}</Checkbox>)}</div>
       </SettingsRow> : null}
+      {/* PLM-147: the client keeps changing: past these rounds a value engineering round is chargeable. */}
+      <SettingsRow label={t("Free value engineering rounds")} hint={t("Later rounds are chargeable. Leave empty for no limit.")}>
+        <TextInput aria-label={t("Free value engineering rounds")} label={null} isReadOnly={readOnly} inputMode="numeric" value={form.valueEngineeringFreeRounds == null ? "" : String(form.valueEngineeringFreeRounds)}
+          onChange={(value) => { const digits = value.replace(/\D/g, "").slice(0, 2); set("valueEngineeringFreeRounds", digits === "" ? null : Number(digits)); }} />
+      </SettingsRow>
       <SettingsRow label={t("Signing link open for (days)")}>
         <TextInput aria-label={t("Signing link open for (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.signingLinkDays ?? 14)}
           onChange={(value) => set("signingLinkDays", Number(value.replace(/\D/g, "") || 0))} />

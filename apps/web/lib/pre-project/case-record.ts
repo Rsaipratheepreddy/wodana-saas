@@ -4,6 +4,7 @@ import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import { nextStepPhrase } from "@/lib/project-core/next-step";
 import type { JourneyStageKey, JourneyStageView, JourneyView } from "./design-workspace";
+import type { ValueEngineeringView } from "@/lib/value-engineering/client";
 import { caseHref, type CaseCommercialFacts, type CasePlan, type PreProjectCase } from "./types";
 
 /**
@@ -17,6 +18,8 @@ export type CaseRecordInput = {
   journey?: JourneyView | null;
   /** The project a released case opened, when it has loaded. */
   project?: ProjectDetail | null;
+  /** PLM-147: the job's value engineering, when it has loaded. */
+  valueEngineering?: Pick<ValueEngineeringView, "open"> | null;
   /** Today in the workspace's time zone (YYYY-MM-DD). */
   today: string;
 };
@@ -154,7 +157,7 @@ export function casePosition(record: PhaseRecord, commercial?: CaseCommercialFac
 }
 
 /** The one next step, from the case's real state, in the order the work happens. */
-export function caseNextStep({ record, commercial, journey, project, today }: CaseRecordInput): CaseNextStep {
+export function caseNextStep({ record, commercial, journey, project, today, valueEngineering }: CaseRecordInput): CaseNextStep {
   const owner = record.engagementOwnerName;
   if (record.status === "cancelled") return {
     title: { key: tKey("Planning cancelled") }, why: record.cancellationReason ? { text: record.cancellationReason } : null, status: "attention",
@@ -192,6 +195,16 @@ export function caseNextStep({ record, commercial, journey, project, today }: Ca
     return { title: { key: site ? tKey("Start the site visit") : tKey("Start the design") }, why: { key: site ? tKey("The order needs measuring before materials are chosen.") : tKey("The design deposit is in; the design stages can start.") }, owner,
       action: { label: { key: site ? tKey("Start site visit") : tKey("Start design") }, command: "start_journey" } };
   }
+
+  // PLM-147: value engineering, while a round is open, is the job's step: the lead designer leads it with the QS.
+  const ve = valueEngineering?.open;
+  if (ve && ve.status === "open") return {
+    title: { key: tKey("Value engineering") },
+    why: ve.step === "agree_options" ? (ve.qsName ? { key: tKey("Agree the savings with {name}"), values: { name: ve.qsName } } : { key: tKey("Agree the savings with the QS") })
+      : ve.step === "present_options" ? { key: tKey("Present the options to the client") } : { key: tKey("Waiting for the client's decision") },
+    owner: ve.lead.name || owner,
+    action: { label: { key: tKey("Open quotation") }, href: href(record, "quotations", { quote: ve.quoteId }) },
+  };
 
   const quote = currentQuote(commercial);
   if (quote && commercial) {

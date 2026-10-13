@@ -62,6 +62,19 @@ describe("the case's next step", () => {
     expect(caseNextStep({ record, journey: { journey: null, stages: [], canStart: true, startsAs: "design", timezone: "UTC" }, today })).toMatchObject({ action: { command: "start_journey" } });
   });
 
+  it("PLM-147: an open value engineering round is the step, led by the lead designer, until the client decides", () => {
+    const round = (patch: Record<string, unknown>) => ({ open: { status: "open", step: "agree_options", quoteId: "q1", qsName: "Quinn QS", lead: { membershipId: "m2", name: "Dina", fallback: false }, ...patch } as never });
+    const quotes = commercial({ quotes: [quote({ status: "draft" })] });
+    expect(caseNextStep({ record: { ...record, phase: "price" }, commercial: quotes, valueEngineering: round({}), today })).toMatchObject({
+      title: { key: "Value engineering" }, why: { key: "Agree the savings with {name}", values: { name: "Quinn QS" } }, owner: "Dina",
+      action: { label: { key: "Open quotation" }, href: "/workspace/pre-projects/cases/c1/quotations?quote=q1" },
+    });
+    expect(caseNextStep({ record, commercial: quotes, valueEngineering: round({ step: "present_options" }), today }).why).toEqual({ key: "Present the options to the client" });
+    expect(caseNextStep({ record, commercial: quotes, valueEngineering: round({ step: "client_decision" }), today }).why).toEqual({ key: "Waiting for the client's decision" });
+    // No round open: the quotation's own step.
+    expect(caseNextStep({ record, commercial: quotes, valueEngineering: { open: null }, today }).title.key).toBe("Finish quotation {quote}");
+  });
+
   it("after the release, points to the project and its own next step", () => {
     const project = { project: { id: "p1", reference: "PRJ-0003", status: "active", promiseDate: "2026-10-19" }, stages: [{ id: "s", position: 5, name: "Delivery and installation", status: "current" }],
       next: { text: "Everything delivered and installed", owner: null }, team: [] } as unknown as ProjectDetail;

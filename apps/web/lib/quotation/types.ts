@@ -18,6 +18,8 @@ export type QuotationSettings = {
   qsVariations?: "rules" | "never";
   /** §6.20: the size (either way) from which a variation always goes to the QS; null for none. */
   qsVariationThreshold?: string | null;
+  /** PLM-147: free value engineering rounds per job; past them a round is chargeable. Null: no limit. */
+  valueEngineeringFreeRounds?: number | null;
   /** How many days a signing link stays open (R8). */
   signingLinkDays?: number;
   /** PLM-106: the firm's intro deck link. */

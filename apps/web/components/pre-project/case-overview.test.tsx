@@ -36,11 +36,13 @@ function answer(...values: unknown[]) {
     if (path === "design-journey") return journey;
     // The client update calls (PLM-046) answer by themselves too: none on this case.
     if (path === "client-calls") return { caseId: "case-1", frequency: "off", started: false, startedFrom: null, version: 0, ownerName: null, hasOwner: false, next: null };
+    // Value engineering (PLM-147) answers by itself: no round open.
+    if (path === "value-engineering") return { open: null, rounds: [], budget: null, freeRounds: null, designWork: true, quote: null, timezone: "Asia/Dubai", can: { start: false, lead: false, decide: false, withdraw: false } };
     commands.push(body);
     return queue.shift();
   });
 }
-const commandsSent = () => caseRequest.mock.calls.filter(([, , path]) => path !== "design-journey" && path !== "client-calls");
+const commandsSent = () => caseRequest.mock.calls.filter(([, , path]) => path !== "design-journey" && path !== "client-calls" && path !== "value-engineering");
 afterEach(() => { caseRequest.mockReset(); commands.length = 0; });
 
 describe("planning case overview", () => {

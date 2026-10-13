@@ -71,6 +71,7 @@ function kindLook(kind: ReminderKind, t: T): KindLook {
     "approval.waiting": { icon: ClipboardCheck, action: t("Review") },
     "client.quote_decision": { icon: FileText, action: t("Open") },
     "quote.expiring": { icon: FileText, action: t("Open") },
+    "quote.value_engineering_idle": { icon: FileText, action: t("Open") },
     "client.design_decision": { icon: Palette, action: t("Open") },
     "design.stage_due": { icon: Palette, action: t("Open") },
     "payment.due": { icon: Banknote, action: t("Open") },
