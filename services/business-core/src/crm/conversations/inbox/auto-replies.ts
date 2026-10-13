@@ -171,11 +171,13 @@ export async function sendAutoReply(db: Db, input: {
 
   const messageId = randomUUID();
   const eventKey = `auto_reply:${inboundMessageId}`;
+  // Written after the message it answers: that one came in this same transaction, at the same now(), and the thread reads in time order.
   const inserted = await db.query(
-    `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, sender_id, body_text, metadata)
-     VALUES ($1, $2, $3, 'outbound', ${demo ? "'sent'" : "'queued'"}, 'automation', 'system', NULL, $4, $5)
+    `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, sender_id, body_text, metadata, created_at)
+     VALUES ($1, $2, $3, 'outbound', ${demo ? "'sent'" : "'queued'"}, 'automation', 'system', NULL, $4, $5,
+       greatest(clock_timestamp(), (SELECT inbound.created_at + interval '1 millisecond' FROM crm_messages inbound WHERE inbound.workspace_id = $2 AND inbound.id = $6)))
      ON CONFLICT (workspace_id, (metadata->>'eventKey')) WHERE metadata ? 'eventKey' DO NOTHING RETURNING id`,
-    [messageId, workspaceId, conversationId, body, { automatic: "auto_reply", autoReply: kind, inReplyTo: inboundMessageId, eventKey, ...(connectionId ? { connectionId } : {}) }]);
+    [messageId, workspaceId, conversationId, body, { automatic: "auto_reply", autoReply: kind, inReplyTo: inboundMessageId, eventKey, ...(connectionId ? { connectionId } : {}) }, inboundMessageId]);
   if (!inserted.rowCount) {
     const prior = (await db.query<{ id: string }>(`SELECT id FROM crm_messages WHERE workspace_id = $1 AND metadata ? 'eventKey' AND metadata->>'eventKey' = $2`, [workspaceId, eventKey])).rows[0];
     return { sent: true, kind, messageId: prior?.id ?? messageId, duplicate: true };

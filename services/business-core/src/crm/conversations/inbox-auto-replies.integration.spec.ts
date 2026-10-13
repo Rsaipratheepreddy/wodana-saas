@@ -113,6 +113,11 @@ integration("inbox auto replies", () => {
       expect(await autoReplies(client, nouraChat)).toEqual([{ kind: "greeting", body: "Hi Noura, thanks for contacting Studio One.", status: "queued", notification: "pending" }]);
       const message = (await client.query(`SELECT authorship, sender_type AS "senderType", metadata FROM crm_messages WHERE conversation_id = $1 AND direction = 'outbound'`, [nouraChat])).rows[0];
       expect(message).toMatchObject({ authorship: "automation", senderType: "system", metadata: { automatic: "auto_reply", autoReply: "greeting", inReplyTo: first.id } });
+      // The thread reads the client's message first, then the reply (both were written in one transaction).
+      const order = await client.query(`SELECT direction FROM crm_messages WHERE conversation_id = $1 ORDER BY created_at, id`, [nouraChat]);
+      expect(order.rows.map((row) => row.direction)).toEqual(["inbound", "outbound"]);
+      const [asked, replied] = (await client.query<{ at: Date }>(`SELECT created_at AS at FROM crm_messages WHERE conversation_id = $1 ORDER BY direction = 'outbound'`, [nouraChat])).rows;
+      expect(replied.at.getTime()).toBeGreaterThan(asked.at.getTime());
       // An auto reply is not the team's answer: the client still waits.
       expect((await client.query(`SELECT waiting_since FROM crm_conversations WHERE id = $1`, [nouraChat])).rows[0].waiting_since).not.toBeNull();
 
