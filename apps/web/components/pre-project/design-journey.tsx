@@ -200,6 +200,8 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
     {view.journey?.estimateDueAt && view.stages.find((stage) => stage.stage === "approval")?.status === "done" ? <p className={styles.muted}>{t("Estimate due {date}", { date: time(view.journey.estimateDueAt) })} · <Link href={`/workspace/pre-projects/cases/${caseId}/quotations`}>{view.journey.estimateQuoteId ? t("Open the estimate") : t("Open quotations")}</Link></p> : null}
     {minutes?.activityId ? <MeetingMinutesSheet workspaceId={workspaceId} activityId={minutes.activityId} title={labels[minutes.stage] ?? minutes.label} onClose={() => setMinutes(null)} /> : null}
     {dialog?.kind === "team" && team ? <TeamDialog slot={dialog.slot} label={slotLabel(dialog.slot)} members={team.candidates?.length ? team.candidates : members} onClose={() => setDialog(null)}
+      pair={(() => { const other = dialog.slot.slot === "lead_designer" ? slot("junior_designer") : dialog.slot.slot === "junior_designer" ? slot("lead_designer") : null;
+        return other?.member ? { membershipId: other.member.membershipId, label: slotLabel(other) } : null; })()}
       onSubmit={async (choice) => saved(t("Design team saved."), await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/team", "PUT", { version: team.version, roles: [{ slot: dialog.slot.slot, ...choice.role }], reason: choice.reason }))} /> : null}
     {dialog?.kind === "close_inspiration" ? <CloseInspirationDialog onClose={() => setDialog(null)} onSubmit={async (note) => saved(current ? t("Inspiration closed. The kick-off is next.") : t("Inspiration closed. The site visit is next."), await post("design-journey/inspiration/close", { version: dialog.stage.version, note: note || null }))} /> : null}
     {dialog?.kind === "schedule" ? <ScheduleVisitDialog title={t("Book site visit")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Site visit booked. The Account Manager has been invited."), await post("design-journey/site-visit/schedule", { version: dialog.stage.version, ...value }))} /> : null}
@@ -256,17 +258,22 @@ function FormNoteDialog({ title, submitLabel, onClose, onSubmit }: { title: stri
  * PLM-151: one part of the design team. Changing an allocated designer asks for the reason (kept in the history); every
  * part but the lead designer can be "not needed on this job".
  */
-function TeamDialog({ slot, label, members, onClose, onSubmit }: { slot: TeamSlotView; label: string; members: Member[]; onClose: () => void;
+function TeamDialog({ slot, label, members, pair = null, onClose, onSubmit }: { slot: TeamSlotView; label: string; members: Member[];
+  /** The other designer of the job (lead or junior): the same person can't be both. */
+  pair?: { membershipId: string; label: string } | null; onClose: () => void;
   onSubmit: (choice: { role: { membershipId: string | null; notApplicable: boolean }; reason: string | null }) => Promise<unknown> }) {
   const t = useT();
   const [picked, setPicked] = useState<string | null>(slot.member?.membershipId ?? (slot.notApplicable ? NOT_NEEDED : null));
   const [reason, setReason] = useState("");
   const designer = slot.slot === "lead_designer" || slot.slot === "junior_designer";
   const changing = designer && Boolean(slot.member) && picked !== slot.member?.membershipId;
+  // PLM-151: the lead and the junior designer are two people.
+  const clash = Boolean(pair && picked && picked === pair.membershipId);
   const items = [...members.map((member) => ({ id: member.id, label: member.displayName })), ...(slot.slot === "lead_designer" ? [] : [{ id: NOT_NEEDED, label: t("Not needed on this job") }])];
-  return <FormDialog title={label} onClose={onClose} isDirty={picked !== (slot.member?.membershipId ?? null)} isSubmitDisabled={!picked || (changing && !reason.trim())} submitLabel={t("Save")}
+  return <FormDialog title={label} onClose={onClose} isDirty={picked !== (slot.member?.membershipId ?? null)} isSubmitDisabled={!picked || clash || (changing && !reason.trim())} submitLabel={t("Save")}
     onSubmit={() => onSubmit({ role: picked === NOT_NEEDED ? { membershipId: null, notApplicable: true } : { membershipId: picked, notApplicable: false }, reason: reason.trim() || null })}>
-    <SelectField isRequired label={label} items={items} selectedKey={picked} onSelectionChange={(key) => setPicked(String(key))} />
+    <SelectField isRequired label={label} items={items} selectedKey={picked} onSelectionChange={(key) => setPicked(String(key))}
+      isInvalid={clash} errorMessage={clash && pair ? t("Already the {role} on this job. Choose someone else.", { role: pair.label }) : undefined} />
     {changing ? <TextAreaField isRequired label={t("Reason for the change")} maxLength={500} onChange={setReason} value={reason} /> : null}
   </FormDialog>;
 }

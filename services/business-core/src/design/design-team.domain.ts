@@ -44,6 +44,14 @@ export function settableSlots(roles: { admin: boolean; accountManager: boolean; 
   return slots.filter((slot) => slotSetters(slot, reviewed).some((setter) => held[setter]));
 }
 
+/**
+ * PLM-151: the lead and the junior designer of a job are two people. `lead` and `junior` are who will hold each slot
+ * once the change is saved; the refusal names both slots in the firm's words.
+ */
+export function designerPairProblem(lead: string | null | undefined, junior: string | null | undefined, labels: { lead: string; junior: string }) {
+  return lead && junior && lead === junior ? `The ${labels.lead} and the ${labels.junior} must be different people. Choose someone else.` : null;
+}
+
 /** The slots the allocation needs on this workspace: those it configures (a slot set to no role isn't asked). */
 export const allocationSlots = (config: DesignTeamConfig) => ALLOCATION_SLOTS.filter((slot) => Boolean(config[slot]));
 

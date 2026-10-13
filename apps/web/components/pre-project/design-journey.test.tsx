@@ -94,6 +94,26 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     expect(screen.getByRole("option", { name: "Not needed on this job" })).toBeInTheDocument();
   });
 
+  it("refuses the lead designer as the junior designer too, saying why (PLM-151)", async () => {
+    const fetch = vi.fn(async () => ({ ok: true, json: async () => view({ journey: { packageName: "Bespoke Interior Design", includedRevisions: 2, flowVersion: 2, includesRenders: true },
+      team: { version: 4, reviewRole: null, missing: ["junior_designer"], candidates: [{ id: "m1", displayName: "Lina Lead" }, { id: "m2", displayName: "Jad Junior" }], slots: [
+        { slot: "lead_designer", role: "designer", label: "Lead Interior Designer", member: { membershipId: "m1", name: "Lina Lead" }, notApplicable: false, canSet: true },
+        { slot: "junior_designer", role: "junior_designer", label: "Junior Interior Designer", member: null, notApplicable: false, canSet: true }] },
+      stages: [stage({ stage: "inspiration", status: "active" })] }) }));
+    vi.stubGlobal("fetch", fetch);
+    renderJourney();
+    fireEvent.click(await screen.findByRole("button", { name: "Choose" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /Junior Interior Designer/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Lina Lead" }));
+    expect(await within(dialog).findByText("Already the Lead Interior Designer on this job. Choose someone else.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Junior Interior Designer/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Jad Junior" }));
+    expect(within(dialog).queryByText("Already the Lead Interior Designer on this job. Choose someone else.")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
   it("books the showroom on the booking engine's free slots when the firm set a showroom booking type", async () => {
     const fetch = vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("material-selection/slots")
       ? { configured: true, timezone: "Europe/London", durationMinutes: 60, location: "Studio showroom", slots: [{ start: "2031-04-09T09:00:00.000Z", end: "2031-04-09T10:00:00.000Z", date: "2031-04-09" }, { start: "2031-04-09T11:00:00.000Z", end: "2031-04-09T12:00:00.000Z", date: "2031-04-09" }] }

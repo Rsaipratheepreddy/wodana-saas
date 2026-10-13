@@ -157,9 +157,14 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     expect((await sql(ids, "SELECT membership_id FROM crm_opportunity_designer WHERE workspace_id = $1 AND opportunity_id = $2", [ids.workspaceId, ids.opportunityId]))[0].membership_id).toBe(ids.people.lead.member);
     expect(await told(ids, "design.team_allocated")).toEqual([ids.people.lead.user, ids.people.junior.user, ids.people.admin.user].sort());
     // A replay changes nothing; changing an allocated designer needs a reason, which the history keeps.
-    await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: (await version()) - 1, roles: team(ids.people.junior.member) })).rejects.toThrow(/another window/);
-    await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.junior.member) })).rejects.toThrow("Give a reason for changing the designer");
-    await am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.junior.member), reason: "Lina is on leave" });
+    await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: (await version()) - 1, roles: team(ids.people.director.member) })).rejects.toThrow(/another window/);
+    await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.director.member) })).rejects.toThrow("Give a reason for changing the designer");
+    // The lead and the junior designer are two people: the junior can't also be made the lead, nor the lead the junior.
+    await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.junior.member), reason: "Lina is on leave" }))
+      .rejects.toThrow(/must be different people/);
+    await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: [{ slot: "junior_designer", membershipId: ids.people.lead.member }], reason: "Swap" }))
+      .rejects.toThrow(/must be different people/);
+    await am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.director.member), reason: "Lina is on leave" });
     view = await am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.lead.member), reason: "Lina is back" });
     const history = await sql<{ reason: string }>(ids, "SELECT reason FROM crm_opportunity_designer_history WHERE workspace_id = $1 AND opportunity_id = $2 ORDER BY changed_at", [ids.workspaceId, ids.opportunityId]);
     expect(history.map((row) => row.reason)).toEqual(["Allocated as the lead designer", "Lina is on leave", "Lina is back"]);

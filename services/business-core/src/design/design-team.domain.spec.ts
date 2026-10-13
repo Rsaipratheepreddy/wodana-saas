@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocationMissing, allocationSlots, DEFAULT_DESIGN_TEAM, settableSlots, slotSetters, teamConfigProblem } from "./design-team.domain";
+import { allocationMissing, allocationSlots, DEFAULT_DESIGN_TEAM, designerPairProblem, settableSlots, slotSetters, teamConfigProblem } from "./design-team.domain";
 import { agreedRate } from "./design-packages.domain";
 
 describe("the design team of a job (PLM-151)", () => {
@@ -36,6 +36,15 @@ describe("the design team of a job (PLM-151)", () => {
     expect(teamConfigProblem({ lead_designer: "Lead Designer" })).toBe("Use a role key of lower-case letters, numbers and underscores");
     expect(teamConfigProblem({ lead_designer: "designer", junior_designer: "designer" })).toBe("Give each part of the design team its own role");
     expect(teamConfigProblem({ ...DEFAULT_DESIGN_TEAM })).toBeNull();
+  });
+
+  it("refuses the same person as both the lead and the junior designer, in the firm's words", () => {
+    const labels = { lead: "Lead Interior Designer", junior: "Junior Interior Designer" };
+    expect(designerPairProblem("m1", "m1", labels)).toBe("The Lead Interior Designer and the Junior Interior Designer must be different people. Choose someone else.");
+    expect(designerPairProblem("m1", "m2", labels)).toBeNull();
+    // Nobody yet in one of them (or "not needed on this job"): nothing to compare.
+    expect(designerPairProblem("m1", null, labels)).toBeNull();
+    expect(designerPairProblem(null, null, labels)).toBeNull();
   });
 });
 

@@ -21,7 +21,7 @@ import {
   caseFacts, caseRoleHolder, completeStage, completeTask, designTeamConfig, dueText, event, formatDay, formatDue, holdsRole, journeyTimings, leadDesigner, membersWithRole,
   readTasks, recordProjectSiteVisit, roleLabels, salesAdminMembership, startJourney, tellMembers, tellRenderTag, workspaceToday,
 } from "./design-journey.store";
-import { allocationMissing, DESIGNER_SLOTS, settableSlots, TEAM_SLOTS, type DesignTeamConfig, type TeamSlot } from "./design-team.domain";
+import { allocationMissing, DESIGNER_SLOTS, designerPairProblem, settableSlots, TEAM_SLOTS, type DesignTeamConfig, type TeamSlot } from "./design-team.domain";
 import { lockLedger, readLedger } from "./design-ledger.store";
 import { startClientCalls } from "../client-calls/client-calls.store";
 import { presentedRounds } from "./design-presentations.store";
@@ -117,6 +117,16 @@ export class DesignJourneyService {
       const facts = await caseFacts(client, workspaceId, caseId);
       const actorName = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [user.userId])).rows[0]?.name ?? "";
       const notApplicable = new Set(await notApplicableRoles(client, workspaceId, { caseId }));
+      // PLM-151: the lead and the junior designer are two people, as they will be once this change is saved.
+      const designerAfter = async (slot: TeamSlot) => {
+        const entry = input.roles.find((role) => role.slot === slot);
+        return entry ? entry.membershipId?.trim() || null : caseRoleHolder(client, workspaceId, caseId, config[slot]);
+      };
+      const slotLabel = (slot: TeamSlot) => (config[slot] ? labels.get(config[slot]!) ?? config[slot]!.replace(/_/g, " ") : slot.replace(/_/g, " "));
+      // Only a change to either designer is checked (a team that already had one person in both still saves its other parts).
+      const pair = config.lead_designer && config.junior_designer && input.roles.some((role) => DESIGNER_SLOTS.includes(role.slot as TeamSlot))
+        ? designerPairProblem(await designerAfter("lead_designer"), await designerAfter("junior_designer"), { lead: slotLabel("lead_designer"), junior: slotLabel("junior_designer") }) : null;
+      if (pair) throw new UnprocessableEntityException(pair);
       const changes: Array<{ slot: TeamSlot; role: string; from: string | null; to: string | null; notApplicable: boolean }> = [];
       for (const entry of input.roles) {
         if (!(TEAM_SLOTS as readonly string[]).includes(entry.slot)) throw new BadRequestException("Choose a part of the design team.");
