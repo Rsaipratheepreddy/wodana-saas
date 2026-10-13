@@ -23,6 +23,11 @@ import {
   workOrderNext, type ListedMaterial, type WorkOrderRow,
 } from "./factory";
 import { orderReady, readReadyReminder, remindForReady } from "./factory-ready";
+import {
+  assertOrderCleared, cancelInspections, fixInspectionStages, inspectionSettings, INSPECTION_STAGE_KINDS, parseInspectionSettings, readOrderInspections, requestInspection, stageName,
+  type InspectionStageKind, type OrderInspection,
+} from "./factory-inspections";
+import { ensureSettings as ensureProjectSettings } from "../project-core/project-core.store";
 import { drawingsGate, measureGate } from "../project-core/project-drawings";
 import { readWorkOrderDrawing } from "./work-order-drawing";
 import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
@@ -64,12 +69,15 @@ export class FactoryService {
       // Why each planned work order can't be released yet (the needs of a project are read once).
       const needs = new Map<string, Awaited<ReturnType<typeof readNeeds>>>();
       const canSend = rights.canManage || rights.canIssue;
+      // PLM-150: where each work order's design inspections stand.
+      const inspections = await readOrderInspections(client, workspaceId);
       const rows = [];
       for (const order of orders) {
         const blocked = order.status === "planned" ? (await this.releaseChecks(client, workspaceId, order, settings, needs)).filter((check) => !check.passed).map((check) => ({ key: check.key, missing: check.missing })) : [];
+        const inspection = inspectionFor(order, inspections.get(order.id));
         const next = workOrderNext(order, { blocked: blocked.length > 0, atFactory: atFactory.get(order.id) ?? "0", requireCheck: settings.requireCheck, canManage: rights.canManage,
-          canReport: rights.canReport, canApprove: rights.canApprove, canSend });
-        rows.push({ ...order, blocked, atFactory: atFactory.get(order.id) ?? "0", next: next.step, mine: next.mine });
+          canReport: rights.canReport, canApprove: rights.canApprove, canSend, inspection });
+        rows.push({ ...order, blocked, atFactory: atFactory.get(order.id) ?? "0", next: next.step, mine: next.mine, inspection });
       }
       return {
         toMake: await readToMake(client, workspaceId), orders: rows, workcenters: await readWorkcenters(client, workspaceId), batches: await readBatches(client, workspaceId),
@@ -139,6 +147,8 @@ export class FactoryService {
         for (const order of orders.filter((item) => item.status === "released")) {
           if (order.lineStatus === "omitted" || Dec.of(order.scopeOver).cmp(0) > 0) throw new ConflictException(`WO-${String(order.number).padStart(4, "0")}: its scope changed.`);
           await client.query(`UPDATE work_orders SET status = 'in_production', started_at = now(), version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
+          // PLM-150: the design inspections it needs, as the firm's settings say when it starts.
+          await fixInspectionStages(client, workspaceId, order.id, "started");
           await this.event(client, workspaceId, order.id, "start", { batch: id }, user.userId);
           await this.productionStarted(client, workspaceId, order.projectId, user.userId);
           // PLM-125: starting takes the work order's materials out where its path says so (Furniture D and E).
@@ -185,6 +195,8 @@ export class FactoryService {
         [id, workspaceId, number, line.projectId, line.packageId, lineId, line.title, line.specification.slice(0, 2000), quantity, line.unit, schedule.workcenterId, schedule.plannedStart,
           schedule.plannedEnd, text(body.notes, 2000), user.userId]);
       if (schedule.plannedHours) await client.query(`UPDATE work_orders SET planned_hours = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, schedule.plannedHours]);
+      // PLM-150: the design inspections it needs (fixed again when it starts).
+      await fixInspectionStages(client, workspaceId, id, "planned");
       // The payment stage due when it's ready: the one the project's last work order is tied to, so it's chosen once per project.
       await client.query(`UPDATE work_orders SET ready_payment_id = (SELECT other.ready_payment_id FROM work_orders other WHERE other.workspace_id = $1 AND other.project_id = $3 AND other.id <> $2
           AND other.ready_payment_id IS NOT NULL ORDER BY other.number DESC LIMIT 1) WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, line.projectId]);
@@ -281,6 +293,7 @@ export class FactoryService {
         await need("factory.manage", "You can't start work orders.");
         status("released");
         await set(`status = 'in_production', started_at = now()`);
+        await fixInspectionStages(client, workspaceId, orderId, "started");
         await this.productionStarted(client, workspaceId, order.projectId, user.userId);
         await useForProduction(client, workspaceId, { workOrderId: orderId, actorUserId: user.userId });
       } else if (action === "report") {
@@ -292,6 +305,13 @@ export class FactoryService {
         if (Dec.of(good).add(scrap).cmp(0) <= 0) throw new BadRequestException("Enter what was made or scrapped.");
         if (Dec.of(scrap).cmp(0) > 0 && !scrapReason) throw new BadRequestException("Say why it was scrapped.");
         if (Dec.of(good).cmp(order.left) > 0) throw new ConflictException(`Only ${plain(order.left)} ${order.unit} is still to make.`.replace("  ", " "));
+        // PLM-150: Inspection 1 is in raw material, before the final finish: finished output waits for it (scrap doesn't).
+        const raw = Dec.of(good).cmp(0) > 0 ? (await readOrderInspections(client, workspaceId, { orderIds: [orderId] })).get(orderId)?.raw : undefined;
+        if (raw && raw !== "not_needed" && raw !== "passed") {
+          const label = stageName("raw", inspectionSettings(settings).stages);
+          throw new ConflictException(raw === "due" ? `${label} is with the design team: report finished output once it passed.`
+            : raw === "snags" ? `Fix the snags from ${label} first: it then goes back for inspection.` : `Mark it ready for ${label} before the final finish.`);
+        }
         // The hours it took, costed at the workcenter's hourly rate once approved; the workcenter is kept with the report.
         const hours = body.hours === undefined || body.hours === null || body.hours === "" ? null : hoursWorked(body.hours);
         await client.query(`INSERT INTO factory_commands (workspace_id, command_id, entity_id, action, actor_id) VALUES ($1, $2, $3, 'report', $4)`, [workspaceId, recordId, orderId, user.userId]);
@@ -388,7 +408,21 @@ export class FactoryService {
         if (action === "short_close" && Dec.of(order.pending).add(order.toCheck).cmp(0) > 0) throw new ConflictException("Decide the reports and check what was made first.");
         if (!reason) throw new BadRequestException(action === "cancel" ? "Say why it's cancelled." : "Say why the rest won't be made.");
         await set(`status = $3, closed_by = $4, closed_at = now(), close_reason = $5, hold_reason = NULL, held_from = NULL, hold_kind = NULL`, [action === "cancel" ? "cancelled" : "short_closed", user.userId, reason]);
+        // PLM-150: a cancelled item isn't inspected; what a short-closed one made still is, before it goes to site.
+        if (action === "cancel") await cancelInspections(client, workspaceId, orderId);
+        else if (Dec.of(order.passed).cmp(0) > 0) {
+          await cancelInspections(client, workspaceId, orderId);
+          await requestInspection(client, workspaceId, { workOrderId: orderId, stage: "final", actorId: user.userId, auto: true });
+        }
         audit = { reason };
+      } else if (action === "request_inspection") {
+        // PLM-150: the factory marks the item ready for a design inspection (Inspection 1 before the final finish; the last one asks by itself once it's ready).
+        if (!(await has("factory.manage")) && !(await has("factory.report"))) throw new ForbiddenException("Only the factory marks an item ready for inspection.");
+        const stage = INSPECTION_STAGE_KINDS.includes(body.stage as InspectionStageKind) ? body.stage as InspectionStageKind : null;
+        if (!stage) throw new BadRequestException("Choose the inspection.");
+        const asked = await requestInspection(client, workspaceId, { workOrderId: orderId, stage, actorId: user.userId, auto: false });
+        await set(`notes = notes`);
+        audit = { stage, inspectionId: asked?.id ?? null };
       } else if (action === "send_out") {
         // A step done by a supplier: a draft service order for the work order's goods, which the buyer places.
         await need("factory.manage", "You can't send work out.");
@@ -421,6 +455,8 @@ export class FactoryService {
         if (!(await has("factory.manage")) && !(await has("stock.manage"))) throw new ForbiddenException("You can't send goods to site.");
         const quantity = amount(body.quantity, "Quantity");
         if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException("Enter how much goes.");
+        // PLM-150: nothing goes to site before its last design inspection passed.
+        await assertOrderCleared(client, workspaceId, orderId);
         const line = (await client.query<{ catalogItemId: string | null }>(`SELECT catalog_item_id AS "catalogItemId" FROM project_boq_lines WHERE workspace_id = $1 AND id = $2`,
           [workspaceId, order.boqLineId])).rows[0];
         const itemId = await stockItemFor(client, workspaceId, { catalogItemId: line?.catalogItemId ?? null, name: order.title, unit: order.unit });
@@ -439,8 +475,11 @@ export class FactoryService {
       } else {
         throw new BadRequestException("Unknown action.");
       }
-      await this.event(client, workspaceId, orderId, action, audit, user.userId);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `work_order.${action}`, entityType: "work_order", entityId: orderId, after: audit });
+      // Asking for an inspection records its own line (inspection_requested), as when it is asked for by itself.
+      if (action !== "request_inspection") {
+        await this.event(client, workspaceId, orderId, action, audit, user.userId);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `work_order.${action}`, entityType: "work_order", entityId: orderId, after: audit });
+      }
       for (const notice of notices) await this.tell(client, workspaceId, order, notice, user.userId);
       return this.detail(client, workspaceId, orderId, user.userId);
     });
@@ -461,9 +500,14 @@ export class FactoryService {
       // PLM-067: how many days before the latest planned ready date the client is reminded to pay that stage.
       const reminderDays = body.balanceReminderDays === undefined ? current.balanceReminderDays : Number(body.balanceReminderDays);
       if (!Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 90) throw new BadRequestException("Set the reminder from 0 to 90 days before the ready date.");
+      // PLM-150: design inspections (on or off, the stages, the trades, who inspects, the days to do it), against the firm's own roles, trades and packages.
+      const inspections = parseInspectionSettings(body, inspectionSettings(current), await this.inspectionChoices(client, workspaceId)
+        .then((choices) => ({ roles: choices.roles.map((role) => role.key), workPackages: choices.workPackages.map((entry) => entry.id), designPackages: choices.designPackages.map((entry) => entry.code) })));
       await client.query(`UPDATE workspace_factory_settings SET require_drawing = $2, require_payment = $3, require_materials = $4, require_check = $5, production_steps = $7::jsonb,
-        production_weeks = $8, balance_reminder_days = $9, version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId, JSON.stringify(steps), weeks, reminderDays]);
+        production_weeks = $8, balance_reminder_days = $9, inspections_enabled = $10, inspection_stages = $11::jsonb, inspection_work_packages = $12::uuid[], inspector_role = $13,
+        director_role = $14, director_packages = $15::varchar[], inspection_days = $16, version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId, JSON.stringify(steps), weeks, reminderDays,
+          inspections.enabled, JSON.stringify(inspections.stages), inspections.workPackageIds, inspections.inspectorRole, inspections.directorRole, inspections.directorPackages, inspections.days]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return this.settingsView(client, workspaceId, user.userId);
     });
@@ -565,9 +609,23 @@ export class FactoryService {
     const workspace = await workspaceDay(client, workspaceId);
     const settings = await ensureFactorySettings(client, workspaceId);
     return {
-      settings: { ...settings, productionSteps: normaliseProductionSteps(settings.productionSteps) }, workcenters: await readWorkcenters(client, workspaceId, true), canManage, canSeeRates,
+      settings: { ...settings, productionSteps: normaliseProductionSteps(settings.productionSteps), inspectionStages: inspectionSettings(settings).stages },
+      // PLM-150: what the inspection settings choose from: the firm's project roles, trades and design packages.
+      inspectionChoices: await this.inspectionChoices(client, workspaceId),
+      workcenters: await readWorkcenters(client, workspaceId, true), canManage, canSeeRates,
       rates: canSeeRates ? (await readWorkcenterRates(client, workspaceId)).map(({ key, ...rate }) => ({ ...rate, workcenterId: key })) : [],
       currency: workspace.currency, today: workspace.today,
+    };
+  }
+
+  /** The firm's project roles, active trades and design packages (the inspection settings choose from them). */
+  private async inspectionChoices(client: Db, workspaceId: string) {
+    return {
+      roles: (await ensureProjectSettings(client, workspaceId)).roles,
+      workPackages: (await client.query<{ id: string; name: string }>(
+        `SELECT id, name FROM workspace_work_packages WHERE workspace_id = $1 AND archived_at IS NULL ORDER BY position, lower(name)`, [workspaceId])).rows,
+      designPackages: (await client.query<{ code: string; name: string }>(
+        `SELECT code, name FROM design_packages WHERE workspace_id = $1 ORDER BY lower(name)`, [workspaceId])).rows,
     };
   }
 
@@ -642,6 +700,8 @@ export class FactoryService {
         [workspaceId, order.id, readyOn]);
       notices.push({ code: "factory.ready", users: await this.team(client, workspaceId, order.projectId, ["installation_lead"], true), note: "", key: `ready:${order.id}` });
       await orderReady(client, workspaceId, order, { checkId, readyOn, actorId: userId });
+      // PLM-150: once it's made and checked, the last design inspection goes to the inspecting designer by itself.
+      await requestInspection(client, workspaceId, { workOrderId: order.id, stage: "final", actorId: userId, auto: true });
     } else {
       await client.query(`UPDATE work_orders SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
     }
@@ -904,10 +964,24 @@ export class FactoryService {
       [workspaceId, orderId, order.projectId])).rows[0].onHand;
     const releaseChecks = order.status === "planned" ? await this.releaseChecks(client, workspaceId, order, settings) : [];
     const rights = await this.rights(client, workspaceId, userId);
+    // PLM-150: where its design inspections stand, and every round so far.
+    const inspection = inspectionFor(order, (await readOrderInspections(client, workspaceId, { orderIds: [orderId] })).get(orderId));
     const next = workOrderNext(order, { blocked: releaseChecks.some((check) => !check.passed), atFactory, requireCheck: settings.requireCheck, canManage: rights.canManage,
-      canReport: rights.canReport, canApprove: rights.canApprove, canSend: rights.canManage || rights.canIssue });
+      canReport: rights.canReport, canApprove: rights.canApprove, canSend: rights.canManage || rights.canIssue, inspection });
+    const inspections = !inspection ? [] : (await client.query<{ id: string; stage: InspectionStageKind; round: number; status: string; dueOn: string; resultAt: string | null;
+      resultByName: string | null; inspectorName: string | null; comments: string; openSnags: number; snags: number }>(
+      `SELECT inspection.id, inspection.stage, inspection.round, inspection.status, inspection.due_on::text AS "dueOn", inspection.result_at AS "resultAt",
+              recorder.display_name AS "resultByName", coalesce(inspector.display_name, inspector.primary_email) AS "inspectorName", inspection.comments,
+              (SELECT count(*)::int FROM work_items snag WHERE snag.workspace_id = inspection.workspace_id AND snag.factory_inspection_id = inspection.id AND snag.status IN ('todo', 'in_progress')) AS "openSnags",
+              (SELECT count(*)::int FROM work_items snag WHERE snag.workspace_id = inspection.workspace_id AND snag.factory_inspection_id = inspection.id) AS snags
+         FROM factory_inspections inspection
+         LEFT JOIN users recorder ON recorder.id = inspection.result_by
+         LEFT JOIN workspace_memberships member ON member.workspace_id = inspection.workspace_id AND member.id = inspection.inspector_membership_id
+         LEFT JOIN users inspector ON inspector.id = member.user_id
+        WHERE inspection.workspace_id = $1 AND inspection.work_order_id = $2 ORDER BY inspection.stage <> 'raw', inspection.round`, [workspaceId, orderId])).rows;
     return {
-      order: { ...order, ...extra }, reports, checks, events, settings, materials, dispatches, atFactory, reworks, next: next.step,
+      order: { ...order, ...extra }, reports, checks, events, settings: { ...settings, inspectionStages: inspectionSettings(settings).stages }, materials, dispatches, atFactory, reworks,
+      next: next.step, inspection, inspections,
       payments, readyReminder: await readReadyReminder(client, workspaceId, caseId, extra.readyPaymentId),
       // The project's approved designs, to pick the drawing from.
       designs: await this.approvedDesigns(client, workspaceId, order.projectId),
@@ -986,6 +1060,15 @@ export class FactoryService {
       await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code: notice.code, eventType: notice.code, variables, deepLink: `/workspace/factory/orders?order=${order.id}`,
         idempotencyKey: `${notice.code}:${notice.key}:${userId}` });
   }
+}
+
+/**
+ * PLM-150: a work order's inspection state as its lists and next step read it (none when it needs no inspection, or
+ * was closed short with nothing good made, which has nothing to inspect).
+ */
+function inspectionFor(order: Pick<WorkOrderRow, "status" | "passed">, state: OrderInspection | undefined) {
+  if (!state || (order.status === "short_closed" && Dec.of(order.passed).cmp(0) <= 0)) return null;
+  return state;
 }
 
 function statusMessage(status: string) {

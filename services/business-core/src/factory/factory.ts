@@ -13,6 +13,13 @@ export type FactorySettings = {
   productionSteps: unknown; productionWeeks: number | null;
   /** PLM-067: days before the latest planned ready date of a payment stage's work orders that the client is reminded to pay. */
   balanceReminderDays: number;
+  /**
+   * PLM-150: design inspections of made items. The stages are configuration (read leniently by factory-inspections);
+   * the trades that need them (none: every made item); the project role that inspects, the role that inspects instead
+   * on projects of the listed design packages; the working days an inspection is due in.
+   */
+  inspectionsEnabled: boolean; inspectionStages: unknown; inspectionWorkPackages: string[]; inspectorRole: string; directorRole: string | null;
+  directorPackages: string[]; inspectionDays: number;
 };
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
 
@@ -122,7 +129,9 @@ export async function ensureFactorySettings(db: Db, workspaceId: string): Promis
   await db.query(`INSERT INTO workspace_factory_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
   return (await db.query<FactorySettings>(
     `SELECT require_drawing AS "requireDrawing", require_payment AS "requirePayment", require_materials AS "requireMaterials", require_check AS "requireCheck", version,
-            production_steps AS "productionSteps", production_weeks AS "productionWeeks", balance_reminder_days AS "balanceReminderDays"
+            production_steps AS "productionSteps", production_weeks AS "productionWeeks", balance_reminder_days AS "balanceReminderDays",
+            inspections_enabled AS "inspectionsEnabled", inspection_stages AS "inspectionStages", inspection_work_packages::text[] AS "inspectionWorkPackages",
+            inspector_role AS "inspectorRole", director_role AS "directorRole", director_packages::text[] AS "directorPackages", inspection_days AS "inspectionDays"
        FROM workspace_factory_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 
@@ -274,32 +283,61 @@ export function defaultHours(hoursPerDay: string | null, start: string | null, e
   return Dec.of(hoursPerDay).mul(workdays(calendar).span(start, end)).toString();
 }
 
-export type WorkOrderNext = "fix" | "release" | "start" | "approve" | "check" | "report" | "send" | "resume" | "decide_drawing" | null;
+export type WorkOrderNext = "fix" | "release" | "start" | "approve" | "check" | "report" | "send" | "resume" | "decide_drawing"
+  | "request_inspection" | "inspection" | "snags" | null;
+
+/** PLM-150: where each design inspection of the work order stands (see factory-inspections). */
+export type InspectionStep = "not_needed" | "to_request" | "due" | "snags" | "passed";
+export type InspectionStates = { raw: InspectionStep; final: InspectionStep };
 
 /**
  * The one next step on a work order, and whether it's the viewer's to take: fix what blocks its release,
- * release, start, approve reported output, check what was approved, report more, send what's ready to site,
- * or resume it (someone else decides on a changed drawing).
+ * release, start, approve reported output, check what was approved, mark it ready for its design inspection
+ * (PLM-150: then it's the design team's to inspect, or the factory's to fix the snags), report more, send
+ * what's ready to site, or resume it (someone else decides on a changed drawing).
  */
 export function workOrderNext(order: Pick<WorkOrderRow, "status" | "pending" | "toCheck" | "left" | "holdKind">, context: {
   blocked: boolean; atFactory: string; requireCheck: boolean; canManage: boolean; canReport: boolean; canApprove: boolean; canSend: boolean;
+  inspection?: InspectionStates | null;
 }): { step: WorkOrderNext; mine: boolean } {
   const some = (value: string) => Dec.of(value).cmp(0) > 0;
+  const factory = context.canReport || context.canManage;
+  /** An inspection still to pass: the factory marks it ready or fixes its snags; the design team inspects. */
+  const inspect = (state: InspectionStep | undefined): { step: WorkOrderNext; mine: boolean } | null =>
+    state === "to_request" ? { step: "request_inspection", mine: factory } : state === "due" ? { step: "inspection", mine: false }
+      : state === "snags" ? { step: "snags", mine: factory } : null;
+  const send = () => inspect(context.inspection?.final) ?? (some(context.atFactory) ? { step: "send", mine: context.canSend } : { step: null, mine: false });
   switch (order.status) {
     case "planned": return context.blocked ? { step: "fix", mine: context.canManage } : { step: "release", mine: context.canManage };
     case "released": return { step: "start", mine: context.canManage };
     case "in_production":
       if (some(order.pending)) return { step: "approve", mine: context.canApprove };
       if (context.requireCheck && some(order.toCheck)) return { step: "check", mine: context.canApprove };
-      if (some(order.left)) return { step: "report", mine: context.canReport };
+      // Inspection 1 comes before the final finish, so before finished output is reported.
+      if (some(order.left)) return inspect(context.inspection?.raw) ?? { step: "report", mine: context.canReport };
       return some(context.atFactory) ? { step: "send", mine: context.canSend } : { step: null, mine: false };
-    case "ready": return some(context.atFactory) ? { step: "send", mine: context.canSend } : { step: null, mine: false };
+    case "ready": return send();
+    case "short_closed": return inspect(context.inspection?.final) ?? { step: null, mine: false };
     case "on_hold": return order.holdKind === "drawing" ? { step: "decide_drawing", mine: context.canApprove } : { step: "resume", mine: context.canManage };
     default: return { step: null, mine: false };
   }
 }
 
-/** Every active scope line of the project's packages made in the factory has passed its checks in full (true when there are none). */
+/**
+ * PLM-150 (SQL over the work order `alias`): it needs its last design inspection (after finishing, before dispatch) and
+ * hasn't passed it since anything last came back from site to be made again. Work orders from before inspections
+ * (no stages fixed on them) never wait, nor one closed short with nothing good made.
+ */
+export const FINAL_PENDING = (alias: string) => `(coalesce(${alias}.inspection_stages, '{}'::varchar[]) @> ARRAY['final']::varchar[]
+  AND NOT (${alias}.status = 'short_closed' AND ${PASSED_NET(alias)} <= 0) AND NOT EXISTS (
+  SELECT 1 FROM factory_inspections passed_round WHERE passed_round.workspace_id = ${alias}.workspace_id AND passed_round.work_order_id = ${alias}.id
+     AND passed_round.stage = 'final' AND passed_round.status = 'passed'
+     AND NOT EXISTS (SELECT 1 FROM work_order_reworks back WHERE back.workspace_id = ${alias}.workspace_id AND back.work_order_id = ${alias}.id AND back.created_at > passed_round.result_at)))`;
+
+/**
+ * Every active scope line of the project's packages made in the factory has passed its checks in full (true when there
+ * are none), and (PLM-150) every work order that needs its last design inspection passed it.
+ */
 export async function everythingMade(db: Db, workspaceId: string, projectId: string) {
   return (await db.query<{ done: boolean }>(
     `SELECT NOT EXISTS (
@@ -307,6 +345,7 @@ export async function everythingMade(db: Db, workspaceId: string, projectId: str
          JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id AND package.supply = 'make'
         WHERE line.workspace_id = $1 AND line.project_id = $2 AND line.status = 'active'
           AND coalesce((SELECT sum(${PASSED_NET("wo")}) FROM work_orders wo
-                         WHERE wo.workspace_id = line.workspace_id AND wo.boq_line_id = line.id AND wo.status <> 'cancelled'), 0) < line.quantity) AS done`,
+                         WHERE wo.workspace_id = line.workspace_id AND wo.boq_line_id = line.id AND wo.status <> 'cancelled'), 0) < line.quantity)
+       AND NOT EXISTS (SELECT 1 FROM work_orders wo WHERE wo.workspace_id = $1 AND wo.project_id = $2 AND wo.status <> 'cancelled' AND ${FINAL_PENDING("wo")}) AS done`,
     [workspaceId, projectId])).rows[0].done;
 }

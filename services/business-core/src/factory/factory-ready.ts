@@ -32,15 +32,28 @@ export async function orderReady(db: Db, workspaceId: string, order: ReadyOrder,
   };
   await tell(db, workspaceId, await financeAndAccountManager(db, workspaceId, order.projectId, facts.ownerMembershipId), input.actorId, {
     code: "factory.order_ready", variables, deepLink: `/workspace/projects/${order.projectId}/money`, key: input.checkId });
-  if (await everythingMade(db, workspaceId, order.projectId)) {
-    // Once per project, and again only after something came back from site to be made again.
-    const reworked = (await db.query<{ count: number }>(
-      `SELECT count(*)::int AS count FROM work_order_reworks rework JOIN work_orders wo ON wo.workspace_id = rework.workspace_id AND wo.id = rework.work_order_id
-        WHERE rework.workspace_id = $1 AND wo.project_id = $2`, [workspaceId, order.projectId])).rows[0].count;
-    await tell(db, workspaceId, await deliveryTeam(db, workspaceId, order.projectId), input.actorId, {
-      code: "factory.project_ready", variables, deepLink: `/workspace/projects/${order.projectId}`, key: `${order.projectId}:${reworked}` });
-  }
+  await projectReady(db, workspaceId, order, { readyOn: input.readyOn, actorId: input.actorId, variables });
   return reminder;
+}
+
+/**
+ * Everything the factory makes for the project is made, checked and (PLM-150) through its last design inspection: the
+ * project manager and the people who deliver and install hear it, once per project, and again only after something came
+ * back from site to be made again. Called when a work order is ready and when an item passes its last inspection.
+ */
+export async function projectReady(db: Db, workspaceId: string, order: ReadyOrder, input: { readyOn: string; actorId: string; variables?: Record<string, string> }) {
+  if (!(await everythingMade(db, workspaceId, order.projectId))) return false;
+  const reworked = (await db.query<{ count: number }>(
+    `SELECT count(*)::int AS count FROM work_order_reworks rework JOIN work_orders wo ON wo.workspace_id = rework.workspace_id AND wo.id = rework.work_order_id
+      WHERE rework.workspace_id = $1 AND wo.project_id = $2`, [workspaceId, order.projectId])).rows[0].count;
+  const day = await dayFormat(db, workspaceId);
+  const variables = input.variables ?? {
+    order: `WO-${String(order.number).padStart(4, "0")}`, item: order.title, project: `${order.projectReference} · ${order.projectName}`, date: day(input.readyOn),
+    actor: await actorName(db, input.actorId), payment: "",
+  };
+  await tell(db, workspaceId, await deliveryTeam(db, workspaceId, order.projectId), input.actorId, {
+    code: "factory.project_ready", variables, deepLink: `/workspace/projects/${order.projectId}`, key: `${order.projectId}:${reworked}` });
+  return true;
 }
 
 /**

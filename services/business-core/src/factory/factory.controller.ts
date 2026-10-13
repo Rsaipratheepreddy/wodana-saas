@@ -6,6 +6,7 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { sendMedia } from "../gallery/gallery.controller";
 import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
+import { FactoryInspectionsService } from "./factory-inspections.service";
 import { FactorySamplesService } from "./factory-samples.service";
 import { FactoryService } from "./factory.service";
 
@@ -14,7 +15,7 @@ import { FactoryService } from "./factory.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/factory")
 export class FactoryController {
-  constructor(private readonly factory: FactoryService, private readonly samples: FactorySamplesService) {}
+  constructor(private readonly factory: FactoryService, private readonly samples: FactorySamplesService, private readonly inspectionsService: FactoryInspectionsService) {}
 
   @Get("state")
   state(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.factory.state(actor, workspaceId); }
@@ -74,6 +75,38 @@ export class FactoryController {
   async photo(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("photoId", ParseUUIDPipe) photoId: string, @Query("preview") preview: string,
     @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const file = await this.factory.checkPhoto(actor, workspaceId, photoId, preview === "1");
+    response.setHeader("Cache-Control", "private, max-age=300");
+    return sendMedia(file, request, response);
+  }
+
+  /** PLM-150: the design inspections: the factory's list, or the open rounds (`view=open`, optionally `mine=1`, `from`, `to`) the design calendar reads. */
+  @Get("inspections")
+  inspections(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: Record<string, string>) {
+    return this.inspectionsService.list(actor, workspaceId, query ?? {});
+  }
+
+  @Get("inspections/:inspectionId")
+  inspection(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("inspectionId", ParseUUIDPipe) inspectionId: string) {
+    return this.inspectionsService.detail(actor, workspaceId, inspectionId);
+  }
+
+  @Post("inspections/:inspectionId")
+  inspectionCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("inspectionId", ParseUUIDPipe) inspectionId: string,
+    @Body() input: Record<string, unknown>) {
+    return this.inspectionsService.command(actor, workspaceId, inspectionId, input ?? {});
+  }
+
+  @Post("inspections/:inspectionId/photos/:photoId")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
+  inspectionPhoto(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("inspectionId", ParseUUIDPipe) inspectionId: string,
+    @Param("photoId", ParseUUIDPipe) photoId: string, @UploadedFile() file: ReferenceUpload) {
+    return this.inspectionsService.uploadPhoto(actor, workspaceId, inspectionId, photoId, file);
+  }
+
+  @Get("inspection-photos/:photoId")
+  async inspectionPhotoFile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("photoId", ParseUUIDPipe) photoId: string,
+    @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const file = await this.inspectionsService.photo(actor, workspaceId, photoId, preview === "1");
     response.setHeader("Cache-Control", "private, max-age=300");
     return sendMedia(file, request, response);
   }

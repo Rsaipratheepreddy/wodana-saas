@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
+import { inspectionSnagChanged } from "../factory/factory-inspections";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
@@ -472,6 +473,8 @@ export class ProjectWorkService {
       if (moved.assigneeId) notices.push({ key: `${move.id}:${item.version}`, notice: { code: "work.moved", item: { id: move.id, number: move.number, title: move.title, dueDate: move.dueDate ?? move.startDate },
         note: `#${move.because}`, memberships: [moved.assigneeId] } });
     }
+    // PLM-150: the last snag of a failed factory inspection fixed (or closed): the item goes back for inspection by itself.
+    if (type === "snag" && changes.status !== undefined) await inspectionSnagChanged(client, workspaceId, itemId, userId);
     return moves.length ? { ...changes, moved: moves.map((move) => move.number) } : changes;
   }
 

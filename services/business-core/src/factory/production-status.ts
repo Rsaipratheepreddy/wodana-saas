@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
-import { everythingMade, ORDER_TOTALS } from "./factory";
+import { everythingMade, FINAL_PENDING, ORDER_TOTALS } from "./factory";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -61,19 +61,21 @@ export type OrderFacts = {
   status: "planned" | "released" | "in_production" | "ready" | "on_hold" | "cancelled" | "short_closed"; heldFrom: string | null;
   /** Output waiting for approval, approved output not checked yet, and what's still to make. */
   pending: string; toCheck: string; left: string;
+  /** PLM-150: made and checked, but its last design inspection hasn't passed yet (it reads as the quality check until it has). */
+  awaitingInspection?: boolean;
 };
 
 /**
  * Where one work order stands: scheduled until it starts; in production while there's output to make; quality check
- * once everything is made and waits for its approval or check; ready once it passed (or was closed short). On hold
- * stays where it was held.
+ * once everything is made and waits for its approval or check, or (PLM-150) for its last design inspection; ready once
+ * it passed (or was closed short). On hold stays where it was held.
  */
 export function orderStep(order: OrderFacts): ProductionStepKind | null {
   const some = (value: string) => Dec.of(value).cmp(0) > 0;
   switch (order.status) {
     case "planned": case "released": return "scheduled";
     case "in_production": return !some(order.left) && (some(order.pending) || some(order.toCheck)) ? "quality_check" : "in_production";
-    case "ready": case "short_closed": return "ready";
+    case "ready": case "short_closed": return order.awaitingInspection ? "quality_check" : "ready";
     case "on_hold": return order.heldFrom === "in_production" ? "in_production" : "scheduled";
     default: return null;
   }
@@ -158,7 +160,8 @@ export async function readProduction(db: Db, workspaceId: string, projectId: str
             (wo.started_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS "startedOn",
             coalesce(wo.ready_on, (wo.closed_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date)::text AS "readyOn",
             reported.pending::text AS pending, greatest(reported.made - quality.passed - quality.failed, 0)::text AS "toCheck",
-            greatest(wo.quantity - (quality.passed - reworked.quantity) - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0)::text AS "left"
+            greatest(wo.quantity - (quality.passed - reworked.quantity) - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0)::text AS "left",
+            ${FINAL_PENDING("wo")} AS "awaitingInspection"
        FROM work_orders wo JOIN workspaces workspace ON workspace.id = wo.workspace_id
        ${ORDER_TOTALS}
       WHERE wo.workspace_id = $1 AND wo.project_id = ANY($2::uuid[]) AND wo.status <> 'cancelled'`, [workspaceId, projects.map((project) => project.projectId)])).rows;

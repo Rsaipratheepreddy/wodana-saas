@@ -22,6 +22,18 @@ describe("production status (PLM-063)", () => {
     expect(orderStep(order({ status: "cancelled" }))).toBeNull();
   });
 
+  it("keeps an item made and checked at the quality check until its last design inspection passed (PLM-150)", () => {
+    expect(orderStep(order({ status: "ready", left: "0", awaitingInspection: true }))).toBe("quality_check");
+    expect(orderStep(order({ status: "short_closed", awaitingInspection: true }))).toBe("quality_check");
+    expect(orderStep(order({ status: "ready", left: "0", awaitingInspection: false }))).toBe("ready");
+    // A work order from before inspections (nothing asked of it) reads as it always did.
+    expect(orderStep(order({ status: "ready", left: "0" }))).toBe("ready");
+    const waiting = projectProduction([order({ status: "ready", left: "0", awaitingInspection: true, startedOn: "2026-10-02", readyOn: "2026-10-15" })],
+      { steps: DEFAULT_PRODUCTION_STEPS, today: "2026-10-16", slotOn: null, allMade: false, targetWeeks: null });
+    expect(waiting.step?.kind).toBe("quality_check");
+    expect(waiting.ready).toBe(0);
+  });
+
   it("shows a kind as the last step the firm keeps at or before it", () => {
     const noCheck = [{ kind: "scheduled", label: "" }, { kind: "in_production", label: "Making" }, { kind: "ready", label: "" }] as const;
     expect(visibleStep("quality_check", [...noCheck])).toEqual({ kind: "in_production", label: "Making" });

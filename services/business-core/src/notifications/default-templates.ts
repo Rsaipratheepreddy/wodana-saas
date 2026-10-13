@@ -33,6 +33,23 @@ const clientDecisionCopy = (kind: string, what: string): DefaultTemplate[] => {
   ];
 };
 
+const INSPECTION_VARIABLES = ["order", "item", "project", "stage", "date", "actor", "note"];
+export const INSPECTION_TEMPLATES: DefaultTemplate[] = [
+  { code: "factory.inspection_ready", channel: "in_app", subject: "{{item}} is ready for {{stage}}", body: "{{order}} · {{project}}. Inspect it by {{date}}. {{note}}", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspection_ready", channel: "email", subject: "{{item}} is ready for {{stage}}: {{project}}", body: "{{actor}} marked {{order}} {{item}} for {{project}} ready for {{stage}}.\n\nInspect it at the factory by {{date}}. {{note}}", variables: INSPECTION_VARIABLES },
+  { code: "factory.reinspection_ready", channel: "in_app", subject: "{{item}} is ready for re-inspection", body: "{{order}} · {{project}}: the snags from {{stage}} are fixed. Inspect it by {{date}}. {{note}}", variables: INSPECTION_VARIABLES },
+  { code: "factory.reinspection_ready", channel: "email", subject: "{{item}} is ready for re-inspection: {{project}}", body: "The factory fixed the snags {{stage}} found on {{order}} {{item}} for {{project}}.\n\nInspect it again by {{date}}. {{note}}", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspection_snags", channel: "in_app", subject: "Snags to fix on {{item}}", body: "{{actor}} found them at {{stage}} on {{order}} · {{project}}: {{note}}", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspection_snags", channel: "email", subject: "Snags to fix on {{item}}: {{project}}", body: "{{actor}} failed {{stage}} on {{order}} {{item}} for {{project}}.\n\nTo fix: {{note}}\n\nMark each one fixed when it is done; the item then goes back for inspection.", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspection_failed", channel: "in_app", subject: "{{item}} failed {{stage}}", body: "{{actor}} on {{order}} · {{project}}: {{note}}", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspection_failed", channel: "email", subject: "{{item}} failed {{stage}}: {{project}}", body: "{{actor}} failed {{stage}} on {{order}} {{item}} for {{project}}.\n\n{{note}}\n\nThe factory has the snags to fix. It can't go to site until the last inspection passes.", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspection_passed", channel: "in_app", subject: "{{item}} passed {{stage}}", body: "{{actor}} passed it on {{order}} · {{project}}. Finishing can go ahead.", variables: INSPECTION_VARIABLES },
+  { code: "factory.dispatch_cleared", channel: "in_app", subject: "{{item}} can go to site", body: "{{actor}} passed {{stage}} on {{order}} · {{project}}.", variables: INSPECTION_VARIABLES },
+  { code: "factory.dispatch_cleared", channel: "email", subject: "{{item}} can go to site: {{project}}", body: "{{actor}} passed {{stage}} on {{order}} {{item}} for {{project}}.\n\nIt can be sent to site.", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspector_missing", channel: "in_app", subject: "Nobody inspects {{item}}", body: "{{project}} has nobody in the {{note}} role. Add them to the team, or record {{stage}} yourself.", variables: INSPECTION_VARIABLES },
+  { code: "factory.inspector_missing", channel: "email", subject: "Nobody inspects {{item}}: {{project}}", body: "{{order}} {{item}} is ready for {{stage}}, but {{project}} has nobody in the {{note}} role.\n\nAdd them to the project team, or record the inspection yourself.", variables: INSPECTION_VARIABLES },
+];
+
 export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   // Staff kinds: the owner (and cc) in the app, on the phone and by email.
   ...staffReminder("work.due", "Update its progress or move the date."),
@@ -46,6 +63,7 @@ export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   ...staffReminder("permit.expiry", "Renew the permit, or move the booking."),
   ...staffReminder("finance_request.waiting", "It is waiting for Finance."),
   ...staffReminder("meeting.minutes_due", "Write the minutes and share them with the client."),
+  ...staffReminder("factory.inspection_due", "Inspect it at the factory, or ask someone to cover it."),
   // Client kinds: the client by email (WhatsApp uses the firm's approved templates); the owner after the reminders.
   { code: "reminders.client.quote_decision", channel: "email", subject: "Your quotation {{title}} is waiting for you", body: "{{title}} is waiting for your decision.\n\n{{context}}\n\nOpen it to accept it or ask for changes.", variables: REMINDER_VARIABLES },
   { code: "reminders.client.design_decision", channel: "email", subject: "Your design {{title}} is waiting for you", body: "{{title}} is waiting for your approval.\n\n{{context}}\n\nOpen it to approve it or ask for changes.", variables: REMINDER_VARIABLES },
@@ -289,6 +307,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   // Everything the factory makes for a project is ready: the project manager and the delivery and installation team.
   { code: "factory.project_ready", channel: "in_app", subject: "Everything for {{project}} is made", body: "All factory items passed their checks. Schedule delivery and installation.", variables: ["order", "item", "project", "date", "actor", "payment"] },
   { code: "factory.project_ready", channel: "email", subject: "Everything for {{project}} is made", body: "Every factory item for {{project}} passed its checks on {{date}}.\n\nSchedule delivery and installation.", variables: ["order", "item", "project", "date", "actor", "payment"] },
+  // Design inspections at the factory (factory/factory-inspections.ts, PLM-150): the inspecting designer (and the project
+  // manager, who may attend) hears an item is ready for an inspection or a re-inspection; the factory hears the snags to
+  // fix and that finishing can go ahead; the project manager hears it failed and when it can go to site; the project's
+  // managers hear when nobody on the team inspects. 0326 seeds them into existing workspaces.
+  ...INSPECTION_TEMPLATES,
   // Sample requests (factory/factory-samples.ts, PLM-061): the factory hears a sample is asked for (and when it's due and not
   // ready); the person who asked and the case's designer hear it's ready.
   { code: "factory.sample_requested", channel: "in_app", subject: "Sample requested · {{sample}}", body: "{{actor}} needs it by {{date}} for {{project}}. {{note}}", variables: ["sample", "project", "date", "actor", "note"] },
@@ -795,6 +818,7 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "site.report_waiting", "site.report_late", "site.material_requested", "site.client_question", "site.issue_assigned",
   "work.assigned", "work.overdue", "work.snag_reopened",
   "factory.released", "factory.check_failed", "factory.material_short", "factory.rework", "factory.sample_requested",
+  "factory.inspection_ready", "factory.reinspection_ready", "factory.inspection_snags", "factory.inspection_failed",
   "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work", "purchasing.materials_ready",
   "stock.transfer_sent", "stock.transfer_short", "stock.transfer_rejected",
   "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
