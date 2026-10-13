@@ -365,12 +365,17 @@ export async function roleLabels(db: Db, workspaceId: string) {
 /** Tells someone tagged on the renders (PLM-143) when they start and when the client signs them off. */
 export async function tellRenderTag(db: Db, workspaceId: string, caseId: string, membershipId: string, role: string, userId: string | null) {
   const facts = await caseFacts(db, workspaceId, caseId);
-  const stage = (await db.query<{ status: string; clientDueAt: Date | null }>(`SELECT status, client_due_at AS "clientDueAt" FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'renders'`,
-    [workspaceId, caseId])).rows[0];
+  const stage = (await db.query<{ status: string; clientDueAt: Date | null; agreedOn: string | null; locale: string | null }>(
+    `SELECT stage.status, stage.client_due_at AS "clientDueAt", to_char(journey.render_signoff_due_on, 'YYYY-MM-DD') AS "agreedOn", workspace.default_locale AS locale
+       FROM design_journey_stages stage JOIN design_journeys journey ON journey.workspace_id = stage.workspace_id AND journey.case_id = stage.case_id
+       JOIN workspaces workspace ON workspace.id = stage.workspace_id
+      WHERE stage.workspace_id = $1 AND stage.case_id = $2 AND stage.stage = 'renders'`, [workspaceId, caseId])).rows[0];
   if (!facts || stage?.status !== "active") return;
   const actor = userId ? (await db.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [userId])).rows[0]?.name ?? "" : "";
+  // The sign-off agreed at the kick-off is a day, not a time of day: say the day.
+  const due = stage.agreedOn ? formatDay(stage.agreedOn, stage.locale ?? "en") : stage.clientDueAt ? await dueText(db, workspaceId, stage.clientDueAt) : "";
   await tellMembers(db, workspaceId, [membershipId], "design.render_tagged",
-    { clientName: facts.clientName, role, actor, due: stage.clientDueAt ? await dueText(db, workspaceId, stage.clientDueAt) : "" },
+    { clientName: facts.clientName, role, actor, due },
     `/workspace/pre-projects/cases/${caseId}/designs?stage=renders`, `design:${caseId}:renders:tagged:${membershipId}`, true, userId);
 }
 

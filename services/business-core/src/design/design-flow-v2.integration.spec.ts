@@ -217,6 +217,10 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     view = await lead.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: [{ slot: "visualiser", membershipId: ids.people.visualiser.member }] });
     view = await as(ids, "techLead", ["pre_projects.view"]).journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: [{ slot: "draftsman", membershipId: ids.people.draftsman.member }] });
     expect(await told(ids, "design.render_tagged")).toEqual([ids.people.visualiser.user, ids.people.draftsman.user].sort());
+    // The sign-off agreed at the kick-off is a day: the notice names the day, not a time of day.
+    const tagged = await sql<{ body: string }>(ids, `SELECT body FROM notifications WHERE workspace_id = $1 AND event_type::text = 'design.render_tagged' AND channel = 'in_app'`, [ids.workspaceId]);
+    const agreed = new Intl.DateTimeFormat("en", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${day(40)}T00:00:00Z`));
+    expect(tagged.map((row) => row.body)).toEqual(expect.arrayContaining([expect.stringContaining(`signs them off by ${agreed}.`)]));
     // Render time is set per job.
     view = await lead.journey.setDeadline(actor, ids.workspaceId, ids.caseId, "renders", { version: stageRow(view, "renders").version, dueOn: day(20) });
     await expect(lead.journey.setDeadline(actor, ids.workspaceId, ids.caseId, "renders", { version: stageRow(view, "renders").version, dueOn: day(-2) })).rejects.toThrow("Choose today or a later day");
