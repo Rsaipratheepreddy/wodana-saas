@@ -2,6 +2,8 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { UiLanguageContext } from "@/lib/i18n/i18n-provider";
+import { parseDate } from "@internationalized/date";
+import { DateField } from "../components/forms";
 import { DesignSystemProvider, WorkspaceRegionProvider, useDesignSystem, usePortalThemeAttributes } from "./provider";
 
 function Nested() {
@@ -65,5 +67,14 @@ describe("design-system provider direction", () => {
   it("reads left to right in English", () => {
     render(<UiLanguageContext.Provider value="en"><WorkspaceRegionProvider currency="AED"><Inherits /></WorkspaceRegionProvider></UiLanguageContext.Provider>);
     expect(screen.getByTestId("page")).toHaveAttribute("dir", "ltr");
+  });
+  it("orders a date field's day, month and year as the region writes them, on a page without its own provider", () => {
+    // The app's outer provider is plain English (month first); the workspace region is en-AE (day first).
+    render(<DesignSystemProvider><UiLanguageContext.Provider value="en"><WorkspaceRegionProvider locale="en-AE">
+      <DateField label="Start date" defaultValue={parseDate("2026-10-12")} />
+    </WorkspaceRegionProvider></UiLanguageContext.Provider></DesignSystemProvider>);
+    const segments = screen.getAllByRole("spinbutton").map((segment) => segment.getAttribute("aria-label") ?? segment.getAttribute("data-type"));
+    expect(screen.getAllByRole("spinbutton")[0]).toHaveTextContent("12");
+    expect(segments.length).toBe(3);
   });
 });

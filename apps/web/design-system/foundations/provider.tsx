@@ -183,7 +183,11 @@ export function WorkspaceRegionProvider({ locale, currency, timeZone, workingDay
     return { ...parent, locale: formatting, regionLocale, direction: languageDirection(uiLanguage ?? formatting), currency: currency ?? parent.currency, timeZone: timeZone ?? parent.timeZone,
       workingDays: workingDays?.length ? workingDays : parent.workingDays, holidays: holidays ?? parent.holidays, workingHours: workingHours ?? parent.workingHours };
   }, [parent, uiLanguage, locale, currency, timeZone, workingDays, holidays, workingHours]);
-  return <DesignSystemContext.Provider value={value}>{children}</DesignSystemContext.Provider>;
+  // Date and number fields read the region too (a day typed as 12/10 is 12 October in en-AE), on every page below,
+  // not only on pages that open their own provider.
+  const ariaLocale = languageDirection(value.locale) === value.direction ? value.locale
+    : [value.regionLocale, uiLanguage ?? "", value.direction === "rtl" ? "ar" : "en"].find((tag) => tag && languageDirection(tag) === value.direction) ?? value.locale;
+  return <DesignSystemContext.Provider value={value}><I18nProvider locale={ariaLocale}>{children}</I18nProvider></DesignSystemContext.Provider>;
 }
 
 export function useDesignSystem(): DesignSystemSettings {
