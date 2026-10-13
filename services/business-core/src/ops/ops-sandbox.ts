@@ -35,7 +35,7 @@ import { adoptionVerdicts, changeSandboxLifecycle, SANDBOX_RETIRED, type Adoptio
 import { DeliveryHold, describeDeliveries, SANDBOX_SEED } from "./scenarios/scenario-delivery";
 import { runScenarios } from "./scenarios/scenario-run";
 import {
-  parseCrmFile, parseTeamsFile, patternEmail, planMembers, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxAddress, sandboxEmail,
+  parseCrmFile, parseTeamsFile, patternEmail, planMembers, rolesToAdd, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxAddress, sandboxEmail,
   sandboxExternalTenantId, SandboxFileError, sandboxLegalEntityCode, sandboxOrganizationKey, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan,
   type TaxonomySpec, type TeamSpec,
 } from "./ops-sandbox-plan";
@@ -552,7 +552,8 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
         if (!member) throw new OpsError(`${plan.email} accepted the invitation but is not a member.`);
       } else {
         // Already a member: back in use, and the roles and teams this plan gives are added (nothing is taken away).
-        const missingRoles = plan.roleCodes.filter((code) => !member!.roles.includes(code));
+        // A re-run without --teams leaves a team-only member as they are: the fallback role is only for joining.
+        const missingRoles = rolesToAdd(plan, member.roles);
         const missingTeams = wantedTeamIds.filter((id) => !member!.teams.some((team) => team.id === id));
         if (member.status === "active" && !missingRoles.length && !missingTeams.length) report.add("members", "unchanged", plan.email, `${plan.displayName}: ${label}`);
         else if (!args.apply) report.add("members", "would change", plan.email, [member.status !== "active" ? "active again" : "", missingRoles.length ? `roles + ${missingRoles.join(", ")}` : "",

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validateProfile } from "./ops-profile";
 import {
-  parseCrmFile, parseTeamsFile, patternEmail, planMembers, SANDBOX_PERSONAS, sandboxAddress, sandboxEmail, sandboxLegalEntityCode, sandboxProfile, sandboxSeatLimit,
+  parseCrmFile, parseTeamsFile, patternEmail, planMembers, rolesToAdd, SANDBOX_PERSONAS, sandboxAddress, sandboxEmail, sandboxLegalEntityCode, sandboxProfile, sandboxSeatLimit,
   scrubForSandbox, SandboxFileError,
 } from "./ops-sandbox-plan";
 
@@ -47,6 +47,21 @@ describe("sandbox members", () => {
     expect(plan.find((member) => member.key === "designer")).toMatchObject({ roleCodes: ["member"], teamCodes: [], email: "designer@studio-2.test" });
     expect(plan.find((member) => member.key === "qs")).toMatchObject({ roleCodes: ["member"], missingRoles: ["quantity_surveyor"] });
     expect(plan.find((member) => member.key === "manager")).toMatchObject({ roleCodes: ["administrator"], missingRoles: ["project_manager", "operations_approver"] });
+  });
+
+  it("leaves an existing member's roles as they are on a re-run without teams: the member role is only for joining", () => {
+    const withoutTeams = planMembers("studio-2", new Set(["owner", "administrator", "member", "sales"]), []);
+    const designer = withoutTeams.find((member) => member.key === "designer")!;
+    expect(designer).toMatchObject({ roleCodes: ["member"], fallback: true });
+    // A designer who joined through the design team (an earlier run with --teams) holds no role: nothing is added.
+    expect(rolesToAdd(designer, [])).toEqual([]);
+    // A kit role the plan gives is still added when it's missing.
+    const sales = withoutTeams.find((member) => member.key === "sales")!;
+    expect(sales.fallback).toBe(false);
+    expect(rolesToAdd(sales, [])).toEqual(["sales"]);
+    expect(rolesToAdd(sales, ["sales"])).toEqual([]);
+    // With the teams file the designer joins a team and needs no fallback role.
+    expect(planMembers("iglo", KIT_ROLES, parseTeamsFile(json("palm-teams-access.json"))).find((member) => member.key === "designer")).toMatchObject({ fallback: false });
   });
 
   it("gives each member the address --email-pattern makes from their role, else <role>@<slug>.test", () => {

@@ -71,7 +71,9 @@ export const sandboxLegalEntityCode = (slug: string) => slug.toUpperCase().repla
 export const sandboxSeatLimit = (planSeats: number) => Math.max(planSeats, SANDBOX_PERSONAS.length + SANDBOX_SPARE_SEATS);
 
 export type TeamSpec = { code: string; name: string; permissions: string[] };
-export type MemberPlan = { key: string; email: string; displayName: string; roleCodes: string[]; teamCodes: string[]; missingRoles: string[] };
+export type MemberPlan = { key: string; email: string; displayName: string; roleCodes: string[]; teamCodes: string[]; missingRoles: string[];
+  /** The plan gives only the fallback role (no kit role, no team): for joining, never added to an existing member. */
+  fallback: boolean };
 
 /** Each test member's address, roles (those the workspace has) and teams (from the teams file, when given). */
 export function planMembers(slug: string, workspaceRoles: ReadonlySet<string>, teams: readonly TeamSpec[], emailPattern: string | null = null): MemberPlan[] {
@@ -87,10 +89,20 @@ export function planMembers(slug: string, workspaceRoles: ReadonlySet<string>, t
         break;
       }
     }
-    if (!roleCodes.length && !teamCodes.length) roleCodes.push(FALLBACK_ROLE);
-    return { key: persona.key, email: address(persona.key), displayName: persona.displayName, roleCodes, teamCodes,
+    const fallback = !roleCodes.length && !teamCodes.length;
+    if (fallback) roleCodes.push(FALLBACK_ROLE);
+    return { key: persona.key, email: address(persona.key), displayName: persona.displayName, roleCodes, teamCodes, fallback,
       missingRoles: persona.roles.filter((code) => !workspaceRoles.has(code)) };
   });
+}
+
+/**
+ * The roles a run adds to someone already a member: the kit roles their plan gives that they don't hold yet. The
+ * fallback role is only for someone joining with nothing else (so they can sign in); a member who already has their
+ * access (e.g. through the teams of an earlier run with --teams) keeps their roles as they are.
+ */
+export function rolesToAdd(plan: Pick<MemberPlan, "roleCodes" | "fallback">, held: readonly string[]) {
+  return plan.fallback ? [] : plan.roleCodes.filter((code) => !held.includes(code));
 }
 
 // ---------- what never reaches a sandbox ----------

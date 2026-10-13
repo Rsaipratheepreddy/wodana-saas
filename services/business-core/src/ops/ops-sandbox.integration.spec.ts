@@ -31,7 +31,7 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
     "--teams", resolve(docs, "palm-teams-access.json"), "--crm", resolve(docs, "palm-crm-intake-profile.json"), "--password-env", "SANDBOX_TEST_PASSWORD", "--seed"];
   let dry: Result;
   let workspaceBeforeApply = -1;
-  let first: Result, second: Result, again: Result, refused: Result, outsider: Result;
+  let first: Result, second: Result, again: Result, withoutTeams: Result, refused: Result, outsider: Result;
 
   async function cli(runs: string[][]): Promise<Result[]> {
     const url = new URL(databaseUrl!);
@@ -70,10 +70,12 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
     }
     [dry] = await cli([full]);
     workspaceBeforeApply = await count(`SELECT count(*) FROM tenant_login_branding WHERE login_slug = $1`, [slug]);
-    [first, second, again, refused, outsider] = await cli([
+    [first, second, again, withoutTeams, refused, outsider] = await cli([
       [...full, "--apply"],
       [...full, "--apply", "--json"],
       [...full, "--json"],
+      // A re-run without --teams leaves the members (team-only ones included) as they are.
+      ["sandbox", "--slug", slug, "--name", "Sandbox Test", "--region", "AE", "--password-env", "SANDBOX_TEST_PASSWORD", "--apply", "--json"],
       ["sandbox", "--slug", otherSlug, "--name", "Other Studio", "--region", "AE", "--password-env", "SANDBOX_TEST_PASSWORD", "--apply"],
       ["configure", "--workspace", otherSlug, "--as", `owner@${slug}.test`, "--profile", resolve(fixtures, "sample-profile.json"), "--apply"],
     ]);
@@ -123,6 +125,10 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
     expect(by.sales).toMatchObject({ roles: ["sales"], teams: ["SALES"] });
     expect(by.qs).toMatchObject({ roles: ["quantity_surveyor"], teams: ["QS"] });
     expect(by.designer.teams).toEqual(["INTERIOR_DESIGN"]);
+    // Team-only members keep no role of their own, even after a re-run without --teams (no "member" role added).
+    expect([by.designer.roles, by["design-manager"].roles]).toEqual([[], []]);
+    expect(withoutTeams.code, withoutTeams.output).toBe(0);
+    expect(json(withoutTeams).lines.filter((line) => line.section === "members" && line.status === "changed")).toEqual([]);
     expect(by.manager.roles).toEqual(["administrator", "operations_approver", "project_manager"]);
     const credentials = (await pool.query<{ hash: string; salt: string }>(
       `SELECT password_hash AS hash, password_salt AS salt FROM local_auth_credentials WHERE user_id = ANY($1::uuid[])`, [members.map((member) => member.userId)])).rows;
