@@ -3,6 +3,9 @@ export function allowedCasePath(path:string[],method:string) {
   if(!path.length)return method==='GET'||method==='POST';
   if(path.length===1)return (method==='GET'&&(['candidates','start-options'].includes(path[0])||UUID.test(path[0])))||(method==='POST'&&path[0]==='from-lead');
   if(!UUID.test(path[0]))return false;
+  // The order of 13 Oct 2026 (PLM-140–144, PLM-151): the design team, the kick-off, the render sign-off, the samples and a stage's due date.
+  if(path[1]==='design-journey'&&((method==='PUT'&&path.length===3&&path[2]==='team')||(method==='POST'&&((path.length===4&&((path[2]==='kickoff'&&['schedule','complete'].includes(path[3]))
+    ||(path[2]==='renders'&&path[3]==='sign-off')||(path[2]==='samples'&&['collected','approve'].includes(path[3]))))||(path.length===5&&path[2]==='stages'&&['concepts','renders'].includes(path[3])&&path[4]==='deadline')))))return true;
   if(path[1]==='design-journey')return (path.length===2&&method==='GET')
     ||(method==='GET'&&path.length===4&&path[2]==='material-selection'&&path[3]==='slots')
     ||(method==='PUT'&&path.length===4&&path[2]==='site-visit'&&path[3]==='answers')

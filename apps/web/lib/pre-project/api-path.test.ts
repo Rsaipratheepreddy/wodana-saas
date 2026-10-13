@@ -11,6 +11,16 @@ describe("pre-execution browser gateway", () => {
     expect(allowedCasePath([caseId, "design-journey", "stages", "approval", "skip"], "POST")).toBe(false);
     expect(allowedCasePath([caseId, "design-journey", "stages", "concepts", "skip"], "GET")).toBe(false);
   });
+  it("passes the design flow of 13 Oct: the team, the kick-off, render sign-off, samples and a stage's due date (PLM-140–144, PLM-151)", () => {
+    expect(allowedCasePath([caseId, "design-journey", "team"], "PUT")).toBe(true);
+    for (const [step, action] of [["kickoff", "schedule"], ["kickoff", "complete"], ["renders", "sign-off"], ["samples", "collected"], ["samples", "approve"]])
+      expect(allowedCasePath([caseId, "design-journey", step, action], "POST")).toBe(true);
+    for (const stage of ["concepts", "renders"]) expect(allowedCasePath([caseId, "design-journey", "stages", stage, "deadline"], "POST")).toBe(true);
+    expect(allowedCasePath([caseId, "design-journey", "team"], "POST")).toBe(false);
+    expect(allowedCasePath([caseId, "design-journey", "kickoff", "delete"], "POST")).toBe(false);
+    expect(allowedCasePath([caseId, "design-journey", "stages", "approval", "deadline"], "POST")).toBe(false);
+    expect(allowedCasePath([caseId, "design-journey", "samples", "approve"], "GET")).toBe(false);
+  });
   it("passes value engineering's view and commands, and nothing else on it (PLM-147)", () => {
     expect(allowedCasePath([caseId, "value-engineering"], "GET")).toBe(true);
     expect(allowedCasePath([caseId, "value-engineering", "start"], "POST")).toBe(true);
