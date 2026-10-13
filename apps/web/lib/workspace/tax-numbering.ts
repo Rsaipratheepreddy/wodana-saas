@@ -1,5 +1,5 @@
 export type TaxRate = { code: string; label: string; rate: string; isDefault: boolean };
-export type NumberingRow = { documentType: "QUOTATION" | "INVOICE" | "CREDIT_NOTE" | "PURCHASE_ORDER"; prefix: string; suffix?: string; padding: number; resetPolicy: "never" | "annual"; nextNumber: number; version: number; exists: boolean; preview: string };
+export type NumberingRow = { documentType: "QUOTATION" | "INVOICE" | "CREDIT_NOTE" | "PURCHASE_ORDER" | "DEAL_FILE"; prefix: string; suffix?: string; padding: number; resetPolicy: "never" | "annual"; nextNumber: number; version: number; exists: boolean; preview: string };
 export type TaxNumbering = {
   entity: { id: string; countryCode: string; currency: string; taxRegistrationNumber: string | null };
   taxModel: { model: string; label: string | null; registrationLabel: string | null };

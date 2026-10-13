@@ -7,7 +7,7 @@ import { DOCUMENT_TYPES, previewNumber, validateSequence, validateTaxRates, type
 
 const READ = ["legal_entities.view", "finance.settings.manage"];
 const WRITE = "finance.settings.manage";
-const DEFAULT_SHORT: Record<string, string> = { QUOTATION: "QUO", INVOICE: "INV", CREDIT_NOTE: "CN", PURCHASE_ORDER: "PO" };
+const DEFAULT_SHORT: Record<string, string> = { QUOTATION: "QUO", INVOICE: "INV", CREDIT_NOTE: "CN", PURCHASE_ORDER: "PO", DEAL_FILE: "DEAL" };
 
 type Entity = { id: string; code: string; countryCode: string; currency: string; timezone: string; taxRegistrationNumber: string | null };
 

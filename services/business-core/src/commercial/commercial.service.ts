@@ -131,6 +131,7 @@ import { contactEmailSql } from "../client-portal/contact-email";
 import { beforeQuoteIssued, quotationEntityId, quotingEntity } from "../proposals/quote-issue";
 import { quoteReviewAction } from "../proposals/qs-requirement";
 import { quoteReferences } from "./case-quote-facts";
+import { dealFileReference } from "./deal-file-reference";
 import { readLetterhead } from "../workspaces/entity-letterhead";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
@@ -2822,7 +2823,7 @@ export class CommercialService {
             const existingDealFile = data.designRound?.dealFile;
             data.dealFile = {
               id: existingDealFile?.id ?? randomUUID(),
-              reference: existingDealFile?.reference ?? `DF-${now.slice(0, 4)}-${caseId.slice(0, 8).toUpperCase()}`,
+              reference: existingDealFile?.reference ?? await dealFileReference(client, workspaceId, record.legalEntityId ? String(record.legalEntityId) : null, caseId, now.slice(0, 4)),
               revision: existingDealFile ? existingDealFile.revision + 1 : 1,
               ownerReviewId: review.id,
               quoteId: accepted.id,
