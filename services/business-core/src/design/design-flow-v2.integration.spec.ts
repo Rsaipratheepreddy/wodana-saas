@@ -325,6 +325,26 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     expect([saved.designFee?.amount, saved.designRate]).toEqual(["200000.00", null]);
   });
 
+  it("leaves the lead designer to the Account Manager when nobody holds the package's review role", async () => {
+    const ids = await seed("director");
+    await sql(ids, "DELETE FROM member_roles WHERE workspace_id = $1 AND membership_id = $2", [ids.workspaceId, ids.people.director.member]);
+    const am = as(ids, "am", ["pre_projects.view"]);
+    const view = await am.journey.get(actor, ids.workspaceId, ids.caseId);
+    expect(view.team?.slots.find((slot) => slot.slot === "lead_designer")?.canSet).toBe(true);
+    await am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: team(ids.people.lead.member) });
+  });
+
+  it("keeps a journey started in the old order on its own steps, with its site visit as a stage and no team to allocate", async () => {
+    const ids = await seed("bespoke");
+    await sql(ids, "DELETE FROM design_journeys WHERE workspace_id = $1 AND case_id = $2", [ids.workspaceId, ids.caseId]);
+    await asApp(ids.workspaceId, ids.people.ops.user, (client) => startJourney(client, ids.workspaceId, ids.caseId, ids.people.ops.user, { flow: 1 }));
+    const view = await as(ids, "ops", ALL).journey.get(actor, ids.workspaceId, ids.caseId);
+    expect(view.journey).toMatchObject({ flowVersion: 1 });
+    expect(view.stages.map((row) => row.stage)).toEqual(["inspiration", "site_visit", "concepts", "space_planning", "material_selection", "renders", "approval"]);
+    expect(view.tasks).toEqual([]);
+    expect(view.siteVisit).toMatchObject({ within: "stage", open: false });
+  });
+
   it("puts the new steps on the design calendar and chases them through the reminder engine (PLM-152)", async () => {
     const ids = await seed("bespoke");
     const ops = as(ids, "ops", ALL);

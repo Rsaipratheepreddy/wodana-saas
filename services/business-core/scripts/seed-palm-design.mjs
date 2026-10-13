@@ -1,5 +1,6 @@
 // Local-only demo data for Planning → Design, on the moodboard demo case (run seed-palm-moodboard first).
-// A design journey with inspiration and the site visit done and Concepts in progress, and drawings in
+// A design journey in the order of 13 Oct 2026 (PLM-140–144) with inspiration and the kick-off done, the concept in
+// progress with its design site measure open, and drawings in
 // every review state. No rooms are added: the designer files drawings into rooms from the catalog.
 // Safe to re-run: fixed ids and upserts.
 //   DATABASE_URL=postgresql://…@localhost:5432/wodana PALM_ALLOW_SHARED_LOCAL_SEED=palm-living-demo-only node scripts/seed-palm-design.mjs
@@ -53,13 +54,19 @@ try {
   // The dedicated designer (the owner in a single-user demo) and the design journey.
   await client.query(`INSERT INTO crm_opportunity_designer(workspace_id,opportunity_id,membership_id,assigned_by) VALUES($1,$2,$3,$4)
     ON CONFLICT(workspace_id,opportunity_id) DO NOTHING`, [ws, opportunityId, owner.membershipId, owner.userId]);
-  await client.query(`INSERT INTO design_journeys(workspace_id,case_id,package_name,included_revisions,includes_space_planning,includes_renders,inspiration_days,site_visit_hours,started_by,started_at)
-    VALUES($1,$2,'Bespoke design',2,true,true,7,72,$3,now()-interval '10 days') ON CONFLICT(workspace_id,case_id) DO NOTHING`, [ws, caseId, owner.userId]);
-  const stages = [["inspiration", "done"], ["site_visit", "done"], ["concepts", "active"], ["space_planning", "locked"], ["material_selection", "locked"], ["renders", "locked"], ["approval", "locked"]];
+  // An existing demo journey keeps the order it was seeded in; a new one runs the current order.
+  const journey = await client.query(`INSERT INTO design_journeys(workspace_id,case_id,package_name,included_revisions,includes_space_planning,includes_renders,inspiration_days,site_visit_hours,started_by,started_at,flow_version,render_signoff_due_on)
+    VALUES($1,$2,'Bespoke design',2,true,true,7,72,$3,now()-interval '10 days',2,(now()+interval '40 days')::date) ON CONFLICT(workspace_id,case_id) DO NOTHING`, [ws, caseId, owner.userId]);
+  const current = journey.rowCount > 0 || (await client.query(`SELECT flow_version AS flow FROM design_journeys WHERE workspace_id=$1 AND case_id=$2`, [ws, caseId])).rows[0]?.flow === 2;
+  const stages = current ? [["inspiration", "done"], ["kickoff", "done"], ["concepts", "active"], ["renders", "locked"], ["samples", "locked"], ["approval", "locked"]]
+    : [["inspiration", "done"], ["site_visit", "done"], ["concepts", "active"], ["space_planning", "locked"], ["material_selection", "locked"], ["renders", "locked"], ["approval", "locked"]];
   for (const [position, [stage, status]] of stages.entries())
     await client.query(`INSERT INTO design_journey_stages(workspace_id,case_id,stage,position,status,owner_membership_id,started_at,due_at,completed_at)
       VALUES($1,$2,$3,$4,$5::varchar,$6,CASE WHEN $5::varchar<>'locked' THEN now()-interval '9 days' END,CASE WHEN $5::varchar='active' THEN now()+interval '6 days' END,CASE WHEN $5::varchar='done' THEN now()-interval '3 days' END)
       ON CONFLICT DO NOTHING`, [ws, caseId, stage, position + 1, status, owner.membershipId]);
+  // PLM-141: the design site measure inside the concept, due 3 days after the kick-off.
+  if (current) await client.query(`INSERT INTO design_journey_tasks(workspace_id,case_id,task,stage,owner_membership_id,started_at,due_at)
+    VALUES($1,$2,'site_measure','concepts',$3,now()-interval '3 days',now()+interval '1 day') ON CONFLICT DO NOTHING`, [ws, caseId, owner.membershipId]);
 
   // No rooms are pre-filled: the designer adds them from the catalog (or types one) when filing a drawing.
   // Earlier versions of this seed added three rooms; take them away again if nothing else uses them.
@@ -86,7 +93,8 @@ try {
   await design(2, { title: "Living room concept", stage: "concepts", roomId: living, type: "Concept / mood board", status: "client_review", svg: board(["#e7e2d8", "#b9a88f", "#7f8c7a", "#ffffff", "#c9bba4", "#44423d"], "Living room · calm stone"), due: 5 });
   await design(3, { title: "Master bedroom concept", stage: "concepts", roomId: master, type: "Concept / mood board", status: "internal_review", svg: board(["#dfe6e4", "#f7faf9", "#cfd9d6", "#a9b7b3", "#6d7775", "#eae4da"], "Master bedroom · soft sage") });
   await design(4, { title: "Kitchen island option", stage: "concepts", roomId: kitchen, type: "Concept / mood board", status: "draft", svg: board(["#3b3a36", "#cdb899", "#f4f1ec", "#8b6e4e", "#b0a58f", "#e9ddc9"], "Kitchen · island option") });
-  await design(5, { title: "Ground floor layout", stage: "space_planning", roomId: living, type: "Space plan / furniture layout", status: "approved", svg: layout("Ground floor · furniture layout") });
+  // The general layout to scale is part of the concept in every package (PLM-139/142).
+  await design(5, { title: "Ground floor layout", stage: current ? "concepts" : "space_planning", roomId: living, type: "Space plan / furniture layout", status: "approved", svg: layout("Ground floor · furniture layout") });
   await client.query("COMMIT");
   console.log("Design demo ready: Planning → Jumeirah Garden Villa → Design.");
 } catch (error) {

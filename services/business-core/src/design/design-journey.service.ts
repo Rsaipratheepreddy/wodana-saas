@@ -143,9 +143,12 @@ export class DesignJourneyService {
         const line = marked ? `${label}: not needed on this job` : `${label}: ${names.get(membershipId!) ?? ""}${current ? ` (was ${names.get(current) ?? ""})` : ""}`;
         await event(client, workspaceId, caseId, "team", current ? "team_changed" : "team_allocated", reason ? `${line}. ${reason}` : line, user.userId);
         if (membershipId && facts) {
-          await tellMembers(client, workspaceId, [membershipId], "design.team_allocated", { clientName: facts.clientName, role: label, actor: actorName, note: reason ?? "" },
+          // Someone tagged on renders already running hears about the renders (with their sign-off date); everyone else that they're on the team.
+          const rendering = (slot === "visualiser" || slot === "draftsman") && (await client.query(
+            `SELECT 1 FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'renders' AND status = 'active'`, [workspaceId, caseId])).rowCount;
+          if (rendering) await tellRenderTag(client, workspaceId, caseId, membershipId, label, user.userId);
+          else await tellMembers(client, workspaceId, [membershipId], "design.team_allocated", { clientName: facts.clientName, role: label, actor: actorName, note: reason ?? "" },
             `/workspace/pre-projects/cases/${caseId}/overview`, `design:${caseId}:team:${role}:${membershipId}:${journey.version}`, true, user.userId);
-          if (slot === "visualiser" || slot === "draftsman") await tellRenderTag(client, workspaceId, caseId, membershipId, label, user.userId);
         }
       }
       if (!changes.length) return this.view(client, workspaceId, caseId, user.userId);
@@ -748,8 +751,10 @@ export class DesignJourneyService {
     const admin = await this.access.hasPermission(client, workspaceId, userId, "pre_projects.manage_lifecycle");
     const accountManager = Boolean(membership) && (facts?.accountManagerId === membership || (await caseRoleHolder(client, workspaceId, caseId, "account_manager")) === membership);
     const lead = Boolean(membership) && (await leadDesigner(client, workspaceId, caseId)) === membership;
+    // A package whose review role nobody holds leaves the lead designer's choice with the Account Manager (as the allocation asked).
+    const reviewed = Boolean(reviewRole) && (await membersWithRole(client, workspaceId, reviewRole)).length > 0;
     return settableSlots({ admin, accountManager, reviewer: await holdsRole(client, workspaceId, membership, reviewRole), leadDesigner: lead,
-      technicalLead: await holdsRole(client, workspaceId, membership, config.technicalLeadRoleCode) }, Boolean(reviewRole));
+      technicalLead: await holdsRole(client, workspaceId, membership, config.technicalLeadRoleCode) }, reviewed);
   }
 
   /** Names a person for a team role on the case (replacing whoever held it), or clears it. */
