@@ -34,7 +34,8 @@ import { runReminderSweep } from "../reminders/testing";
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "T" } as never;
-const APPROVER = "+15550100001", VIEWER = "+15550100002", STRANGER = "+15550100009";
+// Real-format numbers: staff-entered contacts must be valid mobiles of their country.
+const APPROVER = "+12025550101", VIEWER = "+12025550102", STRANGER = "+15550100009";
 
 /**
  * Every field the portal may return, by path ([] is any item of a list). A field not listed here fails the
@@ -387,7 +388,7 @@ integration("client portal (plan §6.22)", () => {
       expect(w.sent).toEqual([]);
       // WhatsApp for the decision-maker; asking again within 30 seconds (a reload, a second device) returns the code already
       // on its way, and sends nothing more.
-      const first = await w.portal.challenge(w.slug, { phone: "+1 555 010 0001" }, "", "203.0.113.7");
+      const first = await w.portal.challenge(w.slug, { phone: "+1 202 555 0101" }, "", "203.0.113.7");
       expect(first).toMatchObject({ channel: "whatsapp", expiresIn: 300, resendAfter: 30 });
       expect(w.sent).toEqual([{ channel: "whatsapp", to: APPROVER, code: expect.stringMatching(/^\d{6}$/) }]);
       const again = await w.portal.challenge(w.slug, { phone: APPROVER }, "", "203.0.113.7");
@@ -927,7 +928,7 @@ integration("client portal (plan §6.22)", () => {
     await world(async (w) => {
       const { approver } = await open(w);
       // A second decision-maker on the same project.
-      await w.admin.saveContact(actor, w.workspaceId, w.caseId, { name: "Ravi", phone: "+15550100003", email: "ravi@example.com", role: "approver" });
+      await w.admin.saveContact(actor, w.workspaceId, w.caseId, { name: "Ravi", phone: "+12025550103", email: "ravi@example.com", role: "approver" });
       // The quotation is issued to Maya.
       const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
       const data = { ...(loaded.content as CommercialData), revision: loaded.revision };
@@ -944,7 +945,7 @@ integration("client portal (plan §6.22)", () => {
       expect(view.projects[0].decisions!.quotes[0]).toMatchObject({ id: w.quoteId, status: "issued", canDecide: true });
       expect(view.projects[0].next).toEqual([expect.objectContaining({ kind: "quote", id: w.quoteId })]);
       // Another decision-maker can't ask for a code for Maya's quotation.
-      const ravi = await signIn(w, "+15550100003");
+      const ravi = await signIn(w, "+12025550103");
       await expect(w.portal.challenge(w.slug, { purpose: `quote:${w.caseId}:${w.quoteId}:accept` }, ravi, "203.0.113.7")).rejects.toThrow(/another decision-maker/);
       // A wrong code is refused, nothing changes, and the try counts.
       const purpose = `quote:${w.caseId}:${w.quoteId}:accept`;
@@ -1039,7 +1040,7 @@ integration("client portal (plan §6.22)", () => {
   it("signs the material list off item by item, and accepts or refuses a handover, which starts the warranty the client can then claim on", async () => {
     await world(async (w) => {
       await open(w);
-      await w.admin.saveContact(actor, w.workspaceId, w.caseId, { name: "Ravi", phone: "+15550100003", email: "ravi@example.com", role: "approver" });
+      await w.admin.saveContact(actor, w.workspaceId, w.caseId, { name: "Ravi", phone: "+12025550103", email: "ravi@example.com", role: "approver" });
       const { projectId } = await started(w);
       let detail = await w.core.get(actor, w.workspaceId, projectId);
       detail = await w.core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", version: detail.project.version });
@@ -1059,7 +1060,7 @@ integration("client portal (plan §6.22)", () => {
       expect((await w.client.query("SELECT decision_method, recorded_by, decided_by_grant_id IS NOT NULL AS by_client FROM project_material_revisions WHERE project_id = $1", [projectId])).rows)
         .toEqual([{ decision_method: "portal", recorded_by: null, by_client: true }]);
       // The other decision-maker is too late and sees why.
-      const ravi = await signIn(w, "+15550100003");
+      const ravi = await signIn(w, "+12025550103");
       await expect(w.portal.challenge(w.slug, { purpose }, ravi, "203.0.113.7")).rejects.toThrow(/isn't waiting/);
 
       // Handover: a whole-project pack is issued; refused with why, then the next revision accepted.
@@ -1182,7 +1183,7 @@ integration("client portal (plan §6.22)", () => {
       await contactPoint("email", "maya.client@example.com", null);
       await contactPoint("phone", "+1 555 010 0009", "mobile");
       expect(await tell("q:other-number")).toMatchObject({ queued: 0, reason: "no_contact" });
-      await contactPoint("phone", "+1 (555) 010-0001", "mobile");
+      await contactPoint("phone", "+1 (202) 555-0101", "mobile");
       // A demonstration environment emails only its test contacts, and says so.
       expect(await tellClients(w.client, { workspaceId: w.workspaceId, caseId: w.caseId, event: "quote_issued", recordId: "q:demo", title: "Main quote (V1)", demo: true }))
         .toMatchObject({ queued: 0, reason: "demo_test_contacts_only" });
@@ -1353,7 +1354,7 @@ integration("client portal (plan §6.22)", () => {
       // WhatsApp connected, the client consented, the payment_due starter template approved: the next reminder goes there.
       await w.client.query(`INSERT INTO integration_connections(workspace_id,provider,display_name,status,external_account_id,configuration) VALUES($1,'whatsapp','WhatsApp','connected','waba','{"phoneNumberId":"pn"}')`, [w.workspaceId]);
       await w.client.query(`INSERT INTO crm_consents(workspace_id,party_id,purpose,channel,status) VALUES($1,$2,'service','whatsapp','granted')`, [w.workspaceId, w.party]);
-      await w.client.query(`INSERT INTO crm_contact_points(workspace_id,party_id,type,raw_value,normalized_value,is_primary) VALUES($1,$2,'phone','+15550100001','+15550100001',true)`, [w.workspaceId, w.party]);
+      await w.client.query(`INSERT INTO crm_contact_points(workspace_id,party_id,type,raw_value,normalized_value,is_primary) VALUES($1,$2,'phone','+12025550101','+12025550101',true)`, [w.workspaceId, w.party]);
       const templates = new CrmWhatsAppTemplatesService(database as never, access as never, { record: async () => undefined } as never);
       await templates.submitStarterPack(actor, w.workspaceId, { languages: ["en"] });
       await templates.syncInternal(w.workspaceId, { full: false, templates: [{ id: "meta-due", name: "wd_payment_due", language: "en", status: "APPROVED" }] });

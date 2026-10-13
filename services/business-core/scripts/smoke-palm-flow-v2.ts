@@ -146,7 +146,8 @@ async function enrollClientApprover(caseId: string) {
   assert.equal(current.demo, true, "Synthetic client codes must run in local test mode");
   if (!current.settings.enabled)
     await request(`${portalPath}/settings`, "PUT", { version: current.settings.version, enabled: true });
-  const mobile = `+9715${randomInt(10_000_000, 100_000_000)}`;
+  // A real UAE mobile (050 …): staff-saved contacts must be valid mobiles of their country.
+  const mobile = `+97150${randomInt(1_000_000, 10_000_000)}`;
   await request(`${portalPath}/cases/${caseId}/contacts`, "PUT",
     { name: "Palm QA client", phone: mobile, role: "approver", active: true, testContact: true });
   const approver = (await state(caseId)).contacts.find((contact: { phone: string }) => contact.phone === mobile);

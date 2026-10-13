@@ -71,7 +71,8 @@ try {
   }
 
   stage = "create enquiry";
-  const name = `Local QA client ${Date.now()}`;
+  // A staff-typed name is letters and spaces: the run time is spelled in letters.
+  const name = `Local QA client ${String(Date.now()).replace(/\d/g, (digit) => "abcdefghij"[Number(digit)])}`;
   await page.goto(`${web}/workspace/crm/leads`);
   await page.getByRole("button", { name: "Add enquiry" }).click();
   await page.getByRole("textbox", { name: "Customer name" }).fill(name);

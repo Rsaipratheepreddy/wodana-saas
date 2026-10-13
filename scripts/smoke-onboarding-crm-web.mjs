@@ -7,7 +7,8 @@ const web = process.env.WEB_BASE_URL ?? "http://127.0.0.1:3165";
 const internalToken = process.env.BUSINESS_CORE_INTERNAL_TOKEN ?? "local-development-token";
 const runId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 const slug = "plm";
-const customerName = `Palm sample ${runId}`;
+// A staff-typed name is letters and spaces: the run id is spelled in letters.
+const customerName = `Palm sample ${runId.replace(/\d/g, (digit) => "abcdefghij"[Number(digit)]).replace(/[^a-z]/gi, "")}`;
 
 const provision = await fetch(`${api}/internal/tenants`, {
   method: "POST",

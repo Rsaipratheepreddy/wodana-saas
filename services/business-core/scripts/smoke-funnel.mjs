@@ -562,7 +562,8 @@ if (palmFixture) {
   assert(routedQueues.find(queue => queue.id === salesQueue.id).members.some(member =>
     member.membershipId === reviewerMember.id && member.teamId === palmSalesTeam.id));
 
-  const staffName = "Staff-created Palm enquiry (synthetic)";
+  // Staff-typed names are letters and spaces (with hyphen, apostrophe, full stop).
+  const staffName = "Staff created Palm enquiry";
   const staffIntake = await request(`/workspaces/${workspaceId}/crm/intake-events`, {
     headers: { ...owner, "idempotency-key": `palm-staff-${run}`, "x-correlation-id": randomUUID() },
     body: {
@@ -930,10 +931,11 @@ const enabledPortal = await request(`${portalPath}/settings`, {
 });
 assert.equal(enabledPortal.settings.enabled, true);
 const commercialPath = `/workspaces/${workspaceId}/commercial/cases/${caseId}`;
-const mobile = `+9715${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
+// A real UAE mobile (050 …): staff-saved contacts must be valid mobiles of their country.
+const mobile = `+97150${String(Math.floor(1_000_000 + Math.random() * 8_999_999))}`;
 const portalContacts = await request(`${portalPath}/cases/${caseId}/contacts`, {
   body: {
-    name: fixture.customerName,
+    name: fixture.customerName.replace(/\s*\([^)]*\)/g, ""),
     phone: mobile,
     role: "approver",
     testContact: true,
