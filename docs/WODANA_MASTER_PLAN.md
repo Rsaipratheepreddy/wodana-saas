@@ -984,6 +984,8 @@ One design workspace in Planning, driven by the design package's stages. Reviews
 
 **Exit (Milestone A, live):** a Full ID job from Won through site visit, concepts, materials, renders and approval to the Proposal 2 hand-off, with the client acting in the portal; PLM-047–054, 077, 128 verified.
 
+**Design order (PLM-139–145, 151, 152, 154).** New design journeys (`design_journeys.flow_version = 2`) run: inspiration → kick-off meeting (booked with the allocated lead designer; the render sign-off date agreed there) → concept (the layout to scale in every package and a mood board; the design site measure is a deadlined task inside it, done by any designer on the job, and the concept completes only once it is done) → renders (packages with renders; ended by the client's render sign-off with its date and file) → samples (collected by the Material Coordinator, then the sample meeting at the showroom or the client's home; outsourced materials signed off through E3) → design approval. Journeys started before keep their old order. Once the fee is paid the Account Manager allocates the design team per job (team roles on the case; the package's reviewer chooses the lead; the lead tags the Visualiser, the technical lead the Draftsman; changing a designer needs a reason). A package names its reviewer role (rounds wait for it) and can be priced from its rate (a higher agreed rate is approved through E3). Step days, the design team's roles and the scoped site-visit questions are Settings › Design. "Samples approved" (`samplesApprovedAt`) is the fact later steps read. The design calendar is a list of sources (`DESIGN_CALENDAR_SOURCES`); the reminder engine chases the stage and task deadlines (`design.stage_due`).
+
 ### 6.8 Quotation
 Planning ends in two outcomes: the signed-off design and the accepted quotation. The accepted quotation is the source of truth the Project's BOQ, budget, procurement and payments start from.
 
@@ -2241,11 +2243,11 @@ Edge cases: provider down (queue and retry, visible status); token revoked (conn
 **4 · Design projects** (design journeys with a package; open until Design approval is done)
 | KPI | Definition |
 | --- | --- |
-| Projects by design stage | Open projects by the active stage: Inspiration, Site visit, Development (concepts, space planning), Materials, Renders, Approval. |
+| Projects by design stage | Open projects by the active stage: Inspiration, Kick-off, Site visit (a concept whose site measure is still open), Concept, Renders, Samples, Approval. Journeys in the old order read the same: concepts and space planning are Concept, material selection is Samples. |
 | Package mix | Design projects started in the period by package: count and value (Design Fee proposal net, else the discovery design fee). |
-| Overdue | Inspiration open past its days, site visit past its hours, concepts / space planning / renders past their internal deadline. Live. |
+| Overdue | Inspiration open past its days, the kick-off past its days, the site visit past its hours or the design site measure past its days, concepts / space planning / renders past their internal deadline, samples past their deadline. Live. |
 | Chargeable revisions | Open projects with a presentation round beyond the package's included revisions. |
-| Designer / Visualiser workload | Open projects per dedicated designer, and per owner of the renders stage while renders aren't done. |
+| Designer / Visualiser workload | Open projects per dedicated designer (the allocated lead designer), and per Visualiser tagged on the job (in the old order, the owner of the renders stage) while renders aren't done. |
 | Design approval → Proposal 2 | Designs approved in the period: average calendar days to the first main quotation sent on or after approval; and % whose Proposal 2 is Won (moved on to furniture / joinery). |
 
 **5 · Production and delivery** (started projects; deals delivered without a project for deliveries and permits)
