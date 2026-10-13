@@ -10,6 +10,7 @@ import {
   type ConfirmationMethod, type EntryState, type LedgerKind, type LedgerVersionInput, type VersionStatus,
 } from "./design-ledger.domain";
 import { salesAdminMembership } from "./design-journey.store";
+import { outsourcedFrom } from "./finishes.domain";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -24,10 +25,14 @@ export type LedgerVersionRow = {
   recordedByName: string | null; recordedAt: string;
   /** PLM-144: from a local supplier, and where its sign-off stands (the approval engine: pending, approved, returned, rejected). */
   outsourced: boolean; signOff: string | null;
+  /** PLM-157: where it comes from (null on a version recorded before origins), the library sample it was chosen from and the sample's photo. */
+  origin: string | null; sampleId: string | null; sampleName: string | null; samplePhotoAssetId: string | null; samplePhotoName: string | null;
 };
 export type LedgerEntryRow = {
   id: string; kind: LedgerKind; roomId: string | null; roomName: string | null; position: number; currentNumber: number;
   archivedAt: string | null; archivedAfterLock: boolean; version: number;
+  /** PLM-156: its finish category, where it goes in the room and the note for whoever installs it. */
+  categoryKey: string | null; location: string; installNote: string;
 };
 
 const iso = (value: unknown) => (value ? new Date(value as string).toISOString() : null);
@@ -44,7 +49,7 @@ export async function readLedger(db: Db, workspaceId: string, caseId: string) {
   const lock = await latestLock(db, workspaceId, caseId);
   const entries = (await db.query<LedgerEntryRow>(
     `SELECT entry.id, entry.kind, entry.room_id AS "roomId", room.name AS "roomName", entry.position, entry.current_number AS "currentNumber",
-            entry.archived_at AS "archivedAt", entry.version,
+            entry.archived_at AS "archivedAt", entry.version, entry.category_key AS "categoryKey", entry.location, entry.install_note AS "installNote",
             (entry.archived_at IS NOT NULL AND EXISTS (SELECT 1 FROM design_ledger_locks lock WHERE lock.workspace_id = entry.workspace_id AND lock.case_id = entry.case_id
                AND lock.locked_at < entry.archived_at)) AS "archivedAfterLock"
        FROM design_ledger_entries entry
@@ -57,11 +62,14 @@ export async function readLedger(db: Db, workspaceId: string, caseId: string) {
             version.evidence_note AS "evidenceNote", version.note, version.after_lock AS "afterLock", version.status, version.confirmed_at AS "confirmedAt",
             version.confirmation_method AS "confirmationMethod", version.confirmed_by_name AS "confirmedByName", version.recorded_by_grant_id IS NOT NULL AS "fromPortal",
             COALESCE(recorder.display_name, grant_row.name) AS "recordedByName", version.recorded_at AS "recordedAt", version.outsourced,
+            version.origin, version.sample_id AS "sampleId", sample.name AS "sampleName", version.sample_photo_asset_id AS "samplePhotoAssetId", photo.original_name AS "samplePhotoName",
             CASE WHEN version.outsourced THEN (SELECT request.status FROM approval_requests request WHERE request.workspace_id = version.workspace_id
               AND request.subject_kind = 'outsourced_material' AND request.subject_id = version.id AND request.status <> 'superseded'
               ORDER BY request.requested_at DESC LIMIT 1) END AS "signOff"
        FROM design_ledger_versions version
        LEFT JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.id = version.evidence_asset_id
+       LEFT JOIN pre_project_brief_assets photo ON photo.workspace_id = version.workspace_id AND photo.id = version.sample_photo_asset_id
+       LEFT JOIN material_samples sample ON sample.workspace_id = version.workspace_id AND sample.id = version.sample_id
        LEFT JOIN users recorder ON recorder.id = version.recorded_by
        LEFT JOIN client_portal_grants grant_row ON grant_row.workspace_id = version.workspace_id AND grant_row.id = version.recorded_by_grant_id
       WHERE version.workspace_id = $1 AND version.case_id = $2 ORDER BY version.entry_id, version.number DESC`, [workspaceId, caseId])).rows
@@ -117,7 +125,8 @@ function clean(input: LedgerVersionInput & { catalogItemId?: string | null; evid
     title: text(input.title), specification: text(input.specification), supplier: text(input.supplier).slice(0, 200), quantity: text(input.quantity) || null,
     unit: text(input.unit).slice(0, 40), unitPrice: text(input.unitPrice) || null, timeImpactDays: input.timeImpactDays ?? 0, source: input.source as string,
     saidAt: input.saidAt as string, evidenceNote: text(input.evidenceNote), note: text(input.note), catalogItemId: input.catalogItemId ?? null, evidenceAssetId: input.evidenceAssetId ?? null,
-    outsourced: input.outsourced === true,
+    // PLM-157: a material from a local supplier is the outsourced one; the origin says so when it is given.
+    outsourced: outsourcedFrom(input), origin: input.origin ?? null, sampleId: input.sampleId ?? null, samplePhotoAssetId: input.samplePhotoAssetId ?? null,
   };
 }
 
@@ -135,7 +144,12 @@ async function askSignOff(db: Db, workspaceId: string, caseId: string, input: { 
     href: ledgerLink(caseId), amount: total && input.currency ? total.toFixed(2) : null, currency: total && input.currency ? input.currency : null, requesterUserId: input.actor.userId });
 }
 
-async function assertBelongs(db: Db, workspaceId: string, caseId: string, input: { roomId?: string | null; catalogItemId?: string | null; evidenceAssetId?: string | null }) {
+async function assertBelongs(db: Db, workspaceId: string, caseId: string, input: { roomId?: string | null; catalogItemId?: string | null; evidenceAssetId?: string | null; sampleId?: string | null; samplePhotoAssetId?: string | null }) {
+  if (input.sampleId && !(await db.query(`SELECT 1 FROM material_samples WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.sampleId])).rowCount)
+    throw new BadRequestException("Choose a sample from the sample library.");
+  if (input.samplePhotoAssetId && !(await db.query(`SELECT 1 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3 AND mime_type LIKE 'image/%'`,
+    [workspaceId, caseId, input.samplePhotoAssetId])).rowCount)
+    throw new BadRequestException("Attach a photo of the sample from this project.");
   if (input.roomId && !(await db.query(`SELECT 1 FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, input.roomId])).rowCount)
     throw new BadRequestException("Choose a room of this project.");
   if (input.catalogItemId && !(await db.query(`SELECT 1 FROM catalog_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.catalogItemId])).rowCount)
@@ -148,11 +162,12 @@ async function insertVersion(db: Db, workspaceId: string, caseId: string, entryI
   fields: ReturnType<typeof clean>, impact: string, afterLock: boolean, currency: string | null, actor: LedgerActor) {
   await db.query(
     `INSERT INTO design_ledger_versions (id, workspace_id, case_id, entry_id, number, title, specification, catalog_item_id, supplier, quantity, unit, unit_price, currency,
-                                         price_impact, time_impact_days, source, said_at, evidence_asset_id, evidence_note, note, after_lock, recorded_by, recorded_by_grant_id, outsourced)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::numeric, $11, $12::numeric, $13, $14::numeric, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
+                                         price_impact, time_impact_days, source, said_at, evidence_asset_id, evidence_note, note, after_lock, recorded_by, recorded_by_grant_id, outsourced,
+                                         origin, sample_id, sample_photo_asset_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::numeric, $11, $12::numeric, $13, $14::numeric, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
     [id, workspaceId, caseId, entryId, number, fields.title, fields.specification, fields.catalogItemId, fields.supplier, fields.quantity, fields.unit, fields.unitPrice,
       fields.unitPrice ? currency : null, impact, fields.timeImpactDays, fields.source, fields.saidAt, fields.evidenceAssetId, fields.evidenceNote, fields.note, afterLock,
-      actor.userId, null, fields.outsourced]);
+      actor.userId, null, fields.outsourced, fields.origin, fields.sampleId, fields.samplePhotoAssetId]);
 }
 
 /** Replays of the same command (same ids, same content) return the ledger unchanged; anything else with those ids is refused. */
@@ -160,11 +175,13 @@ function sameVersion(existing: LedgerVersionRow, fields: ReturnType<typeof clean
   const same = (a: string | null, b: string | null) => (a === null || b === null ? a === b : Dec.of(a).cmp(b) === 0);
   return existing.title === fields.title && existing.specification === fields.specification && same(existing.quantity, fields.quantity)
     && same(existing.unitPrice, fields.unitPrice) && existing.unit === fields.unit && existing.source === fields.source
-    && existing.catalogItemId === fields.catalogItemId && existing.outsourced === fields.outsourced;
+    && existing.catalogItemId === fields.catalogItemId && existing.outsourced === fields.outsourced && (existing.origin ?? null) === fields.origin
+    && (existing.sampleId ?? null) === fields.sampleId;
 }
 
 /** A new material or design choice, its first version proposed for the client's confirmation. */
-export async function addEntry(db: Db, workspaceId: string, caseId: string, input: LedgerVersionInput & { id: string; versionId: string; kind: string; roomId?: string | null; catalogItemId?: string | null; evidenceAssetId?: string | null }, actor: LedgerActor) {
+export async function addEntry(db: Db, workspaceId: string, caseId: string, input: LedgerVersionInput & { id: string; versionId: string; kind: string; roomId?: string | null; catalogItemId?: string | null; evidenceAssetId?: string | null;
+  categoryKey?: string | null; location?: string | null; installNote?: string | null }, actor: LedgerActor) {
   if (!LEDGER_KINDS.includes(input.kind as LedgerKind)) throw new BadRequestException("Choose material or design.");
   const problem = versionProblem(input);
   if (problem) throw new UnprocessableEntityException(problem);
@@ -175,12 +192,16 @@ export async function addEntry(db: Db, workspaceId: string, caseId: string, inpu
     if (existing.caseId !== caseId || !first || first.id !== input.versionId || !sameVersion(first, fields)) throw new ConflictException("This choice ID is already in use.");
     return { replayed: true, versionId: input.versionId, afterLock: first.afterLock };
   }
-  await assertBelongs(db, workspaceId, caseId, { ...input, catalogItemId: fields.catalogItemId, evidenceAssetId: fields.evidenceAssetId });
+  await assertBelongs(db, workspaceId, caseId, { ...input, catalogItemId: fields.catalogItemId, evidenceAssetId: fields.evidenceAssetId, sampleId: fields.sampleId, samplePhotoAssetId: fields.samplePhotoAssetId });
   const ledger = await readLedger(db, workspaceId, caseId);
   const position = Math.max(-1, ...ledger.entries.map((entry) => entry.position)) + 1;
   const afterLock = Boolean(ledger.lock);
-  await db.query(`INSERT INTO design_ledger_entries (id, workspace_id, case_id, kind, room_id, position, current_number, created_by) VALUES ($1, $2, $3, $4, $5, $6, 1, $7)`,
-    [input.id, workspaceId, caseId, input.kind, input.roomId ?? null, position, actor.userId]);
+  // PLM-156: a material's finish category and placement when given with it (the schedule changes them later too).
+  const category = input.kind === "material" ? input.categoryKey ?? null : null;
+  if (category !== null && !/^[a-z][a-z0-9_]{0,39}$/.test(category)) throw new BadRequestException("Choose a finish category.");
+  await db.query(`INSERT INTO design_ledger_entries (id, workspace_id, case_id, kind, room_id, position, current_number, created_by, category_key, location, install_note)
+                  VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10)`,
+    [input.id, workspaceId, caseId, input.kind, input.roomId ?? null, position, actor.userId, category, (input.location ?? "").trim().slice(0, 200), (input.installNote ?? "").trim().slice(0, 2000)]);
   const impact = priceImpact(null, fields);
   await insertVersion(db, workspaceId, caseId, input.id, input.versionId, 1, fields, impact, afterLock, ledger.currency, actor);
   await askSignOff(db, workspaceId, caseId, { versionId: input.versionId, replacedId: null, fields, currency: ledger.currency, actor });
@@ -205,7 +226,7 @@ export async function addVersion(db: Db, workspaceId: string, caseId: string, en
   }
   if (entry.archivedAt) throw new ConflictException("This choice was removed from the list.");
   if (entry.version !== input.entryVersion) throw new ConflictException("This choice changed in another window. Reload and try again.");
-  await assertBelongs(db, workspaceId, caseId, { catalogItemId: fields.catalogItemId, evidenceAssetId: fields.evidenceAssetId });
+  await assertBelongs(db, workspaceId, caseId, { catalogItemId: fields.catalogItemId, evidenceAssetId: fields.evidenceAssetId, sampleId: fields.sampleId, samplePhotoAssetId: fields.samplePhotoAssetId });
   const previous = own.current;
   const number = entry.currentNumber + 1;
   const afterLock = Boolean(ledger.lock);

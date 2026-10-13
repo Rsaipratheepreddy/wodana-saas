@@ -205,6 +205,7 @@ const TASK_TITLES: Record<JourneyTask, string> = {
   team_allocation: "Allocate the design team",
   site_measure: "Design site measure: measurements, photos and the question list",
   sample_collection: "Collect the samples for every room",
+  finishes_to_qs: "Mark the finishes on the render snapshots and send them to QS",
 };
 
 async function activateStage(db: Db, workspaceId: string, caseId: string, stage: JourneyStage, userId: string | null) {
@@ -260,6 +261,17 @@ async function activateStage(db: Db, workspaceId: string, caseId: string, stage:
     await openTask(db, workspaceId, caseId, "sample_collection", { owner: coordinator ?? facts.accountManagerId, dueAt: due, userId });
     await tellMembers(db, workspaceId, [coordinator], "design.samples_to_collect", { clientName: facts.clientName, due: await dueText(db, workspaceId, due) },
       `/workspace/pre-projects/cases/${caseId}/overview`, `design:${caseId}:sample_collection:due`, true);
+  }
+  if (stage === "approval" && (await db.query(`SELECT 1 FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'samples' AND status = 'done'`, [workspaceId, caseId])).rowCount) {
+    // PLM-146: the samples are approved; the lead designer marks the exact finishes on the render snapshots and sends
+    // them to QS within the firm's days (Settings › Design; 3 when not set). The reminder engine chases it (design.stage_due).
+    const days = (await db.query<{ days: number }>(`SELECT finishes_to_qs_days AS days FROM workspace_finish_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.days ?? 3;
+    const due = addDays(now, days);
+    const lead = await leadDesigner(db, workspaceId, caseId);
+    await openTask(db, workspaceId, caseId, "finishes_to_qs", { owner: lead ?? owner ?? facts.accountManagerId, dueAt: due, userId });
+    await tellMembers(db, workspaceId, [lead ?? owner], "finishes.to_mark",
+      { clientName: facts.clientName, project: "", actor: "", title: "", count: "", items: "", note: "", due: await dueText(db, workspaceId, due) },
+      `/workspace/pre-projects/cases/${caseId}/designs?stage=finishes`, `design:${caseId}:finishes_to_qs:due`, true);
   }
 }
 

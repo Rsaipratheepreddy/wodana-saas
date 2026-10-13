@@ -22,6 +22,7 @@ import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } fr
 import { MARKUP_DISCLOSURES, type MarkupDisclosure } from "../proposals/markup-disclosure";
 import { QS_FIELDS, touchesQsFields } from "../proposals/qs-review.domain";
 import { QS_ITEM_TYPES, QS_SCOPES, qsRequirement, quoteReviewAction, type QsItemType, type QsScope } from "../proposals/qs-requirement";
+import { linkQuoteLine, materialEditor, quoteFinishes, quoteSpecification } from "../design/finishes.store";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -321,7 +322,14 @@ export class QuotationBuilderService {
   async applyOps(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string, ops: unknown, options: { priceOnly?: boolean } = {}) {
     const { quote } = await this.editable(client, workspaceId, caseId, quoteId, userId);
     if (!Array.isArray(ops) || !ops.length || ops.length > 200) throw new BadRequestException("Send 1 to 200 changes.");
-    if (options.priceOnly) assertPriceOnly(ops);
+    // PLM-146: the QS prices from the designer's specification, so tying a line to a finish is part of pricing.
+    if (options.priceOnly) assertPriceOnly(ops.filter((raw) => object(raw).op !== "finish"));
+    // PLM-146: the material column is the designer's (the firm's chosen parts of the design team), asked once per command.
+    let materialRule: Promise<{ allowed: boolean }> | null = null;
+    const mayEditMaterial = () => materialRule ??= (async () => {
+      const membership = (await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`, [workspaceId, userId])).rows[0]?.id ?? null;
+      return materialEditor(client, workspaceId, caseId, membership, await this.access.hasPermission(client, workspaceId, userId, "pre_projects.manage_lifecycle"));
+    })();
     const canEditCosts = await this.costEditor(client, workspaceId, caseId, quoteId, userId);
     const settings = await readSettings(client, workspaceId);
     // PLM-082: where the QS prices quotations, the price fields are theirs (a catalog pick still fills them).
@@ -402,6 +410,8 @@ export class QuotationBuilderService {
           if (Number(fields.version) + 1 === current.version && sameChange(current, fields)) continue; // a replay of the change just saved
           throw conflict(current);
         }
+        if (Object.prototype.hasOwnProperty.call(fields, "material") && String(fields.material ?? "").trim() !== (current?.material ?? "").trim() && !(await mayEditMaterial()).allowed)
+          throw new ForbiddenException("The finishes and materials are the designer's: the lead or junior interior designer, or the Sales Admin, changes them.");
         let next: LineRow & { components?: ComponentRow[] | null } = current
           ? { ...current, components: null }
           : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null, ...defaultTax };
@@ -417,6 +427,17 @@ export class QuotationBuilderService {
           if (!next.areaId || next.areaId === next.fromAreaId) throw new BadRequestException("Choose a different area to move it to.");
         } else if (!current && quote.kind === "variation") next.changeOp = "add";
         await this.saveLine(client, workspaceId, caseId, quoteId, next, current, areas, decimals, userId);
+        changed.push(id);
+      } else if (kind === "finish") {
+        // PLM-146: a line priced from a finish of the schedule (or untied with null): its material column takes the
+        // designer's specification, and a later change to the finish flags this price.
+        const id = lineId(op.lineId);
+        const current = await readLine(client, workspaceId, caseId, quoteId, id, true);
+        if (!current) throw new NotFoundException("That line isn't on this quotation.");
+        if (op.version !== undefined && Number(op.version) !== current.version) throw conflict(current);
+        const linked = await linkQuoteLine(client, workspaceId, caseId, id, op.entryId === null || op.entryId === undefined ? null : String(op.entryId), userId);
+        if (linked && linked.material !== current.material)
+          await this.saveLine(client, workspaceId, caseId, quoteId, { ...current, components: null, material: linked.material }, current, areas, decimals, userId);
         changed.push(id);
       } else throw new BadRequestException(`Unknown change "${kind}".`);
     }
@@ -857,6 +878,13 @@ export class QuotationBuilderService {
            LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
           WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null },
       canEdit, canPrice, canEditCosts, canViewCosts,
+      // PLM-146: the finishes the designer sent to QS (lines priced from them, with the old price flagged when a finish
+      // changed since), who may edit the material column, and whether this quotation waits for the final specification.
+      finishes: await quoteFinishes(client, workspaceId, caseId),
+      canEditMaterial: (await materialEditor(client, workspaceId, caseId,
+        (await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`, [workspaceId, userId])).rows[0]?.id ?? null,
+        await this.access.hasPermission(client, workspaceId, userId, "pre_projects.manage_lifecycle"))).allowed,
+      specification: await quoteSpecification(client, workspaceId, caseId, { id: quote.id, kind: quote.kind, round: quote.round }),
       // Extending a sent or expired quote's validity is the sender's step (Q-7).
       canEditValidity: ["issued", "expired"].includes(quote.status) && await this.access.hasPermission(client, workspaceId, userId, EDIT),
       requirements: await caseRequirements(client, workspaceId, caseId),

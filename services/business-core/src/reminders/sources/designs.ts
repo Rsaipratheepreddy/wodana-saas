@@ -144,7 +144,7 @@ export const designStageSource: ReminderSource = {
         key: `design_task:${row.caseId}:${row.task}`, sourceType: "design_task", sourceId: `${row.caseId}:${row.task}`, jobSource: { type: "case", id: row.caseId },
         projectId: facts.projectId, caseId: row.caseId, partyId: facts.partyId, ownerMembershipId: owner, ccMembershipIds: cc,
         dueAt: new Date(row.dueAt), title: TASK_LABELS[row.task] ?? row.task, context: facts.client,
-        href: `/workspace/pre-projects/cases/${encode(row.caseId)}/${row.task === "site_measure" ? "site" : "overview"}`, variables: { client: facts.client },
+        href: `/workspace/pre-projects/cases/${encode(row.caseId)}/${row.task === "site_measure" ? "site" : row.task === "finishes_to_qs" ? "designs?stage=finishes" : "overview"}`, variables: { client: facts.client },
       }];
     });
     return [...stageItems, ...taskItems];

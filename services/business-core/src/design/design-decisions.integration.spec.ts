@@ -88,6 +88,10 @@ integration("design decisions: presentations and the materials ledger (plan §6.
         if (!required.every((permission) => permissions.includes(permission))) throw new ForbiddenException(`Permissions required: ${required.join(", ")}`);
         return asApp(workspaceId, userId, (client) => work(client, { userId }));
       },
+      withAnyPermission: async (_actor: unknown, workspaceId: string, any: string[], work: (client: PoolClient, user: { userId: string }) => Promise<unknown>) => {
+        if (!any.some((permission) => permissions.includes(permission))) throw new ForbiddenException(`Any permission required: ${any.join(", ")}`);
+        return asApp(workspaceId, userId, (client) => work(client, { userId }));
+      },
       hasPermission: async (_client: unknown, _workspaceId: string, _user: string, permission: string) => permissions.includes(permission),
     };
     return { decisions: new DesignDecisionsService(access as never), journey: new DesignJourneyService(access as never) };

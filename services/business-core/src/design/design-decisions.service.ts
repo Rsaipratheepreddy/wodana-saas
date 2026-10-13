@@ -9,10 +9,13 @@ import { caseFacts, holdsRole, membersWithRole, tellMembers } from "./design-jou
 import type { LedgerVersionInput } from "./design-ledger.domain";
 import { addEntry, addVersion, archiveEntry, decideVersion, ledgerCatalogChoices, readLedger } from "./design-ledger.store";
 import { createPresentation, decideRound, journeyReviewRole, presentedRounds, presentRound, readPresentations, reviewRound, roundReviewed, withdrawRound } from "./design-presentations.store";
+import { tellFinishChanged } from "./finishes.store";
+import { sampleChoices } from "./samples.store";
 
 export type PresentationInput = { id: string; stage: string; options: Array<{ id: string; title: string; note?: string | null; designId?: string | null; linkUrl?: string | null }> };
 export type RoundDecisionInput = { version: number; decision: "chosen" | "changes_requested"; optionId?: string | null; source: string; decidedBy: string; note?: string | null };
-export type LedgerEntryInput = LedgerVersionInput & { id: string; versionId: string; kind: string; roomId?: string | null; catalogItemId?: string | null; evidenceAssetId?: string | null };
+export type LedgerEntryInput = LedgerVersionInput & { id: string; versionId: string; kind: string; roomId?: string | null; catalogItemId?: string | null; evidenceAssetId?: string | null;
+  categoryKey?: string | null; location?: string | null; installNote?: string | null };
 export type LedgerVersionCommand = LedgerVersionInput & { versionId: string; entryVersion: number; catalogItemId?: string | null; evidenceAssetId?: string | null };
 export type LedgerDecisionInput = { decision: "confirmed" | "declined"; method: string; decidedBy: string; note?: string | null };
 
@@ -102,11 +105,14 @@ export class DesignDecisionsService {
     });
   }
 
-  /** The catalog items a ledger choice can be tied to (so its fit through the site's access is checked). */
+  /**
+   * The catalog items a ledger choice can be tied to (so its fit through the site's access is checked), and the sample
+   * library's samples first: in stock, the firm's own stock before brands (PLM-144, PLM-157).
+   */
   ledgerCatalog(actor: RequestActor, workspaceId: string, caseId: string, search: string) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client) => {
       await this.case(client, workspaceId, caseId, false);
-      return { items: await ledgerCatalogChoices(client, workspaceId, caseId, search) };
+      return { samples: await sampleChoices(client, workspaceId, search), items: await ledgerCatalogChoices(client, workspaceId, caseId, search) };
     });
   }
 
@@ -114,6 +120,9 @@ export class DesignDecisionsService {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => ({
       ...await this.case(client, workspaceId, caseId, false).then(() => readLedger(client, workspaceId, caseId)),
       canEdit: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit"),
+      // PLM-157: the Material Coordinator keeps the materials (not the design choices) without editing the rest of the case.
+      canManageMaterials: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit")
+        || await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.manage_materials"),
       canRecordClient: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.record_client_design_decisions"),
       canApprove: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.review_designs"),
       // E5-1 on E3: the approval of changes after sign-off (who it waits for, at which step).
@@ -122,32 +131,49 @@ export class DesignDecisionsService {
   }
 
   addEntry(actor: RequestActor, workspaceId: string, caseId: string, input: LedgerEntryInput) {
-    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
+    return this.editMaterials(actor, workspaceId, caseId, async (client, userId, scope) => {
+      if (scope === "materials" && input.kind !== "material") throw new ForbiddenException("You keep the materials; the designers record the design choices.");
       const result = await addEntry(client, workspaceId, caseId, input, { userId });
       if (!result.replayed) await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.ledger_entry_added.v1", entityType: "design_ledger_entry", entityId: input.id,
-        after: { kind: input.kind, title: input.title, source: input.source, versionId: input.versionId, afterLock: result.afterLock } });
+        after: { kind: input.kind, title: input.title, source: input.source, origin: input.origin ?? null, sampleId: input.sampleId ?? null, versionId: input.versionId, afterLock: result.afterLock } });
       if (result.afterLock) await requestLedgerChangeApproval(client, workspaceId, caseId, userId);
       return readLedger(client, workspaceId, caseId);
     });
   }
 
   addVersion(actor: RequestActor, workspaceId: string, caseId: string, entryId: string, input: LedgerVersionCommand) {
-    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
+    return this.editMaterials(actor, workspaceId, caseId, async (client, userId, scope) => {
+      await this.entryKind(client, workspaceId, caseId, entryId, scope);
       const result = await addVersion(client, workspaceId, caseId, entryId, input, { userId });
-      if (!result.replayed) await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.ledger_version_added.v1", entityType: "design_ledger_entry", entityId: entryId,
-        after: { versionId: input.versionId, title: input.title, source: input.source, afterLock: result.afterLock } });
+      if (!result.replayed) {
+        await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.ledger_version_added.v1", entityType: "design_ledger_entry", entityId: entryId,
+          after: { versionId: input.versionId, title: input.title, source: input.source, origin: input.origin ?? null, afterLock: result.afterLock } });
+        // PLM-146: a finish changed after it went to QS: the QS hears it and the old price is flagged.
+        await tellFinishChanged(client, workspaceId, caseId, entryId, { title: input.title ?? "", what: `New version: ${input.title ?? ""}${input.specification ? ` (${input.specification})` : ""}.`, actorUserId: userId });
+      }
       if (result.afterLock) await requestLedgerChangeApproval(client, workspaceId, caseId, userId);
       return readLedger(client, workspaceId, caseId);
     });
   }
 
   archive(actor: RequestActor, workspaceId: string, caseId: string, entryId: string, input: { entryVersion: number }) {
-    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
-      if (await archiveEntry(client, workspaceId, caseId, entryId, input.entryVersion, userId))
+    return this.editMaterials(actor, workspaceId, caseId, async (client, userId, scope) => {
+      await this.entryKind(client, workspaceId, caseId, entryId, scope);
+      if (await archiveEntry(client, workspaceId, caseId, entryId, input.entryVersion, userId)) {
         await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.ledger_entry_archived.v1", entityType: "design_ledger_entry", entityId: entryId, after: {} });
+        const title = (await client.query<{ title: string }>(`SELECT title FROM design_ledger_versions WHERE workspace_id = $1 AND entry_id = $2 ORDER BY number DESC LIMIT 1`, [workspaceId, entryId])).rows[0]?.title ?? "";
+        await tellFinishChanged(client, workspaceId, caseId, entryId, { title, what: "Removed from the schedule.", actorUserId: userId });
+      }
       await requestLedgerChangeApproval(client, workspaceId, caseId, userId);
       return readLedger(client, workspaceId, caseId);
     });
+  }
+
+  /** The entry's kind, for someone who keeps only the materials (they can't change a design choice). */
+  private async entryKind(client: PoolClient, workspaceId: string, caseId: string, entryId: string, scope: "all" | "materials") {
+    if (scope === "all") return;
+    const kind = (await client.query<{ kind: string }>(`SELECT kind FROM design_ledger_entries WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, entryId])).rows[0]?.kind;
+    if (kind && kind !== "material") throw new ForbiddenException("You keep the materials; the designers record the design choices.");
   }
 
   /** The client's confirmation recorded by staff: how (signed document, email, in person…), who, and a note. */
@@ -155,8 +181,13 @@ export class DesignDecisionsService {
     return this.clientDecision(actor, workspaceId, caseId, async (client, userId) => {
       if (input.method === "portal") throw new ConflictException("Portal confirmations come from the client's portal.");
       const result = await decideVersion(client, workspaceId, caseId, entryId, versionId, { ...input, recordedBy: userId });
-      if (!result.replayed) await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.ledger_decided.v1", entityType: "design_ledger_entry", entityId: entryId,
-        after: { versionId, decision: input.decision, method: input.method, decidedBy: input.decidedBy } });
+      if (!result.replayed) {
+        await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.ledger_decided.v1", entityType: "design_ledger_entry", entityId: entryId,
+          after: { versionId, decision: input.decision, method: input.method, decidedBy: input.decidedBy } });
+        // A material the client turns down after it went to QS: the QS hears it (its price no longer stands).
+        if (input.decision === "declined")
+          await tellFinishChanged(client, workspaceId, caseId, entryId, { title: result.title, what: `Not approved by the client: ${input.note?.trim() ?? ""}`, actorUserId: userId });
+      }
       return readLedger(client, workspaceId, caseId);
     });
   }
@@ -201,6 +232,19 @@ export class DesignDecisionsService {
       // A released case (the project exists) still takes changes: after the lock they wait for approval (E5-1).
       if (!["active", "released"].includes((await this.case(client, workspaceId, caseId)).status)) throw new ConflictException("Reactivate the case first");
       return work(client, user.userId);
+    });
+  }
+
+  /**
+   * The material log (PLM-157): whoever edits the case, or someone who keeps the materials and samples on cases (the
+   * Material Coordinator: `materials` scope, materials only). A released case still takes changes (E5-1).
+   */
+  private editMaterials<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient, userId: string, scope: "all" | "materials") => Promise<T>) {
+    return this.access.withAnyPermission(actor, workspaceId, ["pre_projects.edit", "pre_projects.manage_materials"], async (client, user) => {
+      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.view"))) throw new ForbiddenException("Permissions required: pre_projects.view");
+      if (!["active", "released"].includes((await this.case(client, workspaceId, caseId)).status)) throw new ConflictException("Reactivate the case first");
+      const scope = await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit") ? "all" as const : "materials" as const;
+      return work(client, user.userId, scope);
     });
   }
 

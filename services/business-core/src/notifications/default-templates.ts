@@ -69,6 +69,28 @@ export const INSPECTION_TEMPLATES: DefaultTemplate[] = [
   { code: "factory.inspector_missing", channel: "email", subject: "Nobody inspects {{item}}: {{project}}", body: "{{order}} {{item}} is ready for {{stage}}, but {{project}} has nobody in the {{note}} role.\n\nAdd them to the project team, or record the inspection yourself.", variables: INSPECTION_VARIABLES },
 ];
 
+/**
+ * The finishes schedule (design/finishes.store.ts, PLM-146/148/156): the designer hears the finishes to mark once the
+ * samples are approved and a missing client signature when procurement tries to order; the QS hears the finishes to
+ * price and a finish changed after it was sent; the factory lead hears the sample log is shared; procurement hears a
+ * project's gate cleared. 0339 seeds them into existing workspaces.
+ */
+const FINISH_VARIABLES = ["clientName", "project", "actor", "title", "count", "items", "due", "note"];
+export const FINISH_TEMPLATES: DefaultTemplate[] = [
+  { code: "finishes.to_mark", channel: "in_app", subject: "Mark the finishes · {{clientName}}", body: "The samples are approved. Mark the finishes on the render snapshots and send them to QS by {{due}}.", variables: FINISH_VARIABLES },
+  { code: "finishes.to_mark", channel: "email", subject: "Mark the finishes: {{clientName}}", body: "The samples for {{clientName}} are approved.\n\nMark the exact finishes on the render snapshots and send them to QS by {{due}}.", variables: FINISH_VARIABLES },
+  { code: "finishes.sent_to_qs", channel: "in_app", subject: "Finishes to price · {{clientName}}", body: "{{actor}} sent {{count}} finishes. Price the quotation from them. {{note}}", variables: FINISH_VARIABLES },
+  { code: "finishes.sent_to_qs", channel: "email", subject: "Finishes to price: {{clientName}}", body: "{{actor}} marked the finishes for {{clientName}} and sent them to you ({{count}}).\n\nPrice the quotation from the designer's specification. {{note}}", variables: FINISH_VARIABLES },
+  { code: "finishes.changed", channel: "in_app", subject: "{{title}} changed after pricing · {{clientName}}", body: "{{actor}}: {{note}} The old price is flagged on the quotation.", variables: FINISH_VARIABLES },
+  { code: "finishes.changed", channel: "email", subject: "{{title}} changed after pricing: {{clientName}}", body: "{{actor}} changed {{title}} for {{clientName}} after it was sent to you.\n\n{{note}}\n\nThe old price is flagged on the quotation. Price it again from the new specification.", variables: FINISH_VARIABLES },
+  { code: "finishes.factory_shared", channel: "in_app", subject: "Sample log shared · {{project}}", body: "{{actor}} shared the samples and finishes for {{clientName}}. {{note}}", variables: FINISH_VARIABLES },
+  { code: "finishes.factory_shared", channel: "email", subject: "Sample log shared: {{project}}", body: "{{actor}} shared the sample log and photos for {{project}} ({{clientName}}) with the factory.\n\nOpen it in the Factory. {{note}}", variables: FINISH_VARIABLES },
+  { code: "procurement.gate_cleared", channel: "in_app", subject: "{{project}} can be ordered", body: "The client's payment, the material list and the signed samples are in for {{clientName}}.", variables: FINISH_VARIABLES },
+  { code: "procurement.gate_cleared", channel: "email", subject: "{{project}} can be ordered", body: "The client's payment, the confirmed material list and the client's signed samples and data sheets are all in for {{project}} ({{clientName}}).\n\nThe materials can be ordered.", variables: FINISH_VARIABLES },
+  { code: "procurement.signature_missing", channel: "in_app", subject: "Client signature missing · {{project}}", body: "{{actor}} tried to order. The client still signs: {{items}}.", variables: FINISH_VARIABLES },
+  { code: "procurement.signature_missing", channel: "email", subject: "Client signature missing: {{project}}", body: "{{actor}} tried to order materials for {{project}} ({{clientName}}), but the client hasn't signed these samples or data sheets yet:\n\n{{items}}\n\nRecord each signed sample or sheet (a photo and the date) on the finishes schedule.", variables: FINISH_VARIABLES },
+];
+
 export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   // Staff kinds: the owner (and cc) in the app, on the phone and by email.
   ...staffReminder("work.due", "Update its progress or move the date."),
@@ -84,6 +106,7 @@ export const REMINDER_TEMPLATES: DefaultTemplate[] = [
   ...staffReminder("meeting.minutes_due", "Write the minutes and share them with the client."),
   ...staffReminder("factory.inspection_due", "Inspect it at the factory, or ask someone to cover it."),
   ...staffReminder("quote.value_engineering_idle", "Agree the savings, present the options or record the client's decision."),
+  ...staffReminder("finishes.signature_due", "Get the client to sign the samples and data sheets, then record them."),
   // Client kinds: the client by email (WhatsApp uses the firm's approved templates); the owner after the reminders.
   { code: "reminders.client.quote_decision", channel: "email", subject: "Your quotation {{title}} is waiting for you", body: "{{title}} is waiting for your decision.\n\n{{context}}\n\nOpen it to accept it or ask for changes.", variables: REMINDER_VARIABLES },
   { code: "reminders.client.design_decision", channel: "email", subject: "Your design {{title}} is waiting for you", body: "{{title}} is waiting for your approval.\n\n{{context}}\n\nOpen it to approve it or ask for changes.", variables: REMINDER_VARIABLES },
@@ -356,6 +379,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   // fix and that finishing can go ahead; the project manager hears it failed and when it can go to site; the project's
   // managers hear when nobody on the team inspects. 0326 seeds them into existing workspaces.
   ...INSPECTION_TEMPLATES,
+  ...FINISH_TEMPLATES,
   // Sample requests (factory/factory-samples.ts, PLM-061): the factory hears a sample is asked for (and when it's due and not
   // ready); the person who asked and the case's designer hear it's ready.
   { code: "factory.sample_requested", channel: "in_app", subject: "Sample requested · {{sample}}", body: "{{actor}} needs it by {{date}} for {{project}}. {{note}}", variables: ["sample", "project", "date", "actor", "note"] },

@@ -112,6 +112,8 @@ const EXACT_LABELS: Record<string, MessageKey> = {
   "pre_projects.record_client_design_decisions": tKey("Record client design decisions"),
   "pre_projects.review_designs": tKey("Review design revisions"),
   "pre_projects.verify_measurements": tKey("Verify site measurements"),
+  "pre_projects.manage_materials": tKey("Keep the material log and the samples on cases"),
+  "catalog.samples.manage": tKey("Keep the sample library"),
   "portal.contacts.manage": tKey("Add client contacts and decision-makers"),
   "commercial.record_decision": tKey("Record a client's decision on a quote"),
   "workspace.view_as": tKey("View as a team member or role, read-only"),
@@ -276,7 +278,7 @@ const FIXTURE_PERMISSION_CODES = [
   "factory.view", "factory.manage", "factory.report", "factory.approve",
   "payables.view", "payables.manage", "payables.approve", "receivables.view", "receivables.manage", "accounting.manage",
   "finance_requests.raise", "finance_requests.manage", "reports.management.view", "reports.management.targets",
-  "books.view", "books.post", "books.approve", "books.manage",
+  "books.view", "books.post", "books.approve", "books.manage", "pre_projects.manage_materials", "catalog.samples.manage",
 ] as const;
 
 export const workspacePermissionFixture: WorkspacePermissionDefinition[] = FIXTURE_PERMISSION_CODES.map((code) => ({

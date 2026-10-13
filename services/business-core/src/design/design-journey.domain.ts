@@ -27,11 +27,14 @@ export function journeyStages(pkg: { includesSpacePlanning: boolean; includesRen
 /**
  * Work inside a step with its own owner, deadline and done-check (PLM-151, PLM-141, PLM-144): the design team chosen
  * once the fee is paid (during inspiration), the design site measure (during the concept) and the sample collection
- * (the first half of samples).
+ * (the first half of samples). PLM-146: once the samples are approved, the designer marks the exact finishes on the
+ * render snapshots and sends them to QS (during the design approval).
  */
-export type JourneyTask = "team_allocation" | "site_measure" | "sample_collection";
-export const TASK_LABELS: Record<JourneyTask, string> = { team_allocation: "Design team", site_measure: "Design site measure", sample_collection: "Sample collection" };
-export const TASK_STAGE: Record<JourneyTask, JourneyStage> = { team_allocation: "inspiration", site_measure: "concepts", sample_collection: "samples" };
+export type JourneyTask = "team_allocation" | "site_measure" | "sample_collection" | "finishes_to_qs";
+export const TASK_LABELS: Record<JourneyTask, string> = {
+  team_allocation: "Design team", site_measure: "Design site measure", sample_collection: "Sample collection", finishes_to_qs: "Finishes to QS",
+};
+export const TASK_STAGE: Record<JourneyTask, JourneyStage> = { team_allocation: "inspiration", site_measure: "concepts", sample_collection: "samples", finishes_to_qs: "approval" };
 
 /** The stage holding the materials list: samples in the current order, material selection in the old one and on a furniture/joinery order. */
 export const MATERIAL_STAGES: readonly JourneyStage[] = ["material_selection", "samples"];

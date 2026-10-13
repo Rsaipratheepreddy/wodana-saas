@@ -5,6 +5,7 @@ import { processQuoteExpiry } from "../commercial/quote-expiry";
 import { resolveQuietChats } from "../crm/conversations/inbox/quiet-chats";
 import { escalateWaitingApprovals } from "../approvals/approval-engine";
 import { processDesignDeadlines } from "../design/design-journey.store";
+import { processProcurementGates } from "../design/finishes.store";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminders";
 import { processClientUpdateAutoSend, processClientUpdateDrafts } from "../project-core/client-updates";
@@ -109,6 +110,8 @@ export class ProjectRemindersService {
       // Drafts nobody sent or discarded in time go out by themselves when the firm chose so (D-40).
       clientUpdatesSent: await processClientUpdateAutoSend(client, workspaceId),
       purchasing: await processPurchasingDeadlines(client, workspaceId),
+      // PLM-148: a project whose procurement gate cleared (payment, material list, signed samples) tells procurement once.
+      procurementGates: await processProcurementGates(client, workspaceId),
       suppliers: await processSupplierDocuments(client, workspaceId),
       factory: await processFactoryDeadlines(client, workspaceId),
       // Render and 2D time, production, deliveries and installations past their day (PLM-090/091).

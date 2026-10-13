@@ -10,6 +10,7 @@ import { notifyUserInApp, queueUserEmail } from "../notifications/default-templa
 import { event as boqEvent } from "../project-core/project-scope";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
 import { ledgerProcurementProblem } from "../design/design-ledger.store";
+import { SignatureMissingException, signatureGate, tellSignatureMissing } from "../design/finishes.store";
 import { orderFitProblem } from "../product-sourcing/fit-check.store";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
@@ -469,6 +470,13 @@ export class OrdersService {
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `purchase_order.${action}`, entityType: "purchase_order", entityId: orderId, after: audit });
       const detail = await this.detail(client, workspaceId, orderId, user.userId);
       return { ...detail, email, reordered };
+    }).catch(async (error: unknown) => {
+      // PLM-148: an order refused for the client's missing signatures tells the case's designers (after the refused
+      // transaction, so the notice stays), once a day per project.
+      if (error instanceof SignatureMissingException)
+        await this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "purchasing.approve"], (client, user) => tellSignatureMissing(client, workspaceId, error, user.userId))
+          .catch(() => undefined);
+      throw error;
     }).then(async (result) => {
       // The supplier's email goes out once the order is saved as sent.
       if (!result.email) return { ...result, delivery: null };
@@ -821,6 +829,15 @@ export class OrdersService {
         const ledger = await ledgerProcurementProblem(client, workspaceId, projectId);
         if (ledger) throw new ConflictException(ledger);
       }
+    }
+    // PLM-148: the project's materials wait for the client's signed samples and data sheets (in the categories the firm
+    // marks), recorded by the designer. A project that ordered before the firm started asking isn't held.
+    const projects = (await client.query<{ projectId: string }>(
+      `SELECT DISTINCT line.project_id AS "projectId" FROM purchase_order_lines line
+        WHERE line.workspace_id = $1 AND line.order_id = $2 AND line.project_id IS NOT NULL AND line.source IN ('material', 'line') ORDER BY 1`, [workspaceId, order.id])).rows;
+    for (const { projectId } of projects) {
+      const gate = await signatureGate(client, workspaceId, projectId);
+      if (gate.missing.length && gate.caseId) throw new SignatureMissingException(projectId, gate.caseId, gate.reference || gate.name, gate.missing);
     }
     // PLM-071: nothing goes out for a project or a deal before the client's payment for that order is in.
     if (settings.requireClientPayment) {

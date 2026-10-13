@@ -1,4 +1,5 @@
 import { Dec } from "../catalog-core/decimal";
+import { originProblem } from "./finishes.domain";
 
 /**
  * The materials and decisions ledger (plan §6.7a, PLM-054, E5-1/E5-2): every material or design choice is a row
@@ -19,6 +20,8 @@ export type LedgerVersionInput = {
   unitPrice?: string | null; timeImpactDays?: number | null; source?: string | null; saidAt?: string | null; evidenceNote?: string | null; note?: string | null;
   /** PLM-144: from a local supplier instead of the firm's own stock or brands; it needs the reviewer's sign-off. */
   outsourced?: boolean | null;
+  /** PLM-157: where it comes from (own stock, a brand, a local supplier: the outsourced one), the library sample it was chosen from and the sample's photo. */
+  origin?: string | null; sampleId?: string | null; samplePhotoAssetId?: string | null;
 };
 
 const QUANTITY = /^\d{1,10}(\.\d{1,4})?$/;
@@ -35,7 +38,7 @@ export function versionProblem(input: LedgerVersionInput, now = new Date()) {
   if (!LEDGER_SOURCES.includes(input.source as LedgerSource)) return "Say where the choice came from";
   if (!input.saidAt || Number.isNaN(Date.parse(input.saidAt))) return "Say when the choice was made";
   if (Date.parse(input.saidAt) > now.getTime() + 5 * 60_000) return "The choice can't be dated in the future";
-  return null;
+  return originProblem(input);
 }
 
 /** Quantity × unit price, exact; nothing when either is missing. */

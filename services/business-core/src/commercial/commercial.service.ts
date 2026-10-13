@@ -129,6 +129,7 @@ import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 import { contactEmailSql } from "../client-portal/contact-email";
 import { beforeQuoteIssued, quotationEntityId, quotingEntity } from "../proposals/quote-issue";
+import { budgetRange } from "../design/finishes.store";
 import { quoteReviewAction } from "../proposals/qs-requirement";
 import { checkOverBudget, settleQuietly } from "../value-engineering/value-engineering.store";
 import { quoteReferences } from "./case-quote-facts";
@@ -3401,6 +3402,9 @@ export class CommercialService {
           if (evidenceId && !evidence) throw new BadRequestException("This file does not belong to this case.");
           if (recorder === "sales" && !evidence) throw new BadRequestException("Attach the signed copy, email or message the client decided in.");
           const typed = decision as "accept" | "changes" | "decline";
+          // PLM-146: a budget range is a guide given at the client's request; the client accepts the final quotation.
+          if (typed === "accept" && await budgetRange(client, workspaceId, caseId, q.id))
+            throw new ConflictException("This quotation is a budget range. Send the final quotation once the specifications are final, and record the client's acceptance on it.");
           q.decidedAt = now;
           q.decidedBy = clientName;
           q.clientDecision = { ...quoteDecisionEvidence(q, typed, b.selectedOptionLineIds ?? [], clientName, now, note), recordedBy: user.displayName, recordedById: user.userId,

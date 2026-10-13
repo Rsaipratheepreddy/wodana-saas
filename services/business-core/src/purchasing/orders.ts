@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
 import { ledgerProcurementProblem } from "../design/design-ledger.store";
+import { signatureGate } from "../design/finishes.store";
 import { boqRequiredForProject } from "../fulfilment/fulfilment-rules";
 import { orderPaymentIn } from "./client-payment";
 
@@ -65,8 +66,11 @@ export type Need = {
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null;
   /** A material the client chooses (it waits for their sign-off); scope lines never do. */
   clientChoice: boolean;
-  /** Why it can't be ordered yet, if it can't: the client's material sign-off, or the client's payment for the order (PLM-071). */
-  blocked: "material_signoff" | "client_payment" | null;
+  /**
+   * Why it can't be ordered yet, if it can't: the client's material sign-off, the client's signed samples and data sheets
+   * (PLM-148), or the client's payment for the order (PLM-071).
+   */
+  blocked: "material_signoff" | "client_signature" | "client_payment" | null;
   /** The supplier the catalog prefers for it, when it knows one. */
   supplierId: string | null;
   /**
@@ -208,6 +212,10 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
   // PLM-071: nothing is ordered for a project before the client's payment for its order is in.
   const paid = new Map<string, boolean>();
   if (requirePayment) for (const projectId of new Set(rows.map((row) => row.projectId))) paid.set(projectId, await orderPaymentIn(db, workspaceId, projectId));
+  // PLM-148: a project's materials wait for the client's signed samples and data sheets (the categories the firm marks).
+  const unsigned = new Set<string>();
+  if (requireSignoff || requirePayment) for (const projectId of new Set(rows.map((row) => row.projectId)))
+    if ((await signatureGate(db, workspaceId, projectId)).missing.length) unsigned.add(projectId);
   const fromStock = await givenFromStock(db, workspaceId, rows);
   // §6.20: scope a variation added waits for that variation's payment before the work, where the firm asks.
   const held = await variationHolds(db, workspaceId, [...new Set(rows.map((row) => row.projectId))]);
@@ -221,6 +229,7 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
     const stock = fromStock.get(row.key) ?? Dec.ZERO;
     return { ...row, fromStock: stock.toString(), remaining: row.remaining === null ? null : Dec.of(row.remaining).sub(stock).toFixed(4), orderBy: orderBy(row.neededBy, row.leadDays),
       blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const
+        : unsigned.has(row.projectId) ? "client_signature" as const
         : (requirePayment && !paid.get(row.projectId)) || variationUnpaid(row) ? "client_payment" as const : null,
       status: lineStatus({ required: row.required, placed: row.placed, received: row.received, fromStock: stock.toString(), scopeInstalled, siteFinished }) };
   });

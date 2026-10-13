@@ -25,6 +25,7 @@ export const ENGINE_REMINDER_KINDS = [
   "meeting.minutes_due",
   "factory.inspection_due",
   "quote.value_engineering_idle",
+  "finishes.signature_due",
 ] as const;
 export type EngineReminderKind = (typeof ENGINE_REMINDER_KINDS)[number];
 
@@ -128,6 +129,7 @@ export const REMINDER_KIND_INFO: Record<ReminderKind, ReminderKindInfo> = {
   "meeting.minutes_due": { module: "sales", audience: "staff", critical: false, notify: "engine", eventType: "meeting.minutes_due" },
   "factory.inspection_due": { module: "factory", audience: "staff", critical: false, notify: "engine", eventType: "factory.inspection_due" },
   "quote.value_engineering_idle": { module: "quotations", audience: "staff", critical: false, notify: "engine", eventType: "quotation.value_engineering_idle" },
+  "finishes.signature_due": { module: "design", audience: "staff", critical: false, notify: "engine", eventType: "finishes.signature_due" },
   "crm.first_response": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.unowned": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
   "crm.confirm_client": { module: "sales", audience: "staff", critical: false, notify: "module", eventType: null },
@@ -182,6 +184,8 @@ export const REMINDER_KIND_DEFAULTS: Record<EngineReminderKind, ReminderRuleDefa
   "factory.inspection_due": { offsets: [0, 1, 3], unit: "day", workingDays: true, escalateAfter: 2, chain: ["project_manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
   // PLM-147: working days a value engineering round has not moved (started, savings agreed, meeting held).
   "quote.value_engineering_idle": { offsets: [3, 7], unit: "day", workingDays: true, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
+  // PLM-148: days after the project started while the client's signed samples and data sheets are missing.
+  "finishes.signature_due": { offsets: [1, 3, 7], unit: "day", workingDays: true, escalateAfter: 2, chain: ["manager", "owner"], channels: STAFF_CHANNELS, digest: false, priority: null },
 };
 
 /** Bounds a rule must keep (the database checks the same). */

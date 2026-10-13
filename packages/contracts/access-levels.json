@@ -29,7 +29,8 @@
       "view": ["pre_projects.view"],
       "edit": ["pre_projects.create", "pre_projects.edit", "pre_projects.verify_measurements", "pre_projects.record_client_design_decisions", "pre_projects.record_client_definition_decisions"],
       "manage": ["pre_projects.manage_lifecycle", "pre_projects.review_designs", "pre_projects.publish_definition"],
-      "advanced": []
+      "$comment": "The material log and samples on cases without editing the rest of the case (PLM-157: the Material Coordinator) is given one by one.",
+      "advanced": ["pre_projects.manage_materials"]
     },
     {
       "id": "quotations",
@@ -57,7 +58,7 @@
       "view": ["stock.view", "catalog.view"],
       "edit": ["stock.receive", "stock.manage", "catalog.manage"],
       "manage": ["stock.adjust", "stock.inspect"],
-      "advanced": ["stock.alerts", "fulfilment.deliver"]
+      "advanced": ["stock.alerts", "fulfilment.deliver", "catalog.samples.manage"]
     },
     {
       "id": "factory",

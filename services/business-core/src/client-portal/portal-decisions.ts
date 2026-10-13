@@ -17,6 +17,7 @@ import { noticeQuoteStep } from "../quotation/quote-notices";
 import { stageOwners } from "../change-requests/change-request-notices";
 import { decideHandoverPack } from "../site/handover";
 import { settleQuietly } from "../value-engineering/value-engineering.store";
+import { budgetRange } from "../design/finishes.store";
 import type { Grant, PortalContact } from "./portal-auth";
 import { attach, ownUploads } from "./portal-files";
 import { readCase } from "./portal-read";
@@ -138,6 +139,9 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
   // The decision is bound to the exact revision the client read.
   if (typeof body.hash === "string" && q.hash && body.hash !== q.hash) throw new ConflictException("This quotation changed since you opened it. Reload to read the latest.");
   const target = decision === "accept" ? "accepted" : decision === "changes" ? "changes_requested" : "declined";
+  // PLM-146: a budget range is a guide, not the final quotation: the client accepts the final one.
+  if (decision === "accept" && await budgetRange(ctx.db, ctx.workspaceId, row.caseId, q.id))
+    throw new ConflictException("This is a budget range. You'll receive the final quotation to accept once the design and specifications are final.");
   const requested = quoteDecisionEvidence(q, decision, body.selectedOptionLineIds ?? [], grant.name, q.decidedAt ?? new Date().toISOString(), note);
   if (q.status === target && q.clientDecision && q.clientDecision.quoteHash === requested.quoteHash
     && JSON.stringify(q.clientDecision.selectedOptionLineIds) === JSON.stringify(requested.selectedOptionLineIds))

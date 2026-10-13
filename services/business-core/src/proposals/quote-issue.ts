@@ -5,6 +5,7 @@ import { quotePricingSnapshot, readSettings } from "../quotation/quotation-build
 import { markupDisclosure } from "./markup-disclosure";
 import { pricingHash, qsStage } from "./qs-review.domain";
 import { qsRequirement } from "./qs-requirement";
+import { specificationGateProblem } from "../design/finishes.store";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -81,6 +82,12 @@ export async function qsReviewFor(db: Db, workspaceId: string, caseId: string, q
  * records the markup disclosure the client is shown. Idempotent per quote.
  */
 export async function beforeQuoteIssued(db: Db, input: { workspaceId: string; caseId: string; quoteId: string; familyId: string | null; kind: string; actorUserId: string; qsEstimated?: boolean }) {
+  // PLM-146: the final quotation (Proposal 2) goes once the design and specifications are final, where the firm asks for
+  // it (Settings › Design); a budget range the client asked for may go before.
+  if (input.kind === "quotation") {
+    const waiting = await specificationGateProblem(db, input.workspaceId, input.caseId, input.quoteId);
+    if (waiting) throw new ConflictException(waiting);
+  }
   const settings = await readSettings(db as PoolClient, input.workspaceId);
   // PLM-082/083/084: the QS confirms the pricing where the firm's rules say this quotation needs it (qs-requirement.ts).
   // The QS estimate on this exact version (qsEstimated) is that confirmation too: the QS prices a quotation once.

@@ -7,6 +7,7 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import { DesignDecisionsService } from "./design-decisions.service";
 import { CONFIRMATION_METHODS, LEDGER_KINDS, LEDGER_SOURCES } from "./design-ledger.domain";
 import { DECISION_SOURCES } from "./design-journey.domain";
+import { MATERIAL_ORIGINS } from "./finishes.domain";
 
 const optional = () => ValidateIf((_, value) => value !== null && value !== undefined);
 
@@ -46,12 +47,20 @@ class LedgerFieldsDto {
   @IsOptional() @optional() @IsString() @MaxLength(2000) evidenceNote?: string | null;
   @IsOptional() @optional() @IsString() @MaxLength(2000) note?: string | null;
   @IsOptional() @optional() @IsBoolean() outsourced?: boolean | null;
+  /** PLM-157: own stock, a brand or a local supplier (the outsourced one); the library sample and its photo. */
+  @IsOptional() @optional() @IsIn(MATERIAL_ORIGINS as unknown as string[]) origin?: string | null;
+  @IsOptional() @optional() @IsUUID() sampleId?: string | null;
+  @IsOptional() @optional() @IsUUID() samplePhotoAssetId?: string | null;
 }
 class LedgerEntryDto extends LedgerFieldsDto {
   @IsUUID() id!: string;
   @IsUUID() versionId!: string;
   @IsIn(LEDGER_KINDS as unknown as string[]) kind!: string;
   @IsOptional() @optional() @IsUUID() roomId?: string | null;
+  /** PLM-156: its finish category and placement. */
+  @IsOptional() @optional() @IsString() @Matches(/^[a-z][a-z0-9_]{0,39}$/) categoryKey?: string | null;
+  @IsOptional() @optional() @IsString() @MaxLength(200) location?: string | null;
+  @IsOptional() @optional() @IsString() @MaxLength(2000) installNote?: string | null;
 }
 class LedgerVersionDto extends LedgerFieldsDto { @IsUUID() versionId!: string; @IsInt() @Min(1) entryVersion!: number; }
 class ArchiveDto { @IsInt() @Min(1) entryVersion!: number; }
