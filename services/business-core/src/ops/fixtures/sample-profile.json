@@ -55,5 +55,10 @@
       "parent": [{ "category": "Sofas", "parent": "Living" }, { "category": "Dining", "parent": "Living" }]
     },
     { "catalog": "No such catalogue", "deleteEmptyDuplicates": true }
-  ]
+  ],
+  "finishes": {
+    "categories": [{ "key": "tiles", "label": "Tiles" }, { "key": "appliances", "label": "Appliances", "clientSignature": true }],
+    "specificationGate": true, "finishesToQsDays": 4, "materialEditors": ["lead_designer", "sales_admin"],
+    "priceBands": [{ "label": "Budget", "maxAmount": "50" }, { "label": "Premium", "minAmount": "200" }]
+  }
 }

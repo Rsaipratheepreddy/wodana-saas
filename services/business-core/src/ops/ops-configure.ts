@@ -12,6 +12,7 @@ import { CreateSlaPolicyDto, UpdateSlaPolicyDto } from "../crm/leads/dto/leads.d
 import { normalizeSlaSchedule, SLA_DAY_KEYS } from "../crm/leads/sla-schedule";
 import { CrmSettingsService } from "../crm/settings/crm-settings.service";
 import { DesignPackagesService } from "../design/design-packages.service";
+import { FinishesService } from "../design/finishes.service";
 import { FactoryService } from "../factory/factory.service";
 import { FinanceRequestsService } from "../finance-requests/finance-requests.service";
 import { FulfilmentService } from "../fulfilment/fulfilment.service";
@@ -806,12 +807,59 @@ const catalogCategories: Section = async (ctx, profile, step) => {
   }
 };
 
+// ---------- finishes (PLM-146, PLM-148, PLM-156, PLM-157) ----------
+
+type FinishesView = {
+  settings: { categories: Array<{ key: string; label: string; clientSignature: boolean }>; configured: boolean; specificationGate: boolean; finishesToQsDays: number;
+    materialEditorSlots: string[]; version: number };
+  bands: Array<{ id: string; label: string; minAmount: string | null; maxAmount: string | null }>;
+  currency: string | null;
+};
+
+/** The finishes settings are saved whole through Settings › Design's command: what the profile leaves out goes back as it is. */
+const finishes: Section = async (ctx, profile, step) => {
+  const wanted = profile.finishes!;
+  const service = ctx.get(FinishesService);
+  const current = await service.settings(ctx.actor, ctx.workspace.id) as FinishesView;
+  const changes: Change[] = [];
+  const body: Record<string, unknown> = { version: current.settings.version };
+  const categoryText = (list: FinishesView["settings"]["categories"]) => list.map((category) => `${category.label}${category.clientSignature ? " (client signs)" : ""}`);
+  if (wanted.categories) {
+    if (current.settings.configured && stable(current.settings.categories) === stable(wanted.categories)) step.same("finish categories", categoryText(wanted.categories).join(", "));
+    else { changes.push(diff("finish categories", current.settings.configured ? categoryText(current.settings.categories) : "(defaults)", categoryText(wanted.categories))); body.categories = wanted.categories; }
+  }
+  const scalar = (key: "specificationGate" | "finishesToQsDays", label: string) => {
+    if (wanted[key] === undefined) return;
+    if (current.settings[key] === wanted[key]) step.same(label, shown(wanted[key]));
+    else { changes.push(diff(label, current.settings[key], wanted[key])); body[key] = wanted[key]; }
+  };
+  scalar("specificationGate", "final quotation waits for the final specification");
+  scalar("finishesToQsDays", "days to send the finishes to QS");
+  if (wanted.materialEditors) {
+    if (stable([...current.settings.materialEditorSlots].sort()) === stable([...wanted.materialEditors].sort())) step.same("material column editors", wanted.materialEditors.join(", "));
+    else { changes.push(diff("material column editors", current.settings.materialEditorSlots, wanted.materialEditors)); body.materialEditorSlots = wanted.materialEditors; }
+  }
+  if (wanted.priceBands) {
+    const amount = (value: string | null) => (value === null ? null : Number(value).toFixed(2));
+    const same = current.bands.length === wanted.priceBands.length && wanted.priceBands.every((band, index) => current.bands[index].label === band.label
+      && amount(current.bands[index].minAmount) === amount(band.minAmount) && amount(current.bands[index].maxAmount) === amount(band.maxAmount));
+    const text = (bands: Array<{ label: string; minAmount: string | null; maxAmount: string | null }>) => bands.map((band) => band.label);
+    if (same) step.same("sample price bands", `${text(wanted.priceBands).join(", ")}${current.currency ? ` (${current.currency})` : ""}`);
+    else {
+      changes.push(diff("sample price bands", text(current.bands), text(wanted.priceBands)));
+      // A band kept by its label keeps its id (samples tagged with it stay tagged).
+      body.bands = wanted.priceBands.map((band) => ({ id: current.bands.find((existing) => lower(existing.label) === lower(band.label))?.id ?? null, ...band }));
+    }
+  }
+  if (changes.length) await step.change(changes, () => service.saveSettings(ctx.actor, ctx.workspace.id, body as never));
+};
+
 /** The sections in the order they run (routes before factory, so the permit check sees the route). */
 export const SECTIONS: Array<[ProfileSection, Section]> = [
   // Design before factory: the design team's project roles (e.g. the Creative Director) exist before the inspections name them.
   ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["quotations", quotations], ["firstResponse", firstResponse],
   ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["factory", factory], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
-  ["catalogCategories", catalogCategories], ["projects", projects],
+  ["catalogCategories", catalogCategories], ["projects", projects], ["finishes", finishes],
 ];
 
 export async function runConfigure(ctx: OpsContext, profile: Profile, report: Report) {

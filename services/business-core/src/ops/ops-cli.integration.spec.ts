@@ -157,8 +157,17 @@ integration("operator CLI: import and configure through the app's services (real
     expect(apply.code).toBe(0);
     expect(applied.counts.failed ?? 0).toBe(0);
     const sections = new Set(applied.lines.filter((line) => line.status === "changed").map((line) => line.section));
-    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "design", "enquiryTypes", "factory", "financeRequests", "firstResponse", "orderPaths", "quotations", "rolePermissions",
-      "routes", "vehicles"]);
+    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "design", "enquiryTypes", "factory", "financeRequests", "finishes", "firstResponse", "orderPaths", "quotations",
+      "rolePermissions", "routes", "vehicles"]);
+    // PLM-146/148/156/157: the finish categories, the gates and the sample price bands, in the workspace's currency.
+    const finishes = (await pool.query<{ categories: Array<{ key: string; clientSignature: boolean }>; gate: boolean; days: number; slots: string[]; since: Date | null }>(
+      `SELECT categories, specification_gate AS gate, finishes_to_qs_days AS days, material_editor_slots AS slots, signature_required_since AS since FROM workspace_finish_settings WHERE workspace_id = $1`,
+      [workspaceId])).rows[0];
+    expect(finishes).toMatchObject({ categories: [{ key: "tiles", label: "Tiles", clientSignature: false }, { key: "appliances", label: "Appliances", clientSignature: true }], gate: true, days: 4,
+      slots: ["lead_designer", "sales_admin"] });
+    expect(finishes.since).not.toBeNull();
+    expect((await pool.query("SELECT label, min_amount::text AS min, max_amount::text AS max FROM sample_price_bands WHERE workspace_id = $1 AND archived_at IS NULL ORDER BY position", [workspaceId])).rows)
+      .toEqual([{ label: "Budget", min: null, max: "50.00" }, { label: "Premium", min: "200.00", max: null }]);
     expect(applied.lines).toEqual(expect.arrayContaining([
       expect.objectContaining({ section: "enquiryTypes", status: "not found", label: "enquiry type no_such_type" }),
       expect.objectContaining({ section: "quotations", status: "not found", label: "work package Missing package" }),

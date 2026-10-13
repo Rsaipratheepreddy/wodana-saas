@@ -78,6 +78,16 @@ export type Profile = {
    * records the client's approval (null: the project manager), and the working days the technical measure is due in.
    */
   projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null };
+  /**
+   * The finishes schedule (PLM-146/148/156/157): the finish categories in order (which the client signs before
+   * procurement), whether the final quotation waits for the final specification, the days to send the finishes to QS,
+   * the design team parts that edit the quotation's material column, and the sample library's price bands (amounts in
+   * the workspace's currency). A part left out keeps its value.
+   */
+  finishes?: {
+    categories?: Array<{ key: string; label: string; clientSignature: boolean }>; specificationGate?: boolean; finishesToQsDays?: number; materialEditors?: string[];
+    priceBands?: Array<{ label: string; minAmount: string | null; maxAmount: string | null }>;
+  };
 };
 
 export const DESIGN_STEP_KEYS = ["allocationDays", "kickoffDays", "conceptDays", "siteMeasureDays", "developmentMinDays", "developmentMaxDays", "developmentDaysPerRoom",
@@ -87,7 +97,7 @@ export const DESIGN_TEAM_KEYS = ["lead_designer", "junior_designer", "sales_admi
 export type DesignTeamKey = (typeof DESIGN_TEAM_KEYS)[number];
 
 export const PROFILE_SECTIONS = ["enquiryTypes", "vehicles", "factory", "quotations", "firstResponse", "financeRequests", "approvals", "routes", "rolePermissions",
-  "design", "orderPaths", "clientUpdates", "catalogCategories", "projects"] as const;
+  "design", "orderPaths", "clientUpdates", "catalogCategories", "projects", "finishes"] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 export const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -487,6 +497,52 @@ export function validateProfile(raw: unknown): Profile {
         technicalMeasureDays: nullable(section, "technicalMeasureDays", (value) => at("projects.technicalMeasureDays").int(value, 1, 60) ?? null),
       };
       profile.projects = Object.fromEntries(Object.entries(projects).filter(([, value]) => value !== undefined));
+    }
+  }
+
+  if (raw.finishes !== undefined) {
+    const section = at("finishes").object(raw.finishes, ["categories", "specificationGate", "finishesToQsDays", "materialEditors", "priceBands"]);
+    if (section) {
+      const finishes: NonNullable<Profile["finishes"]> = {
+        categories: optional(section, "categories", (value) => {
+          const seen = new Set<string>();
+          return at("finishes.categories").list(value, 40).flatMap((entry, index) => {
+            const path = `finishes.categories[${index}]`;
+            const object = at(path).object(entry, ["key", "label", "clientSignature"]);
+            if (!object) return [];
+            const key = at(`${path}.key`).text(object.key, 40);
+            const label = at(`${path}.label`).text(object.label, 80);
+            const clientSignature = object.clientSignature === undefined ? false : at(`${path}.clientSignature`).bool(object.clientSignature) ?? false;
+            if (key && !/^[a-z][a-z0-9_]{0,39}$/.test(key)) { problems.push(`${path}.key is a key like sanitary_ware.`); return []; }
+            if (key && seen.has(key)) { problems.push(`${path}.key ${key} is in the list twice.`); return []; }
+            if (key) seen.add(key);
+            return key && label ? [{ key, label, clientSignature }] : [];
+          });
+        }),
+        specificationGate: optional(section, "specificationGate", (value) => at("finishes.specificationGate").bool(value)),
+        finishesToQsDays: optional(section, "finishesToQsDays", (value) => at("finishes.finishesToQsDays").int(value, 1, 60)),
+        materialEditors: optional(section, "materialEditors", (value) => at("finishes.materialEditors").texts(value, 40).filter((slot) => {
+          if ((DESIGN_TEAM_KEYS as readonly string[]).includes(slot) && slot !== "technicalLeadRoleCode") return true;
+          problems.push(`finishes.materialEditors names parts of the design team (${DESIGN_TEAM_KEYS.filter((key) => key !== "technicalLeadRoleCode").join(", ")}).`);
+          return false;
+        })),
+        priceBands: optional(section, "priceBands", (value) => at("finishes.priceBands").list(value, 20).flatMap((entry, index) => {
+          const path = `finishes.priceBands[${index}]`;
+          const object = at(path).object(entry, ["label", "minAmount", "maxAmount"]);
+          if (!object) return [];
+          const label = at(`${path}.label`).text(object.label, 80);
+          const amount = (key: "minAmount" | "maxAmount") => {
+            const raw_ = object[key];
+            if (raw_ === undefined || raw_ === null) return null;
+            if (typeof raw_ !== "string" || !/^\d{1,12}(\.\d{1,2})?$/.test(raw_)) { problems.push(`${path}.${key} is an amount as text, like "250" or "99.50".`); return null; }
+            return raw_;
+          };
+          const minAmount = amount("minAmount"), maxAmount = amount("maxAmount");
+          if (minAmount && maxAmount && Number(maxAmount) < Number(minAmount)) problems.push(`${path}.maxAmount is at least minAmount.`);
+          return label ? [{ label, minAmount, maxAmount }] : [];
+        })),
+      };
+      profile.finishes = Object.fromEntries(Object.entries(finishes).filter(([, value]) => value !== undefined));
     }
   }
 

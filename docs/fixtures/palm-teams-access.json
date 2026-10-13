@@ -142,8 +142,11 @@
       "code": "MATERIAL_COORDINATOR",
       "name": "Material Coordinator",
       "scope": "assigned",
+      "_permissions": "PLM-157: writes the samples and the material log (pre_projects.manage_materials: the materials of a case's materials and decisions list, their samples and photos, not the design choices or the rest of the case) and the sample library (catalog.samples.manage); reads the projects it supports.",
       "permissions": [
         "pre_projects.view",
+        "pre_projects.manage_materials",
+        "catalog.samples.manage",
         "projects.view",
         "catalog.view",
         "vendors.view",

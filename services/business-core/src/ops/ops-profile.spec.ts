@@ -31,6 +31,10 @@ describe("configuration profile", () => {
       sampleCollectionDays: 7, sampleMeetingDays: 7, conceptOptionsMax: 2 });
     expect(palm.design?.team).toMatchObject({ lead_designer: "designer", junior_designer: "junior_designer", technicalLeadRoleCode: "technical_lead" });
     expect(palm.design?.projectRoles?.map((role) => role.key)).toEqual(["designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator", "creative_director"]);
+    // PLM-146/148/156/157: the finishes schedule's categories (the client signs sanitary ware and whitegoods), the final-specification gate and the material column's editors.
+    expect(palm.finishes).toMatchObject({ specificationGate: true, finishesToQsDays: 3, materialEditors: ["lead_designer", "junior_designer", "sales_admin"] });
+    expect(palm.finishes?.categories?.filter((category) => category.clientSignature).map((category) => category.key)).toEqual(["whitegoods", "sanitary_ware"]);
+    expect(palm.finishes?.priceBands?.map((band) => band.label)).toEqual(["Entry", "Mid range", "Premium", "Luxury"]);
     expect(palm.clientUpdates).toEqual({ mode: "call", frequency: "weekly" });
     expect(palm.catalogCategories).toEqual([{ catalog: "Palm Living Core Collection", merge: [{ from: "BED & MATTRESS", into: "Beds & Mattress" }], deleteEmpty: [],
       deleteEmptyDuplicates: true, rename: [{ from: "DINING CHAIRS", to: "Dining Chairs" }, { from: "LOUNGE CHAIRS", to: "Lounge Chairs" }],
@@ -139,6 +143,21 @@ describe("route changes", () => {
     expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5 });
     expect(problems({ projects: { drawingsClientRole: "Lead Designer", technicalMeasureDays: 0 } })).toEqual([
       "projects.drawingsClientRole is a project role key like designer, or null.", "projects.technicalMeasureDays is a whole number from 1 to 60."]);
+  });
+
+  it("refuses finishes it can't apply, in words (PLM-146/148/156/157)", () => {
+    expect(problems({ finishes: { categories: [{ key: "Sanitary", label: "Sanitary" }, { key: "tiles", label: "Tiles", clientSignature: "yes" }, { key: "tiles", label: "Again" }],
+      finishesToQsDays: 0, materialEditors: ["qs"], priceBands: [{ label: "Odd", minAmount: 100, maxAmount: "50" }, { label: "Wrong", minAmount: "300", maxAmount: "100" }], extra: 1 } })).toEqual([
+      "finishes has unknown keys: extra.",
+      "finishes.categories[0].key is a key like sanitary_ware.",
+      "finishes.categories[1].clientSignature is true or false.",
+      "finishes.categories[2].key tiles is in the list twice.",
+      "finishes.finishesToQsDays is a whole number from 1 to 60.",
+      "finishes.materialEditors names parts of the design team (lead_designer, junior_designer, sales_admin, visualiser, draftsman, material_coordinator).",
+      "finishes.priceBands[0].minAmount is an amount as text, like \"250\" or \"99.50\".",
+      "finishes.priceBands[1].maxAmount is at least minAmount.",
+    ]);
+    expect(validateProfile({ finishes: { specificationGate: false } }).finishes).toEqual({ specificationGate: false });
   });
 
   it("reports a stage it can't place", () => {

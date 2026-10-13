@@ -298,5 +298,25 @@
         { "category": "Lounge Chairs", "parent": "Chairs" }
       ]
     }
-  ]
+  ],
+  "_finishes": "PLM-146, PLM-148, PLM-156, PLM-157 (13 Oct 2026): the finishes schedule's categories (Palm's batch sheet: hard and soft finishes, whitegoods, sanitary ware, lighting, sockets); the client signs the physical samples and data sheets of sanitary ware and whitegoods before procurement orders; the final quotation (Proposal 2) waits for the final specification (samples approved and the finishes sent to QS); the lead and junior interior designers and the Sales Admin edit the quotation's material column. The 3 days to send the finishes to QS and the sample library's price bands (names only, no amounts yet) are assumptions until Palm confirms.",
+  "finishes": {
+    "categories": [
+      { "key": "hard_finishes", "label": "Hard finishes" },
+      { "key": "soft_finishes", "label": "Soft finishes" },
+      { "key": "whitegoods", "label": "Whitegoods", "clientSignature": true },
+      { "key": "sanitary_ware", "label": "Sanitary ware", "clientSignature": true },
+      { "key": "lighting", "label": "Lighting" },
+      { "key": "sockets", "label": "Sockets and switches" }
+    ],
+    "specificationGate": true,
+    "finishesToQsDays": 3,
+    "materialEditors": ["lead_designer", "junior_designer", "sales_admin"],
+    "priceBands": [
+      { "label": "Entry" },
+      { "label": "Mid range" },
+      { "label": "Premium" },
+      { "label": "Luxury" }
+    ]
+  }
 }
