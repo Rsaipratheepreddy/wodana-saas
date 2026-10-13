@@ -30,7 +30,7 @@ describe("configuration profile", () => {
     expect(palm.design?.steps).toEqual({ allocationDays: 1, kickoffDays: 5, conceptDays: 7, siteMeasureDays: 3, developmentMinDays: 14, developmentMaxDays: 56, developmentDaysPerRoom: 7,
       sampleCollectionDays: 7, sampleMeetingDays: 7, conceptOptionsMax: 2 });
     expect(palm.design?.team).toMatchObject({ lead_designer: "designer", junior_designer: "junior_designer", technicalLeadRoleCode: "technical_lead" });
-    expect(palm.design?.projectRoles?.map((role) => role.key)).toEqual(["designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator"]);
+    expect(palm.design?.projectRoles?.map((role) => role.key)).toEqual(["designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator", "creative_director"]);
     expect(palm.clientUpdates).toEqual({ mode: "call", frequency: "weekly" });
     expect(palm.catalogCategories).toEqual([{ catalog: "Palm Living Core Collection", merge: [{ from: "BED & MATTRESS", into: "Beds & Mattress" }], deleteEmpty: [],
       deleteEmptyDuplicates: true, rename: [{ from: "DINING CHAIRS", to: "Dining Chairs" }, { from: "LOUNGE CHAIRS", to: "Lounge Chairs" }],
