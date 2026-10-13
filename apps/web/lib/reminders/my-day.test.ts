@@ -62,6 +62,11 @@ describe("My day helpers", () => {
     const context = { t, locale: "en-GB", timeZone: "Asia/Dubai" };
     expect(myDayRow(item("i", { kind: "invoice.overdue", title: "PLM-INV-2026-00001 · PRJ-0002", context: "Reem Al Marzouqi · AED 18,963.00" }), context))
       .toEqual({ title: "Chase invoice · Reem Al Marzouqi · AED 18,963.00", detail: "PLM-INV-2026-00001 · PRJ-0002" });
+    // A money reminder's title is "reference · party": the party is said once, in the row's title.
+    expect(myDayRow(item("b", { kind: "payables.due", title: "INV-1 · Nile Marble", context: "Nile Marble · AED 367.00" }), context))
+      .toEqual({ title: "Pay supplier bill · Nile Marble · AED 367.00", detail: "INV-1" });
+    expect(myDayRow(item("o", { kind: "invoice.overdue", title: "PLM-INV-2026-00003 · Maya Client", context: "Maya Client · AED 1,200.00" }), context))
+      .toEqual({ title: "Chase invoice · Maya Client · AED 1,200.00", detail: "PLM-INV-2026-00003" });
     expect(myDayRow(item("p", { kind: "payment.due", title: "On handover", context: "Omar and Layla Haddad · AED 4,359.60" }), context))
       .toEqual({ title: "Collect payment · Omar and Layla Haddad · AED 4,359.60", detail: "On handover" });
     expect(myDayRow(item("a", { kind: "approval.waiting", variant: "receipt", title: "On handover", context: "Omar and Layla Haddad" }), context))

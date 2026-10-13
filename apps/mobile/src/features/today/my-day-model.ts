@@ -63,6 +63,12 @@ export function groupedEntries(data: MyDayResponse | null | undefined, filter: M
 export const groupHeading = (group: Pick<MyDayGroup, 'jobReference' | 'title'>, fallback: string) =>
   [...new Set([group.jobReference, group.title].filter(Boolean))].join(' · ') || fallback;
 
+/** A row's detail: its context, then its job, leaving out what the title already says (a bill's supplier, an invoice's client). */
+export function rowDetail(item: Pick<MyDayItem, 'title' | 'context'>, job = '') {
+  const said = new Set(item.title.split(' · '));
+  return [...item.context.split(' · ').filter((part) => part && !said.has(part)), job].filter(Boolean).join(' · ');
+}
+
 /** "Reminded 2× · escalated", "Reminded 1×", "Escalated", or nothing before the first reminder. */
 export function remindedLabel(item: Pick<MyDayItem, 'reminders'>): Label | null {
   const { sent, escalationLevel } = item.reminders;

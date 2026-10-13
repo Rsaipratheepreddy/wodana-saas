@@ -19,7 +19,7 @@ import { useTheme } from '../../ui/theme';
 import { useToast } from '../../ui/toast';
 import { useMyDay, useMyDayCommand, useRefetchOnFocus } from './api';
 import {
-  FILTERS, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, snoozePresets, snoozeProblem, URGENCY_LABEL,
+  FILTERS, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, rowDetail, snoozePresets, snoozeProblem, URGENCY_LABEL,
   type MyDayEntry, type MyDayFilter, type SnoozePresetId,
 } from './my-day-model';
 
@@ -47,7 +47,7 @@ export function MyDayRow({ entry, first, today, format, withJob, onPress, onLong
   const reminded = remindedLabel(item);
   const job = withJob && group.jobId ? groupHeading(group, '') : '';
   return <ListRow first={first} icon={MODULE_ICON[item.module] ?? ClipboardCheck} iconTone={TONE[item.urgency]} title={item.title}
-    detail={[item.context, job].filter(Boolean).join(' · ')}
+    detail={rowDetail(item, job)}
     meta={due || item.critical || reminded ? <Row gap={2} wrap>
       {item.critical ? <Chip label={t('Critical')} tone="danger" /> : null}
       {due ? <Text variant="caption" tone={item.urgency === 'overdue' ? 'danger' : 'tertiary'}>{t(due.key, due.values)}</Text> : null}

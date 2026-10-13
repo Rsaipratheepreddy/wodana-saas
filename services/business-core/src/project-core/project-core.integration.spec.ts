@@ -3298,7 +3298,8 @@ integration("projects core (plan §6.10)", () => {
       const notices = (await w.client.query<{ subject: string; body: string; critical: boolean }>(
         `SELECT subject, body, critical FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.due' AND channel = 'in_app' AND recipient_id = $2 ORDER BY subject`,
         [w.workspaceId, w.designer])).rows;
-      expect(notices.map((row) => row.subject)).toEqual([expect.stringMatching(/^INV-1 · .+ · 3 days overdue$/), expect.stringMatching(/^INV-3 · .+ · due today$/)]);
+      // A money reminder's subject: the bill, its supplier and when.
+      expect(notices.map((row) => row.subject)).toEqual(["INV-1 · Nile Marble · 3 days overdue", "INV-3 · Nile Marble · due today"]);
       expect(notices[0].body).toMatch(/· AED 367\.00\. Pay it, or put it on hold\.$/);
       expect(notices.every((row) => row.critical)).toBe(true);
     });
@@ -3533,7 +3534,8 @@ integration("projects core (plan §6.10)", () => {
       await runReminderSweep(w.client, w.workspaceId, { now: jan21 });
       const overdue = (await w.client.query<{ recipient: string; subject: string; critical: boolean }>(
         `SELECT recipient_id AS recipient, subject, critical FROM notifications WHERE workspace_id = $1 AND event_type = 'receivables.overdue' AND channel = 'in_app'`, [w.workspaceId])).rows;
-      expect(overdue).toEqual([{ recipient: w.manager, subject: "FAC-INV-2026-00003 · 1 day overdue", critical: true }]);
+      // The same shape as a supplier bill's: the invoice, its client and when.
+      expect(overdue).toEqual([{ recipient: w.manager, subject: "FAC-INV-2026-00003 · Maya Client · 1 day overdue", critical: true }]);
     });
   });
 

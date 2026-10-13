@@ -14,6 +14,15 @@ function parsePaymentKey(key: string) {
   return prefix === "payment" && UUID.test(caseId ?? "") && paymentId ? { caseId, paymentId } : null;
 }
 
+/**
+ * A money reminder's title: the record's reference and whom it is with ("FAC-INV-2026-00003 · Reem Al Marzouqi",
+ * "INV-1 · Gulf Timber"), so every subject reads "reference · client or supplier · when" in the app, push, email and
+ * digest. The context leads with the same party and the amount; My day names the party once.
+ */
+export function moneyTitle(reference: string | null | undefined, party: string | null | undefined): string {
+  return [reference, party].map((part) => (part ?? "").trim()).filter(Boolean).join(" · ");
+}
+
 async function workspaceToday(db: Parameters<ReminderSource["open"]>[0], workspaceId: string, at: Date) {
   const zone = (await db.query<{ zone: string | null }>(`SELECT nullif(default_timezone, '') AS zone FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.zone ?? "UTC";
   return localDate(at, zone);
@@ -101,8 +110,7 @@ export const invoiceOverdueSource: ReminderSource = {
       return {
         key: `invoice:${invoice.id}`, sourceType: "client_invoice", sourceId: invoice.id, jobSource: { type: "project", id: invoice.projectId },
         projectId: invoice.projectId, caseId: invoice.caseId, partyId: null, ownerMembershipId: owner, ccMembershipIds: finance.filter((id) => id !== owner),
-        // The record (the invoice and its project) as the title; whom to chase and how much as the context, which My day leads with.
-        dueAt: dayStart(invoice.dueDate, clock), title: [invoice.number, invoice.projectReference].filter(Boolean).join(" · "),
+        dueAt: dayStart(invoice.dueDate, clock), title: moneyTitle(invoice.number, invoice.customerName),
         context: [invoice.customerName, money(invoice.currency, invoice.balance)].filter(Boolean).join(" · "),
         href: `/workspace/finance/client-invoices?invoice=${encode(invoice.id)}`, variables: { client: invoice.customerName },
       };
@@ -142,8 +150,7 @@ export const payablesDueSource: ReminderSource = {
     const payers = await readPermissionHolders(db, workspaceId, ["payables.manage"]);
     return rows.map((row): DueItem => ({
       key: `bill:${row.id}`, sourceType: "supplier_invoice", sourceId: row.id, jobSource: null, projectId: row.projectId, caseId: null, partyId: null,
-      // The bill's number as the title; the supplier and what is left to pay as the context (the supplier once).
-      ownerMembershipId: null, ccMembershipIds: payers, dueAt: dayStart(row.dueDate, clock), title: row.number || row.supplier,
+      ownerMembershipId: null, ccMembershipIds: payers, dueAt: dayStart(row.dueDate, clock), title: moneyTitle(row.number, row.supplier),
       context: `${row.supplier} · ${money(row.currency, row.balance)}`, href: `/workspace/finance/suppliers/${encode(row.vendorId)}`, variables: { supplier: row.supplier },
     }));
   },

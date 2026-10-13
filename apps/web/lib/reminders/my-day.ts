@@ -60,8 +60,10 @@ export function myDayRow(item: Pick<MyDayItem, "kind" | "variant" | "title" | "c
     return { title: t(shape.action!, { subject: day }), detail: item.context };
   }
   const subject = (shape.lead === "context" ? item.context : item.title) || item.title || item.context;
-  const detail = shape.lead === "context" ? item.title : item.context;
-  return { title: shape.action && subject ? t(shape.action, { subject }) : subject, detail: detail === subject ? "" : detail };
+  // The muted line leaves out what the title already says (an invoice's client, a bill's supplier): the reference stays.
+  const said = new Set(subject.split(" · "));
+  const detail = (shape.lead === "context" ? item.title : item.context).split(" · ").filter((part) => !said.has(part)).join(" · ");
+  return { title: shape.action && subject ? t(shape.action, { subject }) : subject, detail };
 }
 
 /** Days an overdue item is late in the person's zone (0 when it isn't overdue). */

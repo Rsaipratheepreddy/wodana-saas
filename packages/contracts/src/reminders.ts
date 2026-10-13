@@ -232,7 +232,7 @@ export type MyDayItem = {
   module: ReminderModule;
   /** The record's own kind where one reminder kind covers several (an approval's kind: "receipt", "site_report"). */
   variant?: string | null;
-  /** The record ("PLM-INV-2026-00001 · PRJ-0002", "#7 Order tiles"). */
+  /** The record ("PLM-INV-2026-00001 · Reem Al Marzouqi", "#7 Order tiles"). */
   title: string;
   /** Whom or what it belongs to ("Reem Al Marzouqi · AED 18,963.00"). */
   context: string;

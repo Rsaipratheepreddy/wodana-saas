@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { MyDayCounts, MyDayGroup, MyDayItem, MyDayResponse } from '../../../packages/contracts/src/reminders';
 import {
-  applyActionResult, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, snoozeInput, snoozePresets, snoozeProblem, topItems,
+  applyActionResult, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, rowDetail, snoozeInput, snoozePresets, snoozeProblem, topItems,
 } from '../src/features/today/my-day-model';
 
 const item = (id: string, overrides: Partial<MyDayItem> = {}): MyDayItem => ({
@@ -50,6 +50,8 @@ test('the full list goes job by job in the server\'s order, each job most urgent
   assert.equal(groupHeading({ jobReference: 'J-2', title: 'Flat 7' }, 'Other work'), 'J-2 · Flat 7');
   assert.equal(groupHeading({ jobReference: 'J-9', title: 'J-9' }, 'Other work'), 'J-9', 'a job without a title shows its reference once');
   assert.equal(groupHeading({ jobReference: null, title: '' }, 'Other work'), 'Other work');
+  assert.equal(rowDetail({ title: 'INV-1 · Nile Marble', context: 'Nile Marble · AED 367.00' }), 'AED 367.00', 'a bill names its supplier once');
+  assert.equal(rowDetail({ title: '#7 Book the lift', context: 'Kitchen' }, 'J-2 · Flat 7'), 'Kitchen · J-2 · Flat 7');
   assert.ok(isFilter('snoozed') && isFilter('upcoming') && isFilter('all'));
   assert.ok(!isFilter('team') && !isFilter(undefined) && !isFilter(['today']));
 });
