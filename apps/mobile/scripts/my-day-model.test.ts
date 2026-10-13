@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { MyDayCounts, MyDayGroup, MyDayItem, MyDayResponse } from '../../../packages/contracts/src/reminders';
 import {
-  applyActionResult, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, rowDetail, snoozeInput, snoozePresets, snoozeProblem, topItems,
+  applyActionResult, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, rowDetail, myDayDetail, snoozeInput, snoozePresets, snoozeProblem, topItems,
 } from '../src/features/today/my-day-model';
 
 const item = (id: string, overrides: Partial<MyDayItem> = {}): MyDayItem => ({
@@ -124,4 +124,11 @@ test('a command\'s answer updates the cached list in place: replaced, or gone wi
   assert.deepEqual(done.counts, counts({ overdue: 1, today: 2, upcoming: 1, waiting: 1, snoozed: 1, total: 5 }));
   assert.equal(applyActionResult(data, 'missing', null), data, 'an item no longer listed changes nothing');
   assert.equal(data.groups[2].items.length, 1, 'the cached answer is never changed in place');
+});
+
+test('QA-013: a row names its job once, even when its context already does', () => {
+  assert.equal(myDayDetail('PRJ-0003 · Arabian Ranches Townhouse 7', 'PRJ-0003 · Arabian Ranches Townhouse 7'), 'PRJ-0003 · Arabian Ranches Townhouse 7');
+  assert.equal(myDayDetail('Kitchen', 'PRJ-0003 · Villa 7'), 'Kitchen · PRJ-0003 · Villa 7');
+  assert.equal(myDayDetail('INV-12 · PRJ-0003', 'PRJ-0003 · Villa 7'), 'INV-12 · PRJ-0003 · Villa 7');
+  assert.equal(myDayDetail(null, ''), '');
 });

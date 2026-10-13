@@ -63,10 +63,20 @@ export function groupedEntries(data: MyDayResponse | null | undefined, filter: M
 export const groupHeading = (group: Pick<MyDayGroup, 'jobReference' | 'title'>, fallback: string) =>
   [...new Set([group.jobReference, group.title].filter(Boolean))].join(' · ') || fallback;
 
-/** A row's detail: its context, then its job, leaving out what the title already says (a bill's supplier, an invoice's client). */
+/**
+ * A row's second line: its context, then its job, once (QA-013) and leaving out what the title already says (a
+ * bill's supplier, an invoice's client): no part repeats.
+ */
 export function rowDetail(item: Pick<MyDayItem, 'title' | 'context'>, job = '') {
-  const said = new Set(item.title.split(' · '));
-  return [...item.context.split(' · ').filter((part) => part && !said.has(part)), job].filter(Boolean).join(' · ');
+  const said = new Set(item.title.split(' · ').map((part) => part.trim()));
+  const parts = [...(item.context ?? '').split(' · '), ...(job ? job.split(' · ') : [])].map((part) => part.trim())
+    .filter((part) => part && !said.has(part));
+  return [...new Set(parts)].join(' · ');
+}
+
+/** The second line from a context and a job alone (no title to leave out). */
+export function myDayDetail(context: string | null | undefined, job: string) {
+  return rowDetail({ title: '', context: context ?? '' }, job);
 }
 
 /** "Reminded 2× · escalated", "Reminded 1×", "Escalated", or nothing before the first reminder. */

@@ -153,18 +153,28 @@ export function ListRow({ title, detail, meta, leading, trailing, icon, iconTone
   onPress?: () => void; onLongPress?: () => void; first?: boolean; danger?: boolean; accessibilityLabel?: string; disabled?: boolean;
 }) {
   const theme = useTheme();
-  const content = <>
+  const main = <>
     {leading ?? (icon ? <IconBadge icon={icon} tone={danger ? 'danger' : iconTone} /> : null)}
     <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
       <Text variant="label" tone={danger ? 'danger' : 'default'} numberOfLines={2}>{title}</Text>
       {typeof detail === 'string' ? detail ? <Text variant="caption" tone="secondary" numberOfLines={2}>{detail}</Text> : null : detail}
       {meta}
     </View>
+  </>;
+  const content = <>
+    {main}
     {trailing}
     {onPress && !trailing ? <View style={{ transform: [{ scaleX: theme.rtl ? -1 : 1 }] }}><ChevronRight color={theme.colors.iconSubtle} size={18} /></View> : null}
   </>;
   const style: ViewStyle = { flexDirection: 'row', alignItems: 'center', gap: theme.space(3), minHeight: 60, paddingHorizontal: theme.space(4), paddingVertical: theme.space(3),
     borderTopWidth: first ? 0 : 1, borderTopColor: theme.colors.structuralDivider, opacity: disabled ? 0.5 : 1 };
+  // QA-013: a trailing control (a button) sits beside the row's own press area, never inside it: a button can't hold a button.
+  if ((onPress || onLongPress) && trailing) return <View style={[style, { paddingStart: 0, paddingVertical: 0 }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} disabled={disabled} onPress={onPress} onLongPress={onLongPress}
+      style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space(3), minHeight: 60, paddingStart: theme.space(4), paddingVertical: theme.space(3),
+        backgroundColor: pressed ? theme.colors.surfacePressed : 'transparent' }]}>{main}</Pressable>
+    {trailing}
+  </View>;
   return onPress || onLongPress
     ? <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} disabled={disabled} onPress={onPress} onLongPress={onLongPress}
       style={({ pressed }) => [style, { backgroundColor: pressed ? theme.colors.surfacePressed : 'transparent' }]}>{content}</Pressable>
