@@ -565,8 +565,12 @@ export class CrmLeadsService {
           `SELECT history.id, history.previous_owner_membership_id AS "previousOwnerMembershipId",
                   history.owner_membership_id AS "ownerMembershipId", history.queue_id AS "queueId",
                   history.assignment_method AS "assignmentMethod", history.rule_id AS "ruleId",
-                  history.explanation, history.reason, history.assigned_at AS "assignedAt"
+                  history.explanation, history.reason, history.assigned_at AS "assignedAt",
+                  -- The person it was given to, by name, for whoever reads the enquiry (no member directory needed).
+                  coalesce(nullif(btrim(owner_account.display_name), ''), owner_account.primary_email) AS "ownerName"
            FROM crm_assignment_history history
+           LEFT JOIN workspace_memberships owner_membership ON owner_membership.workspace_id = history.workspace_id AND owner_membership.id = history.owner_membership_id
+           LEFT JOIN users owner_account ON owner_account.id = owner_membership.user_id
            WHERE history.workspace_id = $1 AND history.lead_id = $2
            ORDER BY history.assigned_at DESC`, [workspaceId, leadId],
         );
