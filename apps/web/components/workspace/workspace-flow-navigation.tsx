@@ -43,8 +43,6 @@ export function WorkspaceFlowNavigation({ module, pathname, children, hidden = f
 function useFlowBar(module: WorkspaceModuleDefinition, pathname: string): FlowBar {
   const searchParams = useSearchParams();
   const t = useT();
-  // Resources & setup closes on a click outside, Esc, or choosing a page, like every menu.
-  const resourcesMenu = useDetailsMenu({ closeOnChoose: true });
   const { selected } = usePreProject();
   const section = searchParams.get("section");
   if (pathname === "/workspace/tasks" || pathname === "/workspace/approvals") return NONE;
@@ -133,15 +131,23 @@ function useFlowBar(module: WorkspaceModuleDefinition, pathname: string): FlowBa
           return <div className={styles.flowTabItem} key={item.id}><Link href={item.href} className={styles.flowTab} aria-current={isActive(item) ? "page" : undefined}><Icon size={15} strokeWidth={1.7} aria-hidden="true" /><span>{t(item.label as never)}</span></Link>{String(module.id) === "crm" && crmTabHelp[item.id] && <TabHelp label={t(item.label as never)} description={t(crmTabHelp[item.id] as never)} />}</div>;
         })}
       </div>
-      {module.id !== "projects" && String(module.id) !== "crm" && resources.length > 0 && <details className={styles.flowResources} key={`${pathname}?${searchParams}`} onClick={resourcesMenu.onClick} ref={resourcesMenu.ref}>
-        <summary data-active={resources.some((item) => item.href === activeHref) || undefined}>{t("Resources & setup")} <ChevronDown size={14} /></summary>
-        <div className={styles.flowResourceMenu}>
-          {resources.map((item) => <Link key={item.id} href={item.href} aria-current={activeHref === item.href ? "page" : undefined}>{t(item.label as never)}</Link>)}
-        </div>
-      </details>}
+      {module.id !== "projects" && String(module.id) !== "crm" && resources.length > 0 && <ResourcesMenu key={`${pathname}?${searchParams}`} active={activeHref}
+        items={resources.map((item) => ({ id: item.id, href: item.href, label: t(item.label as never) }))} />}
     </nav>
     {settingsActive && <nav aria-label={t("Sales settings")} className={styles.commercialTabs}>{resources.map(item => <Link key={item.id} href={item.href} className={styles.commercialSegment} aria-current={activeHref === item.href ? "page" : undefined}>{t(item.label as never)}</Link>)}</nav>}
   </div> };
+}
+
+/** The module's resources and setup pages behind one menu; it closes on a click outside, Esc, or choosing a page. */
+function ResourcesMenu({ items, active }: { items: Array<{ id: string; href: string; label: string }>; active?: string }) {
+  const t = useT();
+  const menu = useDetailsMenu({ closeOnChoose: true });
+  return <details className={styles.flowResources} onClick={menu.onClick} ref={menu.ref}>
+    <summary data-active={items.some((item) => item.href === active) || undefined}>{t("Resources & setup")} <ChevronDown size={14} /></summary>
+    <div className={styles.flowResourceMenu}>
+      {items.map((item) => <Link key={item.id} href={item.href} aria-current={active === item.href ? "page" : undefined}>{item.label}</Link>)}
+    </div>
+  </details>;
 }
 
 function TabHelp({ label, description }: { label: string; description: string }) {
