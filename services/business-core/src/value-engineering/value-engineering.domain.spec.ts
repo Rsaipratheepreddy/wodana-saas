@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { describeAction } from "../history/history-actions";
 import { historySubject } from "../history/history-items";
-import { budgetOf, idleSince, overBudgetBy, roundChargeable, startProblem, veLead, veStep } from "./value-engineering.domain";
+import { budgetOf, idleSince, keptPriceStands, overBudgetBy, roundChargeable, startProblem, veLead, veStep } from "./value-engineering.domain";
 
 describe("value engineering (PLM-147)", () => {
   it("reads the client's budget from the brief only when it is a positive amount in a currency", () => {
@@ -18,6 +18,22 @@ describe("value engineering (PLM-147)", () => {
     // No budget recorded, or recorded in another currency: nothing to compare with (only the manual start applies).
     expect(overBudgetBy("340000", "AED", null)).toBeNull();
     expect(overBudgetBy("340000", "USD", budget)).toBeNull();
+  });
+
+  it("a price the client chose to keep doesn't reopen value engineering; a changed price still may", () => {
+    const kept = { outcome: "kept_price" as const, quoteId: "q1", familyId: "f", currency: "AED", quotedTotal: "340000.0000" };
+    const quote = { id: "q1", familyId: "f", currency: "AED", total: "340000" };
+    expect(keptPriceStands([kept], quote)).toBe(true);
+    // The same amount on a later version of the same estimate is still the kept price; another amount (even re-priced on the
+    // same draft version), another estimate or another currency isn't.
+    expect(keptPriceStands([kept], { ...quote, id: "q2" })).toBe(true);
+    expect(keptPriceStands([kept], { ...quote, total: "350000" })).toBe(false);
+    expect(keptPriceStands([kept], { ...quote, id: "q2", total: "350000" })).toBe(false);
+    expect(keptPriceStands([kept], { ...quote, id: "q2", familyId: "other" })).toBe(false);
+    expect(keptPriceStands([kept], { ...quote, id: "q2", currency: "USD" })).toBe(false);
+    // Only a kept-price decision counts: a withdrawn round, a new version sent or a round still open don't.
+    for (const outcome of ["withdrawn", "new_version", null] as const) expect(keptPriceStands([{ ...kept, outcome }], quote)).toBe(false);
+    expect(keptPriceStands([], quote)).toBe(false);
   });
 
   it("has no round limit by default; past the firm's free rounds a round is chargeable", () => {

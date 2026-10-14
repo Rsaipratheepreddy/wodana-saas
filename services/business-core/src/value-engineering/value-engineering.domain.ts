@@ -56,6 +56,20 @@ export function startProblem(quote: StartQuote, lead: { membershipId: string } |
   return null;
 }
 
+export type KeptPriceRound = { outcome: VeOutcome | null; quoteId: string; familyId: string; currency: string; quotedTotal: string };
+export type PricedQuote = { id: string; familyId: string; currency: string; total: string };
+
+/**
+ * Whether the client already chose to keep this price: a round of the same estimate ended with "the client keeps the
+ * price" at this amount (on this version or an earlier one). The over-budget check then doesn't reopen value
+ * engineering when the QS confirms the unchanged pricing again; a changed price, even on the same draft version, still
+ * may.
+ */
+export function keptPriceStands(rounds: readonly KeptPriceRound[], quote: PricedQuote): boolean {
+  return rounds.some((round) => round.outcome === "kept_price"
+    && round.familyId === quote.familyId && round.currency === quote.currency && Dec.of(round.quotedTotal).cmp(quote.total) === 0);
+}
+
 /**
  * Where an open round stands. The savings come first; then the designer presents the options (the meeting, booked and
  * held); then the client decides. The client may decide at any point (a new version sent, or the price kept).

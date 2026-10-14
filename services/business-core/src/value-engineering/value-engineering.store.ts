@@ -11,7 +11,7 @@ import { casePlan } from "../pre-projects/case-plan";
 import { quotationReference } from "../proposals/quote-issue";
 import { money } from "../reminders/sources/support";
 import {
-  budgetOf, idleSince, overBudgetBy, roundChargeable, startProblem, veLead, veStep, type Money, type VeOrigin, type VeOutcome, type VeStep,
+  budgetOf, idleSince, keptPriceStands, overBudgetBy, roundChargeable, startProblem, veLead, veStep, type Money, type VeOrigin, type VeOutcome, type VeStep,
 } from "./value-engineering.domain";
 
 type Db = Pick<PoolClient, "query">;
@@ -249,8 +249,9 @@ export async function startRound(db: Db, input: StartInput): Promise<{ round: Ro
 /**
  * PLM-147: after the QS confirms a price, the over-budget check: above the client's recorded budget (in the estimate's
  * currency), a round opens with the QS as the one who started it. Without a recorded budget, under it, on a job that
- * keeps the existing flow (no design work and no designer) or while a round is open, nothing happens. A failure here
- * never undoes the QS's confirmation.
+ * keeps the existing flow (no design work and no designer), while a round is open, or once the client chose to keep
+ * this price (a round of this estimate closed with "kept price" at this amount), nothing happens. A changed price still
+ * opens one. A failure here never undoes the QS's confirmation.
  */
 export async function checkOverBudget(db: Db, input: { workspaceId: string; caseId: string; quoteId: string; actorUserId: string }) {
   try {
@@ -259,8 +260,9 @@ export async function checkOverBudget(db: Db, input: { workspaceId: string; case
       if (!quote || quote.kind !== "quotation" || quote.round === "design") return null;
       const budget = await clientBudget(db, input.workspaceId, input.caseId);
       if (!overBudgetBy(quote.total, quote.currency, budget)) return null;
-      const open = await db.query(`SELECT 1 FROM quote_value_engineering WHERE workspace_id = $1 AND case_id = $2 AND status = 'open'`, [input.workspaceId, input.caseId]);
-      if (open.rowCount) return null;
+      const rounds = await readRounds(db, input.workspaceId, input.caseId);
+      if (rounds.some((round) => round.status === "open")) return null;
+      if (keptPriceStands(rounds, quote)) return null;
       const { lead, designWork } = await jobLead(db, input.workspaceId, input.caseId);
       if (startProblem({ kind: quote.kind, round: quote.round, status: quote.status, latest: quote.latest }, lead, designWork)) return null;
       return (await startRound(db, { ...input, origin: "automatic", qsUserId: input.actorUserId })).round;

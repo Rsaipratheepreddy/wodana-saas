@@ -238,6 +238,17 @@ integration("value engineering led by the lead designer with the QS (PLM-147)", 
       const [closed] = await notices(w, "quotation.value_engineering_closed", "designer");
       expect(closed.body).toContain("Sara Sales recorded that the client keeps the price");
       expect(await notices(w, "quotation.value_engineering_closed", "qs")).toHaveLength(1);
+      // The QS confirms the same, unchanged pricing again: the price the client chose to keep doesn't reopen value engineering.
+      await qsConfirms(w);
+      const again = await w.ve("qs").view(actor, w.workspaceId, w.caseId, w.quoteId);
+      expect(again.open).toBeNull();
+      expect(again.rounds.map((item) => [item.round, item.outcome])).toEqual([[1, "kept_price"]]);
+      // A changed price above the budget still does.
+      const marble = (await w.builder("qs").builder(actor, w.workspaceId, w.caseId, w.quoteId)).lines.find((line) => line.id === "marble")!;
+      await w.builder("qs").apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "marble", version: marble.version, rate: "3500" } }] });
+      await qsConfirms(w);
+      const reopened = await w.ve("qs").view(actor, w.workspaceId, w.caseId, w.quoteId);
+      expect(reopened.open).toMatchObject({ round: 2, origin: "automatic", status: "open", quotedTotal: "350000.0000" });
     });
     await world(async (w) => {
       await qsConfirms(w);
