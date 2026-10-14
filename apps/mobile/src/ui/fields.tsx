@@ -182,15 +182,16 @@ export function Stepper({ label, value, onChange, step = 1, min = 0, max, unit, 
     onChange(round(next));
   };
   const size = compact ? 40 : theme.touch.control;
+  // On the web an input keeps its own width unless it may shrink (minWidth 0); otherwise the unit lands past the box's edge.
   const control = <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space(2) }}>
     <View style={{ borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.borderControl }}>
       <IconButton icon={Minus} label={t('Less')} onPress={() => bump(-1)} size={size} disabled={number <= min} />
     </View>
-    <View style={{ flex: compact ? 0 : 1, minWidth: compact ? 64 : undefined, flexDirection: 'row', alignItems: 'center', height: size, borderRadius: theme.radius.md, borderWidth: 1, borderColor: error ? theme.colors.danger : theme.colors.borderControl, backgroundColor: theme.colors.surface, paddingHorizontal: theme.space(3) }}>
+    <View style={{ flex: compact ? 0 : 1, minWidth: compact ? 64 : 0, flexDirection: 'row', alignItems: 'center', height: size, borderRadius: theme.radius.md, borderWidth: 1, borderColor: error ? theme.colors.danger : theme.colors.borderControl, backgroundColor: theme.colors.surface, paddingHorizontal: theme.space(3), overflow: 'hidden' }}>
       <TextInput value={value} onChangeText={(text) => onChange(cleanDecimal(text, places))} keyboardType="decimal-pad" selectTextOnFocus accessibilityLabel={label}
         selectionColor={theme.colors.actionPrimary}
-        style={{ flex: 1, textAlign: 'center', color: theme.colors.text, fontFamily: theme.font.semibold, fontSize: theme.size.lg, fontVariant: ['tabular-nums'], height: size - 2, outlineStyle: 'none' } as never} />
-      {unit ? <Text variant="caption" tone="secondary">{unit}</Text> : null}
+        style={{ flex: 1, minWidth: 0, textAlign: 'center', color: theme.colors.text, fontFamily: theme.font.semibold, fontSize: theme.size.lg, fontVariant: ['tabular-nums'], height: size - 2, outlineStyle: 'none' } as never} />
+      {unit ? <Text variant="caption" tone="secondary" numberOfLines={1} style={{ flexShrink: 0, marginStart: theme.space(1) }}>{unit}</Text> : null}
     </View>
     <View style={{ borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.borderControl }}>
       <IconButton icon={Plus} label={t('More')} onPress={() => bump(1)} size={size} disabled={max !== undefined && number >= max} />

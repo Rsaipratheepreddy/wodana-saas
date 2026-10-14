@@ -15202,5 +15202,15 @@
   "This event changed in Google. Refresh and try again.": "This event changed in Google. Refresh and try again.",
   "The provider is busy. Try again in a minute.": "The provider is busy. Try again in a minute.",
   "The provider couldn't complete this. Try again in a moment.": "The provider couldn't complete this. Try again in a moment.",
-  "Site · {name}": "Site · {name}"
+  "Site · {name}": "Site · {name}",
+  "1 capture needs you": "1 capture needs you",
+  "1 snag to close": "1 snag to close",
+  "{stage} is 1 day past its plan": "{stage} is 1 day past its plan",
+  "{name}: 1 day left": "{name}: 1 day left",
+  "1 capture is still waiting to send. It sends after you sign in again.": "1 capture is still waiting to send. It sends after you sign in again.",
+  "1 report waits for approval": "1 report waits for approval",
+  "1 day of work": "1 day of work",
+  "of 1 day left": "of 1 day left",
+  "{before} → {after} ({days} working day)": "{before} → {after} ({days} working day)",
+  "{done} of 1 step": "{done} of 1 step"
 }

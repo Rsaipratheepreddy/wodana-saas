@@ -100,7 +100,7 @@ export function TodayScreen() {
 
   return <Screen large title={t('Today')} subtitle={format.longDay(today)} action={<WoddyButton />} onRefresh={refresh} refreshing={summary.isRefetching || current.isRefetching}>
     {!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('Captures are saved on this phone and sent later.')} /> : null}
-    {blocked.length ? <Banner tone="warning" title={t('{count} captures need you', { count: blocked.length })} action={{ label: t('Fix'), onPress: () => router.push('/outbox') }} />
+    {blocked.length ? <Banner tone="warning" title={blocked.length === 1 ? t('1 capture needs you') : t('{count} captures need you', { count: blocked.length })} action={{ label: t('Fix'), onPress: () => router.push('/outbox') }} />
       : outbox.items.length ? <Banner tone="info" icon={CloudUpload} title={t('{count} waiting to send', { count: outbox.items.length })} action={{ label: t('View'), onPress: () => router.push('/outbox') }} /> : null}
 
     {hrms && bootstrap.data?.employee?.enabled ? <Card tone={open ? 'action' : 'default'}>
@@ -122,7 +122,7 @@ export function TodayScreen() {
 
     {mySites.length ? <Section title={t('My sites today')}>
       {mySites.map((site, index) => <ListRow key={site.projectId} first={index === 0} icon={ClipboardList} iconTone={!site.report && late ? 'warning' : 'action'} title={site.name}
-        detail={[site.reference, site.report ? null : t('No report yet'), site.arriving ? t('{count} arriving', { count: site.arriving }) : null, site.snags ? t('{count} snags to close', { count: site.snags }) : null]
+        detail={[site.reference, site.report ? null : t('No report yet'), site.arriving ? t('{count} arriving', { count: site.arriving }) : null, site.snags === 1 ? t('1 snag to close') : site.snags ? t('{count} snags to close', { count: site.snags }) : null]
           .filter(Boolean).join(' · ')}
         trailing={site.report ? <StatusChip status={site.report.status} /> : <Button size="sm" label={t('Write report')} onPress={() => router.push(`/projects/${site.projectId}/report`)} />}
         onPress={() => router.push(site.report ? `/projects/${site.projectId}/reports` : `/projects/${site.projectId}/report`)} />)}
@@ -138,7 +138,7 @@ export function TodayScreen() {
     {figures.length ? <KeyNumbers figures={figures} onOpen={(figure) => router.push(figure.route as Href)} /> : null}
 
     {expected.length ? <Section title={t('Deliveries expected')} action={<Button size="sm" variant="ghost" label={t('All')} onPress={() => router.push('/purchasing')} />}>
-      {expected.map((order, index) => <ListRow key={order.id} first={index === 0} icon={PackageCheck} title={order.supplierName} detail={`${order.number} · ${t('{count} lines', { count: order.linesLeft })}`}
+      {expected.map((order, index) => <ListRow key={order.id} first={index === 0} icon={PackageCheck} title={order.supplierName} detail={`${order.number} · ${order.linesLeft === 1 ? t('1 line') : t('{count} lines', { count: order.linesLeft })}`}
         onPress={() => router.push(`/purchasing/receive/${order.id}`)} />)}
     </Section> : null}
 

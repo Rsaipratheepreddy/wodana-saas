@@ -95,7 +95,8 @@ export function MeScreen() {
 
     {hrms ? <Section>
       <ListRow first icon={Plane} title={t('Leave')} onPress={() => router.push('/hrms/leave')}
-        detail={annual ? t('{name}: {days} days left', { name: annual.leaveTypeName, days: format.number(annual.available ?? 0, 1) }) : undefined}
+        detail={!annual ? undefined : Number(annual.available ?? 0) === 1 ? t('{name}: 1 day left', { name: annual.leaveTypeName })
+          : t('{name}: {days} days left', { name: annual.leaveTypeName, days: format.number(annual.available ?? 0, 1) })}
         trailing={upcoming ? <Chip label={t('{count} booked', { count: upcoming })} tone="info" /> : undefined} />
       <ListRow icon={CalendarDays} title={t('My days')} onPress={() => router.push('/hrms/days')} />
       <ListRow icon={CalendarClock} title={t('My time')} onPress={() => router.push('/hrms/time')} />
@@ -138,7 +139,8 @@ export function MeScreen() {
     <OptionSheet open={choosingLanguage} onClose={() => setChoosingLanguage(false)} title={t('Language')} value={language.language}
       options={languages.map((item) => ({ value: item.id, label: item.label }))} onChange={(next) => { if (next) void chooseLanguage(next); }} />
     <ConfirmSheet open={signingOut} onClose={() => setSigningOut(false)} danger title={t('Sign out?')} action={t('Sign out')}
-      detail={waiting ? t('{count} captures are still waiting to send. They send after you sign in again.', { count: waiting }) : undefined}
+      detail={waiting === 1 ? t('1 capture is still waiting to send. It sends after you sign in again.')
+        : waiting ? t('{count} captures are still waiting to send. They send after you sign in again.', { count: waiting }) : undefined}
       onConfirm={async () => {
         // This phone stops getting the person's pushes; signing out never waits more than a moment on it.
         await releaseThisPhone(api);

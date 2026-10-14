@@ -142,7 +142,7 @@ export function WorkOrderScreen() {
       {data.dispatches.map((move, index) => <ListRow key={move.id} first={index === 0} icon={Truck} title={t('Move #{number}', { number: move.number })} detail={[`${format.number(move.quantity, 2)} ${order.unit}`, move.sentOn ? format.day(move.sentOn) : null].filter(Boolean).join(' · ')}
         trailing={<StatusChip status={move.status} />} />)}
     </Section> : null}
-    {pendingReports.length && !data.canApprove ? <Banner tone="info" title={t('{count} reports wait for approval', { count: pendingReports.length })} /> : null}
+    {pendingReports.length && !data.canApprove ? <Banner tone="info" title={pendingReports.length === 1 ? t('1 report waits for approval') : t('{count} reports wait for approval', { count: pendingReports.length })} /> : null}
 
     <ReportSheet open={dialog === 'report'} onClose={() => setDialog(null)} left={num(order.left)} unit={order.unit} busy={command.isPending}
       onSubmit={(body) => run({ action: 'report', ...body }, t('Output reported'))} />

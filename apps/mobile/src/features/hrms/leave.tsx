@@ -53,7 +53,7 @@ export function LeaveScreen() {
         {(balances.data ?? []).map((balance) => <View key={balance.leaveTypeId} style={{ width: 156, padding: theme.space(4), gap: theme.space(1), borderRadius: theme.radius.lg, backgroundColor: theme.colors.surfaceMuted }}>
           <Text variant="caption" tone="secondary" numberOfLines={1}>{balance.leaveTypeName}</Text>
           <Text variant="title" style={{ fontVariant: ['tabular-nums'] }}>{balance.limited ? format.number(balance.available ?? 0, 1) : format.number(balance.used, 1)}</Text>
-          <Text variant="caption" tone="tertiary">{balance.limited ? t('of {total} days left', { total: format.number(balance.allowance ?? 0, 1) }) : t('days taken')}</Text>
+          <Text variant="caption" tone="tertiary">{!balance.limited ? t('days taken') : Number(balance.allowance ?? 0) === 1 ? t('of 1 day left') : t('of {total} days left', { total: format.number(balance.allowance ?? 0, 1) })}</Text>
         </View>)}
         <View style={{ width: theme.space(2) }} />
       </ScrollView>}
@@ -62,7 +62,7 @@ export function LeaveScreen() {
       : !sorted.length ? <Empty icon={Plane} title={t('No leave booked')} />
       : <>
         {upcoming.length ? <Section title={t('Coming up')}>
-          {upcoming.map((item, index) => <ListRow key={item.id} first={index === 0} title={item.leaveTypeName} detail={`${leaveRange(item, format, t)} · ${t('{count} days', { count: format.number(item.days, 1) })}`}
+          {upcoming.map((item, index) => <ListRow key={item.id} first={index === 0} title={item.leaveTypeName} detail={`${leaveRange(item, format, t)} · ${Number(item.days) === 1 ? t('1 day') : t('{count} days', { count: format.number(item.days, 1) })}`}
             trailing={<StatusChip status={item.status} />} onPress={() => setSelected(item)} />)}
         </Section> : null}
         {past.length ? <Section title={t('Earlier')}>

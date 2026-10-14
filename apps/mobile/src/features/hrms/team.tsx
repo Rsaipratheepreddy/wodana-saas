@@ -76,7 +76,7 @@ function ToApprove() {
     </Section> : null}
     {days.length ? <Section title={t('Crew days')}>
       {days.map((day, index) => <ListRow key={day.id} first={index === 0} icon={HardHat} title={`${day.crewName} · ${day.projectName ?? t('Workshop')}`}
-        detail={`${format.weekday(day.workDate)} · ${t('{count} days of work', { count: format.number(day.present, 1) })}`} onPress={() => router.push(`/crew-day/${day.id}`)} />)}
+        detail={`${format.weekday(day.workDate)} · ${Number(day.present) === 1 ? t('1 day of work') : t('{count} days of work', { count: format.number(day.present, 1) })}`} onPress={() => router.push(`/crew-day/${day.id}`)} />)}
     </Section> : null}
     <DecisionSheet item={open} onClose={() => setOpen(null)} />
   </>;

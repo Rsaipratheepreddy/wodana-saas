@@ -57,7 +57,7 @@ export function DeliveriesScreen() {
     empty={<Empty icon={Truck} title={view === 'expected' ? t('Nothing expected') : view === 'inspect' ? t('Nothing to inspect') : t('Nothing received yet')} />}
     renderItem={(item, _, first) => item.order
       ? <ListRow first={first} icon={Truck} title={item.order.supplierName}
-        detail={[item.order.number, item.order.projects.map((project) => project.reference).join(', '), t('{count} lines', { count: item.order.linesLeft })].filter(Boolean).join(' · ')}
+        detail={[item.order.number, item.order.projects.map((project) => project.reference).join(', '), item.order.linesLeft === 1 ? t('1 line') : t('{count} lines', { count: item.order.linesLeft })].filter(Boolean).join(' · ')}
         meta={item.order.due ? <Text variant="caption" tone={item.order.due < today ? 'danger' : 'tertiary'}>{t('Due {day}', { day: format.day(item.order.due) })}</Text> : undefined}
         trailing={item.order.due && item.order.due <= today ? <StatusChip status={item.order.due < today ? 'overdue' : 'pending'} label={item.order.due < today ? t('Late') : t('Today')} /> : undefined}
         onPress={() => router.push(data?.canReceive ? `/purchasing/receive/${item.order!.id}` : `/purchasing/order/${item.order!.id}`)} />

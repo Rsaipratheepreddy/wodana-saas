@@ -72,7 +72,7 @@ export function PlanScreen() {
       onRefresh={() => void board.refetch()} refreshing={board.isRefetching}
       empty={<Empty icon={ListChecks} title={who === 'mine' ? t('Nothing assigned to you') : t('Nothing here')} action={who === 'mine' ? { label: t('See everyone’s'), onPress: () => setWho('all') } : undefined} />}
       renderItem={(item, _, first) => <ListRow first={first} title={item.title} detail={detail(item)} onPress={() => router.push(`/projects/${id}/task/${item.id}`)}
-        meta={item.subtasks ? <Text variant="caption" tone="tertiary">{t('{done} of {total} steps', { done: item.subtasksDone, total: item.subtasks })}</Text> : undefined}
+        meta={item.subtasks ? <Text variant="caption" tone="tertiary">{item.subtasks === 1 ? t('{done} of 1 step', { done: item.subtasksDone }) : t('{done} of {total} steps', { done: item.subtasksDone, total: item.subtasks })}</Text> : undefined}
         trailing={<WorkTrailing item={item} />} />}
       footer={board.data?.canEdit ? <Button label={t('Add task')} icon={Plus} variant="primary" size="lg" full onPress={() => setCreating(true)} /> : undefined} />
     <NewTaskSheet projectId={id} open={creating} onClose={() => setCreating(false)} />

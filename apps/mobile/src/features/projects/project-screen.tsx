@@ -95,7 +95,7 @@ export function ProjectScreen() {
     </Card>
 
     {next ? <Banner tone={lateBy ? 'warning' : 'info'} icon={Check} title={t(next.text)}
-      detail={[next.owner ? t('With {name}', { name: next.owner }) : null, lateBy ? t('{stage} is {count} days past its plan', { stage: t(next.stage), count: lateBy }) : null].filter(Boolean).join(' · ') || undefined} /> : null}
+      detail={[next.owner ? t('With {name}', { name: next.owner }) : null, lateBy === 1 ? t('{stage} is 1 day past its plan', { stage: t(next.stage) }) : lateBy ? t('{stage} is {count} days past its plan', { stage: t(next.stage), count: lateBy }) : null].filter(Boolean).join(' · ') || undefined} /> : null}
     {running ? <HoldUps projectId={project.id} overview={glance} loading={overview.isLoading} failed={!!overview.error} onRetry={() => void overview.refetch()} /> : null}
     {current ? <StageChecks projectId={project.id} version={project.version} stage={current} /> : null}
 
