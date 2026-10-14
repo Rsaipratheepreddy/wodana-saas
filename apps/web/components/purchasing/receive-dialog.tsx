@@ -18,8 +18,10 @@ const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 /** A place as people name it: its own name, or the kind for one made on first use. */
 export function usePlaceLabel() {
   const t = useT();
-  return (place: Pick<Place, "kind" | "name" | "projectReference">) => place.name
-    ?? (place.kind === "site" ? t("{reference} site", { reference: place.projectReference ?? "" }) : place.kind === "warehouse" ? t("Warehouse") : place.kind === "factory" ? t("Factory") : t("Other"));
+  // A site not made yet reads like the phone's: "Site · <project name>", or by its reference when the name is missing.
+  return (place: Pick<Place, "kind" | "name" | "projectReference" | "projectName">) => place.name
+    ?? (place.kind === "site" ? (place.projectName ? t("Site · {name}", { name: place.projectName }) : t("{reference} site", { reference: place.projectReference ?? "" }))
+      : place.kind === "warehouse" ? t("Warehouse") : place.kind === "factory" ? t("Factory") : t("Other"));
 }
 
 /**
