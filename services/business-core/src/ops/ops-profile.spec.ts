@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLES, DEFAULT_STAGES } from "../project-core/project-checks";
-import { planRoute } from "./ops-configure";
+import { planRoute, questionListText } from "./ops-configure";
 import { packagesAgainstProfile, ProfileError, validatePackagesFile, validateProfile } from "./ops-profile";
 
 const json = (path: string) => JSON.parse(readFileSync(resolve(__dirname, path), "utf8"));
@@ -187,6 +187,45 @@ describe("route changes", () => {
     expect("requiredRoleCode" in file.packages[2]).toBe(false);
     expect(validatePackagesFile({ packages: [{ code: "Basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] })).toEqual({ packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] });
     expect(validatePackagesFile({ minimumDeposit: null, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] }).minimumDeposit).toBeNull();
+  });
+
+  it("reads Palm's design questions file: the same packages, 31 discovery questions under 6 sections, 14 joinery checklists and the release record", () => {
+    const file = validatePackagesFile(json("../../../../docs/fixtures/palm-design-questions.json"));
+    const packages = validatePackagesFile(json("../../../../docs/fixtures/palm-design-packages.json"));
+    expect(file.packages).toEqual(packages.packages);
+    expect(file.minimumDeposit).toEqual(packages.minimumDeposit);
+    const questions = file.siteVisitQuestions!;
+    expect(questions.length).toBe(181);
+    expect(questions[0]).toEqual({ key: "core.01", question: "What type of property or space is this, and where is it located?", section: "Project overview" });
+    expect(questions.find((entry) => entry.key === "core.31")).toEqual({ key: "core.31", question: "Agreed next step and owner", section: "Decisions and next steps" });
+    expect(questions.find((entry) => entry.key === "kitchen.01")).toEqual({ key: "kitchen.01", scope: "Kitchens and islands", kind: "check",
+      question: "Confirm cooking habits, users, storage priorities and seating count; list all required cabinets and island functions." });
+    const checklists = new Map<string, number>();
+    for (const entry of questions.filter((item) => item.kind === "check")) checklists.set(entry.scope!, (checklists.get(entry.scope!) ?? 0) + 1);
+    expect(checklists.size).toBe(15);
+    expect([...checklists.values()].every((count) => count === 10)).toBe(true);
+    expect(file.siteVisitScopes!.find((entry) => entry.scope === "Wardrobes and walk in closets")?.match).toEqual(["wardrobe", "closet", "walk-in", "dressing"]);
+    expect(file.siteVisitScopes!.filter((entry) => entry.everyJob).map((entry) => entry.scope)).toEqual(["Factory release"]);
+    expect(questionListText(questions, file.siteVisitScopes!)).toBe("31 general questions in 6 sections, 150 checks, 15 checklists (1 for every job), 14 with match words");
+  });
+
+  it("lists every problem of a question list at once", () => {
+    const base = { packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] };
+    const problemsOf = (raw: unknown) => { try { validatePackagesFile(raw); return []; } catch (error) { if (error instanceof ProfileError) return error.problems; throw error; } };
+    expect(problemsOf({ ...base, siteVisitQuestions: [] })).toEqual(["siteVisitQuestions is a list of 1 to 300 questions."]);
+    expect(problemsOf({ ...base, siteVisitScopes: [] })).toEqual(["siteVisitScopes goes with the siteVisitQuestions it describes."]);
+    expect(problemsOf({ ...base, siteVisitQuestions: [
+      { key: "Core 1", question: "Q?" }, { key: "a.1", question: " ", kind: "yes" }, { key: "a.2", question: "Q?", colour: 1, section: "x".repeat(61) },
+      { key: "a.3", question: "Q?", scope: "Kitchen" }, { key: "a.3", question: "Again" },
+    ], siteVisitScopes: [{ scope: "Kitchen", match: ["kitchen", 4] }, { scope: "kitchen", match: [] }, { scope: "Garage" }, { scope: "Kitchen", everyJob: "yes", extra: 1 }] })).toEqual([
+      "siteVisitQuestions[0].key is a key of lowercase letters, digits, \".\", \"_\" or \"-\" (at most 60), e.g. kitchen.01.",
+      "siteVisitQuestions[1].question is the question's text (at most 500 characters).", "siteVisitQuestions[1].kind is answer or check.",
+      "siteVisitQuestions[2] has unknown keys: colour.", "siteVisitQuestions[2].section is a name of at most 60 characters (or null).",
+      "siteVisitQuestions[4].key repeats a.3.",
+      "siteVisitScopes[0].match is a list of at most 20 words or phrases (40 characters each).",
+      "siteVisitScopes[2].scope Garage is not the scope of any question.",
+      "siteVisitScopes[3] has unknown keys: extra.", "siteVisitScopes[3].scope repeats Kitchen.", "siteVisitScopes[3].everyJob is true or false.",
+    ]);
   });
 
   it("lists every problem of a design packages file at once, with the app's own package rules", () => {

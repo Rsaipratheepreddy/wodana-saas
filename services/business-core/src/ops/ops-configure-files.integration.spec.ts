@@ -252,4 +252,26 @@ integration("operator CLI configure: teams access and design packages on an exis
     expect(await count("SELECT count(*) FROM audit_events WHERE workspace_id = $1 AND occurred_at >= $2 AND actor_user_id = $3 AND via IS DISTINCT FROM 'operator_cli'",
       [workspaceId, started, owner])).toBe(0);
   });
+
+  it("loads Palm's discovery questions and joinery checklists from the questions file: previewed, set whole with --apply, unchanged on a second run", async () => {
+    const common = ["configure", "--workspace", slug, "--as", ownerEmail, "--packages", resolve(docs, "palm-design-questions.json")];
+    const from = new Date();
+    const [preview, applied, repeat] = await cli([[...common, "--json"], [...common, "--apply", "--json"], [...common, "--apply", "--json"]]);
+    for (const result of [preview, applied, repeat]) {
+      expect(result.code, result.output).toBe(0);
+      expect(json(result).counts.failed ?? 0, result.output).toBe(0);
+    }
+    // The packages are as the packages file set them; only the question list changes, from the product's default list.
+    expect(json(preview).lines.filter((line) => line.status === "would change")).toEqual([expect.objectContaining({ section: "packages", label: "site visit questions",
+      detail: "7 general questions in 1 section, 0 checks, 0 checklists (0 for every job), 0 with match words → 31 general questions in 6 sections, 150 checks, 15 checklists (1 for every job), 14 with match words" })]);
+    expect(json(applied).lines).toContainEqual(expect.objectContaining({ section: "packages", status: "changed", label: "site visit questions" }));
+    expect(json(repeat).counts.changed ?? 0, repeat.output).toBe(0);
+    expect(json(repeat).lines).toContainEqual(expect.objectContaining({ section: "packages", status: "unchanged", label: "site visit questions" }));
+    const stored = (await pool.query<{ questions: Array<{ key: string; kind?: string }>; scopes: Array<{ scope: string; everyJob?: boolean }> }>(
+      "SELECT site_visit_questions AS questions, site_visit_scopes AS scopes FROM workspace_design_settings WHERE workspace_id = $1", [workspaceId])).rows[0];
+    expect([stored.questions.length, stored.questions.filter((question) => question.kind === "check").length, stored.scopes.length]).toEqual([181, 150, 15]);
+    // One write, audited as the member through the operator CLI.
+    expect(await count("SELECT count(*) FROM audit_events WHERE workspace_id = $1 AND occurred_at >= $2 AND action = 'design.flow_settings_changed.v1' AND via = 'operator_cli'",
+      [workspaceId, from])).toBe(1);
+  }, 300_000);
 });

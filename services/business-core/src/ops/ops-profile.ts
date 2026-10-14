@@ -1,5 +1,8 @@
 import { FURNITURE_PATHS } from "../crm/opportunities/flow-gates";
 import { checkDesignPackage } from "../design/design-packages.domain";
+import {
+  MAX_CHECKLIST_SCOPES, MAX_SITE_QUESTIONS, normaliseChecklistScopes, normaliseSiteQuestions, scopeKey, type ChecklistScope, type SiteQuestion,
+} from "../design/design-journey.domain";
 import { parseInspectionStages, type InspectionStage } from "../factory/factory-inspections";
 import { PRODUCTION_STEP_KINDS, type ProductionStep } from "../factory/production-status";
 import { DEDUCT_EVENTS, LEAD_FROM, RESERVE_EVENTS } from "../fulfilment/fulfilment-rules";
@@ -662,8 +665,15 @@ export type PackageSpec = {
   includedRevisions?: number; includesSpacePlanning?: boolean; includesRenders?: boolean; requiredRoleCode?: string | null; inclusions?: string | null; position?: number;
   reviewRoleCode?: string | null; rateFrom?: boolean; unitDefinition?: string | null;
 };
-/** The design packages file: the packages and, when given, the minimum design deposit (null: no minimum). */
-export type PackagesFile = { minimumDeposit?: { amount: string; currency?: string } | null; packages: PackageSpec[] };
+/**
+ * The design packages file: the packages and, when given, the minimum design deposit (null: no minimum), the question
+ * list asked at the kick-off and the site measure (general questions under sections, checklist lines under a scope),
+ * and each checklist's match words. The list is set whole when given, as Settings › Design saves it.
+ */
+export type PackagesFile = {
+  minimumDeposit?: { amount: string; currency?: string } | null; packages: PackageSpec[];
+  siteVisitQuestions?: SiteQuestion[]; siteVisitScopes?: ChecklistScope[];
+};
 
 const PACKAGE_KEYS = ["code", "name", "pricingMethod", "rate", "currency", "areaUnit", "includedRevisions", "includesSpacePlanning", "includesRenders", "requiredRoleCode",
   "inclusions", "position", "reviewRoleCode", "rateFrom", "unitDefinition"] as const;
@@ -677,7 +687,8 @@ export function validatePackagesFile(raw: unknown): PackagesFile {
   const fail = (): never => { throw new ProfileError(problems, "design packages file"); };
   if (!isObject(raw)) { problems.push("It is a JSON object with a list of packages (\"packages\")."); fail(); }
   const file = raw as Obj;
-  const extra = Object.keys(file).filter((key) => !["packages", "minimumDeposit", "source", "description", "$schema"].includes(key) && !key.startsWith("_"));
+  const extra = Object.keys(file).filter((key) => !["packages", "minimumDeposit", "siteVisitQuestions", "siteVisitScopes", "source", "description", "$schema"].includes(key)
+    && !key.startsWith("_"));
   if (extra.length) problems.push(`Unknown keys: ${extra.join(", ")}.`);
   const result: PackagesFile = { packages: [] };
 
@@ -729,8 +740,70 @@ export function validatePackagesFile(raw: unknown): PackagesFile {
     try { checkDesignPackage({ ...spec, currency: spec.currency ?? "XXX" }); } catch (error) { problems.push(`${path} (${code}): ${(error as Error).message}.`); return; }
     result.packages.push({ ...spec, code });
   });
+  const questions = file.siteVisitQuestions === undefined ? undefined : siteQuestionsIn(file.siteVisitQuestions, problems);
+  if (questions) result.siteVisitQuestions = questions;
+  if (file.siteVisitScopes !== undefined) {
+    if (!questions) problems.push("siteVisitScopes goes with the siteVisitQuestions it describes.");
+    else result.siteVisitScopes = checklistScopesIn(file.siteVisitScopes, questions, problems);
+  }
   if (problems.length) fail();
   return result;
+}
+
+const QUESTION_KEYS = ["key", "question", "scope", "section", "kind"];
+const QUESTION_KEY = /^[a-z0-9_.-]{1,60}$/;
+
+/** The question list as the file gives it: unique keys, text, and an optional scope, section and kind ("answer" or "check"). */
+function siteQuestionsIn(raw: unknown, problems: string[]): SiteQuestion[] | undefined {
+  if (!Array.isArray(raw) || !raw.length || raw.length > MAX_SITE_QUESTIONS) { problems.push(`siteVisitQuestions is a list of 1 to ${MAX_SITE_QUESTIONS} questions.`); return undefined; }
+  const seen = new Set<string>();
+  const out: SiteQuestion[] = [];
+  raw.forEach((entry: unknown, index) => {
+    const path = `siteVisitQuestions[${index}]`;
+    if (!isObject(entry)) { problems.push(`${path} is an object.`); return; }
+    const before = problems.length;
+    const unknown = Object.keys(entry).filter((key) => !QUESTION_KEYS.includes(key) && !key.startsWith("_"));
+    if (unknown.length) problems.push(`${path} has unknown keys: ${unknown.join(", ")}.`);
+    if (typeof entry.key !== "string" || !QUESTION_KEY.test(entry.key)) problems.push(`${path}.key is a key of lowercase letters, digits, ".", "_" or "-" (at most 60), e.g. kitchen.01.`);
+    else if (seen.has(entry.key)) problems.push(`${path}.key repeats ${entry.key}.`);
+    if (typeof entry.question !== "string" || !entry.question.trim() || entry.question.trim().length > 500) problems.push(`${path}.question is the question's text (at most 500 characters).`);
+    for (const key of ["scope", "section"]) {
+      const value = entry[key];
+      if (value !== undefined && value !== null && (typeof value !== "string" || !value.trim() || value.trim().length > 60)) problems.push(`${path}.${key} is a name of at most 60 characters (or null).`);
+    }
+    if (entry.kind !== undefined && entry.kind !== null && entry.kind !== "answer" && entry.kind !== "check") problems.push(`${path}.kind is answer or check.`);
+    if (problems.length > before) return;
+    seen.add(entry.key as string);
+    out.push(...normaliseSiteQuestions([entry]));
+  });
+  return out;
+}
+
+/** Each checklist's match words, for scopes the questions use: once each, at most 20 words or phrases of 40 characters. */
+function checklistScopesIn(raw: unknown, questions: SiteQuestion[], problems: string[]): ChecklistScope[] {
+  if (!Array.isArray(raw) || raw.length > MAX_CHECKLIST_SCOPES) { problems.push(`siteVisitScopes is a list of at most ${MAX_CHECKLIST_SCOPES} checklists.`); return []; }
+  const used = new Set(questions.filter((question) => question.scope).map((question) => scopeKey(question.scope!)));
+  const seen = new Set<string>();
+  const out: ChecklistScope[] = [];
+  raw.forEach((entry: unknown, index) => {
+    const path = `siteVisitScopes[${index}]`;
+    if (!isObject(entry)) { problems.push(`${path} is an object.`); return; }
+    const before = problems.length;
+    const unknown = Object.keys(entry).filter((key) => !["scope", "match", "everyJob"].includes(key) && !key.startsWith("_"));
+    if (unknown.length) problems.push(`${path} has unknown keys: ${unknown.join(", ")}.`);
+    const scope = typeof entry.scope === "string" ? entry.scope.trim() : "";
+    if (!scope || scope.length > 60) problems.push(`${path}.scope is the checklist's name (at most 60 characters).`);
+    else if (seen.has(scopeKey(scope))) problems.push(`${path}.scope repeats ${scope}.`);
+    else if (!used.has(scopeKey(scope))) problems.push(`${path}.scope ${scope} is not the scope of any question.`);
+    const match = entry.match === undefined ? [] : entry.match;
+    if (!Array.isArray(match) || match.length > 20 || match.some((word) => typeof word !== "string" || !word.trim() || word.trim().length > 40))
+      problems.push(`${path}.match is a list of at most 20 words or phrases (40 characters each).`);
+    if (entry.everyJob !== undefined && typeof entry.everyJob !== "boolean") problems.push(`${path}.everyJob is true or false.`);
+    if (problems.length > before) return;
+    seen.add(scopeKey(scope));
+    out.push(...normaliseChecklistScopes([{ scope, match, everyJob: entry.everyJob === true }]));
+  });
+  return out;
 }
 
 /**

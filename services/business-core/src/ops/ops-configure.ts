@@ -15,7 +15,8 @@ import { EnquiryFieldsService } from "../crm/settings/enquiry-fields.service";
 import { CrmClosingMessagesService } from "../crm/conversations/crm-closing-messages.service";
 import { REQUIREMENT_GATES } from "../crm/leads/enquiry-problems";
 import { Dec } from "../catalog-core/decimal";
-import { DesignPackageDto, DesignSettingsDto } from "../design/design-packages.controller";
+import { DesignFlowSettingsDto, DesignPackageDto, DesignSettingsDto } from "../design/design-packages.controller";
+import type { ChecklistScope, SiteQuestion } from "../design/design-journey.domain";
 import { checkDesignPackage, effectiveMinimumDeposit, type DesignPackageInput } from "../design/design-packages.domain";
 import { DesignPackagesService } from "../design/design-packages.service";
 import { FinishesService } from "../design/finishes.service";
@@ -526,7 +527,7 @@ type DesignPackage = { id: string; code: string; name: string; pricingMethod: "p
 type DesignSteps = Record<DesignStepKey, number> & { conceptOptionsMax: number | null };
 type DesignTeam = Record<DesignTeamKey, string | null>;
 type DesignFlow = { designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number; visualiserRoleCode: string;
-  showroomBookingTypeId: string | null; siteVisitQuestions: Array<{ key: string; question: string; scope?: string | null }>; renderInternalDays: number | null; renderClientDays: number | null;
+  showroomBookingTypeId: string | null; siteVisitQuestions: SiteQuestion[]; siteVisitScopes?: ChecklistScope[]; renderInternalDays: number | null; renderClientDays: number | null;
   steps: DesignSteps; team: DesignTeam };
 type DesignSettings = { version: number; packages: DesignPackage[]; flow: DesignFlow };
 
@@ -672,6 +673,37 @@ async function designPackages(ctx: OpsContext, file: PackagesFile, step: Step) {
   for (const entry of current.packages) {
     if (entry.status === "active" && !file.packages.some((spec) => lower(spec.code) === lower(entry.code))) step.info(`design package ${entry.code}`, "not in the file: left as it is");
   }
+  if (file.siteVisitQuestions) await siteQuestions(ctx, file.siteVisitQuestions, file.siteVisitScopes ?? [], current, step);
+}
+
+/** What a question list holds, in a line: its general questions and sections, its checklists and their lines. */
+export function questionListText(questions: SiteQuestion[], scopes: ChecklistScope[]) {
+  const general = questions.filter((question) => !question.scope);
+  const sections = new Set(general.map((question) => question.section?.toLowerCase() ?? ""));
+  const checklists = new Set(questions.filter((question) => question.scope).map((question) => question.scope!.toLowerCase()));
+  const everyJob = scopes.filter((entry) => entry.everyJob).length;
+  return `${general.length} general questions in ${sections.size} ${sections.size === 1 ? "section" : "sections"}, `
+    + `${questions.filter((question) => question.kind === "check").length} checks, ${checklists.size} checklists (${everyJob} for every job), `
+    + `${scopes.filter((entry) => entry.match.length).length} with match words`;
+}
+
+/**
+ * The question list asked at the kick-off and the site measure, set whole through Settings › Design's own command (its
+ * validation, version check and audit) when it differs. Journeys already started keep the list they started with.
+ */
+async function siteQuestions(ctx: OpsContext, questions: SiteQuestion[], scopes: ChecklistScope[], current: DesignSettings, step: Step) {
+  const service = ctx.get(DesignPackagesService);
+  const label = "site visit questions";
+  const same = JSON.stringify(current.flow.siteVisitQuestions) === JSON.stringify(questions) && JSON.stringify(current.flow.siteVisitScopes ?? []) === JSON.stringify(scopes);
+  if (same) { step.same(label, questionListText(questions, scopes)); return; }
+  await step.change([{ label, detail: `${questionListText(current.flow.siteVisitQuestions, current.flow.siteVisitScopes ?? [])} → ${questionListText(questions, scopes)}` }], async () => {
+    const fresh = await service.get(ctx.actor, ctx.workspace.id) as DesignSettings;
+    const flow = fresh.flow;
+    const body = await ctx.validated(DesignFlowSettingsDto, { version: fresh.version, designInternalDays: flow.designInternalDays, designClientDays: flow.designClientDays,
+      materialSelectionDays: flow.materialSelectionDays, estimateDays: flow.estimateDays, visualiserRoleCode: flow.visualiserRoleCode, showroomBookingTypeId: flow.showroomBookingTypeId,
+      renderInternalDays: flow.renderInternalDays ?? null, renderClientDays: flow.renderClientDays ?? null, siteVisitQuestions: questions, siteVisitScopes: scopes });
+    return service.saveFlowSettings(ctx.actor, ctx.workspace.id, { ...body, showroomBookingTypeId: body.showroomBookingTypeId ?? null, steps: undefined, team: undefined } as never);
+  });
 }
 
 // ---------- order paths ----------

@@ -107,7 +107,9 @@ configure
                   product's default, a currency the workspace's), and only the fields that differ are changed and
                   listed; a missing package is added, and the minimum design deposit is set when the file has one. A
                   package the file doesn't list is left as it is (never archived or deleted); an archived one stays
-                  archived.
+                  archived. When the file has siteVisitQuestions (and siteVisitScopes, each checklist's match words),
+                  the question list asked at the kick-off and the site measure is set whole (e.g.
+                  docs/fixtures/palm-design-questions.json); journeys already started keep their list.
   The teams and packages go first, then the profile's sections, which name their roles, teams and packages.
 
 sandbox
