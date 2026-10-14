@@ -50,7 +50,8 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
     {tab === "start" ? <StartRules key={data.settings.version} data={data} onSave={(input) => save(() => api.saveSettings(input))} /> : null}
     {tab === "roles" ? <Roles key={data.settings.version} data={data} onSave={(roles) => save(() => api.saveSettings({ version: data.settings.version, roles }))} /> : null}
     {tab === "informed" ? <KeepInformed key={`informed-${data.settings.version}`} data={data} onSave={(keepInformed) => save(() => api.saveSettings({ version: data.settings.version, keepInformed }))} /> : null}
-    {tab === "routes" ? <SettingsSection id="routes" title={t("Routes")} actions={data.canManage ? <Button size="compact" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New route")}</Button> : null}>
+    {/* The open tab names the section, so its heading is for screen readers only. */}
+    {tab === "routes" ? <SettingsSection id="routes" title={<span className="wd-visually-hidden">{t("Routes")}</span>} actions={data.canManage ? <Button size="compact" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New route")}</Button> : null}>
       <ul className={styles.routes}>{data.templates.map((route) => <li key={route.id}>
         <button type="button" onClick={() => setEditing(route)}>
           <span className={styles.routeName}>{route.name}{route.isDefault ? <Badge tone="neutral">{t("Default")}</Badge> : null}</span>
@@ -58,14 +59,14 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
         </button>
       </li>)}</ul>
     </SettingsSection> : null}
-    {tab === "work" ? <SettingsSection id="work" title={t("Standard tasks")}>
+    {tab === "work" ? <section id="work" aria-label={t("Standard tasks")}>
       <ul className={styles.routes}>{data.workTemplates.map((template) => <li key={template.supply}>
         <button type="button" onClick={() => setEditingWork(template)}>
           <span className={styles.routeName}>{supplies[template.supply]}</span>
           <span className={styles.muted}>{template.tasks.length ? template.tasks.map((task) => task.title).join(" → ") : t("No tasks")}</span>
         </button>
       </li>)}</ul>
-    </SettingsSection> : null}
+    </section> : null}
     {tab === "warranty" ? <WarrantySettingsSection workspaceId={workspaceId} supplies={supplies} /> : null}
     {tab === "labour" ? <LabourRatesSection workspaceId={workspaceId} /> : null}
     {editingWork ? <WorkTemplateEditor template={editingWork} title={supplies[editingWork.supply]} roles={data.settings.roles} stages={routeStages(data.templates)}
