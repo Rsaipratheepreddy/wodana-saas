@@ -9,10 +9,17 @@ const DAY = 86_400_000;
 const leadJob = (leadId: string | null, opportunityId: string | null): JobLineageLink | null =>
   opportunityId ? { type: "opportunity", id: opportunityId } : leadId ? { type: "lead", id: leadId } : null;
 
+/** An enquiry's first-response time has run out: crm.first_response shows it (and the task tied to that SLA steps aside). */
+const FIRST_RESPONSE_LATE = (sla: string, now: string) => `(${sla}.status = 'breached' OR (${sla}.status = 'active' AND ${sla}.due_at < ${now}))`;
+const SLA_TASK_SHOWN_AS_FIRST_RESPONSE = (now: string) => `EXISTS (SELECT 1 FROM crm_sla_instances sla
+           WHERE sla.workspace_id = activity.workspace_id AND sla.id = activity.sla_instance_id AND ${FIRST_RESPONSE_LATE("sla", now)})`;
+
 /**
  * crm.follow_up (new): a follow-up (call, meeting, task) its owner planned, on the day it is due and the day after,
  * then their team lead and the owner. Done when it is no longer pending, or its enquiry or deal closed. "Mark done"
- * and "Reassign" run the follow-up's own commands (bound in my-day/module-commands.ts).
+ * and "Reassign" run the follow-up's own commands (bound in my-day/module-commands.ts). The "Respond to new enquiry"
+ * task tied to an enquiry's first-response SLA leaves My day to crm.first_response once that time has run out, so one
+ * enquiry never shows two "respond" rows.
  */
 export const followUpSource: ReminderSource = {
   kind: "crm.follow_up", module: "sales", audience: "staff", critical: false, notify: "engine",
@@ -29,8 +36,9 @@ export const followUpSource: ReminderSource = {
         WHERE activity.workspace_id = $1 AND activity.status = 'pending' AND activity.type <> 'note' AND activity.due_at IS NOT NULL
           AND activity.due_at BETWEEN $2::timestamptz AND $3::timestamptz
           AND (activity.lead_id IS NULL OR lead.status IN ${OPEN_LEADS}) AND (activity.opportunity_id IS NULL OR opportunity.status = 'open')
+          AND NOT ${SLA_TASK_SHOWN_AS_FIRST_RESPONSE("$5::timestamptz")}
         ORDER BY activity.due_at DESC, activity.id LIMIT $4`,
-      [workspaceId, new Date(now.getTime() - 90 * DAY), new Date(now.getTime() + 14 * DAY), limit])).rows;
+      [workspaceId, new Date(now.getTime() - 90 * DAY), new Date(now.getTime() + 14 * DAY), limit, now])).rows;
     return rows.map((row): DueItem => ({
       key: `activity:${row.id}`, sourceType: "crm_activity", sourceId: row.id, jobSource: leadJob(row.leadId, row.opportunityId),
       projectId: null, caseId: null, partyId: row.partyId, ownerMembershipId: row.owner, ccMembershipIds: [], dueAt: new Date(row.dueAt),
@@ -47,8 +55,9 @@ export const followUpSource: ReminderSource = {
         WHERE activity.workspace_id = $1 AND activity.id = ANY($2::uuid[]) AND activity.status = 'pending' AND activity.due_at IS NOT NULL
           AND activity.owner_membership_id IS NOT NULL
           AND (activity.lead_id IS NULL OR lead.status IN ${OPEN_LEADS}) AND (activity.opportunity_id IS NULL OR opportunity.status = 'open')
-          AND ($3::timestamptz IS NULL OR activity.due_at <= $3::timestamptz)`,
-      [workspaceId, ids, at ? new Date(at.now.getTime() + 14 * DAY) : null])).rows.map((row) => row.id));
+          AND ($3::timestamptz IS NULL OR activity.due_at <= $3::timestamptz)
+          AND NOT ${SLA_TASK_SHOWN_AS_FIRST_RESPONSE("$4::timestamptz")}`,
+      [workspaceId, ids, at ? new Date(at.now.getTime() + 14 * DAY) : null, at?.now ?? new Date()])).rows.map((row) => row.id));
   },
 };
 
@@ -65,7 +74,7 @@ export const firstResponseSource: ReminderSource = {
          JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id
          LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
          LEFT JOIN workspace_memberships owner ON owner.workspace_id = sla.workspace_id AND owner.id = sla.owner_membership_id AND owner.status = 'active'
-        WHERE sla.workspace_id = $1 AND lead.status IN ${OPEN_LEADS} AND (sla.status = 'breached' OR (sla.status = 'active' AND sla.due_at < $2))
+        WHERE sla.workspace_id = $1 AND lead.status IN ${OPEN_LEADS} AND ${FIRST_RESPONSE_LATE("sla", "$2")}
         ORDER BY sla.due_at DESC, sla.id LIMIT $3`, [workspaceId, now, limit])).rows;
     return rows.map((row): DueItem => ({
       key: `sla:${row.id}`, sourceType: "crm_sla_instance", sourceId: row.id, jobSource: { type: "lead", id: row.leadId }, projectId: null, caseId: null,
@@ -79,7 +88,7 @@ export const firstResponseSource: ReminderSource = {
     return keysOf("sla", (await db.query<{ id: string }>(
       `SELECT sla.id FROM crm_sla_instances sla JOIN crm_leads lead ON lead.workspace_id = sla.workspace_id AND lead.id = sla.lead_id
         WHERE sla.workspace_id = $1 AND sla.id = ANY($2::uuid[]) AND lead.status IN ${OPEN_LEADS}
-          AND (sla.status = 'breached' OR (sla.status = 'active' AND sla.due_at < $3))`, [workspaceId, ids, at?.now ?? new Date()])).rows.map((row) => row.id));
+          AND ${FIRST_RESPONSE_LATE("sla", "$3")}`, [workspaceId, ids, at?.now ?? new Date()])).rows.map((row) => row.id));
   },
 };
 
