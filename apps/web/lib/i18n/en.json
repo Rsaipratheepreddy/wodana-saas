@@ -15124,5 +15124,7 @@
   "timeline question {reference}": "timeline question {reference}",
   "{actor} answered {subject}": "{actor} answered {subject}",
   "Who answers": "Who answers",
-  "Internal draft": "Internal draft"
+  "Internal draft": "Internal draft",
+  "Payment verified by Finance": "Payment verified by Finance",
+  "Cost missing": "Cost missing"
 }

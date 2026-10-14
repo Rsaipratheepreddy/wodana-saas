@@ -223,6 +223,15 @@ describe("quotation builder", () => {
     expect(screen.queryByRole("button", { name: /Add item/ })).not.toBeInTheDocument();
   });
 
+  it("says the cost is missing instead of a margin while a charged line has no cost", async () => {
+    const base = state([line({ unitCost: "0" })]);
+    mount({ ...base, pricing: { ...base.pricing, lines: base.pricing.lines.map((item) => ({ ...item, cost: "0.00" })), cost: "0.00", margin: "100.00" } });
+    await userEvent.click(screen.getByRole("button", { name: /^Totals/ }));
+    const totals = screen.getByRole("complementary", { name: "Totals" });
+    expect(totals).toHaveTextContent("MarginCost missing");
+    expect(totals).not.toHaveTextContent("100%");
+  });
+
   it("QA-001: the QS prices a quotation that is with them, and only its prices", async () => {
     const fetcher = mount({ ...state([line({ rate: "0" })]), canEdit: false, canPrice: true });
     expect(screen.getByRole("textbox", { name: "Quantity" })).toBeDisabled();

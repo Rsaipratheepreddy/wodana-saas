@@ -112,6 +112,7 @@ export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partia
     return {
       subtotal: Number(priced.subtotal), cost: Number(priced.cost ?? 0), discount: Number(priced.discounts.total),
       net: Number(priced.net), tax: Number(priced.tax), total: Number(priced.total), margin: Number(priced.margin ?? 0),
+      costMissing: priced.cost === null || quoteCostMissing(q.lines.filter((line) => !line.optional && line.changeOp !== "omit")),
     };
   }
   // Older quotes without a pricing policy: the same arithmetic, exact, in the currency's minor units.
@@ -133,7 +134,15 @@ export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partia
     tax: tax.toNumber(),
     total: net.add(tax).toNumber(),
     margin: net.isZero() ? 0 : net.sub(cost).div(net).mul(100).round(2).toNumber(),
+    costMissing: quoteCostMissing(includedLines),
   };
+}
+/**
+ * Whether a charged line has no cost (none entered, or zero while it sells for something): the margin is then unknown,
+ * never a false 100%.
+ */
+export function quoteCostMissing(lines: Array<Pick<QuoteLine, "quantity" | "rate" | "unitCost">>) {
+  return lines.some((line) => Dec.of(line.quantity).mul(line.rate).cmp(0) > 0 && !(line.unitCost !== null && line.unitCost !== undefined && Dec.of(line.unitCost).cmp(0) > 0));
 }
 export function parseLines(input: unknown): QuoteLine[] {
   if (!Array.isArray(input) || input.length > 300)

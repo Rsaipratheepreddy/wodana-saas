@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { acceptedQuoteTotals } from "./commercial.domain";
 import { dealMoney, dealRisks, dealSections, type DealLive } from "./deal-file-insight";
 import type { CommercialData, DealFile, Quote } from "./commercial.types";
 
@@ -52,6 +53,19 @@ describe("Deal File checks", () => {
   });
 });
 
+describe("Deal File margin", () => {
+  it("never measures a margin when a charged line has no cost", () => {
+    const lines = [{ id: "l1", room: "Kitchen", title: "Cabinets", quantity: 1, unit: "nos", unitCost: 90000, rate: 100000 },
+      { id: "l2", room: "Kitchen", title: "Worktop", quantity: 1, unit: "nos", unitCost: 0, rate: 100000 }] as never;
+    const partial = data({ quotes: [quote({ lines, total: 200000 })] });
+    expect(acceptedQuoteTotals(partial.quotes[0])).toMatchObject({ costMissing: true });
+    expect(dealRisks(partial, { marginFloorPercent: "60", proofCount: 1, outstanding: "0" })).not.toContain("margin_below_floor");
+    const costed = data({ quotes: [quote({ lines: [(lines as unknown as Array<Record<string, unknown>>)[0]] as never, total: 100000 })] });
+    expect(acceptedQuoteTotals(costed.quotes[0])).toMatchObject({ costMissing: false, margin: 10 });
+    expect(dealRisks(costed, { marginFloorPercent: "60", proofCount: 1, outstanding: "0" })).toContain("margin_below_floor");
+  });
+});
+
 describe("Deal File contents per enquiry type (PLM-123)", () => {
   const keys = (sections: ReturnType<typeof dealSections>) => sections.map((section) => section.key);
   it("holds the common part for every type, each linking to its live record", () => {
@@ -67,6 +81,30 @@ describe("Deal File contents per enquiry type (PLM-123)", () => {
     const bespoke = dealSections(data(), live({ flow: "furniture", furniturePath: "bespoke", materialsChange: true, fulfilment: { collected: 0, delivered: 1, installed: 0 } }), null);
     expect(keys(bespoke).slice(8)).toEqual(["items", "collection_delivery", "approved_drawing", "materials_approval", "proof_of_delivery"]);
     expect(bespoke.find((section) => section.key === "proof_of_delivery")?.state).toBe("present");
+  });
+
+  it("follows the order's path: a supplier or in-stock order lists no BOQ, drawings or production, and the permit once", () => {
+    const delivered = { design: false, mainQuotation: true, materialSelection: false, procurement: true, manufacturing: false, siteWorks: false, installation: true };
+    const permit = { required: true, collected: false, planned: false };
+    for (const projectId of [null, "p"]) {
+      const supplier = dealSections(data(), live({ projectId, flow: "furniture", furniturePath: "supplier_order", permit }), delivered);
+      expect(keys(supplier).slice(8)).toEqual(["items", "collection_delivery", "supplier_orders", "building_permit", "proof_of_delivery"]);
+    }
+    expect(keys(dealSections(data(), live({ flow: "furniture", furniturePath: "in_stock_delivery" }), delivered)).slice(8)).toEqual(["items", "collection_delivery", "proof_of_delivery"]);
+    // Before a path is chosen, a scope without manufacturing makes nothing either.
+    expect(keys(dealSections(data(), live({ flow: "furniture" }), delivered))).not.toContain("production");
+    // The order's own BOQ choice still asks for one.
+    expect(keys(dealSections(data(), live({ flow: "furniture", furniturePath: "supplier_order", boqRequired: true }), delivered))).toContain("boq");
+    // A made piece keeps its production part, and the permit is listed once.
+    const made = keys(dealSections(data(), live({ flow: "furniture", furniturePath: "bespoke", permit }), { ...delivered, manufacturing: true }));
+    expect(made).toEqual(expect.arrayContaining(["boq", "technical_drawings", "production"]));
+    expect(made.filter((key) => key === "building_permit")).toHaveLength(1);
+  });
+
+  it("counts a payment Finance verified as the payment proof", () => {
+    const section = (over: Partial<DealLive>, value = data()) => dealSections(value, live(over), null).find((item) => item.key === "payment_proofs")?.state;
+    expect(section({ proofCount: 0 })).toBe("present");
+    expect(section({ proofCount: 0 }, data({ payments: [] }))).toBe("missing");
   });
 
   it("counts the project's client-approved technical drawings as the approved drawing, before any work order records one", () => {

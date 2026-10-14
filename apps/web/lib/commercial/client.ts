@@ -68,14 +68,22 @@ export function quoteTotals(q: Pick<Quote, "lines" | "discount" | "taxRate">) {
     ),
     net = round(subtotal - q.discount),
     tax = round((net * q.taxRate) / 100);
+  // A charged line without a cost makes any margin false (a 100% margin from missing costs): there is none until every cost is in.
+  const costMissing = quoteCostMissing(includedLines);
   return {
     subtotal,
     cost,
     net,
     tax,
     total: round(net + tax),
-    margin: net ? ((net - cost) / net) * 100 : 0,
+    costMissing,
+    margin: costMissing || !net ? null : ((net - cost) / net) * 100,
   };
+}
+
+/** Whether a charged line has no cost (none entered, or zero while it is sold for something). */
+export function quoteCostMissing(lines: Array<Pick<QuoteLine, "quantity" | "rate" | "unitCost">>) {
+  return lines.some((line) => line.quantity * line.rate > 0 && !((line.unitCost ?? 0) > 0));
 }
 export function quoteSelectionTotals(
   q: Pick<Quote, "lines" | "discount" | "taxRate" | "total">,

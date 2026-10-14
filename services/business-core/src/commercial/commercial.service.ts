@@ -2842,8 +2842,9 @@ export class CommercialService {
                 .filter((payment) => payment.sourceQuoteId === accepted.id && payment.requiredForRelease)
                 .map((payment) => payment.id),
               value: acceptedQuoteValue(accepted),
-              cost: snapshot.cost,
-              margin: snapshot.margin,
+              // A cost missing on a line is no cost at all (reports read 0 as unknown), never a false margin.
+              cost: snapshot.costMissing ? 0 : snapshot.cost,
+              margin: snapshot.costMissing ? 0 : snapshot.margin,
               commission: review.commission,
               commissionLines: review.finalCommissionLines,
               paymentProofUrl: review.paymentProofUrl,

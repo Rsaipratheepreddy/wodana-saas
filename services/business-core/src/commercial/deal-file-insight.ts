@@ -10,6 +10,7 @@ import { qsEstimateCurrent } from "./qs-estimate";
 import type { TeamRoleView } from "../project-core/team-types";
 import type { CommercialData, Quote } from "./commercial.types";
 import { permitRequired, readPermitFacts } from "../logistics/permits";
+import { dealRule } from "../fulfilment/fulfilment-rules";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -83,7 +84,9 @@ export function dealRisks(data: CommercialData, options: { marginFloorPercent: s
     risks.push("payment_proof_missing");
   if (!commissions?.length) risks.push("commission_missing");
   if (quote && Dec.of(acceptedQuoteValue(quote)).cmp(0) <= 0) risks.push("value_zero");
-  if (options.marginFloorPercent !== null && quote && Dec.of(acceptedQuoteTotals(quote).margin).cmp(options.marginFloorPercent) < 0) risks.push("margin_below_floor");
+  // Without every cost the margin is unknown (the Deal File says "Cost missing"), never measured against the floor.
+  const totals = quote ? acceptedQuoteTotals(quote) : null;
+  if (options.marginFloorPercent !== null && totals && !totals.costMissing && Dec.of(totals.margin).cmp(options.marginFloorPercent) < 0) risks.push("margin_below_floor");
   if (data.servicePath && quote && quote.round !== "design" && !qsEstimateCurrent(quote)) risks.push("qs_estimate_missing");
   if (Dec.of(options.outstanding).cmp(0) > 0) risks.push("balance_outstanding");
   return risks;
@@ -108,7 +111,12 @@ export type DealLive = {
   proposals: Array<{ kind: ProposalKind; valueStatus: ValueStatus; wonAt: string | null }>;
   /** PLM-136: the building permit, recorded on the project or the deal: whether it's required, collected, or its collection planned. */
   permit?: { required: boolean; collected: boolean; planned: boolean };
+  /** PLM-083: whether the order needs a BOQ priced by the QS (its own choice, else its path's rule); null: no rule says. */
+  boqRequired?: boolean | null;
 };
+
+/** PLM-125: the furniture paths that make the pieces (core collection in the factory, bespoke); the others sell them ready or bought in. */
+const MAKING_PATHS = new Set<FurniturePath>(["core_collection_factory", "bespoke"]);
 
 const DESIGN_SECTIONS: Array<[string, string]> = [
   ["inspiration", "inspiration"], ["site_visit", "site_visit"], ["concepts", "concepts"], ["space_planning", "space_planning"],
@@ -139,7 +147,9 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
     { key: "enquiry", group: "common", state: state(Boolean(dealFile?.enquiryReference ?? live.opportunityId)), href: opportunityHref },
     { key: "client", group: "common", state: "present", href: opportunityHref },
     { key: "quotation", group: "common", state: state(Boolean(quote)), href: caseHref("quotations") },
-    { key: "payment_proofs", group: "common", state: state(live.proofCount > 0 || Boolean(dealFile?.paymentProofUrl ?? review?.paymentProofUrl)), count: live.proofCount, href: opportunityHref },
+    // A payment Finance verified (its receipt uploaded with it) is proof too, as for the reviewer's check.
+    { key: "payment_proofs", group: "common", state: state(live.proofCount > 0 || Boolean(dealFile?.paymentProofUrl ?? review?.paymentProofUrl)
+      || data.payments.some((payment) => payment.sourceQuoteId === quote?.id && payment.status === "verified")), count: live.proofCount, href: opportunityHref },
     { key: "finance_values", group: "common", state: state(Boolean(review?.financeReviewedById), Boolean(review)), href: caseHref("execution-release") },
     { key: "commission", group: "common", state: state(commissions.length > 0), count: commissions.length, href: caseHref("execution-release") },
     { key: "approval", group: "common", state: state(Boolean(dealFile?.approvedAt), Boolean(review)), href: caseHref("execution-release") },
@@ -147,9 +157,12 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
   ];
   const furniture = live.flow === "furniture" || live.furniturePath !== null;
   const design = Boolean(scope?.design) || live.flow === "design" || Object.keys(live.designStages).length > 0;
-  const production = Boolean(scope && (scope.manufacturing || scope.siteWorks || scope.installation || (scope.design && scope.mainQuotation)));
+  // A furniture order follows its path (PLM-083/125): one that sells ready or bought-in pieces (take home, in stock, a
+  // supplier order) has no BOQ, technical drawings or production; before a path is chosen, the scope's manufacturing says.
+  const path = live.furniturePath;
+  const makes = !furniture || (path ? MAKING_PATHS.has(path) : Boolean(scope?.manufacturing));
+  const production = makes && Boolean(scope && (scope.manufacturing || scope.siteWorks || scope.installation || (scope.design && scope.mainQuotation)));
   if (furniture) {
-    const path = live.furniturePath;
     sections.push({ key: "items", group: "furniture", state: state(Boolean(quote?.lines.length)), count: quote?.lines.length ?? 0, href: caseHref("quotations") });
     sections.push({ key: path === "take_home_now" ? "collection" : "collection_delivery", group: "furniture",
       state: state(live.fulfilment.collected + live.fulfilment.delivered > 0, true), href: opportunityHref });
@@ -159,8 +172,10 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
     if (path === "supplier_order")
       sections.push({ key: "supplier_orders", group: "furniture", state: state(live.supplierOrders.total > 0 && live.supplierOrders.arrived === live.supplierOrders.total, live.supplierOrders.total > 0),
         count: live.supplierOrders.total, href: "/workspace/purchasing/orders" });
-    if (path !== "take_home_now" && (live.permit?.required || live.permit?.collected) && !live.projectId)
-      sections.push({ key: "building_permit", group: "furniture", state: state(Boolean(live.permit?.collected), Boolean(live.permit?.planned)), href: opportunityHref });
+    // The order's own BOQ choice (or its path's rule) asks the QS for one even when nothing is made.
+    if (!production && live.boqRequired) sections.push({ key: "boq", group: "furniture", state: state(live.boqLines > 0, Boolean(live.projectId)), count: live.boqLines, href: projectHref() ?? caseHref("quotations") });
+    if (path !== "take_home_now" && (live.permit?.required || live.permit?.collected) && (!live.projectId || !production))
+      sections.push({ key: "building_permit", group: "furniture", state: state(Boolean(live.permit?.collected), Boolean(live.permit?.planned)), href: projectHref() ?? opportunityHref });
     if (path !== "take_home_now") sections.push({ key: "proof_of_delivery", group: "furniture", state: state(live.fulfilment.delivered > 0, true), href: opportunityHref });
   }
   if (design) {
@@ -184,7 +199,8 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
       count: live.workOrders.drawingsApproved, href: projectHref() });
     sections.push({ key: "production", group: "production", state: state(live.workOrders.total > 0 && live.workOrders.ready === live.workOrders.total, live.workOrders.total > 0),
       count: live.workOrders.total, href: projectHref() });
-    if (live.permit?.required || live.permit?.collected)
+    // Once: a furniture order delivered from the deal already lists it.
+    if ((live.permit?.required || live.permit?.collected) && !sections.some((section) => section.key === "building_permit"))
       sections.push({ key: "building_permit", group: "production", state: state(Boolean(live.permit?.collected), Boolean(live.permit?.planned)), href: projectHref() ?? opportunityHref });
     sections.push({ key: "delivery_installation", group: "production", state: state(live.fulfilment.delivered > 0 && live.fulfilment.installed > 0, live.fulfilment.delivered > 0), href: opportunityHref });
     if (!furniture) sections.push({ key: "proof_of_delivery", group: "production", state: state(live.fulfilment.delivered > 0, true), href: opportunityHref });
@@ -235,6 +251,7 @@ async function dealLive(db: Db, workspaceId: string, caseId: string, opportunity
     fulfilment: { collected: row?.collected ?? 0, delivered: row?.delivered ?? 0, installed: row?.installed ?? 0 },
     proposals: opportunityId ? (await loadProposals(db, workspaceId, opportunityId)).map((proposal) => ({ kind: proposal.kind, valueStatus: proposal.valueStatus, wonAt: proposal.wonAt })) : [],
     permit: await dealPermit(db, workspaceId, row?.projectId ?? null, opportunityId),
+    boqRequired: opportunityId && (row?.flow === "furniture" || row?.furniturePath) ? (await dealRule(db, workspaceId, opportunityId))?.boqRequired ?? null : null,
   };
 }
 

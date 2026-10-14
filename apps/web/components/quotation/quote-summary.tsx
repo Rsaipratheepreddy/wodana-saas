@@ -35,7 +35,9 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
   const m = (value: string | null) => money(value, currency, decimals, locale);
   const quoteDiscount = state.discounts.find((item) => item.scope === "quote");
   const floor = state.settings.marginFloorPercent;
-  const belowFloor = pricing.margin !== null && floor !== null && Number(pricing.margin) < Number(floor);
+  // A charged line without a cost (none entered, or zero) leaves the margin unknown: never a false 100%.
+  const costMissing = pricing.cost === null || pricing.lines.some((line) => line.included && Number(line.gross) > 0 && !(Number(line.cost ?? 0) > 0));
+  const belowFloor = !costMissing && pricing.margin !== null && floor !== null && Number(pricing.margin) < Number(floor);
   return <aside className={styles.summary} aria-label={t("Totals")}>
     <dl>
       <div><dt>{t("Subtotal")}</dt><dd>{m(pricing.subtotal)}</dd></div>
@@ -53,7 +55,7 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
       {Number(pricing.optionalTotal) ? <div className={styles.muted}><dt>{t("Optional extras")}</dt><dd>+{m(pricing.optionalTotal)}</dd></div> : null}
       {state.canViewCosts ? <>
         <div className={styles.muted}><dt>{t("Cost")}</dt><dd>{pricing.cost === null ? t("Some costs missing") : m(pricing.cost)}</dd></div>
-        <div className={styles.muted} data-alert={belowFloor || undefined}><dt>{t("Margin")}</dt><dd>{pricing.margin === null ? "—" : `${plain(pricing.margin, locale, 1)}%`}</dd></div>
+        <div className={styles.muted} data-alert={belowFloor || undefined}><dt>{t("Margin")}</dt><dd>{costMissing ? t("Cost missing") : pricing.margin === null ? "—" : `${plain(pricing.margin, locale, 1)}%`}</dd></div>
       </> : null}
     </dl>
     {state.checks.length && state.quote.status === "draft" ? <section className={styles.checks} aria-label={t("To fix before sending")}>

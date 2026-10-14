@@ -114,6 +114,9 @@ it("shows the owner's return remark, checks the proof link before sending, and n
   expect(screen.getByRole("button", {name:"Send to Finance"})).toBeDisabled();
   unmount();
   render(<ApprovalRelease initialView="owner" state={state([{ id: "p1", sourceQuoteId: "quote", status: "verified" }])} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  // The verified payment is the proof: no link is asked for.
+  expect(screen.getByText("Payment verified by Finance")).toBeVisible();
+  expect(screen.queryByRole("textbox", {name:"Proof-of-payment link"})).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Receipt verified"}});
   fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
   await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({paymentProofUrl:""})));

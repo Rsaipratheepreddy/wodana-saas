@@ -384,7 +384,7 @@ export function QuotationEditor({
                   </div>
                   <div>
                     <dt>{t("Gross margin")}</dt>
-                    <dd>{totals.margin.toFixed(1)}%</dd>
+                    <dd>{totals.margin === null ? t("Cost missing") : `${totals.margin.toFixed(1)}%`}</dd>
                   </div>
                   <p className={s.muted}>
                     {t("Costs and margin are visible to your team only.")}</p>

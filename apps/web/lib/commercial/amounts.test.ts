@@ -26,3 +26,10 @@ it("keeps priced options outside the base quotation total and margin", () => {
  expect(acceptedQuoteTotals(accepted)).toMatchObject({total:1155,cost:560});
  expect(acceptedQuoteValue(accepted)).toBe(1155);
 });
+
+it("shows no margin (cost missing) while a charged line has no cost, never a false 100%", () => {
+ const line = {room:"Room",specification:"",material:"",finish:"",unit:"nos",quantity:1};
+ const missing = quoteTotals({discount:0,taxRate:0,lines:[{...line,id:"a",title:"Sofa",unitCost:400,rate:1000},{...line,id:"b",title:"Rug",unitCost:0,rate:500}]});
+ expect(missing).toMatchObject({costMissing:true,margin:null});
+ expect(quoteTotals({discount:0,taxRate:0,lines:[{...line,id:"a",title:"Sofa",unitCost:400,rate:1000}]})).toMatchObject({costMissing:false,margin:60});
+});

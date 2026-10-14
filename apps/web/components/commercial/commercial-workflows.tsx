@@ -578,6 +578,8 @@ export function ApprovalRelease({
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const day = (value: string) => <time dateTime={value}>{formatDate(value, { locale, timeZone })}</time>;
+  // A line without a cost leaves the margin unknown: never a false 100%.
+  const marginText = (margin: number | null) => (margin === null ? t("Cost missing") : `${margin.toFixed(1)}%`);
   const [tab, setTab] = useState<string>(initialView),
     [note, setNote] = useState(""),
     // Finance's note and the approver's remarks are separate: one never pre-fills the other.
@@ -706,7 +708,7 @@ export function ApprovalRelease({
               {/* Costs are stripped for people who can't see them; showing 0 and 100% would mislead. */}
               {state.canViewCosts ? <>
                 <div><small>{t("Internal cost")}</small><strong>{money(acceptedQuoteTotals(accepted).cost, accepted.currency)}</strong></div>
-                <div><small>{t("Gross margin")}</small><strong>{acceptedQuoteTotals(accepted).margin.toFixed(1)}%</strong></div>
+                <div><small>{t("Gross margin")}</small><strong>{marginText(acceptedQuoteTotals(accepted).margin)}</strong></div>
               </> : null}
               <div><small>{t("Internal approval")}</small><strong>{d.ownerReview ? translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status) : t("Not submitted")}</strong></div>
             </div>
@@ -749,7 +751,9 @@ export function ApprovalRelease({
               {d.ownerReview && <p className={s.notice}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status)}. {d.ownerReview.decisionNote ?? d.ownerReview.financeNote}</p>}
               {state.opportunityStatus !== "won" && <p className={s.notice}>{t("Attach the payment proof on the opportunity first: that wins it and opens this Deal File.")}</p>}
               {attachedProof ? <a href={attachedProof} target="_blank" rel="noopener noreferrer">{t("Payment proof attached on the opportunity ↗")}</a> : null}
-              {attachedProof ? null : <TextInput isRequired={!receiptVerified} inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} onBlur={() => setProofTouched(true)} placeholder={t("https://…")}
+              {/* A payment Finance verified (with its uploaded receipt) is the proof: no link is asked for then. */}
+              {!attachedProof && receiptVerified ? <p className={s.muted}>{t("Payment verified by Finance")}</p> : null}
+              {attachedProof || receiptVerified ? null : <TextInput isRequired inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} onBlur={() => setProofTouched(true)} placeholder={t("https://…")}
                 isInvalid={proofTouched && proofProblem === "insecure"} errorMessage={proofProblem === "insecure" ? insecureProof : undefined} />}
               {commissionLines.map((line, index) => <CommissionFields key={index} currency={accepted.currency} index={index} line={line}
                 onChange={(update) => updateCommission(index, update)}
