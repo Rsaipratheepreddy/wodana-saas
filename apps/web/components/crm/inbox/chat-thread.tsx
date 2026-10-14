@@ -5,7 +5,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import Link from "next/link";
 import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, FolderInput, ImageIcon, Info, Mail, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
 import { Avatar, Badge, Button, FormDialog, IconButton, IconMenuButton, InspectorSheet, MenuButton, TextAreaField, useConfirmationDialog, useDesignSystem } from "@/design-system";
-import { crmRequest, label, type RecordData } from "@/lib/crm/client";
+import { CrmRequestError, crmRequest, label, type RecordData } from "@/lib/crm/client";
 import { attachmentUrl, CLIENT_EVENT_LABELS, CLOSING_KINDS, CLOSING_LABELS, channelName, eventLine, fileSizeText, jobHref, jobName, renderClosingText, snoozePresets, type ChatAttachment, type ChatClosing, type ChatContext, type ChatEmail, type ChatEvent, type ClosingKind, type ClosingSettings, type EmailReplying, type ConversationJob, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -34,18 +34,34 @@ export type ThreadLookups = { labels: InboxLabel[]; owners: InboxOwner[]; quickR
  * the three closing messages after a confirmation (PLM-137), and marks the chat as spam or, with a reason, not spam
  * (PLM-138). `onDone` opens the next chat after Resolve, Snooze or a closing message that resolves it.
  */
-export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onChanged, onDone, onLeft, lookups, registerActions }: {
+export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onChanged, onDone, onLeft, lookups, registerActions, listVersion }: {
   workspaceId: string; id: string; draft: string; onDraftChange: (value: string) => void; onBack: () => void;
   onChanged: () => Promise<void>; onDone: () => void; lookups: ThreadLookups;
   /** The chat left the person's reach (filed into a job whose team they are not on): the list says where it went. */
   onLeft?: (message: string) => void;
   /** The list's keyboard shortcuts act on the open chat through these. */
   registerActions?: (actions: { resolve: () => void } | null) => void;
+  /** The chat's version as the list last read it: newer than the one shown (a client's message the list picked up) re-reads the chat. */
+  listVersion?: number;
 }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const now = useNow(15_000);
   const { thread, failure: loadFailure, refresh } = useLiveConversation(workspaceId, id);
+  const shownVersion = thread ? Number(thread.version) : null;
+  useEffect(() => {
+    if (listVersion === undefined || shownVersion === null || !(listVersion > shownVersion)) return;
+    void refresh(true);
+  }, [listVersion, shownVersion, refresh]);
+  // A chat that changed meanwhile (the client wrote, a colleague acted) is read again and shown as it is now, with a note.
+  const [notice, setNotice] = useState("");
+  const changedMeanwhile = useCallback(async (error: unknown) => {
+    if (!(error instanceof CrmRequestError) || error.status !== 409) return false;
+    await refresh();
+    await onChanged();
+    setNotice(t("This chat had changed. It shows the latest now; try again."));
+    return true;
+  }, [refresh, onChanged, t]);
   // Woddy: this chat is its context, the chats picked in the list are "these", and a reply it drafts goes
   // into this reply box (W-3). "@Woddy …" in the reply box is answered here, privately.
   useWoddyRecord("conversation", id, String(thread?.partyName ?? t("Chat")));
@@ -73,17 +89,17 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
 
   const change = useCallback(async (body: Record<string, unknown>, done = false) => {
     if (saving.current || !thread) return;
-    saving.current = true; setBusy(true); setFailure("");
+    saving.current = true; setBusy(true); setFailure(""); setNotice("");
     try { await crmRequest(workspaceId, `conversations/${id}`, "PATCH", { version: thread.version, ...body }, timeout()); await refresh(); await onChanged(); if (done) onDone(); }
-    catch (error) { setFailure(error instanceof Error ? error.message : t("The chat could not be updated.")); }
+    catch (error) { if (!(await changedMeanwhile(error))) setFailure(error instanceof Error ? error.message : t("The chat could not be updated.")); }
     finally { saving.current = false; setBusy(false); }
-  }, [thread, workspaceId, id, refresh, onChanged, onDone, t]);
+  }, [thread, workspaceId, id, refresh, onChanged, onDone, changedMeanwhile, t]);
   // "File into job": the chat belongs to one of the contact's jobs; `null` takes it out again. An enquiry just created
   // from this chat is filed against the chat as it is now: its welcome ("We have everything", PLM-137) went into the
   // chat meanwhile, so the version on screen is already behind.
   const file = useCallback(async (job: Pick<ConversationJob, "kind" | "id"> | null, options: { justCreated?: boolean } = {}) => {
     if (saving.current || !thread) return;
-    saving.current = true; setBusy(true); setFailure("");
+    saving.current = true; setBusy(true); setFailure(""); setNotice("");
     try {
       const version = options.justCreated ? (await crmRequest<RecordData>(workspaceId, `conversations/${id}`, "GET", undefined, timeout())).version : thread.version;
       const result = await crmRequest<{ job: ConversationJob | null; visible?: boolean }>(workspaceId, `conversations/${id}/job`, "PUT", { version, kind: job?.kind ?? null, id: job?.id }, timeout());
@@ -91,16 +107,16 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       if (result.visible === false) { onLeft?.(result.job ? t("Filed into {job}. Its team has the chat now.", { job: jobName(result.job) }) : t("The chat was filed.")); return; }
       await refresh(); await loadContext(); await onChanged();
     }
-    catch (error) { setFailure(error instanceof Error ? error.message : t("The chat could not be filed.")); }
+    catch (error) { if (!(await changedMeanwhile(error))) setFailure(error instanceof Error ? error.message : t("The chat could not be filed.")); }
     finally { saving.current = false; setBusy(false); }
-  }, [thread, workspaceId, id, refresh, loadContext, onChanged, onLeft, t]);
+  }, [thread, workspaceId, id, refresh, loadContext, onChanged, onLeft, changedMeanwhile, t]);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const command = useCallback(async (path: string, body: Record<string, unknown>, fallback: string, method: "PUT" | "POST" = "PUT", done = false) => {
-    setBusy(true); setFailure("");
+    setBusy(true); setFailure(""); setNotice("");
     try { await crmRequest(workspaceId, path, method, body, timeout()); await refresh(); await onChanged(); if (done) onDone(); }
-    catch (error) { setFailure(error instanceof Error ? error.message : fallback); }
+    catch (error) { if (!(await changedMeanwhile(error))) setFailure(error instanceof Error ? error.message : fallback); }
     finally { setBusy(false); }
-  }, [workspaceId, refresh, onChanged, onDone]);
+  }, [workspaceId, refresh, onChanged, onDone, changedMeanwhile]);
   const [unmarking, setUnmarking] = useState(false);
   const block = (blocked: boolean) => blocked
     ? requestConfirmation({ title: t("Block this number?"), confirmLabel: t("Block number"),
@@ -204,6 +220,7 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       </div>
     </header>
     {loadFailure || failure ? <p className={styles.error} role="alert">{failure || loadFailure} {loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : null}</p> : null}
+    {notice && !failure ? <p className={styles.notice} role="status">{notice}</p> : null}
     {status === "spam" || thread.spamAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Spam: messages are kept, nobody is told.")}</p>
       : thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Blocked: messages are kept, nobody is told.")}</p> : null}
     {closingDue && thread.canSend ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{closingState?.afterHours === 1 ? t("No reply for 1 working hour.") : t("No reply for {count} working hours.", { count: closingState?.afterHours ?? 0 })}
@@ -225,7 +242,8 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onFile={(job, options) => file(job, options)} /></InspectorSheet> : null}
     {unmarking ? <NotSpamDialog onClose={() => setUnmarking(false)} onSubmit={async (reason) => {
       if (!thread) return;
-      await crmRequest(workspaceId, `conversations/${id}/spam`, "PUT", { version: thread.version, spam: false, reason }, timeout());
+      try { await crmRequest(workspaceId, `conversations/${id}/spam`, "PUT", { version: thread.version, spam: false, reason }, timeout()); }
+      catch (error) { if (await changedMeanwhile(error)) { setUnmarking(false); return; } throw error; }
       setUnmarking(false); await refresh(); await onChanged();
     }} /> : null}
     {customSnooze ? <CustomSnooze timeZone={timeZone} onClose={() => setCustomSnooze(false)} onSnooze={async (until) => { setCustomSnooze(false); await change({ status: "snoozed", snoozedUntil: until }, true); }} /> : null}
@@ -260,14 +278,20 @@ function CustomSnooze({ timeZone, onClose, onSnooze }: { timeZone: string; onClo
 function useLiveConversation(workspaceId: string, id: string) {
   const t = useT();
   const [thread, setThread] = useState<RecordData | null>(null), [failure, setFailure] = useState("");
-  const controller = useRef<AbortController | null>(null), pending = useRef(false);
-  const refresh = useCallback(async (background = false) => {
-    if (background && pending.current) return;
+  const controller = useRef<AbortController | null>(null), pending = useRef(false), again = useRef(false);
+  const refresh = useCallback(async (background = false): Promise<void> => {
+    // A change seen while a read is under way is read right after it, never dropped (the chat would stay behind).
+    if (background && pending.current) { again.current = true; return; }
     pending.current = true;
-    controller.current?.abort(); const request = new AbortController(); controller.current = request;
-    try { const data = await crmRequest(workspaceId, `conversations/${id}`, "GET", undefined, AbortSignal.any([request.signal, timeout()])); if (!request.signal.aborted) { setThread(data); setFailure(""); } }
-    catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chat could not be refreshed.")); }
-    finally { if (controller.current === request) pending.current = false; }
+    do {
+      again.current = false;
+      controller.current?.abort(); const request = new AbortController(); controller.current = request;
+      try { const data = await crmRequest(workspaceId, `conversations/${id}`, "GET", undefined, AbortSignal.any([request.signal, timeout()])); if (!request.signal.aborted) { setThread(data); setFailure(""); } }
+      catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chat could not be refreshed.")); }
+      // A newer read took over: it finishes the job.
+      if (controller.current !== request) return;
+    } while (again.current);
+    pending.current = false;
   }, [workspaceId, id, t]);
   // A new message, receipt or change to this chat re-reads it at once; polling is the fallback.
   const live = useLiveInvalidate(workspaceId, [`conversation:${id}`], () => void refresh(true), 500);

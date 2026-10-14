@@ -280,7 +280,8 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
       {selected ? <ConversationThread key={`${workspaceId}/${selected}`} workspaceId={workspaceId} id={selected} draft={drafts[selected] ?? ""}
         onDraftChange={(value) => setDrafts((old) => ({ ...old, [selected]: value }))} onBack={() => setSelected(null)} onChanged={() => reload(false, true)} onDone={openNext}
         onLeft={(message) => { setNotice(message); setSelected(null); void reload(); }}
-        registerActions={registerActions} lookups={{ ...lookups, membershipId: summary?.membershipId ?? null }} />
+        registerActions={registerActions} lookups={{ ...lookups, membershipId: summary?.membershipId ?? null }}
+        listVersion={(() => { const row = items.find((item) => item.id === selected); return row && Number.isFinite(Number(row.version)) ? Number(row.version) : undefined; })()} />
         : <section className={styles.empty} aria-label={t("Conversation messages")}>{emptyState}</section>}
     </div>
     {creating ? <NewChat workspaceId={workspaceId} onClose={() => setCreating(false)} onOpened={(id) => { setCreating(false); setSelected(id); void reload(); }} /> : null}

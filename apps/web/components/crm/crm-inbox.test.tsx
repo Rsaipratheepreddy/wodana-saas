@@ -185,6 +185,46 @@ describe("CRM inbox", () => {
     await user.click(await screen.findByRole("button", { name: "Resolve" }));
     await waitFor(() => expect(posted("conversations/email-chat?", "PATCH")).toEqual([{ version: 3, status: "closed" }]));
   });
+  it("shows the client's new message in the open chat once the list has it, and acts on the chat's new version", async () => {
+    const user = userEvent.setup(), { data, record, fetcher, posted } = setup({ status: "unresolved" }); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    // The client writes again: the chat is reopened and its version moves on (the list picks it up, the open chat must follow).
+    const later = { ...record, version: 5, status: "open", messages: [...(record.messages as unknown[]), { id: "third", direction: "inbound", status: "delivered", bodyText: "Third message", createdAt: new Date().toISOString() }] };
+    const base = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname.replace("/api/workspace/crm/data/", "");
+      if (!init?.method || init.method === "GET") {
+        if (path === `conversations/${record.id}`) return { ok: true, status: 200, json: async () => later };
+        if (path === "conversations") return { ok: true, status: 200, json: async () => ({ data: [later], nextCursor: null }) };
+      }
+      return base(url, init);
+    });
+    await user.click(screen.getByRole("button", { name: "Inbox options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Refresh inbox" }));
+    expect(await within(screen.getByRole("log", { name: "Message history" })).findByText("Third message")).toBeInTheDocument();
+    await waitFor(() => expect(within(screen.getByRole("heading", { level: 2, name: /Everyday contact/ })).queryByText("Unresolved")).not.toBeInTheDocument());
+    await user.click(await screen.findByRole("button", { name: /Sara Khan/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /Ali Noor/ }));
+    await waitFor(() => expect(posted(`conversations/${record.id}?`, "PATCH")).toEqual([{ version: 5, ownerMembershipId: ALI }]));
+  });
+  it("reads a chat that changed meanwhile again and says so, instead of an error, when an action meets the change", async () => {
+    const user = userEvent.setup(), { data, record, fetcher } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    const later = { ...record, version: 4, messages: [...(record.messages as unknown[]), { id: "third", direction: "inbound", status: "delivered", bodyText: "Third message", createdAt: new Date().toISOString() }] };
+    const base = fetcher.getMockImplementation()!;
+    let refused = false;
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname.replace("/api/workspace/crm/data/", "");
+      if (init?.method === "PATCH" && path === `conversations/${record.id}`) { refused = true; return { ok: false, status: 409, json: async () => ({ message: "Conversation changed; refresh before trying again" }) }; }
+      if (refused && (!init?.method || init.method === "GET") && path === `conversations/${record.id}`) return { ok: true, status: 200, json: async () => later };
+      return base(url, init);
+    });
+    await user.click(await screen.findByRole("button", { name: /Sara Khan/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /Ali Noor/ }));
+    expect(await screen.findByText("This chat had changed. It shows the latest now; try again.")).toBeInTheDocument();
+    expect(await within(screen.getByRole("log", { name: "Message history" })).findByText("Third message")).toBeInTheDocument();
+    expect(screen.queryByText("Conversation changed; refresh before trying again")).not.toBeInTheDocument();
+  });
   it("PLM-137: filters by status, marks a chat unresolved in one action, and sends Closing the chat only after a confirmation that shows the text", async () => {
     const closing = { version: 2, canManage: true, formUrl: "https://palm.example.com/f", formLink: "https://palm.example.com/f", afterHours: 3, defaultAfterHours: 3, fields: ["name", "form_link"], sentOnEnquiry: true,
       messages: [
