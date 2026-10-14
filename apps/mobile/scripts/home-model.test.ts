@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { HomeMetrics } from '../../../packages/contracts/src/home';
-import { changeBetween, dueLabel, expectsNumbers, figuresFor, lensFor, showsPipeline } from '../src/features/today/home-model';
+import { changeBetween, dueLabel, expectsNumbers, figuresFor, lensFor, reportIsLate, showsPipeline } from '../src/features/today/home-model';
 
 const item = (overrides: Partial<{ due: string | null; urgency: string }>) => ({ due: null, urgency: 'today', ...overrides });
 const format = { time: (value: string) => value.slice(11, 16), date: (value: string) => `<${value}>` };
@@ -48,4 +48,16 @@ test('owners see money and projects; sales see enquiries and quotes; figures fol
   // Without money on the answer (no permission), the business lens falls back to what is there.
   assert.deepEqual(figuresFor({ ...metrics, payments: undefined }, 'business').map((figure) => figure.id), ['projects', 'enquiries']);
   assert.deepEqual(changeBetween('10', '10'), { direction: 'flat', percent: 0 });
+});
+
+test('a missing site report turns late at the workspace\'s "Daily report due" time, 18:00 when unset', () => {
+  assert.equal(reportIsLate(17, '18:00'), false);
+  assert.equal(reportIsLate(18, '18:00'), true);
+  assert.equal(reportIsLate(19, '19:00'), true, 'a firm whose reports are due at 19:00');
+  assert.equal(reportIsLate(18, '19:00'), false);
+  assert.equal(reportIsLate(18, '18:30'), false, 'half past: the hour is all the server sends, so it counts from 19:00');
+  assert.equal(reportIsLate(19, '18:30'), true);
+  assert.equal(reportIsLate(18, null), true, 'no setting: 18:00');
+  assert.equal(reportIsLate(17, undefined), false);
+  assert.equal(reportIsLate(null, '18:00'), false, 'no clock from the server: never amber');
 });

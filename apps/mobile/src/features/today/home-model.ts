@@ -27,6 +27,18 @@ export function dueLabel(item: { due: string | null; urgency: string }, today: s
   return item.urgency === 'overdue' ? { key: key('Due {time}'), values: { time: format.time(item.due) } } : { key: key('Today {time}'), values: { time: format.time(item.due) } };
 }
 
+/**
+ * Whether a site without today's report is late, on the workspace's clock: from the hour the daily report is due
+ * (Settings → Projects, "Daily report due", 18:00 when unset). `hour` is the workspace's current hour, as
+ * `GET site/today` sends it; a due time past the hour ("18:30") counts from the next full hour.
+ */
+export function reportIsLate(hour: number | null | undefined, dueTime: string | null | undefined): boolean {
+  if (typeof hour !== 'number' || !Number.isFinite(hour)) return false;
+  const match = /^(\d{1,2}):(\d{2})/.exec(dueTime ?? '');
+  const dueHour = match ? Number(match[1]) + (Number(match[2]) > 0 ? 1 : 0) : 18;
+  return hour >= dueHour;
+}
+
 export const STAGE_LABEL: Record<HomeFunnelStage['id'], string> = {
   enquiries: key('Enquiries'), planning: key('Planning'), quotes: key('Quotes'), projects: key('Projects'), handover: key('Handover'),
 };
