@@ -11,6 +11,8 @@ import type { TeamRoleView } from "../project-core/team-types";
 import type { CommercialData, Quote } from "./commercial.types";
 import { permitRequired, readPermitFacts } from "../logistics/permits";
 import { dealRule } from "../fulfilment/fulfilment-rules";
+import type { FlowDefinition } from "../crm/flows/flow-definition";
+import { flowCapabilities, type FlowCapabilities } from "../crm/flows/flow-capabilities";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -98,6 +100,8 @@ export type DealLive = {
   opportunityId: string | null;
   projectId: string | null;
   flow: string | null;
+  /** What the job's flow does, read from its steps (absent: the starter flow's, by its code). */
+  capabilities?: FlowCapabilities;
   furniturePath: FurniturePath | null;
   materialsChange: boolean;
   proofCount: number;
@@ -155,8 +159,11 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
     { key: "approval", group: "common", state: state(Boolean(dealFile?.approvedAt), Boolean(review)), href: caseHref("execution-release") },
     { key: "history", group: "common", state: state(data.audit.length > 0), count: data.audit.length, href: caseHref("execution-release") },
   ];
-  const furniture = live.flow === "furniture" || live.furniturePath !== null;
-  const design = Boolean(scope?.design) || live.flow === "design" || Object.keys(live.designStages).length > 0;
+  // Decided by what the flow does, never by its code: an enquiry type's own copy of a starter reads as the starter does.
+  const capabilities = live.capabilities ?? flowCapabilities(null, live.flow);
+  const furniture = capabilities.furniturePath || live.furniturePath !== null;
+  // A design flow has a design package round and no QS pricing; a fit-out with an optional package is design when its scope says.
+  const design = Boolean(scope?.design) || (capabilities.designPackage && !capabilities.qsPricing) || Object.keys(live.designStages).length > 0;
   // A furniture order follows its path (PLM-083/125): one that sells ready or bought-in pieces (take home, in stock, a
   // supplier order) has no BOQ, technical drawings or production; before a path is chosen, the scope's manufacturing says.
   const path = live.furniturePath;
@@ -211,11 +218,12 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
 /** The live records behind one Deal File's sections, in the caller's tenant transaction. */
 async function dealLive(db: Db, workspaceId: string, caseId: string, opportunityId: string | null): Promise<DealLive> {
   const row = (await db.query<{
-    projectId: string | null; flow: string | null; furniturePath: FurniturePath | null; materialsChange: boolean | null; proofCount: number;
+    projectId: string | null; flow: string | null; flowCode: string | null; definition: FlowDefinition | null; furniturePath: FurniturePath | null; materialsChange: boolean | null; proofCount: number;
     stages: Record<string, "locked" | "active" | "done"> | null; boqLines: number; workTotal: number; workReady: number; drawings: number; drawingsClientApproved: boolean | null;
     ordersTotal: number; ordersArrived: number; collected: number; delivered: number; installed: number;
   }>(
-    `SELECT project.id AS "projectId", choice.flow, opportunity.furniture_path AS "furniturePath", opportunity.materials_change AS "materialsChange",
+    `SELECT project.id AS "projectId", choice.flow, coalesce(pinned_flow.code, choice.flow) AS "flowCode", coalesce(pinned.definition, latest.definition) AS definition,
+            opportunity.furniture_path AS "furniturePath", opportunity.materials_change AS "materialsChange",
             (SELECT count(*)::int FROM crm_opportunity_payment_proofs proof WHERE proof.workspace_id = $1 AND proof.opportunity_id = opportunity.id) AS "proofCount",
             (SELECT jsonb_object_agg(stage.stage, stage.status) FROM design_journey_stages stage WHERE stage.workspace_id = $1 AND stage.case_id = $2)
               || coalesce((SELECT jsonb_build_object('site_visit', CASE task.status WHEN 'done' THEN 'done' ELSE 'active' END) FROM design_journey_tasks task
@@ -241,17 +249,23 @@ async function dealLive(db: Db, workspaceId: string, caseId: string, opportunity
        LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
        LEFT JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = opportunity.workspace_id AND taxonomy.code = 'enquiry_type'
        LEFT JOIN crm_taxonomy_options choice ON choice.workspace_id = taxonomy.workspace_id AND choice.taxonomy_id = taxonomy.id AND choice.code = enquiry.service_type
+       LEFT JOIN crm_flow_versions pinned ON pinned.workspace_id = opportunity.workspace_id AND pinned.id = opportunity.flow_version_id
+       LEFT JOIN crm_flows pinned_flow ON pinned_flow.workspace_id = pinned.workspace_id AND pinned_flow.id = pinned.flow_id
+       LEFT JOIN crm_flows typed ON typed.workspace_id = opportunity.workspace_id AND typed.code = choice.flow AND typed.status = 'active'
+       LEFT JOIN LATERAL (SELECT version.definition FROM crm_flow_versions version WHERE version.workspace_id = typed.workspace_id AND version.flow_id = typed.id
+                           ORDER BY version.version DESC LIMIT 1) latest ON pinned.id IS NULL
        LEFT JOIN delivery_projects project ON project.workspace_id = $1 AND project.case_id = $2`,
     [workspaceId, caseId, opportunityId])).rows[0];
+  const capabilities = flowCapabilities(row?.definition ?? null, row?.flowCode ?? null);
   return {
-    caseId, opportunityId, projectId: row?.projectId ?? null, flow: row?.flow ?? null, furniturePath: row?.furniturePath ?? null, materialsChange: Boolean(row?.materialsChange),
+    caseId, opportunityId, projectId: row?.projectId ?? null, flow: row?.flow ?? null, capabilities, furniturePath: row?.furniturePath ?? null, materialsChange: Boolean(row?.materialsChange),
     proofCount: row?.proofCount ?? 0, designStages: row?.stages ?? {}, boqLines: row?.boqLines ?? 0,
     workOrders: { total: row?.workTotal ?? 0, ready: row?.workReady ?? 0, drawingsApproved: row?.drawings ?? 0 }, drawingsClientApproved: Boolean(row?.drawingsClientApproved),
     supplierOrders: { total: row?.ordersTotal ?? 0, arrived: row?.ordersArrived ?? 0 },
     fulfilment: { collected: row?.collected ?? 0, delivered: row?.delivered ?? 0, installed: row?.installed ?? 0 },
     proposals: opportunityId ? (await loadProposals(db, workspaceId, opportunityId)).map((proposal) => ({ kind: proposal.kind, valueStatus: proposal.valueStatus, wonAt: proposal.wonAt })) : [],
     permit: await dealPermit(db, workspaceId, row?.projectId ?? null, opportunityId),
-    boqRequired: opportunityId && (row?.flow === "furniture" || row?.furniturePath) ? (await dealRule(db, workspaceId, opportunityId))?.boqRequired ?? null : null,
+    boqRequired: opportunityId && (capabilities.furniturePath || row?.furniturePath) ? (await dealRule(db, workspaceId, opportunityId))?.boqRequired ?? null : null,
   };
 }
 

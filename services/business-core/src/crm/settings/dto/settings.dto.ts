@@ -7,8 +7,8 @@ export class TaxonomyOptionDto {
   @IsOptional() @IsInt() @Min(0) position?: number;
   /** Role codes allowed to choose this option by hand (e.g. Self Generated); empty clears the limit, absent keeps it. */
   @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @Matches(/^[A-Za-z0-9_-]{1,60}$/, { each: true }) allowedRoles?: string[];
-  /** Legacy: an enquiry type's flow code. Each enquiry type owns its own flow, which puts this back to that flow's code. */
-  @IsOptional() @ValidateIf((_, value) => value !== null) @IsIn(["furniture", "design", "fit_out", "basic"]) flow?: "furniture" | "design" | "fit_out" | "basic" | null;
+  /** Legacy: an enquiry type's flow code (a starter's or the workspace's own). Each enquiry type owns its own flow, which puts this back to that flow's code. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @Matches(/^[a-z][a-z0-9_]{0,59}$/) flow?: string | null;
 }
 export class CreateTaxonomyDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;

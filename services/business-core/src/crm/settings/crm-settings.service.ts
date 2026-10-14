@@ -1,4 +1,4 @@
-import { OPPORTUNITY_FLOWS } from "../opportunities/flow-gates";
+import { isFlowCode } from "../opportunities/flow-gates";
 import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -478,7 +478,7 @@ export class CrmSettingsService {
            flow=CASE WHEN $8 THEN EXCLUDED.flow ELSE crm_taxonomy_options.flow END,
            version=crm_taxonomy_options.version+1,updated_at=now()`,
         [workspaceId, id, option.code, option.label, option.position, option.status === "archived" ? "archived" : "active",
-          OPPORTUNITY_FLOWS.includes(option.flow as never) ? option.flow : null, Object.hasOwn(option, "flow")],
+          isFlowCode(option.flow) ? option.flow : null, Object.hasOwn(option, "flow")],
       );
     }
   }

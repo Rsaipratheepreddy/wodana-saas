@@ -3,6 +3,7 @@ import { hasResolvedEnquiryType } from "../leads/lead-options";
 import type { OpportunityDiscoveryService } from "./discovery.service";
 import { clientTypeDecided, type FurniturePath } from "./flow-gates";
 import { WON_COLUMN } from "../flows/flow-definition";
+import { flowCapabilities } from "../flows/flow-capabilities";
 import {
   columnOfStage, columnOptional, flowAsks, flowProgress, legacyStepName, nextColumnPlan, requirementsUpTo, type CheckFacts,
 } from "../flows/flow-interpreter";
@@ -212,6 +213,8 @@ export function flowSummary(input: { facts: FlowContext; stages: PipelineStageRo
   const negotiation = definition.columns.indexOf("negotiation");
   return {
     flow: facts.flow,
+    // What the flow does (intro, design package, furniture path, ...), read from its steps: the screens decide by this, never by the code.
+    capabilities: flowCapabilities(definition, facts.flow),
     steps,
     done: steps.filter((step) => step.state === "done").length,
     total: steps.length,

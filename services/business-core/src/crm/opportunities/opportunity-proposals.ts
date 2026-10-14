@@ -7,6 +7,8 @@ import {
 } from "../../approvals/approval-engine";
 import type { ApprovalDecision, ApprovalStatus } from "../../approvals/approval-policy";
 import { PROPOSAL_KIND_TITLE } from "../../approvals/approval-titles";
+import type { FlowDefinition } from "../flows/flow-definition";
+import { flowCapabilities } from "../flows/flow-capabilities";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -62,21 +64,30 @@ export function wonProposalKind(existing: Array<Pick<ProposalRow, "kind" | "wonA
 }
 
 /**
- * Whether the job has a design round (Proposal 1): its enquiry type follows the design flow, or its Planning case has
- * a design-round quotation (a Design Fee proposal). Read when a Won doesn't name its round.
+ * Whether the job has a design round (Proposal 1): its flow (the version it pinned, else its enquiry type's latest) has
+ * a design package round, whatever the flow's code, or its Planning case has a design-round quotation (a Design Fee
+ * proposal). Read when a Won doesn't name its round. Read only: it never pins a version.
  */
 export async function hasDesignRound(db: Db, workspaceId: string, opportunityId: string) {
-  return Boolean((await db.query<{ design: boolean }>(
+  const row = (await db.query<{ quote: boolean; typeCode: string | null; code: string | null; definition: FlowDefinition | null }>(
     `SELECT EXISTS (SELECT 1 FROM commercial_quotes quote JOIN pre_project_cases pre_case ON pre_case.workspace_id = quote.workspace_id AND pre_case.id = quote.case_id
                      WHERE quote.workspace_id = $1 AND pre_case.opportunity_id = $2 AND quote.kind = 'quotation' AND quote.round = 'design'
-                       AND quote.status NOT IN ('withdrawn', 'superseded'))
-         OR EXISTS (SELECT 1 FROM crm_opportunities opportunity
-                      JOIN crm_leads lead ON lead.workspace_id = opportunity.workspace_id AND lead.id = opportunity.lead_id
-                      JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
-                      JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = opportunity.workspace_id AND taxonomy.code = 'enquiry_type'
-                      JOIN crm_taxonomy_options choice ON choice.workspace_id = taxonomy.workspace_id AND choice.taxonomy_id = taxonomy.id AND choice.code = enquiry.service_type
-                     WHERE opportunity.workspace_id = $1 AND opportunity.id = $2 AND choice.flow = 'design') AS design`,
-    [workspaceId, opportunityId])).rows[0]?.design);
+                       AND quote.status NOT IN ('withdrawn', 'superseded')) AS quote,
+            choice.flow AS "typeCode", coalesce(pinned_flow.code, choice.flow) AS code, coalesce(pinned.definition, latest.definition) AS definition
+       FROM crm_opportunities opportunity
+       LEFT JOIN crm_leads lead ON lead.workspace_id = opportunity.workspace_id AND lead.id = opportunity.lead_id
+       LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+       LEFT JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = opportunity.workspace_id AND taxonomy.code = 'enquiry_type'
+       LEFT JOIN crm_taxonomy_options choice ON choice.workspace_id = taxonomy.workspace_id AND choice.taxonomy_id = taxonomy.id AND choice.code = enquiry.service_type
+       LEFT JOIN crm_flow_versions pinned ON pinned.workspace_id = opportunity.workspace_id AND pinned.id = opportunity.flow_version_id
+       LEFT JOIN crm_flows pinned_flow ON pinned_flow.workspace_id = pinned.workspace_id AND pinned_flow.id = pinned.flow_id
+       LEFT JOIN crm_flows typed ON typed.workspace_id = opportunity.workspace_id AND typed.code = choice.flow AND typed.status = 'active'
+       LEFT JOIN LATERAL (SELECT version.definition FROM crm_flow_versions version WHERE version.workspace_id = typed.workspace_id AND version.flow_id = typed.id
+                           ORDER BY version.version DESC LIMIT 1) latest ON pinned.id IS NULL
+      WHERE opportunity.workspace_id = $1 AND opportunity.id = $2`,
+    [workspaceId, opportunityId])).rows[0];
+  if (!row) return false;
+  return row.quote || flowCapabilities(row.definition, row.code).designPackage || flowCapabilities(null, row.typeCode).designPackage;
 }
 
 /** The headline opportunity value: the sum of the proposal values, when they share a currency. Exact decimals. */
