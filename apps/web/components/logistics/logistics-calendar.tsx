@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type DragEvent } from "react";
 import Link from "next/link";
 import { parseDate, CalendarDate } from "@internationalized/date";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { Badge, Button, ConfirmationDialog, DateField, EmptyState, ErrorState, FormDialog, IconButton, InlineNotice, InspectorSheet, ListTabs, SelectField, Skeleton, useDesignSystem, useWorkingCalendar } from "@/design-system";
+import { Badge, Button, ConfirmationDialog, DateField, EmptyState, ErrorState, FormDialog, IconButton, InlineNotice, InspectorSheet, ListTabs, PageTools, SelectField, Skeleton, useDesignSystem, useWorkingCalendar } from "@/design-system";
 import { FactList } from "@/components/crm/crm-workbench";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { calendarDayKey, calendarRange, moveCalendar } from "@/lib/crm/calendar";
@@ -96,8 +96,9 @@ export function LogisticsCalendar({ workspaceId }: { workspaceId: string }) {
     : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).formatRange(range.days[0], range.days.at(-1) ?? range.days[0]);
   const people = (options?.workers ?? []).map((worker) => ({ id: worker.id, label: worker.name }));
   const vehicles = (options?.vehicles ?? []).map((item) => ({ id: item.id, label: item.name }));
+  // The calendar's controls and Book are the page's row (Factory's tabs, then these), not a row of their own.
   return <>
-    <div className={styles.toolbar} role="toolbar" aria-label={t("Calendar controls")}>
+    <PageTools><div className={styles.toolbar} role="toolbar" aria-label={t("Calendar controls")}>
       <div className={styles.period}>
         <div className={styles.stepper}>
           <IconButton aria-label={t("Previous calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, -1))}><ChevronLeft size={16} /></IconButton>
@@ -117,7 +118,7 @@ export function LogisticsCalendar({ workspaceId }: { workspaceId: string }) {
         <ListTabs label={t("Calendar view")} items={[{ id: "week", label: t("Week") }, { id: "month", label: t("Month") }]} value={mode} onChange={setMode} />
         {canBook ? <Button variant="primary" onPress={() => setBooking({ day: calendarDayKey(anchor) < today ? today : calendarDayKey(anchor) })}><Plus size={16} aria-hidden="true" />{t("Book")}</Button> : null}
       </div>
-    </div>
+    </div></PageTools>
     {notice ? <InlineNotice tone={notice.tone} message={notice.message} /> : null}
     <section className={styles.frame} aria-label={t("Factory and logistics")} aria-busy={!loaded || loaded.key !== key || undefined}>
       {!loaded || loaded.key !== key ? <div className={styles.loading}><Skeleton lines={8} shape="rows" /></div>

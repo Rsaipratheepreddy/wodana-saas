@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DesignSystemProvider } from "@/design-system";
+import { DesignSystemProvider, ListTabs, PageShell } from "@/design-system";
 import { LogisticsCalendar } from "./logistics-calendar";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }), usePathname: () => "/workspace/factory/calendar", useSearchParams: () => new URLSearchParams() }));
@@ -64,6 +64,16 @@ afterEach(() => vi.unstubAllGlobals());
 const renderCalendar = () => render(<DesignSystemProvider><LogisticsCalendar workspaceId={workspaceId} /></DesignSystemProvider>);
 
 describe("the factory and logistics calendar (PLM-135, PLM-136)", () => {
+  it("puts its controls and Book in the page's one row, beside Factory's tabs", async () => {
+    const { container } = render(<DesignSystemProvider><PageShell title="Factory" tabs={<ListTabs label="Sections" items={[{ id: "calendar", label: "Calendar" }]} value="calendar" onChange={() => undefined} />}>
+      <LogisticsCalendar workspaceId={workspaceId} />
+    </PageShell></DesignSystemProvider>);
+    const row = container.querySelector<HTMLElement>(".wd-page-shell-tabs")!;
+    expect(await within(row).findByRole("button", { name: "Book" })).toBeInTheDocument();
+    expect(within(row).getByRole("toolbar", { name: "Calendar controls" })).toBeInTheDocument();
+    expect(container.querySelector(".wd-page-shell-body [role=toolbar]")).toBeNull();
+  });
+
   it("shows who goes on each booking, the vehicle and driver, Furniture Only deliveries and missing permits, and filters by vehicle", async () => {
     const user = userEvent.setup();
     renderCalendar();
