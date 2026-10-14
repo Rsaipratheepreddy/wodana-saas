@@ -24,7 +24,7 @@ import { useCrews } from '../hrms/api';
 import { useMarkup } from '../capture/use-markup';
 import { sitePhotoPath, useSite } from './api';
 import type { ReportPayload } from './outbox';
-import { chooseProgress, empty, fromPlan, fromReport, reportBody, reportProblems, stepOf, STEPS, tagPhoto, type Draft, type Installed, type Issue, type Material, type PhotoTags } from './report-model';
+import { chooseProgress, empty, fromPlan, fromReport, photoRow, reportBody, reportProblems, stepOf, STEPS, tagPhoto, type Draft, type Installed, type Issue, type Material, type PhotoTags } from './report-model';
 
 const WEATHER = [key('Clear'), key('Hot'), key('Humid'), key('Windy'), key('Dusty'), key('Rain')];
 const STEP_LABEL: Record<number, string> = { 10: key('Started'), 25: '25%', 50: '50%', 75: '75%', 100: key('Done') };
@@ -171,10 +171,8 @@ export function ReportScreen() {
     </Section>
     {allPhotoIds.length && !readOnly ? <Section title={t('Where the photos are')}>
       {allPhotoIds.map((id, index) => {
-        const tags = draft.photos[id];
-        return <ListRow key={id} first={index === 0} icon={MapPin} title={areaName(tags?.areaId ?? null) ?? t('Photo {number}', { number: index + 1 })}
-          detail={[tags?.phase === 'before' ? t('Before') : tags?.phase === 'after' ? t('After') : null, tags?.pairId ? t('Paired with photo {number}', { number: allPhotoIds.indexOf(tags.pairId) + 1 }) : null].filter(Boolean).join(' · ') || t('Choose a room')}
-          onPress={() => setTaggingPhoto(id)} />;
+        const row = photoRow(draft.photos[id], index, allPhotoIds, areaName, t);
+        return <ListRow key={id} first={index === 0} icon={MapPin} title={row.title} detail={row.detail} onPress={() => setTaggingPhoto(id)} />;
       })}
     </Section> : null}
 

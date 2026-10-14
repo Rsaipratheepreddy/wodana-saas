@@ -1,4 +1,5 @@
 import type { Outlook, PhotoPhase, Safety, Severity, SiteReport, SiteState } from '../../../../web/lib/site/types';
+import type { T } from '../../core/i18n';
 
 /** A daily report being written on the phone. Pure: shared by the screen and its tests. */
 export type Installed = { boqLineId: string; installed: string; note: string };
@@ -103,4 +104,12 @@ export function reportProblems(draft: Draft, photos: number, submit: boolean, t:
   if (draft.issues.some((issue) => !issue.description.trim())) problems.push(t('Say what each issue is.'));
   if (submit && !photos && !(draft.noWork && draft.noWorkReason.trim())) problems.push(t('Add a photo, or say why no work was done.'));
   return problems;
+}
+
+/** A photo's row under "Where the photos are": its room (its number until one is chosen), then before/after and its pair. The prompt shows only while no room is chosen. */
+export function photoRow(tags: PhotoTags | undefined, index: number, photoIds: string[], areaName: (id: string | null) => string | null, t: T): { title: string; detail?: string } {
+  const room = areaName(tags?.areaId ?? null);
+  const detail = [tags?.phase === 'before' ? t('Before') : tags?.phase === 'after' ? t('After') : null,
+    tags?.pairId ? t('Paired with photo {number}', { number: photoIds.indexOf(tags.pairId) + 1 }) : null].filter(Boolean).join(' · ');
+  return { title: room ?? t('Photo {number}', { number: index + 1 }), ...(detail ? { detail } : room ? {} : { detail: t('Choose a room') }) };
 }
