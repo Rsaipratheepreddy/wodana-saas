@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { DiscoverySheet, useDiscovery, type DiscoveryGroup, type DiscoveryView } from "./opportunity-discovery";
@@ -99,8 +100,11 @@ describe("opportunity discovery sheets (PLM-040)", () => {
     await screen.findByRole("dialog", { name: "Property details" });
     expect(screen.queryByRole("link", { name: "Open in Maps" })).not.toBeInTheDocument();
     const link = screen.getByRole("textbox", { name: "Paste a Google Maps link" });
+    // A pasted link is complete, so it is read at once.
+    fireEvent.paste(link);
     fireEvent.change(link, { target: { value: "https://maps.app.goo.gl/AbCdEf" } });
     expect(await screen.findByText("No coordinates in this link")).toBeInTheDocument();
+    fireEvent.paste(link);
     fireEvent.change(link, { target: { value: "https://www.google.com/maps/place/Villa/@25.11,55.13,17z/data=!3m1!4b1!8m2!3d25.1124317!4d55.1390165" } });
     expect(link).toHaveValue("");
     expect(screen.getByRole("textbox", { name: "Latitude" })).toHaveValue("25.1124317");
@@ -109,6 +113,34 @@ describe("opportunity discovery sheets (PLM-040)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(calls.find((call) => call.method === "PUT")!.body).toMatchObject({ version: 0, propertyLocation: "Villa 12, Palm Way", latitude: 25.1124317, longitude: 55.1390165 });
+  });
+
+  it("reads a map link typed key by key only once it is complete, never a half-typed longitude", async () => {
+    const user = userEvent.setup();
+    const calls = stub(view());
+    const onClose = vi.fn();
+    renderSheet({ group: "property", onClose });
+    await screen.findByRole("dialog", { name: "Property details" });
+    const link = screen.getByRole("textbox", { name: "Paste a Google Maps link" });
+    // On its way, the link reads "…/@25.2048493,5" (a longitude of 5): nothing is filled while it is typed.
+    await user.type(link, "https://www.google.com/maps/@25.2048493,55.2707828,15z");
+    expect(link).toHaveValue("https://www.google.com/maps/@25.2048493,55.2707828,15z");
+    expect(screen.getByRole("textbox", { name: "Latitude" })).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: "Longitude" })).toHaveValue("");
+    expect(screen.queryByText("No coordinates in this link")).not.toBeInTheDocument();
+    // Leaving the field reads the whole link.
+    await user.tab();
+    expect(link).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: "Latitude" })).toHaveValue("25.2048493");
+    expect(screen.getByRole("textbox", { name: "Longitude" })).toHaveValue("55.2707828");
+    // Enter reads it too; a typed link without coordinates is marked only then.
+    await user.type(link, "https://maps.app.goo.gl/AbCdEf");
+    expect(screen.queryByText("No coordinates in this link")).not.toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText("No coordinates in this link")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(calls.find((call) => call.method === "PUT")!.body).toMatchObject({ latitude: 25.2048493, longitude: 55.2707828 });
   });
 
   it("uses the browser's current location, and a half-entered position blocks the save", async () => {
