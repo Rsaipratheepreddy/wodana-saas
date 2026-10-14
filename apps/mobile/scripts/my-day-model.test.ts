@@ -94,6 +94,12 @@ test('snooze offers later today, tomorrow and next week in the person\'s zone; a
   assert.equal(snoozePresets(new Date('2026-10-11T04:00:00Z'), 'Asia/Kolkata', false)[0].until, '2026-10-11T07:30:00.000Z');
   // In the evening (18:30, and 22:00 crossing midnight) there is no "later today" before the quiet hours.
   assert.deepEqual(snoozePresets(new Date('2026-10-11T14:30:00Z'), 'Asia/Dubai', false).map((preset) => preset.id), ['tomorrow', 'next_week']);
+  // With the work calendar's hours (09:00–18:00): tomorrow is 09:00, and at 15:30 three hours on (18:30) is past the day's end.
+  const workday = { morning: '09:00', evening: '18:00' };
+  assert.deepEqual(snoozePresets(morning, 'Asia/Dubai', false, workday).map(({ id, until }) => [id, until]), [
+    ['later_today', '2026-10-11T09:00:00.000Z'], ['tomorrow', '2026-10-12T05:00:00.000Z'], ['next_week', '2026-10-18T05:00:00.000Z'],
+  ]);
+  assert.deepEqual(snoozePresets(new Date('2026-10-11T11:30:00Z'), 'Asia/Dubai', false, workday).map((preset) => preset.id), ['tomorrow', 'next_week']);
   assert.deepEqual(snoozePresets(new Date('2026-10-11T18:00:00Z'), 'Asia/Dubai', false).map((preset) => preset.id), ['tomorrow', 'next_week']);
   // Across a daylight-saving change the morning stays 08:00 on the wall clock.
   const beforeChange = snoozePresets(new Date('2026-10-30T13:00:00Z'), 'America/New_York', false);
