@@ -220,9 +220,12 @@ integration("the finishes schedule, material log and samples (PLM-146, PLM-156, 
     const task = (await sql<{ owner: string; due: Date; status: string }>(ids, `SELECT owner_membership_id AS owner, due_at AS due, status FROM design_journey_tasks WHERE workspace_id = $1 AND case_id = $2 AND task = 'finishes_to_qs'`,
       [ids.workspaceId, ids.caseId]))[0];
     expect(task).toMatchObject({ owner: ids.people.lead.member, status: "open" });
-    expect(Math.round((new Date(task.due).getTime() - Date.now()) / 86_400_000)).toBe(2);
+    // Working days (the close of the 2nd working day after today), so 2 to 5 calendar days depending on the weekend.
+    const days = (new Date(task.due).getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(1);
+    expect(days).toBeLessThan(6);
     expect(await told(ids, "finishes.to_mark")).toEqual([ids.people.lead.user]);
-    const due = await asApp(ids.workspaceId, ids.people.ops.user, (client) => designStageSource.open(client, ids.workspaceId, { now: new Date(Date.now() + 3 * 86_400_000), limit: 50 } as never));
+    const due = await asApp(ids.workspaceId, ids.people.ops.user, (client) => designStageSource.open(client, ids.workspaceId, { now: new Date(Date.now() + 7 * 86_400_000), limit: 50 } as never));
     expect(due.find((item) => item.key === `design_task:${ids.caseId}:finishes_to_qs`)).toMatchObject({ ownerMembershipId: ids.people.lead.member, title: "Finishes to QS" });
 
     // The designer marks the marble on a render snapshot; the same marker again is a replay.

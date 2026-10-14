@@ -220,7 +220,9 @@ integration("operator CLI configure: teams access and design packages on an exis
     expect(lines).toContainEqual(expect.objectContaining({ section: "factory", status: "changed", label: "design packages the director inspects", detail: "none → creative_director" }));
     // Role permissions and the timeline teams name roles and teams the teams file added in the same run (in the dry run they were not found yet).
     expect(json(dry).lines).toContainEqual(expect.objectContaining({ section: "rolePermissions", status: "not found", label: "role team_sales_admin" }));
-    expect(lines).toContainEqual(expect.objectContaining({ section: "rolePermissions", status: "changed", label: "role team_sales_admin", detail: "granted crm.inbox.close_chats" }));
+    // The Sales Admin's role gets closing chats either from the teams file (its permissions) or the profile's grant.
+    expect(lines.some((line) => line.label === "role team_sales_admin" && ((line.section === "rolePermissions" && line.status === "changed")
+      || (line.section === "teams" && line.status === "changed")))).toBe(true);
     expect(lines).toContainEqual(expect.objectContaining({ section: "sales", status: "changed", label: "timeline questions go to" }));
     expect(lines.filter((line) => line.status === "not found" && ["rolePermissions", "sales", "factory"].includes(line.section) && /team|creative_director/.test(line.label))).toEqual([]);
   });

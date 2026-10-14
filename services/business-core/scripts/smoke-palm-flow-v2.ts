@@ -265,10 +265,15 @@ async function approveDesignDeliverableThroughApi(caseId: string, actors: RoundA
       "POST", { id: randomUUID(), version: design.version, versionId, action,
         note: "", decisionBy: "", ...extra }, 201);
   }
+  // PLM-145: a package without a review role shares the design with the client directly; one with a reviewer goes
+  // through the internal review first.
   token = actors.approvingOwner.token;
-  await designActivity("internal_review", { reviewerId: ownerId, contextConfirmed: true });
+  const reviewed = await designActivity("internal_review", { reviewerId: ownerId, contextConfirmed: true }).then(() => true, (error: unknown) => {
+    if (/no internal review/.test(String((error as Error)?.message))) return false;
+    throw error;
+  });
   token = submitterToken;
-  await designActivity("internal_approved");
+  if (reviewed) await designActivity("internal_approved");
   await designActivity("client_review");
   const shared = (await portalProject(actors.clientToken, caseId)).decisions.designs.find((item: { id: string }) => item.id === versionId);
   assert.equal(shared?.canDecide, true, "The design shared for review must wait for the client's decision");
