@@ -80,8 +80,8 @@ integration("built-in reminder sources on real Postgres", { timeout: 120_000 }, 
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL session_replication_role = replica");
-      for (const table of ["finance_requests", "books_posting_issues", "crm_messages", "crm_conversations", "crm_leads", "crm_enquiries", "crm_parties", "member_roles", "role_permissions",
-        "roles", "workspace_memberships"]) await client.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [ws]);
+      for (const table of ["finance_requests", "books_posting_issues", "crm_messages", "crm_conversations", "crm_activities", "crm_sla_instances", "crm_sla_policies", "crm_leads", "crm_enquiries",
+        "crm_parties", "member_roles", "role_permissions", "roles", "workspace_memberships"]) await client.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [ws]);
       await client.query("DELETE FROM workspaces WHERE id = $1", [ws]);
       await client.query("DELETE FROM users WHERE id = ANY($1::uuid[])", [[owner, finance]]);
       await client.query("COMMIT");
@@ -131,6 +131,34 @@ integration("built-in reminder sources on real Postgres", { timeout: 120_000 }, 
     await fixture(`INSERT INTO crm_messages(workspace_id,conversation_id,direction,status,authorship,sender_type,sender_id,body_text) VALUES($1,$2,'outbound','sent','human','user',$3,'On it')`,
       [ws, chat, owner]);
     expect(await open("crm.reply_waiting", [reply.key])).toEqual(new Set());
+  });
+
+  it("crm.follow_up and crm.first_response: one 'respond' row per enquiry, the task until its first-response time runs out, then the enquiry itself", async () => {
+    const enquiry2 = randomUUID(), lead2 = randomUUID(), policy = randomUUID(), sla = randomUUID(), task = randomUUID();
+    await fixture("INSERT INTO crm_enquiries(id,workspace_id,intake_event_id,party_id,title,source,channel,received_at,reference) VALUES($1,$2,gen_random_uuid(),$3,'Villa 14 interiors','website','web',now(),'E-0002')",
+      [enquiry2, ws, party]);
+    await fixture("INSERT INTO crm_leads(id,workspace_id,enquiry_id,party_id,status,owner_membership_id) VALUES($1,$2,$3,$4,'new',$5)", [lead2, ws, enquiry2, party, membership]);
+    await fixture("INSERT INTO crm_sla_policies(id,workspace_id,name,event_type,warning_after_minutes,breach_after_minutes) VALUES($1,$2,'First response','first_response',60,120)", [policy, ws]);
+    // The enquiry's first-response SLA, still running, and the "Respond to new enquiry" task the product ties to it (due at the warning).
+    await fixture(`INSERT INTO crm_sla_instances(id,workspace_id,policy_id,lead_id,target_type,target_id,status,started_at,warning_at,due_at,owner_membership_id)
+      VALUES($1,$2,$3,$4,'lead',$4,'active',now() - interval '30 minutes',now() - interval '10 minutes',now() + interval '1 hour',$5)`, [sla, ws, policy, lead2, membership]);
+    await fixture(`INSERT INTO crm_activities(id,workspace_id,lead_id,party_id,sla_instance_id,type,title,owner_membership_id,priority,due_at,is_next_action)
+      VALUES($1,$2,$3,$4,$5,'task','Respond to new enquiry',$6,'high',now() - interval '10 minutes',true)`, [task, ws, lead2, party, sla, membership]);
+    const taskRow = (await listed("crm.follow_up")).find((item) => item.key === `activity:${task}`);
+    expect(taskRow).toMatchObject({ title: "Respond to new enquiry", context: "Huda Client", ownerMembershipId: membership, jobSource: { type: "lead", id: lead2 } });
+    expect((await listed("crm.first_response")).map((item) => item.key)).not.toContain(`sla:${sla}`);
+    expect(await open("crm.follow_up", [`activity:${task}`])).toEqual(new Set([`activity:${task}`]));
+    // The first-response time runs out: the enquiry's own row takes over and the task steps aside (it is still pending in CRM).
+    await fixture("UPDATE crm_sla_instances SET due_at = now() - interval '5 minutes' WHERE id = $1", [sla]);
+    expect((await listed("crm.follow_up")).map((item) => item.key)).not.toContain(`activity:${task}`);
+    expect(await open("crm.follow_up", [`activity:${task}`])).toEqual(new Set());
+    const late = (await listed("crm.first_response")).find((item) => item.key === `sla:${sla}`);
+    expect(late).toMatchObject({ title: "Huda Client", context: "Villa 14 interiors", ownerMembershipId: membership, jobSource: { type: "lead", id: lead2 } });
+    expect(await open("crm.first_response", [`sla:${sla}`])).toEqual(new Set([`sla:${sla}`]));
+    // Breached, the same; answered (the SLA stopped), the task would be done by the response too.
+    await fixture("UPDATE crm_sla_instances SET status = 'breached', breached_at = now() WHERE id = $1", [sla]);
+    expect((await listed("crm.follow_up")).map((item) => item.key)).not.toContain(`activity:${task}`);
+    expect(await open("crm.first_response", [`sla:${sla}`])).toEqual(new Set([`sla:${sla}`]));
   });
 
   it("books.posting_issue: an event that couldn't post waits on the Ledger's managers until it is resolved", async () => {

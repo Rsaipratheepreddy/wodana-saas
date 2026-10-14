@@ -134,7 +134,7 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
     : shown === "finishes" ? <FinishesSchedule source={{ kind: "case", workspaceId, caseId }} rooms={data.rooms} onAddMaterials={() => setPicked("ledger")} />
     : shown === "approval" ? <SignOff data={data} designs={current} journey={journey} canReview={review.canRecordClient} busy={busy}
       onSignOff={(input) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, ...input })} /> : <>
-      {(shown === "concepts" || (shown === "renders" && journey.journey?.flowVersion === 2)) && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage={shown} designs={current} canEdit={data.canEdit}
+      {(shown === "concepts" || (shown === "renders" && journey.journey?.flowVersion === 2)) && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage={shown} designs={designs} canEdit={data.canEdit}
         canRecordClient={review.canRecordClient} onChanged={() => void loadJourney()} /> : null}
       <div className={styles.toolbar}>
         {stageView && shown !== "other" ? <span className={styles.stageNote} data-overdue={stageView.overdue && stageView.status === "active" || undefined}>{(() => { const detail = stageDetail(stageView); return t(detail.key as never, detail.values); })()}</span> : null}
