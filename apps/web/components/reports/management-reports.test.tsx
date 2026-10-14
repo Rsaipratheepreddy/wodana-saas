@@ -245,6 +245,8 @@ describe("management dashboards", () => {
     expect(within(tile("Joinery balances due")).getByText("Includes tax")).toBeInTheDocument();
     expect(within(tile("Receivables by age")).getByText("Includes tax")).toBeInTheDocument();
     expect(within(tile("Commissions due by account manager")).getByText("Paid commissions aren't recorded yet")).toBeInTheDocument();
+    // Refunds by reason: the count, with the value beside it.
+    expect(within(tile("Refunds by reason")).getByRole("button", { name: "Damaged: 1. Open the records" })).toHaveTextContent("$300");
     // A column opens the month's payments to that company; a point of the line opens what was invoiced.
     const byMonth = tile("Cash collected and invoiced by month");
     await user.click(within(byMonth).getByRole("button", { name: "Sep 26 · Invoiced: $30K. Open the records" }));

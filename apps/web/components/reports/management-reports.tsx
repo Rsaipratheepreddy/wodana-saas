@@ -482,6 +482,8 @@ function ChartView({ chart, title, format, nameOf, open }: {
         detail: [item.extra && "leads" in item.extra ? t("{count} enquiries", { count: Number(item.extra.leads) }) : null,
           item.extra && "quantity" in item.extra ? t("{count} sold", { count: format.number(String(item.extra.quantity), 2) }) : null,
           item.extra && "target" in item.extra && item.count ? t("{count} orders", { count: item.count }) : null,
+          // A count with its value beside it (refunds by reason: count and value).
+          chart.unit === "count" && item.amount && Number(item.amount) ? format.money(item.amount, true) : null,
           chart.unit !== "count" && !item.extra && item.count ? String(item.count) : null].filter(Boolean).join(" · ") || undefined }))}
       onSelect={(key) => open(`period=1;${chart.dimension}=${key}`, nameOf(chart.dimension, key, chart.items.find((item) => item.key === key)?.label ?? key))} />;
   }
