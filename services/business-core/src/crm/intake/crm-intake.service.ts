@@ -45,7 +45,7 @@ import { recordClientMessageSkipped, sendClientEvent } from "../conversations/in
 import { loadSalesSettings, salesSchedule } from "../leads/sales-attention";
 import { addSlaMinutes } from "../leads/sla-schedule";
 import { memberRoleKeys } from "../../workspaces/role-vocabulary";
-import { teamRolesByEnquiryType, teamRolesForType, writeLeadTeam } from "../leads/lead-team";
+import { teamMembersByRole, teamRolesByEnquiryType, teamRolesForType, writeLeadTeam } from "../leads/lead-team";
 import { loadRequirementRows, ProblemList, requirementContext, requirementProblems, rulesByType, type EnquiryFacts } from "../leads/enquiry-problems";
 import { canReadNotes, notesReader, redactNotes } from "../leads/internal-notes";
 import { contactKeys, flagPartySpam, spamContact } from "../spam/contact-spam";
@@ -69,6 +69,8 @@ export class CrmIntakeService {
         ...options,
         // PLM-100: the team roles each enquiry type asks for, from its own steps.
         teamRoles: await teamRolesByEnquiryType(client, workspaceId, options.enquiryTypes),
+        // Who each of those roles can be (the designers for Designer), names only: the enquiry forms list them.
+        teamMembers: await teamMembersByRole(client, workspaceId),
         // PLM-096: the fields each enquiry type requires, and from which gate.
         requirements: rulesByType(await loadRequirementRows(client, workspaceId), options.enquiryTypes.map((type) => type.id)),
         roleKeys: await memberRoleKeys(client, workspaceId, actorUser.userId),

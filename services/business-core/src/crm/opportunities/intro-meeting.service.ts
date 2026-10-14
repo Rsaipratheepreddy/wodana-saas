@@ -11,7 +11,7 @@ import { assignDesignerToCase } from "./dedicated-designer";
 import { OpportunityDiscoveryService } from "./discovery.service";
 import { checkIntroSlot, introBlockers, meetingLocation, meetingWhen, type MeetingMode } from "./intro-meeting.domain";
 import { loadEnquiryFacts, requirementContext, requirementProblems } from "../leads/enquiry-problems";
-import { teamRolesForType } from "../leads/lead-team";
+import { DESIGNER_PERMISSIONS, teamRolesForType } from "../leads/lead-team";
 
 export type BookIntroInput = {
   designerMembershipId: string; startsAt: string; endsAt: string; timezone: string; mode: MeetingMode;
@@ -24,8 +24,9 @@ type Designer = { membershipId: string; name: string; introActivityId: string | 
 /**
  * Who does design work, so can be the dedicated designer: a member whose roles (or teams) let them work on a planning
  * case and record the client's design decisions. A permission, never a role's name; owners and administrators hold it too.
+ * The enquiry's Designer tag lists the same people (`teamMembersByRole`).
  */
-export const DESIGNER_PERMISSIONS = ["pre_projects.edit", "pre_projects.record_client_design_decisions"] as const;
+export { DESIGNER_PERMISSIONS };
 
 /**
  * PLM-096/155: a blocker the enquiry holds (its area, the client's target completion…) is marked so: it is completed on

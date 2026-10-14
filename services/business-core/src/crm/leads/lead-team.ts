@@ -33,6 +33,41 @@ export function teamRolesForDefinition(definition: Pick<FlowDefinition, "steps">
   return LEAD_TEAM_ROLES.filter((role) => roles.has(role));
 }
 
+/** The permissions of the people who do design work: who can be an enquiry's designer and book an intro with a client. */
+export const DESIGNER_PERMISSIONS = ["pre_projects.edit", "pre_projects.record_client_design_decisions"] as const;
+
+export type TeamRoleMember = { id: string; displayName: string };
+
+/**
+ * Who each team role can be tagged with (PLM-100), names only, for whoever enters enquiries (no member directory):
+ * the designer is one of the people who do design work, as the intro meeting's designer picker lists them
+ * (DESIGNER_PERMISSIONS); another role, a member who holds that role or is in its team. Active members only.
+ */
+export async function teamMembersByRole(db: Db, workspaceId: string): Promise<Record<LeadTeamRole, TeamRoleMember[]>> {
+  const rows = (await db.query<TeamRoleMember & { role: LeadTeamRole }>(
+    `SELECT wanted.role, membership.id, coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS "displayName"
+       FROM unnest($2::text[]) AS wanted(role)
+       JOIN workspace_memberships membership ON membership.workspace_id = $1 AND membership.status = 'active'
+       JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+      WHERE CASE WHEN wanted.role = 'designer'
+        THEN (SELECT count(DISTINCT permission.code) FROM effective_member_roles assigned
+                JOIN role_permissions granted ON granted.role_id = assigned.role_id
+                JOIN permissions permission ON permission.id = granted.permission_id
+               WHERE assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
+                 AND permission.code = ANY($3::text[])) = cardinality($3::text[])
+        ELSE EXISTS (SELECT 1 FROM effective_member_roles assigned JOIN roles held ON held.id = assigned.role_id
+                      WHERE assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
+                        AND lower(held.code) IN (wanted.role, 'team_' || wanted.role))
+          OR EXISTS (SELECT 1 FROM workspace_team_members member
+                       JOIN workspace_teams team ON team.workspace_id = member.workspace_id AND team.id = member.team_id AND team.status = 'active'
+                      WHERE member.workspace_id = membership.workspace_id AND member.membership_id = membership.id
+                        AND lower(team.code) IN (wanted.role, 'team_' || wanted.role))
+      END
+      ORDER BY wanted.role, lower(coalesce(nullif(btrim(account.display_name), ''), account.primary_email)), membership.id`,
+    [workspaceId, LEAD_TEAM_ROLES, DESIGNER_PERMISSIONS])).rows;
+  return Object.fromEntries(LEAD_TEAM_ROLES.map((role) => [role, rows.filter((row) => row.role === role).map(({ id, displayName }) => ({ id, displayName }))])) as Record<LeadTeamRole, TeamRoleMember[]>;
+}
+
 /** The roles each enquiry type asks for, by enquiry type id, from the latest version of the type's steps. */
 export async function teamRolesByEnquiryType(db: Db, workspaceId: string, enquiryTypes: Array<{ id: string; flow?: string | null }>) {
   const codes = [...new Set(enquiryTypes.map((type) => type.flow).filter((code): code is string => Boolean(code)))];
