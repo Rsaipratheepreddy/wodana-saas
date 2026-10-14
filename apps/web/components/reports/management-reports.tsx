@@ -527,7 +527,8 @@ function recordColumns(rows: ReportRecord[], kpi: string, format: Formatters, la
       meta: { primary: true, interactive: true, renderCell: (row) => <Link className={styles.recordLink} href={row.href}>{row.reference || t("Open")}</Link> } },
     { id: "title", header: t("Name"), size: 220, accessorFn: (row) => row.title },
     ...(filled((row) => row.client) ? [{ id: "client", header: t("Client"), size: 160, accessorFn: (row: ReportRecord) => row.client ?? "" }] : []),
-    ...(filled((row) => row.at) ? [{ id: "at", header: t("Date"), size: 120, accessorFn: (row: ReportRecord) => format.date(row.at) }] : []),
+    // B11: a date keeps its natural width on one line ("10 Nov 2026"); the name column gives way instead.
+    ...(filled((row) => row.at) ? [{ id: "at", header: t("Date"), size: 120, accessorFn: (row: ReportRecord) => format.date(row.at), meta: { nowrap: true } }] : []),
     ...(filled((row) => row.amount) ? [{ id: "amount", header: t("Value"), size: 130, accessorFn: (row: ReportRecord) => (row.amount === null ? "" : format.money(row.amount)),
       meta: { align: "end" as const } }] : []),
     ...(MEASURE_LABELS[kpi] && filled((row) => row.measure) ? [{ id: "measure", header: t(MEASURE_LABELS[kpi]), size: 110,

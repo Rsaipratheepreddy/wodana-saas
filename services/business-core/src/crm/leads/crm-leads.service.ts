@@ -42,7 +42,7 @@ import { clearPartySpam, flagPartySpam } from "../spam/contact-spam";
 import { canReadNotes, isNotesField, notesReader, redactNotes } from "./internal-notes";
 import {
   formatDeadline, leadFacts, leadLink, loadSalesSettings, memberPerson, refreshUnownedEscalation,
-  salesEscalationRecipients, tell, workspaceClock,
+  salesEscalationRecipients, salesSchedule, tell, workspaceClock,
 } from "./sales-attention";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
@@ -378,7 +378,7 @@ export class CrmLeadsService {
       [workspaceId, lead.queue_id]) : null;
     const minutes = queue?.rows[0]?.minutes ?? null;
     const nextDue = lastAttempt || minutes === null ? null
-      : addSlaMinutes(new Date(), minutes, queue?.rows[0]?.schedule ? normalizeSlaSchedule(queue.rows[0].schedule) : { version: 1, mode: "elapsed" });
+      : addSlaMinutes(new Date(), minutes, await this.takeoverClock(client, workspaceId, queue?.rows[0]?.schedule));
     await client.query(
       `UPDATE crm_leads SET ownership_due_at=$3, priority='urgent', escalated_at=CASE WHEN $4 THEN now() ELSE escalated_at END,
          version=version+1, updated_at=now()
@@ -972,16 +972,23 @@ export class CrmLeadsService {
       );
       if (!result.rowCount) throw new ConflictException("Queue changed; reload and try again");
       if (input.takeoverAfterMinutes !== undefined) {
-        await client.query(
-          `UPDATE crm_leads lead SET ownership_due_at = CASE WHEN $3::integer IS NULL THEN NULL
-             ELSE COALESCE((SELECT history.assigned_at FROM crm_assignment_history history
+        // The owned enquiries' handoff is re-timed from their current assignment, in the same working minutes.
+        const owned = await client.query<{ id: string; assignedAt: Date | null }>(
+          `SELECT lead.id, (SELECT history.assigned_at FROM crm_assignment_history history
                WHERE history.workspace_id=lead.workspace_id AND history.lead_id=lead.id
                  AND history.owner_membership_id=lead.owner_membership_id
-               ORDER BY history.assigned_at DESC,history.id DESC LIMIT 1),now()) + $3::integer * interval '1 minute' END
+               ORDER BY history.assigned_at DESC,history.id DESC LIMIT 1) AS "assignedAt"
+           FROM crm_leads lead
            WHERE lead.workspace_id=$1 AND lead.queue_id=$2 AND lead.owner_membership_id IS NOT NULL
              AND lead.status IN ('new','attempting_contact','connected','nurturing')`,
-          [workspaceId, queueId, input.takeoverAfterMinutes ?? null],
+          [workspaceId, queueId],
         );
+        const minutes = input.takeoverAfterMinutes ?? null;
+        const clock = minutes === null ? null : await this.takeoverClock(client, workspaceId, result.rows[0].takeoverSchedule);
+        for (const lead of owned.rows) {
+          const due = minutes === null || !clock ? null : addSlaMinutes(new Date(lead.assignedAt ?? Date.now()), minutes, clock);
+          await client.query(`UPDATE crm_leads SET ownership_due_at=$3 WHERE workspace_id=$1 AND id=$2`, [workspaceId, lead.id, due]);
+        }
       }
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.queue.updated.v1", entityType: "crm_queue", entityId: queueId, before, after: result.rows[0] as Record<string, unknown> });
       return result.rows[0];
@@ -1855,9 +1862,9 @@ export class CrmLeadsService {
         [workspaceId, selection.queueId],
       ) : null;
     const takeoverMinutes = takeoverPolicy?.rows[0]?.takeover_after_minutes ?? null;
-    // The countdown runs on the queue's working hours when set (PLM-039), else on elapsed time.
+    // The countdown runs on the queue's working hours when set (PLM-039), else on the Sales working hours.
     const takeoverDueAt = takeoverMinutes === null ? null
-      : addSlaMinutes(new Date(), takeoverMinutes, takeoverPolicy?.rows[0]?.takeover_schedule ? normalizeSlaSchedule(takeoverPolicy.rows[0].takeover_schedule) : { version: 1, mode: "elapsed" });
+      : addSlaMinutes(new Date(), takeoverMinutes, await this.takeoverClock(client, workspaceId, takeoverPolicy?.rows[0]?.takeover_schedule));
     const result = await client.query(
       `UPDATE crm_leads SET owner_membership_id = $1, queue_id = $2,
          next_action_at = COALESCE(next_action_at, now()),
@@ -2174,7 +2181,16 @@ export class CrmLeadsService {
     return { ...result.rows[0], version: Number(result.rows[0].version) };
   }
 
-  /** Validates a takeover working-hours schedule (the SLA calendar shape); null keeps elapsed time. */
+  /**
+   * The clock the handoff counts on: the queue's own working hours when set, else the Sales working hours
+   * (the first-response policy's calendar), the same minutes the escalation timers count.
+   */
+  private takeoverClock(client: Pick<PoolClient, "query">, workspaceId: string, queueSchedule: unknown): Promise<SlaSchedule> {
+    if (queueSchedule) return Promise.resolve(normalizeSlaSchedule(queueSchedule as Record<string, unknown>));
+    return salesSchedule(client, workspaceId);
+  }
+
+  /** Validates a takeover working-hours schedule (the SLA calendar shape); null keeps the Sales working hours. */
   private takeoverSchedule(input: Record<string, unknown> | null | undefined) {
     if (!input) return null;
     try { return JSON.stringify(normalizeSlaSchedule(input)); }

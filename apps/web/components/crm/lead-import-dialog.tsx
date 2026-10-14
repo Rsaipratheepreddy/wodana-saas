@@ -22,7 +22,7 @@ const baseFields: Array<{ id: Field; label: MessageKey; names: string[]; require
   { id: "channel", label: tKey("Channel per row"), names: ["channel", "lead channel"] },
   { id: "mobileCountryCode", label: tKey("Mobile country (ISO code)"), names: ["mobile country code", "country code", "country"] },
 ];
-type RowResult = { status: "created" | "review" | "error"; message: string };
+type RowResult = { status: "created" | "error"; message: string };
 
 function findOption(value: string, choices: LeadOption[] | undefined) {
   const normalized = value.trim().toLocaleLowerCase();
@@ -81,15 +81,14 @@ export function LeadImportDialog({ initialData, onClose, onImported }: { initial
     const next = { ...results };
     let imported = false;
     for (const [index, row] of table.rows.entries()) {
-      if (next[index]?.status === "created" || next[index]?.status === "review") continue;
+      if (next[index]?.status === "created") continue;
       try {
         const payload = prepare(row, index);
         const response = await fetch("/api/workspace/crm/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
         const result = await response.json();
         if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(". ") : result.message ?? t("The row could not be imported."));
-        next[index] = result.status === "duplicate_candidate"
-          ? { status: "review", message: t("Possible duplicate. Review it in Intake review.") }
-          : { status: "created", message: String(result.reference ?? t("Enquiry created")) };
+        // Every accepted row is an enquiry now: a possible existing client is created at once and waits as "Confirm client".
+        next[index] = { status: "created", message: String(result.reference ?? t("Enquiry created")) };
         imported = true;
       } catch (error) { next[index] = { status: "error", message: error instanceof Error ? error.message : t("The row could not be imported.") }; }
       setResults({ ...next });
@@ -97,7 +96,7 @@ export function LeadImportDialog({ initialData, onClose, onImported }: { initial
     if (imported) await onImported().catch(() => setFailure(t("Rows were imported. Refresh the list to see them.")));
     setBusy(false);
   };
-  const counts = Object.values(results).reduce((totals, result) => ({ ...totals, [result.status]: totals[result.status] + 1 }), { created: 0, review: 0, error: 0 });
+  const counts = Object.values(results).reduce((totals, result) => ({ ...totals, [result.status]: totals[result.status] + 1 }), { created: 0, error: 0 });
   const complete = Boolean(table && Object.keys(results).length === table.rows.length && counts.error === 0);
   return <ControlledModalDialog isOpen title={t("Import enquiries")} size="lg" isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Close")}</Button><Button variant="primary" isDisabled={!table || !options || busy || complete || fields.some(field => field.required && !mapping[field.id]) || !source || !channel} isLoading={busy} onPress={() => void importRows()}>{complete ? t("Import complete") : Object.keys(results).length ? t("Retry failed rows") : t("Import enquiries")}</Button></div>}>
@@ -109,7 +108,7 @@ export function LeadImportDialog({ initialData, onClose, onImported }: { initial
         <FormSection title={t("Columns")}>{fields.map(field => <SelectField isRequired={field.required} key={field.id} label={field.label} items={[{ id: "", label: field.required ? t("Choose column") : t("Not in file") }, ...table.headers.map(header => ({ id: header, label: header }))]} selectedKey={mapping[field.id]} onSelectionChange={key => setMapping(previous => ({ ...previous, [field.id]: String(key ?? "") }))} />)}</FormSection>
         <FormSection title={t("Source")}><SelectField isRequired label={t("Default source")} items={options?.sources ?? []} selectedKey={source || null} onSelectionChange={key => { const selected = String(key ?? ""); setSource(selected); setChannel(options?.channels[selected]?.[0]?.id ?? ""); }} /><SelectField isRequired label={t("Default channel")} items={options?.channels[source] ?? []} selectedKey={channel || null} onSelectionChange={key => setChannel(String(key ?? ""))} /></FormSection>
         <FormSection title={t("Preview")}><div className={styles.preview}>{table.rows.slice(0, 5).map((row, index) => <p key={index}>{t("Row {row}: {values}", { row: index + 2, values: ["displayName", "mobile", "emirate", "serviceType"].map(field => value(row, field as Field) || "—").join(" · ") })}</p>)}</div></FormSection>
-        {Object.keys(results).length ? <div role="status" className={styles.summary}>{t("{created} created · {review} need duplicate review · {failed} failed", { created: counts.created, review: counts.review, failed: counts.error })}</div> : null}
+        {Object.keys(results).length ? <div role="status" className={styles.summary}>{t("{created} created · {failed} failed", { created: counts.created, failed: counts.error })}</div> : null}
         {Object.entries(results).filter(([, result]) => result.status !== "created").slice(0, 20).map(([index, result]) => <p key={index} className={styles.rowResult}>{t("Row {row}: {message}", { row: Number(index) + 2, message: result.message })}</p>)}
       </> : null}
     </Form>

@@ -8,7 +8,7 @@ describe("workspace terminology", () => {
   it("returns the current product terminology when no override exists", () => {
     const result = resolveWorkspaceTerminology([]);
 
-    expect(result.map.lead).toEqual({ visibleName: "Lead", visibleNamePlural: "Leads" });
+    expect(result.map.lead).toEqual({ visibleName: "Enquiry", visibleNamePlural: "Enquiries" });
     expect(result.map.pre_execution).toEqual({ visibleName: "Pre-execution", visibleNamePlural: "Pre-execution" });
     expect(result.map.business_unit).toEqual({ visibleName: "Business unit", visibleNamePlural: "Business units" });
     expect(result.map.catalog).toEqual({ visibleName: "Catalog", visibleNamePlural: "Catalogs" });

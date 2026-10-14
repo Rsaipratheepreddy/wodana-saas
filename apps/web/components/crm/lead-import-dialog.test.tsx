@@ -31,5 +31,5 @@ it("imports mapped CSV values through the common intake with automatic assignmen
   await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
   const body = JSON.parse(fetchMock.mock.calls[0][1].body);
   expect(body).toMatchObject({ workspaceId: data.workspaceId, source: "company", channel: "website", serviceType: "design", party: { displayName: "Asha Rao", mobile: "+971501234567" }, details: { emirate: "dubai", area: "marina" } });
-  expect(screen.getByText(/1 created · 0 need duplicate review · 0 failed/)).toBeInTheDocument();
+  expect(screen.getByText(/1 created · 0 failed/)).toBeInTheDocument();
 });

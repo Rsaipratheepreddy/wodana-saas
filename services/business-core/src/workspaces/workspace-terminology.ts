@@ -1,7 +1,7 @@
 export const WORKSPACE_TERMINOLOGY_DEFAULTS = [
   { key: "workspace", visibleName: "Workspace", visibleNamePlural: "Workspaces" },
   { key: "crm", visibleName: "CRM", visibleNamePlural: "CRM" },
-  { key: "lead", visibleName: "Lead", visibleNamePlural: "Leads" },
+  { key: "lead", visibleName: "Enquiry", visibleNamePlural: "Enquiries" },
   { key: "opportunity", visibleName: "Deal", visibleNamePlural: "Deals" },
   { key: "client", visibleName: "Client", visibleNamePlural: "Clients" },
   { key: "pre_execution", visibleName: "Pre-execution", visibleNamePlural: "Pre-execution" },

@@ -166,7 +166,7 @@ export const companyProfileFixture: CompanyProfileData = {
   terminology: {
     workspace: { visibleName: "Workspace", visibleNamePlural: "Workspaces" },
     crm: { visibleName: "CRM", visibleNamePlural: "CRM" },
-    lead: { visibleName: "Lead", visibleNamePlural: "Leads" },
+    lead: { visibleName: "Enquiry", visibleNamePlural: "Enquiries" },
     opportunity: { visibleName: "Deal", visibleNamePlural: "Deals" },
     client: { visibleName: "Client", visibleNamePlural: "Clients" },
     pre_execution: { visibleName: "Planning", visibleNamePlural: "Planning" },

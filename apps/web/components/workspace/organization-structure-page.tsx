@@ -173,11 +173,11 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <SettingsPage aria-label={t("Teams and departments")} title={t("Teams")} width="wide" actions={initialData.canManage ? <>
-        <Button onPress={() => setEditingUnit("new")}><Plus aria-hidden="true" size={14} />{t("Department")}</Button>
+      <SettingsPage aria-label={t("Teams and business units")} title={t("Teams")} width="wide" actions={initialData.canManage ? <>
+        <Button onPress={() => setEditingUnit("new")}><Plus aria-hidden="true" size={14} />{t("Business unit")}</Button>
         <Button isDisabled={!units.length} onPress={() => setEditingTeam("new")} variant="primary"><Plus aria-hidden="true" size={14} />{t("Team")}</Button>
       </> : null}>
-        {/* The tabs carry the team and department counts; the members are People's own tab. */}
+        {/* The tabs carry the team and business unit counts; the members are People's own tab. */}
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
         {failure ? <Callout title={t("Organization action failed")} tone="danger">{failure}</Callout> : null}
 
@@ -256,7 +256,7 @@ function TeamDialog({ initialData, item, onClose, onSaved, units }: { initialDat
       <FormSection>
         <TextInput isRequired label={t("Team name")} onChange={setName} placeholder={t("Sales")} value={name} />
         <TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("SALES")} value={code} />
-        <SelectField items={units.map((unit) => ({ id: unit.id, label: unit.name }))} label={t("Department")} onSelectionChange={(key) => key && setUnitId(String(key))} selectedKey={unitId} />
+        <SelectField items={units.map((unit) => ({ id: unit.id, label: unit.name }))} label={t("Business unit")} onSelectionChange={(key) => key && setUnitId(String(key))} selectedKey={unitId} />
         <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What this team owns")} value={description} />
       </FormSection>
       <FormSection title={t("Members")}>

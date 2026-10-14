@@ -71,7 +71,7 @@ describe("Money › Summary", () => {
     expect(fact("Forecast margin")).toHaveTextContent(/54,250\.00.*49\.3% at completion, target 55%/);
     const flags = screen.getByRole("list", { name: "Flags" });
     expect(within(flags).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-      expect.stringMatching(/Materials over by AED\s?3,100\.00/), "Margin 49.3% below the 55% target", "1 quoted lines have no cost"]);
+      expect.stringMatching(/Materials over by AED\s?3,100\.00/), "Margin 49.3% below the 55% target", "1 quoted line has no cost"]);
     expect(screen.getByText("From Wodana's records")).toBeInTheDocument();
     expect(screen.getByText(/The Ledger differs by -?AED\s?-?800\.00/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ledger journals" })).toHaveAttribute("href", "/workspace/ledger/journals?project=p1");

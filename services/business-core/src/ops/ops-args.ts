@@ -265,7 +265,7 @@ const LIFECYCLE_OPTIONS = ["--slug", "--retire", "--restore", "--apply", "--dry-
 function sandboxSlug(required: (name: string) => string) {
   const slug = required("--slug").toLowerCase();
   if (!LOGIN_SLUG.test(slug) || slug.length < 2 || slug.length > 40)
-    throw new UsageError("--slug is the sandbox's login name: 2 to 40 lowercase letters and digits, single dashes between them (e.g. iglo).");
+    throw new UsageError("--slug is the sandbox's login name: 2 to 40 lowercase letters and digits, single dashes between them (e.g. demo).");
   if (RESERVED_SLUGS.has(slug)) throw new UsageError(`--slug ${slug} is reserved for the platform; choose another.`);
   return slug;
 }
@@ -294,7 +294,7 @@ function parseSandbox(values: Map<string, string>, flags: Set<string>, required:
   const organizationOf = values.has("--organization-of") ? values.get("--organization-of")!.trim().toLowerCase() : null;
   if (organizationOf !== null) {
     if (!LOGIN_SLUG.test(organizationOf) || organizationOf.length < 2 || organizationOf.length > 40 || RESERVED_SLUGS.has(organizationOf))
-      throw new UsageError("--organization-of is the slug of the sandbox whose account gets the organization (e.g. iglo).");
+      throw new UsageError("--organization-of is the slug of the sandbox whose account gets the organization (e.g. demo).");
     if (organizationOf === slug) throw new UsageError("--organization-of is another sandbox than --slug: the one whose account gets this organization.");
     // The people are the sandbox's own: their passwords stay as they are, and the organization gets the sandbox's kit.
     if (passwordEnv !== null) throw new UsageError(`--password-env does not apply with --organization-of: the test members keep the password sandbox ${organizationOf} gave them.`);

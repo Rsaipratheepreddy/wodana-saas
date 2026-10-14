@@ -17,6 +17,7 @@ import { Sheet } from '../../ui/sheet';
 import { SwipeRow, type SwipeAction } from '../../ui/swipe-row';
 import { useTheme } from '../../ui/theme';
 import { useToast } from '../../ui/toast';
+import { useBootstrap as useWorkCalendars } from '../hrms/api';
 import { useMyDay, useMyDayCommand, useRefetchOnFocus } from './api';
 import {
   FILTERS, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, rowDetail, snoozePresets, snoozeProblem, URGENCY_LABEL,
@@ -146,9 +147,14 @@ function SnoozeSheet({ open, item, timeZone, format, onClose, onSnooze }: {
   const [reason, setReason] = useState('');
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The working day's start and end from the person's work calendar (the HRMS bootstrap, already fetched where the
+  // workspace has HRMS); without one the reminder settings' default quiet hours stand.
+  const calendars = useWorkCalendars();
+  const calendar = calendars.data?.employee?.calendar ?? calendars.data?.calendars[0];
+  const hours = calendar ? { morning: calendar.dayStart, evening: calendar.dayEnd } : undefined;
   // The choices are worked out from the moment the sheet opens (`open` is a dependency for that), and stay while it closes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const presets = useMemo(() => (item ? snoozePresets(new Date(), timeZone, item.critical) : []), [open, item, timeZone]);
+  const presets = useMemo(() => (item ? snoozePresets(new Date(), timeZone, item.critical, hours) : []), [open, item, timeZone, hours?.morning, hours?.evening]);
   useEffect(() => {
     if (!open) return;
     setChoice(presets[0]?.id ?? null);

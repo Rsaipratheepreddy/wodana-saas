@@ -127,8 +127,9 @@ const pad = (value: number) => String(value).padStart(2, '0');
 
 /**
  * The snooze choices, in the person's time zone: later today (three hours on, on the hour, while it is still
- * before the evening's quiet hours), tomorrow and in a week when the quiet hours end (the reminder settings'
- * defaults). A critical item snoozes only to the next working day, so it never offers a week.
+ * before the working day ends), tomorrow and in a week when the working day starts. `hours` is the work
+ * calendar's day start and end where the app has one; otherwise the reminder settings' default quiet hours
+ * stand in. A critical item snoozes only to the next working day, so it never offers a week.
  */
 export function snoozePresets(now: Date, timeZone: string, critical: boolean, hours: { morning: string; evening: string } = { morning: REMINDER_SETTINGS_DEFAULTS.quietEnd, evening: REMINDER_SETTINGS_DEFAULTS.quietStart }): SnoozePreset[] {
   const today = isoDay(now, timeZone);
