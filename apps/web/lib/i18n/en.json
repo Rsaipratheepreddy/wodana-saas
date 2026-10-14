@@ -15201,5 +15201,6 @@
   "This calendar can't be changed from Wodana.": "This calendar can't be changed from Wodana.",
   "This event changed in Google. Refresh and try again.": "This event changed in Google. Refresh and try again.",
   "The provider is busy. Try again in a minute.": "The provider is busy. Try again in a minute.",
-  "The provider couldn't complete this. Try again in a moment.": "The provider couldn't complete this. Try again in a moment."
+  "The provider couldn't complete this. Try again in a moment.": "The provider couldn't complete this. Try again in a moment.",
+  "Site · {name}": "Site · {name}"
 }

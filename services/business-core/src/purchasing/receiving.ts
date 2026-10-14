@@ -25,25 +25,26 @@ export async function readLocations(db: Db, workspaceId: string, all = false): P
 /**
  * Where goods can be received for an order: the site of each of its projects, the default warehouse and
  * factory (made the first time they're used), and any other place the firm keeps stock. A key is a
- * location id, or `site:<project>`, `warehouse` or `factory` for one that doesn't exist yet.
+ * location id, or `site:<project>`, `warehouse` or `factory` for one that doesn't exist yet. A site that
+ * doesn't exist yet has no name; its project's reference and name let the apps label it.
  */
-export type Place = { key: string; kind: LocationKind; name: string | null; projectReference: string | null };
+export type Place = { key: string; kind: LocationKind; name: string | null; projectReference: string | null; projectName: string | null };
 
 export async function placesFor(db: Db, workspaceId: string, orderId: string, deliverTo: string) {
   const locations = await readLocations(db, workspaceId);
-  const projects = (await db.query<{ id: string; reference: string }>(
-    `SELECT DISTINCT project.id, project.reference FROM purchase_order_lines line JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+  const projects = (await db.query<{ id: string; reference: string; name: string }>(
+    `SELECT DISTINCT project.id, project.reference, project.name FROM purchase_order_lines line JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
       WHERE line.workspace_id = $1 AND line.order_id = $2 ORDER BY project.reference`, [workspaceId, orderId])).rows;
   const places: Place[] = projects.map((project) => {
     const site = locations.find((location) => location.kind === "site" && location.projectId === project.id);
-    return { key: site?.id ?? `site:${project.id}`, kind: "site", name: site?.name ?? null, projectReference: project.reference };
+    return { key: site?.id ?? `site:${project.id}`, kind: "site", name: site?.name ?? null, projectReference: project.reference, projectName: project.name };
   });
   for (const kind of ["warehouse", "factory"] as const) {
     const ofKind = locations.filter((location) => location.kind === kind);
-    if (!ofKind.length) places.push({ key: kind, kind, name: null, projectReference: null });
-    for (const location of ofKind) places.push({ key: location.id, kind, name: location.name, projectReference: null });
+    if (!ofKind.length) places.push({ key: kind, kind, name: null, projectReference: null, projectName: null });
+    for (const location of ofKind) places.push({ key: location.id, kind, name: location.name, projectReference: null, projectName: null });
   }
-  for (const location of locations.filter((item) => item.kind === "other")) places.push({ key: location.id, kind: "other", name: location.name, projectReference: null });
+  for (const location of locations.filter((item) => item.kind === "other")) places.push({ key: location.id, kind: "other", name: location.name, projectReference: null, projectName: null });
   const preferred = deliverTo === "site" && projects.length === 1 ? places[0]
     : places.find((place) => place.kind === (deliverTo === "factory" ? "factory" : "warehouse") && (place.name === null || locations.some((item) => item.id === place.key && item.isDefault)))
       ?? places.find((place) => place.kind === (deliverTo === "factory" ? "factory" : "warehouse"));

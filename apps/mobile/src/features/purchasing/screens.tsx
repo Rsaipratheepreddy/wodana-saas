@@ -23,6 +23,7 @@ import { useToast } from '../../ui/toast';
 import { useTheme } from '../../ui/theme';
 import { purchasingKeys, receiptPhotoPath, useDeliveries, useOrder, useOrders, useReceipt, useReceivingForm, useTransfer, type ExpectedOrder, type OrderRow, type Receipt, type ReceiptLine } from './api';
 import type { ReceiptPayload } from './outbox';
+import { placeOption } from './receiving-model';
 
 const REJECT_KIND: Array<{ value: string; label: string }> = [
   { value: 'damaged', label: key('Damaged') }, { value: 'defective', label: key('Defective') }, { value: 'wrong_item', label: key('Wrong item') },
@@ -194,7 +195,7 @@ export function ReceiveScreen() {
     footer={<Button label={t('Record delivery')} variant="primary" size="lg" full disabled={!any || invalid || needPhoto || !place || !!pending.length} onPress={send} />}>
     {pending.length ? <Banner tone="info" title={t('A delivery for this order is waiting to send')} /> : null}
     {data.requireInspection ? <Banner tone="neutral" title={t('Goods wait for inspection after receiving')} /> : null}
-    <SelectField label={t('Delivered to')} value={place} onChange={setPlace} options={data.places.map((item) => ({ value: item.key, label: item.name, detail: item.projectReference ?? undefined }))} />
+    <SelectField label={t('Delivered to')} value={place} onChange={setPlace} options={data.places.map((item) => placeOption(item, t))} />
     <DateField label={t('Received on')} value={receivedOn} onChange={setReceivedOn} max={format.today()} />
     <Row style={{ justifyContent: 'space-between' }}>
       <Text variant="overline" tone="secondary">{t('What arrived')}</Text>

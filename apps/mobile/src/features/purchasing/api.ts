@@ -35,10 +35,12 @@ export type OrderDetail = {
   lines: OrderLine[]; receipts: Receipt[]; canReceive: boolean;
   supplier: { id: string; name: string; email: string | null; phone: string | null; contactName: string | null } | null;
 };
+/** Where goods can be received: a location, or one made on first use (`site:<project>`, `warehouse`, `factory`), which has no name yet. */
+export type Place = { key: string; kind: 'warehouse' | 'factory' | 'site' | 'other'; name: string | null; projectReference: string | null; projectName: string | null };
 export type ReceivingForm = {
   order: OrderRow & { deliverTo: string };
   lines: Array<OrderLine & { outstanding: string; receivable: string }>;
-  places: Array<{ key: string; kind: string; name: string; projectReference: string | null }>;
+  places: Place[];
   defaultPlace: string | null; requireInspection: boolean; receiveTolerancePercent: number; requireSitePhoto: boolean;
 };
 export type TransferDetail = {
