@@ -265,6 +265,13 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  /* A column marked nowrap (a date, a reference) stays on one line at its natural width, even when text wraps;
+     the wrapping columns take the rest, so "10 Nov 2026" never loses its year. */
+  .wd-data-grid table.wd-table.wd-record-table.wd-record-table > :is(thead, tbody) > tr > :is(th, td)[data-nowrap="true"],
+  .wd-data-grid table.wd-table.wd-record-table.wd-record-table > tbody > tr > td[data-nowrap="true"] :is(span, strong, small, b, div, p, a, time),
+  .wd-data-grid table.wd-table.wd-record-table.wd-record-table > tbody > tr > td[data-nowrap="true"] .wd-grid-value {
+    white-space: nowrap;
+  }
 }
 
 /* Column header icons (reference: quiet icon before each label). */
