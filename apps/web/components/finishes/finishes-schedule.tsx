@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Factory, Send } from "lucide-react";
 import {
-  Badge, Button, EmptyState, ErrorState, FormDialog, GroupedTable, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, ToolbarSearch, useDesignSystem,
+  Badge, Button, EmptyState, ErrorState, FormDialog, GroupedTable, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, ToolbarSearch, formatDecimal, useDesignSystem,
   type GroupedTableColumn, type GroupedTableSection,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -81,7 +81,7 @@ export function FinishesSchedule({ source, rooms = [], onAddMaterials }: { sourc
   const installColumns: GroupedTableColumn<FinishEntry>[] = [
     { id: "finish", label: t("Finish"), width: "32%", render: finishCell },
     { id: "where", label: t("Where it goes"), width: "22%", render: (entry) => entry.location || <span className={styles.muted}>—</span> },
-    { id: "quantity", label: t("Quantity"), width: "14%", align: "end", render: (entry) => entry.current?.quantity ? <span className={styles.number}><bdi dir="ltr">{entry.current.quantity}</bdi> {entry.current.unit}</span> : "—" },
+    { id: "quantity", label: t("Quantity"), width: "14%", align: "end", render: (entry) => entry.current?.quantity ? <span className={styles.number}><bdi dir="ltr">{formatDecimal(entry.current.quantity, { locale })}</bdi> {entry.current.unit}</span> : "—" },
     { id: "note", label: t("Installation note"), width: "32%", mobileHidden: true, render: (entry) => entry.installNote || <span className={styles.muted}>—</span> },
   ];
   const categoryItems = [{ id: ALL, label: t("All categories") }, ...view.categories.map((item) => ({ id: item.key, label: item.label }))];

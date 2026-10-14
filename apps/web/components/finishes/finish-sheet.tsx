@@ -3,7 +3,7 @@
 import { useState, type CSSProperties, type MouseEvent } from "react";
 import { MapPin, PenLine, Signature, Trash2 } from "lucide-react";
 import { parseDate } from "@internationalized/date";
-import { Badge, Button, DateField, FormDialog, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Badge, Button, DateField, FormDialog, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, formatDecimal, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { zonedToday } from "@/lib/crm/zoned-time";
 import type { CaseAsset, CaseRoom } from "@/lib/pre-project/content";
@@ -45,7 +45,7 @@ export function FinishSheet({ entry, view, rooms, api, onClose, onSaved }: { ent
       <dt>{t("Room")}</dt><dd>{entry.roomName ?? t("Whole home")}</dd>
       <dt>{t("Where it goes")}</dt><dd>{entry.location || "—"}</dd>
       {entry.installNote ? <><dt>{t("Installation note")}</dt><dd>{entry.installNote}</dd></> : null}
-      {current?.quantity ? <><dt>{t("Quantity")}</dt><dd><bdi dir="ltr">{current.quantity}</bdi> {current.unit}</dd></> : null}
+      {current?.quantity ? <><dt>{t("Quantity")}</dt><dd><bdi dir="ltr">{formatDecimal(current.quantity, { locale })}</bdi> {current.unit}</dd></> : null}
     </dl>
     {current?.samplePhotoAssetId
       // eslint-disable-next-line @next/next/no-img-element

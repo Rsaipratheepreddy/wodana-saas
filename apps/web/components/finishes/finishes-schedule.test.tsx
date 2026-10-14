@@ -14,7 +14,7 @@ const body = (fetcher: ReturnType<typeof vi.fn>, match: string) => JSON.parse(((
 const entry = (over: Partial<FinishEntry> = {}): FinishEntry => ({
   id: "e1", title: "Calacatta marble", roomId: "r1", roomName: "Kitchen", categoryKey: "hard_finishes", categoryLabel: "Hard finishes", location: "Floor", installNote: "Book-matched",
   position: 0, version: 2,
-  current: { id: "v1", number: 1, specification: "Honed, 2 cm", supplier: "Own stock", quantity: "30", unit: "m²", catalogItemId: null, origin: "own_stock", outsourced: false, signOff: null,
+  current: { id: "v1", number: 1, specification: "Honed, 2 cm", supplier: "Own stock", quantity: "30.0000", unit: "m²", catalogItemId: null, origin: "own_stock", outsourced: false, signOff: null,
     status: "confirmed", sampleId: "s1", sampleName: "Calacatta Gold", samplePhotoAssetId: null, samplePhotoName: null, note: "", confirmedAt: null, confirmedByName: null },
   locked: null, status: "approved", snapshots: [], signature: { required: false, signed: false, last: null }, sentToQs: true, changedSinceSent: false, priced: { lines: 1, stale: 0 }, ...over,
 });
@@ -51,6 +51,9 @@ describe("the finishes schedule (PLM-156, PLM-146, PLM-148)", () => {
     // The installation view: where each one goes and the note for whoever installs it.
     fireEvent.click(screen.getByRole("radio", { name: "Installation" }));
     expect((await screen.findAllByText("Book-matched")).length).toBeGreaterThan(0);
+    // Quantities read as the locale writes them, without the stored decimals.
+    expect(screen.getAllByText("30").length).toBeGreaterThan(0);
+    expect(screen.queryByText("30.0000")).not.toBeInTheDocument();
     // The drawings schedule, read from the design files and the shop drawings.
     fireEvent.click(screen.getByRole("radio", { name: "Drawings" }));
     expect(await screen.findByText("Kitchen elevations")).toBeInTheDocument();

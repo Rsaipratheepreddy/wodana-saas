@@ -63,6 +63,19 @@ export function formatRelativeTime(value: Date | string | number, context: Forma
   );
 }
 
+/**
+ * A quantity as the API sends it (an exact decimal such as "24.0000") the way the locale writes it, without trailing
+ * zeros: "24", "2.5", "1,250.75". Formatted from the decimal string, so nothing is rounded through a float.
+ */
+export function formatDecimal(value: string | number | null | undefined, context: FormatContext = {}, maximumFractionDigits = 4) {
+  if (value === null || value === undefined || value === "") return "";
+  try {
+    return new Intl.NumberFormat(context.locale ?? defaults.locale, { maximumFractionDigits }).format(String(value) as unknown as number);
+  } catch {
+    return String(value);
+  }
+}
+
 export function formatQuantity(value: number, unit: string, context: FormatContext = {}) {
   return `${formatNumber(value, context, { maximumFractionDigits: 2 })} ${unit}`;
 }

@@ -6,7 +6,7 @@ import { FileText, Plus } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
   Badge, Button, ComboboxField, DateField, EmptyState, ErrorState, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, NumericInput, RecordTable, SegmentedControl,
-  SelectField, Skeleton, TextAreaField, TextInput, formatMoney, useDesignSystem, type DataGridColumn,
+  SelectField, Skeleton, TextAreaField, TextInput, formatDecimal, formatMoney, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { zonedToday } from "@/lib/crm/zoned-time";
@@ -191,6 +191,7 @@ function EntryHistory({ entry, fit, money, day, impact, canEdit, canRecordClient
   onClose: () => void; onVersion: () => void; onDecision: () => void; onRemove: () => Promise<unknown>;
 }) {
   const t = useT();
+  const { locale } = useDesignSystem();
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
   const remove = async () => { setRemoving(true); setError(""); try { await onRemove(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setRemoving(false); } };
@@ -212,7 +213,7 @@ function EntryHistory({ entry, fit, money, day, impact, canEdit, canRecordClient
             {entry.locked?.id === version.id ? <Badge tone="success">{t("Signed off")}</Badge> : null}{version.afterLock ? <Badge tone="warning">{t("After sign-off")}</Badge> : null}</div>
           <dl className={styles.facts}>
             {version.specification ? <><dt>{t("Finish or specification")}</dt><dd>{version.specification}</dd></> : null}
-            {version.quantity ? <><dt>{t("Quantity")}</dt><dd><bdi dir="ltr">{version.quantity}</bdi> {version.unit}</dd></> : null}
+            {version.quantity ? <><dt>{t("Quantity")}</dt><dd><bdi dir="ltr">{formatDecimal(version.quantity, { locale })}</bdi> {version.unit}</dd></> : null}
             {version.unitPrice ? <><dt>{t("Unit price")}</dt><dd className={styles.amount}><bdi dir="ltr">{money(version.unitPrice)}</bdi></dd></> : null}
             <dt>{t("Impact")}</dt><dd className={styles.amount}>{impact(version)}</dd>
             <dt>{t("Source")}</dt><dd>{t(SOURCE_LABEL[version.source] ?? version.source as never)} · {day(version.saidAt)}</dd>
