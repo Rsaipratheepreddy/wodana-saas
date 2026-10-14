@@ -169,7 +169,19 @@ integration("factory order ready (PLM-064, PLM-065, PLM-067)", () => {
       const file = { buffer: png, originalname: "check.png", mimetype: "image/png", size: png.length };
       const photo = randomUUID(), checkId = order.checks[0].id;
       await expect(factory(w.people.finance, ["factory.view"]).uploadCheckPhoto(actor, w.workspaceId, first, checkId, photo, file)).rejects.toThrow(/Not allowed/);
-      order = await checker.uploadCheckPhoto(actor, w.workspaceId, first, checkId, photo, file);
+      // As the app role (explicit grants, forced RLS): storing the photo locks its check, which needs UPDATE on work_order_checks (0342).
+      await w.client.query("SAVEPOINT app_role");
+      try {
+        await w.client.query("SELECT set_config('app.current_actor_id',$1,true)", [w.people.checker]);
+        await w.client.query("SET LOCAL ROLE wodana_app");
+        order = await checker.uploadCheckPhoto(actor, w.workspaceId, first, checkId, photo, file);
+        await w.client.query("RESET ROLE");
+        await w.client.query("RELEASE SAVEPOINT app_role");
+      } catch (error) {
+        await w.client.query("ROLLBACK TO SAVEPOINT app_role");
+        await w.client.query("RESET ROLE");
+        throw error;
+      }
       order = await checker.uploadCheckPhoto(actor, w.workspaceId, first, checkId, photo, file);
       await expect(checker.uploadCheckPhoto(actor, w.workspaceId, first, checkId, randomUUID(), file)).rejects.toThrow(/already has its photo/);
       expect(order.checks[0].photoId).toBe(photo);
