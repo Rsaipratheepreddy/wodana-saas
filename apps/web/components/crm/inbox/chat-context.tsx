@@ -52,7 +52,10 @@ export function enquiryPrefill(thread: RecordData, context: ChatContext | null, 
   const placeholderName = /^whatsapp\s*\+?\d/i.test(name);
   // The chat's own contact is the client; only a contact still named after its number waits for a real name first.
   const partyId = !placeholderName && name.trim() ? context?.party?.id : undefined;
-  return { party: { displayName: placeholderName ? "" : name, mobile: phone, email }, channel: String(thread.channel), summary: extra.summary ?? inbound, ...(partyId ? { partyId } : {}) };
+  // The chat's contact itself (named or not) is never offered back as a returning client.
+  const contactPartyId = context?.party?.id;
+  return { party: { displayName: placeholderName ? "" : name, mobile: phone, email }, channel: String(thread.channel), summary: extra.summary ?? inbound,
+    ...(partyId ? { partyId } : {}), ...(contactPartyId ? { contactPartyId } : {}) };
 }
 
 /**

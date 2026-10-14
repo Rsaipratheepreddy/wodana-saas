@@ -5,7 +5,7 @@ import { Button, Callout, DateField, FillWithWoddy, FormDialog, FormNotSaved, Fo
 import { parseDate } from "@internationalized/date";
 import { normalizePersonName } from "@wodana/contracts/person-name";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
-import { sourceAllowedFor, TEAM_NOT_APPLICABLE, type EnquiryDetails, type LeadContact, type LeadOptions, type LeadTeamEntry } from "@/lib/crm/lead-options";
+import { sourceAllowedFor, TEAM_NOT_APPLICABLE, teamRoleChoices, type EnquiryDetails, type LeadContact, type LeadOptions, type LeadTeamEntry } from "@/lib/crm/lead-options";
 import { problemText, requiredBy, teamRoleLabel } from "@/lib/crm/enquiry-requirements";
 import { countryForPhone, phoneCountry, phoneProblem, phoneProblemText, toE164 } from "@/lib/crm/phone";
 import { findContactMatches, type ClientMatch } from "@/lib/crm/client-match";
@@ -56,7 +56,9 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
    * A new enquiry started from somewhere else (a chat): the person, the channel and a summary. `partyId` is the chat's
    * own contact, already chosen as the client (the Sales Admin isn't asked "Existing client?" about the person writing).
    */
-  prefill?: { party: LeadContact; channel?: string; summary?: string; partyId?: string };
+  prefill?: { party: LeadContact; channel?: string; summary?: string; partyId?: string;
+    /** The chat's own contact, also while it is still named after its number: with no enquiries yet it is a first-time client, never a returning one. */
+    contactPartyId?: string };
   onSaved: (leadId: string, reference?: string) => Promise<void>;
   /** Opens an existing enquiry instead of creating a new one. */
   onOpenLead?: (leadId: string) => void;
@@ -85,7 +87,12 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   // PLM-100: the team roles this enquiry type asks for come from its own steps; each is a member or Not applicable.
   const teamRoles = options?.teamRoles?.[serviceType] ?? [];
   const [team, setTeam] = useState<Record<string, string>>(() => Object.fromEntries((existing?.team ?? []).map(entry => [entry.role, entry.notApplicable ? TEAM_NOT_APPLICABLE : entry.membershipId ?? ""])));
-  const teamItems = [...initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email })), { id: TEAM_NOT_APPLICABLE, label: t("Not applicable") }];
+  // Each role offers the people who can hold it (the designers for Designer), never the sales people as a stand-in.
+  const directory = initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }));
+  const teamItems = (role: string) => {
+    const tagged = existing?.team?.find(entry => entry.role === role && entry.membershipId);
+    return teamRoleChoices(options, role, directory, tagged ? { id: tagged.membershipId!, label: tagged.name ?? "" } : null, t("Not applicable"));
+  };
   const teamBody = () => {
     const entries = teamRoles.filter(role => team[role] !== undefined && (team[role] || existing?.team?.some(entry => entry.role === role)))
       .map(role => ({ role, ...(team[role] === TEAM_NOT_APPLICABLE ? { notApplicable: true } : team[role] ? { membershipId: team[role] } : {}) }));
@@ -149,6 +156,11 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   // A different set of people needs a fresh answer.
   const identity: Identity = chosen?.kind === "existing" ? (matches.some(match => match.partyId === chosen.partyId) ? chosen : null)
     : chosen?.kind === "new" && matches.length ? chosen : null;
+  // The chat's own contact with no enquiries yet is a first-time client: chosen already, it is used without asking
+  // "Existing client?"; otherwise it is offered as "Use this contact", never as returning.
+  const chatContact = prefill?.contactPartyId ?? prefill?.partyId;
+  const firstTime = (match: ClientMatch) => Boolean(chatContact) && match.partyId === chatContact && !match.leadId;
+  const askIdentity = !existing && matches.length > 0 && !(identity?.kind === "existing" && matches.every(firstTime));
   useEffect(() => {
     if (!matchKey) return;
     const query = JSON.parse(matchKey) as { mobile?: string; email?: string };
@@ -322,13 +334,13 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
         <FormSection title={t("Client")}>
         <div data-problem-key="mobile"><CrmPhoneField label={t("Mobile")} required value={contact.mobile ?? ""} onChange={set("mobile")} countryCode={contact.mobileCountryCode ?? ""} onCountryChange={set("mobileCountryCode")} locale={initialData.defaultLocale}
           isReadOnly={identityLocked && Boolean(existing?.party?.mobile)} errorMessage={problem("mobile")} description={identityLocked && existing?.party?.mobile ? identityHint : undefined} /></div>
-        {!existing && matches.length > 0 ? <section className={styles.clientMatch} aria-label={t("Existing client?")} aria-live="polite" data-problem-key="identity" tabIndex={-1}>
+        {askIdentity ? <section className={styles.clientMatch} aria-label={t("Existing client?")} aria-live="polite" data-problem-key="identity" tabIndex={-1}>
           <strong>{t("Existing client?")}</strong>
           <ClientMatchList label={t("Clients with this mobile or email")} matches={matches} reason={matchReason} actions={(match) => <>
             {match.open && match.leadId && onOpenLead ? <Button size="compact" isDisabled={locked} onPress={() => onOpenLead(match.leadId!)}>{t("Open it")}</Button> : null}
             <Button size="compact" variant={identity?.kind === "existing" && identity.partyId === match.partyId ? "primary" : "secondary"} isDisabled={locked}
               aria-pressed={identity?.kind === "existing" && identity.partyId === match.partyId}
-              onPress={() => setIdentity({ kind: "existing", partyId: match.partyId, name: match.name })}>{match.open ? t("Add to this client") : t("Add as returning")}</Button>
+              onPress={() => setIdentity({ kind: "existing", partyId: match.partyId, name: match.name })}>{firstTime(match) ? t("Use this contact") : match.open ? t("Add to this client") : t("Add as returning")}</Button>
           </>} />
           <div><Button size="compact" variant={identity?.kind === "new" ? "primary" : "quiet"} aria-pressed={identity?.kind === "new"} isDisabled={locked} onPress={() => setIdentity({ kind: "new" })}>{t("Different person")}</Button></div>
         </section> : checking ? <p className={styles.routingHint} aria-live="polite">{t("Checking for an existing client…")}</p> : null}
@@ -336,7 +348,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
         </FormSection>
         <FormSection title={t("Enquiry")}>
         <SelectField label={t("Enquiry type")} isRequired placeholder={t("Choose enquiry type")} items={withExisting(options?.enquiryTypes, existing?.serviceType ?? "")} selectedKey={serviceType || null} onSelectionChange={key => key && setServiceType(String(key))} {...mark("serviceType")} />
-        {teamRoles.map(role => <SelectField key={role} label={teamRoleLabel(role, t)} isRequired={needed(`team:${role}`)} placeholder={t("Not tagged")} items={teamItems} selectedKey={team[role] || null} onSelectionChange={key => setTeam(current => ({ ...current, [role]: String(key ?? "") }))} {...mark(`team:${role}`)} />)}
+        {teamRoles.map(role => <SelectField key={role} label={teamRoleLabel(role, t)} isRequired={needed(`team:${role}`)} placeholder={t("Not tagged")} items={teamItems(role)} selectedKey={team[role] || null} onSelectionChange={key => setTeam(current => ({ ...current, [role]: String(key ?? "") }))} {...mark(`team:${role}`)} />)}
         <SelectField label={t("Source")} isRequired placeholder={t("Choose source")} items={withExisting(sourceItems, existing?.source ?? "")} selectedKey={source || null} onSelectionChange={key => chooseSource(String(key ?? ""))} {...mark("source")} />
         <SelectField label={t("Channel")} isRequired isDisabled={!source} placeholder={t("Choose channel")} items={withExisting(channelItems, source === existing?.source ? existing?.channel ?? "" : "")} selectedKey={channel || null} onSelectionChange={key => setChannel(String(key ?? ""))} {...mark("channel")} />
         {referralKind === "external" ? <><TextInput isRequired label={t("Referred by")} value={referral.name} onChange={value => setReferral(current => ({ ...current, name: value }))} /><TextInput label={t("Referrer contact")} value={referral.contact} onChange={value => setReferral(current => ({ ...current, contact: value }))} /></>

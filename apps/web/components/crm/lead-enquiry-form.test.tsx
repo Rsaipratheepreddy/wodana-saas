@@ -125,6 +125,50 @@ it("takes the chat's own contact as the client of an enquiry created from the ch
   expect(body()).toMatchObject({ identity: "existing", partyId: "party-1", displayName: "Asha Rao" });
 }, 20_000);
 
+it("uses the chat's own first-time contact without calling it returning, and words it Use this contact while it is unnamed", async () => {
+  // The chat created the contact seconds ago: it has no enquiries yet.
+  const fresh: ClientMatch = { ...match, leadId: null, reference: null, status: null, receivedAt: null, ownerName: null };
+  const named = setup(undefined, undefined, [fresh], { party: { displayName: "Asha Rao", mobile: "+971501234567" }, channel: "call", partyId: "party-1", contactPartyId: "party-1" });
+  await choose(named.user, /Emirate/, "Dubai");
+  await choose(named.user, /Owner/, "Leave unassigned");
+  await waitFor(() => expect(named.fetchMock.mock.calls.some(([url]) => String(url).includes("contact-match"))).toBe(true));
+  await waitFor(() => expect(screen.queryByText("Checking for an existing client…")).not.toBeInTheDocument());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryByText("Existing client?")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add as returning" })).not.toBeInTheDocument();
+  await named.user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(named.onSaved).toHaveBeenCalled());
+  expect(named.body()).toMatchObject({ identity: "existing", partyId: "party-1", displayName: "Asha Rao" });
+  cleanup();
+
+  // Still named after its number: the person types the name and is offered the chat's contact as "Use this contact".
+  const unnamed = setup(undefined, undefined, [{ ...fresh, name: "WhatsApp +971501234567" }], { party: { displayName: "", mobile: "+971501234567" }, channel: "call", contactPartyId: "party-1" });
+  expect(await screen.findByText("Existing client?")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Use this contact" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Add as returning" })).not.toBeInTheDocument();
+  void unnamed;
+}, 20_000);
+
+it("offers the designers in the Designer tag, never the sales people, and keeps the one already tagged (PLM-100)", async () => {
+  const { user } = setup(undefined, (data) => {
+    data.leadOptions!.teamRoles = { design: ["designer"] };
+    data.leadOptions!.teamMembers = { designer: [{ id: "d1", displayName: "Dana Designer" }, { id: "d2", displayName: "Jamie Junior Designer" }] };
+    data.members = [{ id: "s1", displayName: "Sam Sales", email: "sam@example.com", status: "active" }];
+  });
+  await user.click(screen.getByRole("button", { name: /Designer/ }));
+  expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Dana Designer", "Jamie Junior Designer", "Not applicable"]);
+  cleanup();
+
+  // Editing an enquiry whose designer no longer designs: they stay listed, so the field reads as it was saved.
+  const edit = setup({ id: "lead-1", version: 2, serviceType: "design", party: { displayName: "Asha Rao" }, source: "company", channel: "call",
+    team: [{ role: "designer", membershipId: "d9", name: "Former Designer", notApplicable: false, setAt: "2026-10-01T08:00:00.000Z", setByName: "Sam", version: 1 }] }, (data) => {
+    data.leadOptions!.teamRoles = { design: ["designer"] };
+    data.leadOptions!.teamMembers = { designer: [{ id: "d1", displayName: "Dana Designer" }] };
+  });
+  await edit.user.click(screen.getByRole("button", { name: /Designer/ }));
+  expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Dana Designer", "Former Designer", "Not applicable"]);
+}, 20_000);
+
 it("keeps a different person as a new client, and opens an open enquiry instead of adding one", async () => {
   const first = setup(undefined, undefined, [match]);
   await completeRequired(first.user);
