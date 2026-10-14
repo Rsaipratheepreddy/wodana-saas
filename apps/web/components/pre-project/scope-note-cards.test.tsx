@@ -240,6 +240,12 @@ describe('Requirements tabs and original forms', () => {
   const user=userEvent.setup();
   render(<DesignSystemProvider><BriefScopePage initialData={{...gatheringData,canEdit:false,caseStatus:'released'}}/></DesignSystemProvider>);
   expect(await screen.findByRole('alert')).toHaveTextContent('Connection unavailable');
+  // Managing rooms is an edit; the brief opens read-only (Close, no Save).
+  expect(screen.queryByRole('button',{name:'Manage rooms'})).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button',{name:'Project brief'}));
+  const brief=await screen.findByRole('dialog',{name:'Project brief'});
+  expect(within(brief).queryByRole('button',{name:'Save brief'})).not.toBeInTheDocument();
+  await user.click(within(brief).getByRole('button',{name:'Close'}));
   await user.click(screen.getByRole('button',{name:'Open details for Reception desk'}));
   expect(screen.getByRole('textbox',{name:'Client requirement'})).toBeDisabled();
   expect(screen.queryByRole('button',{name:'Save requirement'})).not.toBeInTheDocument();
