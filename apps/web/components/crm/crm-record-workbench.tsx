@@ -31,6 +31,7 @@ import { RaiseFinanceRequest, useCanRaiseFinanceRequest } from "../finance-reque
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { CrmScreenId } from "@/lib/crm/screens";
 import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
+import type { EnquiryContact } from "@/lib/crm/client-contact";
 import { activityTitle } from "@/lib/crm/contact";
 import { ActionDialog, FactList, ResourceState, addActivityAction, choice, completeActivityAction, options, rescheduleActivityAction, useCrmResource, type ActionSpec, type FieldSpec } from "./crm-workbench";
 import { CustomerPanel } from "./customer-record";
@@ -302,7 +303,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
                 {proof ? <FactRow label={t("Payment proof")}><a className={screen.factLink} href={proofHref(workspaceId, row.id, proof.id)} target="_blank" rel="noopener noreferrer">{t("Attached · {date}", { date: shortDay(proof.recordedAt) })}</a></FactRow> : null}
               </EditableFieldList>
             </SideSection>
-            <ClientContact workspaceId={workspaceId} partyId={partyId} partyName={String(live.partyName ?? t("Customer not set"))} />
+            <ClientContact workspaceId={workspaceId} partyId={partyId} partyName={String(live.partyName ?? t("Customer not set"))}
+              enquiryContact={(live.enquiryContact ?? null) as EnquiryContact | null} />
             <OpportunityActivity items={rows(activities.data)} loading={activities.loading} failure={activities.failure} retry={activities.refresh}
               onAdd={resource.data ? () => setAction(addActivityAction(t, activityTarget)) : undefined}
               onComplete={(item) => setAction(completeActivityAction(t, item))} onReschedule={(item) => setAction(rescheduleActivityAction(t, item))} />

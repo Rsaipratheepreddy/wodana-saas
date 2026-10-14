@@ -6,6 +6,7 @@ import { CalendarClock, Check, ChevronDown, Circle, CircleCheck, Mail, MessageCi
 import { Badge, Button, EditableFieldList, FactRow, Skeleton, Switch, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { dateText, label, type RecordData } from "@/lib/crm/client";
+import { clientContactFacts, type ContactPoint, type EnquiryContact } from "@/lib/crm/client-contact";
 import { activityTitle } from "@/lib/crm/contact";
 import { flowCapabilities, FURNITURE_PATHS, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import type { FactGroup } from "@/lib/crm/now-step";
@@ -131,19 +132,18 @@ export function OpportunityCards(props: CardsProps) {
 
 export { SideSection };
 
-type Contact = { type?: string; value?: string; rawValue?: string; countryCode?: string; isPrimary?: boolean; status?: string };
-
-/** The client's name, phone (call or WhatsApp) and email. */
-export function ClientContact({ workspaceId, partyId, partyName }: { workspaceId: string; partyId: string; partyName: string }) {
+/**
+ * The client's name, phone (call or WhatsApp) and email: from the client record, else from the enquiry the deal came
+ * from (B09: an enquiry made from an email chat keeps its contact there while its client record holds none).
+ */
+export function ClientContact({ workspaceId, partyId, partyName, enquiryContact }: {
+  workspaceId: string; partyId: string; partyName: string; enquiryContact?: EnquiryContact | null;
+}) {
   const t = useT();
   const { locale } = useDesignSystem();
   const party = useCrmResource<RecordData>(workspaceId, partyId ? `parties/${partyId}` : null);
-  const contacts = ((party.data?.contacts ?? []) as Contact[]).filter((contact) => contact.status !== "archived");
-  const primary = (type: string) => contacts.find((contact) => contact.type === type && contact.isPrimary) ?? contacts.find((contact) => contact.type === type);
-  const phone = primary("phone");
-  const email = primary("email");
-  const number = phone ? String(phone.rawValue ?? phone.value ?? "") : "";
-  const country = phoneCountry(phone?.countryCode, locale);
+  const { phone: number, countryCode, email } = clientContactFacts(party.data?.contacts as ContactPoint[] | undefined, enquiryContact);
+  const country = phoneCountry(countryCode, locale);
   const whatsapp = number ? whatsappUrl(number, country) : null;
   return <SideSection title={t("Client contact")}>
     <ul className={styles.contact}>
@@ -155,11 +155,11 @@ export function ClientContact({ workspaceId, partyId, partyName }: { workspaceId
           {whatsapp ? <a className={styles.iconLink} href={whatsapp} target="_blank" rel="noreferrer" aria-label={t("WhatsApp")}><MessageCircle aria-hidden="true" size={14} /></a> : null}
         </span>
       </li> : null}
-      {email?.value ? <li>
-        <span className={styles.value}>{email.value}</span>
-        <span className={styles.contactActions}><a className={styles.iconLink} href={`mailto:${email.value}`} aria-label={t("Email")}><Mail aria-hidden="true" size={14} /></a></span>
+      {email ? <li>
+        <span className={styles.value}>{email}</span>
+        <span className={styles.contactActions}><a className={styles.iconLink} href={`mailto:${email}`} aria-label={t("Email")}><Mail aria-hidden="true" size={14} /></a></span>
       </li> : null}
-      {party.data && !number && !email?.value ? <li className={styles.missing}>{t("No phone or email")}</li> : null}
+      {party.data && !number && !email ? <li className={styles.missing}>{t("No phone or email")}</li> : null}
     </ul>
   </SideSection>;
 }

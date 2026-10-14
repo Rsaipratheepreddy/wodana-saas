@@ -780,6 +780,8 @@ export class CrmOpportunitiesService {
                    opportunity.next_action_at AS "nextActionAt",
                    opportunity.created_at AS "createdAt", opportunity.updated_at AS "updatedAt",
                    party.display_name AS "partyName", enquiry.reference AS "enquiryReference",
+                   -- The phone and email typed on the enquiry: shown when the client record holds no contact points.
+                   enquiry.details->'contact' AS "enquiryContact",
                    source_case.id AS "preProjectCaseId", commercial_case.content #>> '{dealFile,reference}' AS "dealFileReference",
                    case_project.id AS "projectId", case_project.reference AS "projectReference",
                    pipeline.name AS "pipelineName",
