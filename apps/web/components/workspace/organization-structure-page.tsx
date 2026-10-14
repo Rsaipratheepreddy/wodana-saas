@@ -2,7 +2,7 @@
 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
-import { Building2, Network, Pencil, Plus, RotateCcw, Users } from "lucide-react";
+import { Building2, Network, Pencil, Plus, RotateCcw } from "lucide-react";
 import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, DesignSystemProvider, EmptyState, IconButton, IconMenuButton, InspectorSheet, MultiSelectField, SelectField, SettingsPage, Surface, Tabs, TextAreaField, TextInput, useDesignSystem, FormDialog, FormSection } from "@/design-system";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { BusinessUnitRecord } from "@/lib/workspace/company-profile";
@@ -177,15 +177,7 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
         <Button onPress={() => setEditingUnit("new")}><Plus aria-hidden="true" size={14} />{t("Department")}</Button>
         <Button isDisabled={!units.length} onPress={() => setEditingTeam("new")} variant="primary"><Plus aria-hidden="true" size={14} />{t("Team")}</Button>
       </> : null}>
-
-        <section aria-label={t("Organization structure summary")} className={styles.actionStrip}>
-          <div className={styles.summary}>
-            <span><Network aria-hidden="true" size={16} />{teams.length === 1 ? t("1 team") : t("{count} teams", { count: teams.length })}</span>
-            <span><Building2 aria-hidden="true" size={16} />{units.length === 1 ? t("1 department") : t("{count} departments", { count: units.length })}</span>
-            <span><Users aria-hidden="true" size={16} />{initialData.members.length === 1 ? t("1 member") : t("{count} members", { count: initialData.members.length })}</span>
-          </div>
-        </section>
-
+        {/* The tabs carry the team and department counts; the members are People's own tab. */}
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
         {failure ? <Callout title={t("Organization action failed")} tone="danger">{failure}</Callout> : null}
 

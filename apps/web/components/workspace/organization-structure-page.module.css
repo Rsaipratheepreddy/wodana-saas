@@ -1,9 +1,5 @@
 .provider { min-block-size: 100%; background: var(--wd-color-surface); }
 .page { inline-size: min(100%, var(--wd-workspace-page-width, 76rem)); margin-inline: auto; padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem); }
-.actionStrip { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-flow-4); padding-block-end: var(--wd-flow-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.summary, .actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-flow-3); }
-.summary span { display: inline-flex; align-items: center; gap: var(--wd-flow-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); white-space: nowrap; }
-.summary strong { color: var(--wd-color-text); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
 .liveStatus { margin: var(--wd-flow-3) 0 0; color: var(--wd-color-success); font-size: var(--wd-text-sm); }
 .organizationTabs { margin-block-start: var(--wd-flow-4); }
 .cardList { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--wd-inspector-sm)), 1fr)); gap: var(--wd-flow-4); }
