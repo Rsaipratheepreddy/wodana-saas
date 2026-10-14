@@ -70,7 +70,8 @@
 
 /* ── Month: equal cells, today in a filled circle, one-line chips ─────────────────────────────────── */
 .monthScroll { flex: 1; min-block-size: 0; overflow: auto; scrollbar-width: thin; }
-.month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto repeat(6, minmax(6rem, 1fr)); block-size: 100%; min-inline-size: 42rem; }
+/* The weeks share the height; a busy week grows for its "+N more" instead of spilling over the next week's dates. */
+.month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: max-content repeat(6, minmax(6rem, auto)); min-block-size: 100%; min-inline-size: 42rem; }
 .weekday { padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); text-align: center; }
 .day { display: flex; flex-direction: column; gap: var(--wd-space-0-5); min-inline-size: 0; padding: var(--wd-space-1); border-block-end: 1px solid var(--wd-color-structural-divider); border-inline-end: 1px solid var(--wd-color-structural-divider); }
 .day:nth-child(7n) { border-inline-end: 0; }
