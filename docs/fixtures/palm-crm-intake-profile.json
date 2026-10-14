@@ -1,5 +1,6 @@
 {
   "profile": "palm_crm_intake_uat",
+  "tenant": "Palm Living",
   "sourceDocument": "Palm Living Lead Flow CRM Requirements Report.docx",
   "sources": [
     {

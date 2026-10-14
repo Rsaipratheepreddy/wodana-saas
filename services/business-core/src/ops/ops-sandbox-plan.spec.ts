@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validateProfile } from "./ops-profile";
 import {
-  parseCrmFile, parseTeamsFile, patternEmail, planMembers, rolesToAdd, SANDBOX_PERSONAS, sandboxAddress, sandboxEmail, sandboxLegalEntityCode, sandboxProfile, sandboxSeatLimit,
-  scrubForSandbox, SandboxFileError,
+  fileFirm, inSandboxName, parseCrmFile, parseTeamsFile, patternEmail, planMembers, rolesToAdd, SANDBOX_PERSONAS, sandboxAddress, sandboxEmail, sandboxLegalEntityCode, sandboxProfile,
+  sandboxSeatLimit, scrubForSandbox, SandboxFileError,
 } from "./ops-sandbox-plan";
 
 const docs = resolve(__dirname, "../../../../docs/fixtures");
@@ -155,6 +155,28 @@ describe("what never reaches a sandbox", () => {
     expect(JSON.stringify(taxonomies)).not.toMatch(/Asia\/Dubai|not_connected|queue/);
     expect(() => parseCrmFile({ sources: [{ code: "Web Site", label: "" }], channels: { other: [] }, enquiryTypes: [], budgetRanges: "x" }))
       .toThrow(/sources\[0\]\.code[\s\S]*channels\.other is not one of the sources[\s\S]*budgetRanges is a list/);
+  });
+
+  it("names the sandbox, never the firm a CRM file was written for, in its lead options", () => {
+    const raw = json("palm-crm-intake-profile.json");
+    const firm = fileFirm(raw);
+    expect(firm).not.toBeNull();
+    const { taxonomies, renamed } = inSandboxName(parseCrmFile(raw), firm, "Demo Studio");
+    expect(renamed).toBeGreaterThan(0);
+    const text = JSON.stringify(taxonomies.map((taxonomy) => [taxonomy.name, taxonomy.options.map((option) => option.label)]));
+    expect(text.toLowerCase()).not.toContain(firm!.toLowerCase());
+    expect(text).toContain("Demo Studio");
+    // Codes stay, so a channel list still belongs to its source.
+    const sources = taxonomies.find((taxonomy) => taxonomy.code === "lead_source")!.options;
+    expect(sources.slice(0, 2).map((option) => option.label)).toEqual(["Demo Studio Enquiry", "Demo Studio Socials"]);
+    expect(taxonomies.some((taxonomy) => taxonomy.code === `lead_channel_${sources[0].code}` && taxonomy.name === "Demo Studio Enquiry channels")).toBe(true);
+    // Whole words, any case; a file that names no firm, or a sandbox with the firm's own name, changes nothing.
+    const spec = (label: string) => [{ code: "lead_source", name: "Lead source", options: [{ code: "a", label }] }];
+    expect(inSandboxName(spec("ACME studio walk-in"), "Acme Studio", "Demo").taxonomies[0].options[0].label).toBe("Demo walk-in");
+    expect(inSandboxName(spec("Acme Studios"), "Acme Studio", "Demo").renamed).toBe(0);
+    expect(inSandboxName(spec("Acme Studio"), null, "Demo").renamed).toBe(0);
+    expect(inSandboxName(spec("Acme Studio"), "Acme Studio", "acme studio").renamed).toBe(0);
+    expect(fileFirm({ tenant: "  " })).toBeNull();
   });
 
   it("reads a teams file and refuses a malformed one with every problem", () => {

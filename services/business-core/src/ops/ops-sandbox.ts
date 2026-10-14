@@ -35,7 +35,7 @@ import { adoptionVerdicts, changeSandboxLifecycle, SANDBOX_RETIRED, type Adoptio
 import { DeliveryHold, describeDeliveries, SANDBOX_SEED } from "./scenarios/scenario-delivery";
 import { runScenarios } from "./scenarios/scenario-run";
 import {
-  parseCrmFile, parseTeamsFile, patternEmail, planMembers, rolesToAdd, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxAddress, sandboxEmail,
+  fileFirm, inSandboxName, parseCrmFile, parseTeamsFile, patternEmail, planMembers, rolesToAdd, SANDBOX_DEFAULT_KIT, SANDBOX_PERSONAS, SANDBOX_PLAN, SANDBOX_SUPPLIERS, sandboxAddress, sandboxEmail,
   sandboxExternalTenantId, SandboxFileError, sandboxLegalEntityCode, sandboxOrganizationKey, sandboxProfile, sandboxSeatLimit, scrubForSandbox, type MemberPlan,
   type TaxonomySpec, type TeamSpec,
 } from "./ops-sandbox-plan";
@@ -103,7 +103,7 @@ export async function runSandbox(app: INestApplicationContext, args: SandboxArgs
   const password = await readPassword(args.passwordEnv);
   const profile = args.profile ? await readProfile(args.profile, report) : null;
   const teams = args.teams ? await readTeams(args.teams) : null;
-  const leadOptions = args.crm ? await readCrm(args.crm, report) : null;
+  const leadOptions = args.crm ? await readCrm(args.crm, args.name, report) : null;
   // The sandbox whose people (and, with --organization-of, whose account) this run is for.
   const people = args.organizationOf ?? args.slug;
   const base = args.organizationOf ? await resolveBase(db, args.organizationOf, args.emailPattern) : null;
@@ -761,16 +761,27 @@ async function readTeams(path: string): Promise<TeamSpec[]> {
   }
 }
 
-/** The CRM intake profile's lead options; an option whose label holds an address or the like is left out and reported. */
-async function readCrm(path: string, report: Report): Promise<TaxonomySpec[]> {
+/**
+ * The CRM intake profile's lead options in the sandbox's own name (`name`): an option whose label holds an address or the
+ * like is left out and reported, and the firm the file was written for is never named (its labels say `name`).
+ */
+async function readCrm(path: string, name: string, report: Report): Promise<TaxonomySpec[]> {
   let taxonomies: TaxonomySpec[];
-  try { taxonomies = parseCrmFile(await readJson(path, "CRM intake profile")); } catch (error) {
+  let firm: string | null;
+  try {
+    const raw = await readJson(path, "CRM intake profile");
+    taxonomies = parseCrmFile(raw);
+    firm = fileFirm(raw);
+  } catch (error) {
     if (error instanceof SandboxFileError) throw new OpsError(error.message);
     throw error;
   }
   const { value, dropped } = scrubForSandbox(taxonomies);
   for (const entry of dropped) report.add("crm", "info", entry.path, `${entry.reason}: not copied into a sandbox`);
-  return (value as TaxonomySpec[]).map((taxonomy) => ({ ...taxonomy, options: taxonomy.options.filter((option) => option.label) })).filter((taxonomy) => taxonomy.options.length);
+  const kept = (value as TaxonomySpec[]).map((taxonomy) => ({ ...taxonomy, options: taxonomy.options.filter((option) => option.label) })).filter((taxonomy) => taxonomy.options.length);
+  const neutral = inSandboxName(kept, firm, name);
+  if (neutral.renamed) report.add("crm", "info", "firm name", `${neutral.renamed} labels say ${name}, not the firm the file was written for`);
+  return neutral.taxonomies;
 }
 
 /**

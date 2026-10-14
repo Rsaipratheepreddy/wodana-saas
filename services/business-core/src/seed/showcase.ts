@@ -219,7 +219,8 @@ const TERMS_50_40_10: Term[] = [
 ];
 
 const DEMO_CODE = "123456";
-const DEMO_CLIENT = { displayName: "Dana Demo", email: "demo.client@palmliving.test", mobile: "+971501234567", demoCode: DEMO_CODE };
+// A fictional client at a reserved test domain: no firm's name, whichever workspace the showcase is made in.
+const DEMO_CLIENT = { displayName: "Dana Demo", email: "demo.client@example.test", mobile: "+971501234567", demoCode: DEMO_CODE };
 
 const joineryMaterials = [
   { name: "Oak veneer, natural", code: "OAK-NAT", specification: "Crown cut, matt lacquer, 0.6 mm on 18 mm MDF", quantity: "14", unit: "sheet" },
@@ -1276,12 +1277,23 @@ export class ShowcaseSeed {
     return (await intake.options(actor, this.w)) as { sources: Array<{ id: string }>; channels: Record<string, Array<{ id: string }>>; enquiryTypes: Array<{ id: string }>; emirates: Array<{ id: string }>; customerTypes: Array<{ id: string }>; budgetRanges: Array<{ id: string }>; referralBrokers?: Array<{ id: string }>; referralPartners?: Array<{ id: string }> };
   }
 
-  protected async findLead(actor: Actor, party: { displayName: string; email: string }) {
+  /**
+   * The client's enquiry: by their name and email, or (given its story's reference) the enquiry recorded under that
+   * reference, so a run after a fictional client's address changed finds it instead of recording it a second time.
+   */
+  protected async findLead(actor: Actor, party: { displayName: string; email: string }, reference?: string) {
     const leads = this.get(CrmLeadsService);
     const list = (await leads.list(actor, this.w, { search: party.displayName, limit: 100 } as never)) as unknown as { data: Array<{ id: string; partyId: string; partyName: string; status: string; version: number; serviceType?: string | null }> };
-    const parties = (await this.db.tenantTransaction(this.w, actor.userId, (db) => db.query<{ id: string }>(
-      `SELECT DISTINCT party_id AS id FROM crm_contact_points WHERE workspace_id = $1 AND type = 'email' AND lower(raw_value) = $2`, [this.w, party.email.toLowerCase()]))).rows.map((row) => row.id);
-    return list.data.find((lead) => lead.partyName === party.displayName && parties.includes(lead.partyId)) ?? null;
+    const { parties, recorded } = await this.db.tenantTransaction(this.w, actor.userId, async (db) => ({
+      parties: (await db.query<{ id: string }>(
+        `SELECT DISTINCT party_id AS id FROM crm_contact_points WHERE workspace_id = $1 AND type = 'email' AND lower(raw_value) = $2`, [this.w, party.email.toLowerCase()])).rows.map((row) => row.id),
+      recorded: reference ? (await db.query<{ id: string }>(
+        `SELECT lead.id FROM crm_intake_events intake
+           JOIN crm_enquiries enquiry ON enquiry.workspace_id = intake.workspace_id AND enquiry.intake_event_id = intake.id
+           JOIN crm_leads lead ON lead.workspace_id = enquiry.workspace_id AND lead.enquiry_id = enquiry.id
+          WHERE intake.workspace_id = $1 AND intake.external_event_id = $2`, [this.w, reference])).rows.map((row) => row.id) : [],
+    }));
+    return list.data.find((lead) => lead.partyName === party.displayName && (parties.includes(lead.partyId) || recorded.includes(lead.id))) ?? null;
   }
 
   /** A manual enquiry, backdated, from one of the workspace's sources and channels, assigned to its owner. */
@@ -1289,7 +1301,7 @@ export class ShowcaseSeed {
     const actor = await this.actor(this.input.actorUserId);
     const owner = await this.as(facts.owner);
     const intake = this.get(CrmIntakeService);
-    const find = () => this.findLead(actor, party);
+    const find = () => this.findLead(actor, party, reference);
     const lead = await this.step(`enquiry ${reference}`, find, async () => this.record(actor, owner, key, reference, party, facts));
     await this.ensureEnquiryType(actor, lead, party, facts);
     return lead;

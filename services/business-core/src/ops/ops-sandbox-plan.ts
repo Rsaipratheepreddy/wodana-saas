@@ -244,6 +244,31 @@ export function parseCrmFile(raw: unknown): TaxonomySpec[] {
   return taxonomies.filter((taxonomy) => taxonomy.options.length);
 }
 
+/** The firm a file was written for, as the file names it ("tenant"); null when it names none. */
+export function fileFirm(raw: unknown): string | null {
+  return isObject(raw) && typeof raw.tenant === "string" && raw.tenant.trim() ? raw.tenant.trim() : null;
+}
+
+/**
+ * Lead options for a sandbox in its own name: wherever a label or list name says the firm the file was written for
+ * (its "tenant"), it says the sandbox's name instead ("<firm> Enquiry" → "<sandbox> Enquiry"), as addresses never reach
+ * a sandbox either. Whole words, in any case. Codes stay as they are; nothing changes when the file names no firm.
+ */
+export function inSandboxName(taxonomies: TaxonomySpec[], firm: string | null, name: string): { taxonomies: TaxonomySpec[]; renamed: number } {
+  const own = name.trim();
+  if (!firm || !own || firm.toLocaleLowerCase() === own.toLocaleLowerCase()) return { taxonomies, renamed: 0 };
+  const words = firm.split(/\s+/).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${words}(?![\\p{L}\\p{N}])`, "giu");
+  let renamed = 0;
+  const neutral = (text: string, limit: number) => {
+    const next = text.replace(pattern, own).slice(0, limit);
+    if (next !== text) renamed += 1;
+    return next;
+  };
+  return { taxonomies: taxonomies.map((taxonomy) => ({ ...taxonomy, name: neutral(taxonomy.name, 160),
+    options: taxonomy.options.map((option) => ({ ...option, label: neutral(option.label, 160) })) })), renamed };
+}
+
 /** A teams access file: { teams: [{ code, name, permissions }] }; other keys (notes, sources) are ignored. */
 export function parseTeamsFile(raw: unknown): TeamSpec[] {
   if (!isObject(raw) || !Array.isArray(raw.teams)) throw new SandboxFileError(["It is a JSON object with a list of teams (\"teams\")."]);

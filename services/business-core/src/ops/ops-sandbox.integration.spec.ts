@@ -147,6 +147,13 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
     expect(first.output).toContain("financeRequests.inbox: an email address: not copied into a sandbox");
     expect((await pool.query(`SELECT finance_inbox FROM finance_request_settings WHERE workspace_id = $1`, [id])).rows[0]?.finance_inbox ?? null).toBeNull();
     expect(await count(`SELECT count(*) FROM audit_events WHERE workspace_id = $1 AND (coalesce(after::text, '') ILIKE '%palmlivingae%' OR coalesce(before::text, '') ILIKE '%palmlivingae%')`, [id])).toBe(0);
+    // Nor the firm's name: the lead options, the seeded notices and the showcase's client say the sandbox's own words.
+    expect(first.output).toMatch(/firm name: \d+ labels say Sandbox Test, not the firm the file was written for/);
+    expect(await count(`SELECT count(*) FROM crm_taxonomy_options WHERE workspace_id = $1 AND label ILIKE '%palm living%'`, [id])).toBe(0);
+    expect(await count(`SELECT count(*) FROM crm_taxonomies WHERE workspace_id = $1 AND name ILIKE '%palm living%'`, [id])).toBe(0);
+    expect(await count(`SELECT count(*) FROM crm_taxonomy_options WHERE workspace_id = $1 AND label = 'Sandbox Test Enquiry'`, [id])).toBe(1);
+    expect(await count(`SELECT count(*) FROM notifications WHERE workspace_id = $1 AND (coalesce(subject, '') || body) ILIKE ANY (ARRAY['%palm living%', '%palmliving%'])`, [id])).toBe(0);
+    expect(await count(`SELECT count(*) FROM crm_contact_points WHERE workspace_id = $1 AND raw_value ILIKE '%palmliving%'`, [id])).toBe(0);
     // The rest of the profile, the teams and the lead options are there.
     expect(await count(`SELECT count(*) FROM workspace_teams WHERE workspace_id = $1`, [id])).toBe(19);
     expect(await count(`SELECT count(*) FROM crm_taxonomy_options choice JOIN crm_taxonomies taxonomy ON taxonomy.id = choice.taxonomy_id
