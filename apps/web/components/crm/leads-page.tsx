@@ -454,7 +454,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const inSettings = (SETTINGS_SECTIONS as readonly string[]).includes(activeSection);
   // Settings: one title and its sections as the one row of tabs under it (a single section is just its own title).
   const settingsTabs = settingsSections.map((id) => ({ id: id as EnquirySection, label: t(SETTINGS_LABELS[id]) }));
-  const pageTitle = inSettings && settingsTabs.length > 1 ? t("Sales settings") : t(SECTION_AREA[activeSection]);
+  // The page's name is its Sales tab's (Settings), so the tab bar names it once.
+  const pageTitle = inSettings && settingsTabs.length > 1 ? t("Settings") : t(SECTION_AREA[activeSection]);
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
   return <DesignSystemProvider className={`${styles.provider} ${theme.theme}`} portalContainer={portalContainer} ref={setPortalContainer}>
     {/* One title per section, with New enquiry top-end on the list (S-20); the lists sit under the title. */}

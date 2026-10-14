@@ -35,7 +35,7 @@
   min-inline-size: 0;
   color: var(--wd-color-text);
   font-family: var(--wd-font-display);
-  font-size: var(--wd-text-xl);
+  font-size: var(--wd-text-lg);
   font-weight: var(--wd-weight-semibold);
   line-height: 1.3;
   letter-spacing: var(--wd-tracking-tight);
@@ -129,11 +129,32 @@
 .wd-record-menu-actions .wd-button { justify-content: flex-start; }
 /* Phone numbers read left to right in every language (+971 50 123 4567), aligned with the other fields. */
 .wd-root[dir="rtl"] input[type="tel"] { direction: ltr; text-align: end; }
-/* Tabs and the list's tools share one row (search, Filter, ⋯ at the end), so there is no near-empty toolbar row. */
-.wd-page-shell-tabs { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); min-inline-size: 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
-.wd-page-shell-tabs-start { min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
+/* The page's one row: tabs at the start; the toolbar (search, Filter, ⋯) and the primary action at the end, so there
+   is no title row, no near-empty toolbar row and no row for the action alone. When it doesn't fit, the tools and the
+   action wrap to the end of a second line; tabs wider than the row scroll. */
+.wd-page-shell-tabs { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2) var(--wd-space-3); min-inline-size: 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.wd-page-shell-tabs-start { flex: 1 1 auto; max-inline-size: 100%; min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
 .wd-page-shell-tabs-start :is(.wd-list-tabs, .wd-tabs) { border-block-end: 0; }
-.wd-page-shell-tools { display: flex; flex: none; align-items: center; gap: var(--wd-space-1); }
+.wd-page-shell-tools { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-1); min-inline-size: 0; }
 .wd-page-shell-tools:empty { display: none; }
+.wd-page-shell-tabs > .wd-page-shell-action { flex: none; }
+/* Without tabs the toolbar spans the row with its own start and end; the action follows it. An empty row takes no space. */
+.wd-page-shell-tabs:not([data-tabs]) { border-block-end: 0; }
+.wd-page-shell-tabs:not([data-tabs]) > .wd-page-shell-tools { flex: 1 1 auto; }
+.wd-page-shell-tabs:not([data-tabs]) > .wd-page-shell-tools > * { flex: 1 1 auto; min-inline-size: 0; }
+.wd-page-shell-tabs:not([data-tabs]):not(:has(> .wd-page-shell-action)):has(> .wd-page-shell-tools:empty) { display: none; }
 .wd-page-shell .wd-page-shell-tools > .wd-grid-toolbar.wd-record-toolbar { margin: 0; padding: 0; border: 0; min-block-size: 0; background: transparent; }
 .wd-page-shell > .wd-page-shell-header { padding-block-start: var(--wd-space-4); }
+/* Named by the chrome: the header is just the one row. */
+.wd-page-shell[data-named] > .wd-page-shell-header { padding-block-start: var(--wd-space-2); }
+.wd-page-shell[data-named] > .wd-page-shell-header:not(:has(.wd-page-shell-tabs)) { padding-block-end: 0; }
+/* A phone: the tabs take their own line (scrolling sideways when they must), the tools and the action the next. */
+@media (max-width: 40rem) {
+  .wd-page-shell-tabs[data-tabs] { border-block-end: 0; }
+  .wd-page-shell-tabs[data-tabs] > .wd-page-shell-tabs-start { flex-basis: 100%; border-block-end: 1px solid var(--wd-color-structural-divider); }
+  .wd-page-shell-tabs[data-tabs]:has(> .wd-page-shell-tools:not(:empty), > .wd-page-shell-action) { padding-block-end: var(--wd-space-2); }
+}
+/* Titles a page keeps (a record's name, a page outside the workspace chrome) are compact. */
+.wd-page-header[data-named] { justify-content: flex-end; min-block-size: 0; margin-block-end: 0; }
+.wd-page-header[data-named]:has(> .wd-page-header-actions) { margin-block-end: var(--wd-space-3); }
+.wd-settings-page[data-named] > .wd-settings-page-header { justify-content: flex-end; min-block-size: 0; }

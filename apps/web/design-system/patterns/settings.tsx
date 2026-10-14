@@ -1,12 +1,21 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useNamedByChrome } from "./page-shell";
 
 /**
  * Settings pages, Notion style: one small title, then quiet sections of
  * rows with the label and hint on one side and the value or control on the other.
+ * When the Settings menu (or another part of the chrome) already names the page, the title is for screen readers
+ * only and the actions keep a slim row at the end.
  */
 export function SettingsPage({ title, actions, children, width = "narrow", "aria-label": ariaLabel }: { title: ReactNode; actions?: ReactNode; children: ReactNode; width?: "narrow" | "wide"; "aria-label"?: string }) {
-  return <section aria-label={ariaLabel} className="wd-settings-page" data-width={width}>
-    <header className="wd-settings-page-header"><h1>{title}</h1>{actions ? <div className="wd-settings-actions">{actions}</div> : null}</header>
+  const named = useNamedByChrome(title);
+  return <section aria-label={ariaLabel} className="wd-settings-page" data-width={width} data-named={named || undefined}>
+    {named ? <>
+      <h1 className="wd-visually-hidden">{title}</h1>
+      {actions ? <header className="wd-settings-page-header"><div className="wd-settings-actions">{actions}</div></header> : null}
+    </> : <header className="wd-settings-page-header"><h1>{title}</h1>{actions ? <div className="wd-settings-actions">{actions}</div> : null}</header>}
     {children}
   </section>;
 }

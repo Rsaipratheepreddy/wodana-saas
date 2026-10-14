@@ -1353,7 +1353,9 @@
 }
 
 @media (max-width: 40rem) {
-  .breadcrumbs { display: none; }
+  /* A phone names the page by the breadcrumb's last item alone; Home's and People's tabs name theirs. */
+  .breadcrumbs { padding-inline-start: 0; }
+  .breadcrumbs li:not([aria-current]), .breadcrumbs[data-topbar-tabs] { display: none; }
   .woddyControl { margin-inline-start: auto; }
   .topbar { gap: var(--wd-space-1-5); }
   /* On a phone the case keeps its name (the client's name gives way) beside the global utilities. */
@@ -1416,7 +1418,6 @@
 .workspaceBack { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: 2rem; padding-inline: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; }
 .workspaceBack:hover { background: var(--wd-color-surface-hover); border-radius: var(--wd-radius-xs); }
 .shell .navigationItem { font-size: var(--wd-text-sm); font-weight: 400; }
-.shell .workspaceContent h1 { font-size: var(--wd-text-3xl); font-weight: 450; }
 
 /* One persistent, substantial navigation rail across every workspace. */
 .shell { --sidebar-expanded: 14.25rem; }
@@ -1467,7 +1468,6 @@
 }
 
 .flowHeader { padding: var(--wd-space-5) var(--wd-space-6) 0; border-block-end: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-workspace-canvas); }
-.flowTitle { font-size: var(--wd-text-xl); font-weight: 550; margin-block-end: var(--wd-space-3); color: var(--wd-color-text); }
 .flowTabs { display: flex; align-items: stretch; gap: var(--wd-space-4); min-inline-size: 0; }
 .flowTabScroll { display: flex; gap: var(--wd-space-5); overflow-x: auto; min-inline-size: 0; scrollbar-width: thin; }
 .flowTabs[aria-label="Planning sections"] .flowTabScroll,
@@ -1487,7 +1487,6 @@
 
 /* Compact workspace masthead and icon tabs. */
 .flowHeader { padding-block-start: var(--wd-space-3); }
-.flowTitle { margin-block-end: var(--wd-space-1); font-size: var(--wd-text-xs); font-weight: 500; color: var(--wd-color-text-secondary); }
 .flowTabScroll { gap: var(--wd-space-4); }
 .flowTab { gap: var(--wd-space-1-5); font-size: var(--wd-text-xs); min-block-size: 38px; }
 .flowTab svg { flex-shrink: 0; }
@@ -1496,7 +1495,6 @@
   background: var(--wd-brand-50);
   border-color: var(--wd-brand-100);
 }
-.flowTitle { color: var(--wd-color-text); font-weight: 600; }
 .flowTabScroll { gap: var(--wd-space-4); }
 .flowTab { padding-inline: var(--wd-space-1); gap: var(--wd-space-2); color: var(--wd-color-text-secondary); border-radius: 0; }
 .flowTab:hover { background: transparent; color: var(--wd-color-text); }

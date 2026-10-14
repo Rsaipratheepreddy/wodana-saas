@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 
 /**
  * The end of the tabs row, where the page's list puts its toolbar (search, Filter, ⋯) so the tabs and the tools
@@ -23,21 +23,46 @@ export function usePageToolbarElement() {
   return mine ? slot!.element : null;
 }
 
+/**
+ * One title per view (plan §2): the names the workspace chrome already shows for the open page — its breadcrumb,
+ * the active module tab, the active Home, People or Settings entry. A page whose title repeats one of them keeps
+ * its `<h1>` for screen readers only, and its tabs, tools and primary action share one row.
+ * Nested providers add their names to the outer ones (the shell's breadcrumb, then the module's tabs).
+ */
+const PageChromeContext = createContext<readonly string[] | null>(null);
+const nameKey = (value: string) => value.trim().toLocaleLowerCase();
+
+export function PageChrome({ names, children }: { names: ReadonlyArray<string | null | undefined | false>; children: ReactNode }) {
+  const parent = useContext(PageChromeContext);
+  const key = names.filter((name): name is string => typeof name === "string" && name.trim() !== "").map(nameKey).join("\n");
+  const value = useMemo(() => [...(parent ?? []), ...(key ? key.split("\n") : [])], [parent, key]);
+  return <PageChromeContext.Provider value={value}>{children}</PageChromeContext.Provider>;
+}
+
+/** Whether the chrome around the page already shows `title` (so the page doesn't repeat it). */
+export function useNamedByChrome(title: ReactNode) {
+  const names = useContext(PageChromeContext);
+  return Boolean(names && typeof title === "string" && names.includes(nameKey(title)));
+}
+
 /** How a page spaces its sections: one gap scale per page type (§5c D6). */
 export type PageKind = "list" | "record" | "form" | "dashboard";
 
 /**
- * Every workspace page (§5c D1): a sticky header with one sentence-case title and at most one primary
- * action at the end, optional tabs under the title, an optional toolbar, then the content.
- * No eyebrow, no description paragraph, no decorative chrome.
+ * Every workspace page (§5c D1): one sentence-case title, at most one primary action, optional tabs, an optional
+ * toolbar, then the content. No eyebrow, no description paragraph, no decorative chrome.
+ *
+ * When the chrome already names the page (see `PageChrome`), the title is for screen readers only and the page starts
+ * with ONE row: the tabs at the start, then the toolbar and the primary action at the end. Otherwise (a record named by
+ * its own title, or a page outside the workspace chrome) a compact title row with the action comes first.
  */
 export function PageShell({ action, "aria-label": ariaLabel, children, kind = "list", tabs, title, toolbar }: {
-  /** The one primary action (top-end). Secondary actions live in the toolbar's ⋯ menu. */
+  /** The one primary action: the end of the page's first row. Secondary actions live in the toolbar's ⋯ menu. */
   action?: ReactNode;
   "aria-label"?: string;
   children: ReactNode;
   kind?: PageKind;
-  /** Up to six tabs under the title (ListTabs or Tabs). */
+  /** Up to six tabs (ListTabs or Tabs); the toolbar sits at the end of their row. */
   tabs?: ReactNode;
   title: ReactNode;
   toolbar?: ReactNode;
@@ -46,19 +71,24 @@ export function PageShell({ action, "aria-label": ariaLabel, children, kind = "l
   const owner = useRef<string | null>(null);
   const claim = useCallback((id: string) => { if (owner.current === null || owner.current === id) owner.current = id; return owner.current === id; }, []);
   const release = useCallback((id: string) => { if (owner.current === id) owner.current = null; }, []);
-  return <section aria-label={ariaLabel} className="wd-page-shell" data-kind={kind}>
+  const named = useNamedByChrome(title);
+  // The row exists for tabs; on a named page also for the toolbar and the action, and on a named list for its first
+  // grid's search, Filter and ⋯ (an empty row takes no space).
+  const row = Boolean(tabs) || (named && Boolean(toolbar || action || kind === "list"));
+  return <section aria-label={ariaLabel} className="wd-page-shell" data-kind={kind} data-named={named || undefined}>
     <header className="wd-page-shell-header">
-      <div className="wd-page-shell-bar">
+      {named ? <h1 className="wd-visually-hidden">{title}</h1> : <div className="wd-page-shell-bar">
         <h1 className="wd-page-shell-title">{title}</h1>
         {action ? <div className="wd-page-shell-action">{action}</div> : null}
-      </div>
-      {tabs ? <div className="wd-page-shell-tabs">
-        <div className="wd-page-shell-tabs-start">{tabs}</div>
+      </div>}
+      {row ? <div className="wd-page-shell-tabs" data-tabs={tabs ? "" : undefined}>
+        {tabs ? <div className="wd-page-shell-tabs-start">{tabs}</div> : null}
         <div className="wd-page-shell-tools" ref={setSlot}>{toolbar}</div>
+        {named && action ? <div className="wd-page-shell-action">{action}</div> : null}
       </div> : null}
     </header>
-    {toolbar && !tabs ? <div className="wd-page-shell-toolbar">{toolbar}</div> : null}
-    <ToolbarSlotContext.Provider value={tabs ? { element: slot, owner, claim, release } : null}>
+    {toolbar && !row ? <div className="wd-page-shell-toolbar">{toolbar}</div> : null}
+    <ToolbarSlotContext.Provider value={tabs || (row && kind === "list") ? { element: slot, owner, claim, release } : null}>
       <div className="wd-page-shell-body">{children}</div>
     </ToolbarSlotContext.Provider>
   </section>;

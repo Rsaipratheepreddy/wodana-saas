@@ -40,12 +40,13 @@ export function Callout({ actions, children, title, tone = "info" }: { actions?:
   return <div className="wd-callout" data-tone={tone} role={tone === "danger" ? "alert" : "status"}><Icon aria-hidden="true" size={18} /><div><strong>{title}</strong><div>{children}</div></div>{actions ? <div className="wd-callout-actions">{actions}</div> : null}</div>;
 }
 
-/** Compact feedback for form submission and service states. */
-export function InlineNotice({ className, message, title, tone = "info" }: { className?: string; message: ReactNode; title?: string; tone?: "error" | "info" | "success" }) {
+/** Compact feedback for form submission and service states, with at most one action at the end (e.g. Reconnect). */
+export function InlineNotice({ action, className, message, title, tone = "info" }: { action?: ReactNode; className?: string; message: ReactNode; title?: string; tone?: "error" | "info" | "success" }) {
   const Icon = tone === "error" ? AlertCircle : tone === "success" ? CheckCircle2 : Info;
-  return <div aria-atomic="true" aria-live={tone === "error" ? "assertive" : "polite"} className={["wd-inline-notice", className].filter(Boolean).join(" ")} data-tone={tone} data-visible="true" role={tone === "error" ? "alert" : "status"}>
+  return <div aria-atomic="true" aria-live={tone === "error" ? "assertive" : "polite"} className={["wd-inline-notice", className].filter(Boolean).join(" ")} data-tone={tone} data-visible="true" data-action={action ? "" : undefined} role={tone === "error" ? "alert" : "status"}>
     <Icon aria-hidden="true" size={16} />
     <span>{title ? <strong>{title}</strong> : null}<span>{message}</span></span>
+    {action ? <span className="wd-inline-notice-action">{action}</span> : null}
   </div>;
 }
 

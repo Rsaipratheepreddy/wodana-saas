@@ -106,12 +106,12 @@ describe("LeadsPage", () => {
     expect(screen.queryByRole("button", { name: /List$/ })).not.toBeInTheDocument();
   });
 
-  it("shows Sales settings as one title with one row of tabs, and Assignment's views in that row", async () => {
+  it("shows Sales settings as one title (its tab's name) with one row of tabs, and Assignment's views in that row", async () => {
     const data = structuredClone(leadsPageFixture);
     vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => String(url).includes("assignment-policies") ? data.assignmentPolicies : data.queues })));
     const user = userEvent.setup();
     render(<LeadsPage initialData={data} initialSection="assignment" />);
-    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Sales settings"]);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Settings"]);
     const sections = screen.getByRole("group", { name: "Sales settings" });
     expect(within(sections).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Assignment", "Response targets", "Fields", "Automations"]);
     expect(within(sections).getByRole("button", { name: "Assignment" })).toHaveAttribute("aria-pressed", "true");

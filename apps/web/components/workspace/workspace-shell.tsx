@@ -10,7 +10,7 @@ import { TourProvider } from "@/components/tours/tour-provider";
 import { WoddyMenu } from "@/components/tours/woddy-menu";
 import { TourPersonaBadge } from "@/components/tours/tour-persona-badge";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
-import { GridDefaultsProvider, RememberProvider } from "@/design-system";
+import { GridDefaultsProvider, PageChrome, RememberProvider } from "@/design-system";
 import { createGridDefaultsSource } from "@/lib/workspace/grid-settings";
 import {
   findWorkspaceModule,
@@ -22,7 +22,7 @@ import {
   type WorkspaceUser,
 } from "./workspace-navigation";
 import { WorkspaceFlowNavigation } from "./workspace-flow-navigation";
-import { HomeTabs } from "./home-tabs";
+import { HomeTabs, currentTopbarTab } from "./home-tabs";
 import { useWaitingCount } from "@/components/approvals/use-waiting-count";
 import { SettingsLayout } from "./settings-layout";
 import { WorkspaceSidebar } from "./workspace-sidebar";
@@ -91,11 +91,18 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
   const route = resolveWorkspaceRoute(pathname, builderSearch);
   const recordTitle = projectPage ? breadcrumb?.title : selectedCase?.record.title;
   const pageTitle = route.record && recordTitle ? recordTitle : t(route.label as never);
-  // A page that is one of its parent's tabs (Home › Approvals, Sales › Enquiries) is named by the tab and its title,
-  // so the breadcrumb ends at the parent instead of saying the name a third time.
-  const tabbed = route.homeTab || (!route.record && route.trail.at(-1)?.id === "sales");
+  // A page that is one of its parent's tabs (Home › Approvals, Sales › Enquiries, People › Teams, a Settings page) is
+  // named by its tab, so the breadcrumb ends at the parent instead of saying the name twice.
+  // (Follow-ups and Attachments are Sales pages without a tab of their own.)
+  const tabbed = route.homeTab || (!route.record && ["sales", "people", "settings"].includes(route.trail.at(-1)?.id ?? "") && !["follow-ups", "attachments"].includes(route.id));
   const crumbs = tabbed ? route.trail.slice(0, -1) : route.trail;
   const currentCrumb = tabbed ? t((route.trail.at(-1)?.label ?? route.label) as never) : pageTitle;
+  const homeTabList = route.id === "home" || route.homeTab ? homeTabs(modules) : [];
+  const peopleTabList = route.nav === "team" ? peopleTabs(modules) : [];
+  // One title per view: the top bar names the page (its breadcrumb, Home's or People's open tab), so a page whose
+  // title repeats one of these keeps it for screen readers only. The module's tab bar and the Settings menu add theirs.
+  const openTopbarTab = currentTopbarTab(homeTabList, pathname) ?? currentTopbarTab(peopleTabList, pathname, true);
+  const chromeNames = [...crumbs.map((crumb) => t(crumb.label as never)), currentCrumb, openTopbarTab ? t(openTopbarTab.label as never) : null];
   const workspaceName = workspaces[0]?.name;
   useEffect(() => {
     document.title = workspaceName ? `${pageTitle} · ${workspaceName}` : pageTitle;
@@ -177,7 +184,7 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
           </button>
           {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label={t("All planning")} className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>{t("Planning")}</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? t("Back to quotations") : t("Back to planning")) : t("Back to CRM")}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
-          <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs}>
+          <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs} data-topbar-tabs={homeTabList.length > 1 || peopleTabList.length > 1 || undefined}>
             <ol>
               {crumbs.map((crumb) => <li key={crumb.id}><Link href={crumb.id === "settings" ? settingsHref : crumb.id === "people" ? people[0]?.href ?? crumb.href : crumb.href}>{t(crumb.label as never)}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li>)}
               <li aria-current="page">{route.record && !recordTitle ? <span aria-busy="true">{currentCrumb}</span> : currentCrumb}</li>
@@ -215,7 +222,7 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
               attendance={workspaceId && modules.some((module) => module.id === "hrms") ? { workspaceId } : undefined} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-tour="page-content" data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{banner}{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : route.settings && settingsModule ? <SettingsLayout module={settingsModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
+        <main className={styles.workspaceContent} data-tour="page-content" data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{banner}<PageChrome names={chromeNames}><WorkspaceFlowNavigation hidden={pathname === "/workspace" || activeModule.id === "workspace"} module={activeModule} pathname={pathname}>{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : route.settings && settingsModule ? <SettingsLayout module={settingsModule} pathname={pathname}>{children}</SettingsLayout> : children}</WorkspaceFlowNavigation></PageChrome></main>
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Bell, BellRing, Bot, Building2, Calculator, CalendarClock, CreditCard, Factory, FileText, FolderKanban, Globe, History, KeyRound, Landmark, Languages, MessagesSquare, Network, Palette, Plug, Send, ShieldCheck, ShoppingCart, Sparkles, Truck, UserRound, Users, Warehouse, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { SearchInput, SelectField } from "@/design-system";
+import { PageChrome, SearchInput, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkspaceModuleDefinition } from "./workspace-navigation";
 import styles from "./settings-layout.module.css";
@@ -60,6 +60,7 @@ export function SettingsLayout({ module, pathname, children }: { module: Workspa
     <div className={styles.picker}>
       <SelectField accent="neutral" aria-label={t("Settings")} items={items.map((item) => ({ id: item.href, label: label(item.id, item.label) }))} label={t("Settings")} onSelectionChange={(key) => key && router.push(String(key))} selectedKey={active?.href ?? null} />
     </div>
-    <div className={styles.content}>{children}</div>
+    {/* The menu's open entry (and the picker on a phone) names the page, so the page doesn't repeat it. */}
+    <div className={styles.content}><PageChrome names={[active ? label(active.id, active.label) : null]}>{children}</PageChrome></div>
   </div>;
 }

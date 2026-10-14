@@ -191,6 +191,8 @@
 .wd-inline-notice[data-tone="error"] > svg { color: var(--wd-color-danger); }
 .wd-inline-notice[data-tone="success"] > svg { color: var(--wd-color-success); }
 .wd-inline-notice[data-tone="neutral"] > svg { color: var(--wd-color-text-secondary); }
+.wd-inline-notice[data-action] { align-items: center; padding-block: var(--wd-space-2); }
+.wd-inline-notice > .wd-inline-notice-action { display: flex; flex: none; align-items: center; margin-inline-start: auto; }
 .wd-person-name { min-inline-size: 0; overflow-wrap: anywhere; text-transform: none; }
 .wd-person-chip { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; max-inline-size: 100%; }
 .wd-person-chip > .wd-person-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1324,7 +1326,7 @@ th:last-child .wd-resizer { inset-inline-end: 0; }
 .wd-settings-page > * { min-inline-size: 0; }
 .wd-settings-page > .wd-settings-section + .wd-settings-section { margin-block-start: var(--wd-space-3); }
 .wd-settings-page-header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); min-block-size: var(--wd-space-8); }
-.wd-root .wd-settings-page-header h1, .wd-settings-page-header h1 { margin: 0; font-family: var(--wd-font-sans); font-size: var(--wd-text-xl); line-height: 1.3; font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-transform: none; }
+.wd-root .wd-settings-page-header h1, .wd-settings-page-header h1 { margin: 0; font-family: var(--wd-font-sans); font-size: var(--wd-text-lg); line-height: 1.3; font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-transform: none; }
 .wd-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .wd-settings-section { display: grid; gap: var(--wd-space-1); }
 .wd-settings-section > header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
