@@ -7,7 +7,7 @@ import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/refe
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { leadDesigner } from "./design-journey.store";
 import {
-  addSnapshot, archiveSnapshot, factoryShares, finishSettings, priceBands, readSchedule, recordSignature, saveFinishSettings, scheduleAsset, sendToQs, setBudgetRange,
+  addSnapshot, archiveSnapshot, factoryScheduleView, factoryShares, finishSettings, priceBands, readSchedule, recordSignature, saveFinishSettings, scheduleAsset, sendToQs, setBudgetRange,
   shareWithFactory, sharedWithFactory, updateFinishDetails,
 } from "./finishes.store";
 import { archiveSample, listSamples, readSample, saveBands, saveSample, workspaceCurrency, type SampleInput } from "./samples.store";
@@ -52,7 +52,8 @@ export class FinishesService {
   factorySchedule(actor: RequestActor, workspaceId: string, caseId: string) {
     return this.access.withPermission(actor, workspaceId, "factory.view", async (client) => {
       if (!(await sharedWithFactory(client, workspaceId, caseId))) throw new NotFoundException("This sample log wasn't shared with the factory.");
-      return { ...await readSchedule(client, workspaceId, caseId), ...READ_ONLY, caseId };
+      // The factory's own read: the QS's, the client's and the money side of the schedule never leave the firm's office.
+      return { ...factoryScheduleView(await readSchedule(client, workspaceId, caseId)), ...READ_ONLY, caseId };
     });
   }
 
@@ -63,10 +64,11 @@ export class FinishesService {
   asset(actor: RequestActor, workspaceId: string, from: { projectId?: string; caseId?: string }, assetId: string, preview: boolean) {
     return this.access.withAnyPermission(actor, workspaceId, ["projects.view", "factory.view", VIEW], async (client, user) => {
       const caseId = from.projectId ? await this.caseOfProject(client, workspaceId, from.projectId) : from.caseId!;
-      const allowed = await this.access.hasPermission(client, workspaceId, user.userId, VIEW)
-        || (from.projectId ? await this.access.hasPermission(client, workspaceId, user.userId, "projects.view") : false)
-        || (await this.access.hasPermission(client, workspaceId, user.userId, "factory.view") && await sharedWithFactory(client, workspaceId, caseId));
-      if (!allowed || !(await scheduleAsset(client, workspaceId, caseId, assetId))) throw new NotFoundException("File not found");
+      const office = await this.access.hasPermission(client, workspaceId, user.userId, VIEW)
+        || (from.projectId ? await this.access.hasPermission(client, workspaceId, user.userId, "projects.view") : false);
+      const factory = !office && await this.access.hasPermission(client, workspaceId, user.userId, "factory.view") && await sharedWithFactory(client, workspaceId, caseId);
+      // The factory opens the samples and snapshots it reads, never the client's signed copies.
+      if (!(office || factory) || !(await scheduleAsset(client, workspaceId, caseId, assetId, { signatures: office }))) throw new NotFoundException("File not found");
       const row = (await client.query<{ name: string; mimeType: string; objectKey: string; previewKey: string | null }>(
         `SELECT original_name AS name, mime_type AS "mimeType", object_key AS "objectKey", preview_key AS "previewKey" FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
         [workspaceId, caseId, assetId])).rows[0];

@@ -11,30 +11,37 @@ export type FinishCategory = { key: string; label: string; clientSignature: bool
 export type LogStatus = "approved" | "not_approved" | "in_process";
 export type MaterialOrigin = "own_stock" | "brand" | "local_supplier";
 export type FinishSnapshot = { id: string; assetId: string; assetName: string | null; markerX: number; markerY: number; label: string; createdByName: string | null; createdAt: string };
+/**
+ * A finish as the office reads it. The factory's read of a shared sample log (PLM-156) has only the specification,
+ * sample, photos, placement and installation note: the optional parts below (what QS has, the client's signature, the
+ * supplier and the lock) are left out by the API, not just hidden.
+ */
 export type FinishEntry = {
   id: string; title: string; roomId: string | null; roomName: string | null; categoryKey: string | null; categoryLabel: string | null; location: string; installNote: string;
   position: number; version: number;
   current: {
-    id: string; number: number; specification: string; supplier: string; quantity: string | null; unit: string; catalogItemId: string | null; origin: MaterialOrigin | null;
-    outsourced: boolean; signOff: string | null; status: string; sampleId: string | null; sampleName: string | null; samplePhotoAssetId: string | null; samplePhotoName: string | null;
-    note: string; confirmedAt: string | null; confirmedByName: string | null;
+    id: string; number: number; specification: string; supplier?: string; quantity: string | null; unit: string; catalogItemId?: string | null; origin?: MaterialOrigin | null;
+    outsourced?: boolean; signOff?: string | null; status?: string; sampleId: string | null; sampleName: string | null; samplePhotoAssetId: string | null; samplePhotoName: string | null;
+    note?: string; confirmedAt?: string | null; confirmedByName?: string | null;
   } | null;
-  locked: { id: string; number: number } | null;
+  locked?: { id: string; number: number } | null;
   status: LogStatus;
   snapshots: FinishSnapshot[];
-  signature: { required: boolean; signed: boolean; last: { signedOn: string; signer: string; assetId: string; assetName: string | null; recordedByName: string | null; outOfDate: boolean } | null };
-  sentToQs: boolean; changedSinceSent: boolean; priced: { lines: number; stale: number };
+  signature?: { required: boolean; signed: boolean; last: { signedOn: string; signer: string; assetId: string; assetName: string | null; recordedByName: string | null; outOfDate: boolean } | null };
+  sentToQs?: boolean; changedSinceSent?: boolean; priced?: { lines: number; stale: number };
 };
 export type DesignDrawing = { id: string; title: string; stage: string | null; roomName: string | null; revision: number | null; status: string | null; updatedAt: string };
 export type ShopDrawing = { id: string; number: number; status: string; sentAt: string | null; decidedOn: string | null; files: Array<{ id: string; name: string }> };
+export type SpecificationState = { gate: boolean; samplesStep: boolean; samplesApproved: boolean; final: boolean; problem: string | null; changed: string[];
+  handoff: { number: number; sentAt: string; sentByName: string | null; note: string; finishes: number } | null };
 export type ScheduleView = {
   caseId: string; categories: FinishCategory[]; entries: FinishEntry[]; removed: Array<{ id: string; title: string; roomName: string | null; archivedAt: string | null }>;
-  currency: string | null;
-  specification: { gate: boolean; samplesStep: boolean; samplesApproved: boolean; final: boolean; problem: string | null; changed: string[];
-    handoff: { number: number; sentAt: string; sentByName: string | null; note: string; finishes: number } | null };
+  /** Left out of the factory's read, with the specification hand-off and the procurement gate. */
+  currency?: string | null;
+  specification?: SpecificationState;
   share: { number: number; sharedAt: string; sharedByName: string | null; note: string } | null;
   project: { id: string; reference: string; name: string; started: boolean } | null;
-  procurement: { payment: boolean; materials: boolean; signatures: { missing: string[]; exempt: boolean; required: number }; cleared: boolean } | null;
+  procurement?: { payment: boolean; materials: boolean; signatures: { missing: string[]; exempt: boolean; required: number }; cleared: boolean } | null;
   drawings: { designs: DesignDrawing[]; shop: ShopDrawing[] };
   canEdit: boolean; canManageMaterials: boolean; canSendToQs: boolean; canRecordSignature: boolean; canShare: boolean;
 };

@@ -10,7 +10,7 @@ import {
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { CaseRoom } from "@/lib/pre-project/content";
 import {
-  DRAWING_STATUS_LABEL, LOG_STATUS_LABEL, logStatusTone, ORIGIN_LABEL, scheduleApi, type DesignDrawing, type FinishEntry, type ScheduleSource, type ScheduleView, type ShopDrawing,
+  DRAWING_STATUS_LABEL, LOG_STATUS_LABEL, logStatusTone, ORIGIN_LABEL, scheduleApi, type DesignDrawing, type FinishEntry, type ScheduleSource, type ScheduleView, type ShopDrawing, type SpecificationState,
 } from "@/lib/pre-project/finishes";
 import { FinishSheet } from "./finish-sheet";
 import styles from "./finishes.module.css";
@@ -18,6 +18,7 @@ import styles from "./finishes.module.css";
 type Mode = "design" | "installation" | "drawings";
 const NO_ROOM = "__general";
 const ALL = "__all";
+const NO_SPECIFICATION = { gate: false, samplesStep: false, samplesApproved: false, final: true, problem: null, changed: [], handoff: null } satisfies SpecificationState;
 
 /**
  * The finishes schedule (PLM-156) on the materials and decisions list: per room, a design view (what was specified and
@@ -58,7 +59,8 @@ export function FinishesSchedule({ source, rooms = [], onAddMaterials }: { sourc
     .sort(([a, left], [b, right]) => (a === NO_ROOM ? 1 : b === NO_ROOM ? -1 : left.localeCompare(right)))
     .map(([id, label]) => ({ id, label, rows: shown.filter((entry) => (entry.roomId ?? NO_ROOM) === id), emptyMessage: "" }));
   const open = view.entries.find((entry) => entry.id === openId) ?? null;
-  const spec = view.specification;
+  // The factory's read has no QS side (PLM-156): no hand-off, no notices, no QS column.
+  const spec = view.specification ?? NO_SPECIFICATION;
 
   const finishCell = (entry: FinishEntry) => <span className={styles.cell}><span>{entry.title}</span>
     {entry.current?.specification || entry.categoryLabel ? <small>{[entry.categoryLabel, entry.current?.specification].filter(Boolean).join(" · ")}</small> : null}</span>;
@@ -72,9 +74,9 @@ export function FinishesSchedule({ source, rooms = [], onAddMaterials }: { sourc
       ? <img className={styles.thumb} alt={entry.current.samplePhotoName ?? t("Sample photo")} src={api.assetUrl(view.caseId, entry.current.samplePhotoAssetId, true)} /> : null },
     { id: "status", label: t("Status"), width: "20%", render: (entry) => <span className={styles.inline}>
       <Badge tone={logStatusTone(entry.status)}>{t(LOG_STATUS_LABEL[entry.status])}</Badge>
-      {entry.signature.required ? <Badge tone={entry.signature.signed ? "success" : "warning"}>{entry.signature.signed ? t("Client signed") : t("Client to sign")}</Badge> : null}</span> },
-    { id: "qs", label: t("QS"), width: "17%", render: (entry) => entry.priced.stale ? <Badge tone="danger">{t("Price to check")}</Badge>
-      : entry.changedSinceSent ? <Badge tone="warning">{t("Changed since sent")}</Badge> : entry.sentToQs ? <Badge tone="neutral">{t("Sent to QS")}</Badge> : <span className={styles.muted}>—</span> },
+      {entry.signature?.required ? <Badge tone={entry.signature.signed ? "success" : "warning"}>{entry.signature.signed ? t("Client signed") : t("Client to sign")}</Badge> : null}</span> },
+    ...(view.specification ? [{ id: "qs", label: t("QS"), width: "17%", render: (entry: FinishEntry) => entry.priced?.stale ? <Badge tone="danger">{t("Price to check")}</Badge>
+      : entry.changedSinceSent ? <Badge tone="warning">{t("Changed since sent")}</Badge> : entry.sentToQs ? <Badge tone="neutral">{t("Sent to QS")}</Badge> : <span className={styles.muted}>—</span> }] : []),
   ];
   const installColumns: GroupedTableColumn<FinishEntry>[] = [
     { id: "finish", label: t("Finish"), width: "32%", render: finishCell },
@@ -83,7 +85,7 @@ export function FinishesSchedule({ source, rooms = [], onAddMaterials }: { sourc
     { id: "note", label: t("Installation note"), width: "32%", mobileHidden: true, render: (entry) => entry.installNote || <span className={styles.muted}>—</span> },
   ];
   const categoryItems = [{ id: ALL, label: t("All categories") }, ...view.categories.map((item) => ({ id: item.key, label: item.label }))];
-  const gate = view.procurement;
+  const gate = view.procurement ?? null;
 
   return <section className={styles.schedule} aria-label={t("Finishes")}>
     <div className={styles.toolbar}>

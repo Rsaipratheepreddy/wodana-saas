@@ -247,6 +247,26 @@ export async function readSchedule(db: Db, workspaceId: string, caseId: string) 
 export type ScheduleView = Awaited<ReturnType<typeof readSchedule>>;
 
 /**
+ * PLM-156: what the factory reads of a shared sample log: each finish's specification, sample and photos, its snapshots,
+ * where it goes and the installation note (with the drawings). Nothing QS keeps (what went to QS, priced lines, prices to
+ * check, the specification notices), no client signatures, no supplier, payment or procurement state and no currency.
+ */
+export function factoryScheduleView(view: ScheduleView) {
+  const { entries, removed, categories, share, project, drawings } = view;
+  return {
+    categories, removed, share, project, drawings,
+    entries: entries.map((entry) => ({
+      id: entry.id, title: entry.title, roomId: entry.roomId, roomName: entry.roomName, categoryKey: entry.categoryKey, categoryLabel: entry.categoryLabel,
+      location: entry.location, installNote: entry.installNote, position: entry.position, version: entry.version, status: entry.status, snapshots: entry.snapshots,
+      current: entry.current ? {
+        id: entry.current.id, number: entry.current.number, specification: entry.current.specification, quantity: entry.current.quantity, unit: entry.current.unit,
+        sampleId: entry.current.sampleId, sampleName: entry.current.sampleName, samplePhotoAssetId: entry.current.samplePhotoAssetId, samplePhotoName: entry.current.samplePhotoName,
+      } : null,
+    })),
+  };
+}
+
+/**
  * PLM-156: the drawings schedule, read from the records (never copied): the case's design drawings with their latest
  * revision and status, and the project's shop drawings by revision.
  */
@@ -447,11 +467,12 @@ export async function factoryShares(db: Db, workspaceId: string) {
 }
 
 /** Whether an asset belongs to the schedule of a case (a sample photo, a snapshot or a signed sample), so a reader of the schedule may open it. */
-export async function scheduleAsset(db: Db, workspaceId: string, caseId: string, assetId: string) {
+export async function scheduleAsset(db: Db, workspaceId: string, caseId: string, assetId: string, options: { signatures?: boolean } = {}) {
   return Boolean((await db.query(
     `SELECT 1 FROM design_ledger_versions WHERE workspace_id = $1 AND case_id = $2 AND sample_photo_asset_id = $3
      UNION ALL SELECT 1 FROM finish_snapshots WHERE workspace_id = $1 AND case_id = $2 AND asset_id = $3
-     UNION ALL SELECT 1 FROM finish_client_signatures WHERE workspace_id = $1 AND case_id = $2 AND asset_id = $3 LIMIT 1`, [workspaceId, caseId, assetId])).rowCount);
+     UNION ALL SELECT 1 FROM finish_client_signatures WHERE workspace_id = $1 AND case_id = $2 AND asset_id = $3 AND $4::boolean LIMIT 1`,
+    [workspaceId, caseId, assetId, options.signatures !== false])).rowCount);
 }
 
 // ---------- the quotation's side (PLM-146) ----------

@@ -35,7 +35,7 @@ const view = (over: Partial<ScheduleView> = {}): ScheduleView => ({
 describe("the finishes schedule (PLM-156, PLM-146, PLM-148)", () => {
   it("lists the finishes by room with where they come from, their status, the client's signature and what QS has; sends the changes to QS", async () => {
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => json(init?.method === "POST" && url.includes("finishes/send-to-qs")
-      ? view({ specification: { ...view().specification, final: true, problem: null, changed: [], handoff: { number: 2, sentAt: "2026-10-13T09:00:00Z", sentByName: "Lina Lead", note: "", finishes: 2 } } })
+      ? view({ specification: { ...view().specification!, final: true, problem: null, changed: [], handoff: { number: 2, sentAt: "2026-10-13T09:00:00Z", sentByName: "Lina Lead", note: "", finishes: 2 } } })
       : view()));
     vi.stubGlobal("fetch", fetcher);
     render(<DesignSystemProvider><FinishesSchedule source={{ kind: "case", workspaceId: "w", caseId: "c1" }} rooms={[]} /></DesignSystemProvider>);
@@ -103,9 +103,17 @@ describe("the finishes schedule (PLM-156, PLM-146, PLM-148)", () => {
     }
   });
 
-  it("reads a shared sample log from the Factory without any of the designers' actions", async () => {
+  it("reads a shared sample log from the Factory without any of the designers' actions or the QS side", async () => {
+    // What the API returns to the factory: no QS hand-off, prices to check, client signatures, supplier or procurement state.
+    const { specification: _spec, procurement: _procurement, currency: _currency, ...shared } = view({ canEdit: false, canManageMaterials: false, canSendToQs: false, canRecordSignature: false, canShare: false });
+    void _spec; void _procurement; void _currency;
+    const factoryRead = { ...shared, entries: shared.entries.map(({ priced: _p, sentToQs: _s, changedSinceSent: _c, signature: _g, locked: _l, ...item }) => {
+      void _p; void _s; void _c; void _g; void _l;
+      return { ...item, current: item.current ? { id: item.current.id, number: item.current.number, specification: item.current.specification, quantity: item.current.quantity,
+        unit: item.current.unit, sampleId: item.current.sampleId, sampleName: item.current.sampleName, samplePhotoAssetId: null, samplePhotoName: null } : null };
+    }) };
     const fetcher = vi.fn(async (url: string) => json(url.includes("/api/factory/finishes/c1")
-      ? view({ canEdit: false, canManageMaterials: false, canSendToQs: false, canRecordSignature: false, canShare: false })
+      ? factoryRead
       : { shares: [{ caseId: "c1", number: 1, sharedAt: "2026-10-12T09:00:00Z", sharedByName: "Lina Lead", note: "Vanity unit", clientName: "Maya Client", projectId: "p1", project: "PRJ-0001 · Villa" }] }));
     vi.stubGlobal("fetch", fetcher);
     const open = vi.fn();
@@ -116,6 +124,9 @@ describe("the finishes schedule (PLM-156, PLM-146, PLM-148)", () => {
     expect(await screen.findByText("Calacatta marble")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Send/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Share with the factory" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "QS" })).not.toBeInTheDocument();
+    for (const text of ["Price to check", "Changed since sent", "Sent to QS", "Client to sign", "Specification not final", "Payment in"]) expect(screen.queryByText(text)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ordering waits/)).not.toBeInTheDocument();
   });
 
   it("starts empty with the next action", async () => {

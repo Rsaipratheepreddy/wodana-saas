@@ -30,12 +30,12 @@ export function FinishSheet({ entry, view, rooms, api, onClose, onSaved }: { ent
     try { onSaved(t("Snapshot removed."), await api.removeSnapshot(view.caseId, snapshotId)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
   };
-  const last = entry.signature.last;
+  const last = entry.signature?.last ?? null;
   return <CaseModal title={entry.title} size="md" layout="sheet" onClose={onClose}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     <div className={styles.inline}>
       <Badge tone={logStatusTone(entry.status)}>{t(LOG_STATUS_LABEL[entry.status])}</Badge>
-      {entry.priced.stale ? <Badge tone="danger">{t("Price to check")}</Badge> : entry.changedSinceSent ? <Badge tone="warning">{t("Changed since sent")}</Badge>
+      {entry.priced?.stale ? <Badge tone="danger">{t("Price to check")}</Badge> : entry.changedSinceSent ? <Badge tone="warning">{t("Changed since sent")}</Badge>
         : entry.sentToQs ? <Badge tone="neutral">{t("Sent to QS")}</Badge> : null}
     </div>
     <dl className={styles.details}>
@@ -66,12 +66,12 @@ export function FinishSheet({ entry, view, rooms, api, onClose, onSaved }: { ent
       {view.canEdit ? <div className={styles.inline}><Button size="compact" onPress={() => setDialog("snapshot")}><PenLine aria-hidden="true" size={14} />{t("Mark on a render snapshot")}</Button></div> : null}
     </div>
 
-    {entry.signature.required || last ? <div className={styles.section}>
+    {entry.signature?.required || last ? <div className={styles.section}>
       <h3 className={styles.sectionTitle}>{t("Client's signature")}</h3>
-      {entry.signature.signed && last ? <p className={styles.muted}>{t("Signed {date} by {name}", { date: day(last.signedOn), name: last.signer })}{last.assetName ? ` · ${last.assetName}` : ""}</p>
+      {entry.signature?.signed && last ? <p className={styles.muted}>{t("Signed {date} by {name}", { date: day(last.signedOn), name: last.signer })}{last.assetName ? ` · ${last.assetName}` : ""}</p>
         : last?.outOfDate ? <p className={styles.muted}>{t("Signed for an earlier version. The client signs the new one.")}</p>
         : <p className={styles.muted}>{t("Not signed yet")}</p>}
-      {view.canRecordSignature && !entry.signature.signed && (entry.locked ?? current) ? <div className={styles.inline}>
+      {view.canRecordSignature && !entry.signature?.signed && (entry.locked ?? current) ? <div className={styles.inline}>
         <Button size="compact" variant="primary" onPress={() => setDialog("signature")}><Signature aria-hidden="true" size={14} />{t("Record the client's signature")}</Button></div> : null}
     </div> : null}
 

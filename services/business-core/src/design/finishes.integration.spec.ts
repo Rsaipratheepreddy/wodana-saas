@@ -304,8 +304,20 @@ integration("the finishes schedule, material log and samples (PLM-146, PLM-156, 
     expect((await factory.finishes.factoryList(actor, ids.workspaceId)).shares).toEqual([expect.objectContaining({ caseId: ids.caseId, clientName: "Maya Client", note: "For the vanity unit" })]);
     const read = await factory.finishes.factorySchedule(actor, ids.workspaceId, ids.caseId);
     expect(read).toMatchObject({ canEdit: false, canShare: false, entries: [expect.objectContaining({ title: "Zellige tile" })] });
+    // The factory reads the specification, sample, photos and placement only: nothing QS keeps, no client signature, supplier or money.
+    for (const key of ["specification", "procurement", "currency", "lock"]) expect(read).not.toHaveProperty(key);
+    for (const key of ["priced", "sentToQs", "changedSinceSent", "signature", "locked"]) expect(read.entries[0]).not.toHaveProperty(key);
+    for (const key of ["supplier", "origin", "signOff", "note", "confirmedByName"]) expect(read.entries[0].current).not.toHaveProperty(key);
+    expect(read.entries[0].current).toMatchObject({ samplePhotoAssetId: expect.any(String) });
     // The factory opens the sample's photo through the schedule (and nothing else of the case).
     await expect(factory.finishes.asset(actor, ids.workspaceId, { caseId: ids.caseId }, await asset(ids, "private.pdf", "application/pdf"), false)).rejects.toThrow(/File not found/);
+    expect(await factory.finishes.asset(actor, ids.workspaceId, { caseId: ids.caseId }, read.entries[0].current!.samplePhotoAssetId!, false)).toMatchObject({ contentType: "image/png" });
+    // Nor the client's signed copy: that stays with the designers.
+    const signed = await asset(ids, "signed.png");
+    const versionId = (await lead.finishes.schedule(actor, ids.workspaceId, ids.caseId)).entries[0].current!.id;
+    await lead.finishes.recordSignature(actor, ids.workspaceId, ids.caseId, read.entries[0].id, { id: randomUUID(), versionId, signedOn: "2026-10-01", signer: "Maya Client", assetId: signed });
+    await expect(factory.finishes.asset(actor, ids.workspaceId, { caseId: ids.caseId }, signed, false)).rejects.toThrow(/File not found/);
+    expect(await lead.finishes.asset(actor, ids.workspaceId, { caseId: ids.caseId }, signed, false)).toMatchObject({ contentType: "image/png" });
   });
 
   it("keeps the schedule as a plain list on a job without design: no samples step, and the final quotation isn't held", async () => {
