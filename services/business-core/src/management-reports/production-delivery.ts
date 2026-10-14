@@ -1,10 +1,14 @@
 import { Dec } from "../catalog-core/decimal";
+import { FURNITURE_PATHS, type FurniturePath } from "../crm/opportunities/flow-gates";
 import { materialsShort, ORDER_TOTALS, defaultHours, FINAL_PENDING, plain, readWorkOrderMaterials } from "../factory/factory";
 import { DEFAULT_PRODUCTION_STEPS, normaliseProductionSteps } from "../factory/production-status";
+import { expectedWindow } from "../fulfilment/deal-fulfilment";
+import { dealRule } from "../fulfilment/fulfilment-rules";
+import { readFacts as readFulfilmentFacts } from "../fulfilment/fulfilment.service";
 import { readCalendar, workdays } from "../project-core/work-calendar";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
 import { type KpiSpec, type ReportContext, readFacts } from "./report-context";
-import { type Fact, FACT_COLUMNS, byUrgency, categories, grid, inPeriod, monthKeys, percent } from "./report-kit";
+import { type Fact, FACT_COLUMNS, byUrgency, calendarEntries, categories, grid, inPeriod, mean, monthKeys, percent, topGroups } from "./report-kit";
 import { OPPORTUNITIES, OPPORTUNITY_ENTITY, P, localDate } from "./report-scope";
 import { targetFor } from "./report-targets";
 
@@ -52,6 +56,8 @@ orders AS (
                 AND greatest(wo.quantity - (quality.passed - reworked.quantity) - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0) = 0
                 AND (reported.pending > 0 OR greatest(reported.made - quality.passed - quality.failed, 0) > 0) THEN 'quality_check'
            ELSE 'in_production' END AS step,
+         -- Late (PLM-131): not made yet and past its internal date (planned end) or the client's (delivery day or promised date).
+         CASE WHEN wo.status NOT IN ('ready', 'short_closed') AND (wo.planned_end < p.today OR least(pj.delivery_on, pj.promise_date) < p.today) THEN 'late' ELSE 'on_track' END AS timing,
          shipped.arrived_on
     FROM work_orders wo CROSS JOIN p JOIN pj ON pj.project_id = wo.project_id
     ${ORDER_TOTALS}
@@ -64,7 +70,7 @@ orders AS (
 SELECT ${FACT_COLUMNS} FROM (
   SELECT orders.id::text AS id, 'work_order' AS kind, orders.project_id::text AS parent_id, ${WO_REFERENCE("orders")} AS reference, orders.title,
          orders.client, orders.owner, orders.am::text AS owner_id, ${local("COALESCE(orders.arrived_on, orders.planned_end)")} AS at,
-         NULL::text AS amount, NULL::text AS measure, orders.project_reference AS detail, jsonb_build_object('period', '1', 'step', orders.step) AS dims
+         NULL::text AS amount, NULL::text AS measure, orders.project_reference AS detail, jsonb_build_object('period', '1', 'step', orders.step, 'late', orders.timing) AS dims
     FROM orders CROSS JOIN p
    WHERE (orders.step <> 'delivered' AND orders.project_status IN ('active', 'on_hold'))
       OR (orders.step = 'delivered' AND ${inChosen("orders.arrived_on")})
@@ -87,6 +93,12 @@ export function foldSteps(facts: Fact[], kept: string[]) {
   return facts;
 }
 
+export const TIMING_SERIES = [{ id: "on_track", label: "" }, { id: "late", label: "" }];
+
+/**
+ * Production schedule (PLM-131): the open work orders by step in the firm's own words, each column on track against
+ * late (as Late jobs reads it).
+ */
 const workOrderStatus: KpiSpec = {
   code: "work_orders_status",
   facts: async (ctx) => foldSteps(await readFacts(ctx, STATUS_SQL), (await productionSteps(ctx)).map((step) => step.kind)),
@@ -94,14 +106,11 @@ const workOrderStatus: KpiSpec = {
     const steps = await productionSteps(ctx);
     const open = facts.filter((fact) => fact.dims.step !== DELIVERED);
     // Delivered is its own figure (Delivered to site); the chart shows the open work orders by step.
-    const items = steps.map((step) => ({ key: step.kind, label: step.label })).map((step) => {
-      const count = facts.filter((fact) => fact.dims.step === step.key).length;
-      return { ...step, value: String(count), count };
-    });
     return {
       code: "work_orders_status", unit: "count", value: String(open.length), count: open.length, targetable: false,
-      extra: { delivered: facts.length - open.length },
-      chart: { type: "bars", dimension: "step", unit: "count", items },
+      extra: { delivered: facts.length - open.length, late: open.filter((fact) => fact.dims.late === "late").length },
+      chart: { type: "columns", dimension: "step", seriesDimension: "late", categories: steps.map((step) => ({ key: step.kind, label: step.label })), series: TIMING_SERIES,
+        values: grid(open, "step", steps.map((step) => step.kind), TIMING_SERIES, "late", "count", ctx.places), unit: "count" },
     };
   },
 };
@@ -154,19 +163,159 @@ const onTime: KpiSpec = {
   },
 };
 
-/** Late work orders, live: open work orders on running projects past their planned end (days late, local). */
+/**
+ * Late jobs (PLM-131), live: open work orders (not made yet) on running projects past their internal date (the planned
+ * end) or the client's date (the booked delivery day, else the promised handover date, whichever comes first). Days
+ * late count from the first date missed; `against` says whether the client's date has gone (the more serious) or only
+ * the internal one.
+ */
 const LATE_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${PROJECTS}
 SELECT ${FACT_COLUMNS} FROM (
   SELECT wo.id::text AS id, 'work_order' AS kind, wo.project_id::text AS parent_id, ${WO_REFERENCE("wo")} AS reference, wo.title, pj.client, pj.owner, pj.am::text AS owner_id,
-         ${local("wo.planned_end")} AS at, NULL::text AS amount, (p.today - wo.planned_end)::text AS measure, pj.reference AS detail, jsonb_build_object('period', '1') AS dims
+         ${local("missed.missed_on")} AS at, NULL::text AS amount, (p.today - missed.missed_on)::text AS measure, missed.against AS detail,
+         jsonb_build_object('period', '1', 'against', missed.against) AS dims
     FROM work_orders wo CROSS JOIN p JOIN pj ON pj.project_id = wo.project_id
-   WHERE wo.workspace_id = p.ws AND wo.status IN ('planned', 'released', 'in_production', 'on_hold') AND wo.planned_end < p.today AND ${LIVE}
-) facts ORDER BY at`;
+    CROSS JOIN LATERAL (SELECT least(pj.delivery_on, pj.promise_date) AS client_on) client
+    CROSS JOIN LATERAL (SELECT CASE WHEN client.client_on < p.today THEN 'client_date' ELSE 'internal_date' END AS against,
+                               CASE WHEN client.client_on < p.today THEN least(client.client_on, wo.planned_end) ELSE wo.planned_end END AS missed_on) missed
+   WHERE wo.workspace_id = p.ws AND wo.status IN ('planned', 'released', 'in_production', 'on_hold') AND ${LIVE}
+     AND (wo.planned_end < p.today OR client.client_on < p.today)
+) facts ORDER BY at, reference`;
 
 const lateOrders: KpiSpec = {
   code: "late_work_orders",
   facts: (ctx) => readFacts(ctx, LATE_SQL),
-  build: (_ctx, facts) => ({ code: "late_work_orders", unit: "count", value: String(facts.length), count: facts.length, targetable: false, chart: { type: "list", bucket: "period=1" } }),
+  build: (_ctx, facts) => ({ code: "late_work_orders", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+    extra: { clientDate: facts.filter((fact) => fact.dims.against === "client_date").length }, chart: { type: "list", bucket: "period=1" } }),
+};
+
+// ------------------------------------------------------------------ ready this week and next
+
+/**
+ * Ready this week and next (PLM-131): work orders on running projects whose order-ready day falls in this week or the
+ * next (on the workspace's week start) — the day recorded when it was made ready, else its planned end — by day, made
+ * ready against still planned.
+ */
+const READY_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${PROJECTS}, ${WEEK}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT wo.id::text AS id, 'work_order' AS kind, wo.project_id::text AS parent_id, ${WO_REFERENCE("wo")} AS reference, wo.title, pj.client, pj.owner, pj.am::text AS owner_id,
+         ${local("ready.day")} AS at, NULL::text AS amount, NULL::text AS measure, pj.reference AS detail,
+         jsonb_build_object('period', '1', 'day', to_char(ready.day, 'YYYY-MM-DD'), 'state', ready.state,
+           'week', CASE WHEN ready.day < wk.start + 7 THEN 'this_week' ELSE 'next_week' END) AS dims
+    FROM work_orders wo CROSS JOIN p CROSS JOIN wk JOIN pj ON pj.project_id = wo.project_id
+    CROSS JOIN LATERAL (SELECT CASE WHEN wo.status IN ('ready', 'short_closed') THEN 'ready' ELSE 'planned' END AS state,
+                               CASE WHEN wo.status IN ('ready', 'short_closed') THEN COALESCE(wo.ready_on, (wo.ready_at AT TIME ZONE p.tz)::date) ELSE wo.planned_end END AS day) ready
+   WHERE wo.workspace_id = p.ws AND wo.status <> 'cancelled' AND ${LIVE} AND ready.day >= wk.start AND ready.day < wk.start + 14
+) facts ORDER BY at, reference`;
+
+export const READY_SERIES = [{ id: "ready", label: "" }, { id: "planned", label: "" }];
+
+/** The 14 days of this week and the next, on the workspace's week start. */
+export function fortnight(today: string, weekStart: number) {
+  const first = loadWeeks(today, weekStart)[0];
+  return Array.from({ length: 14 }, (_, index) => addDays(first, index));
+}
+
+const readyUpcoming: KpiSpec = {
+  code: "ready_upcoming",
+  facts: (ctx) => readFacts(ctx, READY_SQL),
+  build: (ctx, facts) => {
+    const days = fortnight(localDate(ctx.now, ctx.timeZone), ctx.weekStart);
+    return {
+      code: "ready_upcoming", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+      extra: { thisWeek: facts.filter((fact) => fact.dims.week === "this_week").length, nextWeek: facts.filter((fact) => fact.dims.week === "next_week").length },
+      chart: { type: "columns", dimension: "day", seriesDimension: "state", categories: categories(days), series: READY_SERIES,
+        values: grid(facts, "day", days, READY_SERIES, "state", "count", ctx.places), unit: "count" },
+    };
+  },
+};
+
+// ------------------------------------------------------------------ deliveries and installations booked
+
+/**
+ * Deliveries and installations booked (PLM-131), as the logistics calendar holds them: running and finished projects'
+ * delivery and installation days, and the delivery days of deals delivered without a project — from the first of the
+ * period's month to the end of the month after the later of the period's end and today. A day opens what is booked.
+ */
+const BOOKINGS_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${PROJECTS},
+win AS (SELECT date_trunc('month', $2::date)::date AS first, (date_trunc('month', greatest($3::date, p.today)) + interval '2 months' - interval '1 day')::date AS last FROM p),
+booked AS (
+  SELECT pj.project_id AS id, 'project' AS kind, pj.project_id AS parent, pj.reference, pj.name AS title, pj.client, pj.owner, pj.am, 'delivery' AS what, pj.delivery_on AS day
+    FROM pj WHERE pj.status IN ('active', 'on_hold', 'completed') AND pj.delivery_on IS NOT NULL
+  UNION ALL
+  SELECT pj.project_id, 'project', pj.project_id, pj.reference, pj.name, pj.client, pj.owner, pj.am, 'installation', pj.installation_on
+    FROM pj WHERE pj.status IN ('active', 'on_hold', 'completed') AND pj.installation_on IS NOT NULL
+  UNION ALL
+  SELECT oc.opportunity_id, 'opportunity', oc.case_id, oc.reference, oc.title, oc.client, oc.owner, oc.am, 'delivery', f.delivery_on
+    FROM crm_deal_fulfilment f CROSS JOIN p JOIN oc ON oc.opportunity_id = f.opportunity_id
+   WHERE f.workspace_id = p.ws AND f.cancelled_at IS NULL AND f.delivery_on IS NOT NULL AND ${OPPORTUNITY_ENTITY}
+     AND NOT EXISTS (SELECT 1 FROM delivery_projects dp WHERE dp.workspace_id = p.ws AND dp.case_id = oc.case_id AND dp.started_at IS NOT NULL)
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT booked.id::text || ':' || booked.what AS id, booked.kind, booked.parent::text AS parent_id, booked.reference, booked.title, booked.client, booked.owner,
+         booked.am::text AS owner_id, ${local("booked.day")} AS at, NULL::text AS amount, NULL::text AS measure, booked.what AS detail,
+         jsonb_build_object('period', CASE WHEN booked.day BETWEEN $2::date AND $3::date THEN '1' ELSE '0' END, 'day', to_char(booked.day, 'YYYY-MM-DD'), 'kind', booked.what) AS dims
+    FROM booked CROSS JOIN p CROSS JOIN win
+   WHERE booked.day BETWEEN win.first AND win.last
+) facts ORDER BY at, reference`;
+
+const bookings: KpiSpec = {
+  code: "bookings",
+  facts: (ctx) => readFacts(ctx, BOOKINGS_SQL),
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    return {
+      code: "bookings", unit: "count", value: String(period.length), count: period.length, targetable: false,
+      extra: { deliveries: period.filter((fact) => fact.dims.kind === "delivery").length, installations: period.filter((fact) => fact.dims.kind === "installation").length },
+      chart: { type: "calendar", dimension: "day", seriesDimension: "kind", month: ctx.filters.to.slice(0, 7), weekStart: ctx.weekStart, entries: calendarEntries(facts, "day", "kind") },
+    };
+  },
+};
+
+// ------------------------------------------------------------------ open snags
+
+export const SNAG_AGES = ["days_0_7", "days_8_30", "days_31_plus"] as const;
+export const SNAG_PROJECTS = 8;
+
+/** A snag's age bucket from the days it has been open. */
+export function snagAge(days: number): (typeof SNAG_AGES)[number] {
+  return days <= 7 ? "days_0_7" : days <= 30 ? "days_8_30" : "days_31_plus";
+}
+
+/**
+ * Open snags (PLM-131), live: snags not done or cancelled on started projects (not cancelled ones; a warranty snag on a
+ * finished project still counts), by project — the eight with the most, the rest together — and by how many local
+ * days they have been open.
+ */
+const SNAGS_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${PROJECTS}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT item.id::text AS id, 'snag' AS kind, item.project_id::text AS parent_id, pj.reference, item.title, pj.client, pj.owner, pj.am::text AS owner_id,
+         item.created_at AS at, NULL::text AS amount, (p.today - (item.created_at AT TIME ZONE p.tz)::date)::text AS measure, item.severity AS detail,
+         jsonb_build_object('period', '1', 'project', item.project_id::text) AS dims
+    FROM work_items item CROSS JOIN p JOIN pj ON pj.project_id = item.project_id
+   WHERE item.workspace_id = p.ws AND item.type = 'snag' AND item.status NOT IN ('done', 'cancelled') AND pj.status <> 'cancelled'
+) facts ORDER BY at, reference`;
+
+const openSnags: KpiSpec = {
+  code: "open_snags",
+  facts: async (ctx) => {
+    const facts = await readFacts(ctx, SNAGS_SQL);
+    for (const fact of facts) fact.dims.age = snagAge(Number(fact.measure ?? "0"));
+    topGroups(facts, "project", "projectGroup", SNAG_PROJECTS);
+    return facts;
+  },
+  build: (ctx, facts) => {
+    const { top, hasOther } = topGroups(facts, "project", "projectGroup", SNAG_PROJECTS);
+    const keys = [...top, ...(hasOther ? ["other"] : [])];
+    const series = SNAG_AGES.map((id) => ({ id, label: "" }));
+    return {
+      code: "open_snags", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+      extra: { over30: facts.filter((fact) => fact.dims.age === "days_31_plus").length },
+      chart: { type: "columns", dimension: "projectGroup", seriesDimension: "age",
+        categories: keys.map((key) => ({ key, label: key === "other" ? "" : facts.find((fact) => fact.dims.project === key)?.reference ?? "" })), series,
+        values: grid(facts, "projectGroup", keys, series, "age", "count", ctx.places), unit: "count" },
+    };
+  },
 };
 
 // ------------------------------------------------------------------ factory load
@@ -529,6 +678,103 @@ const installed: KpiSpec = {
   }),
 };
 
+// ------------------------------------------------------------------ Furniture Only lead times
+
+/** Working days after `from` up to and including `to` (0 when `to` isn't after `from`): how long a lead time ran. */
+export function workingDaysAfter(isWorking: (day: string) => boolean, from: string, to: string) {
+  let count = 0;
+  for (let day = addDays(from, 1); day <= to; day = addDays(day, 1)) if (isWorking(day)) count += 1;
+  return count;
+}
+
+/**
+ * One Furniture Only order's lead time: working days from its anchor (Won, or the drawing approval for a path counted
+ * from it) to the day it reached the client, against the working days its path allows (its rule's longest lead time,
+ * stretched to the catalogue's own time when the rule says so). On time when it reached the client by the last day.
+ * No target when the path has no lead time (or the anchor isn't recorded).
+ */
+export function leadTime(isWorking: (day: string) => boolean, anchor: string | null, handed: string, expectedBy: string | null) {
+  if (!anchor) return { actual: null, target: null, timing: "no_target" as const };
+  const actual = workingDaysAfter(isWorking, anchor, handed);
+  if (!expectedBy) return { actual, target: null, timing: "no_target" as const };
+  return { actual, target: workingDaysAfter(isWorking, anchor, expectedBy), timing: handed <= expectedBy ? "on_time" as const : "late" as const };
+}
+
+/** On time ÷ (on time + late) × 100, one decimal; null when nothing with a lead time reached a client. */
+export function leadTimeRate(facts: Fact[]) {
+  const timed = facts.filter((fact) => fact.dims.timing === "on_time" || fact.dims.timing === "late");
+  return timed.length ? percent(timed.filter((fact) => fact.dims.timing === "on_time").length, timed.length) : null;
+}
+
+/**
+ * Furniture Only orders (deals on a furniture path, A–E) handed to the client in the period — collected for A, the
+ * earlier of collection and delivery for C, else delivered (or collected) — not cancelled; each with its own path's
+ * rule, the way the deal's fulfilment reads it.
+ */
+const FO_SQL = `WITH ${P}, ${OPPORTUNITIES},
+fo AS (
+  SELECT oc.opportunity_id, oc.case_id, oc.reference, oc.title, oc.client, oc.owner, oc.am, deal.furniture_path AS path,
+         (SELECT min(ev.recorded_at) FROM crm_deal_fulfilment_events ev WHERE ev.workspace_id = p.ws AND ev.opportunity_id = oc.opportunity_id AND ev.event = 'collected') AS collected_at,
+         (SELECT min(ev.recorded_at) FROM crm_deal_fulfilment_events ev WHERE ev.workspace_id = p.ws AND ev.opportunity_id = oc.opportunity_id AND ev.event = 'delivered') AS delivered_at
+    FROM oc CROSS JOIN p JOIN crm_opportunities deal ON deal.workspace_id = p.ws AND deal.id = oc.opportunity_id
+   WHERE deal.furniture_path IS NOT NULL AND oc.cancelled_at IS NULL AND ${OPPORTUNITY_ENTITY}
+),
+handed AS (
+  SELECT fo.*, CASE fo.path WHEN 'take_home_now' THEN fo.collected_at WHEN 'supplier_order' THEN least(fo.collected_at, fo.delivered_at)
+                            ELSE COALESCE(fo.delivered_at, fo.collected_at) END AS handed_at
+    FROM fo
+)
+SELECT handed.opportunity_id::text AS id, handed.case_id::text AS "caseId", handed.reference, handed.title, handed.client, handed.owner, handed.am::text AS am,
+       handed.path, handed.handed_at AS "handedAt"
+  FROM handed CROSS JOIN p
+ WHERE handed.handed_at >= p.from_at AND handed.handed_at < p.to_at
+ ORDER BY handed.handed_at, handed.reference`;
+
+const foLeadTime: KpiSpec = {
+  code: "fo_lead_time",
+  compare: "higher",
+  facts: async (ctx) => {
+    const rows = (await ctx.db.query<{ id: string; caseId: string | null; reference: string | null; title: string; client: string | null; owner: string | null; am: string | null;
+      path: FurniturePath; handedAt: Date }>(FO_SQL, ctx.params)).rows;
+    if (!rows.length) return [];
+    const calendar = await readCalendar(ctx.db, ctx.workspaceId);
+    const isWorking = workdays(calendar).isWorking;
+    const day = (at: string | Date | null) => (at ? localDate(new Date(at), ctx.timeZone) : null);
+    const facts: Fact[] = [];
+    for (const row of rows) {
+      const rule = await dealRule(ctx.db, ctx.workspaceId, row.id, { readOnly: true });
+      if (!rule) continue;
+      const known = await readFulfilmentFacts(ctx.db, ctx.workspaceId, rule);
+      const anchor = day(rule.leadFrom === "drawing_approved" ? known.production.drawingApprovedAt : known.wonAt);
+      const handed = day(row.handedAt)!;
+      const window = anchor ? expectedWindow(rule, anchor, known.catalogueDays, calendar) : null;
+      const time = leadTime(isWorking, anchor, handed, window?.by ?? null);
+      facts.push({
+        id: row.id, kind: "opportunity", parentId: row.caseId, reference: row.reference, title: row.title, client: row.client, owner: row.owner, ownerId: row.am,
+        at: row.handedAt.toISOString(), amount: null, measure: time.actual === null ? null : String(time.actual), detail: row.path,
+        dims: { period: "1", path: row.path, timing: time.timing, ...(time.target === null ? {} : { target: String(time.target) }) },
+      });
+    }
+    return facts;
+  },
+  build: (ctx, facts) => {
+    const rate = leadTimeRate(facts);
+    const items = FURNITURE_PATHS.map((path) => {
+      const group = facts.filter((fact) => fact.dims.path === path);
+      const measured = group.filter((fact) => fact.measure !== null);
+      const targets = group.filter((fact) => fact.dims.target !== undefined);
+      return { key: path, label: "", value: mean(measured.map((fact) => fact.measure!), 1) ?? "0", count: group.length,
+        extra: { target: mean(targets.map((fact) => fact.dims.target), 1), onTime: leadTimeRate(group) } };
+    });
+    return {
+      code: "fo_lead_time", unit: "percent", value: rate, count: facts.length, targetable: true, ...targetFor(ctx.targets, "fo_lead_time_rate", ctx.filters, rate),
+      extra: { onTime: facts.filter((fact) => fact.dims.timing === "on_time").length, late: facts.filter((fact) => fact.dims.timing === "late").length,
+        noTarget: facts.filter((fact) => fact.dims.timing === "no_target").length },
+      chart: { type: "bars", dimension: "path", unit: "days", items },
+    };
+  },
+};
+
 // ------------------------------------------------------------------ needs attention
 
 /**
@@ -555,5 +801,5 @@ const attention: KpiSpec = {
   build: (_ctx, facts) => ({ code: "production_attention", unit: "count", value: String(facts.length), count: facts.length, targetable: false, chart: { type: "list", bucket: "period=1" } }),
 };
 
-export const PRODUCTION_DELIVERY: KpiSpec[] = [made, onTime, delivered, installed, workOrderStatus, factoryLoad, attention, lateOrders, shortages, deliveries, installations, permits,
-  projectStages, handovers];
+export const PRODUCTION_DELIVERY: KpiSpec[] = [lateOrders, readyUpcoming, openSnags, foLeadTime, workOrderStatus, bookings, attention, made, onTime, delivered, installed,
+  factoryLoad, shortages, deliveries, installations, permits, projectStages, handovers];

@@ -122,6 +122,13 @@ export async function ensureRules(db: Db, workspaceId: string, flowId: string) {
   return loadRules(db, workspaceId, flowId);
 }
 
+/** The rules a flow would have, without seeding anything (reports read; they never write). */
+async function peekRules(db: Db, workspaceId: string, flowId: string): Promise<FulfilmentRule[]> {
+  const rules = await loadRules(db, workspaceId, flowId);
+  if (rules.length || !(await isFurnitureFlow(db, workspaceId, flowId))) return rules;
+  return FURNITURE_RULES.map((rule) => ({ ...rule, version: 1 }));
+}
+
 export type DealRule = RuleSettings & {
   opportunityId: string; flowId: string | null; furniturePath: FurniturePath | null;
   /** The order's own choice (null: the rule's). */
@@ -131,9 +138,10 @@ export type DealRule = RuleSettings & {
 
 /**
  * The rule that applies to one deal: its flow (the version it pinned, else its enquiry type's, else the basic one)
- * and its furniture path, and the order's own BOQ choice. Read only: it never pins a flow version.
+ * and its furniture path, and the order's own BOQ choice. Read only: it never pins a flow version; with `readOnly` it
+ * doesn't seed a furniture flow's default rules either (it reads them as they would be).
  */
-export async function dealRule(db: Db, workspaceId: string, opportunityId: string): Promise<DealRule | null> {
+export async function dealRule(db: Db, workspaceId: string, opportunityId: string, options: { readOnly?: boolean } = {}): Promise<DealRule | null> {
   const row = (await db.query<{ flowId: string | null; furniturePath: FurniturePath | null; boqOverride: boolean | null; status: string; caseId: string | null;
     projectId: string | null; cancelledAt: Date | null }>(
     `SELECT coalesce(pinned.flow_id, typed.id, basic.id) AS "flowId", opportunity.furniture_path AS "furniturePath", deal.boq_required AS "boqOverride",
@@ -152,7 +160,7 @@ export async function dealRule(db: Db, workspaceId: string, opportunityId: strin
       WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
       ORDER BY pre_case.created_at DESC NULLS LAST LIMIT 1`, [workspaceId, opportunityId])).rows[0];
   if (!row) return null;
-  const settings = row.flowId ? ruleFor(await ensureRules(db, workspaceId, row.flowId), row.furniturePath) : { ...NO_RULE };
+  const settings = row.flowId ? ruleFor(await (options.readOnly ? peekRules : ensureRules)(db, workspaceId, row.flowId), row.furniturePath) : { ...NO_RULE };
   return {
     ...settings, opportunityId, flowId: row.flowId, furniturePath: row.furniturePath, boqOverride: row.boqOverride,
     boqRequired: row.boqOverride ?? settings.boqRequired, status: row.status, caseId: row.caseId, projectId: row.projectId,

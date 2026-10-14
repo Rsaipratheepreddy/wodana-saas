@@ -255,4 +255,5 @@ export const href = {
   pettyCash: (id: string) => `/workspace/finance/petty-cash?claim=${id}`,
   stockItem: (id: string) => `/workspace/inventory/history?item=${id}`,
   purchaseOrder: (id: string) => `/workspace/purchasing/orders?order=${id}`,
+  snag: (projectId: string, id: string) => `/workspace/projects/${projectId}/plan?filter=snags&item=${id}`,
 };

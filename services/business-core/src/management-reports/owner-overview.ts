@@ -185,6 +185,7 @@ SELECT ${FACT_COLUMNS} FROM (
          CASE WHEN stage.due_date < p.today THEN (p.today - stage.due_date)::text END AS measure, oc.title AS detail,
          jsonb_build_object('period', '1', 'age', CASE WHEN stage.due_date IS NULL THEN 'no_due_date' WHEN stage.due_date >= p.today THEN 'not_due'
              WHEN p.today - stage.due_date <= 30 THEN 'overdue_1_30' WHEN p.today - stage.due_date <= 60 THEN 'overdue_31_60' ELSE 'overdue_60_plus' END,
+           'entity', COALESCE(stage.legal_entity_id, oc.entity_id::text, 'none'),
            'currency', CASE WHEN stage.cur = p.currency THEN 'base' ELSE 'other' END, 'tax', 'gross') AS dims
     FROM stage CROSS JOIN p JOIN oc ON oc.opportunity_id = stage.opportunity_id
    WHERE stage.amount - stage.paid > 0 AND (p.entity_id IS NULL OR COALESCE(stage.legal_entity_id, oc.entity_id::text) = p.entity_id::text)

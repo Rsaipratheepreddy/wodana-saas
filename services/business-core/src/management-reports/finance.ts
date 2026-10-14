@@ -37,7 +37,8 @@ export const salesFiltered = (filters: ReportFilters) => Boolean(filters.account
  */
 const RECEIPTS = `rc AS (
   SELECT r.id, r.case_id, r.amount, btrim(r.currency) AS cur, ${stamp("r.detail->>'verifiedAt'")} AS verified_at, ${stamp("r.detail->>'rejectedAt'")} AS rejected_at,
-         q.tax_rate, q.kind AS quote_kind, q.round AS quote_round, oc.reference, oc.title, oc.client, oc.owner, oc.am
+         q.tax_rate, q.kind AS quote_kind, q.round AS quote_round, oc.reference, oc.title, oc.client, oc.owner, oc.am,
+         COALESCE(NULLIF(r.legal_entity_id, ''), stage.legal_entity_id) AS entity_id
     FROM commercial_receipts r CROSS JOIN p
     JOIN commercial_payments stage ON stage.workspace_id = r.workspace_id AND stage.case_id = r.case_id AND stage.id = r.payment_id
     JOIN pre_project_cases c ON c.workspace_id = r.workspace_id AND c.id = r.case_id
@@ -125,7 +126,8 @@ export const REVENUE_CATEGORIES = ["design_fees", "production", "variations"] as
 const REVENUE_SQL = `WITH ${P}, ${OPPORTUNITIES}, ${RECEIPTS}
 SELECT receipt_moves.id, receipt_moves.case_id::text AS "caseId", receipt_moves.reference, receipt_moves.title, receipt_moves.client, receipt_moves.owner, receipt_moves.am::text AS am,
        receipt_moves.at, receipt_moves.sign, receipt_moves.amount::text AS amount, receipt_moves.cur, receipt_moves.tax_rate::text AS rate,
-       receipt_moves.quote_kind AS kind, receipt_moves.quote_round AS round, (receipt_moves.at >= p.from_at) AS chosen, ${month("receipt_moves.at")} AS month, p.currency AS base
+       receipt_moves.quote_kind AS kind, receipt_moves.quote_round AS round, (receipt_moves.at >= p.from_at) AS chosen, ${month("receipt_moves.at")} AS month, p.currency AS base,
+       receipt_moves.entity_id AS entity
   FROM receipt_moves CROSS JOIN p
  WHERE receipt_moves.at >= p.series_from_at AND receipt_moves.at < p.to_at
  ORDER BY receipt_moves.at DESC`;
@@ -135,22 +137,27 @@ SELECT receipt_moves.id, receipt_moves.case_id::text AS "caseId", receipt_moves.
  * less rejections, before the tax inside them at their quotation's rate), by what they paid for — Design fee (the
  * design round), production (the main quotation) and variations. Monthly columns over 12 months.
  */
+/** The client payments Finance verified (less rejections) over the 12 months, before the tax inside them, by what they paid for and the company. */
+async function receiptFacts(ctx: ReportContext): Promise<Fact[]> {
+  const rows = (await ctx.db.query<{ id: string; caseId: string; reference: string | null; title: string; client: string | null; owner: string | null; am: string | null;
+    at: Date; sign: number; amount: string; cur: string; rate: string | null; kind: string | null; round: string | null; chosen: boolean; month: string; base: string;
+    entity: string | null }>(REVENUE_SQL, ctx.params)).rows;
+  return rows.map((row) => {
+    const base = row.cur === row.base;
+    const net = base ? Dec.of(row.amount).sub(taxInside(row.amount, row.rate, row.cur)).mul(row.sign).toFixed(4) : null;
+    return {
+      id: row.id, kind: "receipt", parentId: row.caseId, reference: row.reference, title: row.title, client: row.client, owner: row.owner, ownerId: row.am,
+      at: row.at.toISOString(), amount: net, measure: null, detail: revenueCategoryOfQuote(row),
+      dims: { period: row.chosen ? "1" : "0", month: row.month, category: revenueCategoryOfQuote(row), entity: row.entity ?? "none", series: "collected",
+        currency: base ? "base" : "other", tax: row.rate === null ? "gross" : "net" },
+    } satisfies Fact;
+  });
+}
+
 const revenueMix: KpiSpec = {
   code: "revenue_mix",
   compare: "higher",
-  facts: async (ctx) => {
-    const rows = (await ctx.db.query<{ id: string; caseId: string; reference: string | null; title: string; client: string | null; owner: string | null; am: string | null;
-      at: Date; sign: number; amount: string; cur: string; rate: string | null; kind: string | null; round: string | null; chosen: boolean; month: string; base: string }>(REVENUE_SQL, ctx.params)).rows;
-    return rows.map((row) => {
-      const base = row.cur === row.base;
-      const net = base ? Dec.of(row.amount).sub(taxInside(row.amount, row.rate, row.cur)).mul(row.sign).toFixed(4) : null;
-      return {
-        id: row.id, kind: "receipt", parentId: row.caseId, reference: row.reference, title: row.title, client: row.client, owner: row.owner, ownerId: row.am,
-        at: row.at.toISOString(), amount: net, measure: null, detail: revenueCategoryOfQuote(row),
-        dims: { period: row.chosen ? "1" : "0", month: row.month, category: revenueCategoryOfQuote(row), currency: base ? "base" : "other", tax: row.rate === null ? "gross" : "net" },
-      } satisfies Fact;
-    });
-  },
+  facts: receiptFacts,
   build: (ctx, facts) => {
     const period = facts.filter(inPeriod);
     const amount = sum(period.map((fact) => fact.amount)).toFixed(ctx.places);
@@ -161,6 +168,72 @@ const revenueMix: KpiSpec = {
       extra: Object.fromEntries(REVENUE_CATEGORIES.map((category) => [category, sum(period.filter((fact) => fact.dims.category === category).map((fact) => fact.amount)).toFixed(ctx.places)])),
       chart: { type: "columns", dimension: "month", seriesDimension: "category", categories: categories(keys), series, values: grid(facts, "month", keys, series, "category", "amount", ctx.places), unit: "money" },
       notes: moneyNotes(facts),
+    };
+  },
+};
+
+// ------------------------------------------------------------------ cash collected vs invoiced (PLM-132)
+
+/** Tax invoices issued (not credited) over the 12 months, their net (before tax), by issue date and company. */
+const INVOICED_SQL = `WITH ${P}, ${OPPORTUNITIES}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT invoice.id::text AS id, 'invoice' AS kind, invoice.case_id::text AS parent_id, invoice.number AS reference,
+         COALESCE(NULLIF(btrim(invoice.milestone_title), ''), invoice.number) AS title, oc.client, oc.owner, oc.am::text AS owner_id,
+         (invoice.issue_date::timestamp AT TIME ZONE p.tz) AS at, ${inBase("invoice.net", "invoice.currency")} AS amount, NULL::text AS measure, 'invoiced' AS detail,
+         jsonb_build_object('period', ${PERIOD("(invoice.issue_date::timestamp AT TIME ZONE p.tz)")}, 'month', to_char(invoice.issue_date, 'YYYY-MM'), 'series', 'invoiced',
+           'company', COALESCE(invoice.legal_entity_id::text, 'none'), 'currency', ${BASE("invoice.currency")}, 'tax', 'net') AS dims
+    FROM client_invoices invoice CROSS JOIN p
+    JOIN pre_project_cases c ON c.workspace_id = invoice.workspace_id AND c.id = invoice.case_id
+    JOIN oc ON oc.opportunity_id = c.opportunity_id
+   WHERE invoice.workspace_id = p.ws AND invoice.status = 'issued' AND (p.entity_id IS NULL OR invoice.legal_entity_id = p.entity_id)
+     AND (invoice.issue_date::timestamp AT TIME ZONE p.tz) >= p.series_from_at AND (invoice.issue_date::timestamp AT TIME ZONE p.tz) < p.to_at
+) facts ORDER BY at DESC`;
+
+/** The workspace's companies by id (the chart names its series). */
+async function companyNames(ctx: ReportContext) {
+  return new Map((await ctx.db.query<{ id: string; name: string }>(`SELECT id::text, display_name AS name FROM legal_entities WHERE workspace_id = $1`, [ctx.workspaceId])).rows
+    .map((row) => [row.id, row.name]));
+}
+
+/**
+ * Cash collected (PLM-132): client payments Finance verified in the period (a later rejection takes one off on the day
+ * it was rejected), before the tax inside them — the same payments as Revenue. Target: Cash collected (monthly).
+ */
+const cashCollected: KpiSpec = {
+  code: "cash_collected",
+  compare: "higher",
+  facts: async (ctx) => (await receiptFacts(ctx)).filter(inPeriod),
+  build: async (ctx, facts) => {
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    const invoiced = sum((await readFacts(ctx, INVOICED_SQL)).filter(inPeriod).map((fact) => fact.amount)).toFixed(ctx.places);
+    return {
+      code: "cash_collected", unit: "money", value: amount, count: facts.length, amount, targetable: true, ...targetFor(ctx.targets, "cash_in", ctx.filters, amount),
+      extra: { invoiced }, notes: moneyNotes(facts),
+    };
+  },
+};
+
+/**
+ * Cash collected vs invoiced by month (PLM-132): 12 months of columns, the payments collected (as above) stacked by the
+ * company that received them, with what was invoiced (issued tax invoices' net) as the line. A column part opens its
+ * payments, a point of the line its invoices.
+ */
+const collectedInvoiced: KpiSpec = {
+  code: "collected_invoiced",
+  facts: async (ctx) => [...await receiptFacts(ctx), ...await readFacts(ctx, INVOICED_SQL)],
+  build: async (ctx, facts) => {
+    const collected = facts.filter((fact) => fact.dims.series === "collected"), invoiced = facts.filter((fact) => fact.dims.series === "invoiced");
+    const names = await companyNames(ctx);
+    const keys = monthKeys(ctx.filters);
+    const series = groupBy(collected, "entity", () => "", ctx.places).sort((a, b) => b.amount.cmp(a.amount) || a.key.localeCompare(b.key))
+      .map((group) => ({ id: group.key, label: names.get(group.key) ?? "" }));
+    const amount = sum(collected.filter(inPeriod).map((fact) => fact.amount)).toFixed(ctx.places);
+    return {
+      code: "collected_invoiced", unit: "money", value: amount, count: collected.filter(inPeriod).length, amount, targetable: false,
+      extra: { invoiced: sum(invoiced.filter(inPeriod).map((fact) => fact.amount)).toFixed(ctx.places) },
+      chart: { type: "columns", dimension: "month", seriesDimension: "entity", categories: categories(keys), series, values: grid(collected, "month", keys, series, "entity", "amount", ctx.places),
+        unit: "money", line: { id: "invoiced", label: "", values: keys.map((key) => sum(invoiced.filter((fact) => fact.dims.month === key).map((fact) => fact.amount)).toFixed(ctx.places)) } },
+      notes: moneyNotes(collected),
     };
   },
 };
@@ -224,38 +297,153 @@ const invoicesCollected: KpiSpec = {
 
 /**
  * Receivables ageing, live: what clients owe on every live job — the Owner overview's Outstanding balances (each
- * payment stage less the payments Finance verified against it, tax included) — by age past the due date. The overdue
- * list is the overdue buckets.
+ * payment stage less the payments Finance verified against it, tax included) — by age past the due date (not due,
+ * 1–30, 31–60, over 60 days, no due date), each column stacked by the company owed. The overdue list is the overdue
+ * buckets.
  */
 const receivables: KpiSpec = {
   code: "receivables_ageing",
   facts: async (ctx) => (await readFacts(ctx, OUTSTANDING_SQL)).map((fact) => ({ ...fact, dims: { ...fact.dims, overdue: fact.dims.age.startsWith("overdue") ? "1" : "0" } })),
-  build: (ctx, facts) => {
+  build: async (ctx, facts) => {
     const counted = facts.filter((fact) => fact.dims.currency === "base");
     const overdue = counted.filter((fact) => fact.dims.overdue === "1");
+    const names = await companyNames(ctx);
+    const series = groupBy(counted, "entity", () => "", ctx.places).sort((a, b) => b.amount.cmp(a.amount) || a.key.localeCompare(b.key))
+      .map((group) => ({ id: group.key, label: names.get(group.key) ?? "" }));
     return {
       code: "receivables_ageing", unit: "money", value: sum(counted.map((fact) => fact.amount)).toFixed(ctx.places), count: counted.length, targetable: false,
       extra: { overdue: sum(overdue.map((fact) => fact.amount)).toFixed(ctx.places), overdueCount: overdue.length },
-      chart: { type: "bars", dimension: "age", unit: "money", items: AGE_BUCKETS.map((age) => {
-        const bucket = counted.filter((fact) => fact.dims.age === age);
-        return { key: age, label: age, value: sum(bucket.map((fact) => fact.amount)).toFixed(ctx.places), count: bucket.length };
-      }) },
+      chart: { type: "columns", dimension: "age", seriesDimension: "entity", categories: AGE_BUCKETS.map((age) => ({ key: age, label: age })), series,
+        values: grid(counted, "age", [...AGE_BUCKETS], series, "entity", "amount", ctx.places), unit: "money" },
       notes: moneyNotes(facts, true),
     };
   },
 };
 
-export const PAYABLE_BUCKETS = ["overdue", "within_7", "within_30"] as const;
-export const PAYABLES_DAYS = 30;
+// ------------------------------------------------------------------ joinery balances due (PLM-132)
 
+export const BALANCE_DAYS = 14;
 
 /**
- * Payables due, live: approved supplier bills with a balance still to pay — the bill less the supplier payments
- * allocated to it and the retention still held, as Payables works it out — due within 30 days of today, or overdue.
- * Bills belong to the company, so they count only while no sales filter is on; the entity filter is the bill's company.
+ * Joinery balances due (PLM-067, PLM-132), live: the payment stages a work order names as falling due when it is ready
+ * (the balance before installation) on running projects, with what the client still owes on them (the stage less the
+ * payments Finance verified against it, tax included), due within the next two weeks or already overdue. Due on the
+ * stage's due date or the installation day, whichever is first; without either, on the latest planned ready date of
+ * its work orders.
+ */
+const BALANCES_SQL = `WITH ${P}, ${OPPORTUNITIES},
+named AS (
+  SELECT wo.project_id, wo.ready_payment_id AS payment_id, max(wo.planned_end) AS planned_ready
+    FROM work_orders wo CROSS JOIN p
+   WHERE wo.workspace_id = p.ws AND wo.ready_payment_id IS NOT NULL AND wo.status <> 'cancelled'
+   GROUP BY wo.project_id, wo.ready_payment_id
+),
+balance AS (
+  SELECT dp.id AS project_id, dp.reference AS project_reference, pay.case_id, pay.id, pay.title, pay.amount, c.opportunity_id, pay.legal_entity_id,
+         COALESCE(NULLIF(btrim(pay.currency), ''), btrim(q.currency)) AS cur,
+         COALESCE(least(pay.due_date, dp.installation_on), named.planned_ready) AS due_on,
+         COALESCE((SELECT sum(al.amount) FROM commercial_allocations al
+                     JOIN commercial_receipts r ON r.workspace_id = al.workspace_id AND r.case_id = al.case_id AND r.id = al.receipt_id AND r.status = 'finance_verified'
+                    WHERE al.workspace_id = pay.workspace_id AND al.case_id = pay.case_id AND al.payment_id = pay.id AND al.detail->>'reversedAt' IS NULL),
+                  CASE WHEN pay.status = 'verified' AND NOT COALESCE(jsonb_typeof(cc.content->'financeContext') = 'object', false) THEN pay.amount ELSE 0 END) AS paid
+    FROM named CROSS JOIN p
+    JOIN delivery_projects dp ON dp.workspace_id = p.ws AND dp.id = named.project_id AND dp.status IN ('active', 'on_hold')
+    JOIN pre_project_cases c ON c.workspace_id = p.ws AND c.id = dp.case_id
+    JOIN commercial_payments pay ON pay.workspace_id = p.ws AND pay.case_id = dp.case_id AND pay.id = named.payment_id
+    LEFT JOIN commercial_quotes q ON q.workspace_id = pay.workspace_id AND q.case_id = pay.case_id AND q.id = pay.source_quote_id
+    LEFT JOIN commercial_cases cc ON cc.workspace_id = pay.workspace_id AND cc.case_id = pay.case_id
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT balance.project_id::text || ':' || balance.id AS id, 'project_money' AS kind, balance.project_id::text AS parent_id, balance.project_reference AS reference,
+         balance.title, oc.client, oc.owner, oc.am::text AS owner_id, (balance.due_on::timestamp AT TIME ZONE p.tz) AS at,
+         ${inBase("greatest(balance.amount - balance.paid, 0)", "balance.cur")} AS amount,
+         CASE WHEN balance.due_on < p.today THEN (p.today - balance.due_on)::text END AS measure,
+         CASE WHEN balance.due_on < p.today THEN 'overdue' ELSE 'due' END AS detail,
+         jsonb_build_object('period', '1', 'due', CASE WHEN balance.due_on < p.today THEN 'overdue' ELSE 'due' END,
+           'currency', ${BASE("balance.cur")}, 'tax', 'gross') AS dims
+    FROM balance CROSS JOIN p JOIN oc ON oc.opportunity_id = balance.opportunity_id
+   WHERE balance.amount - balance.paid > 0 AND balance.due_on IS NOT NULL AND balance.due_on <= p.today + ${BALANCE_DAYS}
+     AND (p.entity_id IS NULL OR COALESCE(balance.legal_entity_id, oc.entity_id::text) = p.entity_id::text)
+) facts ORDER BY at, reference`;
+
+const joineryBalances: KpiSpec = {
+  code: "joinery_balances_due",
+  facts: (ctx) => readFacts(ctx, BALANCES_SQL),
+  build: (ctx, facts) => {
+    const counted = facts.filter((fact) => fact.dims.currency === "base");
+    const overdue = counted.filter((fact) => fact.dims.due === "overdue");
+    return {
+      code: "joinery_balances_due", unit: "money", value: sum(counted.map((fact) => fact.amount)).toFixed(ctx.places), count: counted.length, targetable: false,
+      extra: { overdue: overdue.length, overdueValue: sum(overdue.map((fact) => fact.amount)).toFixed(ctx.places) },
+      chart: { type: "list", bucket: "period=1" }, notes: moneyNotes(facts, true),
+    };
+  },
+};
+
+// ------------------------------------------------------------------ commissions (PLM-132)
+
+/**
+ * Commissions due (PLM-132): the commission lines of Deal Files approved in the period (the final lines Finance
+ * confirmed), each due to its recipient, by the deal's Account Manager; deals cancelled since are left out. In the
+ * accepted quotation's currency (else the deal's). What has been paid isn't recorded in Wodana, so it isn't shown
+ * (never as a zero).
+ */
+const COMMISSIONS_SQL = `WITH ${P}, ${OPPORTUNITIES}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT deal.case_id::text || ':' || line.position::text AS id, 'approval' AS kind, deal.case_id::text AS parent_id, deal.reference,
+         COALESCE(NULLIF(btrim(line.value->>'recipientName'), ''), deal.reference) AS title, oc.client, oc.owner, oc.am::text AS owner_id,
+         ${stamp("deal.detail->>'approvedAt'")} AS at,
+         CASE WHEN COALESCE(btrim(q.currency), oc.currency_code) = p.currency AND (line.value->>'amount') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+              THEN round((line.value->>'amount')::numeric, 6)::text END AS amount,
+         NULL::text AS measure, line.value->>'type' AS detail,
+         jsonb_build_object('period', '1', 'am', COALESCE(oc.am::text, 'none'), 'type', COALESCE(line.value->>'type', 'none'),
+           'currency', CASE WHEN COALESCE(btrim(q.currency), oc.currency_code) = p.currency THEN 'base' ELSE 'other' END, 'tax', 'net') AS dims
+    FROM commercial_deal_files deal CROSS JOIN p
+    JOIN pre_project_cases c ON c.workspace_id = deal.workspace_id AND c.id = deal.case_id
+    JOIN oc ON oc.opportunity_id = c.opportunity_id
+    LEFT JOIN commercial_quotes q ON q.workspace_id = deal.workspace_id AND q.case_id = deal.case_id AND q.id = deal.quote_id
+    CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(deal.detail->'commissionLines') = 'array' THEN deal.detail->'commissionLines' ELSE '[]'::jsonb END)
+      WITH ORDINALITY AS line(value, position)
+   WHERE deal.workspace_id = p.ws AND oc.cancelled_at IS NULL AND ${OPPORTUNITY_ENTITY}
+     AND ${stamp("deal.detail->>'approvedAt'")} >= p.from_at AND ${stamp("deal.detail->>'approvedAt'")} < p.to_at
+) facts ORDER BY at DESC, reference, id`;
+
+const commissions: KpiSpec = {
+  code: "commissions",
+  facts: (ctx) => readFacts(ctx, COMMISSIONS_SQL),
+  build: (ctx, facts) => {
+    const groups = groupBy(facts, "am", (fact) => fact.owner ?? "", ctx.places).sort((a, b) => b.amount.cmp(a.amount) || b.count - a.count || a.key.localeCompare(b.key));
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    return {
+      code: "commissions", unit: "money", value: amount, count: facts.length, amount, targetable: false,
+      chart: { type: "bars", dimension: "am", unit: "money", items: groups.map((group) => ({ key: group.key, label: group.key === "none" ? "" : group.label, value: group.amountText,
+        count: group.count })) },
+      notes: { ...moneyNotes(facts), notRecorded: "commission_payments" },
+    };
+  },
+};
+
+export const PAYABLE_BUCKETS = ["requested", "overdue", "within_7", "within_30"] as const;
+export const PAYABLES_DAYS = 30;
+
+/**
+ * Payables due, live, by due date: supplier payments Finance has been asked for and hasn't made or rejected yet (a
+ * payable Finance Request: what to pay now, due now — PLM-110), and approved supplier bills with a balance still to
+ * pay — the bill less the supplier payments allocated to it and the retention still held, as Payables works it out —
+ * due within 30 days of today, or overdue. Both belong to the company, so they count only while no sales filter is on;
+ * the entity filter is their company. Amounts include tax (what is owed).
  */
 const PAYABLES_SQL = `WITH ${P}
 SELECT ${FACT_COLUMNS} FROM (
+  SELECT r.id::text AS id, 'finance_request' AS kind, NULL::text AS parent_id, 'FR-' || lpad(r.number::text, 4, '0') AS reference, vendor.display_name AS title,
+         NULL::text AS client, NULL::text AS owner, NULL::text AS owner_id, r.created_at AS at, ${inBase("r.pay_now_amount", "r.currency")} AS amount,
+         NULL::text AS measure, 'requested' AS detail,
+         jsonb_build_object('period', '1', 'due', 'requested', 'currency', ${BASE("r.currency")}, 'tax', 'gross') AS dims
+    FROM finance_requests r CROSS JOIN p
+    JOIN workspace_vendors vendor ON vendor.workspace_id = r.workspace_id AND vendor.id = r.vendor_id
+   WHERE r.workspace_id = p.ws AND r.kind = 'payable' AND r.status IN ('new', 'in_progress', 'needs_info')
+     AND ${NO_SALES_FILTERS} AND (p.entity_id IS NULL OR r.legal_entity_id = p.entity_id)
+  UNION ALL
   SELECT bill.id::text AS id, 'bill' AS kind, NULL::text AS parent_id, bill.number AS reference, vendor.display_name AS title, NULL::text AS client, NULL::text AS owner,
          NULL::text AS owner_id, (bill.due_date::timestamp AT TIME ZONE p.tz) AS at,
          ${inBase("bill.total - coalesce(paid.amount, 0) - coalesce(kept.amount, 0) + coalesce(freed.amount, 0)", "bill.currency")} AS amount,
@@ -283,7 +471,7 @@ const payables: KpiSpec = {
     const overdue = counted.filter((fact) => fact.dims.due === "overdue");
     return {
       code: "payables_due", unit: "money", value: sum(counted.map((fact) => fact.amount)).toFixed(ctx.places), count: counted.length, targetable: false,
-      extra: { overdue: sum(overdue.map((fact) => fact.amount)).toFixed(ctx.places), overdueCount: overdue.length },
+      extra: { overdue: sum(overdue.map((fact) => fact.amount)).toFixed(ctx.places), overdueCount: overdue.length, requested: counted.filter((fact) => fact.dims.due === "requested").length },
       chart: { type: "bars", dimension: "due", unit: "money", items: PAYABLE_BUCKETS.map((due) => {
         const bucket = counted.filter((fact) => fact.dims.due === due);
         return { key: due, label: due, value: sum(bucket.map((fact) => fact.amount)).toFixed(ctx.places), count: bucket.length };
@@ -522,5 +710,5 @@ const attention: KpiSpec = {
     targetable: false, chart: { type: "list", bucket: "period=1" } }),
 };
 
-export const FINANCE: KpiSpec[] = [cashSide("cash_in", "in", "higher"), cashSide("cash_out", "out", "lower"), revenueMix, refunds, cashInOut, receivables, attention,
-  invoicesCollected, payables, projectMargins, requests, pettyCash];
+export const FINANCE: KpiSpec[] = [cashCollected, refunds, joineryBalances, payables, collectedInvoiced, receivables, requests, commissions,
+  cashSide("cash_in", "in", "higher"), cashSide("cash_out", "out", "lower"), revenueMix, cashInOut, attention, invoicesCollected, projectMargins, pettyCash];

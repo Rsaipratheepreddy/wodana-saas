@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { marginBand, portfolioMargin, salesFiltered } from "./finance";
-import { LOAD_WEEKS, foldSteps, groupCentres, loadWeeks, onTimeRate, spreadLoad } from "./production-delivery";
-import { byUrgency, change, matchBucket, monthKeys, parseBucket, weekKeys, type Fact } from "./report-kit";
+import { LOAD_WEEKS, foldSteps, fortnight, groupCentres, leadTime, leadTimeRate, loadWeeks, onTimeRate, snagAge, spreadLoad, workingDaysAfter } from "./production-delivery";
+import { byUrgency, calendarEntries, change, matchBucket, monthKeys, parseBucket, topGroups, weekKeys, type Fact } from "./report-kit";
 import { localDate, parseFilters, previousPeriod } from "./report-scope";
-import { sourceRates, topFive } from "./stock-marketing";
+import { groupPairs, sourceRates, topFive } from "./stock-marketing";
 import { TARGET_KPIS, achievement, parseTargetChanges, periodMonths, periodTarget, targetsComparable } from "./report-targets";
 import { groupSources } from "./sales-pipeline";
 import { weightedMargin } from "./owner-overview";
@@ -179,5 +179,58 @@ describe("operations KPI arithmetic", () => {
     const facts = ["a", "a", "b", "c", "d", "e", "f", "f"].map((type) => fact({ type }));
     expect(topFive(facts, "type", "typeGroup")).toEqual({ top: ["a", "f", "b", "c", "d"], hasOther: true });
     expect(facts.filter((item) => item.dims.typeGroup === "other").map((item) => item.dims.type)).toEqual(["e"]);
+  });
+});
+
+describe("dashboards 5–7 arithmetic (PLM-131, PLM-132, PLM-133)", () => {
+  const weekday = (day: string) => ![0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay());
+
+  it("lists this week and the next on the workspace's week start", () => {
+    // 20 Sep 2026 is a Sunday: a Monday week runs 14–27 Sep, a Sunday week from the 20th, a Saturday week from the 19th.
+    expect(fortnight("2026-09-20", 1)).toHaveLength(14);
+    expect([fortnight("2026-09-20", 1)[0], fortnight("2026-09-20", 1)[13]]).toEqual(["2026-09-14", "2026-09-27"]);
+    expect(fortnight("2026-09-20", 0)[0]).toBe("2026-09-20");
+    expect(fortnight("2026-09-20", 6)[0]).toBe("2026-09-19");
+  });
+
+  it("ages open snags in three buckets", () => {
+    expect([0, 7, 8, 30, 31, 400].map(snagAge)).toEqual(["days_0_7", "days_0_7", "days_8_30", "days_8_30", "days_31_plus", "days_31_plus"]);
+  });
+
+  it("counts a Furniture Only lead time in working days against its path's window", () => {
+    // Won Thursday 10 Sep; handed over Wednesday 16 Sep = 4 working days (Fri, Mon, Tue, Wed).
+    expect(workingDaysAfter(weekday, "2026-09-10", "2026-09-16")).toBe(4);
+    expect(workingDaysAfter(weekday, "2026-09-10", "2026-09-10")).toBe(0);
+    expect(workingDaysAfter(weekday, "2026-09-10", "2026-09-08")).toBe(0);
+    expect(leadTime(weekday, "2026-09-10", "2026-09-16", "2026-09-16")).toEqual({ actual: 4, target: 4, timing: "on_time" });
+    expect(leadTime(weekday, "2026-09-10", "2026-09-17", "2026-09-15")).toEqual({ actual: 5, target: 3, timing: "late" });
+    // Same day (take home now): 0 against 0.
+    expect(leadTime(weekday, "2026-09-10", "2026-09-10", "2026-09-10")).toEqual({ actual: 0, target: 0, timing: "on_time" });
+    // A path without a lead time, or no anchor recorded: measured where it can be, but out of the rate.
+    expect(leadTime(weekday, "2026-09-10", "2026-09-16", null)).toEqual({ actual: 4, target: null, timing: "no_target" });
+    expect(leadTime(weekday, null, "2026-09-16", "2026-09-16")).toEqual({ actual: null, target: null, timing: "no_target" });
+    expect(leadTimeRate([fact({ timing: "on_time" }), fact({ timing: "late" }), fact({ timing: "late" }), fact({ timing: "no_target" })])).toBe("33.3");
+    expect(leadTimeRate([fact({ timing: "no_target" })])).toBeNull();
+  });
+
+  it("keeps the biggest groups by count or by value, the rest as Other, the same for the chart and its records", () => {
+    const facts = [fact({ project: "a" }), fact({ project: "b" }), fact({ project: "b" }), fact({ project: "c" }, { amount: "900" })];
+    expect(topGroups(facts, "project", "projectGroup", 2)).toEqual({ top: ["b", "a"], hasOther: true });
+    expect(facts.map((item) => item.dims.projectGroup)).toEqual(["a", "b", "b", "other"]);
+    expect(topGroups(facts, "project", "byValue", 1, "amount")).toEqual({ top: ["c"], hasOther: true });
+  });
+
+  it("counts a calendar's entries per day and series", () => {
+    const facts = [fact({ day: "2026-09-16", kind: "delivery" }), fact({ day: "2026-09-16", kind: "delivery" }), fact({ day: "2026-09-16", kind: "installation" }),
+      fact({ day: "2026-09-03", kind: "delivery" })];
+    expect(calendarEntries(facts, "day", "kind")).toEqual([{ day: "2026-09-03", series: "delivery", count: 1 }, { day: "2026-09-16", series: "delivery", count: 2 },
+      { day: "2026-09-16", series: "installation", count: 1 }]);
+  });
+
+  it("ranks lead sources by Won value, then enquiries, and folds the rest", () => {
+    const facts = [fact({ sourceChannel: "website/form" }, { kind: "lead" }), fact({ sourceChannel: "website/form" }, { kind: "opportunity", amount: "500" }),
+      fact({ sourceChannel: "instagram/dm" }, { kind: "lead" }), fact({ sourceChannel: "instagram/dm" }, { kind: "lead" }), fact({ sourceChannel: "walk_in/showroom" }, { kind: "lead" })];
+    expect(groupPairs(facts, 2)).toEqual(["website/form", "instagram/dm", "other"]);
+    expect(facts.map((item) => item.dims.pairGroup)).toEqual(["website/form", "website/form", "instagram/dm", "instagram/dm", "other"]);
   });
 });

@@ -8,7 +8,7 @@ import { href } from "./report-scope";
  * drill-down list are all read from the same facts, so a bar always reconciles with the records it opens.
  */
 export type RecordKind = "lead" | "opportunity" | "case" | "project" | "quote" | "approval" | "invoice" | "receipt" | "refund"
-  | "project_money" | "handover" | "work_order" | "finance_request" | "bill" | "supplier_payment" | "petty_cash" | "stock_item" | "purchase_order";
+  | "project_money" | "handover" | "work_order" | "finance_request" | "bill" | "supplier_payment" | "petty_cash" | "stock_item" | "purchase_order" | "snag";
 
 export type Fact = {
   id: string;
@@ -37,7 +37,9 @@ export type Unit = "count" | "money" | "percent" | "hours" | "days";
 export type ChartSeries = { id: string; label: string };
 export type ChartCategory = { key: string; label: string };
 export type Chart =
-  | { type: "columns"; dimension: string; seriesDimension?: string; categories: ChartCategory[]; series: ChartSeries[]; values: string[][]; unit: Unit }
+  | { type: "columns"; dimension: string; seriesDimension?: string; categories: ChartCategory[]; series: ChartSeries[]; values: string[][]; unit: Unit;
+      /** A line over the columns in the same unit (e.g. invoiced over cash collected), one value per category; its points open `series=<id>`. */
+      line?: { id: string; label: string; values: Array<string | null> } }
   | { type: "lines"; dimension: string; categories: ChartCategory[]; series: ChartSeries[]; values: Array<Array<string | null>>; unit: Unit }
   | { type: "bars"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount?: string | null; target?: TargetResult | null;
       /** Figures shown beside the bar (e.g. a source's step rates), keyed by name. */
@@ -45,6 +47,8 @@ export type Chart =
   | { type: "donut"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount: string | null }>; unit: Unit }
   | { type: "funnel"; dimension: string; items: Array<{ key: string; label: string; value: string; rate: string | null }> }
   | { type: "gauge"; percent: string | null; target: string | null }
+  /** A month calendar (the logistics calendar): how many records fall on each day, per series; a day opens `day=<YYYY-MM-DD>`. */
+  | { type: "calendar"; dimension: string; seriesDimension: string; month: string; weekStart: number; entries: Array<{ day: string; series: string; count: number }> }
   | { type: "list"; bucket: string };
 
 export type TargetResult = {
@@ -75,7 +79,9 @@ export type Kpi = {
    * Records left out of money because they are in another currency, and money whose tax could not be separated;
    * `basis` says what a figure is read from (the Ledger's journals, or Wodana's own records).
    */
-  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string; basis?: "ledger" | "records" | "mixed" };
+  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string; basis?: "ledger" | "records" | "mixed";
+    /** Part of what the figure is about that isn't recorded in Wodana yet (e.g. commission payments), so it isn't shown as zero. */
+    notRecorded?: string };
   /** Extra figures shown with the main one (e.g. average deal size), decimal text keyed by name. */
   extra?: Record<string, string | number | null>;
   /**
@@ -91,8 +97,10 @@ export type Better = "higher" | "lower" | "neutral";
 export type Dashboard = {
   dashboard: string; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[];
   /** Which KPIs the page shows as figures and charts, and its "needs attention" list (its first rows). */
-  layout?: { tiles: string[]; charts: string[]; attention: string | null };
+  layout?: { tiles: string[]; charts: string[]; attention: string | null; lists?: string[] };
   attention?: { kpi: string; total: number; records: RecordRow[] } | null;
+  /** The layout's lists (a KPI that is a list on the dashboard, e.g. payables by due date): their first rows. */
+  lists?: Array<{ kpi: string; total: number; records: RecordRow[] }>;
 };
 
 /** (now − before) ÷ |before| × 100, one decimal; null when there's no figure before or it was zero. */
@@ -166,6 +174,39 @@ export function groupBy(facts: Fact[], dimension: string, label: (fact: Fact) =>
   return [...groups.values()].map((group) => ({ ...group, amountText: group.amount.toFixed(places) }));
 }
 
+/**
+ * Keeps the `keep` biggest groups of a dimension (by amount when `by` is "amount", else by count; ties by key) as
+ * their own `into` value and folds the rest into "other", so a chart and its drill-down use the same groups.
+ */
+export function topGroups(facts: Fact[], dimension: string, into: string, keep: number, by: "count" | "amount" = "count") {
+  const weights = new Map<string, { count: number; amount: Dec }>();
+  for (const fact of facts) {
+    const key = fact.dims[dimension] ?? "none";
+    const weight = weights.get(key) ?? { count: 0, amount: Dec.ZERO };
+    weight.count += 1;
+    if (fact.amount) weight.amount = weight.amount.add(fact.amount);
+    weights.set(key, weight);
+  }
+  const top = [...weights.entries()]
+    .sort((a, b) => (by === "amount" ? b[1].amount.cmp(a[1].amount) : 0) || b[1].count - a[1].count || a[0].localeCompare(b[0]))
+    .slice(0, keep).map(([key]) => key);
+  for (const fact of facts) fact.dims[into] = top.includes(fact.dims[dimension] ?? "none") ? fact.dims[dimension] ?? "none" : "other";
+  return { top, hasOther: facts.some((fact) => fact.dims[into] === "other") };
+}
+
+/** How many facts fall on each day per series (a calendar's entries), by day then series. */
+export function calendarEntries(facts: Fact[], dayDimension: string, seriesDimension: string) {
+  const counts = new Map<string, { day: string; series: string; count: number }>();
+  for (const fact of facts) {
+    const day = fact.dims[dayDimension], series = fact.dims[seriesDimension];
+    if (!day || !series) continue;
+    const entry = counts.get(`${day}|${series}`) ?? { day, series, count: 0 };
+    entry.count += 1;
+    counts.set(`${day}|${series}`, entry);
+  }
+  return [...counts.values()].sort((a, b) => a.day.localeCompare(b.day) || a.series.localeCompare(b.series));
+}
+
 // ------------------------------------------------------------------ drill-down
 
 /** Bucket text from a chart click: `dimension=value;dimension=value` (values are dimension values, never SQL). */
@@ -209,6 +250,7 @@ export function recordHref(fact: Pick<Fact, "kind" | "id" | "parentId">): string
     case "petty_cash": return href.pettyCash(id);
     case "stock_item": return href.stockItem(id);
     case "purchase_order": return href.purchaseOrder(id);
+    case "snag": return href.snag(parentId ?? "", id);
     default: return href.case(parentId ?? id);
   }
 }

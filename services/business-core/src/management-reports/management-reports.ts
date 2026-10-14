@@ -10,7 +10,7 @@ import { type KpiSpec, type ReportContext, reportContext } from "./report-contex
 import { type Dashboard, type Kpi, type RecordRow, change, matchBucket, parseBucket, recordRow } from "./report-kit";
 import { localDate, parseFilters, previousPeriod } from "./report-scope";
 import { SALES_PIPELINE } from "./sales-pipeline";
-import { MARKETING, PURCHASING_READ, STOCK, STOCK_READ } from "./stock-marketing";
+import { MARKETING, MARKETING_READ, STOCK, STOCK_READ } from "./stock-marketing";
 
 type Db = Pick<PoolClient, "query">;
 type Can = (permission: string) => boolean;
@@ -18,8 +18,8 @@ type Can = (permission: string) => boolean;
 /**
  * Management dashboards (PLM-134), each one read endpoint computing its KPIs server-side over the business tables in
  * the member's tenant transaction: Overview (the landing), Sales and marketing (lead response and the marketing
- * figures belong to the same funnel, so they are one tab), Design, Production and delivery, Finance and Stock. Every
- * KPI a dashboard knows can be opened (its records); the layout says which are shown.
+ * figures belong to the same funnel, so they are one tab), Design, Production and delivery, Finance and Stock and
+ * marketing. Every KPI a dashboard knows can be opened (its records); the layout says which are shown.
  */
 export const DASHBOARDS: Record<string, KpiSpec[]> = {
   "owner-overview": OWNER_OVERVIEW,
@@ -32,19 +32,25 @@ export const DASHBOARDS: Record<string, KpiSpec[]> = {
 
 /**
  * One calm page per dashboard: at most four figures for the period (each against the period before, each opening its
- * records), at most two charts, and at most one "needs attention" list (its first five, most urgent first). What a
- * dashboard knows beyond this stays reachable through the records.
+ * records), its charts, and its lists — at most one "needs attention" list, and the KPIs that are lists themselves
+ * (their first five, each opening its record). What a dashboard knows beyond this stays reachable through the records.
  */
-export type Layout = { tiles: string[]; charts: string[]; attention: string | null };
+export type Layout = { tiles: string[]; charts: string[]; attention: string | null; lists?: string[] };
+/**
+ * Dashboards 5–7 show every KPI of Palm's Management Dashboards tab (PLM-131/132/133) with its graph: the figures with a
+ * target or a red tile as tiles, the rest as charts, and the KPIs that are lists ("Payables due", "Low stock") as lists.
+ */
 export const LAYOUTS: Record<string, Layout> = {
   "owner-overview": { tiles: ["sales_won", "revenue_collected", "deals_closed", "profit_margin"], charts: ["sales_won", "active_projects"], attention: "delayed_items" },
   "sales-pipeline": { tiles: ["new_leads", "conversion_funnel", "response_rate", "lost"], charts: ["new_leads", "won_by_source", "spam_by_source"], attention: "sales_attention" },
   "design-projects": { tiles: ["package_mix", "designs_approved", "design_to_proposal2_days", "design_to_proposal2_rate"], charts: ["design_stage", "designer_workload"],
     attention: "design_overdue" },
-  "production-delivery": { tiles: ["work_orders_made", "on_time_rate", "work_orders_delivered", "installations_done"], charts: ["work_orders_status", "factory_load"],
-    attention: "production_attention" },
-  finance: { tiles: ["cash_in", "cash_out", "revenue_mix", "refunds"], charts: ["cash_in_out", "receivables_ageing"], attention: "finance_attention" },
-  stock: { tiles: ["stock_value", "purchases", "stock_used"], charts: ["reserved_available", "slow_moving"], attention: "low_stock" },
+  "production-delivery": { tiles: ["late_work_orders", "ready_upcoming", "open_snags", "fo_lead_time"],
+    charts: ["work_orders_status", "ready_upcoming", "bookings", "open_snags", "fo_lead_time"], attention: "production_attention" },
+  finance: { tiles: ["cash_collected", "refunds", "joinery_balances_due", "payables_due"],
+    charts: ["collected_invoiced", "receivables_ageing", "finance_requests_open", "refunds", "commissions"], attention: null, lists: ["joinery_balances_due", "payables_due"] },
+  stock: { tiles: ["low_stock", "reserved_available", "best_sellers", "lead_source_won"],
+    charts: ["reserved_available", "best_sellers", "lead_sources", "form_links", "spam_by_source"], attention: null, lists: ["low_stock"] },
 };
 
 /** Addresses of dashboards that were folded into another (kept so old links still open). */
@@ -58,7 +64,8 @@ export const MOVED: Record<string, string> = { "lead-response": "sales-pipeline"
 export const DASHBOARD_ACCESS: Record<string, string[]> = {
   "production-delivery": ["factory.view", "factory.manage", "projects.view", "projects.manage", "logistics.manage"],
   finance: ["payables.view", "receivables.view", "accounting.manage"],
-  stock: [...STOCK_READ, ...PURCHASING_READ],
+  // Stock and marketing: its figures are stock's or marketing's (purchases stay reachable through the records).
+  stock: [...STOCK_READ, ...MARKETING_READ],
 };
 
 /** Every permission a dashboard or one of its figures asks for (read once per request). */
@@ -93,7 +100,8 @@ export async function readDashboard(db: Db, workspaceId: string, requested: stri
   const name = dashboardName(requested);
   const all = dashboardSpecs(name).filter((spec) => visible(spec, can));
   const layout = LAYOUTS[name];
-  const shown = new Set([...layout.tiles, ...layout.charts, ...(layout.attention ? [layout.attention] : [])]);
+  const listed = layout.lists ?? [];
+  const shown = new Set([...layout.tiles, ...layout.charts, ...listed, ...(layout.attention ? [layout.attention] : [])]);
   const specs = scope === "all" ? all : all.filter((spec) => shown.has(spec.code));
   const timeZone = await workspaceZone(db, workspaceId);
   const filters = parseFilters(query, localDate(now, timeZone));
@@ -102,6 +110,7 @@ export async function readDashboard(db: Db, workspaceId: string, requested: stri
   let earlier: ReportContext | null = null;
   const kpis: Kpi[] = [];
   let attention: Dashboard["attention"] = null;
+  const lists = new Map<string, NonNullable<Dashboard["lists"]>[number]>();
   for (const spec of specs) {
     const facts = await spec.facts(ctx);
     const kpi = await spec.build(ctx, facts);
@@ -110,15 +119,19 @@ export async function readDashboard(db: Db, workspaceId: string, requested: stri
       const then = await spec.build(earlier, await spec.facts(earlier));
       kpi.previous = { ...before, value: then.value, change: change(kpi.value, then.value), better: spec.compare };
     }
-    if (spec.code === layout.attention) attention = { kpi: spec.code, total: facts.length, records: facts.slice(0, ATTENTION_ROWS).map(recordRow) as RecordRow[] };
+    const first = () => ({ kpi: spec.code, total: facts.length, records: facts.slice(0, ATTENTION_ROWS).map(recordRow) as RecordRow[] });
+    if (spec.code === layout.attention) attention = first();
+    if (listed.includes(spec.code)) lists.set(spec.code, first());
     kpis.push(kpi);
   }
   const visibleCodes = new Set(kpis.map((kpi) => kpi.code));
+  const shownLists = listed.filter((code) => visibleCodes.has(code));
   return {
     dashboard: name, currency: ctx.currency, timeZone: ctx.timeZone, from: filters.from, to: filters.to, generatedAt: now.toISOString(), kpis,
     layout: { tiles: layout.tiles.filter((code) => visibleCodes.has(code)), charts: layout.charts.filter((code) => visibleCodes.has(code)),
-      attention: layout.attention && visibleCodes.has(layout.attention) ? layout.attention : null },
+      attention: layout.attention && visibleCodes.has(layout.attention) ? layout.attention : null, ...(layout.lists ? { lists: shownLists } : {}) },
     attention,
+    ...(layout.lists ? { lists: shownLists.map((code) => lists.get(code)!) } : {}),
   };
 }
 

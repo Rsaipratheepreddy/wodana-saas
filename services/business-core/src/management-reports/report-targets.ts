@@ -33,11 +33,16 @@ export const TARGET_KPIS: Record<string, TargetDefinition> = {
   design_to_proposal2_rate: { unit: "percent", direction: "higher", additive: false, perMember: false },
   design_to_proposal2_days: { unit: "days", direction: "lower", additive: false, perMember: false },
   on_time_rate: { unit: "percent", direction: "higher", additive: false, perMember: false },
+  /** Cash collected (client payments Finance verified, before tax) on the Finance dashboard. */
   cash_in: { unit: "money", direction: "higher", additive: true, perMember: false },
+  /** PLM-131: Furniture Only orders handed over within their path's lead time, as a share of those with one. */
+  fo_lead_time_rate: { unit: "percent", direction: "higher", additive: false, perMember: false },
+  /** PLM-133: the period's Won value from enquiries (deals with a lead source). */
+  lead_source_won_value: { unit: "money", direction: "higher", additive: true, perMember: false },
 };
 
 /** Targets no dashboard shows any more (the calm layouts): kept for what was saved, not offered in Settings. */
-export const UNSHOWN_TARGETS = new Set(["sales_won_count", "net_revenue", "first_response_hours"]);
+export const UNSHOWN_TARGETS = new Set(["sales_won_count", "net_revenue", "first_response_hours", "on_time_rate"]);
 
 export type TargetRow = { id: string; kpi: string; month: string; membershipId: string | null; target: string; version: number };
 
