@@ -25,7 +25,7 @@ import { useSitesToday } from '../projects/api';
 import { useDeliveries } from '../purchasing/api';
 import { WoddyButton } from '../woddy/woddy-screen';
 import { useHomeMetrics, useHomeSummary, useMyDay, useRefetchOnFocus } from './api';
-import { expectsNumbers, figuresFor, lensFor, showsPipeline, STAGE_LABEL, type Figure } from './home-model';
+import { expectsNumbers, figuresFor, lensFor, reportIsLate, showsPipeline, STAGE_LABEL, type Figure } from './home-model';
 import { topItems } from './my-day-model';
 import { MyDayRow, useZonedFormat } from './my-day-screen';
 
@@ -90,9 +90,9 @@ export function TodayScreen() {
   const upcoming = (summary.data?.upcoming ?? []).slice(0, 3);
   const expected = (deliveries.data?.expected ?? []).filter((order) => !order.due || order.due <= today).slice(0, 3);
   const blocked = outbox.items.filter((item) => item.status === 'blocked');
-  // My sites first: today's report with one tap; after 19:00 a missing report turns amber.
+  // My sites first: today's report with one tap; once the workspace's daily report is due, a missing report turns amber.
   const mySites = sites.data?.sites ?? [];
-  const late = (sites.data?.hour ?? 0) >= 19;
+  const late = reportIsLate(sites.data?.hour, sites.data?.dueTime);
   const nothing = !needs.length && !approvals && !waiting.count && !expected.length && !(inbox.unread > 0) && !mySites.length && !upcoming.length;
   const failed = summary.error ?? (myDayMissing ? null : myDay.error) ?? (hrms ? current.error : null);
   // Something the phone has no screen for is opened on the web.
