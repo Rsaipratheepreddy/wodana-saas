@@ -94,7 +94,9 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
   // A page that is one of its parent's tabs (Home › Approvals, Sales › Enquiries, People › Teams, a Settings page) is
   // named by its tab, so the breadcrumb ends at the parent instead of saying the name twice.
   // (Follow-ups and Attachments are Sales pages without a tab of their own.)
-  const tabbed = route.homeTab || (!route.record && ["sales", "people", "settings"].includes(route.trail.at(-1)?.id ?? "") && !["follow-ups", "attachments"].includes(route.id));
+  const tabbed = route.homeTab || (!route.record && ["sales", "people", "settings", "factory"].includes(route.trail.at(-1)?.id ?? "") && !["follow-ups", "attachments"].includes(route.id));
+  // A record page that shows its own name as its title (a project) ends the breadcrumb at the way back.
+  const ownTitle = projectPage && Boolean(breadcrumb?.ownTitle);
   const crumbs = tabbed ? route.trail.slice(0, -1) : route.trail;
   const currentCrumb = tabbed ? t((route.trail.at(-1)?.label ?? route.label) as never) : pageTitle;
   const homeTabList = route.id === "home" || route.homeTab ? homeTabs(modules) : [];
@@ -182,12 +184,13 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
           >
             <Menu size={19} />
           </button>
-          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label={t("All planning")} className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>{t("Planning")}</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
+          {/* The case's Overview names the case in its own header; the other sections show it here. */}
+          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label={t("All planning")} className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>{t("Planning")}</span></Link>{selectedCase && preProjectRoute.section !== "overview" ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? t("Back to quotations") : t("Back to planning")) : t("Back to CRM")}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
-          <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs} data-topbar-tabs={homeTabList.length > 1 || peopleTabList.length > 1 || undefined}>
+          <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs} data-own-title={ownTitle || undefined} data-topbar-tabs={homeTabList.length > 1 || peopleTabList.length > 1 || undefined}>
             <ol>
-              {crumbs.map((crumb) => <li key={crumb.id}><Link href={crumb.id === "settings" ? settingsHref : crumb.id === "people" ? people[0]?.href ?? crumb.href : crumb.href}>{t(crumb.label as never)}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li>)}
-              <li aria-current="page">{route.record && !recordTitle ? <span aria-busy="true">{currentCrumb}</span> : currentCrumb}</li>
+              {crumbs.map((crumb, index) => <li key={crumb.id}><Link href={crumb.id === "settings" ? settingsHref : crumb.id === "people" ? people[0]?.href ?? crumb.href : crumb.href}>{t(crumb.label as never)}</Link>{ownTitle && index === crumbs.length - 1 ? null : <ChevronRight aria-hidden="true" data-directional="true" size={13} />}</li>)}
+              {ownTitle ? null : <li aria-current="page">{route.record && !recordTitle ? <span aria-busy="true">{currentCrumb}</span> : currentCrumb}</li>}
             </ol>
           </nav>
           {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} counts={{ approvals: waiting }} /> : null}

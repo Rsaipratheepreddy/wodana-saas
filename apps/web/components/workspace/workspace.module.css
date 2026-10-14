@@ -1356,6 +1356,8 @@
   /* A phone names the page by the breadcrumb's last item alone; Home's and People's tabs name theirs. */
   .breadcrumbs { padding-inline-start: 0; }
   .breadcrumbs li:not([aria-current]), .breadcrumbs[data-topbar-tabs] { display: none; }
+  /* A record that names itself (a project) keeps the way back instead. */
+  .breadcrumbs[data-own-title] li:last-child { display: inline-flex; }
   .woddyControl { margin-inline-start: auto; }
   .topbar { gap: var(--wd-space-1-5); }
   /* On a phone the case keeps its name (the client's name gives way) beside the global utilities. */

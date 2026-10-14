@@ -264,7 +264,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       <SettingsPage
         actions={initialData.canCreate ? <Button onPress={() => setDialog({ mode: "new" })} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />{t("New role")}</Button> : null}
         aria-label={t("Roles & permissions")}
-        title={t("Roles & permissions")}
+        title={t("Roles")}
         width="wide"
       >
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}

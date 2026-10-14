@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, Button, DataGrid, localeWorkingDays, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, localeWorkingDays, PageTools, useDesignSystem, type DataGridColumn } from "@/design-system";
 import type { CrmSlaPolicy, LeadsPageData } from "@/lib/crm/leads";
 import type { RecordData } from "@/lib/crm/client";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -123,12 +123,13 @@ export function LeadResponseSla({ initialData }: { initialData: LeadsPageData })
   ];
 
   return <section aria-label={t("Response SLA")} className={styles.page}>
-    <header className={styles.toolbar} data-actions-only>
+    {/* In the Settings tabs' row: the actions add no row of their own. */}
+    <PageTools><header className={styles.toolbar} data-actions-only>
       <div className={styles.actions}>
         <Button size="compact" onPress={refresh}>{t("Refresh")}</Button>
         <Button size="compact" variant="primary" onPress={() => setAction(eventPolicy(t, week))}>{t("Add response target")}</Button>
       </div>
-    </header>
+    </header></PageTools>
     <DataGrid ariaLabel={t("Response SLA policies")} columns={columns} data={policies} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No response targets yet")} emptyDescription={t("Set how fast a new enquiry must get its first contact.")} />
     <ResourceState loading={loading} failure={failure} retry={refresh} />
     {!loading && !failure && policies.length ? <dl className={styles.health} aria-label={t("Response SLA health")}><div><dt>{t("Within target")}</dt><dd>{reportCount(health.withinTarget, locale)}</dd></div><div><dt>{t("Breached")}</dt><dd>{reportCount(health.breached, locale)}</dd></div><div><dt>{t("Average first response")}</dt><dd>{average}</dd></div></dl> : null}

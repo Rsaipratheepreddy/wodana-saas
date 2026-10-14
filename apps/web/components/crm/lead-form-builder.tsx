@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { ArrowLeft, Copy, Download, Eye, FileText, LayoutTemplate, Pencil, Plus, QrCode, RefreshCw, Trash2, Upload } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, EmptyState, FormSection, IconButton, InspectorSheet, isNoAccessError, NoAccessNotice, SearchInput, SegmentedControl, SelectField, Tabs, formatDate, useConfirmationDialog, useDesignSystem, useMediaQuery, type DataGridColumn, type StatusTone } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, EmptyState, FormSection, IconButton, InspectorSheet, isNoAccessError, NoAccessNotice, PageTools, SearchInput, SegmentedControl, SelectField, Tabs, formatDate, useConfirmationDialog, useDesignSystem, useMediaQuery, type DataGridColumn, type StatusTone } from "@/design-system";
 import { leadOptionLabel } from "@/lib/crm/lead-options";
 import { translateKnown } from "@/lib/i18n/keys";
 import type { LeadsPageData } from "@/lib/crm/leads";
@@ -249,7 +249,8 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
     {error && (isNoAccessError(error) ? <NoAccessNotice area={t("Forms")} /> : <Callout title={t("Forms")} tone="danger">{error}{!record && !loading && <Button size="compact" onPress={() => { setLoading(true); setError(""); setReload(value => value + 1); }}>{t("Retry loading forms")}</Button>}</Callout>)}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {!record || !draft ? <>
-      <div className={styles.formListToolbar}><SearchInput label={t("Search forms")} value={search} onChange={setSearch} /><Button variant="primary" size="compact" onPress={() => setPicking(true)} isDisabled={busy}><Plus size={15} />{t("New form")}</Button></div>
+      {/* In the Campaigns tabs' row: search and New form add no row of their own. */}
+      <PageTools><div className={styles.formListToolbar}><SearchInput label={t("Search forms")} value={search} onChange={setSearch} /><Button variant="primary" size="compact" onPress={() => setPicking(true)} isDisabled={busy}><Plus size={15} />{t("New form")}</Button></div></PageTools>
       <DataGrid ariaLabel={t("Enquiry forms")} columns={formColumns} data={visibleForms} getRowId={form => form.id} onRowAction={open} isLoading={loading} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} keepEmptyTable={false}
         emptyContent={forms.length ? <EmptyState title={t("No matching forms.")} description={t("Try another search.")} />
           : <EmptyState title={t("No forms yet")} description={t("Start from a template; every submission becomes an enquiry.")} action={<Button size="compact" variant="primary" onPress={() => void create()}>{t("Create default enquiry form")}</Button>} />} />

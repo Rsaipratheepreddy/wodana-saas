@@ -3,7 +3,7 @@ import { RecordHistory } from "../history/record-history";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { useWoddyRecord } from "@/components/crm/woddy-chat";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -49,15 +49,23 @@ import { PreExecutionFlow } from "./pre-execution-flow";
 import { QuotationBuilderPreview } from "./quotation-builder-preview";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
-/** Each section's one page title (PageShell). */
+/** A section's page; inside another page (an approval's review) it has no title of its own. */
+function SectionPage({ nested, title, children }: { nested: boolean; title: string; children: ReactNode }) {
+  return nested ? <>{children}</> : <PageShell kind="record" title={title}>{children}</PageShell>;
+}
+
+/**
+ * Each section's one page title (PageShell): the name of its tab in the case's bar (Agreement, Payments, Client
+ * access…), so the bar names it once and the title stays for screen readers.
+ */
 const labels: Record<string, MessageKey> = {
-  "client-portal": tKey("Client portal"),
+  "client-portal": tKey("Client access"),
   boq: tKey("Design Quote"),
-  quotations: tKey("Quotations"),
-  contracts: tKey("Agreements & Payments"),
-  "payment-plan": tKey("Agreements & Payments"),
+  quotations: tKey("Quotes"),
+  contracts: tKey("Agreement"),
+  "payment-plan": tKey("Payments"),
   variations: tKey("Change requests"),
-  approvals: tKey("Approvals & release"),
+  approvals: tKey("Approvals"),
   "execution-release": tKey("Release readiness"),
 };
 export function CommercialPage({
@@ -261,7 +269,7 @@ export function CommercialPage({
     showReadinessFlow = ["approvals", "execution-release"].includes(section);
   return (
     <DesignSystemProvider {...design} className={colors.theme}>
-      <PageShell kind="record" title={t(labels[section] ?? labels.quotations)}>
+      <SectionPage nested={reviewOnly} title={t(labels[section] ?? labels.quotations)}>
       <section
         className={`${s.page} ${s.inShell} ${reviewOnly ? s.reviewPage : ""} ${section === "quotations" && !quotationId ? s.quotationTablePage : ""} ${!reviewOnly && section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
       >
@@ -578,7 +586,7 @@ export function CommercialPage({
         </FormDialog>
         {confirmationDialog}
       </section>
-      </PageShell>
+      </SectionPage>
     </DesignSystemProvider>
   );
 }

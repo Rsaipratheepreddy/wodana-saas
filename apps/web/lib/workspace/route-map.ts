@@ -125,7 +125,8 @@ function routeTable() {
     { id: "receive", label: "Receive", href: "/workspace/receive", parent: "purchasing", paths: ["/workspace/receive"] },
     { id: "inventory", label: "Inventory", href: "/workspace/inventory", nav: "inventory", paths: ["/workspace/inventory"] },
     { id: "factory", label: "Factory", href: "/workspace/factory", nav: "factory", paths: ["/workspace/factory"] },
-    { id: "logistics-calendar", label: "Logistics calendar", href: "/workspace/factory/calendar", nav: "logistics-calendar", paths: ["/workspace/factory/calendar"] },
+    // Factory's Calendar tab (its own sidebar entry, Logistics): the breadcrumb says Factory and the tab names it.
+    { id: "logistics-calendar", label: "Logistics calendar", href: "/workspace/factory/calendar", parent: "factory", nav: "logistics-calendar", paths: ["/workspace/factory/calendar"] },
 
     // Company: People opens on the directory; teams, roles, and attendance and leave are its other areas.
     { id: "people", label: "People", href: "/workspace/members", nav: "team", paths: ["/workspace/members"] },

@@ -134,7 +134,8 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   return <PageShell title={t("Catalog")} action={canManage ? <Button onPress={() => setDialog("item")} variant="primary"><Plus aria-hidden="true" size={15} />{t("Add item")}</Button> : null}>
     <div className={styles.layout}>
       <nav aria-label={t("Categories")} className={styles.tree}>
-        {catalogs.length > 1 ? <SelectField aria-label={t("Catalog")} items={catalogs.map((entry) => ({ id: entry.id, label: entry.name }))} label={t("Catalog")} onSelectionChange={(key) => { setCatalogId(String(key)); setCategoryId(null); }} selectedKey={catalogId} /> : null}
+        {/* The page is Catalog already: the choice of catalog says its name only to screen readers. */}
+        {catalogs.length > 1 ? <SelectField aria-label={t("Catalog")} items={catalogs.map((entry) => ({ id: entry.id, label: entry.name }))} label={<span className="wd-visually-hidden">{t("Catalog")}</span>} onSelectionChange={(key) => { setCatalogId(String(key)); setCategoryId(null); }} selectedKey={catalogId} /> : null}
         <CatalogCategoryTree canManage={canManage} catalogId={catalogId} categories={structure?.categories ?? []} onChanged={() => void loadItems()} onSelect={setCategoryId}
           selectedId={categoryId} workspaceId={workspaceId} />
       </nav>

@@ -280,7 +280,7 @@ describe("ordering", () => {
     page("to-order");
     const tabs = await screen.findByRole("tablist", { name: "What to order" }).catch(() => screen.findByRole("group", { name: "What to order" }));
     expect(within(tabs).getAllByRole("button").concat(within(tabs).queryAllByRole("tab")).map((tab) => tab.textContent?.replace(/\d+$/, "").trim()))
-      .toEqual(expect.arrayContaining(["To order", "Everything"]));
+      .toEqual(expect.arrayContaining(["Ready", "Everything"]));
     expect(within(tabs).queryByText("Late to order")).not.toBeInTheDocument();
     expect(within(tabs).queryByText("Client sign-off")).not.toBeInTheDocument();
   });
@@ -298,7 +298,7 @@ describe("ordering", () => {
     const waiting = await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
     expect(waiting).toHaveTextContent("Oak veneer");
     expect(within(waiting).getByRole("link", { name: "Get sign-off" })).toHaveAttribute("href", "/workspace/projects/p2/scope");
-    await userEvent.click(screen.getByRole("button", { name: /^To order\s*2$/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Ready\s*2$/ }));
     await userEvent.click(within(await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" })))
       .getByRole("checkbox", { name: "Select PRJ-0007 Calacatta slab" }));
     const table2 = await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
@@ -332,7 +332,7 @@ describe("ordering", () => {
     const waiting = await grid();
     expect(waiting).toHaveTextContent("Waiting for the client's payment");
     expect(within(waiting).getByRole("link", { name: "Open payments" })).toHaveAttribute("href", "/workspace/projects/p2/money");
-    await userEvent.click(screen.getByRole("button", { name: /^To order\s*2$/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Ready\s*2$/ }));
     await userEvent.click(within(await grid()).getByRole("checkbox", { name: "Select PRJ-0007 Calacatta slab" }));
     await userEvent.click(within(await grid()).getByRole("checkbox", { name: "Select PRJ-0007 Brass handles" }));
     await userEvent.click(screen.getByRole("button", { name: "Orders by supplier" }));

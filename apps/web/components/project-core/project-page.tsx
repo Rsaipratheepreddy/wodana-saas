@@ -67,7 +67,8 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
   const [overview, setOverview] = useState<Overview | null>(null);
   const [overviewError, setOverviewError] = useState("");
   const panel = useDetailsPanel();
-  useWorkspaceBreadcrumb(detail ? detail.project.name : undefined);
+  // The project's header carries its name, so the breadcrumb is just the way back to Projects.
+  useWorkspaceBreadcrumb(detail ? detail.project.name : undefined, { ownTitle: true });
 
   const load = useCallback(async () => {
     try { setDetail(await api.get(projectId)); setError(""); setRefresh((value) => value + 1); }

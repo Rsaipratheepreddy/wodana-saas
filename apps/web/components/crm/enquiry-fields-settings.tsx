@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Lock, Plus, Trash2 } from "lucide-react";
-import { Button, ConfirmationDialog, DataGrid, EmptyState, IconButton, InlineNotice, InspectorSheet, RadioSet, SearchInput, SelectField, Switch, TextInput, type DataGridColumn } from "@/design-system";
+import { Button, ConfirmationDialog, DataGrid, EmptyState, IconButton, InlineNotice, InspectorSheet, PageTools, RadioSet, SearchInput, SelectField, Switch, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey } from "@/lib/i18n/keys";
 import { UNRESOLVED_ENQUIRY_TYPE_ID, type LeadOptions, type RequiredAt } from "@/lib/crm/lead-options";
@@ -117,11 +117,12 @@ export function EnquiryFieldsSettings({ workspaceId, leadOptions, regionLabel, o
   ];
 
   return <section className={styles.page} aria-label={t("Enquiry fields")}>
-    <div className={styles.toolbar}>
+    {/* In the Settings tabs' row: search and New field add no row of their own. */}
+    <PageTools><div className={styles.toolbar}>
       <SearchInput label={t("Search fields")} placeholder={t("Search fields")} value={search} onChange={setSearch} />
       <span className={styles.spacer} />
       <Button size="compact" variant="primary" isDisabled={!state} onPress={() => setOpen("new")}><Plus aria-hidden="true" size={14} />{t("New field")}</Button>
-    </div>
+    </div></PageTools>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {failure ? <EmptyState illustration="error" title={t("Fields could not load")} description={failure} action={<Button size="compact" onPress={() => setReload((value) => value + 1)}>{t("Retry")}</Button>} />
       : <DataGrid ariaLabel={t("Enquiry fields")} columns={columns} data={state ? rows : []} getRowId={(field) => field.key} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false}

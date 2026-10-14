@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * The end of the tabs row, where the page's list puts its toolbar (search, Filter, ⋯) so the tabs and the tools
@@ -43,6 +44,15 @@ export function PageChrome({ names, children }: { names: ReadonlyArray<string | 
 export function useNamedByChrome(title: ReactNode) {
   const names = useContext(PageChromeContext);
   return Boolean(names && typeof title === "string" && names.includes(nameKey(title)));
+}
+
+/**
+ * A section's own tools (search, its one action) moved up into the page's row when the page offers it, so a section
+ * under the page's tabs adds no row of its own; rendered in place otherwise.
+ */
+export function PageTools({ children }: { children: ReactNode }) {
+  const slot = usePageToolbarElement();
+  return slot ? createPortal(children, slot) : <>{children}</>;
 }
 
 /** How a page spaces its sections: one gap scale per page type (§5c D6). */

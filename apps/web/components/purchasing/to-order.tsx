@@ -154,7 +154,8 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   return <div className={styles.stack} data-tour="purchasing-to-order">
     <div className={styles.toolbar}>
       <ListTabs label={t("What to order")} value={view} onChange={(next) => { setView(next); setSelected(new Set()); }} items={[
-        { id: "order", label: t("To order"), count: count("order") },
+        // The module tab is "To order" already: this list is the items ready to order now.
+        { id: "order", label: t("Ready"), count: count("order") },
         ...extraTabs,
         { id: "all", label: t("Everything") },
       ]} />
