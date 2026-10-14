@@ -118,7 +118,9 @@ function ChangeCard({ change, caseId }: { change: PortalChange; caseId: string }
     {change.priceImpact !== null ? <View style={{ gap: theme.space(1) }}>
       <Row style={{ justifyContent: 'space-between' }}><Text tone="secondary">{t('Price')}</Text><Text variant="label" style={{ writingDirection: 'ltr' }}>{signed(change.priceImpact, money)}</Text></Row>
       <Row style={{ justifyContent: 'space-between' }}><Text tone="secondary">{t('Handover')}</Text><Text variant="label" style={{ flexShrink: 1 }}>{days && change.handoverAfter
-        ? t('{before} → {after} ({days} working days)', { before: format.day(change.handoverBefore), after: format.day(change.handoverAfter), days: `${days > 0 ? '+' : ''}${days}` })
+        ? Math.abs(days) === 1
+          ? t('{before} → {after} ({days} working day)', { before: format.day(change.handoverBefore), after: format.day(change.handoverAfter), days: `${days > 0 ? '+' : ''}${days}` })
+          : t('{before} → {after} ({days} working days)', { before: format.day(change.handoverBefore), after: format.day(change.handoverAfter), days: `${days > 0 ? '+' : ''}${days}` })
         : change.handoverBefore ? t('{date}, unchanged', { date: format.day(change.handoverBefore) }) : t('No change')}</Text></Row>
       {change.designImpact ? <Row style={{ justifyContent: 'space-between' }}><Text tone="secondary">{t('Design')}</Text><Text variant="label" style={{ flexShrink: 1 }}>{change.designImpact}</Text></Row> : null}
     </View> : null}

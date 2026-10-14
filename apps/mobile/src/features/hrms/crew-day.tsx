@@ -40,7 +40,7 @@ export function CrewDaysScreen() {
     onRefresh={() => void days.refetch()} refreshing={days.isRefetching}
     empty={<Empty icon={HardHat} title={t('No crew days yet')} action={canMark ? { label: t('Mark crew day'), onPress: () => router.push({ pathname: '/crew-day/[id]', params: { id: 'new', projectId } }) } : undefined} />}
     renderItem={(day, _, first) => <ListRow first={first} icon={HardHat} title={day.crewName} onPress={() => router.push(`/crew-day/${day.id}`)}
-      detail={`${day.trade} · ${t('{count} days of work', { count: format.number(day.present, 1) })} · ${day.markedByName}`} trailing={<StatusChip status={day.status} />} />}
+      detail={`${day.trade} · ${Number(day.present) === 1 ? t('1 day of work') : t('{count} days of work', { count: format.number(day.present, 1) })} · ${day.markedByName}`} trailing={<StatusChip status={day.status} />} />}
     footer={canMark ? <Button label={t('Mark crew day')} icon={Plus} variant="primary" size="lg" full onPress={() => router.push({ pathname: '/crew-day/[id]', params: { id: 'new', projectId } })} /> : undefined} />;
 }
 

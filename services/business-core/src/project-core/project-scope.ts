@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
+import { calendarDay } from "./calendar-day";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -90,8 +91,7 @@ export async function savePackage(db: Db, workspaceId: string, projectId: string
   const owner = input.ownerMembershipId ? String(input.ownerMembershipId) : null;
   if (owner && !(await db.query(`SELECT 1 FROM workspace_memberships WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, owner])).rowCount)
     throw new BadRequestException("Choose someone from your team.");
-  const due = input.dueDate ? String(input.dueDate) : null;
-  if (due && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || Number.isNaN(Date.parse(`${due}T00:00:00Z`)))) throw new BadRequestException("Due date must be a date.");
+  const due = calendarDay(input.dueDate, "Due date");
   if (typeof input.id === "string") {
     const updated = await db.query(
       `UPDATE project_packages SET name = $4, supply = $5, owner_membership_id = $6, due_date = $7, version = version + 1, updated_at = now()

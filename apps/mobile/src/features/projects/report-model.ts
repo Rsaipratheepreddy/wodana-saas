@@ -1,4 +1,6 @@
-import type { Outlook, PhotoPhase, Safety, Severity, SiteReport, SiteState } from '../../../../web/lib/site/types';
+import type { Outlook, PhotoPhase, Safety, Severity, SiteReport, SiteState, TodayTask } from '../../../../web/lib/site/types';
+import type { Format } from '../../core/format-core';
+import type { T } from '../../core/i18n';
 
 /** A daily report being written on the phone. Pure: shared by the screen and its tests. */
 export type Installed = { boqLineId: string; installed: string; note: string };
@@ -103,4 +105,24 @@ export function reportProblems(draft: Draft, photos: number, submit: boolean, t:
   if (draft.issues.some((issue) => !issue.description.trim())) problems.push(t('Say what each issue is.'));
   if (submit && !photos && !(draft.noWork && draft.noWorkReason.trim())) problems.push(t('Add a photo, or say why no work was done.'));
   return problems;
+}
+
+/** A photo's row under "Where the photos are": its room (its number until one is chosen), then before/after and its pair. The prompt shows only while no room is chosen. */
+export function photoRow(tags: PhotoTags | undefined, index: number, photoIds: string[], areaName: (id: string | null) => string | null, t: T): { title: string; detail?: string } {
+  const room = areaName(tags?.areaId ?? null);
+  const detail = [tags?.phase === 'before' ? t('Before') : tags?.phase === 'after' ? t('After') : null,
+    tags?.pairId ? t('Paired with photo {number}', { number: photoIds.indexOf(tags.pairId) + 1 }) : null].filter(Boolean).join(' · ');
+  return { title: room ?? t('Photo {number}', { number: index + 1 }), ...(detail ? { detail } : room ? {} : { detail: t('Choose a room') }) };
+}
+
+/**
+ * One of today's planned tasks as a row: its package, the day it's due (a calendar day, never shifted by a zone,
+ * with its full year when it isn't this year's) and its progress. "Late" is the plan's own call, made on the server.
+ */
+export function taskRow(task: Pick<TodayTask, 'id' | 'title' | 'status' | 'progress' | 'dueDate' | 'overdue' | 'packageName'>, format: Pick<Format, 'day'>, t: T) {
+  return {
+    id: task.id, title: task.title, overdue: task.overdue, done: task.status === 'done',
+    detail: [task.packageName, task.dueDate ? t('Due {date}', { date: format.day(task.dueDate) }) : null,
+      task.progress && task.status !== 'done' ? t('Now {percent}%', { percent: task.progress }) : null].filter(Boolean).join(' · '),
+  };
 }

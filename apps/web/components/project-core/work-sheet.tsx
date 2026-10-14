@@ -16,6 +16,7 @@ import { woddyInstruction } from "@/lib/woddy/agent";
 import { useWoddyPrivateAsk, WoddyPrivateReplies } from "@/components/woddy/woddy-private-replies";
 import { SavedPhotos } from "../purchasing/delivery-photos";
 import { useProjectFormat } from "./format";
+import { stillTypingYear } from "@/lib/project-core/day-input";
 import { ALL_STATUSES, AwayChip, PRIORITIES, StatusIcon, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import styles from "./work.module.css";
 
@@ -157,10 +158,10 @@ function WorkBody({ workspaceId, detail, board, run, notice, onOpenItem, preview
       <div><dt>{t("Dates")}</dt><dd className={styles.dates}>
         {edit ? <>
           <DateField label={null} aria-label={t("Start")} value={detail.startDate ? parseDate(detail.startDate) : null}
-            onChange={(value) => { const next = value ? value.toString() : null; if (next !== detail.startDate) void changeDates({ startDate: next }); }} />
+            onChange={(value) => { if (stillTypingYear(value)) return; const next = value ? value.toString() : null; if (next !== detail.startDate) void changeDates({ startDate: next }); }} />
           <ArrowRight aria-hidden="true" className={styles.muted} size={14} />
           <DateField label={null} aria-label={t("Due")} value={detail.dueDate ? parseDate(detail.dueDate) : null}
-            onChange={(value) => { const next = value ? value.toString() : null; if (next !== detail.dueDate) void changeDates({ dueDate: next }); }} />
+            onChange={(value) => { if (stillTypingYear(value)) return; const next = value ? value.toString() : null; if (next !== detail.dueDate) void changeDates({ dueDate: next }); }} />
         </> : <span>{[format.day(detail.startDate), format.day(detail.dueDate)].filter(Boolean).join(" – ") || "—"}</span>}
         {due ? <span className={styles.muted} data-late={due.late || undefined}>{due.text}</span> : null}
         {slip ? <span className={styles.slip}>{slip === 1 ? t("1 day behind the baseline") : t("{count} days behind the baseline", { count: slip })}</span> : null}

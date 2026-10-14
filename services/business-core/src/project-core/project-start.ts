@@ -17,10 +17,10 @@ import { LEAD_ROLE } from "./project-checks";
 import { activeMembers, ensureSettings, ensureTemplates, setRole } from "./project-core.store";
 import { noticeProject } from "./project-notices";
 import { carryTeamToProject } from "./project-team";
+import { calendarDay as optionalDate } from "./calendar-day";
 import { proposePackages, seedBoq } from "./project-scope";
 
 type Db = PoolClient;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Starting a project (plan §6.10): only from an accepted quotation once the firm's start rules pass. Its scope
@@ -212,10 +212,4 @@ function startChecks(data: CommercialData, quote: Quote, settings: { requireAgre
 async function any(access: WorkspaceAccessService, client: Db, workspaceId: string, userId: string, codes: string[]) {
   for (const code of codes) if (await access.hasPermission(client, workspaceId, userId, code)) return true;
   return false;
-}
-
-function optionalDate(value: unknown, label: string) {
-  if (value === undefined || value === null || value === "") return null;
-  if (typeof value !== "string" || !DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) throw new BadRequestException(`${label} must be a date.`);
-  return value;
 }

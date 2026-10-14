@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chooseProgress, fromPlan, reportBody, reportProblems, stepOf, tagPhoto } from '../src/features/projects/report-model';
+import { makeFormat } from '../src/core/format-core';
+import { translate } from '../src/core/i18n';
+import { chooseProgress, fromPlan, photoRow, reportBody, reportProblems, stepOf, tagPhoto, taskRow } from '../src/features/projects/report-model';
 
 const plan = { crew: [{ trade: 'Carpenters', people: 3, hours: '8.00' }], plan: { today: [], tomorrow: { day: '2026-09-28', tasks: [{ id: 't1', title: 'Fit carcasses' }, { id: 't2', title: 'Template the worktop' }] } } };
 const label = (text: string) => text;
@@ -36,4 +38,29 @@ test('the server gets complete parts, and a submit needs a photo or why no work 
   assert.deepEqual(body.workforce, [{ trade: 'Carpenters', people: 3, hours: 8 }]);
   assert.deepEqual(reportProblems(draft, 0, true, label), ['Add a photo, or say why no work was done.']);
   assert.deepEqual(reportProblems(draft, 1, true, label), []);
+});
+
+const t = (key: string, vars?: Record<string, string | number>) => translate({}, key, vars);
+
+test('a photo\'s row names its room once chosen; "Choose a room" shows only until then', () => {
+  const areaName = (id: string | null) => (id === 'kitchen' ? 'Kitchen' : null);
+  assert.deepEqual(photoRow(undefined, 0, ['a', 'b'], areaName, t), { title: 'Photo 1', detail: 'Choose a room' });
+  assert.deepEqual(photoRow({ areaId: 'kitchen', phase: null, pairId: null }, 0, ['a', 'b'], areaName, t), { title: 'Kitchen' });
+  assert.deepEqual(photoRow({ areaId: 'kitchen', phase: 'before', pairId: 'b' }, 0, ['a', 'b'], areaName, t), { title: 'Kitchen', detail: 'Before · Paired with photo 2' });
+  assert.deepEqual(photoRow({ areaId: null, phase: 'after', pairId: null }, 1, ['a', 'b'], areaName, t), { title: 'Photo 2', detail: 'After' });
+});
+
+test('a task\'s due day is the same calendar day in every zone, with its full year when it isn\'t this year\'s; "late" is the plan\'s call', () => {
+  const task = { id: 't1', title: 'Fit on site', status: 'todo' as const, progress: null, dueDate: '2026-12-01', overdue: false, packageName: 'Living room' };
+  const year = new Date().getUTCFullYear();
+  for (const timeZone of ['Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Dubai']) {
+    const row = taskRow({ ...task, dueDate: `${year + 1}-12-01` }, makeFormat({ locale: 'en-GB', timeZone }), t);
+    assert.equal(row.detail, `Living room · Due 1 Dec ${year + 1}`, timeZone);
+    assert.equal(row.overdue, false);
+  }
+  const dubai = makeFormat({ locale: 'en-GB', timeZone: 'Asia/Dubai' });
+  assert.equal(taskRow({ ...task, dueDate: `${year}-12-01` }, dubai, t).detail, 'Living room · Due 1 Dec');
+  assert.deepEqual(taskRow({ ...task, status: 'in_progress', progress: 25, overdue: true, dueDate: `${year}-10-01` }, dubai, t),
+    { id: 't1', title: 'Fit on site', overdue: true, done: false, detail: 'Living room · Due 1 Oct · Now 25%' });
+  assert.deepEqual(taskRow({ ...task, status: 'done', progress: 100, dueDate: null, packageName: null }, dubai, t), { id: 't1', title: 'Fit on site', overdue: false, done: true, detail: '' });
 });
