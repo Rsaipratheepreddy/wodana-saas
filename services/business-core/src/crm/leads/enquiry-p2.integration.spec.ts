@@ -8,6 +8,7 @@ import { CrmOpportunitiesService } from "../opportunities/crm-opportunities.serv
 import { OpportunityDiscoveryService } from "../opportunities/discovery.service";
 import { IntroMeetingService } from "../opportunities/intro-meeting.service";
 import { EnquiryFieldsService } from "../settings/enquiry-fields.service";
+import { loadFlowFacts } from "../opportunities/flow-facts";
 import { CrmLeadsService } from "./crm-leads.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each scenario is rolled back.
@@ -26,7 +27,7 @@ type Ids = {
   admin: string; sales: string; sales2: string; designer: string;
   adminMember: string; salesMember: string; sales2Member: string; designerMember: string;
 };
-type Services = { leads: CrmLeadsService; intake: CrmIntakeService; opportunities: CrmOpportunitiesService; fields: EnquiryFieldsService; intro: IntroMeetingService };
+type Services = { leads: CrmLeadsService; intake: CrmIntakeService; opportunities: CrmOpportunitiesService; fields: EnquiryFieldsService; intro: IntroMeetingService; discovery: OpportunityDiscoveryService };
 
 /**
  * P2 enquiry (plan §6.5a, §7a E1-1/E1-2/E1-6): duplicates across channels, returning clients, locked identity,
@@ -108,6 +109,7 @@ integration("P2 enquiry: required fields, team, notes, duplicates (real Postgres
         return {
           leads, intake: new CrmIntakeService(database as never, access, events, leads), opportunities: new CrmOpportunitiesService(access, events),
           fields: new EnquiryFieldsService(access, events), intro: new IntroMeetingService(access, { record: async () => randomUUID() } as never, new OpportunityDiscoveryService(access)),
+          discovery: new OpportunityDiscoveryService(access),
         };
       };
       await work(client, { workspaceId, otherWorkspaceId, pipelineId, admin, sales, sales2, designer, adminMember, salesMember, sales2Member, designerMember }, as);
@@ -299,6 +301,55 @@ integration("P2 enquiry: required fields, team, notes, duplicates (real Postgres
       await expect(as(ids.admin).leads.updateSalesSettings(actor, ids.workspaceId, { version: settings.version + 1, internalNotesVisibility: "sales" })).rejects.toThrow("Sales settings changed");
       await as(ids.admin).leads.updateSalesSettings(actor, ids.workspaceId, { version: settings.version, internalNotesVisibility: "sales" });
       expect((await notesFor(ids.sales2))[0]).toBe("VIP, calls after 6pm");
+    });
+  });
+
+  it("PLM-100: the Designer tag offers the people who do design work (as the intro's designer picker does); another role, who holds it", async () => {
+    await scenario(async (client, ids, as) => {
+      // Dina's role does design work; Sara and Omar sell.
+      await client.query(`INSERT INTO role_permissions(workspace_id,role_id,permission_id)
+        SELECT $1, role.id, permission.id FROM roles role, permissions permission WHERE role.workspace_id = $1 AND role.code = 'designer' AND permission.code = ANY($2::text[])`,
+      [ids.workspaceId, ["pre_projects.edit", "pre_projects.record_client_design_decisions"]]);
+      const options = await as(ids.sales).intake.options(actor, ids.workspaceId) as unknown as { teamMembers: Record<string, Array<{ id: string; displayName: string }>> };
+      // The administrator holds every permission, so can design too; nobody selling is offered.
+      expect(options.teamMembers.designer).toEqual([{ id: ids.adminMember, displayName: "Admin" }, { id: ids.designerMember, displayName: "Dina Designer" }]);
+      expect(options.teamMembers.quantity_surveyor).toEqual([]);
+      // A member in the QS role (or team) is offered as the QS.
+      const qs = randomUUID();
+      await client.query("INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$2,'quantity_surveyor','QS',false)", [qs, ids.workspaceId]);
+      await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [ids.workspaceId, ids.sales2Member, qs]);
+      const again = await as(ids.sales).intake.options(actor, ids.workspaceId) as unknown as { teamMembers: Record<string, Array<{ id: string; displayName: string }>> };
+      expect(again.teamMembers.quantity_surveyor).toEqual([{ id: ids.sales2Member, displayName: "Omar Sales" }]);
+    });
+  });
+
+  it("the client's email given on the enquiry reaches the opportunity, also when the enquiry is added to a known client without one", async () => {
+    await scenario(async (client, ids, as) => {
+      const staff = as(ids.sales);
+      // A chat's contact (no email yet); the enquiry made from the chat picks it and is given the email.
+      const contact = await create(staff, ids, { serviceType: "furniture" });
+      const lead = await create(staff, ids, { identity: "existing", partyId: contact.partyId, email: "layla@example.com" });
+      expect((await client.query("SELECT count(*)::int AS n FROM crm_contact_points WHERE party_id = $1 AND type = 'email'", [contact.partyId])).rows[0].n).toBe(0);
+      const opportunity = await convert(client, staff, ids, lead.leadId);
+      const discovery = await staff.discovery.get(actor, ids.workspaceId, String(opportunity.id)) as unknown as { facts: { clientEmail: string | null }; missing: Array<{ key: string }> };
+      expect(discovery.facts.clientEmail).toBe("layla@example.com");
+      expect(discovery.missing.map((item) => item.key)).not.toContain("clientEmail");
+      expect((await loadFlowFacts(client, ids.workspaceId, String(opportunity.id))).clientEmail).toBe(true);
+      // Discovery's own email, once saved, is the one that counts.
+      await staff.discovery.save(actor, ids.workspaceId, String(opportunity.id), { clientEmail: "layla.h@example.com" });
+      expect(((await staff.discovery.get(actor, ids.workspaceId, String(opportunity.id))) as unknown as { facts: { clientEmail: string } }).facts.clientEmail).toBe("layla.h@example.com");
+      // An enquiry without any email still asks for it.
+      const other = await create(staff, ids, { name: "Noor Saleh", mobile: "+971502223344" });
+      const second = await convert(client, staff, ids, other.leadId);
+      expect(((await staff.discovery.get(actor, ids.workspaceId, String(second.id))) as unknown as { missing: Array<{ key: string }> }).missing.map((item) => item.key)).toContain("clientEmail");
+    });
+  });
+
+  it("names the person an enquiry was assigned to in its activity, for whoever reads it", async () => {
+    await scenario(async (_client, ids, as) => {
+      const lead = await create(as(ids.sales), ids, { owner: ids.salesMember });
+      const seen = await as(ids.sales).leads.get(actor, ids.workspaceId, lead.leadId) as unknown as { assignments: Array<{ ownerMembershipId: string; ownerName: string | null }> };
+      expect(seen.assignments[0]).toMatchObject({ ownerMembershipId: ids.salesMember, ownerName: "Sara Sales" });
     });
   });
 
