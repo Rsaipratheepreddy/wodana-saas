@@ -5,7 +5,7 @@ import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { agreedRate, checkDesignPackage, designFee, effectiveMinimumDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
-import { DEFAULT_SITE_VISIT_QUESTIONS, normaliseSiteQuestions, type SiteQuestion } from "./design-journey.domain";
+import { DEFAULT_SITE_VISIT_QUESTIONS, normaliseChecklistScopes, normaliseSiteQuestions, scopeKey, type ChecklistScope, type SiteQuestion } from "./design-journey.domain";
 import { designTeamConfig } from "./design-journey.store";
 import { teamConfigProblem, type TeamSlot } from "./design-team.domain";
 import { DEFAULT_ROLES } from "../project-core/project-checks";
@@ -13,6 +13,8 @@ import { DEFAULT_ROLES } from "../project-core/project-checks";
 export type DesignFlowSettings = {
   version: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number;
   visualiserRoleCode: string; showroomBookingTypeId: string | null; siteVisitQuestions: SiteQuestion[];
+  /** The checklists' match words (and the ones for every job), by scope; left out, they keep what they were. */
+  siteVisitScopes?: ChecklistScope[];
   /** The 3D renders' own internal and client-facing days; null follows the design days. */
   renderInternalDays?: number | null; renderClientDays?: number | null;
   /** The order of 13 Oct 2026 (PLM-140–144, PLM-151); left out, a value keeps what it was. */
@@ -95,6 +97,8 @@ export class DesignPackagesService {
   saveFlowSettings(actor: RequestActor, workspaceId: string, input: Omit<DesignFlowSettings, "version"> & { version: number }) {
     const questions = normaliseSiteQuestions(input.siteVisitQuestions);
     if (questions.length !== input.siteVisitQuestions.length) throw new UnprocessableEntityException("Every question needs a unique key and its text");
+    const scopes = input.siteVisitScopes === undefined ? null : normaliseChecklistScopes(input.siteVisitScopes);
+    if (scopes && scopes.length !== input.siteVisitScopes!.length) throw new UnprocessableEntityException("Each checklist is listed once, with its name");
     if (input.designClientDays < input.designInternalDays) throw new UnprocessableEntityException("The client deadline can't be before the internal one");
     const renderInternal = input.renderInternalDays ?? null, renderClient = input.renderClientDays ?? null;
     if ((renderClient ?? input.designClientDays) < (renderInternal ?? input.designInternalDays)) throw new UnprocessableEntityException("The renders' client deadline can't be before their internal one");
@@ -134,8 +138,11 @@ export class DesignPackagesService {
           [workspaceId, team.lead_designer, team.junior_designer || null, team.sales_admin || null, team.visualiser || null, team.draftsman || null, team.material_coordinator || null,
             team.technicalLeadRoleCode || null]);
       }
+      // Match words only for the scopes the list still uses.
+      if (scopes) await client.query(`UPDATE workspace_design_settings SET site_visit_scopes = $2::jsonb WHERE workspace_id = $1`,
+        [workspaceId, JSON.stringify(scopes.filter((entry) => questions.some((question) => question.scope && scopeKey(question.scope) === scopeKey(entry.scope))))]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.flow_settings_changed.v1", entityType: "workspace_design_settings", entityId: workspaceId,
-        after: { ...input, siteVisitQuestions: questions.map((question) => question.key) } });
+        after: { ...input, siteVisitQuestions: questions.map((question) => question.key), siteVisitScopes: scopes?.map((entry) => entry.scope) } });
       return this.load(client, workspaceId);
     });
   }
@@ -199,9 +206,9 @@ export class DesignPackagesService {
     const settings = (await client.query<{ amount: string | null; currency: string | null; version: number; inspirationDays: number; siteVisitHours: number }>(
       `SELECT minimum_design_deposit::text AS amount, currency, version, inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours" FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const packages = (await client.query<PackageRow>(`SELECT ${PACKAGE_COLUMNS} FROM design_packages WHERE workspace_id = $1 ORDER BY status, position, name`, [workspaceId])).rows;
-    const flow = (await client.query<Omit<DesignFlowSettings, "version" | "siteVisitQuestions"> & { questions: unknown }>(
+    const flow = (await client.query<Omit<DesignFlowSettings, "version" | "siteVisitQuestions" | "siteVisitScopes"> & { questions: unknown; scopes: unknown }>(
       `SELECT design_internal_days AS "designInternalDays", design_client_days AS "designClientDays", material_selection_days AS "materialSelectionDays", estimate_days AS "estimateDays",
-              visualiser_role_code AS "visualiserRoleCode", showroom_booking_type_id AS "showroomBookingTypeId", site_visit_questions AS questions,
+              visualiser_role_code AS "visualiserRoleCode", showroom_booking_type_id AS "showroomBookingTypeId", site_visit_questions AS questions, site_visit_scopes AS scopes,
               render_internal_days AS "renderInternalDays", render_client_days AS "renderClientDays"
          FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const bookingTypes = (await client.query<{ id: string; name: string }>(`SELECT id, name FROM booking_types WHERE workspace_id = $1 AND active ORDER BY name`, [workspaceId])).rows;
@@ -218,6 +225,7 @@ export class DesignPackagesService {
         designInternalDays: flow?.designInternalDays ?? 35, designClientDays: flow?.designClientDays ?? 56, materialSelectionDays: flow?.materialSelectionDays ?? 7,
         estimateDays: flow?.estimateDays ?? 7, visualiserRoleCode: flow?.visualiserRoleCode ?? "visualiser", showroomBookingTypeId: flow?.showroomBookingTypeId ?? null,
         siteVisitQuestions: flow ? normaliseSiteQuestions(flow.questions) : DEFAULT_SITE_VISIT_QUESTIONS,
+        siteVisitScopes: flow ? normaliseChecklistScopes(flow.scopes) : [],
         renderInternalDays: flow?.renderInternalDays ?? null, renderClientDays: flow?.renderClientDays ?? null,
         steps: steps ? { ...steps, conceptOptionsMax: steps.conceptOptionsMax ?? null } : STEP_DEFAULTS,
         team: await designTeamConfig(client, workspaceId),

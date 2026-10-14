@@ -185,3 +185,97 @@ describe("the design order of 13 Oct 2026 (PLM-140–144, PLM-154)", () => {
     expect(normaliseSiteQuestions([{ key: "k", question: "Q?", scope: "  Kitchen  " }, { key: "g", question: "G?", scope: "" }])).toEqual([{ key: "k", question: "Q?", scope: "Kitchen" }, { key: "g", question: "G?" }]);
   });
 });
+
+import { checklistMatches, normaliseChecklistScopes, pendingChecks, workOrderChecklists, type ChecklistScope, type SiteQuestion } from "./design-journey.domain";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+describe("question sections and joinery checklists (Palm discovery, 12 Oct 2026)", () => {
+  const list: SiteQuestion[] = [
+    { key: "core.01", question: "What type of property?", section: "Project overview" },
+    { key: "core.06", question: "Who will use the space?", section: "Lifestyle and everyday needs" },
+    { key: "core.02", question: "Which rooms?", section: "Project overview" },
+    { key: "kitchen.01", question: "Confirm cooking habits", scope: "Kitchens and islands", kind: "check" },
+    { key: "wardrobe.01", question: "Confirm users", scope: "Wardrobes and walk in closets", kind: "check" },
+    { key: "media.01", question: "Confirm TV size", scope: "TV and media walls", kind: "check" },
+    { key: "release.01", question: "Site verified dimensions recorded", scope: "Factory release", kind: "check" },
+  ];
+  const scopes: ChecklistScope[] = [
+    { scope: "Kitchens and islands", match: ["kitchen", "island"] },
+    { scope: "Wardrobes and walk in closets", match: ["wardrobe", "closet", "walk-in", "dressing"] },
+    { scope: "TV and media walls", match: ["tv", "media wall"] },
+    { scope: "Factory release", match: [], everyJob: true },
+  ];
+
+  it("keeps a question's section and kind, and a scope's match words, as stored", () => {
+    expect(normaliseSiteQuestions([{ key: "core.01", question: " Q? ", section: "  Project   overview ", kind: "answer" }, { key: "k.1", question: "C", scope: "Kitchen", kind: "check", section: "" }]))
+      .toEqual([{ key: "core.01", question: "Q?", section: "Project overview" }, { key: "k.1", question: "C", scope: "Kitchen", kind: "check" }]);
+    expect(normaliseChecklistScopes([{ scope: " Kitchens ", match: ["kitchen", "Kitchen", " ", "-", 4] }, { scope: "kitchens", match: [] }, { scope: "Release", match: [], everyJob: true }, { match: ["x"] }]))
+      .toEqual([{ scope: "Kitchens", match: ["kitchen"] }, { scope: "Release", match: [], everyJob: true }]);
+  });
+
+  it("matches a scope's words and phrases in the job's names, singular or plural, two letters and up", () => {
+    expect(checklistMatches("Wardrobes and walk in closets", ["walk-in", "wardrobe"], ["Walk-in closet"])).toBe(true);
+    expect(checklistMatches("Wardrobes and walk in closets", ["walk-in"], ["Walkway", "Walk to the garden"])).toBe(false);
+    expect(checklistMatches("Wardrobes and walk in closets", ["wardrobe"], ["Master bedroom wardrobes"])).toBe(true);
+    expect(checklistMatches("TV and media walls", ["tv"], ["TV lounge"])).toBe(true);
+    expect(checklistMatches("TV and media walls", ["media wall"], ["Media room", "Feature wall"])).toBe(false);
+    // With match words the scope's own words ("and", "walls") don't match on their own.
+    expect(checklistMatches("Bars and pantry units", ["bar", "pantry"], ["Living and dining"])).toBe(false);
+    // Without match words, the scope's name is matched as before (PLM-154).
+    expect(checklistMatches("Kitchen", [], ["Main kitchen"])).toBe(true);
+  });
+
+  it("asks the general questions by section, then the checklists that apply: a kitchen job gets the kitchen checklist and the one for every job", () => {
+    const groups = groupSiteQuestions(list, ["Kitchen", "Kitchen base cabinets"], { scopes });
+    expect(groups.map((group) => [group.section ?? group.scope, group.applies, group.required, group.questions.map((question) => question.key)])).toEqual([
+      ["Project overview", true, true, ["core.01", "core.02"]], ["Lifestyle and everyday needs", true, true, ["core.06"]],
+      ["Kitchens and islands", true, true, ["kitchen.01"]], ["Factory release", true, true, ["release.01"]],
+      ["Wardrobes and walk in closets", false, false, ["wardrobe.01"]], ["TV and media walls", false, false, ["media.01"]],
+    ]);
+    expect(groups[0].scope).toBeNull();
+    // The designer adds the TV wall and drops the release record on this job.
+    const chosen = groupSiteQuestions(list, ["Kitchen"], { scopes, chosen: new Map([["tv and media walls", true], ["factory release", false]]) });
+    expect(chosen.filter((group) => group.scope && group.applies).map((group) => [group.scope, group.chosen])).toEqual([["Kitchens and islands", null], ["TV and media walls", true]]);
+    expect(requiredSiteQuestions(list, ["Kitchen"], { scopes, chosen: new Map([["kitchens and islands", false]]) }).map((question) => question.key))
+      .toEqual(["core.01", "core.02", "core.06", "release.01"]);
+    // Nothing on the job matches a checklist yet (no rooms): every checklist applies until the designer switches it off.
+    expect(requiredSiteQuestions(list, [], { scopes }).length).toBe(7);
+  });
+
+  it("needs every line marked to complete the visit; a pending line counts and is an open item", () => {
+    const required = requiredSiteQuestions(list, ["Kitchen"], { scopes });
+    expect(siteChecklistProblem(required, ["core.01", "core.02", "core.06"])).toBe("Mark the 2 checks left");
+    expect(siteChecklistProblem(required, ["core.01", "core.02", "kitchen.01"])).toBe("Answer the last site visit question and mark the last check");
+    expect(siteChecklistProblem(required, ["core.01", "kitchen.01", "release.01"])).toBe("Answer the 2 site visit questions left");
+    expect(siteChecklistProblem(required, required.map((question) => question.key))).toBeNull();
+    const groups = groupSiteQuestions(list, ["Kitchen"], { scopes });
+    const status = (key: string) => ({ "kitchen.01": "pending", "release.01": "confirmed", "wardrobe.01": "pending" } as const)[key as "kitchen.01"] ?? null;
+    // The wardrobe checklist doesn't apply, so its pending line isn't one of the job's open items.
+    expect(pendingChecks(groups, status)).toBe(1);
+  });
+
+  it("shows a work order the checklists of its room or item, else all of the job's", () => {
+    const groups = groupSiteQuestions(list, ["Kitchen", "Master bedroom wardrobe"], { scopes });
+    expect(workOrderChecklists(groups, scopes, ["Wardrobe carcass", "Master bedroom"]).map((group) => group.scope)).toEqual(["Wardrobes and walk in closets", "Factory release"]);
+    expect(workOrderChecklists(groups, scopes, ["Island top"]).map((group) => group.scope)).toEqual(["Kitchens and islands", "Factory release"]);
+    expect(workOrderChecklists(groups, scopes, ["Sofa"]).map((group) => group.scope)).toEqual(["Kitchens and islands", "Wardrobes and walk in closets", "Factory release"]);
+  });
+
+  it("reads Palm's question file: 30 questions and the next step under 6 sections, 14 joinery checklists of 10 checks and the release record for every job", () => {
+    const file = JSON.parse(readFileSync(resolve(__dirname, "../../../../docs/fixtures/palm-design-questions.json"), "utf8")) as { siteVisitQuestions: SiteQuestion[]; siteVisitScopes: ChecklistScope[] };
+    const questions = normaliseSiteQuestions(file.siteVisitQuestions);
+    expect(questions.length).toBe(file.siteVisitQuestions.length);
+    const general = questions.filter((question) => !question.scope);
+    expect(general.length).toBe(31);
+    expect([...new Set(general.map((question) => question.section))]).toEqual(["Project overview", "Lifestyle and everyday needs", "Style and preferences", "Furniture requirements",
+      "Budget and timing", "Decisions and next steps"]);
+    const checks = questions.filter((question) => question.kind === "check");
+    expect(checks.length).toBe(150);
+    expect(normaliseChecklistScopes(file.siteVisitScopes).length).toBe(15);
+    // A kitchen job: the kitchen checklist and the release record; the designer adds the rest by hand.
+    const groups = groupSiteQuestions(questions, ["Kitchen", "Kitchen cabinets – lacquer"], { scopes: normaliseChecklistScopes(file.siteVisitScopes) });
+    expect(groups.filter((group) => group.scope && group.applies).map((group) => group.scope)).toEqual(["Kitchens and islands", "Factory release"]);
+    expect(groups.filter((group) => group.scope && group.applies).flatMap((group) => group.questions).length).toBe(20);
+  });
+});

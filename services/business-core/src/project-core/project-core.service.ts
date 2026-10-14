@@ -41,6 +41,7 @@ import { parseKeepInformed } from "./project-keep-informed";
 import { readProduction } from "../factory/production-status";
 import { projectAreas } from "./project-areas";
 import { readProjectReadiness } from "./project-readiness";
+import { projectBrief } from "../design/design-checklists";
 import { readReadinessSettings } from "../catalog-core/item-readiness";
 import { calendarDay as optionalDate } from "./calendar-day";
 
@@ -287,6 +288,14 @@ export class ProjectCoreService {
    * the client's material choice, purchase, production and installation), worked out from the records. The columns
    * are the firm's choice, less the delivery areas the project's path doesn't use.
    */
+  /** The job's brief from design: the discovery answers by section and the checklists that apply, read-only, with the pending lines counted. */
+  brief(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { project } = await this.visible(client, workspaceId, projectId, user);
+      return { ...(await projectBrief(client, workspaceId, project.caseId ?? null)), caseId: project.caseId ?? null };
+    });
+  }
+
   readiness(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const { project } = await this.visible(client, workspaceId, projectId, user);

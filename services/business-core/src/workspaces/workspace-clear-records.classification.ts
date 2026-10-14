@@ -294,6 +294,8 @@ const clear = [
   "design_presentation_options",
   "design_presentations",
   "design_site_visit_answers",
+  // A job's "Applies to this job" choice per checklist.
+  "design_checklist_choices",
   "design_work_bookings",
   "fit_check_overrides",
   "pre_project_asset_markups",

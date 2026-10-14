@@ -8,7 +8,7 @@ import { formatCalendarDay } from "../common/calendar-day";
 import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
 import { workingDeadline } from "../project-core/work-calendar";
 import {
-  addDays, CURRENT_FLOW, DEFAULT_SITE_VISIT_QUESTIONS, developmentWindowDays, journeyStages, nextStage, normaliseSiteQuestions, SITE_AND_MATERIALS_STAGES, stageDeadlines,
+  addDays, CURRENT_FLOW, DEFAULT_SITE_VISIT_QUESTIONS, developmentWindowDays, journeyStages, nextStage, normaliseChecklistScopes, normaliseSiteQuestions, SITE_AND_MATERIALS_STAGES, stageDeadlines,
   STAGE_LABELS, TASK_LABELS, TASK_STAGE, type DueRule, type FlowVersion, type JourneyKind, type JourneyStage, type JourneyTask, type StageTimings,
 } from "./design-journey.domain";
 import { allocationSlots, DEFAULT_DESIGN_TEAM, type DesignTeamConfig } from "./design-team.domain";
@@ -135,10 +135,10 @@ export async function startJourney(db: Db, workspaceId: string, caseId: string, 
             package.includes_renders AS "includesRenders", COALESCE(package.review_role_code, package.required_role_code) AS "reviewRoleCode"
        FROM crm_opportunity_discovery discovery JOIN design_packages package ON package.workspace_id = discovery.workspace_id AND package.id = discovery.design_package_id
       WHERE discovery.workspace_id = $1 AND discovery.opportunity_id = $2`, [workspaceId, facts.opportunityId])).rows[0];
-  const settings = (await db.query<Record<string, number | null> & { questions: unknown }>(
+  const settings = (await db.query<Record<string, number | null> & { questions: unknown; scopes: unknown }>(
     `SELECT inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours", design_internal_days AS "designInternalDays", design_client_days AS "designClientDays",
             render_internal_days AS "renderInternalDays", render_client_days AS "renderClientDays",
-            material_selection_days AS "materialSelectionDays", estimate_days AS "estimateDays", site_visit_questions AS questions,
+            material_selection_days AS "materialSelectionDays", estimate_days AS "estimateDays", site_visit_questions AS questions, site_visit_scopes AS scopes,
             kickoff_days AS "kickoffDays", concept_days AS "conceptDays", site_measure_days AS "siteMeasureDays", development_min_days AS "developmentMinDays",
             development_max_days AS "developmentMaxDays", development_days_per_room AS "developmentDaysPerRoom", sample_collection_days AS "sampleCollectionDays",
             sample_meeting_days AS "sampleMeetingDays", concept_options_max AS "conceptOptionsMax", allocation_days AS "allocationDays"
@@ -159,6 +159,9 @@ export async function startJourney(db: Db, workspaceId: string, caseId: string, 
       flow, value("kickoffDays", 5), value("conceptDays", 7), value("siteMeasureDays", 3), value("developmentMinDays", 14), value("developmentMaxDays", 56),
       value("developmentDaysPerRoom", 7), value("sampleCollectionDays", 7), value("sampleMeetingDays", 7), settings?.conceptOptionsMax ?? null]);
   if (!created.rowCount) return false;
+  // The checklists' match words are frozen with the questions.
+  await db.query(`UPDATE design_journeys SET site_visit_scopes = $3::jsonb WHERE workspace_id = $1 AND case_id = $2`,
+    [workspaceId, caseId, JSON.stringify(normaliseChecklistScopes(settings?.scopes))]);
   const order = kind === "design" ? journeyStages({ includesSpacePlanning: pkg.includesSpacePlanning, includesRenders: pkg.includesRenders }, flow) : SITE_AND_MATERIALS_STAGES;
   const owner = flow === 2 ? await leadDesigner(db, workspaceId, caseId) ?? facts.accountManagerId : facts.designerId ?? facts.accountManagerId;
   for (const [index, stage] of order.entries()) {

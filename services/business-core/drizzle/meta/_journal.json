@@ -1485,6 +1485,13 @@
       "when": 1801740010400,
       "tag": "0342_work_order_checks_update",
       "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1801740010500,
+      "tag": "0343_design_checklists",
+      "breakpoints": true
     }
   ]
 }

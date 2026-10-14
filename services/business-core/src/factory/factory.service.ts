@@ -23,6 +23,7 @@ import {
   workOrderNext, type ListedMaterial, type WorkOrderRow,
 } from "./factory";
 import { orderReady, readReadyReminder, remindForReady } from "./factory-ready";
+import { workOrderBrief } from "../design/design-checklists";
 import {
   assertOrderCleared, cancelInspections, fixInspectionStages, inspectionSettings, INSPECTION_STAGE_KINDS, parseInspectionSettings, readOrderInspections, requestInspection, stageName,
   type InspectionStageKind, type OrderInspection,
@@ -991,6 +992,11 @@ export class FactoryService {
       order: { ...order, ...extra }, reports, checks, events, settings: { ...settings, inspectionStages: inspectionSettings(settings).stages }, materials, dispatches, atFactory, reworks,
       next: next.step, inspection, inspections, snags,
       payments, readyReminder: await readReadyReminder(client, workspaceId, caseId, extra.readyPaymentId),
+      // The job's design checklists this order is made to (its item, package or room), with their pending lines.
+      checklists: await workOrderBrief(client, workspaceId, caseId, [order.title, order.packageName ?? "", ...(await client.query<{ name: string }>(
+        `SELECT concat_ws(' ', line.title, room.name) AS name FROM project_boq_lines line
+           LEFT JOIN pre_project_rooms room ON room.workspace_id = line.workspace_id AND room.case_id = $3 AND room.id = line.area_id
+          WHERE line.workspace_id = $1 AND line.id = $2`, [workspaceId, order.boqLineId, caseId])).rows.map((row) => row.name)].filter(Boolean)),
       // The project's approved designs, to pick the drawing from.
       designs: await this.approvedDesigns(client, workspaceId, order.projectId),
       // The drawing it's made to when none is recorded on it: the project's client-approved drawings, or its catalogue drawing.

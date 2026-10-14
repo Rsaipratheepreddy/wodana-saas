@@ -4,6 +4,7 @@ import { Type } from "class-transformer";
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { CHECK_STATUSES, type CheckStatus } from "./design-journey.domain";
 import { DesignJourneyService } from "./design-journey.service";
 
 class StageVersionDto { @IsInt() @Min(1) version!: number; @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(2000) note?: string | null; }
@@ -20,8 +21,15 @@ class ScheduleDto {
 class SkipStageDto { @IsInt() @Min(1) version!: number; @IsString() @MinLength(1) @MaxLength(2000) note!: string; }
 class AssignStageDto { @IsInt() @Min(1) version!: number; @IsUUID() membershipId!: string; }
 class CompleteSiteVisitDto { @IsInt() @Min(1) version!: number; @IsString() @MinLength(1) @MaxLength(5000) summary!: string; }
-class SiteAnswerDto { @IsString() @MinLength(1) @MaxLength(60) key!: string; @IsString() @MaxLength(2000) answer!: string; }
-class AnswerSiteVisitDto { @IsInt() @Min(1) version!: number; @IsArray() @ArrayMaxSize(80) @ValidateNested({ each: true }) @Type(() => SiteAnswerDto) answers!: SiteAnswerDto[]; }
+class SiteAnswerDto {
+  @IsString() @MinLength(1) @MaxLength(60) key!: string;
+  /** The answer in words; on a checklist line, its "Requirement or reference" note. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(2000) answer?: string | null;
+  /** A checklist line's status; null clears it. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsIn(CHECK_STATUSES) status?: CheckStatus | null;
+}
+class AnswerSiteVisitDto { @IsInt() @Min(1) version!: number; @IsArray() @ArrayMaxSize(300) @ValidateNested({ each: true }) @Type(() => SiteAnswerDto) answers!: SiteAnswerDto[]; }
+class ChecklistAppliesDto { @IsInt() @Min(0) version!: number; @IsString() @MinLength(1) @MaxLength(60) scope!: string; @IsBoolean() applies!: boolean; }
 class TeamRoleDto {
   @IsIn(["lead_designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator"]) slot!: string;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() membershipId?: string | null;
@@ -87,6 +95,11 @@ export class DesignJourneyController {
 
   @Put("site-visit/answers")
   answerSiteVisit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: AnswerSiteVisitDto) { return this.journey.answerSiteVisit(actor, workspaceId, caseId, input); }
+
+  @Put("checklists/applies")
+  setChecklistApplies(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: ChecklistAppliesDto) {
+    return this.journey.setChecklistApplies(actor, workspaceId, caseId, input);
+  }
 
   @Post("site-visit/complete")
   completeSiteVisit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: CompleteSiteVisitDto) { return this.journey.completeSiteVisit(actor, workspaceId, caseId, input); }

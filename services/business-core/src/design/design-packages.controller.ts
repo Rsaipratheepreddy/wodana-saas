@@ -32,10 +32,20 @@ export class DesignPackageDto {
   @IsOptional() @IsBoolean() rateFrom?: boolean;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(200) unitDefinition?: string | null;
 }
-class SiteQuestionDto {
-  @IsString() @MinLength(1) @MaxLength(60) @Matches(/^[a-z0-9_-]+$/) key!: string; @IsString() @MinLength(1) @MaxLength(500) question!: string;
+export class SiteQuestionDto {
+  @IsString() @MinLength(1) @MaxLength(60) @Matches(/^[a-z0-9_.-]+$/) key!: string; @IsString() @MinLength(1) @MaxLength(500) question!: string;
   /** PLM-154: the scope the question belongs to (e.g. Kitchen); none for the general ones. */
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(60) scope?: string | null;
+  /** The heading a general question sits under (e.g. Project overview); never used to match rooms. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(60) section?: string | null;
+  /** A checklist line, answered confirmed, pending or not applicable with a note; left out, a question answered in words. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsIn(["answer", "check"]) kind?: "answer" | "check" | null;
+}
+export class ChecklistScopeDto {
+  @IsString() @MinLength(1) @MaxLength(60) scope!: string;
+  /** Words or phrases in a room, area or quotation line that make the checklist apply to a job. */
+  @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(40, { each: true }) match!: string[];
+  @IsOptional() @IsBoolean() everyJob?: boolean;
 }
 class StepTimingsDto {
   @IsInt() @Min(1) @Max(30) allocationDays!: number;
@@ -59,7 +69,7 @@ class DesignTeamDto {
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @roleKey() material_coordinator!: string | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @roleKey() technicalLeadRoleCode!: string | null;
 }
-class DesignFlowSettingsDto {
+export class DesignFlowSettingsDto {
   @IsInt() @Min(0) version!: number;
   @IsInt() @Min(1) @Max(365) designInternalDays!: number;
   @IsInt() @Min(1) @Max(365) designClientDays!: number;
@@ -69,7 +79,8 @@ class DesignFlowSettingsDto {
   @IsInt() @Min(1) @Max(90) estimateDays!: number;
   @IsString() @MaxLength(60) visualiserRoleCode!: string;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() showroomBookingTypeId!: string | null;
-  @IsArray() @ArrayMaxSize(80) @ValidateNested({ each: true }) @Type(() => SiteQuestionDto) siteVisitQuestions!: SiteQuestionDto[];
+  @IsArray() @ArrayMaxSize(300) @ValidateNested({ each: true }) @Type(() => SiteQuestionDto) siteVisitQuestions!: SiteQuestionDto[];
+  @IsOptional() @IsArray() @ArrayMaxSize(60) @ValidateNested({ each: true }) @Type(() => ChecklistScopeDto) siteVisitScopes?: ChecklistScopeDto[];
   @IsOptional() @ValidateNested() @Type(() => StepTimingsDto) steps?: StepTimingsDto;
   @IsOptional() @ValidateNested() @Type(() => DesignTeamDto) team?: DesignTeamDto;
 }

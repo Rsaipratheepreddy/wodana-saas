@@ -163,8 +163,30 @@ export function siteEvidenceProblem(measurements: Array<{ title: string; status:
   return null;
 }
 
-/** A question on the site visit list; `scope` groups it (PLM-154: "Kitchen", "Bedrooms"), none for the general ones. */
-export type SiteQuestion = { key: string; question: string; scope?: string | null };
+/**
+ * A question on the site visit list; `scope` groups it (PLM-154: "Kitchen", "Bedrooms"), none for the general ones.
+ * `section` heads and orders the general questions ("Project overview"); it never takes part in room matching.
+ * `kind: "check"` is a checklist line answered with a status (confirmed, pending, not applicable) and a note.
+ */
+export type SiteQuestion = { key: string; question: string; scope?: string | null; section?: string | null; kind?: "answer" | "check" | null };
+
+/** A checklist line's status; pending is an open item. */
+export const CHECK_STATUSES = ["confirmed", "pending", "not_applicable"] as const;
+export type CheckStatus = (typeof CHECK_STATUSES)[number];
+export const isCheckStatus = (value: unknown): value is CheckStatus => typeof value === "string" && (CHECK_STATUSES as readonly string[]).includes(value);
+
+/**
+ * A scope's match words: the words or phrases in a room, area or quotation line name that make the scope's checklist
+ * apply to a job ("Wardrobes and walk in closets": wardrobe, closet, walk-in, dressing). `everyJob` applies it to every
+ * job (e.g. a release record). Without match words the scope's own name is matched.
+ */
+export type ChecklistScope = { scope: string; match: string[]; everyJob?: boolean };
+
+/** How many questions a list holds (the general questions and every checklist line). */
+export const MAX_SITE_QUESTIONS = 300;
+export const MAX_CHECKLIST_SCOPES = 60;
+
+const oneLine = (value: unknown, max: number) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
 /** The question list a workspace starts with (the same as the settings column default); each firm edits its own. */
 export const DEFAULT_SITE_VISIT_QUESTIONS: SiteQuestion[] = [
@@ -177,7 +199,10 @@ export const DEFAULT_SITE_VISIT_QUESTIONS: SiteQuestion[] = [
   { key: "wishes", question: "Anything the client asked for on site that is not in the brief?" },
 ];
 
-/** The workspace's question list as stored (configuration JSON): well-formed entries only, no duplicates, at most 80. */
+/**
+ * The workspace's question list as stored (configuration JSON): well-formed entries only, no duplicates, at most
+ * MAX_SITE_QUESTIONS. A question keeps its scope, section and kind only when it has them.
+ */
 export function normaliseSiteQuestions(value: unknown): SiteQuestion[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -187,15 +212,40 @@ export function normaliseSiteQuestions(value: unknown): SiteQuestion[] {
     const question = typeof (item as SiteQuestion)?.question === "string" ? (item as SiteQuestion).question.trim().slice(0, 500) : "";
     if (!key || !question || seen.has(key)) continue;
     seen.add(key);
-    const scope = typeof (item as SiteQuestion)?.scope === "string" ? (item as SiteQuestion).scope!.replace(/\s+/g, " ").trim().slice(0, 60) : "";
-    out.push(scope ? { key, question, scope } : { key, question });
-    if (out.length === 80) break;
+    const scope = oneLine((item as SiteQuestion)?.scope, 60);
+    const section = oneLine((item as SiteQuestion)?.section, 60);
+    out.push({ key, question, ...(scope ? { scope } : {}), ...(section ? { section } : {}), ...((item as SiteQuestion)?.kind === "check" ? { kind: "check" as const } : {}) });
+    if (out.length === MAX_SITE_QUESTIONS) break;
   }
   return out;
 }
 
+/** The scopes' match words as stored: one entry per scope (case-insensitive), each with at most 20 words or phrases. */
+export function normaliseChecklistScopes(value: unknown): ChecklistScope[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: ChecklistScope[] = [];
+  for (const item of value) {
+    const scope = oneLine((item as ChecklistScope)?.scope, 60);
+    if (!scope || seen.has(scope.toLowerCase())) continue;
+    seen.add(scope.toLowerCase());
+    const words = new Map<string, string>();
+    for (const word of Array.isArray((item as ChecklistScope)?.match) ? (item as ChecklistScope).match : []) {
+      const text = oneLine(word, 40);
+      if (text && matchTokens(text).length && !words.has(text.toLowerCase())) words.set(text.toLowerCase(), text);
+    }
+    out.push({ scope, match: [...words.values()].slice(0, 20), ...((item as ChecklistScope)?.everyJob === true ? { everyJob: true } : {}) });
+    if (out.length === MAX_CHECKLIST_SCOPES) break;
+  }
+  return out;
+}
+
+const singular = (word: string) => word.replace(/(ies)$/, "y").replace(/s$/, "");
 const scopeWords = (value: string) => value.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((word) => word.length > 2)
-  .map((word) => word.replace(/(ies)$/, "y").replace(/s$/, ""));
+  .map(singular);
+/** Words of a name for the match words: accents dropped, hyphens and punctuation as spaces, two letters or more ("TV"). */
+const matchTokens = (value: string) => value.toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/)
+  .filter((word) => word.length > 1).map(singular);
 
 /** Whether a scope ("Kitchen", "Bedrooms") is one of the job's areas ("Main kitchen", "Bedroom 2"): a word in common, singular or plural. */
 export function scopeMatches(scope: string, areas: readonly string[]) {
@@ -203,38 +253,110 @@ export function scopeMatches(scope: string, areas: readonly string[]) {
   return areas.some((area) => scopeWords(area).some((word) => wanted.has(word)));
 }
 
-export type SiteQuestionGroup = { scope: string | null; matches: boolean; required: boolean; questions: SiteQuestion[] };
+/**
+ * Whether a scope applies to the names given (the job's rooms, areas and quotation lines, or a work order): one of its
+ * match words or phrases is in a name, every word of a phrase in the same name ("walk-in" in "Walk-in closet"), singular
+ * or plural. Without match words the scope's own name is matched (scopeMatches).
+ */
+export function checklistMatches(scope: string, match: readonly string[], areas: readonly string[]) {
+  if (!match.length) return scopeMatches(scope, areas);
+  const phrases = match.map(matchTokens).filter((words) => words.length);
+  return areas.some((area) => {
+    const words = new Set(matchTokens(area));
+    return phrases.some((phrase) => phrase.every((word) => words.has(word)));
+  });
+}
+
+export type SiteQuestionGroup = {
+  scope: string | null;
+  /** The heading of a group of general questions; null for a scope's checklist and for general questions without one. */
+  section: string | null;
+  /** The job's names match the scope (always for general questions and for a scope that applies to every job). */
+  matches: boolean;
+  /** A scope for every job (e.g. the release record). */
+  everyJob: boolean;
+  /** The designer's choice on this job ("Applies to this job"), null while it follows the matching. */
+  chosen: boolean | null;
+  /** Asked on this job: the choice, else the matching. */
+  applies: boolean;
+  required: boolean;
+  questions: SiteQuestion[];
+};
+export type GroupOptions = { scopes?: readonly ChecklistScope[]; chosen?: ReadonlyMap<string, boolean> };
+
+/** A scope's key for choices and lookups: its name, case-insensitive. */
+export const scopeKey = (scope: string) => scope.replace(/\s+/g, " ").trim().toLowerCase();
 
 /**
- * PLM-154: the list grouped by scope for the kick-off and the site measure. The general questions (no scope) come first,
- * then the scopes the job has (its rooms and areas), then the rest. With no areas recorded, or none matching, every
- * group is asked; otherwise a scope the job doesn't have is shown but not required. A list without scopes is one group.
+ * PLM-154: the list grouped for the kick-off and the site measure. The general questions (no scope) come first, by
+ * section in the order the list gives them; then the checklists that apply to the job; then the rest.
+ * A scope applies when the designer chose it for the job ("Applies to this job"), else when it matches the job's rooms,
+ * areas and quotation lines (its match words, or its name), or is for every job. With nothing on the job matching any
+ * scope (no rooms yet), every scope applies, so nothing is missed until the designer switches off what isn't there.
+ * The general questions and the checklists that apply are required; the rest are shown, not asked.
  */
-export function groupSiteQuestions(questions: SiteQuestion[], areas: readonly string[]): SiteQuestionGroup[] {
+export function groupSiteQuestions(questions: SiteQuestion[], areas: readonly string[], options: GroupOptions = {}): SiteQuestionGroup[] {
+  const definitions = new Map((options.scopes ?? []).map((entry) => [scopeKey(entry.scope), entry]));
   const groups = new Map<string, SiteQuestionGroup>();
   for (const question of questions) {
     const scope = question.scope?.trim() || null;
-    const id = scope ? scope.toLowerCase() : "";
-    const group = groups.get(id) ?? { scope, matches: scope === null || scopeMatches(scope, areas), required: true, questions: [] };
+    const section = scope ? null : question.section?.trim() || null;
+    const id = scope ? `scope:${scopeKey(scope)}` : `section:${section?.toLowerCase() ?? ""}`;
+    let group = groups.get(id);
+    if (!group) {
+      const definition = scope ? definitions.get(scopeKey(scope)) : undefined;
+      const everyJob = Boolean(definition?.everyJob);
+      group = { scope, section, everyJob, matches: scope === null || everyJob || checklistMatches(scope, definition?.match ?? [], areas),
+        chosen: scope ? options.chosen?.get(scopeKey(scope)) ?? null : null, applies: true, required: true, questions: [] };
+      groups.set(id, group);
+    }
     group.questions.push(question);
-    groups.set(id, group);
   }
   const list = [...groups.values()];
-  const known = list.some((group) => group.scope !== null && group.matches);
-  for (const group of list) group.required = group.scope === null || !known || group.matches;
-  const rank = (group: SiteQuestionGroup) => (group.scope === null ? 0 : group.matches ? 1 : 2);
+  const known = list.some((group) => group.scope !== null && !group.everyJob && group.matches);
+  for (const group of list) {
+    group.applies = group.scope === null || (group.chosen ?? (group.everyJob || !known || group.matches));
+    group.required = group.applies;
+  }
+  const rank = (group: SiteQuestionGroup) => (group.scope === null ? 0 : group.applies ? 1 : 2);
   return list.map((group, index) => ({ group, index })).sort((a, b) => rank(a.group) - rank(b.group) || a.index - b.index).map(({ group }) => group);
 }
 
-/** The questions a visit must answer: the general ones and those of the job's scopes (all of them when its scope isn't known). */
-export const requiredSiteQuestions = (questions: SiteQuestion[], areas: readonly string[]) =>
-  groupSiteQuestions(questions, areas).filter((group) => group.required).flatMap((group) => group.questions);
+/** The questions a visit must answer: the general ones and those of the checklists that apply to the job. */
+export const requiredSiteQuestions = (questions: SiteQuestion[], areas: readonly string[], options: GroupOptions = {}) =>
+  groupSiteQuestions(questions, areas, options).filter((group) => group.required).flatMap((group) => group.questions);
 
-/** PLM-128: the visit also needs every question on the list answered. */
+/**
+ * PLM-128: the visit also needs every question on the list answered, and every checklist line marked. A line marked
+ * pending counts: it is recorded as an open item (the answer rule never judges what an answer says either).
+ */
 export function siteChecklistProblem(questions: SiteQuestion[], answered: string[]) {
   const left = questions.filter((question) => !answered.includes(question.key));
   if (!left.length) return null;
-  return left.length === 1 ? "Answer the last site visit question" : `Answer the ${left.length} site visit questions left`;
+  const checks = left.filter((question) => question.kind === "check").length;
+  const open = left.length - checks;
+  const ask = open === 1 ? "Answer the last site visit question" : `Answer the ${open} site visit questions left`;
+  const mark = checks === 1 ? "mark the last check" : `mark the ${checks} checks left`;
+  if (!checks) return ask;
+  if (!open) return `${mark.charAt(0).toUpperCase()}${mark.slice(1)}`;
+  return `${ask} and ${mark}`;
+}
+
+/** The open items of a job: the pending lines of the checklists that apply to it. */
+export function pendingChecks(groups: readonly SiteQuestionGroup[], status: (key: string) => CheckStatus | null | undefined) {
+  return groups.filter((group) => group.applies).flatMap((group) => group.questions).filter((question) => question.kind === "check" && status(question.key) === "pending").length;
+}
+
+/**
+ * The checklists a work order is made to: the scopes that apply to the job and match the order's own names (its
+ * item, package and room), plus those for every job. When none of the job's checklists matches the order, all of the
+ * job's checklists are shown, so the factory never misses one.
+ */
+export function workOrderChecklists(groups: readonly SiteQuestionGroup[], scopes: readonly ChecklistScope[], names: readonly string[]) {
+  const checklists = groups.filter((group) => group.scope !== null && group.applies);
+  const definitions = new Map(scopes.map((entry) => [scopeKey(entry.scope), entry]));
+  const matching = checklists.filter((group) => !group.everyJob && checklistMatches(group.scope!, definitions.get(scopeKey(group.scope!))?.match ?? [], names));
+  return matching.length ? checklists.filter((group) => group.everyJob || matching.includes(group)) : checklists;
 }
 
 /**

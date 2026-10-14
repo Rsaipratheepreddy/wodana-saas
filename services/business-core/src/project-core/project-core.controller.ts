@@ -69,6 +69,11 @@ export class ProjectCoreController {
   @Get("projects/:projectId/materials")
   materials(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.materials(actor, workspaceId, projectId); }
 
+  @Get("projects/:projectId/brief")
+  brief(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.projects.brief(actor, workspaceId, projectId);
+  }
+
   @Get("projects/:projectId/readiness")
   readiness(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.projects.readiness(actor, workspaceId, projectId);

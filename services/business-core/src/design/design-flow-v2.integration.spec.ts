@@ -11,6 +11,7 @@ import { workingDeadline } from "../project-core/work-calendar";
 import { designStageSource } from "../reminders/sources/designs";
 import { readDesignEntries } from "../team-calendars/team-calendars.store";
 import { workspaceClock } from "../team-calendars/workspace-clock";
+import { projectBrief, workOrderBrief } from "./design-checklists";
 import { DesignDecisionsService } from "./design-decisions.service";
 import { DesignJourneyService } from "./design-journey.service";
 import { processDesignDeadlines, samplesApprovedAt, startJourney } from "./design-journey.store";
@@ -278,6 +279,64 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     expect([stageRow(view, "samples").outcome, stageRow(view, "approval").status]).toEqual(["samples_approved", "active"]);
     // The fact the later steps (finishes for QS, value engineering, procurement) read.
     expect(await asApp(ids.workspaceId, ids.people.ops.user, (client) => samplesApprovedAt(client, ids.workspaceId, ids.caseId))).toBeInstanceOf(Date);
+  });
+
+  it("asks the general questions by section and the checklists that apply; a check takes a status and a note, a pending one is an open item (Palm discovery)", async () => {
+    const ids = await seed("bespoke");
+    const ops = as(ids, "ops", ALL), lead = as(ids, "lead", DESIGNER), am = as(ids, "am", ["pre_projects.view"]);
+    // The list as the journey froze it: general questions under sections, two joinery checklists with match words and a release record for every job.
+    await sql(ids, "UPDATE design_journeys SET site_visit_questions = $3::jsonb, site_visit_scopes = $4::jsonb WHERE workspace_id = $1 AND case_id = $2", [ids.workspaceId, ids.caseId, JSON.stringify([
+      { key: "core.01", question: "What type of property is this?", section: "Project overview" }, { key: "core.21", question: "What budget range?", section: "Budget and timing" },
+      { key: "kitchen.01", question: "Record appliance brand and model.", scope: "Kitchens and islands", kind: "check" },
+      { key: "kitchen.02", question: "Confirm worktop material.", scope: "Kitchens and islands", kind: "check" },
+      { key: "wardrobe.01", question: "Confirm hanging and shoe storage.", scope: "Wardrobes and walk in closets", kind: "check" },
+      { key: "release.01", question: "Site verified dimensions recorded", scope: "Factory release", kind: "check" },
+    ]), JSON.stringify([{ scope: "Kitchens and islands", match: ["kitchen", "island"] }, { scope: "Wardrobes and walk in closets", match: ["wardrobe", "walk-in"] },
+      { scope: "Factory release", match: [], everyJob: true }])]);
+    let view = await ops.journey.closeInspiration(actor, ids.workspaceId, ids.caseId, { version: stageRow(await ops.journey.get(actor, ids.workspaceId, ids.caseId), "inspiration").version });
+    // A kitchen job (its room "Main kitchen"): the kitchen checklist and the release record apply, the wardrobe one doesn't.
+    expect(view.checklistGroups.map((group) => [group.section ?? group.scope, group.applies, group.required])).toEqual([
+      ["Project overview", true, true], ["Budget and timing", true, true], ["Kitchens and islands", true, true], ["Factory release", true, true], ["Wardrobes and walk in closets", false, false]]);
+    const kickoff = () => stageRow(view, "kickoff").version;
+    await expect(lead.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: kickoff(), answers: [{ key: "core.01", answer: "Villa", status: "confirmed" }] }))
+      .rejects.toThrow("Only a checklist line takes a status");
+    await expect(lead.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: kickoff(), answers: [{ key: "kitchen.01", answer: "Bosch" }] })).rejects.toThrow(/Mark "Record appliance/);
+    view = await lead.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: kickoff(), answers: [{ key: "core.01", answer: "Villa in the Springs" },
+      { key: "kitchen.01", status: "pending", answer: "Client sends the hob model" }, { key: "kitchen.02", status: "not_applicable" }] });
+    expect(view.checklist.find((item) => item.key === "kitchen.01")).toMatchObject({ kind: "check", status: "pending", answer: "Client sends the hob model", answeredByName: "Lina Lead" });
+    expect(view.checklist.find((item) => item.key === "kitchen.02")).toMatchObject({ status: "not_applicable", answer: null });
+    expect(view.checklist.find((item) => item.key === "core.01")).toMatchObject({ kind: "answer", status: null, answer: "Villa in the Springs" });
+    expect(view.pendingChecks).toBe(1);
+
+    // "Applies to this job": the designer adds the wardrobe checklist; two people at once, a replay, someone without edit rights and an unknown checklist.
+    expect(view.checklistGroups.find((group) => group.scope === "Wardrobes and walk in closets")).toMatchObject({ applies: false, chosen: null, choiceVersion: 0 });
+    view = await lead.journey.setChecklistApplies(actor, ids.workspaceId, ids.caseId, { scope: "wardrobes and walk in closets", applies: true, version: 0 });
+    expect(view.checklistGroups.find((group) => group.scope === "Wardrobes and walk in closets")).toMatchObject({ applies: true, chosen: true, required: true, choiceVersion: 1 });
+    await expect(lead.journey.setChecklistApplies(actor, ids.workspaceId, ids.caseId, { scope: "Wardrobes and walk in closets", applies: false, version: 0 })).rejects.toThrow(/another window/);
+    view = await lead.journey.setChecklistApplies(actor, ids.workspaceId, ids.caseId, { scope: "Wardrobes and walk in closets", applies: true, version: 1 });
+    expect(view.checklistGroups.find((group) => group.scope === "Wardrobes and walk in closets")?.choiceVersion).toBe(1);
+    await expect(am.journey.setChecklistApplies(actor, ids.workspaceId, ids.caseId, { scope: "Factory release", applies: false, version: 0 })).rejects.toThrow(ForbiddenException);
+    await expect(lead.journey.setChecklistApplies(actor, ids.workspaceId, ids.caseId, { scope: "Garage", applies: true, version: 0 })).rejects.toThrow("That checklist is not on this job's list");
+
+    // The project and the factory read the same answers: the brief by section and checklist, a work order its own room's checklist and the release record.
+    const brief = await asApp(ids.workspaceId, ids.people.ops.user, (client) => projectBrief(client, ids.workspaceId, ids.caseId));
+    expect(brief.groups.map((group) => [group.section ?? group.scope, group.pending])).toEqual([["Project overview", 0], ["Budget and timing", 0], ["Kitchens and islands", 1],
+      ["Wardrobes and walk in closets", 0], ["Factory release", 0]]);
+    expect(brief.pending).toBe(1);
+    const order = await asApp(ids.workspaceId, ids.people.ops.user, (client) => workOrderBrief(client, ids.workspaceId, ids.caseId, ["Wardrobe carcass", "Master bedroom"]));
+    expect(order.groups.map((group) => group.scope)).toEqual(["Wardrobes and walk in closets", "Factory release"]);
+    const unclear = await asApp(ids.workspaceId, ids.people.ops.user, (client) => workOrderBrief(client, ids.workspaceId, ids.caseId, ["Sofa"]));
+    expect([unclear.groups.map((group) => group.scope), unclear.pending]).toEqual([["Kitchens and islands", "Wardrobes and walk in closets", "Factory release"], 1]);
+
+    // After the site measure a pending line is confirmed later; a question is no longer changed there.
+    await sql(ids, "UPDATE design_journey_stages SET status = 'done', completed_at = now() WHERE workspace_id = $1 AND case_id = $2 AND stage = 'kickoff'", [ids.workspaceId, ids.caseId]);
+    await sql(ids, "INSERT INTO design_journey_tasks(workspace_id, case_id, task, stage, status, completed_at) VALUES($1, $2, 'site_measure', 'concepts', 'done', now())", [ids.workspaceId, ids.caseId]);
+    await expect(lead.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: 1, answers: [{ key: "core.01", answer: "Townhouse" }] })).rejects.toThrow("The design site measure is done");
+    view = await lead.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: 1, answers: [{ key: "kitchen.01", status: "confirmed", answer: "Bosch PIE631BB5E" }] });
+    expect([view.pendingChecks, view.checklist.find((item) => item.key === "kitchen.01")?.status]).toEqual([0, "confirmed"]);
+    // Free-text answers keep no status.
+    expect(await sql(ids, "SELECT question_key AS key, status FROM design_site_visit_answers WHERE workspace_id = $1 AND case_id = $2 ORDER BY question_key", [ids.workspaceId, ids.caseId]))
+      .toEqual([{ key: "core.01", status: null }, { key: "kitchen.01", status: "confirmed" }, { key: "kitchen.02", status: "not_applicable" }]);
   });
 
   it("ends a Concept package's design with samples after the concept: no renders, no render date at the kick-off", async () => {

@@ -14,9 +14,10 @@ import { notifyUserInApp, queueUserEmail } from "../notifications/default-templa
 import { markNotApplicable, notApplicableRoles } from "../project-core/project-team";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
-  APPROVAL_METHODS, approvalProblem, groupSiteQuestions, isCalendarDay, kickoffProblem, MATERIAL_STAGES, normaliseSiteQuestions, renderSignOffProblem, requiredSiteQuestions,
-  samplesProblem, siteChecklistProblem, siteEvidenceProblem, STAGE_LABELS, stageRevisions, TASK_LABELS, type JourneyStage, type JourneyTask, type SiteQuestion,
+  APPROVAL_METHODS, approvalProblem, isCalendarDay, isCheckStatus, kickoffProblem, MATERIAL_STAGES, normaliseSiteQuestions, renderSignOffProblem,
+  samplesProblem, scopeKey, siteChecklistProblem, siteEvidenceProblem, STAGE_LABELS, stageRevisions, TASK_LABELS, type CheckStatus, type JourneyStage, type JourneyTask,
 } from "./design-journey.domain";
+import { jobPending, readJobChecklist } from "./design-checklists";
 import {
   caseFacts, caseRoleHolder, completeStage, completeTask, designTeamConfig, dueText, event, formatDay, formatDue, holdsRole, journeyTimings, leadDesigner, membersWithRole,
   readTasks, recordProjectSiteVisit, roleLabels, salesAdminMembership, startJourney, tellMembers, tellRenderTag, workspaceToday,
@@ -424,29 +425,65 @@ export class DesignJourneyService {
    * is used at the kick-off meeting too (PLM-154): while the kick-off is the current step, its answers are recorded
    * against it (the kick-off's version), and the site measure carries on from them.
    */
-  answerSiteVisit(actor: RequestActor, workspaceId: string, caseId: string, input: { answers: Array<{ key: string; answer: string }>; version: number }) {
+  answerSiteVisit(actor: RequestActor, workspaceId: string, caseId: string, input: { answers: Array<{ key: string; answer?: string | null; status?: CheckStatus | null }>; version: number }) {
     return this.edit(actor, workspaceId, caseId, async (client, userId) => {
-      const kickoff = (await client.query<{ status: string }>(`SELECT status FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'kickoff'`,
-        [workspaceId, caseId])).rows[0];
-      const target: SiteVisitTarget | { kind: "kickoff" } = kickoff?.status === "active"
-        ? (await this.activeStage(client, workspaceId, caseId, "kickoff", input.version), { kind: "kickoff" as const })
-        : await this.siteVisitTarget(client, workspaceId, caseId, input.version);
-      const questions = await this.questions(client, workspaceId, caseId);
-      for (const item of input.answers) {
+      const questions = normaliseSiteQuestions((await client.query<{ questions: unknown }>(
+        `SELECT site_visit_questions AS questions FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.questions);
+      const asked = input.answers.map((item) => {
         const question = questions.find((entry) => entry.key === item.key);
         if (!question) throw new UnprocessableEntityException("That question is not on this visit's list");
-        const answer = item.answer.trim();
-        if (!answer) await client.query(`DELETE FROM design_site_visit_answers WHERE workspace_id = $1 AND case_id = $2 AND question_key = $3`, [workspaceId, caseId, item.key]);
+        if (question.kind !== "check" && item.status) throw new UnprocessableEntityException("Only a checklist line takes a status");
+        if (item.status && !isCheckStatus(item.status)) throw new UnprocessableEntityException("Mark a check confirmed, pending or not applicable");
+        return { question, answer: (item.answer ?? "").trim(), status: question.kind === "check" ? item.status ?? null : null };
+      });
+      const kickoff = (await client.query<{ status: string }>(`SELECT status FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'kickoff'`,
+        [workspaceId, caseId])).rows[0];
+      // A checklist line stays open to change after the visit (a pending item gets confirmed later); questions don't.
+      const checksOnly = asked.length > 0 && asked.every((item) => item.question.kind === "check");
+      const target: SiteVisitTarget | { kind: "kickoff" } = kickoff?.status === "active"
+        ? (await this.activeStage(client, workspaceId, caseId, "kickoff", input.version), { kind: "kickoff" as const })
+        : await this.siteVisitTarget(client, workspaceId, caseId, input.version, checksOnly);
+      for (const { question, answer, status } of asked) {
+        if (question.kind === "check" && !status && answer) throw new UnprocessableEntityException(`Mark "${question.question.slice(0, 60)}" confirmed, pending or not applicable`);
+        if (!answer && !status) await client.query(`DELETE FROM design_site_visit_answers WHERE workspace_id = $1 AND case_id = $2 AND question_key = $3`, [workspaceId, caseId, question.key]);
         else await client.query(
-          `INSERT INTO design_site_visit_answers (workspace_id, case_id, question_key, question, answer, answered_by) VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (workspace_id, case_id, question_key) DO UPDATE SET answer = excluded.answer, answered_by = excluded.answered_by, answered_at = now(), version = design_site_visit_answers.version + 1
-           WHERE design_site_visit_answers.answer IS DISTINCT FROM excluded.answer`, [workspaceId, caseId, item.key, question.question, answer, userId]);
+          `INSERT INTO design_site_visit_answers (workspace_id, case_id, question_key, question, answer, status, answered_by) VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (workspace_id, case_id, question_key) DO UPDATE SET answer = excluded.answer, status = excluded.status, answered_by = excluded.answered_by, answered_at = now(),
+             version = design_site_visit_answers.version + 1
+           WHERE design_site_visit_answers.answer IS DISTINCT FROM excluded.answer OR design_site_visit_answers.status IS DISTINCT FROM excluded.status`,
+          [workspaceId, caseId, question.key, question.question, answer, status, userId]);
       }
       if (target.kind === "kickoff") await client.query(`UPDATE design_journey_stages SET version = version + 1 WHERE workspace_id = $1 AND case_id = $2 AND stage = 'kickoff'`, [workspaceId, caseId]);
       else if (target.kind === "stage") await client.query(`UPDATE design_journey_stages SET version = version + 1 WHERE workspace_id = $1 AND case_id = $2 AND stage = 'site_visit'`, [workspaceId, caseId]);
       else await client.query(`UPDATE design_journey_tasks SET version = version + 1 WHERE workspace_id = $1 AND case_id = $2 AND task = 'site_measure'`, [workspaceId, caseId]);
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.site_visit_answered.v1", entityType: "pre_project_case", entityId: caseId,
-        after: { keys: input.answers.map((item) => item.key), at: target.kind === "kickoff" ? "kickoff" : "site_visit" } });
+        after: { keys: input.answers.map((item) => item.key), checks: Object.fromEntries(asked.filter((item) => item.status).map((item) => [item.question.key, item.status])),
+          at: target.kind === "kickoff" ? "kickoff" : "site_visit" } });
+      return this.view(client, workspaceId, caseId, userId);
+    });
+  }
+
+  /**
+   * "Applies to this job": the designer switches a scope's checklist on or off for the job (pre-set from the matching).
+   * Recorded with who and when; the same choice twice changes nothing. Its version guards against two people at once.
+   */
+  setChecklistApplies(actor: RequestActor, workspaceId: string, caseId: string, input: { scope: string; applies: boolean; version: number }) {
+    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
+      const job = await readJobChecklist(client, workspaceId, caseId);
+      if (!job) throw new ConflictException("Start the design first");
+      const key = scopeKey(input.scope ?? "");
+      const group = job.groups.find((entry) => entry.scope && scopeKey(entry.scope) === key);
+      if (!group) throw new UnprocessableEntityException("That checklist is not on this job's list");
+      const before = (await client.query<{ applies: boolean; version: number }>(
+        `SELECT applies, version FROM design_checklist_choices WHERE workspace_id = $1 AND case_id = $2 AND scope_key = $3 FOR UPDATE`, [workspaceId, caseId, key])).rows[0];
+      if ((before?.version ?? 0) !== input.version) throw new ConflictException("This checklist changed in another window. Reload and try again.");
+      if (before?.applies === input.applies) return this.view(client, workspaceId, caseId, userId);
+      await client.query(
+        `INSERT INTO design_checklist_choices (workspace_id, case_id, scope_key, scope, applies, chosen_by) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (workspace_id, case_id, scope_key) DO UPDATE SET applies = excluded.applies, chosen_by = excluded.chosen_by, chosen_at = now(), version = design_checklist_choices.version + 1`,
+        [workspaceId, caseId, key, group.scope, input.applies, userId]);
+      await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.checklist_applies_changed.v1", entityType: "pre_project_case", entityId: caseId,
+        before: { scope: group.scope, applies: before?.applies ?? group.applies, chosen: Boolean(before) }, after: { scope: group.scope, applies: input.applies } });
       return this.view(client, workspaceId, caseId, userId);
     });
   }
@@ -461,8 +498,10 @@ export class DesignJourneyService {
       const target = await this.siteVisitTarget(client, workspaceId, caseId, input.version);
       if (!input.summary?.trim()) throw new UnprocessableEntityException("Summarise what was found on site");
       const measurements = await this.measurements(client, workspaceId, caseId);
-      const required = requiredSiteQuestions(await this.questions(client, workspaceId, caseId), await this.areas(client, workspaceId, caseId));
-      const problem = siteEvidenceProblem(measurements) ?? siteChecklistProblem(required, (await this.answers(client, workspaceId, caseId)).map((row) => row.key));
+      // The general questions and the checklists that apply: every question answered, every line marked (pending counts).
+      const job = await readJobChecklist(client, workspaceId, caseId);
+      const required = job ? job.groups.filter((group) => group.required).flatMap((group) => group.questions) : [];
+      const problem = siteEvidenceProblem(measurements) ?? siteChecklistProblem(required, (job?.answers ?? []).map((row) => row.key));
       if (problem) throw new UnprocessableEntityException(problem);
       const files = measurements.reduce((sum, item) => sum + item.files, 0);
       const summary = input.summary.trim();
@@ -703,10 +742,11 @@ export class DesignJourneyService {
       .map((row) => ({ ...row, label: STAGE_LABELS[row.stage], overdue: row.status === "active" && row.dueAt instanceof Date && row.dueAt.getTime() < Date.now(),
         revisions: isDeliverableStage(row.stage) ? stageRevisions(roundsOf(row.stage), journey.includedRevisions) : null })) : [];
     const measurements = journey ? await this.measurements(client, workspaceId, caseId) : [];
-    const questions = journey ? normaliseSiteQuestions(journey.questions) : [];
-    const answers = journey ? await this.answers(client, workspaceId, caseId) : [];
-    const areas = journey ? await this.areas(client, workspaceId, caseId) : [];
-    const required = requiredSiteQuestions(questions, areas);
+    const job = journey ? await readJobChecklist(client, workspaceId, caseId) : null;
+    const questions = job?.questions ?? [];
+    const answers = job?.answers ?? [];
+    const groups = job?.groups ?? [];
+    const required = groups.filter((group) => group.required).flatMap((group) => group.questions);
     const timezone = (await client.query<{ timezone: string }>(`SELECT default_timezone AS timezone FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.timezone ?? "UTC";
     const progress = journey ? await stageProgress(client, workspaceId, caseId) : [];
     const ledger = journey ? await readLedger(client, workspaceId, caseId) : null;
@@ -726,8 +766,11 @@ export class DesignJourneyService {
     const tasks = journey ? (await readTasks(client, workspaceId, caseId)).map((task) => ({ ...task, label: TASK_LABELS[task.task as JourneyTask],
       overdue: task.status === "open" && task.dueAt instanceof Date && task.dueAt.getTime() < Date.now() })) : [];
     const answeredKeys = answers.map((answer) => answer.key);
-    const checklist = questions.map((question) => ({ ...question, required: required.some((entry) => entry.key === question.key),
-      ...(answers.find((answer) => answer.key === question.key) ?? { answer: null, answeredByName: null, answeredAt: null }) }));
+    const checklist = questions.map((question) => {
+      const found = answers.find((answer) => answer.key === question.key);
+      return { ...question, kind: question.kind ?? "answer", required: required.some((entry) => entry.key === question.key),
+        answer: found?.answer || null, status: found?.status ?? null, answeredByName: found?.answeredByName ?? null, answeredAt: found?.answeredAt ?? null };
+    });
     return {
       site: site && (site.address || site.latitude !== null) ? site : null,
       journey: journey ? { ...journeyView, flowVersion: Number(journey.flowVersion), kind: journey.packageId || journey.packageName ? "design" : "site_and_materials" } : null, startsAs,
@@ -736,9 +779,17 @@ export class DesignJourneyService {
       siteVisit: journey ? await this.siteVisitState(client, workspaceId, caseId, stages, tasks) : null,
       measurements, siteEvidenceProblem: journey ? siteEvidenceProblem(measurements) : null,
       checklist,
-      // PLM-154: the list by scope, the job's own scopes first; questions of a scope the job doesn't have are optional.
-      checklistGroups: groupSiteQuestions(questions, areas).map((group) => ({ scope: group.scope, matches: group.matches, required: group.required, keys: group.questions.map((question) => question.key) })),
+      // PLM-154: the general questions by section, then the checklists that apply to the job; the rest aren't asked. Each
+      // checklist carries the designer's "Applies to this job" choice (its version for the next change).
+      checklistGroups: groups.map((group) => {
+        const choice = group.scope ? job?.choices.find((entry) => entry.scopeKey === scopeKey(group.scope!)) : undefined;
+        return { scope: group.scope, section: group.section, everyJob: group.everyJob, matches: group.matches, chosen: group.chosen, applies: group.applies, required: group.required,
+          choiceVersion: choice?.version ?? 0, keys: group.questions.map((question) => question.key),
+          pending: group.questions.filter((question) => question.kind === "check" && answers.find((answer) => answer.key === question.key)?.status === "pending").length };
+      }),
       siteChecklistProblem: journey ? siteChecklistProblem(required, answeredKeys) : null,
+      // The open items: pending lines of the checklists that apply.
+      pendingChecks: job ? jobPending(job) : 0,
       ledger: ledger ? { state: ledger.state, lockProblem: ledger.lockProblem, lock: ledger.lock, materials: ledger.entries.filter((entry) => !entry.archivedAt && entry.kind === "material").length,
         waiting: ledger.entries.filter((entry) => !entry.archivedAt && entry.current?.status !== "confirmed").length,
         outsourcedWaiting: ledger.entries.filter((entry) => !entry.archivedAt && entry.current?.outsourced && entry.current.signOff !== "approved").length } : null,
@@ -833,19 +884,20 @@ export class DesignJourneyService {
   }
 
   /** The site visit to write to: the old order's stage when it is the current one, else the open site measure (PLM-141). */
-  private async siteVisitTarget(client: PoolClient, workspaceId: string, caseId: string, version: number): Promise<SiteVisitTarget> {
+  /** `afterDone`: a visit already done is written to as well (a checklist line changed after the visit). */
+  private async siteVisitTarget(client: PoolClient, workspaceId: string, caseId: string, version: number, afterDone = false): Promise<SiteVisitTarget> {
     const stage = (await client.query<{ status: string; version: number; activityId: string | null; owner: string | null }>(
       `SELECT status, version, activity_id AS "activityId", owner_membership_id AS owner FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'site_visit' FOR UPDATE`, [workspaceId, caseId])).rows[0];
     if (stage) {
       if (stage.version !== version) throw new ConflictException("The design stage changed in another window. Reload and try again.");
-      if (stage.status !== "active") throw new ConflictException(`${STAGE_LABELS.site_visit} is not the current stage`);
+      if (stage.status !== "active" && !(afterDone && stage.status === "done")) throw new ConflictException(`${STAGE_LABELS.site_visit} is not the current stage`);
       return { kind: "stage", activityId: stage.activityId, owner: stage.owner };
     }
     const task = (await client.query<{ status: string; version: number; activityId: string | null; owner: string | null }>(
       `SELECT status, version, activity_id AS "activityId", owner_membership_id AS owner FROM design_journey_tasks WHERE workspace_id = $1 AND case_id = $2 AND task = 'site_measure' FOR UPDATE`, [workspaceId, caseId])).rows[0];
     if (!task) throw new ConflictException("The design site measure starts after the kick-off meeting");
     if (task.version !== version) throw new ConflictException("The site measure changed in another window. Reload and try again.");
-    if (task.status !== "open") throw new ConflictException("The design site measure is done");
+    if (task.status !== "open" && !(afterDone && task.status === "done")) throw new ConflictException("The design site measure is done");
     return { kind: "task", activityId: task.activityId, owner: task.owner };
   }
 
@@ -875,20 +927,6 @@ export class DesignJourneyService {
     return (await client.query<{ owner: string | null }>(`SELECT owner_membership_id AS owner FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = $3`, [workspaceId, caseId, stage])).rows[0]?.owner ?? null;
   }
 
-  private async questions(client: PoolClient, workspaceId: string, caseId: string): Promise<SiteQuestion[]> {
-    return normaliseSiteQuestions((await client.query<{ questions: unknown }>(`SELECT site_visit_questions AS questions FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.questions);
-  }
-
-  /** PLM-154: the job's scope as its rooms and areas in the brief, which pick the matching question groups. */
-  private async areas(client: PoolClient, workspaceId: string, caseId: string) {
-    return (await client.query<{ name: string }>(`SELECT name FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2 ORDER BY name`, [workspaceId, caseId])).rows.map((row) => row.name);
-  }
-
-  private async answers(client: PoolClient, workspaceId: string, caseId: string) {
-    return (await client.query<{ key: string; answer: string; answeredByName: string | null; answeredAt: Date }>(
-      `SELECT answer.question_key AS key, answer.answer, account.display_name AS "answeredByName", answer.answered_at AS "answeredAt"
-         FROM design_site_visit_answers answer LEFT JOIN users account ON account.id = answer.answered_by WHERE answer.workspace_id = $1 AND answer.case_id = $2`, [workspaceId, caseId])).rows;
-  }
 
   private async measurements(client: PoolClient, workspaceId: string, caseId: string) {
     return (await client.query<{ title: string; status: string; files: number; roomId: string | null }>(
