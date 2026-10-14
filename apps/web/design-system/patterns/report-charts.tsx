@@ -12,7 +12,9 @@ import { useT } from "@/lib/i18n/i18n-provider";
  */
 export type ReportSeries = { id: string; label: string };
 export type ReportCategory = { key: string; label: string };
-export type ReportItem = { key: string; label: string; value: number; display: string; detail?: string };
+export type ReportItem = { key: string; label: string; value: number; display: string; detail?: string;
+  /** This row's own target (e.g. a path's lead time), drawn as a marker across its bar. */
+  marker?: number };
 
 const finite = (value: number | null | undefined) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 const share = (value: number, max: number) => (max > 0 ? Math.min(1, Math.max(0, finite(value)) / max) : 0);
@@ -26,28 +28,34 @@ function ValuesTable({ caption, head, rows }: { caption: string; head: string[];
   </table>;
 }
 
-function Legend({ series }: { series: ReportSeries[] }) {
-  if (series.length < 2) return null;
+function Legend({ series, line }: { series: ReportSeries[]; line?: ReportSeries }) {
+  if (series.length < 2 && !line) return null;
   return <ul className="wd-report-legend" aria-hidden="true">
     {series.map((item, index) => <li key={item.id}><i data-series={index} />{item.label}</li>)}
+    {line ? <li><b className="wd-report-legend-line" />{line.label}</li> : null}
   </ul>;
 }
 
-/** Bars ranked by value, one row each (people, reasons, stages); an optional target marker crosses every row. */
+/**
+ * Bars ranked by value, one row each (people, reasons, stages); an optional target marker crosses every row, or each
+ * row its own (`marker`).
+ */
 export function RankedBars({ ariaLabel, items, onSelect, target, tone }: {
   ariaLabel: string; items: ReportItem[]; onSelect?: (key: string) => void;
   target?: { value: number; display: string }; tone?: "danger";
 }) {
   const t = useT();
-  const max = peak([...items.map((item) => item.value), target?.value ?? 0]);
+  const max = peak([...items.map((item) => item.value), ...items.map((item) => item.marker ?? 0), target?.value ?? 0]);
+  const marked = items.some((item) => item.marker !== undefined);
   return <figure className="wd-ranked-bars" data-tone={tone}>
     <ol aria-label={ariaLabel}>
       {items.map((item) => {
+        const mark = item.marker ?? target?.value;
         const body = <>
           <span className="wd-ranked-bars-label">{item.label}</span>
           <span className="wd-ranked-bars-track">
             <i style={{ "--wd-bar": share(item.value, max) } as CSSProperties} />
-            {target && max > 0 ? <b className="wd-ranked-bars-target" style={{ "--wd-bar": share(target.value, max) } as CSSProperties} /> : null}
+            {mark !== undefined && max > 0 ? <b className="wd-ranked-bars-target" style={{ "--wd-bar": share(mark, max) } as CSSProperties} /> : null}
           </span>
           <span className="wd-ranked-bars-value">{item.display}{item.detail ? <small>{item.detail}</small> : null}</span>
         </>;
@@ -56,47 +64,67 @@ export function RankedBars({ ariaLabel, items, onSelect, target, tone }: {
           : <span className="wd-ranked-bars-row">{body}</span>}</li>;
       })}
     </ol>
-    {target ? <figcaption className="wd-report-note"><b className="wd-ranked-bars-target-key" aria-hidden="true" />{t("Target {target}", { target: target.display })}</figcaption> : null}
+    {target ? <figcaption className="wd-report-note"><b className="wd-ranked-bars-target-key" aria-hidden="true" />{t("Target {target}", { target: target.display })}</figcaption>
+      : marked ? <figcaption className="wd-report-note"><b className="wd-ranked-bars-target-key" aria-hidden="true" />{t("Target")}</figcaption> : null}
   </figure>;
 }
 
 /**
  * Columns per period (or category). With more than one series the columns are stacked, each part a button that
- * opens its own records; the total sits above the column.
+ * opens its own records; the total sits above the column. An optional `line` (in the same unit, e.g. invoiced over
+ * collected) runs across the columns, point to point; a point opens its own records.
  */
-export function ColumnChart({ ariaLabel, categories, series, values, format, onSelect, highlightLast = true }: {
+export function ColumnChart({ ariaLabel, categories, series, values, format, onSelect, highlightLast = true, line, onSelectLine }: {
   ariaLabel: string; categories: ReportCategory[]; series: ReportSeries[];
   /** values[series][category] */
   values: number[][];
   format: (value: number) => string;
   onSelect?: (categoryKey: string, seriesId: string | null) => void;
   highlightLast?: boolean;
+  /** One value per category (null: no point there). */
+  line?: ReportSeries & { values: Array<number | null> };
+  onSelectLine?: (categoryKey: string) => void;
 }) {
   const t = useT();
   const totals = categories.map((_, column) => series.reduce((sum, __, row) => sum + Math.max(0, finite(values[row]?.[column])), 0));
-  const max = peak(totals);
+  const max = peak([...totals, ...(line?.values ?? []).map((value) => finite(value))]);
+  const point = (column: number) => { const value = line?.values[column]; return value === null || value === undefined || !Number.isFinite(value) ? null : Math.max(0, value); };
   return <figure className="wd-column-chart">
     <div className="wd-column-chart-plot" role="group" aria-label={ariaLabel}>
-      {categories.map((category, column) => <div key={category.key} className="wd-column-chart-column" data-current={highlightLast && column === categories.length - 1 ? "" : undefined}>
-        <span className="wd-column-chart-total" aria-hidden="true">{totals[column] > 0 ? format(totals[column]) : ""}</span>
-        <span className="wd-column-chart-stack" style={{ "--wd-bar": share(totals[column], max) } as CSSProperties}>
-          {series.map((item, row) => {
-            const value = Math.max(0, finite(values[row]?.[column]));
-            if (!value) return null;
-            const label = series.length > 1 ? `${category.label} · ${item.label}: ${format(value)}` : `${category.label}: ${format(value)}`;
-            const style = { "--wd-part": totals[column] > 0 ? value / totals[column] : 0 } as CSSProperties;
-            return onSelect
-              ? <button key={item.id} type="button" data-series={row} style={style} title={label} aria-label={t("{label}. Open the records", { label })}
-                  onClick={() => onSelect(category.key, series.length > 1 ? item.id : null)} />
-              : <i key={item.id} data-series={row} style={style} title={label} />;
-          })}
-        </span>
-        <small aria-hidden="true">{category.label}</small>
-      </div>)}
+      {categories.map((category, column) => {
+        const here = point(column), next = column < categories.length - 1 ? point(column + 1) : null;
+        const pointLabel = line && here !== null ? `${category.label} · ${line.label}: ${format(here)}` : "";
+        return <div key={category.key} className="wd-column-chart-column" data-current={highlightLast && column === categories.length - 1 ? "" : undefined}>
+          <span className="wd-column-chart-total" aria-hidden="true">{totals[column] > 0 ? format(totals[column]) : ""}</span>
+          <span className="wd-column-chart-stack" style={{ "--wd-bar": share(totals[column], max) } as CSSProperties}>
+            {series.map((item, row) => {
+              const value = Math.max(0, finite(values[row]?.[column]));
+              if (!value) return null;
+              const label = series.length > 1 ? `${category.label} · ${item.label}: ${format(value)}` : `${category.label}: ${format(value)}`;
+              const style = { "--wd-part": totals[column] > 0 ? value / totals[column] : 0 } as CSSProperties;
+              return onSelect
+                ? <button key={item.id} type="button" data-series={row} style={style} title={label} aria-label={t("{label}. Open the records", { label })}
+                    onClick={() => onSelect(category.key, series.length > 1 ? item.id : null)} />
+                : <i key={item.id} data-series={row} style={style} title={label} />;
+            })}
+          </span>
+          {line && here !== null ? <span className="wd-column-chart-line">
+            {next !== null ? <svg className="wd-column-chart-segment wd-chart-flow" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <line x1="0" y1={100 - share(here, max) * 100} x2="100" y2={100 - share(next, max) * 100} vectorEffect="non-scaling-stroke" />
+            </svg> : null}
+            {onSelectLine
+              ? <button type="button" className="wd-column-chart-point" style={{ "--wd-bar": share(here, max) } as CSSProperties} title={pointLabel}
+                  aria-label={t("{label}. Open the records", { label: pointLabel })} onClick={() => onSelectLine(category.key)} />
+              : <i className="wd-column-chart-point" style={{ "--wd-bar": share(here, max) } as CSSProperties} title={pointLabel} />}
+          </span> : null}
+          <small aria-hidden="true">{category.label}</small>
+        </div>;
+      })}
     </div>
-    <Legend series={series} />
-    <ValuesTable caption={ariaLabel} head={["", ...series.map((item) => item.label)]}
-      rows={categories.map((category, column) => ({ key: category.key, cells: [category.label, ...series.map((_, row) => format(finite(values[row]?.[column])))] }))} />
+    <Legend series={series} line={line} />
+    <ValuesTable caption={ariaLabel} head={["", ...series.map((item) => item.label), ...(line ? [line.label] : [])]}
+      rows={categories.map((category, column) => ({ key: category.key, cells: [category.label, ...series.map((_, row) => format(finite(values[row]?.[column]))),
+        ...(line ? [point(column) === null ? "—" : format(point(column)!)] : [])] }))} />
   </figure>;
 }
 
@@ -218,11 +246,15 @@ export function FunnelSteps({ ariaLabel, steps, onSelect }: {
   </figure>;
 }
 
-/** A report's chart or list on the same quiet surface as its figures: a title, an optional action, the content. */
-export function ReportPanel({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+/**
+ * A report's chart or list on the same quiet surface as its figures: a title, an optional action, the content, and
+ * an optional one-line note under it (e.g. that its amounts include tax).
+ */
+export function ReportPanel({ title, action, note, children }: { title: string; action?: ReactNode; note?: ReactNode; children: ReactNode }) {
   return <section className="wd-report-panel">
     <header><h3>{title}</h3>{action ? <div className="wd-report-panel-action">{action}</div> : null}</header>
     <div className="wd-report-panel-body">{children}</div>
+    {note ? <small className="wd-report-note">{note}</small> : null}
   </section>;
 }
 

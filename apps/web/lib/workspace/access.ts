@@ -97,7 +97,8 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
 export const REPORT_DASHBOARD_ACCESS: Record<string, AccessRule> = {
   "production-delivery": [["factory.view", "factory.manage", "projects.view", "projects.manage", "logistics.manage"]],
   finance: [["payables.view", "receivables.view", "accounting.manage"]],
-  stock: [[...STOCK_VIEW, "purchasing.view", "purchasing.manage"]],
+  // Stock and marketing (PLM-133): its figures are stock's or marketing's.
+  stock: [[...STOCK_VIEW, "crm.leads.view"]],
 };
 
 /** Sales settings' sections (`?section=`), in their tab order. */

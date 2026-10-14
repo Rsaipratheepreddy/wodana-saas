@@ -63,7 +63,8 @@ export function MonthCalendar({ month, events, today, selected, onSelect, onMont
   selected?: string;
   onSelect?: (day: string) => void;
   onMonthChange: (month: string) => void;
-  weekStartsOn?: 0 | 1;
+  /** The first day of the week (0 Sunday … 6 Saturday), from the workspace's region. */
+  weekStartsOn?: number;
   nonWorkingWeekdays?: number[];
   maxPerDay?: number;
   locale?: string;

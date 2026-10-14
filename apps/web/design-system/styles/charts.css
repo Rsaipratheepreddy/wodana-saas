@@ -90,7 +90,17 @@ button.wd-ranked-bars-row:hover .wd-ranked-bars-track i { background: color-mix(
 .wd-ranked-bars-value small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-regular); }
 
 .wd-column-chart { container-type: inline-size; }
-.wd-column-chart-plot { display: flex; align-items: stretch; gap: var(--wd-space-2); block-size: calc(var(--wd-space-24) + var(--wd-space-16)); }
+.wd-column-chart-plot { --wd-column-gap: var(--wd-space-2); display: flex; align-items: stretch; gap: var(--wd-column-gap); block-size: calc(var(--wd-space-24) + var(--wd-space-16)); }
+/* A line over the columns: a point at its value in each column (the stack's row) and a segment to the next column's point,
+   drawn toward the inline end in both directions. */
+.wd-column-chart-line { grid-row: 2; grid-column: 1; position: relative; pointer-events: none; }
+.wd-column-chart-segment { position: absolute; inset-block: 0; inset-inline-start: 50%; inline-size: calc(100% + var(--wd-column-gap)); block-size: 100%; overflow: visible; }
+.wd-column-chart-segment line { stroke: var(--wd-color-text); stroke-width: 1.5; }
+.wd-column-chart .wd-column-chart-point { position: absolute; inset-inline-start: 50%; inset-block-end: calc(var(--wd-bar) * 100%); inline-size: var(--wd-space-2); block-size: var(--wd-space-2);
+  margin-inline-start: calc(-1 * var(--wd-space-1)); margin-block-end: calc(-1 * var(--wd-space-1)); padding: 0; border: 2px solid var(--wd-color-text); border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface); pointer-events: auto; }
+.wd-column-chart button.wd-column-chart-point:hover { background: var(--wd-color-text); }
+.wd-report-legend-line { display: inline-block; inline-size: var(--wd-space-3); block-size: var(--wd-space-0-5); background: var(--wd-color-text); }
 .wd-column-chart-column { flex: 1; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--wd-space-1); min-inline-size: 0; }
 /* The total sits above the current period only (the others read from the tooltip and the table). */
 .wd-column-chart-total { justify-self: center; inline-size: max-content; font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; unicode-bidi: plaintext; visibility: hidden; }
@@ -101,7 +111,7 @@ button.wd-ranked-bars-row:hover .wd-ranked-bars-track i { background: color-mix(
 .wd-column-chart-column[data-current] .wd-column-chart-stack > * { background: var(--wd-series); }
 .wd-column-chart .wd-column-chart-stack > button:hover { background: color-mix(in srgb, var(--wd-series) 82%, var(--wd-color-text)); }
 .wd-column-chart-column small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@container (max-width: 36rem) { .wd-column-chart-column:nth-last-child(even) small { visibility: hidden; } .wd-column-chart-column small { justify-self: center; inline-size: max-content; overflow: visible; } .wd-column-chart-plot { gap: var(--wd-space-1); } }
+@container (max-width: 36rem) { .wd-column-chart-column:nth-last-child(even) small { visibility: hidden; } .wd-column-chart-column small { justify-self: center; inline-size: max-content; overflow: visible; } .wd-column-chart-plot { --wd-column-gap: var(--wd-space-1); } }
 
 .wd-trend-lines svg { inline-size: 100%; block-size: calc(var(--wd-space-24) + var(--wd-space-8)); overflow: visible; }
 .wd-trend-lines line { stroke: var(--wd-color-structural-divider); stroke-width: 0.5; }

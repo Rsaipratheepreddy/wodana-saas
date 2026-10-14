@@ -9,7 +9,11 @@ export type TargetResult = { target: string; percent: string | null; gap: string
 export type ChartCategory = { key: string; label: string };
 export type ChartSeries = { id: string; label: string };
 export type Chart =
-  | { type: "columns"; dimension: string; seriesDimension?: string; categories: ChartCategory[]; series: ChartSeries[]; values: string[][]; unit: Unit }
+  | { type: "columns"; dimension: string; seriesDimension?: string; categories: ChartCategory[]; series: ChartSeries[]; values: string[][]; unit: Unit;
+      /** A line over the columns (e.g. invoiced over cash collected); a point opens `series=<id>` for its category. */
+      line?: { id: string; label: string; values: Array<string | null> } }
+  /** The logistics calendar: records per day and series; a day opens `day=<YYYY-MM-DD>`. */
+  | { type: "calendar"; dimension: string; seriesDimension: string; month: string; weekStart: number; entries: Array<{ day: string; series: string; count: number }> }
   | { type: "lines"; dimension: string; categories: ChartCategory[]; series: ChartSeries[]; values: Array<Array<string | null>>; unit: Unit }
   | { type: "bars"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount?: string | null; target?: TargetResult | null;
       extra?: Record<string, string | number | null> }>; unit: Unit }
@@ -22,7 +26,9 @@ export type Better = "higher" | "lower" | "neutral";
 export type Kpi = {
   code: string; unit: Unit; value: string | null; count: number; amount?: string | null; targetable: boolean;
   target?: TargetResult | null; targetHidden?: boolean; chart?: Chart;
-  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string; basis?: "ledger" | "records" | "mixed" };
+  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string; basis?: "ledger" | "records" | "mixed";
+    /** Part of the figure Wodana doesn't record yet (e.g. "commission_payments"): said, never shown as a zero. */
+    notRecorded?: string };
   extra?: Record<string, string | number | null>;
   /** The same figure for the span just before the period, and the change in % (null: nothing to compare). */
   previous?: { from: string; to: string; value: string | null; change: string | null; better: Better };
@@ -31,11 +37,15 @@ export type ReportRecord = {
   id: string; kind: string; reference: string | null; title: string; client: string | null; owner: string | null; ownerId: string | null;
   at: string | null; amount: string | null; measure: string | null; detail: string | null; href: string;
 };
-/** What the page shows: up to four figures, two charts and one "needs attention" list (its first rows come with the dashboard). */
-export type Layout = { tiles: string[]; charts: string[]; attention: string | null };
+/**
+ * What the page shows: up to four figures, its charts, at most one "needs attention" list and the KPIs that are lists
+ * (their first rows come with the dashboard).
+ */
+export type Layout = { tiles: string[]; charts: string[]; attention: string | null; lists?: string[] };
+export type RecordList = { kpi: string; total: number; records: ReportRecord[] };
 export type Dashboard = {
   dashboard: DashboardId; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[];
-  layout?: Layout; attention?: { kpi: string; total: number; records: ReportRecord[] } | null;
+  layout?: Layout; attention?: RecordList | null; lists?: RecordList[];
 };
 export type Option = { id: string; label: string };
 export type FilterOptions = {
@@ -55,7 +65,7 @@ export type DashboardId = (typeof DASHBOARDS)[number];
 export const MOVED_DASHBOARDS: Record<string, DashboardId> = { "lead-response": "sales-pipeline", "stock-marketing": "stock" };
 export const DASHBOARD_LABELS: Record<DashboardId, MessageKey> = {
   "owner-overview": tKey("Overview"), "sales-pipeline": tKey("Sales and marketing"), "design-projects": tKey("Design"),
-  "production-delivery": tKey("Production and delivery"), finance: tKey("Finance"), stock: tKey("Stock"),
+  "production-delivery": tKey("Production and delivery"), finance: tKey("Finance"), stock: tKey("Stock and marketing"),
 };
 /** The two filters each dashboard offers beside the period (the rest of a figure's breakdown is in its records). */
 export const DASHBOARD_FILTERS: Record<DashboardId, ReadonlyArray<"accountManager" | "enquiryType" | "package" | "entity">> = {

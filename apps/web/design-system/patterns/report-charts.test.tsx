@@ -17,6 +17,29 @@ describe("report charts", () => {
     expect(within(table).getByRole("row", { name: "Sep $18000 $20000" })).toBeInTheDocument();
   });
 
+  it("draws a line over the columns, point to point, each point opening its own records", () => {
+    const column = vi.fn(), point = vi.fn();
+    const { container } = render(<ColumnChart ariaLabel="Cash collected" categories={[...months, { key: "2026-10", label: "Oct" }]} series={[{ id: "e1", label: "Studio" }]}
+      values={[[1000, 29000, 0]]} format={(value) => `$${value}`} onSelect={column} line={{ id: "invoiced", label: "Invoiced", values: [0, 30000, null] }} onSelectLine={point} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sep · Invoiced: $30000. Open the records" }));
+    expect(point).toHaveBeenCalledWith("2026-09");
+    fireEvent.click(screen.getByRole("button", { name: "Sep: $29000. Open the records" }));
+    expect(column).toHaveBeenCalledWith("2026-09", null);
+    // Aug → Sep is a segment; Sep → Oct isn't (no point in October).
+    expect(container.querySelectorAll(".wd-column-chart-point")).toHaveLength(2);
+    expect(container.querySelectorAll(".wd-column-chart-segment")).toHaveLength(1);
+    // The line is named in the legend and its values are in the table.
+    expect(container.querySelector(".wd-report-legend")).toHaveTextContent("Invoiced");
+    expect(within(screen.getByRole("table", { name: "Cash collected" })).getByRole("row", { name: "Oct $0 —" })).toBeInTheDocument();
+  });
+
+  it("draws each row's own target across its bar", () => {
+    const { container } = render(<RankedBars ariaLabel="Lead time by path"
+      items={[{ key: "a", label: "A", value: 1, display: "1 days", marker: 0 }, { key: "b", label: "B", value: 4, display: "4 days", marker: 4 }, { key: "c", label: "C", value: 0, display: "0 days" }]} />);
+    expect(container.querySelectorAll(".wd-ranked-bars-target")).toHaveLength(2);
+    expect(screen.getByText("Target")).toBeInTheDocument();
+  });
+
   it("ranks bars with a target marker and names each row for screen readers", () => {
     const open = vi.fn();
     render(<RankedBars ariaLabel="Won by Account Manager" target={{ value: 25000, display: "$25,000" }} onSelect={open}

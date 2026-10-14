@@ -5,7 +5,7 @@ import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@/design-system";
 import type { Dashboard, DashboardId, Kpi } from "@/lib/reports/management";
-import { chartHasData, ManagementReports, presetRange } from "./management-reports";
+import { chartHasData, chartRows, ManagementReports, presetRange } from "./management-reports";
 import { ReportTargetsSettings } from "./report-targets-settings";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -36,17 +36,28 @@ const DASHBOARDS: Record<string, Dashboard> = {
   ], { tiles: ["sales_won", "revenue_collected", "deals_closed", "profit_margin"], charts: ["sales_won", "active_projects"], attention: "delayed_items" },
   { kpi: "delayed_items", total: 1, records: [{ id: "p1", kind: "project", reference: "PRJ-1", title: "Villa", client: "Amira", owner: "Ali", ownerId: "m1",
     at: "2026-09-15T00:00:00Z", amount: null, measure: "5", detail: "promise_date", href: "/workspace/projects/p1/overview" }] }),
+  // PLM-131: every KPI on Palm's tab.
   "production-delivery": page("production-delivery", [
-    { code: "work_orders_made", unit: "count", value: "3", count: 3, targetable: false, previous: previous("1", "200.0") },
-    { code: "on_time_rate", unit: "percent", value: "50.0", count: 3, targetable: true, extra: { late: 1 }, previous: previous("100.0", "-50.0") },
-    { code: "work_orders_delivered", unit: "count", value: "1", count: 1, targetable: false, previous: previous("0", null) },
-    { code: "installations_done", unit: "count", value: "0", count: 0, targetable: false, previous: previous("0", null) },
-    { code: "work_orders_status", unit: "count", value: "6", count: 6, targetable: false,
-      chart: { type: "bars", dimension: "step", unit: "count", items: [{ key: "scheduled", label: "", value: "1", count: 1 }, { key: "ready", label: "Ready to send", value: "3", count: 3 }] } },
-    { code: "factory_load", unit: "hours", value: "66.0", count: 2, targetable: false,
-      chart: { type: "columns", dimension: "week", seriesDimension: "centre", categories: [{ key: "2026-09-14", label: "2026-09-14" }], series: [{ id: "w1", label: "Joinery" }], values: [["16.0"]], unit: "hours" } },
+    { code: "late_work_orders", unit: "count", value: "4", count: 4, targetable: false, extra: { clientDate: 3 }, chart: { type: "list", bucket: "period=1" } },
+    { code: "ready_upcoming", unit: "count", value: "4", count: 4, targetable: false, extra: { thisWeek: 3, nextWeek: 1 },
+      chart: { type: "columns", dimension: "day", seriesDimension: "state", categories: [{ key: "2026-09-14", label: "2026-09-14" }, { key: "2026-09-15", label: "2026-09-15" }],
+        series: [{ id: "ready", label: "" }, { id: "planned", label: "" }], values: [["0", "1"], ["1", "0"]], unit: "count" } },
+    { code: "open_snags", unit: "count", value: "3", count: 3, targetable: false, extra: { over30: 1 },
+      chart: { type: "columns", dimension: "projectGroup", seriesDimension: "age", categories: [{ key: "p1", label: "PRJ-1" }],
+        series: [{ id: "days_0_7", label: "" }, { id: "days_8_30", label: "" }, { id: "days_31_plus", label: "" }], values: [["1"], ["1"], ["1"]], unit: "count" } },
+    { code: "fo_lead_time", unit: "percent", value: "50.0", count: 2, targetable: true, target: { target: "80.0000", percent: "62.5", gap: "30.0000", tone: "danger" },
+      previous: previous(null, null),
+      chart: { type: "bars", dimension: "path", unit: "days", items: [{ key: "take_home_now", label: "", value: "1.0", count: 1, extra: { target: "0.0", onTime: "0.0" } },
+        { key: "in_stock_delivery", label: "", value: "4.0", count: 1, extra: { target: "4.0", onTime: "100.0" } }] } },
+    { code: "work_orders_status", unit: "count", value: "7", count: 7, targetable: false,
+      chart: { type: "columns", dimension: "step", seriesDimension: "late", categories: [{ key: "scheduled", label: "" }, { key: "ready", label: "Ready to send" }],
+        series: [{ id: "on_track", label: "" }, { id: "late", label: "" }], values: [["0", "3"], ["1", "0"]], unit: "count" } },
+    { code: "bookings", unit: "count", value: "2", count: 2, targetable: false,
+      chart: { type: "calendar", dimension: "day", seriesDimension: "kind", month: "2026-09", weekStart: 1,
+        entries: [{ day: "2026-09-18", series: "delivery", count: 1 }, { day: "2026-09-18", series: "installation", count: 1 }] } },
     { code: "production_attention", unit: "count", value: "6", count: 6, targetable: false, chart: { type: "list", bucket: "period=1" } },
-  ], { tiles: ["work_orders_made", "on_time_rate", "work_orders_delivered", "installations_done"], charts: ["work_orders_status", "factory_load"], attention: "production_attention" },
+  ], { tiles: ["late_work_orders", "ready_upcoming", "open_snags", "fo_lead_time"], charts: ["work_orders_status", "ready_upcoming", "bookings", "open_snags", "fo_lead_time"],
+    attention: "production_attention" },
   { kpi: "production_attention", total: 6, records: [{ id: "x:1", kind: "project", reference: "PRJ-2", title: "access · N-1", client: "Amira", owner: "Sara", ownerId: "m2",
     at: "2026-09-10T00:00:00Z", amount: null, measure: "10", detail: "permit_expired", href: "/workspace/projects/p2/overview" }] }),
   "sales-pipeline": page("sales-pipeline", [
@@ -57,12 +68,57 @@ const DASHBOARDS: Record<string, Dashboard> = {
       href: "/workspace/crm/opportunities?record=o5" },
     { id: "o5", kind: "opportunity", reference: "O-5", title: "Job O5", client: "Amira", owner: "Ali", ownerId: "m1", at: "2026-09-19T14:00:00Z", amount: null, measure: "1",
       detail: "follow_up_overdue", href: "/workspace/crm/opportunities?record=o5" }] }),
-  finance: page("finance", [
-    { code: "cash_in", unit: "money", value: "30450.00", count: 3, targetable: true, notes: { basis: "records" }, previous: previous("1050.00", "2800.0") },
-    { code: "cash_out", unit: "money", value: "5300.00", count: 2, targetable: false, previous: previous("1000.00", "430.0", "lower") },
-    { code: "revenue_mix", unit: "money", value: "29000.00", count: 3, targetable: false, extra: { design_fees: "10000.00", production: "19000.00" }, previous: previous("1000.00", "2800.0") },
-    { code: "refunds", unit: "count", value: "2", count: 2, amount: "1300.00", targetable: false, previous: previous("1", "100.0", "lower") },
-  ], { tiles: ["cash_in", "cash_out", "revenue_mix", "refunds"], charts: [], attention: "finance_attention" }, { kpi: "finance_attention", total: 0, records: [] }),
+  // PLM-132: every KPI on Palm's tab, with two lists.
+  finance: {
+    ...page("finance", [
+      { code: "cash_collected", unit: "money", value: "29000.00", count: 4, amount: "29000.00", targetable: true, target: { target: "30000.0000", percent: "96.7", gap: "1000.0000", tone: "warning" },
+        extra: { invoiced: "30000.00" }, previous: previous("1000.00", "2800.0") },
+      { code: "refunds", unit: "count", value: "2", count: 2, amount: "1300.00", targetable: false, previous: previous("1", "100.0", "lower"),
+        chart: { type: "bars", dimension: "reason", unit: "count", items: [{ key: "damaged", label: "Damaged", value: "1", count: 1, amount: "300.00" }] } },
+      { code: "joinery_balances_due", unit: "money", value: "5000.00", count: 1, targetable: false, extra: { overdue: 1 }, notes: { amountsIncludeTax: true }, chart: { type: "list", bucket: "period=1" } },
+      { code: "payables_due", unit: "money", value: "6800.00", count: 3, targetable: false, extra: { overdueCount: 1 }, notes: { amountsIncludeTax: true } },
+      { code: "collected_invoiced", unit: "money", value: "29000.00", count: 4, targetable: false,
+        chart: { type: "columns", dimension: "month", seriesDimension: "entity", categories: [{ key: "2026-08", label: "2026-08" }, { key: "2026-09", label: "2026-09" }],
+          series: [{ id: "e1", label: "Studio" }], values: [["1000.00", "29000.00"]], unit: "money", line: { id: "invoiced", label: "", values: ["0.00", "30000.00"] } } },
+      { code: "receivables_ageing", unit: "money", value: "16000.00", count: 2, targetable: false, notes: { amountsIncludeTax: true },
+        chart: { type: "columns", dimension: "age", seriesDimension: "entity", categories: [{ key: "not_due", label: "not_due" }, { key: "overdue_1_30", label: "overdue_1_30" }],
+          series: [{ id: "e1", label: "Studio" }], values: [["5000.00", "11000.00"]], unit: "money" } },
+      { code: "finance_requests_open", unit: "count", value: "2", count: 2, targetable: false,
+        chart: { type: "columns", dimension: "kind", seriesDimension: "wait", categories: [{ key: "invoice", label: "invoice" }, { key: "payable", label: "payable" }],
+          series: [{ id: "days_0_2", label: "" }, { id: "days_8_plus", label: "" }], values: [["1", "0"], ["0", "1"]], unit: "count" } },
+      { code: "commissions", unit: "money", value: "820.00", count: 3, targetable: false, notes: { notRecorded: "commission_payments" },
+        chart: { type: "bars", dimension: "am", unit: "money", items: [{ key: "m1", label: "Ali Manager", value: "720.00", count: 2 }] } },
+    ], { tiles: ["cash_collected", "refunds", "joinery_balances_due", "payables_due"], charts: ["collected_invoiced", "receivables_ageing", "finance_requests_open", "refunds", "commissions"],
+      attention: null, lists: ["joinery_balances_due", "payables_due"] }),
+    lists: [
+      { kpi: "joinery_balances_due", total: 1, records: [{ id: "p1:Balance", kind: "project_money", reference: "PRJ-1", title: "Balance", client: "Amira", owner: "Ali", ownerId: "m1",
+        at: "2026-09-18T04:00:00Z", amount: "5000.000000", measure: "2", detail: "overdue", href: "/workspace/projects/p1/money" }] },
+      { kpi: "payables_due", total: 6, records: [{ id: "r2", kind: "finance_request", reference: "FR-0002", title: "Timber Co", client: null, owner: null, ownerId: null,
+        at: "2026-09-05T14:00:00Z", amount: "800.000000", measure: null, detail: "requested", href: "/workspace/finance/requests?request=r2" }] },
+    ],
+  },
+  // PLM-133: every KPI on Palm's tab, with the low stock list.
+  stock: {
+    ...page("stock", [
+      { code: "low_stock", unit: "count", value: "1", count: 1, targetable: false, extra: { short: 1 },
+        chart: { type: "bars", dimension: "level", unit: "count", items: [{ key: "short", label: "short", value: "1", count: 1 }] } },
+      { code: "reserved_available", unit: "money", value: "700.00", count: 2, targetable: false, extra: { available: "3200.00" },
+        chart: { type: "columns", dimension: "place", seriesDimension: "series", categories: [{ key: "w1", label: "Core Collection" }, { key: "s1", label: "Showroom" }],
+          series: [{ id: "reserved", label: "" }, { id: "available", label: "" }], values: [["700.00", "0.00"], ["2800.00", "400.00"]], unit: "money" } },
+      { code: "best_sellers", unit: "money", value: "2000.00", count: 2, targetable: false, previous: previous("0.00", null),
+        chart: { type: "bars", dimension: "item", unit: "money", items: [{ key: "k1", label: "Sofa", value: "1700.00", count: 1, extra: { quantity: "2" } }] } },
+      { code: "lead_source_won", unit: "money", value: "30000.00", count: 2, targetable: true, target: { target: "26666.6667", percent: "112.5", gap: "-3333.3333", tone: "success" },
+        previous: previous("0.00", null) },
+      { code: "lead_sources", unit: "money", value: "30000.00", count: 3, targetable: false,
+        chart: { type: "bars", dimension: "pairGroup", unit: "money", items: [{ key: "website/form", label: "", value: "30000.00", count: 2, extra: { leads: 2, won: 2 } }] } },
+      { code: "form_links", unit: "count", value: "2", count: 2, targetable: false,
+        chart: { type: "bars", dimension: "linkGroup", unit: "count", items: [{ key: "f1|showroom-door", label: "Website enquiry · showroom-door", value: "1", count: 1 }] } },
+      { code: "spam_by_source", unit: "count", value: "0", count: 0, targetable: false, chart: { type: "bars", dimension: "sourceChannel", unit: "count", items: [] } },
+    ], { tiles: ["low_stock", "reserved_available", "best_sellers", "lead_source_won"], charts: ["reserved_available", "best_sellers", "lead_sources", "form_links", "spam_by_source"],
+      attention: null, lists: ["low_stock"] }),
+    lists: [{ kpi: "low_stock", total: 1, records: [{ id: "s1:p1", kind: "stock_item", reference: "SKU-Hinge", title: "Hinge", client: null, owner: null, ownerId: null, at: null,
+      amount: null, measure: "8.0000", detail: null, href: "/workspace/inventory/history?item=s1" }] }],
+  },
 };
 
 function mount() {
@@ -135,29 +191,104 @@ describe("management dashboards", () => {
     expect(records).toContain("kpi=sales_won");
   });
 
-  it("names why each thing needs attention and opens the whole list", async () => {
+  it("PLM-131: shows every Production and delivery KPI with its graph, and names why each thing needs attention", async () => {
     const user = userEvent.setup();
     const fetcher = mount();
     render(<ManagementReports workspaceId={WS} initialDashboard="production-delivery" />);
     const list = (await screen.findByRole("heading", { name: "Needs attention · 6" })).closest("section") as HTMLElement;
+    expect(screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent).filter((text) => !/\d{4}$/.test(text ?? ""))).toEqual([
+      "Late jobs", "Ready this week and next", "Open snags", "Furniture Only on target",
+      "Production schedule", "Ready this week and next", "Deliveries and installations", "Open snags by age", "Furniture Only lead time by path", "Needs attention · 6"]);
+    // Late jobs is a red figure; its records open from it.
+    expect(tile("Late jobs")).toHaveAttribute("data-tone", "danger");
+    const [ready, timeline] = screen.getAllByRole("heading", { name: "Ready this week and next" }).map((heading) => heading.closest("section") as HTMLElement);
+    expect(within(ready).getByText("3 this week · 1 next week")).toBeInTheDocument();
+    expect(within(timeline).getByRole("button", { name: "Sep 15 · Ready: 1. Open the records" })).toBeInTheDocument();
+    expect(within(tile("Open snags")).getByText("1 over 30 days")).toBeInTheDocument();
+    // Furniture Only on target against its target: 62.5 %, red; each path against its own lead time.
+    const onTarget = tile("Furniture Only on target");
+    expect(onTarget).toHaveAttribute("data-tone", "danger");
+    expect(within(onTarget).getByText("62.5%")).toBeInTheDocument();
+    const paths = tile("Furniture Only lead time by path");
+    expect(within(paths).getByRole("button", { name: "A · Take home now: 1 days. Open the records" })).toBeInTheDocument();
+    expect(paths.querySelectorAll(".wd-ranked-bars-target")).toHaveLength(2);
+    expect(within(paths).getByText("Target")).toBeInTheDocument();
+    // The production schedule keeps the firm's own word for a step, on track against late.
+    const schedule = tile("Production schedule");
+    expect(within(schedule).getAllByText("Ready to send").length).toBeGreaterThan(0);
+    expect(within(schedule).getByRole("button", { name: "Scheduled · Late: 1. Open the records" })).toBeInTheDocument();
+    // The logistics calendar: a day's chips, and the day opens what is booked on it.
+    const calendar = tile("Deliveries and installations");
+    expect(within(calendar).getByText("Delivery · 1")).toBeInTheDocument();
+    expect(within(calendar).getByText("Installation · 1")).toBeInTheDocument();
+    await user.click(within(calendar).getByRole("button", { name: /18.* · 2 items$/ }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("kpi=bookings&bucket=day=2026-09-18"))).toBe(true));
+    await user.keyboard("{Escape}");
     expect(within(list).getByText("Permit expired")).toBeInTheDocument();
     expect(within(list).getByRole("link", { name: "PRJ-2" })).toHaveAttribute("href", "/workspace/projects/p2/overview");
-    // On time fell 50 %: bad news. A step the firm named in its own words keeps its name.
-    expect(within(tile("Made on time")).getByText(/^50% vs /).closest("small")).toHaveAttribute("data-tone", "danger");
-    expect(within(tile("Made on time")).getByText("1 late")).toBeInTheDocument();
-    expect(within(tile("Open work orders")).getByText("Ready to send")).toBeInTheDocument();
     await user.click(within(list).getByRole("button", { name: "Show all" }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("kpi=production_attention"))).toBe(true));
   });
 
-  it("says what a figure is read from, and that nothing needs attention", async () => {
-    mount();
+  it("PLM-132: shows every Finance KPI, cash collected against invoiced, and the lists by due date", async () => {
+    const user = userEvent.setup();
+    const fetcher = mount();
     render(<ManagementReports workspaceId={WS} initialDashboard="finance" />);
-    expect(within((await screen.findByRole("heading", { name: "Cash in" })).closest("section") as HTMLElement).getByText("From Wodana's records")).toBeInTheDocument();
-    // Cash out went up: bad news, as lower is better.
-    expect(within(tile("Cash out")).getByText(/^430% vs /).closest("small")).toHaveAttribute("data-tone", "danger");
-    expect(within(tile("Revenue")).getByText("Design fees $10K · production $19K")).toBeInTheDocument();
-    expect(screen.getByText("Nothing needs attention")).toBeInTheDocument();
+    const collected = (await screen.findByRole("heading", { name: "Cash collected" })).closest("section") as HTMLElement;
+    expect(collected).toHaveAttribute("data-tone", "warning");
+    expect(within(collected).getByText("Invoiced $30K")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      "Cash collected", "Refunds", "Joinery balances due", "Payables due",
+      "Cash collected and invoiced by month", "Receivables by age", "Finance requests by type and age", "Refunds by reason", "Commissions due by account manager",
+      "Joinery balances due · 1", "Payables due · 6"]);
+    // What clients owe and what is owed to suppliers include tax, and say so; commission payments aren't recorded.
+    expect(within(tile("Joinery balances due")).getByText("Includes tax")).toBeInTheDocument();
+    expect(within(tile("Receivables by age")).getByText("Includes tax")).toBeInTheDocument();
+    expect(within(tile("Commissions due by account manager")).getByText("Paid commissions aren't recorded yet")).toBeInTheDocument();
+    // A column opens the month's payments to that company; a point of the line opens what was invoiced.
+    const byMonth = tile("Cash collected and invoiced by month");
+    await user.click(within(byMonth).getByRole("button", { name: "Sep 26 · Invoiced: $30K. Open the records" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("kpi=collected_invoiced&bucket=month=2026-09;series=invoiced"))).toBe(true));
+    await user.keyboard("{Escape}");
+    await user.click(within(byMonth).getByRole("button", { name: "Sep 26: $29K. Open the records" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes("bucket=month=2026-09;entity=e1"))).toBe(true));
+    await user.keyboard("{Escape}");
+    // The lists link each record; the rest open from Show all.
+    expect(within(tile("Joinery balances due · 1")).getByRole("link", { name: "PRJ-1" })).toHaveAttribute("href", "/workspace/projects/p1/money");
+    const payables = tile("Payables due · 6");
+    expect(within(payables).getByRole("link", { name: "FR-0002" })).toHaveAttribute("href", "/workspace/finance/requests?request=r2");
+    expect(within(payables).getByText("Requested")).toBeInTheDocument();
+    await user.click(within(payables).getByRole("button", { name: "Show all" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("kpi=payables_due"))).toBe(true));
+  });
+
+  it("PLM-133: shows Stock and marketing — low stock in red, places, best sellers, sources, forms and spam", async () => {
+    mount();
+    render(<ManagementReports workspaceId={WS} initialDashboard="stock" />);
+    const low = (await screen.findByRole("heading", { name: "Low stock" })).closest("section") as HTMLElement;
+    expect(low).toHaveAttribute("data-tone", "danger");
+    expect(within(low).getByText("1 short")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stock and marketing" })).toBeInTheDocument();
+    expect(within(tile("Won value from enquiries")).getByText("112.5%")).toBeInTheDocument();
+    expect(within(tile("Reserved stock")).getByText("Available $3.2K")).toBeInTheDocument();
+    expect(within(tile("Reserved and available stock")).getByRole("button", { name: "Showroom · Available: $400. Open the records" })).toBeInTheDocument();
+    expect(within(tile("Best-selling Furniture Only items")).getByText("2 sold")).toBeInTheDocument();
+    const sources = tile("Enquiries and won value by source");
+    expect(within(sources).getByRole("button", { name: "Website · form: $30K. Open the records" })).toBeInTheDocument();
+    expect(within(sources).getByText("2 enquiries")).toBeInTheDocument();
+    expect(within(tile("Enquiries by form and QR code")).getByText("Website enquiry · showroom-door")).toBeInTheDocument();
+    expect(within(tile("Spam by source and channel")).getByText("Nothing to show for this period")).toBeInTheDocument();
+    expect(within(tile("Low stock · 1")).getByRole("link", { name: "SKU-Hinge" })).toHaveAttribute("href", "/workspace/inventory/history?item=s1");
+  });
+
+  it("exports each chart's figures with the page", () => {
+    const name = (dimension: string, key: string, fallback: string) => fallback || `${dimension}:${key}`;
+    const money = (_unit: string, text: string) => `$${Number(text)}`;
+    expect(chartRows({ type: "columns", dimension: "month", seriesDimension: "entity", categories: [{ key: "2026-09", label: "2026-09" }], series: [{ id: "e1", label: "Studio" }],
+      values: [["29000.00"]], unit: "money", line: { id: "invoiced", label: "Invoiced", values: ["30000.00"] } }, "Cash", name, money))
+      .toEqual([["Cash · month:2026-09", "$29000"], ["Cash · month:2026-09 · Invoiced", "$30000"]]);
+    expect(chartRows({ type: "calendar", dimension: "day", seriesDimension: "kind", month: "2026-09", weekStart: 1, entries: [{ day: "2026-09-18", series: "delivery", count: 2 }] },
+      "Bookings", name, money)).toEqual([["Bookings · 2026-09-18 · kind:delivery", "2"]]);
   });
 
   it("keeps the period and two filters in one row, in the address, and only the tabs a member may open", async () => {

@@ -12,7 +12,8 @@ const TARGET_LABELS: Record<string, MessageKey> = {
   sales_won_value: tKey("Sales won"), revenue_collected: tKey("Revenue collected"), deals_closed: tKey("Deals closed"), profit_margin: tKey("Profit margin (%)"),
   new_leads: tKey("New enquiries"), lead_to_won_rate: tKey("Enquiry to won (%)"), response_rate: tKey("Answered within target (%)"),
   design_to_proposal2_rate: tKey("Moved on to furniture or joinery (%)"), design_to_proposal2_days: tKey("Days to Proposal 2, lower is better"),
-  on_time_rate: tKey("Made on time (%)"), cash_in: tKey("Cash in"),
+  on_time_rate: tKey("Made on time (%)"), cash_in: tKey("Cash collected"),
+  fo_lead_time_rate: tKey("Furniture Only on target (%)"), lead_source_won_value: tKey("Won value from enquiries"),
 };
 
 const COMPANY = "company";

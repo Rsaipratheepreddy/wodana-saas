@@ -5,10 +5,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import {
-  Button, CardGrid, ColumnChart, DataGrid, DateRangeField, DonutChart, EmptyState, ErrorState, FunnelSteps, InspectorSheet, KpiFigure, ListTabs, MenuButton, PageShell,
-  RankedBars, RecordTable, ReportPanel, SelectField, Skeleton, TrendLines, useDesignSystem, type ComparisonState, type DataGridColumn, type TargetState,
+  Button, CardGrid, ColumnChart, DataGrid, DateRangeField, DonutChart, EmptyState, ErrorState, FunnelSteps, InspectorSheet, KpiFigure, ListTabs, MenuButton, MonthCalendar, PageShell,
+  RankedBars, RecordTable, ReportPanel, SelectField, Skeleton, TrendLines, eventsOn, useDesignSystem, type ComparisonState, type DataGridColumn, type MonthCalendarEvent,
+  type TargetState,
 } from "@/design-system";
 import { useWoddy } from "@/components/crm/woddy-chat";
+import { FURNITURE_PATHS } from "@/lib/crm/opportunity-flow";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import { meetsRule, type AccessContext } from "@/lib/workspace/access";
@@ -16,7 +18,7 @@ import { loadAiSettings } from "@/lib/workspace/ai-settings";
 import { useHydrated } from "@/lib/use-hydrated";
 import {
   DASHBOARD_FILTERS, DASHBOARD_LABELS, DASHBOARDS, downloadCsv, filtersFrom, filtersQuery, reportsApi, toCsv,
-  type Chart, type Dashboard, type DashboardId, type FilterOptions, type Filters, type Kpi, type ReportRecord, type TargetResult, type Unit,
+  type Chart, type Dashboard, type DashboardId, type FilterOptions, type Filters, type Kpi, type RecordList as RecordListData, type ReportRecord, type TargetResult, type Unit,
 } from "@/lib/reports/management";
 import styles from "./management-reports.module.css";
 
@@ -29,16 +31,27 @@ const KPI_LABELS: Record<string, MessageKey> = {
   work_orders_made: tKey("Work orders made"), on_time_rate: tKey("Made on time"), work_orders_delivered: tKey("Delivered to site"), installations_done: tKey("Installations done"),
   cash_in: tKey("Cash in"), cash_out: tKey("Cash out"), revenue_mix: tKey("Revenue"), refunds: tKey("Refunds"),
   stock_value: tKey("Stock value"), purchases: tKey("Purchases"), stock_used: tKey("Stock used"),
+  // Dashboards 5–7 (PLM-131, PLM-132, PLM-133).
+  late_work_orders: tKey("Late jobs"), ready_upcoming: tKey("Ready this week and next"), open_snags: tKey("Open snags"), fo_lead_time: tKey("Furniture Only on target"),
+  cash_collected: tKey("Cash collected"), joinery_balances_due: tKey("Joinery balances due"), payables_due: tKey("Payables due"),
+  low_stock: tKey("Low stock"), reserved_available: tKey("Reserved stock"), best_sellers: tKey("Furniture Only sales"), lead_source_won: tKey("Won value from enquiries"),
 };
+
+/** Figures that are bad news whenever they are above zero: shown in red (Palm's "red tile"). */
+const ALERT_TILES = new Set(["late_work_orders", "low_stock"]);
 
 /** Each chart's title (a chart may break down a tile's figure; its title says how). */
 const CHART_LABELS: Record<string, MessageKey> = {
   sales_won: tKey("Sales won by month"), active_projects: tKey("Projects by stage"), new_leads: tKey("Enquiries by source"), won_by_source: tKey("Won value by source"),
-  design_stage: tKey("Projects by design stage"), designer_workload: tKey("Designer workload"), work_orders_status: tKey("Open work orders"),
+  design_stage: tKey("Projects by design stage"), designer_workload: tKey("Designer workload"), work_orders_status: tKey("Production schedule"),
   factory_load: tKey("Factory load by week"), cash_in_out: tKey("Cash in and out by month"), receivables_ageing: tKey("Receivables by age"),
   reserved_available: tKey("Reserved and available stock"), slow_moving: tKey("Slow-moving stock"),
   // PLM-138: spam enquiries by the source and channel they came from.
   spam_by_source: tKey("Spam by source and channel"),
+  ready_upcoming: tKey("Ready this week and next"), bookings: tKey("Deliveries and installations"), open_snags: tKey("Open snags by age"),
+  fo_lead_time: tKey("Furniture Only lead time by path"), collected_invoiced: tKey("Cash collected and invoiced by month"),
+  finance_requests_open: tKey("Finance requests by type and age"), refunds: tKey("Refunds by reason"), commissions: tKey("Commissions due by account manager"),
+  best_sellers: tKey("Best-selling Furniture Only items"), lead_sources: tKey("Enquiries and won value by source"), form_links: tKey("Enquiries by form and QR code"),
 };
 
 /** Fixed chart keys and reasons the server sends (stages, ages, series, steps), named here. */
@@ -58,6 +71,10 @@ const KEY_LABELS: Record<string, MessageKey> = {
   permit_expiring: tKey("Permit expiring"), late_handover: tKey("Handover late"), client_overdue: tKey("Client payment overdue"), bill_overdue: tKey("Bill overdue"),
   request_waiting: tKey("Waiting over a week"), design_stage: tKey("Design stage late"), design_fees: tKey("Design fees"), variations: tKey("Variations"),
   on_time: tKey("On time"), late: tKey("Late"), issued: tKey("Issued"), stuck_deal: tKey("No stage change"), follow_up_overdue: tKey("Follow-up overdue"),
+  on_track: tKey("On track"), planned: tKey("Planned"), installation: tKey("Installation"), client_date: tKey("Client date passed"), internal_date: tKey("Internal date passed"),
+  days_0_7: tKey("0–7 days"), days_8_30: tKey("8–30 days"), days_31_plus: tKey("Over 30 days"), days_0_2: tKey("0–2 days"), days_3_7: tKey("3–7 days"), days_8_plus: tKey("8+ days"),
+  invoice: tKey("Invoice"), refund: tKey("Refund"), payable: tKey("Payable"), requested: tKey("Requested"), within_7: tKey("Within 7 days"), within_30: tKey("Within 30 days"),
+  sales: tKey("Sales"), referral: tKey("Referral"), minor: tKey("Minor"), major: tKey("Major"), critical: tKey("Critical"),
 };
 
 /** What a record's measure means, per figure (the list's column header). */
@@ -66,7 +83,12 @@ const MEASURE_LABELS: Record<string, MessageKey> = {
   production_attention: tKey("Days late"), on_time_rate: tKey("Days late"), factory_load: tKey("Hours"), finance_attention: tKey("Days overdue"),
   receivables_ageing: tKey("Days overdue"), low_stock: tKey("Free"), slow_moving: tKey("Days idle"), stock_value: tKey("Quantity"), stock_used: tKey("Quantity"),
   response_rate: tKey("Hours to respond"), installations_done: tKey("Days late"), sales_attention: tKey("Days"), stuck_deals: tKey("Days"),
+  late_work_orders: tKey("Days late"), open_snags: tKey("Days open"), fo_lead_time: tKey("Working days"), joinery_balances_due: tKey("Days overdue"),
+  payables_due: tKey("Days overdue"), best_sellers: tKey("Quantity"), reserved_available: tKey("Quantity"),
 };
+
+/** What a figure says it isn't based on yet (data Wodana doesn't record). */
+const NOT_RECORDED: Record<string, MessageKey> = { commission_payments: tKey("Paid commissions aren't recorded yet") };
 
 /** Where to start when a chart has nothing to show yet. */
 const NEXT_ACTIONS: Record<DashboardId, { href: string; label: MessageKey }> = {
@@ -116,7 +138,28 @@ export function chartHasData(chart: Chart | undefined) {
   if (chart.type === "lines") return chart.values.some((row) => row.some((value) => value !== null && Number(value) !== 0));
   if (chart.type === "bars" || chart.type === "donut") return chart.items.some((item) => item.count > 0 || Number(item.value) !== 0);
   if (chart.type === "funnel") return chart.items.some((item) => Number(item.value) > 0);
+  if (chart.type === "calendar") return chart.entries.length > 0;
   return false;
+}
+
+/** A chart's figures as rows for the dashboard's Excel (CSV): what is drawn, by category and series. */
+export function chartRows(chart: Chart, title: string, name: (dimension: string, key: string, fallback: string) => string, value: (unit: Unit, text: string) => string): string[][] {
+  const part = (...parts: string[]) => [title, ...parts].filter(Boolean).join(" · ");
+  if (chart.type === "columns") {
+    const series = chart.series.length > 1 && chart.seriesDimension ? chart.series : [];
+    return chart.categories.flatMap((category, column) => [
+      ...(series.length ? series.map((item, row) => [part(name(chart.dimension, category.key, category.label === category.key ? "" : category.label),
+        name(chart.seriesDimension!, item.id, item.label === item.id ? "" : item.label)), value(chart.unit, chart.values[row]?.[column] ?? "0")])
+        : [[part(name(chart.dimension, category.key, category.label === category.key ? "" : category.label)), value(chart.unit, chart.values[0]?.[column] ?? "0")]]),
+      ...(chart.line ? [[part(name(chart.dimension, category.key, ""), name("series", chart.line.id, chart.line.label)), chart.line.values[column] === null ? "" : value(chart.unit, chart.line.values[column]!)]] : []),
+    ]);
+  }
+  if (chart.type === "lines") return chart.categories.flatMap((category, column) => chart.series.map((item, row) => [part(name(chart.dimension, category.key, ""),
+    name("series", item.id, item.label)), chart.values[row]?.[column] === null ? "" : value(chart.unit, chart.values[row]![column]!)]));
+  if (chart.type === "bars" || chart.type === "donut") return chart.items.map((item) => [part(name(chart.dimension, item.key, item.label === item.key ? "" : item.label)), value(chart.unit, item.value)]);
+  if (chart.type === "funnel") return chart.items.map((item) => [part(name("step", item.key, item.label)), item.value]);
+  if (chart.type === "calendar") return chart.entries.map((entry) => [part(entry.day, name(chart.seriesDimension, entry.series, "")), String(entry.count)]);
+  return [];
 }
 
 type Drill = { kpi: string; bucket: string; title: string };
@@ -211,15 +254,25 @@ export function ManagementReports({ workspaceId, initialDashboard, dashboards = 
   const layout = data?.layout ?? { tiles: [], charts: [], attention: null };
   const open = (kpi: string, bucket: string, title: string) => setDrill({ kpi, bucket, title });
 
+  /** The page as a spreadsheet: each figure, then each chart's values and each list's rows (every record is in its own export). */
   const exportDashboard = () => {
     if (!data) return;
-    const rows = layout.tiles.flatMap((code) => {
+    const rows: Array<Array<string>> = layout.tiles.flatMap((code) => {
       const kpi = kpiOf(code);
       if (!kpi) return [];
       return [[t(KPI_LABELS[code] ?? (code as MessageKey)), kpi.value === null ? t("Not enough data yet") : format.value(kpi.unit, kpi.value),
         kpi.previous?.value ? format.value(kpi.unit, kpi.previous.value) : "", kpi.previous?.change ? `${kpi.previous.change}%` : "",
         kpi.target ? format.value(kpi.unit, kpi.target.target) : "", kpi.target?.percent ? `${kpi.target.percent}%` : ""]];
     });
+    const name = nameOf(t, options, format, label);
+    for (const code of layout.charts) {
+      const chart = kpiOf(code)?.chart;
+      if (chart) rows.push(...chartRows(chart, t(CHART_LABELS[code] ?? (code as MessageKey)), name, (unit, text) => format.value(unit, text)));
+    }
+    for (const list of data.lists ?? []) {
+      for (const record of list.records) rows.push([[t(KPI_LABELS[list.kpi] ?? (list.kpi as MessageKey)), record.reference, record.title].filter(Boolean).join(" · "),
+        record.amount === null ? record.measure ?? "" : format.money(record.amount), "", "", "", ""]);
+    }
     downloadCsv(`${dashboard}-${effective.from}-${effective.to}.csv`, toCsv([t("Figure"), t("This period"), t("Period before"), t("Change"), t("Target"), t("Achieved")], rows));
   };
 
@@ -244,15 +297,21 @@ export function ManagementReports({ workspaceId, initialDashboard, dashboards = 
           {layout.charts.length ? <CardGrid min="24rem">{layout.charts.map((code) => {
             const kpi = kpiOf(code);
             const title = t(CHART_LABELS[code] ?? (code as MessageKey));
-            return kpi?.chart ? <ReportPanel key={code} title={title}>
+            return kpi?.chart ? <ReportPanel key={code} title={title} note={panelNote(kpi, t)}>
               {chartHasData(kpi.chart)
-                ? <ChartView chart={kpi.chart} title={title} format={format} nameOf={nameOf(t, options, format, label)} open={(bucket, part) => open(code, bucket, part ? `${title} · ${part}` : title)} />
+                ? <ChartView key={kpi.chart.type === "calendar" ? kpi.chart.month : undefined} chart={kpi.chart} title={title} format={format} nameOf={nameOf(t, options, format, label)}
+                    open={(bucket, part) => open(code, bucket, part ? `${title} · ${part}` : title)} />
                 : <EmptyState illustration={null} title={t("Nothing to show for this period")}
                     action={<Link className={styles.recordLink} href={NEXT_ACTIONS[dashboard].href}>{t(NEXT_ACTIONS[dashboard].label)}</Link>} />}
             </ReportPanel> : null;
           })}</CardGrid> : null}
-          {layout.attention && data.attention ? <Attention attention={data.attention} format={format} label={label}
-            onShowAll={() => open(data.attention!.kpi, "period=1", t("Needs attention"))} /> : null}
+          {(data.lists ?? []).map((list) => {
+            const title = t(KPI_LABELS[list.kpi] ?? (list.kpi as MessageKey));
+            return <RecordList key={list.kpi} list={list} title={list.total ? `${title} · ${list.total}` : title} empty={t("Nothing to show")} format={format} label={label}
+              onShowAll={() => open(list.kpi, "period=1", title)} />;
+          })}
+          {layout.attention && data.attention ? <RecordList list={data.attention} title={data.attention.total ? t("Needs attention · {count}", { count: data.attention.total }) : t("Needs attention")}
+            empty={t("Nothing needs attention")} format={format} label={label} onShowAll={() => open(data.attention!.kpi, "period=1", t("Needs attention"))} /> : null}
           {dashboard === "owner-overview" ? <AskWoddy workspaceId={workspaceId} access={access} /> : null}
         </div> : null}
     </PageShell>
@@ -311,23 +370,41 @@ function Tile({ kpi, format, open }: { kpi: Kpi; format: Formatters; open: () =>
   const title = t(KPI_LABELS[kpi.code] ?? (kpi.code as MessageKey));
   const notes = [
     kpi.notes?.otherCurrency ? t("{count} in another currency not included", { count: kpi.notes.otherCurrency }) : null,
+    kpi.notes?.amountsIncludeTax ? t("Includes tax") : null,
     kpi.notes?.basis === "records" ? t("From Wodana's records") : kpi.notes?.basis === "ledger" ? t("From the Ledger") : kpi.notes?.basis === "mixed" ? t("From the Ledger and Wodana's records") : null,
     kpi.targetHidden ? t("Target not compared while filtered") : null,
   ].filter(Boolean);
   return <KpiFigure label={title} value={kpi.value === null ? null : format.value(kpi.unit, kpi.value, true)} noData={kpi.value === null}
     targetable={kpi.targetable && !kpi.targetHidden && Boolean(kpi.target)} target={targetState(kpi.unit, kpi.target, format)}
+    tone={ALERT_TILES.has(kpi.code) && Number(kpi.value ?? 0) > 0 ? "danger" : undefined}
     comparison={comparisonState(kpi, format)} detail={tileDetail(kpi, format, t) ?? undefined} note={notes.length ? notes.join(" · ") : undefined} onOpen={open} />;
+}
+
+/** The one line under a chart: amounts that include tax, or what isn't recorded yet. */
+function panelNote(kpi: Kpi | undefined, t: Translate) {
+  const notes = [kpi?.notes?.amountsIncludeTax ? t("Includes tax") : null, kpi?.notes?.notRecorded && NOT_RECORDED[kpi.notes.notRecorded] ? t(NOT_RECORDED[kpi.notes.notRecorded]) : null]
+    .filter(Boolean);
+  return notes.length ? notes.join(" · ") : undefined;
 }
 
 /** At most one short line under a figure, never a number another tile or chart already shows. */
 function tileDetail(kpi: Kpi, format: Formatters, t: Translate): string | null {
   const extra = kpi.extra ?? {};
+  const count = (key: string) => Number(extra[key] ?? 0);
   switch (kpi.code) {
-    case "sales_won": return t("{count} won", { count: kpi.count });
+    case "sales_won": case "lead_source_won": return t("{count} won", { count: kpi.count });
     case "deals_closed": case "lost": case "refunds": case "package_mix": return kpi.amount && Number(kpi.amount) ? format.money(kpi.amount, true) : null;
     case "revenue_mix": return t("Design fees {design} · production {production}", { design: format.money(String(extra.design_fees ?? "0"), true), production: format.money(String(extra.production ?? "0"), true) });
     case "on_time_rate": case "installations_done": return Number(extra.late ?? 0) ? t("{count} late", { count: Number(extra.late) }) : null;
     case "profit_margin": return extra.withoutCost ? t("{count} projects without a QS cost left out", { count: Number(extra.withoutCost) }) : null;
+    case "ready_upcoming": return t("{this} this week · {next} next week", { this: count("thisWeek"), next: count("nextWeek") });
+    case "open_snags": return count("over30") ? t("{count} over 30 days", { count: count("over30") }) : null;
+    case "fo_lead_time": return kpi.count ? t("{count} orders", { count: kpi.count }) : null;
+    case "cash_collected": return t("Invoiced {amount}", { amount: format.money(String(extra.invoiced ?? "0"), true) });
+    case "joinery_balances_due": return count("overdue") ? t("{count} overdue", { count: count("overdue") }) : null;
+    case "payables_due": return count("overdueCount") ? t("{count} overdue", { count: count("overdueCount") }) : null;
+    case "low_stock": return count("short") ? t("{count} short", { count: count("short") }) : null;
+    case "reserved_available": return t("Available {amount}", { amount: format.money(String(extra.available ?? "0"), true) });
     default: return null;
   }
 }
@@ -339,17 +416,38 @@ function nameOf(t: Translate, options: FilterOptions | null, format: Formatters,
     if (dimension === "type" || dimension === "typeGroup") return options?.enquiryTypes.find((item) => item.id === key)?.label ?? (key === "none" ? t("Not set") : key);
     if (dimension === "sourceGroup" || dimension === "source") return key === "none" ? t("No enquiry") : options?.sources.find((item) => item.id === key)?.label ?? (fallback || key);
     // PLM-138: a source and its channel ("source/channel"), each by its name.
-    if (dimension === "sourceChannel") {
+    if (dimension === "sourceChannel" || dimension === "pairGroup") {
       const [source, channel] = key.split("/");
       return `${options?.sources.find((item) => item.id === source)?.label ?? source} · ${options?.channels[source]?.find((item) => item.id === channel)?.label ?? channel}`;
     }
     if ((dimension === "am" || dimension === "person") && key === "none") return t("Not assigned");
+    if (dimension === "am") return fallback || options?.accountManagers.find((item) => item.id === key)?.label || key;
     if (dimension === "series" && key === "design") return t("Design fee");
     if (dimension === "month") return format.month(key);
-    if (dimension === "week") return format.day(key);
+    if (dimension === "week" || dimension === "day") return format.day(key);
     if (dimension === "category" && key === "none") return t("No category");
+    // PLM-131: Furniture Only paths A–E, by their letter and name.
+    if (dimension === "path") {
+      const path = FURNITURE_PATHS.find((item) => item.id === key);
+      return path ? `${path.letter} · ${t(path.label)}` : key;
+    }
+    if (dimension === "entity") return key === "none" ? t("No company") : fallback || options?.entities.find((item) => item.id === key)?.label || key;
+    if (dimension === "place" && key === "none") return t("No place");
     return fallback || label(key);
   };
+}
+
+/** The logistics calendar (PLM-131): a chip per day and kind with how many are booked; a day opens what is booked on it. */
+function BookingsCalendar({ chart, nameOf, format, open }: {
+  chart: Extract<Chart, { type: "calendar" }>; nameOf: (dimension: string, key: string, fallback: string) => string; format: Formatters; open: (bucket: string, part?: string) => void;
+}) {
+  const [month, setMonth] = useState(chart.month);
+  const events: MonthCalendarEvent[] = chart.entries.map((entry) => ({
+    id: `${entry.day}:${entry.series}`, date: entry.day, title: `${nameOf(chart.seriesDimension, entry.series, "")} · ${format.number(String(entry.count), 0)}`,
+    tone: entry.series === "installation" ? "brand" : "info", kind: entry.series,
+  }));
+  return <MonthCalendar month={month} events={events} onMonthChange={setMonth} weekStartsOn={chart.weekStart}
+    onSelect={(day) => { if (eventsOn(events, day).length) open(`${chart.dimension}=${day}`, format.date(day)); }} />;
 }
 
 function ChartView({ chart, title, format, nameOf, open }: {
@@ -357,11 +455,16 @@ function ChartView({ chart, title, format, nameOf, open }: {
 }) {
   const t = useT();
   if (chart.type === "list" || chart.type === "gauge") return null;
+  if (chart.type === "calendar") return <BookingsCalendar chart={chart} nameOf={nameOf} format={format} open={open} />;
   if (chart.type === "columns") {
     const categories = chart.categories.map((item) => ({ key: item.key, label: nameOf(chart.dimension, item.key, item.label === item.key ? "" : item.label) }));
     const series = chart.series.map((item) => ({ id: item.id, label: chart.seriesDimension ? nameOf(chart.seriesDimension, item.id, item.label === item.id ? "" : item.label) : item.label }));
+    const line = chart.line ? { id: chart.line.id, label: nameOf("series", chart.line.id, chart.line.label), values: chart.line.values.map((value) => (value === null ? null : Number(value))) } : undefined;
+    // With a line over them, a column always opens its own series (the line's records share the category).
+    const part = (seriesId: string | null) => seriesId ?? (line && chart.series.length === 1 ? chart.series[0].id : null);
     return <ColumnChart ariaLabel={title} categories={categories} series={series} values={chart.values.map((row) => row.map(Number))} format={(value) => format.value(chart.unit, String(value), true)}
-      onSelect={(key, seriesId) => open(`${chart.dimension}=${key}${seriesId && chart.seriesDimension ? `;${chart.seriesDimension}=${seriesId}` : ""}`,
+      line={line} onSelectLine={line ? (key) => open(`${chart.dimension}=${key};series=${line.id}`, [categories.find((item) => item.key === key)?.label, line.label].filter(Boolean).join(" · ")) : undefined}
+      onSelect={(key, seriesId) => open(`${chart.dimension}=${key}${part(seriesId) && chart.seriesDimension ? `;${chart.seriesDimension}=${part(seriesId)}` : ""}`,
         [categories.find((item) => item.key === key)?.label, series.find((item) => item.id === seriesId)?.label].filter(Boolean).join(" · "))} />;
   }
   if (chart.type === "lines") {
@@ -374,7 +477,11 @@ function ChartView({ chart, title, format, nameOf, open }: {
     return <RankedBars ariaLabel={title}
       items={chart.items.map((item) => ({ key: item.key, label: nameOf(chart.dimension, item.key, item.label === item.key ? "" : item.label), value: Number(item.value),
         display: format.value(chart.unit, item.value, true),
+        // A row's own target (a Furniture Only path's lead time) is drawn across its bar.
+        marker: item.extra && item.extra.target !== null && item.extra.target !== undefined ? Number(item.extra.target) : undefined,
         detail: [item.extra && "leads" in item.extra ? t("{count} enquiries", { count: Number(item.extra.leads) }) : null,
+          item.extra && "quantity" in item.extra ? t("{count} sold", { count: format.number(String(item.extra.quantity), 2) }) : null,
+          item.extra && "target" in item.extra && item.count ? t("{count} orders", { count: item.count }) : null,
           chart.unit !== "count" && !item.extra && item.count ? String(item.count) : null].filter(Boolean).join(" · ") || undefined }))}
       onSelect={(key) => open(`period=1;${chart.dimension}=${key}`, nameOf(chart.dimension, key, chart.items.find((item) => item.key === key)?.label ?? key))} />;
   }
@@ -427,17 +534,19 @@ function recordColumns(rows: ReportRecord[], kpi: string, format: Formatters, la
   ];
 }
 
-/** The dashboard's one "needs attention" list: its first five, most urgent first, each opening its record; the rest in the records sheet. */
-function Attention({ attention, format, label, onShowAll }: {
-  attention: NonNullable<Dashboard["attention"]>; format: Formatters; label: (key: string) => string; onShowAll: () => void;
+/**
+ * A list on the dashboard — its "needs attention" list, or a KPI that is a list (payables by due date, low stock): its
+ * first five, each opening its record; the rest in the records sheet.
+ */
+function RecordList({ list, title, empty, format, label, onShowAll }: {
+  list: RecordListData; title: string; empty: string; format: Formatters; label: (key: string) => string; onShowAll: () => void;
 }) {
   const t = useT();
-  const rows = attention.records.map((row, index) => ({ ...row, key: `${row.id}:${index}` }));
-  return <ReportPanel title={attention.total ? t("Needs attention · {count}", { count: attention.total }) : t("Needs attention")}
-    action={attention.total > rows.length ? <Button size="compact" variant="quiet" onPress={onShowAll}>{t("Show all")}</Button> : undefined}>
-    {rows.length ? <RecordTable ariaLabel={t("Needs attention")} columns={recordColumns(attention.records, attention.kpi, format, label, t)} data={rows} getRowId={(row) => row.key}
+  const rows = list.records.map((row, index) => ({ ...row, key: `${row.id}:${index}` }));
+  return <ReportPanel title={title} action={list.total > rows.length ? <Button size="compact" variant="quiet" onPress={onShowAll}>{t("Show all")}</Button> : undefined}>
+    {rows.length ? <RecordTable ariaLabel={title} columns={recordColumns(list.records, list.kpi, format, label, t)} data={rows} getRowId={(row) => row.key}
         selectable={false} rowNumbers={false} pageSize={rows.length} showToolbar={false} showFooter={false} wrapText />
-      : <EmptyState illustration={null} title={t("Nothing needs attention")} />}
+      : <EmptyState illustration={null} title={empty} />}
   </ReportPanel>;
 }
 
