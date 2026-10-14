@@ -79,19 +79,19 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
   };
 
   const columns = useMemo<DataGridColumn<WorkOrderRow>[]>(() => [
-    { id: "order", header: t("Work order"), accessorFn: (row) => row.number, size: 280, meta: { primary: true, renderCell: (row) =>
+    { id: "order", header: t("Work order"), accessorFn: (row) => row.number, size: 250, meta: { primary: true, renderCell: (row) =>
       <Cell title={row.title} meta={[orderNumber(row.number), row.packageName].filter(Boolean).join(" · ")} /> } },
-    { id: "project", header: t("Project"), accessorFn: (row) => row.projectReference, size: 120, meta: { mobileHidden: true, renderCell: (row) =>
+    { id: "project", header: t("Project"), accessorFn: (row) => row.projectReference, size: 110, meta: { mobileHidden: true, renderCell: (row) =>
       <ProjectLinks projects={[{ id: row.projectId, reference: row.projectReference, name: row.projectName }]} /> } },
-    { id: "where", header: t("Where and when"), accessorFn: (row) => row.plannedEnd ?? "", size: 210, meta: { mobileHidden: true, renderCell: (row) =>
+    { id: "where", header: t("Where and when"), accessorFn: (row) => row.plannedEnd ?? "", size: 190, meta: { mobileHidden: true, renderCell: (row) =>
       <Cell title={row.workcenterName ?? "—"} tone={late(row) ? "danger" : undefined}
         meta={[[format.short(row.plannedStart), format.short(row.plannedEnd)].filter(Boolean).join(" – "), late(row) ? t("Late") : "",
           row.batchName ? t("Batch {number}: {name}", { number: row.batchNumber ?? 0, name: row.batchName }) : ""].filter(Boolean).join(" · ") || null} /> } },
-    { id: "progress", header: t("Ready"), accessorFn: (row) => Number(row.passed) / Number(row.quantity), size: 170, meta: { renderCell: (row) =>
+    { id: "progress", header: t("Ready"), accessorFn: (row) => Number(row.passed) / Number(row.quantity), size: 150, meta: { renderCell: (row) =>
       <Cell title={<span className={styles.number}>{t("{ready} of {quantity}", { ready: quantityText(row.passed) || "0", quantity: `${quantityText(row.quantity)} ${row.unit}`.trim() })}</span>}
         meta={[Number(row.pending) ? t("{quantity} to approve", { quantity: quantityText(row.pending) }) : "", Number(row.toCheck) ? t("{quantity} to check", { quantity: quantityText(row.toCheck) }) : "",
           Number(row.atFactory) > 0 && row.next === "send" ? t("{quantity} at the factory", { quantity: quantityText(row.atFactory ?? "0") }) : ""].filter(Boolean).join(" · ") || null} /> } },
-    { id: "status", header: t("Status"), accessorFn: (row) => labels.status[row.status], size: 190, meta: { renderCell: (row) => {
+    { id: "status", header: t("Status"), accessorFn: (row) => labels.status[row.status], size: 170, meta: { renderCell: (row) => {
       // Why it's where it is: what blocks release, why it's held, what changed.
       const why = OPEN.includes(row.status) && (row.lineStatus === "omitted" || Number(row.scopeOver) > 0) ? t("Scope changed")
         : row.blocked?.length ? row.blocked.map((check) => labels.blocked[check.key]).join(" · ")
@@ -107,7 +107,7 @@ export function WorkOrders({ api, state, error, openId, intent = null, onReload,
       return <Cell title={<WorkOrderStatusLabel status={row.status} />} meta={overdue ? `${why} · ${t("Late")}` : why}
         tone={why && (row.blocked?.length || row.lineStatus === "omitted" || Number(row.scopeOver) > 0 || overdue || row.next === "snags") ? "danger" : why ? "warning" : undefined} />;
     } } },
-    { id: "next", header: t("Next"), accessorFn: () => "", size: 150, meta: { align: "end", renderCell: (row) => {
+    { id: "next", header: t("Next"), accessorFn: () => "", size: 130, meta: { align: "end", renderCell: (row) => {
       if (!row.next || !row.mine) return null;
       const label = row.next === "fix" ? t("Fix") : labels.next[row.next];
       return <Button size="compact" variant={row.next === "release" || row.next === "approve" || row.next === "check" ? "secondary" : "quiet"} isLoading={busy === row.id}
