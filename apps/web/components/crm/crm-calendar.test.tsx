@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { crmRequest } from "@/lib/crm/client";
-import { WorkspaceRegionProvider } from "@/design-system";
+import { PageChrome, WorkspaceRegionProvider } from "@/design-system";
 import { zonedToUtc, zonedToday } from "@/lib/crm/zoned-time";
 import { CrmCalendar } from "./crm-calendar";
 import { calendarRights } from "@/lib/crm/calendar-rights";
@@ -85,10 +85,45 @@ describe("CRM calendar", () => {
 
   it("works out from the membership what the calendar may read", () => {
     expect(calendarRights({ roles: ["designer"], allowedPermissions: ["pre_projects.view", "crm.activities.view"] }))
-      .toEqual({ canManageBooking: false, canListMembers: false, canReadConnections: false });
+      .toEqual({ canManageBooking: false, canListMembers: false, canReadConnections: false, canManageConnections: false });
     expect(calendarRights({ roles: ["sales"], allowedPermissions: ["module.members.read", "integrations.view", "crm.settings.manage"] }))
-      .toEqual({ canManageBooking: true, canListMembers: true, canReadConnections: true });
-    expect(calendarRights({ roles: ["owner"] })).toEqual({ canManageBooking: true, canListMembers: true, canReadConnections: true });
+      .toEqual({ canManageBooking: true, canListMembers: true, canReadConnections: true, canManageConnections: false });
+    expect(calendarRights({ roles: ["operations"], allowedPermissions: ["integrations.view", "integrations.manage"] })).toMatchObject({ canReadConnections: true, canManageConnections: true });
+    expect(calendarRights({ roles: ["owner"] })).toEqual({ canManageBooking: true, canListMembers: true, canReadConnections: true, canManageConnections: true });
+  });
+
+  describe("a Google account that stopped working", () => {
+    const connectionId = "00000000-0000-4000-8000-000000000009";
+    beforeEach(() => {
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).includes("integration-connections")
+        ? { ok: true, json: async () => [{ id: connectionId, provider: "google_workspace", status: "degraded", displayName: "Studio Google" }] }
+        : String(url).includes("google-calendar")
+          ? { ok: false, status: 409, json: async () => ({ problem: "reconnect", message: "This account isn't connected anymore. Reconnect it in Connections." }) }
+          : { ok: true, json: async () => [] }));
+    });
+
+    it("shows Wodana's events with one calm line and Reconnect for someone who manages connections", async () => {
+      render(<CrmCalendar workspaceId={workspaceId} currentUserId={userId} canManageConnections />);
+      expect(await screen.findByRole("button", { name: /CRM Design consultation/ })).toBeInTheDocument();
+      const note = await screen.findByText("Google Calendar isn't connected anymore. Wodana events still show here.");
+      expect(note.closest("[role='status']")).not.toBeNull();
+      expect(screen.getByRole("link", { name: "Reconnect" })).toHaveAttribute("href", "/workspace/integrations");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText(/expired or revoked/i)).toBeNull();
+    });
+
+    it("gives everyone else the quiet note only", async () => {
+      render(<CrmCalendar workspaceId={workspaceId} currentUserId={userId} />);
+      expect(await screen.findByText("Google Calendar isn't connected anymore. Wodana events still show here.")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Reconnect" })).toBeNull();
+    });
+  });
+
+  it("starts with one row under the top bar: the controls and New event, the title for screen readers only", async () => {
+    render(<PageChrome names={["Calendar"]}><CrmCalendar workspaceId={workspaceId} currentUserId={userId} /></PageChrome>);
+    const toolbar = await screen.findByRole("toolbar", { name: "Calendar controls" });
+    expect(screen.getByRole("heading", { level: 1, name: "Calendar" })).toHaveClass("wd-visually-hidden");
+    expect(toolbar.closest(".wd-page-shell-tabs")).toContainElement(screen.getByRole("button", { name: "New event" }));
   });
 
   it("shows real activities, excludes cancellations and supports the day/search view", async () => {

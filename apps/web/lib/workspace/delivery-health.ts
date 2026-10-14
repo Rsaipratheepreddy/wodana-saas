@@ -1,4 +1,5 @@
 import { tKey, type Translate } from "@/lib/i18n/keys";
+import { knownProviderError, providerErrorMessage } from "./provider-errors";
 
 /** Business Core's delivery health (GET /workspaces/:id/delivery-health). */
 export type DeliveryChannel = "email" | "whatsapp" | "push";
@@ -54,6 +55,8 @@ const FAILURE_REASONS: Record<string, string> = {
 export function failureReason(t: Translate, failure: ChannelHealth["lastFailure"]) {
   if (!failure) return "";
   if (FAILURE_REASONS[failure.code]) return t(FAILURE_REASONS[failure.code] as never);
+  // A connected account (Gmail, Google) failing: Wodana's sentence for its code, never the provider's own text.
+  if (knownProviderError(failure.code) || /^(oauth_|event_|calendar_|sheet_|userinfo_|freebusy_)/.test(failure.code)) return providerErrorMessage(t, failure.code);
   if (/^MAILGUN_HTTP_(401|403)$/.test(failure.code)) return t("The email service refused the sending credentials");
   if (/^MAILGUN_HTTP_/.test(failure.code)) return t("The email service refused the message");
   return failure.message?.trim() || failure.code;

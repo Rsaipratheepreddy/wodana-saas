@@ -4,6 +4,21 @@ import type { SourceSheet } from "./linked-import-source";
 
 export class SheetSourceError extends Error {}
 
+const UNREADABLE = "Wodana couldn't read the sheet. Check the Google connection and that the sheet is still shared with it.";
+const RECONNECT = "Google isn't connected anymore. Reconnect it in Connections, then refresh the import.";
+/** The integration service's own sentences for a sheet it can't open (not Google's words). */
+const WODANA_SHEET_CODES = new Set(["sheet_unavailable", "drive_file_not_granted", "sheet_tab_missing"]);
+
+/**
+ * What to tell the person (and the import's owner, in its notice) when the sheet can't be read: Wodana's sentence for
+ * the code, never Google's own text. A revoked or expired Google access asks to reconnect.
+ */
+export function sheetErrorMessage(code: unknown, message: unknown): string {
+  if (code === "reconnect_required" || code === "credential_missing" || code === "refresh_token_missing") return RECONNECT;
+  if (typeof code === "string" && WODANA_SHEET_CODES.has(code) && typeof message === "string" && message.trim()) return message;
+  return UNREADABLE;
+}
+
 export type SheetRequest = { workspaceId: string; connectionId: string; spreadsheetId: string; sheetName?: string | null; previewRows?: number };
 export type SheetRead = { title: string; sheets: SourceSheet[]; rowCounts: Record<string, number> };
 
@@ -27,11 +42,8 @@ export class SheetSourceService {
       signal: AbortSignal.timeout(60_000),
     }).catch(() => null);
     if (!response) throw new SheetSourceError("Google didn't answer. Try again in a few minutes.");
-    const payload = await response.json().catch(() => null) as { title?: unknown; sheets?: unknown; rowCounts?: unknown; error?: { message?: unknown }; detail?: unknown } | null;
-    if (!response.ok) {
-      const message = typeof payload?.error?.message === "string" ? payload.error.message : typeof payload?.detail === "string" ? payload.detail : "";
-      throw new SheetSourceError(message || "Wodana couldn't read the sheet. Check the Google connection and that the sheet is still shared with it.");
-    }
+    const payload = await response.json().catch(() => null) as { title?: unknown; sheets?: unknown; rowCounts?: unknown; error?: { code?: unknown; message?: unknown }; detail?: unknown } | null;
+    if (!response.ok) throw new SheetSourceError(sheetErrorMessage(payload?.error?.code, payload?.error?.message));
     if (!payload || typeof payload.title !== "string" || !Array.isArray(payload.sheets)) throw new SheetSourceError("Google returned something Wodana can't read.");
     return { title: payload.title, sheets: payload.sheets as SourceSheet[], rowCounts: (payload.rowCounts && typeof payload.rowCounts === "object" ? payload.rowCounts : {}) as Record<string, number> };
   }

@@ -10,6 +10,9 @@ export type AccessRule = ReadonlyArray<ReadonlyArray<string>>;
 
 export type AccessContext = { permissions?: readonly string[] | null; roles?: readonly string[] | null };
 
+/** Connecting, reconnecting and changing the workspace's connections (the same codes Business Core checks). */
+export const MANAGE_CONNECTIONS: AccessRule = [["integrations.manage", "module.integrations.write", "module.integrations.edit"]];
+
 const ORGANIZATION_READ = ["module.organization.read", "legal_entities.view"];
 const MEMBERS_READ = ["module.members.read", "module.members.write", "module.members.edit", "module.members.delete", "workspace.members.manage"];
 const PROJECTS_VIEW = ["projects.view", "projects.manage"];

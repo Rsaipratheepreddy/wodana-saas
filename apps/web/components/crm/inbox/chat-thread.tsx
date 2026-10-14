@@ -20,6 +20,7 @@ import { LabelChip, useNow } from "./inbox-parts";
 import styles from "../crm-inbox.module.css";
 import { SaveToProject } from "./save-to-project";
 import { JobSuggestion, SuggestedReplies, useChatInsights, WoddyLine } from "./chat-insights";
+import { deliveryFailureReason } from "@/lib/crm/delivery-failure";
 
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
 const timeout = () => AbortSignal.timeout(20_000);
@@ -398,7 +399,7 @@ function MessageBubble({ message, partyName, workspaceId, conversationId, time, 
       : <MessageContent message={message} workspaceId={workspaceId} conversationId={conversationId} />}
     {onHide && !message.hiddenAt ? <IconButton aria-label={t("Hide message")} className={styles.hideButton} size="compact" variant="quiet" onPress={() => onHide(message.id, true)}><EyeOff size={13} /></IconButton> : null}
     <footer><time dateTime={String(message.createdAt)}>{time}</time>{direction === "outbound" ? <DeliveryState status={String(message.status)} /> : null}</footer>
-    {message.failureCode ? <small className={styles.error}>{t("Not delivered: {reason}", { reason: String(message.failureCode) })}</small> : null}
+    {message.failureCode ? <small className={styles.error}>{t("Not delivered: {reason}", { reason: deliveryFailureReason(t, message.failureCode) })}</small> : null}
   </article>;
 }
 

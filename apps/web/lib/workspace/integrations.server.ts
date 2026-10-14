@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile, intelligenceApiUrl } from "@/lib/auth/server";
 import type { CompanyProfileData } from "./company-profile";
+import { MANAGE_CONNECTIONS, meetsRule } from "./access";
 import { integrationsPageFixture, type IntegrationConnection, type IntegrationProvider, type IntegrationsPageData, type ProviderCapabilitiesResponse } from "./integrations";
 
 const READINESS_PROVIDERS: IntegrationProvider[] = ["google_workspace", "quickbooks", "zoho_books", "whatsapp"];
@@ -24,7 +25,8 @@ export async function getIntegrationsPageData(workspaceId?: string, strict = fal
   const authProfile = await getAuthenticatedProfile();
   const membership = workspaceId ? authProfile.memberships.find(item=>item.workspaceId===workspaceId) : authProfile.memberships[0];
   if (!membership) redirect("/login");
-  const canManage = membership.roles.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+  // Owners and administrators, and any role given the connection permissions (what Business Core checks).
+  const canManage = meetsRule(MANAGE_CONNECTIONS, { permissions: membership.allowedPermissions, roles: membership.roles });
   if (process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") return integrationsPageFixture;
 
   const token = (await cookies()).get(ACCESS_COOKIE)?.value;

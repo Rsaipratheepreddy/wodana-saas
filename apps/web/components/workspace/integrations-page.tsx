@@ -32,7 +32,13 @@ import {
 import { WhatsAppSignup, isWhatsAppSetup, type WhatsAppSetup } from "./whatsapp-signup";
 import { IntegrationTools } from "./integration-tools";
 import styles from "./integrations-page.module.css";
-import { tKey, type Translate } from "@/lib/i18n/keys";
+import { tKey, translateKnown, type Translate } from "@/lib/i18n/keys";
+import { providerProblem } from "@/lib/workspace/provider-errors";
+
+/** A connection whose access ended (revoked or expired at the provider): only connecting it again helps. */
+function needsReconnect(connection: IntegrationConnection) {
+  return connection.status === "degraded" && providerProblem(connection.lastErrorCode ?? undefined) === "reconnect";
+}
 
 const STATUS_LABELS = {
   draft: tKey("Draft"),
@@ -287,7 +293,8 @@ export function IntegrationsPage({
               <p>{t(item.description as never)}</p>
               {connection ? <small className={styles.connectionName}>{connection.displayName}{connection.legalEntityName ? ` · ${connection.legalEntityName}` : ""}</small> : null}
               {connection ? <small className={styles.capabilityTruth}>{connection?.id === item.connection?.id ? verificationLabel(item.verificationState, t) : t("Not tested")}</small> : null}
-              {connection?.healthIssues?.length ? <small className={styles.healthIssue}>{connection.healthIssues[0]}</small> : null}
+              {connection && needsReconnect(connection) ? <small className={styles.healthIssue}>{t("Access ended. Reconnect this account to use it again.")}</small>
+                : connection?.healthIssues?.length ? <small className={styles.healthIssue}>{translateKnown(t, connection.healthIssues[0])}</small> : null}
             </div>
             <div className={styles.cardFooter}>
               {(!connection || connection.status === "draft") && !platformReady(item.provider)
@@ -298,7 +305,9 @@ export function IntegrationsPage({
                     ? <Button isDisabled={!initialData.canManage} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Connect")}</Button>
                     : connection.status === "pending"
                       ? <Button isDisabled={!initialData.canManage || !platformReady(item.provider)} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Try again")}</Button>
-                      : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">{t("Manage")}</Button>}
+                      : needsReconnect(connection)
+                        ? <Button isDisabled={!initialData.canManage || !platformReady(item.provider)} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Reconnect")}</Button>
+                        : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">{t("Manage")}</Button>}
               {connection?.status === "pending" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">{t("Manage")}</Button> : null}
               {connection?.status === "draft" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">{t("Settings")}</Button> : null}
               {connection && ["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage || !platformReady(item.provider)} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="quiet">{t("Add account")}</Button> : null}

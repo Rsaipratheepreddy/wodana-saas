@@ -279,7 +279,7 @@ function inspectorTitle(id: CrmScreenId, row: CrmRecord, t: Translate) {
 export function CrmScreenPage({ initialData, initialRecordId, initialCalendar = false, initialFollowUpList = false, initialCreate = false }: { initialFollowUpList?: boolean; initialData: CrmScreenPageData; initialRecordId?: string; initialCalendar?: boolean; initialCreate?: boolean }) {
   if (initialData.id === "crm-overview") return <CrmOverview key={initialData.workspaceId} initialData={initialData} />;
   if (initialData.id === "calendar" || (initialData.id === "follow-ups" && initialCalendar)) return <CrmCalendar key={initialData.workspaceId} workspaceId={initialData.workspaceId} currentUserId={String(initialData.supporting.currentUserId ?? "")} canView={initialData.canView} canManageBooking={initialData.supporting.canManageBooking === true}
-    canListMembers={initialData.supporting.canListMembers !== false} canReadConnections={initialData.supporting.canReadConnections !== false} />;
+    canListMembers={initialData.supporting.canListMembers !== false} canReadConnections={initialData.supporting.canReadConnections !== false} canManageConnections={initialData.supporting.canManageConnections === true} />;
   if (initialData.id === "follow-ups") return <CrmFollowUps initialLayout={initialFollowUpList ? "kanban" : "timeline"} tasksOnly={initialFollowUpList} key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} initialCreate={initialCreate} />;
   if (initialData.id === "activities" && initialCalendar) redirect("/workspace/crm/follow-ups?view=schedule");
   if (initialData.id === "conversations") return <CrmInbox key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} />;

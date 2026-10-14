@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
 import { connectedGoogleForMember, crmCalendarEvents, googleCalendarEvents, projectCalendarEvents, type CalendarConnection, type CalendarMember } from "@/lib/crm/calendar-sources";
+import type { ProviderProblem } from "@/lib/workspace/provider-errors";
 import { atWallClock, fromWallClock, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { ActionDialog, FactList, ResourceState, options, useCrmResource, type ActionSpec } from "./crm-workbench";
 import { CalendarTimeGrid } from "./calendar-time-grid";
@@ -26,7 +27,7 @@ import type { BookingSubject } from "@/lib/logistics/types";
 function safeGoogleLink(value: unknown) { try { const url = new URL(String(value)); return url.protocol === "https:" && ["calendar.google.com", "www.google.com"].includes(url.hostname) ? url.href : undefined; } catch { return undefined; } }
 
 const subscribeToHydration = () => () => {};
-export function CrmCalendar(props: { workspaceId: string; currentUserId?: string; canView?: boolean; canManageBooking?: boolean; canListMembers?: boolean; canReadConnections?: boolean; revision?: number }) {
+export function CrmCalendar(props: { workspaceId: string; currentUserId?: string; canView?: boolean; canManageBooking?: boolean; canListMembers?: boolean; canReadConnections?: boolean; canManageConnections?: boolean; revision?: number }) {
   const t = useT();
   const settings = useDesignSystem();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
@@ -36,10 +37,12 @@ export function CrmCalendar(props: { workspaceId: string; currentUserId?: string
   return <DesignSystemProvider {...settings} className={`${styles.provider} ${workspaceColors.theme}`} portalContainer={portal} ref={setPortal}>{props.canView === false ? <NoAccessState area={t("Calendar")} /> : ready ? <LocalCrmCalendar {...props} /> : <p role="status">{t("Loading your local calendar…")}</p>}</DesignSystemProvider>;
 }
 
-function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canManageBooking = false, canListMembers = true, canReadConnections = true }: {
+function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canManageBooking = false, canListMembers = true, canReadConnections = true, canManageConnections = false }: {
   workspaceId: string; currentUserId?: string; revision?: number; canManageBooking?: boolean;
   /** Whether the viewer may read the member list and the integrations: when not, neither is asked for (no refused calls). */
   canListMembers?: boolean; canReadConnections?: boolean;
+  /** Who may reconnect a Google account that stopped working (Settings › Connections). */
+  canManageConnections?: boolean;
 }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
@@ -53,7 +56,8 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
   const [refresh, setRefresh] = useState(0);
   const [crm, setCrm] = useState<{ key: string; events: CalendarEvent[]; error?: string } | null>(null);
   const [project, setProject] = useState<{ key: string; events: CalendarEvent[]; error?: string } | null>(null);
-  const [google, setGoogle] = useState<{ key: string; events: CalendarEvent[]; error?: string } | null>(null);
+  // A Google account that stopped working is a problem to act on (reconnect, a setting, try later), never Google's own words.
+  const [google, setGoogle] = useState<{ key: string; events: CalendarEvent[]; problem?: ProviderProblem } | null>(null);
   const [connections, setConnections] = useState<CalendarConnection[]>([]);
   const [members, setMembers] = useState<CalendarMember[]>([]);
   const [memberError, setMemberError] = useState("");
@@ -163,14 +167,18 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
       try {
         // Google accepts at most 31 days per request. Split a six-week month grid safely.
         const items: Parameters<typeof googleCalendarEvents>[0] = [];
+        const problems = new Set<ProviderProblem>();
         for (let cursor = Date.parse(from); cursor < Date.parse(to); cursor += 30 * 86400000) {
           const response = await fetch("/api/workspace/crm/google-calendar", { method: "POST", signal: controller.signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, connectionIds, timeMin: new Date(cursor).toISOString(), timeMax: new Date(Math.min(cursor + 30 * 86400000, Date.parse(to))).toISOString(), timeZone }) });
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.message ?? t("Google events could not be loaded."));
-          items.push(...payload.events ?? []);
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) throw Object.assign(new Error("google"), { problem: (payload?.problem ?? "unavailable") as ProviderProblem });
+          items.push(...payload?.events ?? []);
+          for (const failure of payload?.failures ?? []) problems.add(failure.problem as ProviderProblem);
         }
-        if (!controller.signal.aborted) setGoogle({ key: googleKey, events: googleCalendarEvents(items, safeGoogleLink, timeZone) });
-      } catch (error) { if (!controller.signal.aborted) setGoogle({ key: googleKey, events: [], error: (error as Error).message }); }
+        // An account that can't be read doesn't hide the others' events; reconnecting is the problem to tell first.
+        const problem = (["reconnect", "setup", "unavailable"] as const).find((item) => problems.has(item));
+        if (!controller.signal.aborted) setGoogle({ key: googleKey, events: googleCalendarEvents(items, safeGoogleLink, timeZone), problem });
+      } catch (error) { if (!controller.signal.aborted) setGoogle({ key: googleKey, events: [], problem: (error as { problem?: ProviderProblem }).problem ?? "unavailable" }); }
     })();
     return () => controller.abort();
   }, [workspaceId, connectionIdKey, from, to, timeZone, googleKey, t]);
@@ -215,13 +223,14 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
     { id: "refresh", label: t("Refresh") }] : [{ id: "schedule", label: t("Schedule a CRM meeting") }, ...(!connectionsDenied ? [{ id: "google", label: googleConnected ? t("Manage Google") : t("Connect Google") }] : []), ...(canManageBooking ? [{ id: "booking", label: t("Booking pages") }] : []), { id: "refresh", label: t("Refresh") }];
   const notice = memberError ? memberError : scope === "personal" && members.length > 0 && !currentMember ? t("Your workspace membership could not be identified.") : connectionError
     ? `${connectionError} ${t("Workspace events are still available.")}` : project?.key === key && project.error ? project.error
-    : connectionIds.length && google?.key === googleKey && google.error ? google.error : "";
+    : "";
+  // Wodana's own events always show; a Google account that stopped working gets one calm line, and Reconnect for
+  // whoever may manage connections.
+  const googleProblem = connectionIds.length && google?.key === googleKey ? google.problem : undefined;
   const frameLoading = scope === "team" ? !teamLoaded : crm?.key !== key;
   const frameError = scope === "team" ? teamLoaded?.error : crm?.error;
-  return <PageShell title={t("Calendar")} kind="dashboard" action={canBook ? <Button variant="primary" onPress={() => setBooking(calendarDayKey(newEventDate()))}><Plus size={16} aria-hidden="true" />{t("Book design time")}</Button>
-    : canBookLogistics ? <Button variant="primary" onPress={() => setLogisticsBooking({ day: calendarDayKey(newEventDate()) })}><Plus size={16} aria-hidden="true" />{t("Book")}</Button>
-    : scope === "team" ? null : <Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("New event")}</Button>}>
-    <div className={styles.toolbar} role="toolbar" aria-label={t("Calendar controls")}>
+  // One row: ‹ Today › and the period at the start; search, whose calendar, Day · Week · Month, ⋯ and the action at the end.
+  const toolbar = <div className={styles.toolbar} role="toolbar" aria-label={t("Calendar controls")}>
       <div className={styles.period}>
         <div className={styles.stepper}><IconButton aria-label={t("Previous calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, -1))}><ChevronLeft size={16} /></IconButton>
           <Button size="compact" onPress={() => setAnchor(wallNow())}>{t("Today")}</Button>
@@ -246,8 +255,14 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
           else { setRefresh(n => n + 1); setConnectionError(""); }
         }} />
       </div>
-    </div>
+    </div>;
+  return <PageShell title={t("Calendar")} kind="dashboard" toolbar={toolbar} action={canBook ? <Button variant="primary" onPress={() => setBooking(calendarDayKey(newEventDate()))}><Plus size={16} aria-hidden="true" />{t("Book design time")}</Button>
+    : canBookLogistics ? <Button variant="primary" onPress={() => setLogisticsBooking({ day: calendarDayKey(newEventDate()) })}><Plus size={16} aria-hidden="true" />{t("Book")}</Button>
+    : scope === "team" ? null : <Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("New event")}</Button>}>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {googleProblem ? <InlineNotice message={googleProblem === "reconnect" ? t("Google Calendar isn't connected anymore. Wodana events still show here.")
+      : googleProblem === "setup" ? t("Google Calendar needs a setting in Connections. Wodana events still show here.") : t("Google Calendar isn't available right now. Wodana events still show here.")}
+      action={canManageConnections && googleProblem !== "unavailable" ? <Link className="wd-button" data-size="compact" data-variant="secondary" href="/workspace/integrations">{googleProblem === "reconnect" ? t("Reconnect") : t("Open Connections")}</Link> : undefined} /> : null}
     {scope === "team" && teamNotice ? <InlineNotice tone={teamNotice.tone} message={teamNotice.message} /> : null}
     <section className={styles.frame} aria-label={t("Calendar schedule")} aria-busy={frameLoading || (connectionIds.length > 0 && google?.key !== googleKey) || undefined}>
       {frameLoading ? <div className={styles.loading}><Skeleton lines={8} shape="rows" /></div>

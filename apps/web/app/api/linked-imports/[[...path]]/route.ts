@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { applyRotatedSession, authenticatedBackendFetch } from "@/lib/auth/backend-session";
-import { intelligenceApiUrl, safeBackendMessage } from "@/lib/auth/server";
+import { intelligenceApiUrl } from "@/lib/auth/server";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
+import { providerErrorCode, providerErrorMessage, providerProblem } from "@/lib/workspace/provider-errors";
 
 /** Linked spreadsheet imports (stock, catalog, suppliers), and the Google Picker that links a sheet. */
 function allowed(path: string[], method: string) {
@@ -31,8 +32,10 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
     const result = await authenticatedBackendFetch("/integrations/google/picker-token", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ workspaceId, connectionId: body.connectionId }) }, intelligenceApiUrl);
     const payload = await result.upstream?.json().catch(() => null);
+    // Google's own text never passes: a code picks Wodana's sentence (a revoked account asks to reconnect).
+    const code = providerErrorCode(payload);
     const response = NextResponse.json(result.unauthenticated ? { message: t("Your session has expired. Sign in again.") }
-      : result.upstream?.ok ? payload : { message: safeBackendMessage(payload, t("Google isn't available. Check the connection in Connections.")) },
+      : result.upstream?.ok ? payload : { ...(code ? { code } : {}), problem: providerProblem(code), message: providerErrorMessage(t, code, t("Google isn't available. Check the connection in Connections.")) },
       { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503, headers: { "cache-control": "no-store" } });
     applyRotatedSession(response, result.rotatedSession);
     return response;
