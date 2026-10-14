@@ -70,7 +70,7 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
     items={(["packages", "entries", "hours"] as const).map((id) => ({ id, label: views[id] }))} />
     {canAskFinance ? <Button size="compact" onPress={() => setAskingFinance(true)}>{t("Request from Finance")}</Button> : null}</>;
   return <div className={styles.money}>
-    {state.uncosted ? <InlineNotice tone="info" message={t("{count} costs have no price or exchange rate yet and aren't counted.", { count: state.uncosted })} /> : null}
+    {state.uncosted ? <InlineNotice tone="info" message={state.uncosted === 1 ? t("1 cost has no price or exchange rate yet and isn't counted.") : t("{count} costs have no price or exchange rate yet and aren't counted.", { count: state.uncosted })} /> : null}
     {view === "hours" ? <ProjectHours workspaceId={workspaceId} projectId={projectId} switcher={toolbar} />
       : view === "packages"
       ? <DataGrid<PackageMoney> ariaLabel={t("Budget by package")} columns={packageColumns} data={packages} getRowId={(row) => row.id ?? "none"} rowNumbers={false} wrapText

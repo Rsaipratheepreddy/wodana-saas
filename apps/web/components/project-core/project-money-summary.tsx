@@ -33,7 +33,7 @@ export function useFlagText() {
       case "over_budget": return { text: t("{category} over by {amount}", { category: labels[flag.category], amount: money(flag.amount) }), tone: "danger" };
       case "forecast_loss": return { text: t("Expected loss of {amount}", { amount: money(flag.amount) }), tone: "danger" };
       case "below_target": return { text: t("Margin {percent} below the {target} target", { percent: percent(flag.forecastPercent), target: percent(flag.target) }), tone: "warning" };
-      case "estimate_incomplete": return { text: t("{count} quoted lines have no cost", { count: flag.count }), tone: "warning" };
+      case "estimate_incomplete": return { text: flag.count === 1 ? t("1 quoted line has no cost") : t("{count} quoted lines have no cost", { count: flag.count }), tone: "warning" };
       default: return { text: t("The quotation has no cost estimate"), tone: "warning" };
     }
   }, [t, labels, percent]);
@@ -144,7 +144,7 @@ export function ProjectMoneySummary({ workspaceId, projectId, switcher }: { work
       </> : null}
     </p>
     {!pnl.comparable && !pnl.marginHidden ? <InlineNotice tone="info" message={t("The project is in {project} and costs are in {costs}, so there's no margin here.", { project: contractCurrency, costs: pnl.currency })} /> : null}
-    {pnl.uncosted ? <InlineNotice tone="info" message={t("{count} costs have no price or exchange rate yet and aren't counted.", { count: pnl.uncosted })} /> : null}
+    {pnl.uncosted ? <InlineNotice tone="info" message={pnl.uncosted === 1 ? t("1 cost has no price or exchange rate yet and isn't counted.") : t("{count} costs have no price or exchange rate yet and aren't counted.", { count: pnl.uncosted })} /> : null}
 
     <section className={styles.section} aria-labelledby="money-pnl">
       <Heading as="h2" size="sm" id="money-pnl">{t("Profit & loss")} <span className={styles.muted}>{pnl.currency}</span></Heading>
@@ -173,7 +173,7 @@ export function ProjectMoneySummary({ workspaceId, projectId, switcher }: { work
       </dl>
       {cash.spendingLock.state === "locked" ? <InlineNotice tone="error" message={t("New orders are stopped: {amount} in hand.", { amount: money(cash.spendingLock.available, cash.currency) })} /> : null}
       {cash.spendingLock.state === "warn" ? <InlineNotice tone="info" message={t("New orders go ahead with a warning: {amount} in hand.", { amount: money(cash.spendingLock.available, cash.currency) })} /> : null}
-      {cash.unconverted ? <InlineNotice tone="info" message={t("{count} payments have no exchange rate yet and aren't counted.", { count: cash.unconverted })} /> : null}
+      {cash.unconverted ? <InlineNotice tone="info" message={cash.unconverted === 1 ? t("1 payment has no exchange rate yet and isn't counted.") : t("{count} payments have no exchange rate yet and aren't counted.", { count: cash.unconverted })} /> : null}
       {recent.length ? <>
         <TrendLines ariaLabel={t("Money in and out")} categories={recent.map((row) => ({ key: row.month, label: month(row.month) }))}
           series={[{ id: "in", label: t("Received") }, { id: "out", label: t("Paid") }]}

@@ -38,7 +38,7 @@ describe("project money", () => {
     render(<DesignSystemProvider><ProjectMoney workspaceId="w" projectId="p1" /></DesignSystemProvider>);
     const table = await grid("Budget by package");
     expect(screen.queryByText("Cash in hand")).toBeNull();
-    expect(screen.getByText(/1 costs have no price or exchange rate/)).toBeInTheDocument();
+    expect(screen.getByText(/1 cost has no price or exchange rate/)).toBeInTheDocument();
     expect(table).toHaveTextContent(/Lights.*520.*20.00 over/);
     expect(table).toHaveTextContent(/Fitting.*100/);
     expect(table).toHaveTextContent("Not in a package");
