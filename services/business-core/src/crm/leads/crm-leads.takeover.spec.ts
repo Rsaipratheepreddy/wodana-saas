@@ -8,10 +8,17 @@ const dueLead = {
   business_unit_id: null, preferred_locale: null, party_owner_membership_id: null,
 };
 
-function processor({ responded = false, engaged = false, attempts = 0, cap = 2 }: { responded?: boolean; engaged?: boolean; attempts?: number; cap?: number } = {}) {
+// The Sales working hours (the first-response policy's calendar): Mon–Sun 09:00–18:00 Dubai time.
+const day = [{ start: "09:00", end: "18:00" }];
+const SALES_HOURS = { version: 1, mode: "business", timezone: "Asia/Dubai", weeklyHours: { monday: day, tuesday: day, wednesday: day, thursday: day, friday: day, saturday: day, sunday: day }, holidays: [], dateOverrides: {} };
+
+function processor({ responded = false, engaged = false, attempts = 0, cap = 2, queueMinutes = null, salesHours = false }:
+  { responded?: boolean; engaged?: boolean; attempts?: number; cap?: number; queueMinutes?: number | null; salesHours?: boolean } = {}) {
   const query = vi.fn(async (sql: string) => {
     if (sql.includes("SELECT lead.id FROM crm_leads lead")) return { rows: [{ id: "lead" }], rowCount: 1 };
     if (sql.includes("FROM workspace_sales_settings")) return { rows: [{ takeoverCap: cap, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90, salesAdminMembershipId: null, version: 1 }], rowCount: 1 };
+    if (sql.includes("takeover_after_minutes AS minutes")) return { rows: queueMinutes === null ? [] : [{ minutes: queueMinutes, schedule: null }], rowCount: queueMinutes === null ? 0 : 1 };
+    if (sql.includes("FROM crm_sla_policies")) return { rows: salesHours ? [{ schedule: SALES_HOURS, mode: "business" }] : [], rowCount: salesHours ? 1 : 0 };
     if (sql.includes("AS attempts FROM crm_assignment_history")) return { rows: [{ attempts }], rowCount: 1 };
     if (sql.includes("FROM crm_assignment_history history") && sql.includes('AS "assignedAt"')) {
       return { rows: [{ assignedAt, userId: "owner-user" }], rowCount: 1 };
@@ -88,6 +95,21 @@ describe("unanswered lead ownership handoff", () => {
     expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.lead.takeover_kept.v1" }));
     // The owner is never stripped.
     expect(query.mock.calls.some(([sql]) => /owner_membership_id\s*=\s*NULL/i.test(sql))).toBe(false);
+  });
+
+  it("counts the next handoff in Sales working minutes when the queue has no hours of its own", async () => {
+    vi.useFakeTimers();
+    try {
+      // 18:05 Dubai time, after the working day: 60 working minutes end at 10:00 the next morning, not 19:05 tonight.
+      vi.setSystemTime(new Date("2026-09-26T14:05:00.000Z"));
+      const { service, query } = processor({ queueMinutes: 60, salesHours: true });
+      service["selectAssignment"] = vi.fn().mockResolvedValue({ ownerMembershipId: null, queueId: "queue", ruleId: null, explanation: { reason: "no_eligible_alternate" } });
+      expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({ reassigned: [], engaged: [], kept: ["lead"], escalated: [] });
+      const kept = query.mock.calls.find(([sql]) => sql.includes("SET ownership_due_at=$3, priority='urgent'"));
+      expect((kept?.[1]?.[2] as Date).toISOString()).toBe("2026-09-27T06:00:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("escalates to a manager instead of rotating once the attempt cap is reached (S-1)", async () => {

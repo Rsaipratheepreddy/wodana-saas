@@ -128,7 +128,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
           <Button size="compact" isDisabled={!queue} onPress={() => queue && setAction({
             title: t("Unanswered lead handoff"), path: `queues/${queue.id}`, method: "PATCH",
             initial: { version: queue.version, takeoverAfterMinutes: queue.takeoverAfterMinutes },
-            fields: [{ key: "takeoverAfterMinutes", label: t("Elapsed minutes before another sales owner takes over"), type: "number", min: 1, max: 10080 }],
+            fields: [{ key: "takeoverAfterMinutes", label: t("Working minutes before another sales owner takes over"), type: "number", min: 1, max: 10080 }],
             transform: (values) => ({ version: values.version, takeoverAfterMinutes: values.takeoverAfterMinutes ?? null }),
             submit: t("Save handoff"),
           })}>{t("Lead handoff")}</Button>

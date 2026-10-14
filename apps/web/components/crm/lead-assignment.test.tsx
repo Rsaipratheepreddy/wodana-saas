@@ -17,7 +17,7 @@ describe("Auto-assignment settings", () => {
     expect(await screen.findByText(/working minutes/i)).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Lead handoff" }));
     const dialog = await screen.findByRole("dialog", { name: "Unanswered lead handoff" });
-    const minutes = within(dialog).getByRole("textbox", { name: /Elapsed minutes before another sales owner/ });
+    const minutes = within(dialog).getByRole("textbox", { name: /Working minutes before another sales owner/ });
     await user.clear(minutes);
     await user.type(minutes, "60");
     await user.click(within(dialog).getByRole("button", { name: "Save handoff" }));

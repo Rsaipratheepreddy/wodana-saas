@@ -8534,7 +8534,7 @@
   "Default sales owners are already included.": "Default sales owners are already included.",
   "Add default sales owners": "Add default sales owners",
   "Unanswered lead handoff": "Unanswered lead handoff",
-  "Elapsed minutes before another sales owner takes over": "Elapsed minutes before another sales owner takes over",
+  "Working minutes before another sales owner takes over": "Working minutes before another sales owner takes over",
   "Save handoff": "Save handoff",
   "Lead handoff": "Lead handoff",
   "Add queue": "Add queue",
