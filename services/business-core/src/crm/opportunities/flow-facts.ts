@@ -27,7 +27,7 @@ async function qsSkipped(db: Db, workspaceId: string, opportunityId: string, cas
 
 type FactsRow = {
   hasLead: boolean; enquiryType: string | null; enquiryTypeLabel: string | null; flow: string | null; flowVersionId: string | null; clientType: string | null;
-  partyEmail: string | null; discoveryEmail: string | null; discoveryLocation: string | null; enquiryLocation: string | null; budgetRange: string | null;
+  partyEmail: string | null; enquiryEmail: string | null; discoveryEmail: string | null; discoveryLocation: string | null; enquiryLocation: string | null; budgetRange: string | null;
   floorPlan: string | null; area: string | null; introStatus: string | null; introAt: Date | null; introBy: string | null; contactLogged: boolean;
   packageCode: string | null;
   furniturePath: FurniturePath | null; feasibilityAt: Date | null; feasibilityBy: string | null; materialsChange: boolean;
@@ -60,7 +60,7 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
             choice.flow, opportunity.flow_version_id AS "flowVersionId", enquiry.details->>'customerType' AS "clientType",
             (SELECT point.raw_value FROM crm_contact_points point WHERE point.workspace_id = opportunity.workspace_id AND point.party_id = opportunity.party_id
                AND point.type = 'email' AND point.status = 'active' ORDER BY point.is_primary DESC LIMIT 1) AS "partyEmail",
-            discovery.client_email AS "discoveryEmail", discovery.property_location AS "discoveryLocation", enquiry.details->>'location' AS "enquiryLocation",
+            NULLIF(btrim(enquiry.details->'contact'->>'email'), '') AS "enquiryEmail", discovery.client_email AS "discoveryEmail", discovery.property_location AS "discoveryLocation", enquiry.details->>'location' AS "enquiryLocation",
             NULLIF(trim(enquiry.details->>'budgetRange'), '') AS "budgetRange",
             discovery.floor_plan_asset_id::text AS "floorPlan", discovery.area::text AS area, intro.status AS "introStatus",
             intro.completed_at AS "introAt", intro_owner.display_name AS "introBy",
@@ -137,7 +137,8 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
     enquiryTypeResolved: !row.hasLead || hasResolvedEnquiryType(row.enquiryType),
     clientTypeResolved: clientTypeDecided(row.clientType),
     clientType: row.clientType?.trim().toLowerCase() || null,
-    clientEmail: Boolean(row.discoveryEmail || row.partyEmail),
+    // The client's email carries over from the enquiry as its location does (a known client chosen on the form keeps the email typed there).
+    clientEmail: Boolean(row.discoveryEmail || row.partyEmail || row.enquiryEmail),
     propertyLocation: Boolean(row.discoveryLocation?.trim() || row.enquiryLocation?.trim()),
     floorPlanOrArea: Boolean(row.floorPlan || row.area),
     budgetBand: row.budgetRange,

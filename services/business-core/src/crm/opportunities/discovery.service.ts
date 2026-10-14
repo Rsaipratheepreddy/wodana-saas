@@ -11,7 +11,19 @@ import { areaIn, coordinatesProblem, discoveryMissing, roundCoordinate, type Dis
 import { ensureSiteLocation } from "./site-location";
 
 export type SaveDiscoveryInput = Partial<DiscoveryFacts> & { version?: number; answers?: Record<string, unknown> };
+/** `partyEmail`: the client's email on record, the client's own or else the one given on the enquiry. */
 type Context = { leadId: string | null; enquiryType: string | null; clientType: string | null; partyEmail: string | null };
+type StoredFacts = DiscoveryFacts & { version: number; designFee: string | null; designFeeCurrency: string | null };
+
+const NO_FACTS: DiscoveryFacts = { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: null, floorPlanAssetId: null, designPackageId: null, latitude: null, longitude: null, designRate: null };
+
+/** The discovery facts with the client's email carried over from the client or the enquiry while Discovery has none of its own. */
+function withClientEmail(facts: StoredFacts, context: Context): StoredFacts;
+function withClientEmail(facts: null, context: Context): DiscoveryFacts;
+function withClientEmail(facts: StoredFacts | null, context: Context): DiscoveryFacts {
+  const base: DiscoveryFacts = facts ?? NO_FACTS;
+  return base.clientEmail ? base : { ...base, clientEmail: context.partyEmail };
+}
 type PackageRow = { id: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null; status: string; rateFrom: boolean; unitDefinition: string | null };
 
 /** PLM-040: the Account Manager's discovery form on an opportunity, and the design fee it prices (PLM-041). */
@@ -92,29 +104,33 @@ export class OpportunityDiscoveryService {
   /** What still blocks a stage that requires discovery; used by the pipeline stage gate. */
   async missing(client: PoolClient, workspaceId: string, opportunityId: string) {
     const context = await this.context(client, workspaceId, opportunityId);
-    const facts = await this.facts(client, workspaceId, opportunityId, false);
-    const pkg = facts?.designPackageId ? await this.package(client, workspaceId, facts.designPackageId) : null;
+    const stored = await this.facts(client, workspaceId, opportunityId, false);
+    const facts = stored ? withClientEmail(stored, context) : withClientEmail(null, context);
+    const pkg = facts.designPackageId ? await this.package(client, workspaceId, facts.designPackageId) : null;
     const questions = await this.questions(client, workspaceId, context.enquiryType);
     return discoveryMissing({ facts, enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers: await this.answers(client, workspaceId, opportunityId) });
   }
 
   private async view(client: PoolClient, workspaceId: string, opportunityId: string) {
     const context = await this.context(client, workspaceId, opportunityId);
-    const facts = await this.facts(client, workspaceId, opportunityId, false);
+    const stored = await this.facts(client, workspaceId, opportunityId, false);
+    // The client's email shows (and counts) from the client or the enquiry until Discovery has its own.
+    const facts = stored && withClientEmail(stored, context);
+    const shown = facts ?? withClientEmail(null, context);
     const questions = await this.questions(client, workspaceId, context.enquiryType);
     const answers = await this.answers(client, workspaceId, opportunityId);
     const pkg = facts?.designPackageId ? await this.package(client, workspaceId, facts.designPackageId) : null;
     // PLM-139: where an agreed rate above the package's stands (pending, approved, sent back or refused).
     const rate = pkg && facts?.designRate ? await this.rate(client, workspaceId, opportunityId, pkg, facts) : null;
     return {
-      facts: facts ?? { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: context.partyEmail, floorPlanAssetId: null, designPackageId: null, latitude: null, longitude: null, designRate: null },
+      facts: shown,
       designFee: facts?.designFee ? { amount: facts.designFee, currency: facts.designFeeCurrency } : null,
       package: pkg ? { id: pkg.id, name: pkg.name, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit, rate: pkg.rate, rateFrom: pkg.rateFrom, unitDefinition: pkg.unitDefinition } : null,
       designRate: rate && facts?.designRate ? { requested: facts.designRate, rate: rate.rate, approval: !rate.needsApproval ? "approved" : rate.approval && ["rejected", "returned"].includes(rate.approval.status) ? rate.approval.status : "pending",
         waitingFor: rate.needsApproval && rate.approval?.status === "pending" ? rate.approval.waitingFor : [] } : null,
       enquiryType: context.enquiryType, clientType: context.clientType,
       questions, answers, files: await this.files(client, workspaceId, context.leadId),
-      missing: discoveryMissing({ facts, enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers }),
+      missing: discoveryMissing({ facts: shown, enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers }),
       version: facts?.version ?? 0,
     };
   }
@@ -165,8 +181,9 @@ export class OpportunityDiscoveryService {
   private async context(client: PoolClient, workspaceId: string, opportunityId: string): Promise<Context> {
     const row = (await client.query<Context & { found: boolean }>(
       `SELECT true AS found, opportunity.lead_id AS "leadId", enquiry.service_type AS "enquiryType", enquiry.details->>'customerType' AS "clientType",
-              (SELECT point.raw_value FROM crm_contact_points point WHERE point.workspace_id = opportunity.workspace_id AND point.party_id = opportunity.party_id
-                 AND point.type = 'email' AND point.status = 'active' ORDER BY point.is_primary DESC LIMIT 1) AS "partyEmail"
+              coalesce((SELECT point.raw_value FROM crm_contact_points point WHERE point.workspace_id = opportunity.workspace_id AND point.party_id = opportunity.party_id
+                 AND point.type = 'email' AND point.status = 'active' ORDER BY point.is_primary DESC LIMIT 1),
+                NULLIF(btrim(enquiry.details->'contact'->>'email'), '')) AS "partyEmail"
        FROM crm_opportunities opportunity
        LEFT JOIN crm_leads lead ON lead.workspace_id = opportunity.workspace_id AND lead.id = opportunity.lead_id
        LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
