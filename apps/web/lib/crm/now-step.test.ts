@@ -70,6 +70,12 @@ describe("now step mapping (F1)", () => {
     expect(designing.then.map((step) => step.id)).toEqual(["quote", "deal"]);
     // Furniture has no design step.
     expect(nowPlan({ status: "won", flow: view({ flow: "furniture" }), funnel: funnel({ quote: "done" }), caseId: "case-1" }).now).toMatchObject({ id: "deal", section: "approvals" });
+    // Decided by the flow's steps, never its code: an enquiry type's own design flow designs; its own furniture flow doesn't.
+    const none = { intro: false, designPackage: false, furniturePath: false, clientApprovalOnSpot: false, siteVisit: false, qsPricing: false };
+    expect(nowPlan({ status: "won", flow: view({ flow: "interior_design_furniture", capabilities: { ...none, intro: true, designPackage: true } }), funnel: funnel({}), caseId: "case-1" }).now)
+      .toMatchObject({ id: "design", section: "designs" });
+    expect(nowPlan({ status: "won", flow: view({ flow: "showroom_sale", capabilities: { ...none, furniturePath: true, clientApprovalOnSpot: true } }), funnel: funnel({}), caseId: "case-1" }).now)
+      .toMatchObject({ id: "quote", section: "quotations" });
     expect(nowPlan({ status: "won", flow: view(), funnel: funnel({ design: "done", quote: "done", deal: "done" }), caseId: "case-1" }).now).toMatchObject({ id: "planning", section: "overview" });
     expect(nowPlan({ status: "lost", flow: view() }).now).toMatchObject({ target: "reopen" });
   });

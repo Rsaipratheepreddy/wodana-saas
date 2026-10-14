@@ -1,6 +1,7 @@
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { MissingRequirement } from "./client";
 import type { OpportunityFlowView, FlowLineStep } from "./opportunity-flow";
+import { flowCapabilities } from "./flow-capabilities";
 
 /**
  * F1 (plan §5a): one job, one step at a time. What the opportunity's "Now" card and board card show,
@@ -121,7 +122,10 @@ function wonPlan(flow: OpportunityFlowView | null, funnel: FunnelStep[], caseId:
     return { status: "won", column: null, more: [], then: [], why: project.reference ? { key: tKey("Won. The work continues in project {reference}."), values: { reference: project.reference } } : { key: tKey("Won. The work continues in the project.") },
       now: { id: "project", title: tKey("Open the project"), short: tKey("Open project"), target: "project", keys: [], fields: [] } };
   }
-  const order = (flow?.flow === "furniture" || flow?.flow === "basic" ? ["quote", "deal"] : ["design", "quote", "deal"]) as Array<keyof typeof FUNNEL_STEPS>;
+  // Design work follows Won on a project flow (an intro or a design round), never on a furniture sale or a basic flow; decided by its steps, not its code.
+  const capabilities = flow ? flowCapabilities(flow) : null;
+  const designWork = !capabilities || (!capabilities.furniturePath && (capabilities.intro || capabilities.designPackage));
+  const order = (designWork ? ["design", "quote", "deal"] : ["quote", "deal"]) as Array<keyof typeof FUNNEL_STEPS>;
   const done = (key: string) => funnel.find((step) => step.key === key)?.state === "done";
   const open = order.filter((key) => !done(key)).map((key) => ({ ...FUNNEL_STEPS[key], keys: [], fields: [] }));
   if (!caseId) {

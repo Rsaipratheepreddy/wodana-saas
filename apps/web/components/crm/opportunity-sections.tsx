@@ -7,7 +7,7 @@ import { Badge, Button, EditableFieldList, FactRow, Skeleton, Switch, useDesignS
 import { useT } from "@/lib/i18n/i18n-provider";
 import { dateText, label, type RecordData } from "@/lib/crm/client";
 import { activityTitle } from "@/lib/crm/contact";
-import { FURNITURE_PATHS, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
+import { flowCapabilities, FURNITURE_PATHS, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import type { FactGroup } from "@/lib/crm/now-step";
 import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/phone";
 import { SiteLocation } from "@/components/ui/site-location";
@@ -114,7 +114,7 @@ export function OpportunityCards(props: CardsProps) {
       <EditableFieldList layout="stacked">
         <FactRow label={t("Furniture sub-path")}>{pathChoice ? `${pathChoice.letter} · ${t(pathChoice.label)}` : <Missing />}</FactRow>
         {flow.furniture.feasibility ? <FactRow label={t("Feasibility")}>{t("Confirmed · {date}", { date: dateText(flow.furniture.feasibility.at, { locale }) })}</FactRow> : null}
-        {flow.flow === "furniture" && !closed ? <FactRow label={t("Client approved on the spot")}>
+        {flowCapabilities(flow).clientApprovalOnSpot && !closed ? <FactRow label={t("Client approved on the spot")}>
           <Switch aria-label={t("Client approved on the spot")} isSelected={Boolean(flow.clientApproval)} onChange={props.onClientApproval}>{flow.clientApproval ? t("Yes") : t("No")}</Switch>
         </FactRow> : null}
       </EditableFieldList>

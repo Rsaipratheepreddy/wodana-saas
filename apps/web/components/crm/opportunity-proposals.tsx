@@ -6,7 +6,7 @@ import { Badge, Button, EditableFieldList, FactRow, FormDialog, MoneyField, Sele
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import { crmRequest, dateText } from "@/lib/crm/client";
-import type { OpportunityFlowView, ProofReading } from "@/lib/crm/opportunity-flow";
+import { flowCapabilities, type OpportunityFlowView, type ProofReading } from "@/lib/crm/opportunity-flow";
 import { amountText } from "@/lib/approvals/policies";
 import { useCrmResource } from "./crm-workbench";
 import { FactCard } from "./opportunity-sections";
@@ -56,9 +56,9 @@ export function proofMatch(reading: Pick<ProofReading, "amount" | "currency"> | 
   return minor(reading.amount) === minor(proposal.amount) ? "match" : "mismatch";
 }
 
-/** Which proposals the opportunity shows: Proposal 1 for a design job or when it exists; Proposal 2 always. */
-export function visibleKinds(flow: Pick<OpportunityFlowView, "flow"> | null, proposals: Array<Pick<Proposal, "kind">>): ProposalKind[] {
-  return flow?.flow === "design" || proposals.some((proposal) => proposal.kind === "design") ? ["design", "main"] : ["main"];
+/** Which proposals the opportunity shows: Proposal 1 when its flow has a design package round or when it exists; Proposal 2 always. */
+export function visibleKinds(flow: Pick<OpportunityFlowView, "flow" | "capabilities"> | null, proposals: Array<Pick<Proposal, "kind">>): ProposalKind[] {
+  return (flow && flowCapabilities(flow).designPackage) || proposals.some((proposal) => proposal.kind === "design") ? ["design", "main"] : ["main"];
 }
 
 /** A day as people read it (no time of day). */

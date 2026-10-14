@@ -95,6 +95,46 @@ describe("CRM opportunity workbench", () => {
     await waitFor(() => expect(within(side).getByRole("button", { name: "Book intro meeting" })).toBeEnabled());
   });
 
+  it("books the intro and shows the design package and the design fee proposal on an enquiry type's own flow, whatever its code", async () => {
+    // Palm's "Interior Design + Furniture": the workspace's own copy of the design flow, under its own code.
+    const record = { id: "opportunity-7", title: "Villa design", status: "open", version: 3, pipelineId: "pipeline-1", stageId: "new", stageName: "New Opportunity", partyId: "party-7", partyName: "Yasmin",
+      flow: { flow: "interior_design_furniture", capabilities: { intro: true, designPackage: true, furniturePath: false, clientApprovalOnSpot: false, siteVisit: false, qsPricing: false },
+        steps, done: 0, total: 4, next: { stageId: "qualified", name: "Qualified", step: "qualified" }, missing: [{ key: "introMeeting", label: "Intro meeting completed" }], toWon: [],
+        proofs: [], furniture: null, clientApproval: null, negotiationOptional: false } };
+    const intro = { designer: null, intro: null, history: [], timezone: "Asia/Dubai", canChangeDesigner: true, blockers: [] };
+    const proposals = { proposals: [], events: [], valueHidden: false, can: { enter: true, fulfil: false }, closing: null, fulfilment: [] };
+    vi.mocked(crmRequest).mockImplementation(async (_w, path) => path === `opportunities/${record.id}` ? record : path === "pipelines" ? pipelines
+      : path === `opportunities/${record.id}/discovery` ? discovery : path === `opportunities/${record.id}/intro` ? intro
+      : path === `opportunities/${record.id}/proposals` ? proposals : path === `opportunities/${record.id}/designers` ? { items: [{ id: "d1", displayName: "Dana Designer" }] } : { data: [] });
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
+    const next = await screen.findByRole("region", { name: "To move to Qualified" });
+    // Book on the checklist opens the booking, as it does for Interior Design.
+    await user.click(within(next).getByRole("button", { name: /^Book/ }));
+    expect(await screen.findByRole("dialog", { name: "Book intro meeting" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close dialog" }));
+    const side = screen.getByRole("complementary", { name: "Key facts" });
+    expect(within(side).getByRole("button", { name: /Intro meeting/ })).toBeInTheDocument();
+    expect(within(side).getByRole("button", { name: /Design package/ })).toBeInTheDocument();
+    await user.click(await within(side).findByRole("button", { name: /Proposals/ }));
+    expect(await within(side).findByText("Proposal 1 · Design fee")).toBeInTheDocument();
+  });
+
+  it("shows no intro or design package where the flow's steps have none, whatever its code", async () => {
+    const record = { id: "opportunity-8", title: "Sofa", status: "open", version: 1, pipelineId: "pipeline-1", stageId: "new", stageName: "New Opportunity", partyId: "party-8", partyName: "Omar",
+      flow: { flow: "design", capabilities: { intro: false, designPackage: false, furniturePath: false, clientApprovalOnSpot: false, siteVisit: false, qsPricing: false },
+        steps, done: 0, total: 4, next: { stageId: "won", name: "Won", step: "won" }, missing: [], toWon: [], proofs: [], furniture: null, clientApproval: null, negotiationOptional: false } };
+    vi.mocked(crmRequest).mockImplementation(async (_w, path) => path === `opportunities/${record.id}` ? record : path === "pipelines" ? pipelines
+      : path === `opportunities/${record.id}/discovery` ? discovery : { data: [] });
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
+    const side = await screen.findByRole("complementary", { name: "Key facts" });
+    await user.click(within(side).getByRole("tab", { name: "Details" }));
+    expect(await within(side).findByRole("button", { name: /Property/ })).toBeInTheDocument();
+    expect(within(side).queryByRole("button", { name: /Intro meeting/ })).not.toBeInTheDocument();
+    expect(within(side).queryByRole("button", { name: /Design package/ })).not.toBeInTheDocument();
+  });
+
   it("leads the action card with the pending follow-up and keeps the activity in the sidebar", async () => {
     const record = { id: "opportunity-3", title: "Penthouse", status: "open", version: 4, pipelineId: "pipeline-1", stageId: "qualified", stageName: "Qualified", partyId: "party-3", partyName: "Yusuf Haddad", ownerMembershipId: "m1", ownerName: "Amal Staff",
       nextActionAt: "2020-09-30T09:00:00.000Z",

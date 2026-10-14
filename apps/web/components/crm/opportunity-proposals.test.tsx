@@ -26,6 +26,10 @@ describe("opportunity proposals (PLM-101 / PLM-103)", () => {
     expect(proofMatch({ amount: null, currency: null }, { amount: "1", currencyCode: "AED" })).toBe("unknown");
     expect(visibleKinds({ flow: "furniture" } as never, [])).toEqual(["main"]);
     expect(visibleKinds({ flow: "design" } as never, [])).toEqual(["design", "main"]);
+    // An enquiry type's own flow shows Proposal 1 when its steps hold a design package round, whatever its code.
+    const none = { intro: false, designPackage: false, furniturePath: false, clientApprovalOnSpot: false, siteVisit: false, qsPricing: false };
+    expect(visibleKinds({ flow: "interior_design_furniture", capabilities: { ...none, intro: true, designPackage: true } }, [])).toEqual(["design", "main"]);
+    expect(visibleKinds({ flow: "full_fit_out", capabilities: { ...none, intro: true, siteVisit: true, qsPricing: true } }, [])).toEqual(["main"]);
   });
 
   it("shows the locked value, the change waiting with old → new, and lets the step's approver verify it", async () => {

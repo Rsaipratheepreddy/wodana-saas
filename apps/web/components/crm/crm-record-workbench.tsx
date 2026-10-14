@@ -16,7 +16,7 @@ import { SiteVisitDialog } from "./site-visit-dialog";
 import { StepNotNeededDialog } from "./step-not-needed-dialog";
 import { FollowUpRow, NextActions, ProgressLine, type StageMove } from "./opportunity-now";
 import type { MissingRequirement } from "@/lib/crm/client";
-import { FURNITURE_PATHS, missingFrom, proofHref, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
+import { flowCapabilities, FURNITURE_PATHS, missingFrom, proofHref, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import { firstName, groupForRequirement, isGenericFollowUp, nextChecklist, nowPlan, pendingFollowUp, type ChecklistRow, type FactGroup, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
 import { tKey } from "@/lib/i18n/keys";
 import { RecordAttachments } from "./record-attachments";
@@ -208,13 +208,15 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       onComplete={() => setAction(completeActivityAction(t, nextTask))} onReschedule={() => setAction(rescheduleActivityAction(t, nextTask))} />
     : followUp ? <FollowUpRow title={clientFirst ? t("Follow up with {name}", { name: clientFirst }) : t("Next follow-up")} due={followUp} onReschedule={() => setEditing(true)} />
     : needsFollowUp ? <FollowUpRow onBook={() => setAction(addActivityAction(t, activityTarget))} /> : null;
-  const showIntro = !flow || flow.flow === "design" || flow.flow === "fit_out";
+  // What the job's flow does, read from its steps (any enquiry type's own flow, whatever its code); with no flow yet, both show.
+  const capabilities = flow ? flowCapabilities(flow) : null;
+  const showIntro = !capabilities || capabilities.intro;
   const discovery = useDiscovery(workspaceId, row.id);
   const intro = useIntro(workspaceId, row.id, showIntro);
   // The intro meeting can be booked once the property details are in: saving them refreshes what still blocks it, with the record.
   const factsSaved = async () => { discovery.refresh(); intro.refresh(); await saved(); };
   const needed = new Set((checklist?.rows ?? []).filter((item) => item.state === "missing").map((item) => item.group));
-  const showPackage = showIntro && flow?.flow !== "fit_out" || Boolean(discovery.view?.package) || needed.has("package");
+  const showPackage = !capabilities || capabilities.designPackage || Boolean(discovery.view?.package) || needed.has("package");
   const isOpen = (group: FactGroup) => folded[group] ?? needed.has(group);
   const unfold = (group: FactGroup | null) => { if (group) setFolded((current) => ({ ...current, [group]: true })); setTab("details"); };
   const openSheet = (group: FactGroup | null, focus?: string) => setSheet({ group: group === "package" || group === "questions" ? group : "property", focus });

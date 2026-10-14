@@ -1,8 +1,14 @@
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { CrmRequestError, type MissingRequirement } from "./client";
+import type { FlowCapabilities } from "./flow-capabilities";
 
-/** PLM-121/122: the step-by-step pipeline, as the opportunity detail returns it. */
-export type OpportunityFlowCode = "furniture" | "design" | "fit_out" | "basic";
+export { flowCapabilities, type FlowCapabilities } from "./flow-capabilities";
+
+/**
+ * PLM-121/122: the step-by-step pipeline, as the opportunity detail returns it. The code is a starter's (furniture,
+ * design, fit_out, basic) or the workspace's own flow's: screens decide what to show by `capabilities`, never by it.
+ */
+export type OpportunityFlowCode = string;
 export type FlowStepState = "done" | "current" | "upcoming";
 export type FurniturePath = "take_home_now" | "in_stock_delivery" | "supplier_order" | "core_collection_factory" | "bespoke";
 /** What AI read on a proof: a proposal Finance confirms, never a value on its own. */
@@ -19,6 +25,8 @@ export type FlowLineStep = {
 };
 export type OpportunityFlowView = {
   flow: OpportunityFlowCode;
+  /** Absent from older responses: the starter flow's, by its code. */
+  capabilities?: FlowCapabilities;
   steps: Array<{ stageId: string; name: string; step: string | null; state: FlowStepState; optional: boolean }>;
   done: number;
   total: number;
