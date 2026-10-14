@@ -244,6 +244,21 @@ describe("factory", () => {
     expect(within(sheet).getByRole("button", { name: "Edit Ready on" })).toBeInTheDocument();
   });
 
+  it("shows the design checklists the work order is made to, its pending lines counted on the tab", async () => {
+    nav.query = "order=w1";
+    const checklists: WorkOrderState["checklists"] = { pending: 1, groups: [{ scope: "Kitchens and islands", section: null, pending: 1, items: [
+      { key: "kitchen.03", question: "Record appliance brand, model and supplier.", kind: "check", answer: "Hob model from the client", status: "pending", answeredByName: "Dana", answeredAt: "2026-10-14T09:00:00Z" }] },
+      { scope: "Factory release", section: null, everyJob: true, pending: 0, items: [
+        { key: "release.01", question: "Site verified dimensions and finished levels recorded", kind: "check", answer: null, status: "confirmed", answeredByName: "Tara", answeredAt: "2026-10-14T09:00:00Z" }] }] };
+    mount((url) => (url.includes("/orders/w1") ? order({ status: "released", releasedAt: "2026-09-27T09:00:00Z" }, { checklists }) : factory()));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    await userEvent.click(await within(sheet).findByRole("tab", { name: /Checklists/ }));
+    expect(await within(sheet).findByRole("region", { name: "Kitchens and islands" })).toBeInTheDocument();
+    expect(within(sheet).getByText("Hob model from the client").closest("[data-pending]")).not.toBeNull();
+    expect(within(sheet).getByRole("region", { name: "Factory release" })).toBeInTheDocument();
+  });
+
   it("issues a material to the work order and asks why when it's more than it needs; a swap waits for someone else", async () => {
     nav.query = "order=w1";
     const oak = { id: "m1", itemId: "i1", itemName: "Oak veneer", unit: "sheets", materialItemId: "pm1", quantity: "13.3334", status: "active" as const, replacesId: null, replacesName: null,

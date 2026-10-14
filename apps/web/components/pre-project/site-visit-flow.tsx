@@ -5,7 +5,8 @@ import { CalendarPlus, Camera, Check, CircleCheck, CircleDashed, Ruler } from "l
 import { AccessPointsEditor } from "@/components/catalog/fit-check-panel";
 import { Button, InlineNotice, TextAreaField, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { JourneyStageView, JourneyView, SiteMeasurement } from "@/lib/pre-project/design-workspace";
+import type { JourneyStageView, JourneyView, SiteAnswerInput, SiteChecklistGroup, SiteMeasurement } from "@/lib/pre-project/design-workspace";
+import { changedAnswers, ChecklistFields, checklistDrafts, checklistGroups, isAnswered } from "./site-checklist";
 import { SiteLocation } from "@/components/ui/site-location";
 import { CaseModal } from "./case-controls";
 import styles from "./design-decisions.module.css";
@@ -30,8 +31,8 @@ export function siteVisitProgress(view: Pick<JourneyView, "measurements" | "chec
     visit: Boolean(stage?.scheduledAt),
     measurements: measurements.length > 0 && measurements.every(measured),
     photos: measurements.length > 0 && measurements.every((item) => item.files > 0),
-    // PLM-154: a scope the job doesn't have is optional.
-    questions: checklist.filter((item) => item.required !== false).every((item) => Boolean(item.answer)),
+    // PLM-154: a checklist that doesn't apply to the job isn't asked; a checklist line is answered once marked (pending counts).
+    questions: checklist.filter((item) => item.required !== false).every(isAnswered),
     finish: stage?.status === "done",
   } satisfies Record<Exclude<SiteVisitStep, "access">, boolean>;
 }
@@ -41,9 +42,11 @@ export function siteVisitProgress(view: Pick<JourneyView, "measurements" | "chec
  * measured, photos, the firm's question list, then complete. Each step says what's left; the last step completes
  * the visit only when everything is in.
  */
-export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure, onAddPhotos, onSaveAnswers, onComplete }: {
+export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure, onAddPhotos, onSaveAnswers, onApplies, onComplete }: {
   view: JourneyView; stage: JourneyStageView; access?: SiteVisitAccess; onClose: () => void; onBook: () => void; onMeasure: (roomId: string | null) => void; onAddPhotos: (roomId: string | null) => void;
-  onSaveAnswers: (answers: Array<{ key: string; answer: string }>) => Promise<unknown>; onComplete: (summary: string) => Promise<unknown>;
+  onSaveAnswers: (answers: SiteAnswerInput[]) => Promise<unknown>; onComplete: (summary: string) => Promise<unknown>;
+  /** "Applies to this job" on a checklist. */
+  onApplies?: (group: SiteChecklistGroup, applies: boolean) => Promise<unknown>;
 }) {
   const t = useT();
   const { locale } = useDesignSystem();
@@ -55,20 +58,20 @@ export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure,
   const missingAccess = Boolean(access?.nudge && access.count === 0);
   const checklist = view.checklist ?? [];
   const measurements = view.measurements ?? [];
-  const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(checklist.map((item) => [item.key, item.answer ?? ""])));
+  const [drafts, setDrafts] = useState(() => checklistDrafts(checklist));
   const [summary, setSummary] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const unsaved = checklist.filter((item) => (drafts[item.key] ?? "").trim() !== (item.answer ?? ""));
+  const unsaved = changedAnswers(checklist, drafts);
   const problem = view.siteEvidenceProblem ?? view.siteChecklistProblem ?? null;
   const labels: Record<SiteVisitStep, string> = { visit: t("Visit"), measurements: t("Measurements"), access: t("Access"), photos: t("Photos"), questions: t("Questions"), finish: t("Complete") };
   const index = steps.indexOf(step);
   const run = async (work: () => Promise<unknown>) => { setBusy(true); setError(""); try { await work(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setBusy(false); } };
   const when = (iso: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone: view.timezone, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return iso; } };
   const asked = checklist.filter((item) => item.required !== false);
-  const answered = asked.filter((item) => item.answer).length;
-  // PLM-154: the questions by scope, the general ones and the job's own scopes first; one group when the list has no scopes.
-  const groups = view.checklistGroups?.length ? view.checklistGroups : [{ scope: null, matches: true, required: true, keys: checklist.map((item) => item.key) }];
+  const answered = asked.filter(isAnswered).length;
+  // PLM-154: the general questions by section, then the checklists that apply; one group when the list has neither.
+  const groups = checklistGroups(view.checklistGroups, checklist);
 
   return <CaseModal title={t("Site visit")} size="lg" layout="sheet" onClose={onClose} busy={busy} dirty={Boolean(summary.trim()) || unsaved.length > 0}
     footer={<div className={styles.footer}>
@@ -76,7 +79,7 @@ export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure,
       {step === "finish" ? <Button size="compact" variant="primary" isLoading={busy} isDisabled={Boolean(problem) || !summary.trim() || unsaved.length > 0}
         onPress={() => void run(() => onComplete(summary.trim()))}>{t("Complete site visit")}</Button>
         : <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void (step === "questions" && unsaved.length
-          ? run(async () => { await onSaveAnswers(unsaved.map((item) => ({ key: item.key, answer: (drafts[item.key] ?? "").trim() }))); setStep(steps[index + 1]); })
+          ? run(async () => { await onSaveAnswers(unsaved); setStep(steps[index + 1]); })
           : setStep(steps[index + 1]))}>{step === "questions" && unsaved.length ? t("Save and continue") : t("Continue")}</Button>}
     </div>}>
     {view.site ? <div className={styles.muted}><SiteLocation address={view.site.address} latitude={view.site.latitude} longitude={view.site.longitude} /></div> : null}
@@ -115,17 +118,7 @@ export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure,
 
     {step === "questions" ? <div className={styles.stack}>
       <p className={styles.muted}>{t("{answered} of {total} answered", { answered, total: asked.length })}</p>
-      {groups.map((group) => {
-        const items = group.keys.map((key) => checklist.find((item) => item.key === key)).filter((item): item is NonNullable<typeof item> => Boolean(item));
-        if (!items.length) return null;
-        const fields = items.map((item) => <TextAreaField key={item.key} label={item.question} maxLength={2000} value={drafts[item.key] ?? ""}
-          onChange={(next) => setDrafts((current) => ({ ...current, [item.key]: next }))}
-          description={item.answer && item.answeredByName ? t("Answered by {name}", { name: item.answeredByName }) : undefined} />);
-        return groups.length > 1 ? <section key={group.scope ?? ""} className={styles.stack} aria-label={group.scope ?? t("General")}>
-          <h4 className={styles.groupTitle}>{group.scope ?? t("General")}{group.required ? null : <span className={styles.muted}> · {t("Optional")}</span>}</h4>
-          {fields}
-        </section> : <div key={group.scope ?? ""} className={styles.stack}>{fields}</div>;
-      })}
+      <ChecklistFields checklist={checklist} groups={groups} drafts={drafts} onApplies={onApplies} onDraft={(key, draft) => setDrafts((current) => ({ ...current, [key]: draft }))} />
     </div> : null}
 
     {step === "finish" ? <div className={styles.stack}>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, CalendarPlus, Check, CheckCircle2, NotebookPen, PackageCheck, Play, UserPlus, Users } from "lucide-react";
+import { CalendarClock, CalendarPlus, Check, CheckCircle2, ListChecks, NotebookPen, PackageCheck, Play, UserPlus, Users } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
 import {
   Badge, Button, DateField, EmptyState, FormDialog, FormRow, InlineNotice, PersonName, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar,
@@ -10,7 +10,8 @@ import {
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
 import { revisionDetail } from "@/lib/pre-project/design-decisions";
-import { TASK_LABEL, TEAM_SLOT_LABEL, type JourneyStageView, type JourneyTaskView, type JourneyView as JourneyData, type TeamSlotView } from "@/lib/pre-project/design-workspace";
+import { TASK_LABEL, TEAM_SLOT_LABEL, type JourneyStageView, type JourneyTaskView, type JourneyView as JourneyData, type SiteAnswerInput, type SiteChecklistGroup, type TeamSlotView } from "@/lib/pre-project/design-workspace";
+import { changedAnswers, ChecklistFields, checklistDrafts, checklistGroups } from "./site-checklist";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { factoryApi } from "@/lib/factory/client";
 import { SampleRequests } from "../factory/samples";
@@ -23,7 +24,7 @@ export type JourneyView = JourneyData;
 type StageCode = JourneyStageView["stage"];
 type StageDialog = { kind: "close_inspiration" | "schedule" | "schedule_materials" | "schedule_home" | "not_required" | "confirm_materials" | "assign" | "schedule_kickoff" | "kickoff" | "deadline"
   | "render_signoff" | "samples_collected" | "approve_samples" | "questions"; stage: JourneyStage };
-type Dialog = StageDialog | { kind: "team"; slot: TeamSlotView } | null;
+type Dialog = StageDialog | { kind: "team"; slot: TeamSlotView } | { kind: "checklists"; version: number } | null;
 type Slots = { configured: boolean; slots: Array<{ start: string; end: string; date: string }>; timezone: string | null; durationMinutes: number | null; location: string | null };
 type Member = { id: string; displayName: string };
 const NOT_NEEDED = "__not_needed__";
@@ -94,6 +95,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
   const finishesTask = task("finishes_to_qs");
   const team = view.team;
   const allocating = task("team_allocation");
+  const hasChecks = Boolean(view.checklist?.some((item) => item.kind === "check"));
 
   return <section aria-labelledby="design-journey-title" className={styles.journey}>
     <header className={styles.header}>
@@ -108,6 +110,13 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
     </header>
     {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
+    {/* The job's open items: pending checklist lines; after the visit they are confirmed from here. */}
+    {view.journey && (view.pendingChecks || (view.siteVisit?.done && hasChecks)) ? <div className={styles.titleRow}>
+      <ListChecks aria-hidden="true" size={14} /><span className={styles.title}>{t("Checklists")}</span>
+      {view.pendingChecks ? <Badge tone="warning">{t("{count} pending", { count: view.pendingChecks })}</Badge> : null}
+      {view.siteVisit?.done && hasChecks && view.canEdit ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "checklists", version: view.siteVisit!.version })}>
+        {t("Open checklists")}</Button> : null}
+    </div> : null}
     {current && team?.slots.length ? <div className={styles.team} aria-label={t("Design team")}>
       <div className={styles.titleRow}>
         <Users aria-hidden="true" size={14} /><span className={styles.title}>{t("Design team")}</span>
@@ -206,8 +215,11 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
     {dialog?.kind === "close_inspiration" ? <CloseInspirationDialog onClose={() => setDialog(null)} onSubmit={async (note) => saved(current ? t("Inspiration closed. The kick-off is next.") : t("Inspiration closed. The site visit is next."), await post("design-journey/inspiration/close", { version: dialog.stage.version, note: note || null }))} /> : null}
     {dialog?.kind === "schedule" ? <ScheduleVisitDialog title={t("Book site visit")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Site visit booked. The Account Manager has been invited."), await post("design-journey/site-visit/schedule", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "schedule_kickoff" ? <ScheduleVisitDialog title={t("Book kick-off meeting")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Kick-off booked. The design team has been invited."), await post("design-journey/kickoff/schedule", { version: dialog.stage.version, ...value }))} /> : null}
-    {dialog?.kind === "questions" ? <SiteQuestionsDialog view={view} onClose={() => setDialog(null)}
-      onSubmit={async (answers) => saved(t("Answers saved."), await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT", { version: dialog.stage.version, answers }))} /> : null}
+    {dialog?.kind === "questions" || dialog?.kind === "checklists" ? <SiteQuestionsDialog view={view} checksOnly={dialog.kind === "checklists"} onClose={() => setDialog(null)}
+      onApplies={view.canEdit ? async (group, applies) => setView(keepFlags(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/checklists/applies", "PUT",
+        { scope: group.scope, applies, version: group.choiceVersion ?? 0 }))) : undefined}
+      onSubmit={async (answers) => saved(t("Answers saved."), await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT",
+        { version: dialog.kind === "checklists" ? dialog.version : dialog.stage.version, answers }))} /> : null}
     {dialog?.kind === "kickoff" ? <KickoffDialog needsRenderDate={Boolean(view.journey?.includesRenders)} onClose={() => setDialog(null)}
       onSubmit={async (value) => saved(t("Kick-off recorded. The concept and the site measure have started."), await post("design-journey/kickoff/complete", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "deadline" ? <DeadlineDialog title={dialog.stage.stage === "renders" ? t("Render due date") : t("Concept due date")} onClose={() => setDialog(null)}
@@ -279,22 +291,21 @@ function TeamDialog({ slot, label, members, pair = null, onClose, onSubmit }: { 
 }
 
 /**
- * PLM-154: the site visit question list at the kick-off meeting, grouped by scope (the job's scopes first, a scope it
- * doesn't have marked optional). The site measure carries on from these answers.
+ * PLM-154: the question list at the kick-off meeting: the general questions by section, then the checklists that apply
+ * to the job, each with its "Applies to this job" switch. The site measure carries on from these answers. After the
+ * visit (`checksOnly`) only the checklists are shown, so a pending line can be confirmed later.
  */
-function SiteQuestionsDialog({ view, onClose, onSubmit }: { view: JourneyView; onClose: () => void; onSubmit: (answers: Array<{ key: string; answer: string }>) => Promise<unknown> }) {
+function SiteQuestionsDialog({ view, checksOnly = false, onClose, onSubmit, onApplies }: { view: JourneyView; checksOnly?: boolean; onClose: () => void;
+  onSubmit: (answers: SiteAnswerInput[]) => Promise<unknown>; onApplies?: (group: SiteChecklistGroup, applies: boolean) => Promise<unknown> }) {
   const t = useT();
   const checklist = view.checklist ?? [];
-  const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(checklist.map((item) => [item.key, item.answer ?? ""])));
-  const changed = checklist.filter((item) => (drafts[item.key] ?? "").trim() !== (item.answer ?? ""));
-  const groups = view.checklistGroups?.length ? view.checklistGroups : [{ scope: null, matches: true, required: true, keys: checklist.map((item) => item.key) }];
-  return <FormDialog title={t("Site visit questions")} onClose={onClose} isDirty={changed.length > 0} isSubmitDisabled={!changed.length} submitLabel={t("Save")}
-    onSubmit={() => onSubmit(changed.map((item) => ({ key: item.key, answer: (drafts[item.key] ?? "").trim() })))}>
-    {groups.map((group) => <section key={group.scope ?? ""} className={styles.questionGroup} aria-label={group.scope ?? t("General")}>
-      {groups.length > 1 ? <h4 className={styles.groupTitle}>{group.scope ?? t("General")}{group.required ? null : <span className={styles.muted}> · {t("Optional")}</span>}</h4> : null}
-      {group.keys.map((key) => checklist.find((item) => item.key === key)).filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) =>
-        <TextAreaField key={item.key} label={item.question} maxLength={2000} value={drafts[item.key] ?? ""} onChange={(next) => setDrafts((current) => ({ ...current, [item.key]: next }))} />)}
-    </section>)}
+  const [drafts, setDrafts] = useState(() => checklistDrafts(checklist));
+  const changed = changedAnswers(checklist, drafts);
+  const groups = checklistGroups(view.checklistGroups, checklist);
+  return <FormDialog title={checksOnly ? t("Checklists") : t("Site visit questions")} size="lg" onClose={onClose} isDirty={changed.length > 0} isSubmitDisabled={!changed.length}
+    submitLabel={t("Save")} onSubmit={() => onSubmit(changed)}>
+    <ChecklistFields checklist={checklist} groups={checksOnly ? groups.filter((group) => group.scope) : groups} drafts={drafts} checksOnly={checksOnly} onApplies={onApplies}
+      onDraft={(key, draft) => setDrafts((current) => ({ ...current, [key]: draft }))} />
   </FormDialog>;
 }
 

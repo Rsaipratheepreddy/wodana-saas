@@ -252,6 +252,8 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       onMeasure={(roomId) => { setVisitOpen(false); const area = areas.find((item) => item.roomId === roomId); if (area) measure(area); else setPicking(true); }}
       onAddPhotos={(roomId) => { setVisitOpen(false); const area = areas.find((item) => item.roomId === roomId); if (area) pickFiles(area); }}
       onSaveAnswers={async (answers) => setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT", { version: visitStage.version, answers }))}
+      onApplies={canEdit ? async (group, applies) => setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/checklists/applies", "PUT",
+        { scope: group.scope, applies, version: group.choiceVersion ?? 0 })) : undefined}
       onComplete={async (summary) => { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/complete", "POST", { version: visitStage.version, summary })); setVisitOpen(false); setNotice(t("Site visit completed.")); }} /> : null}
     {booking && visitStage && journey ? <ScheduleVisitDialog title={t("Book site visit")} timezone={journey.timezone} onClose={() => setBooking(false)}
       onSubmit={async (value) => { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/schedule", "POST", { version: visitStage.version, ...value })); setBooking(false); }} /> : null}

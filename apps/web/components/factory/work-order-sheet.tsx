@@ -14,6 +14,7 @@ import { INSPECTION_TONE, WorkOrderStatusLabel, inspectionToAsk, orderNumber, us
 import { CheckDialog, DispatchDialog, DrawingDialog, QuantityDialog, ReportDialog, ScheduleDialog, SendOutDialog, TextDialog } from "./work-order-dialogs";
 import { RecordHistory } from "../history/record-history";
 import { WorkOrderMaterials } from "./work-order-materials";
+import { ChecklistAnswers } from "../pre-project/site-checklist";
 import styles from "./factory.module.css";
 
 /** The "no payment stage" choice of the payment field. */
@@ -21,7 +22,7 @@ const NO_PAYMENT = "none";
 type Dialog = "schedule" | "drawing" | "revise" | "quantity" | "report" | "check" | "hold" | "cancel" | "short_close" | "send_out" | "dispatch" | { refuse: string } | null;
 /** An action a list asks the opened work order to start with (its row's Next button). */
 export type WorkOrderIntent = "report" | "check" | "dispatch" | "drawing" | null;
-type Tab = "work" | "output" | "site" | "history";
+type Tab = "work" | "output" | "site" | "checklists" | "history";
 
 /**
  * One work order: its state and stage, the one next step, then what it makes (with what's missing before
@@ -376,6 +377,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         { id: "work", label: t("Work"), count: failing.length || undefined, panel: workPanel },
         { id: "output", label: t("Output"), count: outputCount || undefined, panel: outputPanel },
         { id: "site", label: t("To site"), count: state.dispatches.length || undefined, panel: sitePanel },
+        // The design checklists it's made to; the count is their pending lines.
+        ...(state.checklists?.groups.length ? [{ id: "checklists", label: t("Checklists"), count: state.checklists.pending || undefined,
+          panel: <ChecklistAnswers groups={state.checklists.groups} /> }] : []),
         { id: "history", label: t("History"), panel: <RecordHistory workspaceId={api.workspaceId} recordType="work_order" recordId={orderId} /> },
       ]} />
     </div>}

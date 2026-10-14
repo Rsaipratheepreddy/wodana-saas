@@ -15214,5 +15214,20 @@
   "1 day of work": "1 day of work",
   "of 1 day left": "of 1 day left",
   "{before} → {after} ({days} working day)": "{before} → {after} ({days} working day)",
-  "{done} of 1 step": "{done} of 1 step"
+  "{done} of 1 step": "{done} of 1 step",
+  "Applies to this job": "Applies to this job",
+  "Not for this job": "Not for this job",
+  "Requirement or reference": "Requirement or reference",
+  "Not marked": "Not marked",
+  "Not answered": "Not answered",
+  "Checklists": "Checklists",
+  "Open checklists": "Open checklists",
+  "Section of question {number}": "Section of question {number}",
+  "Answer of question {number}": "Answer of question {number}",
+  "In words": "In words",
+  "Applies to rooms or items named": "Applies to rooms or items named",
+  "e.g. wardrobe, walk-in": "e.g. wardrobe, walk-in",
+  "The brief didn't load.": "The brief didn't load.",
+  "No brief recorded": "No brief recorded",
+  "The answers from the kick-off and the site measure show here.": "The answers from the kick-off and the site measure show here."
 }

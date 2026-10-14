@@ -88,8 +88,41 @@ describe("the guided site visit (PLM-048/128)", () => {
     render(<DesignSystemProvider><SiteVisitFlow view={scoped} stage={stage} onClose={vi.fn()} onBook={vi.fn()} onMeasure={vi.fn()} onAddPhotos={vi.fn()} onSaveAnswers={vi.fn()} onComplete={vi.fn()} /></DesignSystemProvider>);
     fireEvent.click(within(await screen.findByRole("navigation", { name: "Site visit steps" })).getByRole("button", { name: /Questions/ }));
     expect(screen.getByText("2 of 2 answered")).toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent)).toEqual(["General", "Kitchen", "Bedrooms · Optional"]);
+    expect(screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent)).toEqual(["General", "Kitchen", "Bedrooms"]);
     expect(within(screen.getByRole("region", { name: "Kitchen" })).getByRole("textbox", { name: "How big is the family?" })).toBeInTheDocument();
+    // A scope the job doesn't have isn't asked: its name only.
+    expect(within(screen.getByRole("region", { name: "Bedrooms" })).getByText("Not for this job")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Bed sizes?" })).toBeNull();
+  });
+
+  it("asks general questions by section and marks checklist lines with a status and a note; a checklist is switched on for the job", async () => {
+    const onSaveAnswers = vi.fn().mockResolvedValue(undefined);
+    const onApplies = vi.fn().mockResolvedValue(undefined);
+    const listed = view({
+      checklist: [
+        { key: "core.01", question: "What type of property is this?", section: "Project overview", kind: "answer", answer: "Villa", answeredByName: "Dana", answeredAt: null, required: true },
+        { key: "kitchen.01", question: "Record appliance brand and model.", scope: "Kitchens and islands", kind: "check", answer: null, status: null, answeredByName: null, answeredAt: null, required: true },
+        { key: "media.01", question: "Confirm TV size.", scope: "TV and media walls", kind: "check", answer: null, status: null, answeredByName: null, answeredAt: null, required: false },
+      ],
+      checklistGroups: [{ scope: null, section: "Project overview", matches: true, applies: true, required: true, keys: ["core.01"] },
+        { scope: "Kitchens and islands", matches: true, applies: true, chosen: null, required: true, choiceVersion: 0, pending: 0, keys: ["kitchen.01"] },
+        { scope: "TV and media walls", matches: false, applies: false, chosen: null, required: false, choiceVersion: 0, pending: 0, keys: ["media.01"] }],
+    });
+    // The checklist line isn't marked yet.
+    expect(siteVisitProgress(listed).questions).toBe(false);
+    render(<DesignSystemProvider><SiteVisitFlow view={listed} stage={stage} onClose={vi.fn()} onBook={vi.fn()} onMeasure={vi.fn()} onAddPhotos={vi.fn()}
+      onSaveAnswers={onSaveAnswers} onApplies={onApplies} onComplete={vi.fn()} /></DesignSystemProvider>);
+    fireEvent.click(within(await screen.findByRole("navigation", { name: "Site visit steps" })).getByRole("button", { name: /Questions/ }));
+    expect(screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent)).toEqual(["Project overview", "Kitchens and islands", "TV and media walls"]);
+    const kitchen = within(screen.getByRole("region", { name: "Kitchens and islands" }));
+    fireEvent.click(kitchen.getByRole("radio", { name: "Pending" }));
+    fireEvent.change(kitchen.getByRole("textbox", { name: "Requirement or reference" }), { target: { value: "Client sends the hob model" } });
+    // "Applies to this job" on the TV wall checklist.
+    fireEvent.click(within(screen.getByRole("region", { name: "TV and media walls" })).getByRole("switch", { name: "Applies to this job" }));
+    expect(onApplies).toHaveBeenCalledWith(expect.objectContaining({ scope: "TV and media walls" }), true);
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await vi.waitFor(() => expect(onSaveAnswers).toHaveBeenCalledWith([{ key: "kitchen.01", answer: "Client sends the hob model", status: "pending" }]));
+    expect(siteVisitProgress({ ...listed, checklist: listed.checklist!.map((item) => item.key === "kitchen.01" ? { ...item, status: "pending" as const } : item) }).questions).toBe(true);
   });
 
   it("opens the design site measure inside the concept as the visit to run (PLM-141)", () => {

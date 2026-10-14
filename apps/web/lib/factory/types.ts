@@ -1,4 +1,5 @@
 import type { StockLocation } from "@/lib/purchasing/types";
+import type { ChecklistGroupRead } from "@/lib/pre-project/design-workspace";
 import type { ProductionStep } from "./production";
 
 export type WorkOrderStatus = "planned" | "released" | "in_production" | "ready" | "on_hold" | "cancelled" | "short_closed";
@@ -170,6 +171,8 @@ export type WorkOrderState = FactoryRights & {
   readyReminder?: { readyOn: string | null; outcome: string; channel: "whatsapp" | "email" | null; at: string; on: string;
     /** Why it went: everything tied to the stage was ready, or the planned ready date was near (with that date). */
     reason?: "all_ready" | "before_ready"; plannedReadyOn?: string | null } | null;
+  /** The job's design checklists it is made to (its item or room; all of the job's when none matches), with their pending lines. */
+  checklists?: { groups: ChecklistGroupRead[]; pending: number };
 };
 /** Settings → Factory; hourly rates (oldest first) only for people who set them or see costs. */
 export type FactorySettingsState = {

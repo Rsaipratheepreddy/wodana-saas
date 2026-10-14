@@ -35,9 +35,31 @@ export type JourneyStageView = {
   activityId?: string | null; bookingReminder?: boolean;
   scheduledAt?: string | null; scheduledEnd?: string | null; scheduledTimezone?: string | null; scheduledLocation?: { address?: string | null } | null;
 };
-export type SiteChecklistItem = { key: string; question: string; scope?: string | null; required?: boolean; answer: string | null; answeredByName: string | null; answeredAt: string | null };
-/** PLM-154: the question list by scope, the job's scopes first; a scope the job doesn't have is optional. */
-export type SiteChecklistGroup = { scope: string | null; matches: boolean; required: boolean; keys: string[] };
+/** A checklist line's status; pending is an open item. */
+export type CheckStatus = "confirmed" | "pending" | "not_applicable";
+/**
+ * A question on the job's list: answered in words, or (`kind: "check"`) a checklist line marked with a status and an
+ * optional requirement or reference note in `answer`.
+ */
+export type SiteChecklistItem = {
+  key: string; question: string; scope?: string | null; section?: string | null; kind?: "answer" | "check"; required?: boolean;
+  answer: string | null; status?: CheckStatus | null; answeredByName: string | null; answeredAt: string | null;
+};
+/**
+ * PLM-154: the general questions by section, then the checklists that apply to the job, then the rest. `chosen` is the
+ * designer's "Applies to this job" choice (null while it follows the matching), `choiceVersion` its version.
+ */
+export type SiteChecklistGroup = {
+  scope: string | null; section?: string | null; everyJob?: boolean; matches: boolean; chosen?: boolean | null; applies?: boolean; required: boolean;
+  choiceVersion?: number; pending?: number; keys: string[];
+};
+/** A group of answers as the project and the factory read them, with its pending lines. */
+export type ChecklistGroupRead = {
+  scope: string | null; section: string | null; everyJob?: boolean; pending: number;
+  items: Array<{ key: string; question: string; kind: "answer" | "check"; answer: string | null; status: CheckStatus | null; answeredByName: string | null; answeredAt: string | null }>;
+};
+/** One answer as saved: words, or a checklist line's status and note. */
+export type SiteAnswerInput = { key: string; answer: string; status?: CheckStatus | null };
 export type SiteMeasurement = { title: string; status: string; files: number; roomId?: string | null };
 export type JourneyView = {
   journey: {
@@ -61,6 +83,8 @@ export type JourneyView = {
   stages: JourneyStageView[]; canStart?: boolean; canManage?: boolean; canEdit?: boolean; canReview?: boolean; canRecordClient?: boolean; timezone: string;
   measurements?: SiteMeasurement[]; siteEvidenceProblem?: string | null;
   checklist?: SiteChecklistItem[]; siteChecklistProblem?: string | null;
+  /** The job's open items: pending lines of the checklists that apply. */
+  pendingChecks?: number;
   /** The materials and decisions ledger in one line (plan §6.7a). */
   ledger?: { state: "empty" | "open" | "locked" | "changes_pending"; lockProblem: string | null; materials: number; waiting: number; outsourcedWaiting?: number; lock: { number: number } | null } | null;
   /** The firm books the showroom on its booking engine (Settings › Design). */
