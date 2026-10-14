@@ -148,6 +148,32 @@ integration("the step-by-step pipeline (PLM-121/122)", () => {
     });
   });
 
+  const followUp = async (client: PoolClient, ids: Ids, type = "task") => (await client.query<{ id: string }>(
+    `INSERT INTO crm_activities(workspace_id,opportunity_id,type,title,due_at,is_next_action,created_by) VALUES($1,$2,$3,'Follow up',now() - interval '2 days',$4,$5) RETURNING id`,
+    [ids.workspaceId, ids.opportunityId, type, type === "task", ids.actor])).rows[0].id;
+  const statusOf = async (client: PoolClient, id: string) => (await client.query<{ status: string }>("SELECT status FROM crm_activities WHERE id = $1", [id])).rows[0].status;
+  const cancelledLines = async (client: PoolClient, id: string) => (await client.query<{ after: { outcome: string; followUps: unknown[] } }>(
+    "SELECT after FROM audit_events WHERE entity_id = $1 AND action = 'crm.opportunity.follow_ups_cancelled.v1'", [id])).rows.map((row) => row.after);
+
+  it("cancels the open follow-ups of a won deal, audited once; a booked meeting is left alone", async () => {
+    await withOpportunity("architecture", "basic", async (client, ids) => {
+      const task = await followUp(client, ids), meeting = await followUp(client, ids, "meeting");
+      await ids.flow.attachProof(actor, ids.workspaceId, ids.opportunityId, { version: await version(client, ids.opportunityId), kind: "receipt" }, png);
+      expect(await statusOf(client, task)).toBe("cancelled");
+      expect(await statusOf(client, meeting)).toBe("pending");
+      expect(await cancelledLines(client, ids.opportunityId)).toEqual([{ outcome: "won", followUps: [expect.objectContaining({ id: task, title: "Follow up" })] }]);
+    });
+  });
+
+  it("cancels the open follow-ups of a lost deal", async () => {
+    await withOpportunity("architecture", "basic", async (client, ids) => {
+      const task = await followUp(client, ids);
+      await ids.opportunities.transition(actor, ids.workspaceId, ids.opportunityId, { version: await version(client, ids.opportunityId), stageId: ids.stage.lost, status: "lost", reason: "Budget" });
+      expect(await statusOf(client, task)).toBe("cancelled");
+      expect(await cancelledLines(client, ids.opportunityId)).toEqual([{ outcome: "lost", followUps: [expect.objectContaining({ id: task })] }]);
+    });
+  });
+
   it("keeps a 'not sure yet' enquiry in the first column", async () => {
     await withOpportunity("not_sure", null, async (client, { workspaceId, opportunityId, stage, opportunities }) => {
       await expect(opportunities.transition(actor, workspaceId, opportunityId, { version: await version(client, opportunityId), stageId: stage.proposal }))

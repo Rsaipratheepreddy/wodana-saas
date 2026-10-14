@@ -20,6 +20,7 @@ import { tellDealOutcome } from "../leads/sales-attention";
 import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
 import { loadDealClosing } from "./deal-closing";
 import { takeForDeal } from "../../fulfilment/stock-reservations";
+import { cancelOpenFollowUps } from "./follow-ups";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -421,6 +422,8 @@ export class CrmOpportunitiesService {
     const response = result.rows[0] as Row;
     if (targetStatus === "open") await this.syncCommitment(client, workspaceId, response, actorUser.userId);
     if (targetStatus !== "open") await client.query(`UPDATE crm_activities SET is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND opportunity_id = $2 AND is_next_action`, [workspaceId, opportunityId]);
+    // A closed deal has nothing left to follow up: its open follow-ups are cancelled (audited, one history line).
+    if (targetStatus === "won" || targetStatus === "lost") await cancelOpenFollowUps(client, { workspaceId, opportunityId, outcome: targetStatus, actorUserId: actorUser.userId });
     if (targetStatus === "won") await client.query(`UPDATE crm_parties SET lifecycle = 'customer', version = version + 1 WHERE workspace_id = $1 AND id = $2 AND lifecycle <> 'customer'`, [workspaceId, before.party_id]);
     await client.query(`INSERT INTO crm_stage_history (workspace_id, opportunity_id, from_stage_id, to_stage_id, from_status, to_status, reason, changed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [workspaceId, opportunityId, before.stage_id, targetStage.id, before.status, targetStatus, input.reason ?? null, actorUser.userId]);
     await this.snapshot(client, workspaceId, response, "stage_changed");

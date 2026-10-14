@@ -3,6 +3,7 @@ import { recordAudit } from "../audit/record-audit";
 import { startClientCalls } from "../client-calls/client-calls.store";
 import { thankForDeal } from "../crm/conversations/inbox/client-followups";
 import { tellDealOutcome } from "../crm/leads/sales-attention";
+import { cancelOpenFollowUps } from "../crm/opportunities/follow-ups";
 import { markProposalWon } from "../crm/opportunities/opportunity-proposals";
 import { noticeReadyToStart } from "../project-core/project-release";
 import { reserveForAcceptedQuote, takeForDeal } from "../fulfilment/stock-reservations";
@@ -58,6 +59,8 @@ export async function winOpportunityOnAcceptance(db: Db, input: {
       [input.workspaceId, opportunity.id, stage?.id ?? null, reason])).rows[0] as Record<string, unknown>;
     await db.query(`UPDATE crm_activities SET is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND opportunity_id = $2 AND is_next_action`,
       [input.workspaceId, opportunity.id]);
+    // The won deal's open follow-ups are done with (audited, one history line).
+    await cancelOpenFollowUps(db, { workspaceId: input.workspaceId, opportunityId: String(opportunity.id), outcome: "won", actorUserId: input.actorUserId, source: input.source });
     if (opportunity.partyId)
       await db.query(`UPDATE crm_parties SET lifecycle = 'customer', version = version + 1 WHERE workspace_id = $1 AND id = $2 AND lifecycle <> 'customer'`,
         [input.workspaceId, opportunity.partyId]);
