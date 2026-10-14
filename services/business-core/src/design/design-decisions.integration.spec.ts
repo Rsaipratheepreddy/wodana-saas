@@ -8,6 +8,7 @@ import { ledgerDecision, presentationChoice, readDesignChoices } from "../client
 import { designComment, designReply, designResolve, readDesignReview } from "../client-portal/portal-design";
 import { ASSUME_PRESENT } from "../client-portal/portal-files";
 import { readPortalSettings } from "../client-portal/portal-settings";
+import { captureApprovedDesignBaseline } from "../projects/project-design-control";
 import { DesignDecisionsService } from "./design-decisions.service";
 import { DesignJourneyService } from "./design-journey.service";
 import { startJourney } from "./design-journey.store";
@@ -286,6 +287,61 @@ integration("design decisions: presentations and the materials ledger (plan §6.
     const after = await journey.get(actor, ids.workspaceId, ids.caseId);
     expect(after.stages.map((stage) => [stage.stage, stage.status])).toEqual([["inspiration", "done"], ["kickoff", "done"], ["concepts", "done"], ["samples", "active"], ["approval", "locked"]]);
     expect(after.stages.find((stage) => stage.stage === "concepts")).toMatchObject({ outcome: "chosen", note: "Client's choice: Warm minimal 4" });
+  });
+
+  it("the client's concept choice approves the chosen board and retires the other, so the main quotation's design gate passes; a job decided earlier reads the same", async () => {
+    const ids = await seed();
+    const { decisions } = services(ids, ALL);
+    await asApp(ids.workspaceId, ids.opsUser, (client) => client.query(`UPDATE design_journey_stages SET status = CASE WHEN stage IN ('inspiration', 'kickoff', 'site_visit') THEN 'done' WHEN stage = 'concepts' THEN 'active' ELSE status END, completed_at = CASE WHEN stage IN ('inspiration', 'kickoff', 'site_visit') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]));
+    // Two concept boards uploaded for the stage, as the files stood in the bug: one still a draft, one shared with the client.
+    const board = async (title: string, status: "draft" | "client_review") => {
+      const designId = randomUUID(), versionId = randomUUID(), asset = randomUUID();
+      await asApp(ids.workspaceId, ids.opsUser, async (client) => {
+        await client.query("INSERT INTO pre_project_brief_assets(id,workspace_id,case_id,original_name,mime_type,byte_size,object_key,sha256,created_by) VALUES($1,$2,$3,$4,'image/png',1,$5,repeat('c',64),$6)",
+          [asset, ids.workspaceId, ids.caseId, `${title}.png`, `design-decisions/${asset}`, ids.opsUser]);
+        await client.query("INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,stage,created_by) VALUES($1,$2,$3,$4,'Concept board','concepts',$5)", [designId, ids.workspaceId, ids.caseId, title, ids.opsUser]);
+        await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status,client_review_expires_at) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8)",
+          [versionId, ids.workspaceId, ids.caseId, designId, asset, ids.designerUser, status, status === "client_review" ? new Date(Date.now() + 7 * 86_400_000) : null]);
+      });
+      return { designId, versionId };
+    };
+    const warm = await board("Warm minimal", "draft");
+    const coastal = await board("Coastal", "client_review");
+    const presentation = { id: randomUUID(), stage: "concepts", options: [{ id: randomUUID(), title: "Warm minimal", designId: warm.designId }, { id: randomUUID(), title: "Coastal", designId: coastal.designId }] };
+    await decisions.createPresentation(actor, ids.workspaceId, ids.caseId, presentation);
+    const round = (await decisions.present(actor, ids.workspaceId, ids.caseId, presentation.id, { version: 1 })).presentations[0];
+    const gate = () => asApp(ids.workspaceId, ids.opsUser, (client) => captureApprovedDesignBaseline(client, ids.workspaceId, ids.caseId,
+      [{ scopeLineId: "package-line", title: "Fit-out package" }], new Date().toISOString(), undefined, { includePackageDesigns: true }));
+    // Until the client decides, the main quotation waits for the designs.
+    await expect(gate()).rejects.toThrow(/Approve the latest package-level designs/);
+    const run = portal(ids);
+    const choose = { caseId: ids.caseId, presentationId: round.id, version: round.version, decision: "choose", optionId: presentation.options[0].id };
+    await run((ctx) => presentationChoice(ctx, choose));
+    // The chosen board is approved with the client's decision in its history; the other is retired, with the reason.
+    const files = async () => (await asApp(ids.workspaceId, ids.opsUser, (client) => client.query<{ title: string; status: string; archived: boolean; history: Array<[string, string, string | null, string | null]> }>(
+      `SELECT design.title, latest.status, design.archived_at IS NOT NULL AS archived,
+              coalesce((SELECT json_agg(json_build_array(activity.action, activity.decision_by, activity.decision_source, activity.client_grant_id::text) ORDER BY activity.created_at)
+                          FROM pre_project_design_activity activity WHERE activity.workspace_id = design.workspace_id AND activity.design_id = design.id), '[]'::json) AS history
+         FROM pre_project_designs design
+         JOIN LATERAL (SELECT status FROM pre_project_design_versions version WHERE version.workspace_id = design.workspace_id AND version.design_id = design.id ORDER BY number DESC LIMIT 1) latest ON true
+        WHERE design.workspace_id = $1 AND design.case_id = $2 ORDER BY design.title`, [ids.workspaceId, ids.caseId]))).rows;
+    const settled = [
+      { title: "Coastal", status: "client_review", archived: true, history: [["comment", "Maya Client", "client_portal", ids.grantId]] },
+      { title: "Warm minimal", status: "approved", archived: false, history: [["approved", "Maya Client", "client_portal", ids.grantId]] },
+    ];
+    expect(await files()).toEqual(settled);
+    const notes = (await asApp(ids.workspaceId, ids.opsUser, (client) => client.query<{ note: string }>(`SELECT note FROM pre_project_design_activity WHERE workspace_id = $1 AND case_id = $2 ORDER BY note`, [ids.workspaceId, ids.caseId]))).rows;
+    expect(notes.map((row) => row.note)).toEqual(["Chosen by the client from Concepts.", "Not chosen: the client chose Warm minimal (Concepts)."]);
+    // The main quotation's design gate now passes with the chosen board alone; a replay of the choice changes nothing more.
+    expect((await gate()).links.map((link) => link.designVersionId)).toEqual([warm.versionId]);
+    expect((await run((ctx) => presentationChoice(ctx, choose))).audit).toMatchObject({ replayed: true });
+    expect(await files()).toEqual(settled);
+    // A job whose client chose before the choice settled the files (the chosen board still a draft, the other still shared) passes the gate the same way.
+    await asApp(ids.workspaceId, ids.opsUser, async (client) => {
+      await client.query("UPDATE pre_project_design_versions SET status = 'draft' WHERE workspace_id = $1 AND id = $2", [ids.workspaceId, warm.versionId]);
+      await client.query("UPDATE pre_project_designs SET archived_at = NULL WHERE workspace_id = $1 AND id = $2", [ids.workspaceId, coastal.designId]);
+    });
+    expect((await gate()).links.map((link) => [link.designVersionId, link.approvedAt !== null])).toEqual([[warm.versionId, true]]);
   });
 
   it("keeps one design conversation both ways: the client's pinned comments reach the team, team threads reach the client only when shared", async () => {

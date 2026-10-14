@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { caseTeam, caseTitle, tellClients, tellStaff } from "../client-portal/portal-notices";
 import { DECISION_SOURCES, optionProblem, roundChargeable, STAGE_LABELS, stageRevisions, type DecisionSource, type JourneyStage } from "./design-journey.domain";
 import { completeStage, salesAdminMembership } from "./design-journey.store";
-import { isDeliverableStage, siteMeasureDone } from "./design-stage-sync";
+import { isDeliverableStage, siteMeasureDone, syncDesignStages } from "./design-stage-sync";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -177,6 +178,9 @@ export async function decideRound(db: Db, workspaceId: string, caseId: string, i
     [workspaceId, id, input.decision, input.decision === "chosen" ? input.optionId : null, input.userId ?? null, input.grantId ?? null, name, input.source, note]);
   const facts = await caseTitle(db, workspaceId, caseId);
   const chosen = input.decision === "chosen" ? (await db.query<{ title: string }>(`SELECT title FROM design_presentation_options WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.optionId])).rows[0]?.title ?? "" : "";
+  if (input.decision === "chosen")
+    await settleOptionDesigns(db, workspaceId, caseId, { presentationId: id, chosenOptionId: input.optionId!, chosenTitle: chosen, stage: row.stage, round: row.round, decidedBy: name,
+      source: input.source, note, userId: input.userId ?? null, grantId: input.grantId ?? null });
   // The design team hears the client's answer: "<client> chose <option>", or "<client> wants changes to <stage>" with what (the
   // client-changes notice every design answer uses), never "chose changes".
   await tellStaff(db, { workspaceId, recipients: await caseTeam(db, workspaceId, caseId, ["design"]), code: input.decision === "chosen" ? "design.concept_chosen" : "design.client_changes",
@@ -191,6 +195,52 @@ export async function decideRound(db: Db, workspaceId: string, caseId: string, i
     if (active && await siteMeasureDone(db, workspaceId, caseId)) { await completeStage(db, workspaceId, caseId, "concepts", input.userId ?? null, `Client's choice: ${chosen}`, "chosen"); completed = true; }
   }
   return { replayed: false, stage: row.stage, completed };
+}
+
+/**
+ * The client's choice settles the uploaded options the way a design file is approved (its latest revision's status and
+ * a history line saying who decided and where): the chosen option's design is approved, and the options the client
+ * passed over are retired (archived, with the reason in their history). The stage and the main quotation's design gate
+ * then see one approved design instead of a draft and a shared one. Idempotent: a design already settled is left alone.
+ */
+async function settleOptionDesigns(db: Db, workspaceId: string, caseId: string, input: {
+  presentationId: string; chosenOptionId: string; chosenTitle: string; stage: JourneyStage; round: number; decidedBy: string; source: string; note: string | null;
+  userId: string | null; grantId: string | null;
+}) {
+  const options = (await db.query<{ id: string; designId: string }>(
+    `SELECT id, design_id AS "designId" FROM design_presentation_options WHERE workspace_id = $1 AND presentation_id = $2 AND design_id IS NOT NULL ORDER BY position, created_at`,
+    [workspaceId, input.presentationId])).rows;
+  if (!options.length) return;
+  // The history names the client through their portal, or the staff member who recorded the client's decision and where it was given.
+  const actor = input.grantId ? { createdBy: null, grantId: input.grantId, source: "client_portal" } : { createdBy: input.userId, grantId: null, source: input.source };
+  const round = `${STAGE_LABELS[input.stage]}${input.round > 1 ? ` · revision ${input.round - 1}` : ""}`;
+  let approved = false;
+  for (const option of options) {
+    const design = (await db.query<{ archivedAt: Date | null; versionId: string | null; status: string | null }>(
+      `SELECT design.archived_at AS "archivedAt", latest.id AS "versionId", latest.status
+         FROM pre_project_designs design
+         LEFT JOIN LATERAL (SELECT version.id, version.status FROM pre_project_design_versions version
+                             WHERE version.workspace_id = design.workspace_id AND version.design_id = design.id ORDER BY version.number DESC LIMIT 1) latest ON true
+        WHERE design.workspace_id = $1 AND design.case_id = $2 AND design.id = $3 FOR UPDATE OF design`, [workspaceId, caseId, option.designId])).rows[0];
+    if (!design?.versionId) continue;
+    const history = (action: string, note: string) => db.query(
+      `INSERT INTO pre_project_design_activity (id, workspace_id, case_id, design_id, version_id, action, note, decision_by, created_by, client_grant_id, decision_source, decision_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, clock_timestamp())`,
+      [randomUUID(), workspaceId, caseId, option.designId, design.versionId, action, note, input.decidedBy, actor.createdBy, actor.grantId, actor.source]);
+    if (option.id === input.chosenOptionId) {
+      if (design.status === "approved") continue;
+      await db.query(`UPDATE pre_project_design_versions SET status = 'approved' WHERE workspace_id = $1 AND id = $2`, [workspaceId, design.versionId]);
+      await history("approved", `Chosen by the client from ${round}.${input.note ? ` ${input.note}` : ""}`);
+      approved = true;
+    } else {
+      if (design.archivedAt) continue;
+      await db.query(`UPDATE pre_project_designs SET archived_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, option.designId]);
+      await history("comment", `Not chosen: the client chose ${input.chosenTitle} (${round}).`);
+    }
+    await db.query(`UPDATE pre_project_designs SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, option.designId]);
+  }
+  // Concepts complete through the choice itself (decideRound, with the site measure); another stage completes as any approved file would.
+  if (approved && input.stage !== "concepts") await syncDesignStages(db, workspaceId, caseId, input.userId);
 }
 
 /** The role that reviews this journey's rounds before the client sees them (PLM-145), when its package has one. */

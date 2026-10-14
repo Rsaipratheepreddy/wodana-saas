@@ -84,6 +84,26 @@ describe("project design control", () => {
     )).rejects.toThrow(/Approve the latest package-level designs/);
   });
 
+  it("reads the client's concept choice as the approval: the chosen option passes the gate, the options passed over are retired, an undecided one still blocks", async () => {
+    const chosen = { ...baseline.links[0], designVersionId: "concept-a", designId: "design-a", title: "Concept A", status: "draft", hasBlockingThread: false, chosen: true, passedOver: false,
+      approvedAt: "2026-09-18T09:00:00.000Z" };
+    const passedOver = { ...baseline.links[0], designVersionId: "concept-b", designId: "design-b", title: "Concept B", status: "client_review", hasBlockingThread: false, chosen: false, passedOver: true };
+    const query = vi.fn().mockResolvedValue({ rows: [chosen, passedOver] });
+    const captured = await captureApprovedDesignBaseline(
+      { query } as unknown as PoolClient, "workspace", "case",
+      [{ scopeLineId: "package-line", title: "Fitout package" }],
+      "2026-09-24T00:00:00Z", undefined, { includePackageDesigns: true },
+    );
+    expect(captured.links).toEqual([expect.objectContaining({ scopeLineId: "package-line", designVersionId: "concept-a", approvedAt: "2026-09-18T09:00:00.000Z" })]);
+    // A chosen option with an open blocking comment still blocks; so does a presented option the client hasn't decided on.
+    query.mockResolvedValueOnce({ rows: [{ ...chosen, hasBlockingThread: true }, passedOver] });
+    await expect(captureApprovedDesignBaseline({ query } as unknown as PoolClient, "workspace", "case", [{ scopeLineId: "package-line", title: "Fitout package" }],
+      "2026-09-24T00:00:00Z", undefined, { includePackageDesigns: true })).rejects.toThrow(/Approve the latest package-level designs/);
+    query.mockResolvedValueOnce({ rows: [{ ...chosen, status: "client_review", chosen: false, passedOver: false }] });
+    await expect(captureApprovedDesignBaseline({ query } as unknown as PoolClient, "workspace", "case", [{ scopeLineId: "package-line", title: "Fitout package" }],
+      "2026-09-24T00:00:00Z", undefined, { includePackageDesigns: true })).rejects.toThrow(/Approve the latest package-level designs/);
+  });
+
   it("materialises an approved design revision as project-controlled evidence", () => {
     const data = emptyProject();
     synchroniseApprovedDesignDocuments(data, baseline, baseline.capturedAt, () => "document-1");
