@@ -200,7 +200,15 @@ export function ComboboxField({ description, errorMessage, items, label, onCreat
   // Focus selects the chosen label so typing replaces it; text the person is typing is never selected again.
   const selectedLabel = items.find((item) => item.id === current)?.label ?? "";
   const picked = useRef(false);
-  const select = (key: Key | null) => { picked.current = true; if (!controlled) setOwnKey(key); props.onSelectionChange?.(key); };
+  const select = (key: Key | null) => {
+    picked.current = true; if (!controlled) setOwnKey(key); props.onSelectionChange?.(key);
+    // The page holds the text but not the choice (a free-text field with suggestions): a picked suggestion becomes the
+    // text, as the field does on its own. React Aria leaves that to the page once the choice is held here too.
+    if (!controlled && props.inputValue !== undefined && key !== null) {
+      const label = items.find((item) => item.id === key)?.label;
+      if (label !== undefined) { setTyped(label); props.onInputChange?.(label); }
+    }
+  };
   const takeTyped = () => {
     if (picked.current) { picked.current = false; return; }
     if (!text || props.isReadOnly || props.isDisabled || props.allowsCustomValue) return;
