@@ -14,7 +14,7 @@ import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, Re
 import { initialQualificationValues, qualificationAnswerText, qualificationFields, qualificationValues, type QualificationQuestion } from "@/lib/crm/qualification-fields";
 import { LeadAssignmentDialog } from "./lead-assignment-dialog";
 import { LeadEnquiryForm } from "./lead-enquiry-form";
-import { hasResolvedEnquiryType, leadOptionLabel, TEAM_NOT_APPLICABLE, type EnquiryDetails, type LeadContact, type LeadTeamEntry } from "@/lib/crm/lead-options";
+import { hasResolvedEnquiryType, leadOptionLabel, TEAM_NOT_APPLICABLE, teamRoleChoices, type EnquiryDetails, type LeadContact, type LeadTeamEntry } from "@/lib/crm/lead-options";
 import { problemText, teamRoleLabel } from "@/lib/crm/enquiry-requirements";
 import type { SaveProblem } from "@/design-system";
 import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/crm/phone";
@@ -90,6 +90,8 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
   const ownFields = fieldList.filter((field) => field.custom && field.visible);
   const contact = enquiryDetails.contact ?? { displayName: lead.partyName };
   const owner = live.ownerMembershipId ? initialData.members.find((m) => m.id === live.ownerMembershipId)?.displayName ?? live.ownerName ?? t("Assigned owner") : null;
+  // A member's name for whoever reads the enquiry: the directory when this person may read it, else the sales owners.
+  const memberName = (id: string) => initialData.members.find((member) => member.id === id)?.displayName || initialData.salesOwners?.find((member) => member.id === id)?.displayName || null;
   const saved = async () => { resource.refresh(); setActivityRevision(value => value + 1); await onChanged(); };
   const active = !["qualified", "disqualified"].includes(String(live.status));
   const stageOptions = leadStageOptions(String(live.status)).filter((stage) => stage.id !== "qualified");
@@ -211,7 +213,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
         {nextStep}
       </> : null}
       activity={<ActivityPanel title={t("Activity")} key={activityRevision} workspaceId={workspaceId} leadId={lead.id} partyId={lead.partyId} ownerMembershipId={live.ownerMembershipId as string | null} onChanged={saved}
-          assignments={((detail?.assignments ?? []) as RecordData[]).map((entry) => ({ id: String(entry.id), at: String(entry.assignedAt), ownerName: entry.ownerMembershipId ? initialData.members.find((member) => member.id === entry.ownerMembershipId)?.displayName ?? t("A team member") : null, method: entry.explanation && (entry.explanation as RecordData).mode === "unassigned" ? "unassigned" : String(entry.assignmentMethod ?? "manual"), reason: entry.reason ? String(entry.reason) : null }))} />}
+          assignments={((detail?.assignments ?? []) as RecordData[]).map((entry) => ({ id: String(entry.id), at: String(entry.assignedAt), ownerName: entry.ownerMembershipId ? String(entry.ownerName || memberName(String(entry.ownerMembershipId)) || t("A team member")) : null, method: entry.explanation && (entry.explanation as RecordData).mode === "unassigned" ? "unassigned" : String(entry.assignmentMethod ?? "manual"), reason: entry.reason ? String(entry.reason) : null }))} />}
       tabs={[
         { id: "overview", label: t("Overview"), panel: <RecordPanel>
           {enquiry?.summary || canEdit ? <EditableFieldList layout="stacked"><EditableField canEdit={canEdit} kind="multiline" label={t("Project description")} maxLength={10000} onReload={resource.refresh}
@@ -223,7 +225,8 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
               {teamRoles.map((role) => {
                 const tagged = team.find((entry) => entry.role === role);
                 return <EditableField key={role} canEdit={canEdit && !live.isConverted} kind="select" label={teamRoleLabel(role, t)} placeholder={t("Not tagged")}
-                  items={[...initialData.members.filter((member) => member.status === "active").map((member) => ({ id: member.id, label: member.displayName || member.email })), { id: TEAM_NOT_APPLICABLE, label: t("Not applicable") }]}
+                  items={teamRoleChoices(options, role, initialData.members.filter((member) => member.status === "active").map((member) => ({ id: member.id, label: member.displayName || member.email })),
+                    tagged?.membershipId ? { id: tagged.membershipId, label: tagged.name ?? "" } : null, t("Not applicable"))}
                   display={tagged ? <>{tagged.notApplicable ? t("Not applicable") : tagged.name}{tagged.setByName ? <small className={styles.contactHint}> · {t("{name} · {date}", { name: tagged.setByName, date: dateText(tagged.setAt, zoned) })}</small> : null}</> : undefined}
                   onReload={resource.refresh} onSave={(choice) => saveDetails({ team: [{ role, ...(choice === TEAM_NOT_APPLICABLE ? { notApplicable: true } : { membershipId: choice || null }) }] })}
                   value={tagged ? (tagged.notApplicable ? TEAM_NOT_APPLICABLE : tagged.membershipId ?? "") : ""} />;

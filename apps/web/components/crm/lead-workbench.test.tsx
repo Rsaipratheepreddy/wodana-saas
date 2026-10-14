@@ -19,10 +19,10 @@ function detail(change: Record<string, unknown> = {}) {
     ...change,
   };
 }
-function setup(change?: Record<string, unknown>) {
-  const data = structuredClone(leadsPageFixture);
+function setup(change?: Record<string, unknown>, options: Record<string, unknown> = {}, page: Partial<typeof leadsPageFixture> = {}) {
+  const data = { ...structuredClone(leadsPageFixture), ...page };
   data.leadOptions = { sources: [{ id: "referral", label: "Referral" }], channels: { referral: [{ id: "phone", label: "Phone" }] }, enquiryTypes: [{ id: "design", label: "Design" }], budgetRanges: [], customerTypes: [],
-    emirates: [{ id: "dubai", label: "Dubai" }], areas: {}, teamRoles: { design: ["designer"] } };
+    emirates: [{ id: "dubai", label: "Dubai" }], areas: {}, teamRoles: { design: ["designer"] }, ...options };
   vi.mocked(crmRequest).mockImplementation(async (_workspace: string, path: string) => (path === `leads/${lead.id}` ? detail(change) : { data: [] }) as never);
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ data: [] }) })));
   render(<DesignSystemProvider><LeadWorkbench lead={lead} initialData={data} onChanged={vi.fn().mockResolvedValue(undefined)} onQualify={vi.fn()} /></DesignSystemProvider>);
@@ -48,5 +48,17 @@ describe("an enquiry's next step and team", () => {
     expect(screen.getAllByText("Not applicable").length).toBeGreaterThan(0);
     expect(screen.queryByText("Internal notes")).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Convert to opportunity" })).toBeInTheDocument();
+  });
+
+  it("offers the designers in the Designer field, not the member directory, and names who it was assigned to (PLM-100)", async () => {
+    // A salesperson reads no member directory; the assignment names its owner itself.
+    setup({ conversion: { ready: true, missing: [] }, assignments: [{ id: "a1", ownerMembershipId: "m-sam", ownerName: "Sam Sales", assignmentMethod: "manual", explanation: { mode: "manual" }, reason: "Selected during creation", assignedAt: "2026-10-01T08:00:00Z" }] },
+      { teamMembers: { designer: [{ id: "d1", displayName: "Dana Designer" }, { id: "d2", displayName: "Jamie Junior Designer" }] } },
+      { members: [] });
+    expect(await screen.findByText("Assigned to Sam Sales")).toBeInTheDocument();
+    expect(screen.queryByText("Assigned to A team member")).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit Designer" }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Dana Designer", "Jamie Junior Designer", "Not applicable"]);
   });
 });

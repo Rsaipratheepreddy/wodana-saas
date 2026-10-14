@@ -20,6 +20,8 @@ export type LeadOptions = {
   roleKeys?: string[];
   /** PLM-100: the team roles each enquiry type asks for (by enquiry type id), from the type's own steps. */
   teamRoles?: Record<string, string[]>;
+  /** PLM-100: who each team role can be tagged with, by role (the designers for Designer); names only. */
+  teamMembers?: Record<string, Array<{ id: string; displayName: string }>>;
   /** PLM-096: the fields each enquiry type requires, and from which gate (by enquiry type id, then field key). */
   requirements?: Record<string, Record<string, RequiredAt>>;
 };
@@ -29,6 +31,17 @@ export type RequiredAt = "create" | "convert" | "book_intro" | "never";
 export type LeadTeamEntry = { role: string; membershipId: string | null; name: string | null; notApplicable: boolean; setAt: string; setByName: string | null; version: number };
 /** The choice that says a role is not needed for this enquiry. */
 export const TEAM_NOT_APPLICABLE = "not_applicable";
+
+type Choice = { id: string; label: string };
+/**
+ * PLM-100: the choices for one team role: the people the server offers for it (the designers for Designer), the member
+ * already tagged when no longer among them, then Not applicable. An older server without them offers `fallback`.
+ */
+export function teamRoleChoices(options: Pick<LeadOptions, "teamMembers"> | undefined, role: string, fallback: Choice[], tagged: Choice | null, notApplicable: string): Choice[] {
+  const people = options?.teamMembers ? (options.teamMembers[role] ?? []).map((member) => ({ id: member.id, label: member.displayName })) : fallback;
+  const kept = tagged?.id && tagged.label && !people.some((person) => person.id === tagged.id) ? [...people, tagged] : people;
+  return [...kept, { id: TEAM_NOT_APPLICABLE, label: notApplicable }];
+}
 
 /**
  * One role vocabulary: a member's roles and teams, lower-case, where a team role (`team_sales`) and its
