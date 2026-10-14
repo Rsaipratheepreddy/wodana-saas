@@ -959,7 +959,10 @@
   color: var(--wd-color-text);
 }
 
+/* The page's own name shrinks with an ellipsis when the bar runs out of room (a phone). */
 .breadcrumbs li[aria-current="page"] {
+  display: block;
+  min-inline-size: 0;
   color: var(--wd-color-text);
   font-weight: var(--wd-weight-medium);
 }
