@@ -24,7 +24,9 @@ export function liveScopes(event: LiveEventSource): string[] {
   const data = dataOf(event.payload);
   const scopes = new Set<string>(["workspace"]);
   if (aggregate === "notification" || has(type, "notification.")) scopes.add("notifications");
-  if (has(aggregate, "crm_conversation", "crm_message") || has(type, "crm.conversation", "crm.message")) {
+  // A chat's own events, and any event about one of its messages (a client's reply is recorded on its job or client,
+  // with the conversation in its data): the inbox list and the open chat both re-read.
+  if (has(aggregate, "crm_conversation", "crm_message") || has(type, "crm.conversation", "crm.message") || id(data.conversationId)) {
     scopes.add("conversations");
     const conversation = aggregate === "crm_conversation" ? id(event.aggregateId) : id(data.conversationId);
     if (conversation) scopes.add(`conversation:${conversation}`);

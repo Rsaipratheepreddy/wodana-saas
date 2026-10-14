@@ -15,6 +15,10 @@ describe("live events (FD-4)", () => {
       .toEqual(expect.arrayContaining(["workspace", "projects", `project:${projectId}`]));
     expect(liveScopes({ eventType: "crm.message.received.v1", aggregateType: "crm_message", aggregateId: "m", payload: envelope({ conversationId }) }))
       .toEqual(expect.arrayContaining(["conversations", `conversation:${conversationId}`, "sales"]));
+    // A client's reply is recorded on its job (or client) with the chat in its data: the open chat re-reads it too.
+    for (const aggregateType of ["crm_lead", "crm_opportunity", "delivery_project", "crm_party"])
+      expect(liveScopes({ eventType: "crm.customer.replied.v1", aggregateType, aggregateId: "x", payload: envelope({ conversationId, bodyText: "private" }) }))
+        .toEqual(expect.arrayContaining(["conversations", `conversation:${conversationId}`]));
     expect(liveScopes({ eventType: "purchasing.approval_needed", aggregateType: "purchase_order", aggregateId: "o" })).toEqual(expect.arrayContaining(["purchasing", "approvals"]));
     expect(liveScopes({ eventType: "notification.delivery_requested.v1", aggregateType: "notification", aggregateId: "n" })).toContain("notifications");
     expect(liveScopes({ eventType: "factory.released", aggregateType: "work_order", aggregateId: "w", payload: "not json" })).toEqual(expect.arrayContaining(["workspace", "factory"]));
