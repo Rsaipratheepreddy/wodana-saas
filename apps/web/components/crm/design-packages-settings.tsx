@@ -2,12 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { Badge, Button, DataGrid, FormDialog, IconButton, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, FormDialog, IconButton, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TagsField, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { loadDesignSettings, questionKey, saveDesignFlow, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignFlow, type DesignPackage, type DesignSettings, type DesignSteps, type DesignTeamRoles, type PricingMethod } from "@/lib/design/packages";
+import { loadDesignSettings, MAX_SITE_QUESTIONS, questionKey, saveDesignFlow, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type ChecklistScope, type DesignFlow, type DesignPackage, type DesignSettings, type DesignSteps, type DesignTeamRoles, type PricingMethod, type SiteQuestion } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
 
 const amount = (value: string) => value.replace(/[^\d.]/g, "");
+const scopeKey = (scope: string) => scope.replace(/\s+/g, " ").trim().toLowerCase();
+/** The checklists the questions name, in list order, each with its match words (kept from before) and whether it's for every job. */
+function checklistScopes(questions: SiteQuestion[], scopes: ChecklistScope[]): ChecklistScope[] {
+  const names = [...new Map(questions.filter((item) => item.scope?.trim()).map((item) => [scopeKey(item.scope!), item.scope!.replace(/\s+/g, " ").trim()])).entries()];
+  return names.map(([key, scope]) => {
+    const found = scopes.find((entry) => scopeKey(entry.scope) === key);
+    return { scope, match: found?.match ?? [], ...(found?.everyJob ? { everyJob: true } : {}) };
+  });
+}
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
 
 /** PLM-041: the design package price list and the minimum design deposit. Owners and admins edit; others read. */
@@ -71,7 +80,14 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
       let version = settings?.version ?? 0;
       if (minimumChanged) version = (await saveMinimumDeposit(workspaceId, minimum ? { amount: Number(minimum).toFixed(2), currency: settings?.minimumDeposit?.currency ?? currency } : null, version)).version;
       if (timingsChanged) version = (await saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, version)).version;
-      if (flowChanged && flow) await saveDesignFlow(workspaceId, { ...flow, siteVisitQuestions: flow.siteVisitQuestions.map((item) => ({ key: item.key, question: item.question.trim(), scope: item.scope?.trim() || null })) }, version);
+      if (flowChanged && flow) {
+        const questions = flow.siteVisitQuestions.map((item) => {
+          const scope = item.scope?.trim() || null;
+          // A section heads general questions only; a checklist is its scope.
+          return { key: item.key, question: item.question.trim(), scope, section: scope ? null : item.section?.trim() || null, kind: item.kind === "check" ? "check" as const : null };
+        });
+        await saveDesignFlow(workspaceId, { ...flow, siteVisitQuestions: questions, siteVisitScopes: checklistScopes(questions, flow.siteVisitScopes ?? []) }, version);
+      }
       await load();
       setJustSaved(true);
     } catch (error) { setFailure(error instanceof Error ? error.message : t("Design settings could not be saved.")); }
@@ -154,15 +170,36 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
       </SettingsRow>
     </SettingsSection> : null}
     {flow ? <SettingsSection id="site-visit-questions" title={t("Site visit questions")}
-      actions={canManage && flow.siteVisitQuestions.length < 80 ? <Button size="compact" onPress={() => setFlowValue("siteVisitQuestions", [...flow.siteVisitQuestions, { key: "", question: "" }])}><Plus aria-hidden="true" size={14} />{t("Add question")}</Button> : null}>
-      <ol className={styles.questions}>{flow.siteVisitQuestions.map((item, index) => <li key={item.key || `new-${index}`}>
-        <TextInput aria-label={t("Scope of question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} maxLength={60} placeholder={t("General")} value={item.scope ?? ""}
-          onChange={(scope) => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.map((current, position) => position === index ? { ...current, scope } : current))} />
-        <TextInput aria-label={t("Question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} maxLength={500} value={item.question}
-          onChange={(question) => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.map((current, position) => position === index
-            ? { ...current, question, key: current.key || questionKey(question, flow.siteVisitQuestions.filter((_, other) => other !== index).map((entry) => entry.key)) } : current))} />
-        {canManage ? <IconButton aria-label={t("Remove question {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.filter((_, position) => position !== index))}><Trash2 aria-hidden="true" size={14} /></IconButton> : null}
-      </li>)}</ol>
+      actions={canManage && flow.siteVisitQuestions.length < MAX_SITE_QUESTIONS ? <Button size="compact" onPress={() => setFlowValue("siteVisitQuestions", [...flow.siteVisitQuestions, { key: "", question: "" }])}><Plus aria-hidden="true" size={14} />{t("Add question")}</Button> : null}>
+      <ol className={styles.questions}>{flow.siteVisitQuestions.map((item, index) => {
+        const change = (patch: Partial<SiteQuestion>) => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.map((current, position) => position === index ? { ...current, ...patch } : current));
+        return <li key={item.key || `new-${index}`}>
+          {/* A checklist is its scope (matched to the job's rooms); a section only heads general questions. */}
+          <TextInput aria-label={t("Scope of question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} maxLength={60} placeholder={t("General")} value={item.scope ?? ""}
+            onChange={(scope) => change({ scope })} />
+          <TextInput aria-label={t("Section of question {number}", { number: index + 1 })} isDisabled={!canManage || Boolean(item.scope?.trim())} label={null} maxLength={60}
+            placeholder={t("Section")} value={item.scope?.trim() ? "" : item.section ?? ""} onChange={(section) => change({ section })} />
+          <TextInput aria-label={t("Question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} maxLength={500} value={item.question}
+            onChange={(question) => change({ question, key: item.key || questionKey(question, flow.siteVisitQuestions.filter((_, other) => other !== index).map((entry) => entry.key)) })} />
+          <SelectField aria-label={t("Answer of question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} accent="neutral" selectedKey={item.kind === "check" ? "check" : "answer"}
+            items={[{ id: "answer", label: t("In words") }, { id: "check", label: t("Check") }]} onSelectionChange={(kind) => change({ kind: kind === "check" ? "check" : null })} />
+          {canManage ? <IconButton aria-label={t("Remove question {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.filter((_, position) => position !== index))}><Trash2 aria-hidden="true" size={14} /></IconButton> : null}
+        </li>;
+      })}</ol>
+    </SettingsSection> : null}
+    {flow && checklistScopes(flow.siteVisitQuestions, []).length ? <SettingsSection id="site-visit-checklists" title={t("Checklists")}>
+      {checklistScopes(flow.siteVisitQuestions, flow.siteVisitScopes ?? []).map((entry) => {
+        const count = flow.siteVisitQuestions.filter((item) => item.scope && scopeKey(item.scope) === scopeKey(entry.scope)).length;
+        const set = (patch: Partial<ChecklistScope>) => setFlowValue("siteVisitScopes",
+          checklistScopes(flow.siteVisitQuestions, flow.siteVisitScopes ?? []).map((current) => scopeKey(current.scope) === scopeKey(entry.scope) ? { ...current, ...patch } : current));
+        return <SettingsRow key={scopeKey(entry.scope)} align="start" label={entry.scope} hint={t("{count} questions", { count })}>
+          <div className={styles.checklist}>
+            <TagsField label={t("Applies to rooms or items named")} values={entry.match} isReadOnly={!canManage || Boolean(entry.everyJob)} placeholder={t("e.g. wardrobe, walk-in")}
+              onChange={(match) => set({ match: match.slice(0, 20).map((word) => word.slice(0, 40)) })} />
+            <Switch isSelected={Boolean(entry.everyJob)} isDisabled={!canManage} onChange={(everyJob) => set({ everyJob })}>{t("Every job")}</Switch>
+          </div>
+        </SettingsRow>;
+      })}
     </SettingsSection> : null}
     {canManage ? <SaveBar isDirty={minimumChanged || timingsChanged || flowChanged} isSaving={saving} saved={justSaved} isDisabled={!timings.inspirationDays || !timings.siteVisitHours || !flowValid}
       onDiscard={() => { setMinimum(savedMinimum); setTimings(savedTimings); setFlow(settings?.flow ?? null); setFailure(""); }} onSave={() => void saveChanges()} /> : null}

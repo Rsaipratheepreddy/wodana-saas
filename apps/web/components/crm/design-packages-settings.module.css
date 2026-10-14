@@ -10,7 +10,13 @@
 .toggles { display: flex; flex-wrap: wrap; gap: var(--wd-space-5); }
 @media (max-width: 40rem) { .row { grid-template-columns: minmax(0, 1fr); } }
 .questions { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--wd-space-2); }
-.questions li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr) auto; align-items: center; gap: var(--wd-space-2); }
-@media (max-width: 40rem) { .questions li { grid-template-columns: minmax(0, 1fr) auto; } .questions li > :first-child { grid-column: 1 / -1; } }
+/* Scope, section, question, how it's answered, remove. */
+.questions li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 3fr) minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-2); }
+@media (max-width: 40rem) {
+  .questions li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .questions li > :nth-child(3) { grid-column: 1 / -1; }
+  .questions li > :nth-child(5) { justify-self: end; }
+}
+.checklist { display: flex; flex-direction: column; gap: var(--wd-space-2); }
 .window { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-2); }
 @media (max-width: 40rem) { .window { grid-template-columns: minmax(0, 1fr); } }

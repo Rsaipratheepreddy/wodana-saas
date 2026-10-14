@@ -20,13 +20,22 @@ export type DesignTeamRoles = {
   lead_designer: string; junior_designer: string | null; sales_admin: string | null; visualiser: string | null; draftsman: string | null; material_coordinator: string | null;
   technicalLeadRoleCode: string | null;
 };
-/** PLM-154: a site visit question, grouped by its scope (none for the general ones). */
-export type SiteQuestion = { key: string; question: string; scope?: string | null };
+/**
+ * PLM-154: a site visit question, grouped by its scope (none for the general ones). A general question can sit under a
+ * section (a heading, never matched to rooms); `kind: "check"` is a checklist line marked confirmed, pending or not applicable.
+ */
+export type SiteQuestion = { key: string; question: string; scope?: string | null; section?: string | null; kind?: "answer" | "check" | null };
+/** A checklist's match words (rooms, areas and quotation lines that make it apply to a job), or every job. */
+export type ChecklistScope = { scope: string; match: string[]; everyJob?: boolean };
+/** At most this many questions on the list (general questions and checklist lines). */
+export const MAX_SITE_QUESTIONS = 300;
 export type DesignTimings = { inspirationDays: number; siteVisitHours: number };
 /** Settings › Design: the design flow after Won (plan §6.7a): deadlines, the showroom booking type, the visualiser role and the site visit question list. */
 export type DesignFlow = {
   designInternalDays: number; designClientDays: number; materialSelectionDays: number; estimateDays: number; visualiserRoleCode: string;
   showroomBookingTypeId: string | null; siteVisitQuestions: SiteQuestion[];
+  /** Each checklist's match words, by scope. */
+  siteVisitScopes?: ChecklistScope[];
   /** The renders' own internal and client-facing days; null follows the design deadlines. */
   renderInternalDays?: number | null; renderClientDays?: number | null;
   steps?: DesignSteps; team?: DesignTeamRoles;

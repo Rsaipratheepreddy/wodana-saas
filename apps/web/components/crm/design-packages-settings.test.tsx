@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { DesignPackagesSettings } from "./design-packages-settings";
@@ -29,6 +29,30 @@ describe("design packages settings (PLM-041)", () => {
     expect(field).toHaveValue("");
     expect(field).toHaveAttribute("placeholder", "No minimum");
     expect(screen.queryByText(/AED\s?0\b/)).not.toBeInTheDocument();
+  });
+
+  it("edits a question's section, how it's answered, its scope and the checklist's match words, and saves them with the list", async () => {
+    const flow = { designInternalDays: 35, designClientDays: 56, materialSelectionDays: 7, estimateDays: 7, visualiserRoleCode: "visualiser", showroomBookingTypeId: null,
+      siteVisitQuestions: [{ key: "core.01", question: "What type of property is this?", section: "Project overview" },
+        { key: "kitchen.01", question: "Record appliance brand and model.", scope: "Kitchens and islands", kind: "check" }],
+      siteVisitScopes: [{ scope: "Kitchens and islands", match: ["kitchen"] }] };
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...settings, flow }) });
+    vi.stubGlobal("fetch", fetch);
+    render(<DesignSystemProvider><DesignPackagesSettings workspaceId="ws" currency="AED" locale="en-GB" canManage /></DesignSystemProvider>);
+    expect(await screen.findByRole("textbox", { name: "Section of question 1" })).toHaveValue("Project overview");
+    // A checklist line has no section: its scope is the checklist.
+    expect(screen.getByRole("textbox", { name: "Section of question 2" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Section of question 1" }), { target: { value: "Lifestyle and everyday needs" } });
+    const words = screen.getByRole("combobox", { name: "Applies to rooms or items named" });
+    fireEvent.change(words, { target: { value: "island" } });
+    fireEvent.keyDown(words, { key: "Enter" });
+    fireEvent.click(screen.getByRole("switch", { name: "Every job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).includes("flow-settings"))).toBe(true));
+    const body = JSON.parse(fetch.mock.calls.find(([url]) => String(url).includes("flow-settings"))![1].body as string);
+    expect(body.siteVisitQuestions).toEqual([{ key: "core.01", question: "What type of property is this?", scope: null, section: "Lifestyle and everyday needs", kind: null },
+      { key: "kitchen.01", question: "Record appliance brand and model.", scope: "Kitchens and islands", section: null, kind: "check" }]);
+    expect(body.siteVisitScopes).toEqual([{ scope: "Kitchens and islands", match: ["kitchen", "island"], everyJob: true }]);
   });
 
   it("is read-only for people who cannot change settings", async () => {
