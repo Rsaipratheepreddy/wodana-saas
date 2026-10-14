@@ -190,6 +190,8 @@ export class CrmConversationsService {
       const history = await client.query(
         `SELECT event.id, event.kind, event.method, event.reason, event.snoozed_until AS "snoozedUntil", event.lead_id AS "leadId",
                 event.created_at AS "createdAt", ${MEMBER_NAME("actor")} AS "actorName", ${MEMBER_NAME("owner_user")} AS "ownerName",
+                -- Someone who assigned the chat to themselves "took this chat" (by who they are, not by name).
+                coalesce(event.actor_user_id = owner_membership.user_id, false) AS "self",
                 label.name AS "labelName", label.color AS "labelColor"
            FROM crm_conversation_events event
            LEFT JOIN users actor ON actor.id = event.actor_user_id

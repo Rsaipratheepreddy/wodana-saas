@@ -10093,6 +10093,7 @@
   "This chat is back from snooze": "This chat is back from snooze",
   "Assigned to {owner} automatically": "Assigned to {owner} automatically",
   "{actor} assigned this chat to {owner}": "{actor} assigned this chat to {owner}",
+  "{actor} took this chat": "{actor} took this chat",
   "{actor} unassigned this chat": "{actor} unassigned this chat",
   "{actor} added the label {label}": "{actor} added the label {label}",
   "{actor} removed the label {label}": "{actor} removed the label {label}",

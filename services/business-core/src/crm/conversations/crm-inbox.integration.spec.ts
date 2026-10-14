@@ -174,8 +174,10 @@ integration("team inbox", () => {
   });
 
   it("labels and bulk actions are idempotent and leave history", async () => {
-    await withInbox(async (client, { workspaceId, manager, aliMember, nouraChat, strangerChat, inbox, conversations, as }) => {
+    await withInbox(async (client, { workspaceId, manager, aliMember, managerMember, nouraChat, strangerChat, inbox, conversations, as }) => {
       as(manager);
+      // Someone who assigns a chat to themselves "took" it: the history knows it by who they are, not by name.
+      expect(await inbox.bulk(actor, workspaceId, { conversationIds: [strangerChat], action: "assign", ownerMembershipId: managerMember })).toMatchObject({ changed: 1 });
       const label = await inbox.createLabel(actor, workspaceId, { name: " Quote  request ", color: "viz-2" }) as { id: string; name: string };
       expect(label.name).toBe("Quote request");
       expect(await inbox.createLabel(actor, workspaceId, { name: "quote request", color: "viz-2" })).toMatchObject({ id: label.id, idempotentReplay: true });
@@ -192,6 +194,10 @@ integration("team inbox", () => {
       expect(await chat(client, nouraChat)).toMatchObject({ status: "closed", owner_membership_id: aliMember });
       const history = await client.query(`SELECT kind FROM crm_conversation_events WHERE conversation_id=$1 ORDER BY created_at`, [nouraChat]);
       expect(history.rows.map((row) => row.kind)).toEqual(["labelled", "assigned", "resolved"]);
+      const taken = (await conversations.get(actor, workspaceId, strangerChat)) as unknown as { events: Array<{ kind: string; actorName: string; ownerName: string; self: boolean }> };
+      const assigned = taken.events.filter((event) => event.kind === "assigned").map(({ actorName, ownerName, self }) => ({ actorName, ownerName, self }));
+      expect(assigned).toHaveLength(2);
+      expect(assigned).toEqual(expect.arrayContaining([{ actorName: "Maya Manager", ownerName: "Maya Manager", self: true }, { actorName: "Maya Manager", ownerName: "Ali Noor", self: false }]));
       const archived = await inbox.updateLabel(actor, workspaceId, label.id, { version: 1, status: "archived" });
       expect(archived).toMatchObject({ status: "archived" });
       await expect(inbox.setConversationLabels(actor, workspaceId, strangerChat, { labelIds: [label.id] })).rejects.toThrow(/active label/);

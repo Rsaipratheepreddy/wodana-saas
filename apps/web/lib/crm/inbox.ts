@@ -87,6 +87,8 @@ export type ChatEvent = {
     | "unresolved" | "spam" | "unspam" | "closing_sent";
   method: string | null; reason: string | null; snoozedUntil: string | null; createdAt: string;
   actorName: string | null; ownerName: string | null; labelName: string | null; labelColor: LabelColor | null;
+  /** The person acting is the one it was assigned to ("took this chat"); absent on older replies. */
+  self?: boolean;
 };
 export type ChatContext = {
   conversationId: string; leadId: string | null;
@@ -334,7 +336,10 @@ export function eventLine(event: ChatEvent): { key: MessageKey; values: Record<s
     case "reopened": return event.method === "client_replied" ? { key: tKey("The client wrote again, so this chat is open"), values: {} } : { key: tKey("{actor} reopened this chat"), values: { actor } };
     case "snoozed": return { key: tKey("{actor} snoozed this chat"), values: { actor } };
     case "woke": return { key: tKey("This chat is back from snooze"), values: {} };
-    case "assigned": return byWho ? { key: tKey("Assigned to {owner} automatically"), values: { owner: event.ownerName ?? "" } } : { key: tKey("{actor} assigned this chat to {owner}"), values: { actor, owner: event.ownerName ?? "" } };
+    // Someone who assigns the chat to themselves took it: their name once, never "Sana assigned this chat to Sana".
+    case "assigned": return byWho ? { key: tKey("Assigned to {owner} automatically"), values: { owner: event.ownerName ?? "" } }
+      : event.self ? { key: tKey("{actor} took this chat"), values: { actor } }
+      : { key: tKey("{actor} assigned this chat to {owner}"), values: { actor, owner: event.ownerName ?? "" } };
     case "unassigned": return { key: tKey("{actor} unassigned this chat"), values: { actor } };
     case "labelled": return { key: tKey("{actor} added the label {label}"), values: { actor, label: event.labelName ?? "" } };
     case "unlabelled": return { key: tKey("{actor} removed the label {label}"), values: { actor, label: event.labelName ?? "" } };

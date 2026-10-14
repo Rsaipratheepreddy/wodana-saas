@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { channelName, fillQuickReply, fillTemplate, nextChatId, quickReplyQuery, renderTemplate, snoozePresets, waitingMinutes, waitingParts, windowLeft } from "./inbox";
+import { channelName, eventLine, fillQuickReply, fillTemplate, nextChatId, quickReplyQuery, renderTemplate, snoozePresets, waitingMinutes, waitingParts, windowLeft, type ChatEvent } from "./inbox";
 
 describe("team inbox helpers", () => {
   it("names a chat's channel the way people write it", () => {
@@ -53,5 +53,20 @@ describe("team inbox helpers", () => {
     expect(nextChatId(["a", "b", "c"], "b")).toBe("c");
     expect(nextChatId(["a", "b", "c"], "c")).toBe("b");
     expect(nextChatId(["a"], "a")).toBeNull();
+  });
+});
+
+describe("a chat's history lines", () => {
+  const event = (patch: Partial<ChatEvent>): ChatEvent => ({ id: "e1", kind: "assigned", method: "manual", reason: null, snoozedUntil: null, createdAt: "2026-10-14T09:00:00Z",
+    actorName: "Sana Sales Admin", ownerName: "Sana Sales Admin", labelName: null, labelColor: null, ...patch });
+
+  it("says someone took the chat when they assigned it to themselves, and names both people otherwise", () => {
+    expect(eventLine(event({ self: true }))).toEqual({ key: "{actor} took this chat", values: { actor: "Sana Sales Admin" } });
+    expect(eventLine(event({ ownerName: "Ali Noor", self: false }))).toEqual({ key: "{actor} assigned this chat to {owner}", values: { actor: "Sana Sales Admin", owner: "Ali Noor" } });
+    // Two people may share a name: who they are decides, never the name.
+    expect(eventLine(event({ self: false }))).toEqual({ key: "{actor} assigned this chat to {owner}", values: { actor: "Sana Sales Admin", owner: "Sana Sales Admin" } });
+    expect(eventLine(event({ actorName: null }))).toEqual({ key: "Assigned to {owner} automatically", values: { owner: "Sana Sales Admin" } });
+    // Unassigning names nobody else, so it reads well whoever had the chat.
+    expect(eventLine(event({ kind: "unassigned", ownerName: null }))).toEqual({ key: "{actor} unassigned this chat", values: { actor: "Sana Sales Admin" } });
   });
 });
