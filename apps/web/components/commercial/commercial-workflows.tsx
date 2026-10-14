@@ -703,7 +703,7 @@ export function ApprovalRelease({
             <EmptyState illustration="locked" title={t("Client acceptance comes first")} description={t("Issue the reviewed quotation and wait for the client approver.")}
               action={<Link className="wd-button" data-size="compact" data-variant="primary" href={sectionHref?.("quotations") ?? `${root}/quotations`}>{t("Open quotations")}</Link>} />
           ) : <>
-            <div className={s.controlSummary}>
+            <div className={s.controlSummary} data-tour="deal-approvals">
               <div><small>{t("Accepted quotation")}</small><strong>V{accepted.number} · {money(acceptedQuoteValue(accepted), accepted.currency)}</strong></div>
               {/* Costs are stripped for people who can't see them; showing 0 and 100% would mislead. */}
               {state.canViewCosts ? <>

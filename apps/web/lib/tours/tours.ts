@@ -206,7 +206,8 @@ export const tours: Tour[] = [
         id: "deal",
         actor: "finance",
         route: "/workspace/pre-projects/cases/{case}/execution-release",
-        target: "deal-approvals",
+        // The deal's summary (accepted quote, internal approval); before the client's yes, the Internal approval tab.
+        target: "deal-approvals|deal-approvals-owner",
         action: "point",
         woddy: "thinking",
         narration: "Back in the office. When the client accepts, Sales submits the deal with the signed agreement and the payment proof. Finance verifies the payment, then an owner approves, and nobody can approve their own submission.",
@@ -293,7 +294,8 @@ export const tours: Tour[] = [
       {
         id: "warranty",
         actor: "approver",
-        target: "project-tab-warranty",
+        // Warranty is a view of the Handover tab, offered once the client has accepted the handover.
+        target: "project-handover-view-warranty",
         action: "click",
         waitFor: "page-content",
         woddy: "thinking",
