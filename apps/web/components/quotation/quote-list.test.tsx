@@ -58,3 +58,13 @@ it("shows a sent quote by the number it was issued under, and its type from what
   expect(within(draft).getByText("Q-1")).toBeInTheDocument();
   expect(within(draft).getByText("Fit-out")).toBeInTheDocument();
 });
+
+it("badges a budget-range quotation", () => {
+  const quote = { id: "q1", number: 1, kind: "quotation", round: "main", status: "draft", title: "Villa fit-out", currency: "AED", validUntil: "2026-10-20", discount: 0, taxRate: 5,
+    terms: "", exclusions: "", lines: [], requestIds: [], paymentTerms: [], createdAt: "2026-10-08T00:00:00Z", total: 4500 };
+  const initial = state({ budgetRangeQuoteIds: ["q1"] });
+  render(<DesignSystemProvider><QuoteList initial={{ ...initial, data: { ...initial.data, quotes: [quote, { ...quote, id: "q2", number: 2, title: "Final quote" }] } } as CommercialState}
+    baseHref="/workspace/pre-projects/cases/c1/quotations" /></DesignSystemProvider>);
+  expect(within(screen.getByRole("link", { name: "Villa fit-out" }).closest("tr")!).getByText("Budget range")).toBeInTheDocument();
+  expect(within(screen.getByRole("link", { name: "Final quote" }).closest("tr")!).queryByText("Budget range")).not.toBeInTheDocument();
+});

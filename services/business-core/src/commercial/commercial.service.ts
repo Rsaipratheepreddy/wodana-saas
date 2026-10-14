@@ -522,6 +522,8 @@ export class CommercialService {
           servicePathEnabled,
           data: commercialDataForCostAccess(data, canViewCosts),
           quoteReferences: (await quoteReferences(client, workspaceId, [caseId])).get(caseId) ?? {},
+          // PLM-146: which quotations are a budget range, for the list's badge.
+          budgetRangeQuoteIds: (await client.query<{ id: string }>(`SELECT quote_id AS id FROM quote_budget_ranges WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows.map((row) => row.id),
           dealApproval,
           dealInsight: await dealInsightFor(client, workspaceId, { caseId, opportunityId: record.opportunityId ? String(record.opportunityId) : null, data, canViewCosts,
             team: data.dealFile || data.ownerReview ? await readCaseTeam(client, workspaceId, caseId) : [] }),

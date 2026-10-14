@@ -758,6 +758,8 @@ export type CommercialState = {
   data: CommercialData;
   /** The quotation number each quote's family was issued under (PLM-QUO-2026-00001), by quote id, once it was sent. */
   quoteReferences?: Record<string, string>;
+  /** PLM-146: the quotations marked as a budget range the client asked for. */
+  budgetRangeQuoteIds?: string[];
   contacts: PortalGrant[];
   canEdit: boolean;
   canApprove: boolean;
