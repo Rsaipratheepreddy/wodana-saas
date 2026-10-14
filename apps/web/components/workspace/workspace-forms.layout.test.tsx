@@ -60,7 +60,7 @@ describe("Settings form dialogs", () => {
     saveAtTheEnd(team, "Save team");
     await userEvent.click(within(team).getByRole("button", { name: "Cancel" }));
 
-    await userEvent.click(screen.getByRole("button", { name: "Department" }));
+    await userEvent.click(screen.getByRole("button", { name: "Business unit" }));
     const unit = await screen.findByRole("dialog", { name: "Create business unit" });
     expect(sectionTitles(unit)).toEqual(["Structure"]);
     expect(rows(unit)).toBe(0);
