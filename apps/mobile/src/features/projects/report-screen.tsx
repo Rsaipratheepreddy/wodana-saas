@@ -24,7 +24,7 @@ import { useCrews } from '../hrms/api';
 import { useMarkup } from '../capture/use-markup';
 import { sitePhotoPath, useSite } from './api';
 import type { ReportPayload } from './outbox';
-import { chooseProgress, empty, fromPlan, fromReport, photoRow, reportBody, reportProblems, stepOf, STEPS, tagPhoto, type Draft, type Installed, type Issue, type Material, type PhotoTags } from './report-model';
+import { chooseProgress, empty, fromPlan, fromReport, photoRow, reportBody, reportProblems, stepOf, STEPS, tagPhoto, taskRow, type Draft, type Installed, type Issue, type Material, type PhotoTags } from './report-model';
 
 const WEATHER = [key('Clear'), key('Hot'), key('Humid'), key('Windy'), key('Dusty'), key('Rain')];
 const STEP_LABEL: Record<number, string> = { 10: key('Started'), 25: '25%', 50: '50%', 75: '75%', 100: key('Done') };
@@ -154,8 +154,7 @@ export function ReportScreen() {
 
     <Section title={t('Today’s work')}>
       {today.length || (mine?.tasks ?? []).length ? [
-        ...today.map((task) => ({ id: task.id, title: task.title, overdue: task.overdue, done: task.status === 'done',
-          detail: [task.packageName, task.dueDate ? t('Due {date}', { date: format.day(task.dueDate) }) : null, task.progress && task.status !== 'done' ? t('Now {percent}%', { percent: task.progress }) : null].filter(Boolean).join(' · ') })),
+        ...today.map((task) => taskRow(task, format, t)),
         ...(mine?.tasks ?? []).filter((task) => !today.some((item) => item.id === task.workItemId)).map((task) => ({ id: task.workItemId, title: task.title, overdue: false, done: false, detail: '' })),
       ].map(taskRow) : <ListRow first icon={ListChecks} title={t('Nothing is planned for today on the plan.')} />}
     </Section>

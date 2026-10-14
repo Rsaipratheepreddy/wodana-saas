@@ -17,11 +17,11 @@ import {
   type WorkItem, type WorkStatus,
 } from "./project-work";
 import { criticalPath, readCalendar, ripple, type PlanMove } from "./work-calendar";
+import { calendarDay as date } from "./calendar-day";
 import { ensureWorkTemplates, packageStart, schedulePackage } from "./work-templates";
 import { MISS_REASONS, readSprintDetail, readSprints, type MissReason } from "./project-sprints";
 
 type Db = PoolClient;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SEVERITIES = ["minor", "major", "critical"] as const;
 const SNAG_SOURCES = ["internal", "inspection", "delivery", "client", "warranty"] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -804,12 +804,6 @@ function text(value: unknown, max: number, label: string) {
   const trimmed = value.trim();
   if (trimmed.length > max) throw new BadRequestException(`${label} is too long (up to ${max} characters).`);
   return trimmed;
-}
-
-function date(value: unknown, label: string) {
-  if (value === undefined || value === null || value === "") return null;
-  if (typeof value !== "string" || !DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) throw new BadRequestException(`${label} must be a date.`);
-  return value;
 }
 
 function oneOf<T extends string>(value: unknown, options: readonly T[], label: string): T {

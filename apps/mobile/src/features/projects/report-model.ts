@@ -1,4 +1,5 @@
-import type { Outlook, PhotoPhase, Safety, Severity, SiteReport, SiteState } from '../../../../web/lib/site/types';
+import type { Outlook, PhotoPhase, Safety, Severity, SiteReport, SiteState, TodayTask } from '../../../../web/lib/site/types';
+import type { Format } from '../../core/format-core';
 import type { T } from '../../core/i18n';
 
 /** A daily report being written on the phone. Pure: shared by the screen and its tests. */
@@ -112,4 +113,16 @@ export function photoRow(tags: PhotoTags | undefined, index: number, photoIds: s
   const detail = [tags?.phase === 'before' ? t('Before') : tags?.phase === 'after' ? t('After') : null,
     tags?.pairId ? t('Paired with photo {number}', { number: photoIds.indexOf(tags.pairId) + 1 }) : null].filter(Boolean).join(' · ');
   return { title: room ?? t('Photo {number}', { number: index + 1 }), ...(detail ? { detail } : room ? {} : { detail: t('Choose a room') }) };
+}
+
+/**
+ * One of today's planned tasks as a row: its package, the day it's due (a calendar day, never shifted by a zone,
+ * with its full year when it isn't this year's) and its progress. "Late" is the plan's own call, made on the server.
+ */
+export function taskRow(task: Pick<TodayTask, 'id' | 'title' | 'status' | 'progress' | 'dueDate' | 'overdue' | 'packageName'>, format: Pick<Format, 'day'>, t: T) {
+  return {
+    id: task.id, title: task.title, overdue: task.overdue, done: task.status === 'done',
+    detail: [task.packageName, task.dueDate ? t('Due {date}', { date: format.day(task.dueDate) }) : null,
+      task.progress && task.status !== 'done' ? t('Now {percent}%', { percent: task.progress }) : null].filter(Boolean).join(' · '),
+  };
 }

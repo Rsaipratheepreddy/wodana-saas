@@ -18,6 +18,7 @@ import { PlanTimeline } from "./plan-timeline";
 import { useSupplyLabels } from "./project-scope";
 import { AwayChip, BOARD_STATUSES, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import { useWorkColumns, type WorkRow } from "./work-columns";
+import { stillTypingYear } from "@/lib/project-core/day-input";
 import { WorkSheet } from "./work-sheet";
 import styles from "./work.module.css";
 
@@ -349,7 +350,7 @@ function PlanPackageDialog({ board, load, onClose, onSave }: {
     onSubmit={async () => { if (shown) await onSave(shown.package.id, shown.startDate); }}>
       <SelectField label={t("Package")} isRequired selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
         items={options.map((item) => ({ id: item.id, label: `${item.name} · ${supplies[item.supply]}` }))} />
-      <DateField label={t("Start")} value={shown ? parseDate(shown.startDate) : startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
+      <DateField label={t("Start")} value={shown ? parseDate(shown.startDate) : startDate ? parseDate(startDate) : null} onChange={(value) => { if (!stillTypingYear(value)) setStartDate(value ? value.toString() : null); }} />
       {error ? <InlineNotice tone="error" message={error} />
         : !shown ? <Skeleton lines={4} shape="rows" />
         : !shown.tasks.length ? <EmptyState illustration={null} title={t("No standard tasks for this kind of package")} description={t("Add them in Settings → Projects → Standard tasks.")} />
