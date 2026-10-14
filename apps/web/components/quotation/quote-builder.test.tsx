@@ -232,6 +232,12 @@ describe("quotation builder", () => {
     expect(totals).not.toHaveTextContent("100%");
   });
 
+  it("shows an accepted quote as accepted, not as one to revise", () => {
+    mount({ ...state([line({})]), quote: { ...state([]).quote, status: "accepted" }, canEdit: false });
+    expect(screen.getByText("The client accepted the quotation")).toBeVisible();
+    expect(screen.queryByText("This quote has been sent. Start a new revision to change it.")).not.toBeInTheDocument();
+  });
+
   it("QA-001: the QS prices a quotation that is with them, and only its prices", async () => {
     const fetcher = mount({ ...state([line({ rate: "0" })]), canEdit: false, canPrice: true });
     expect(screen.getByRole("textbox", { name: "Quantity" })).toBeDisabled();

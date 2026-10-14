@@ -564,7 +564,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {(state.finishes?.links ?? []).some((link) => link.stale) && ["draft", "internal_review"].includes(state.quote.status)
           ? <InlineNotice tone="error" message={t("A finish changed after it was priced. Check the flagged lines.")} /> : null}
         {undecided ? <InlineNotice tone="error" message={<Link className={styles.checkLink} href={requirementHref(caseId, undecided.requirementId!)}>{t(undecided.code as never, undecided.values)}</Link>} /> : null}
-        {!state.canEdit && state.quote.status !== "draft" && !undecided && !(state.quote.status === "internal_approved" && specWaiting) ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
+        {/* Accepted: the client's decision above (or this line) says so; changes after acceptance go through a change request, not a revision. */}
+        {state.quote.status === "accepted" && !state.quote.clientDecision ? <InlineNotice tone="success" message={t("The client accepted the quotation")} /> : null}
+        {!state.canEdit && !["draft", "accepted"].includes(state.quote.status) && !undecided && !(state.quote.status === "internal_approved" && specWaiting) ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
           ? t("This quote is in review. It can be changed again if it's sent back.") : state.quote.status === "internal_approved"
             ? t("This quote is approved and ready to send to the client.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
