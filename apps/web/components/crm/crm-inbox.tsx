@@ -6,6 +6,7 @@ import { MessagingMark } from "@/components/brand/messaging-mark";
 import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, MenuButton, SelectField, Skeleton, TextAreaField, TextInput, SearchInput, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isTypingTarget } from "@/lib/keyboard/typing-target";
+import { exampleMobile, phoneCountry } from "@/lib/phone";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { chipQuery, chipsFor, ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, statusQuery, type ConversationJob, type InboxChip, type InboxLabel, type InboxOwner, type InboxSummary, type StatusFilter } from "@/lib/crm/inbox";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
@@ -319,6 +320,9 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
  */
 function SimulateMessage({ workspaceId, onClose, onOpened }: { workspaceId: string; onClose: () => void; onOpened: (id: string) => void }) {
   const t = useT();
+  // The example number is the workspace region's own (its country's example mobile), never a fixed country's.
+  const { regionLocale } = useDesignSystem();
+  const example = exampleMobile(phoneCountry(undefined, regionLocale));
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [text, setText] = useState("");
@@ -335,7 +339,7 @@ function SimulateMessage({ workspaceId, onClose, onOpened }: { workspaceId: stri
       finally { setBusy(false); }
     }}>
     <TextInput label={t("Client name")} value={name} onChange={setName} maxLength={120} autoFocus />
-    <TextInput label={t("Mobile number")} value={phone} onChange={setPhone} maxLength={40} inputMode="tel" description={t("With the country code, e.g. +971 50 123 4567")} isRequired />
+    <TextInput label={t("Mobile number")} value={phone} onChange={setPhone} maxLength={40} inputMode="tel" description={example ? t("With the country code, e.g. {example}", { example }) : t("With the country code")} isRequired />
     <TextAreaField label={t("Message")} value={text} onChange={setText} maxLength={4000} isRequired />
   </FormDialog>;
 }

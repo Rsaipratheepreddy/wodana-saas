@@ -1,4 +1,5 @@
-import { getCountries, getCountryCallingCode, isSupportedCountry, Metadata, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/max";
+import { getCountries, getCountryCallingCode, getExampleNumber, isSupportedCountry, Metadata, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/max";
+import mobileExamples from "libphonenumber-js/examples.mobile.json";
 import { tKey, type Translate } from "@/lib/i18n/keys";
 
 /** Resolve a contact's country first, then the workspace locale. Never guess a country from digits alone. */
@@ -12,6 +13,11 @@ export function phoneCountry(contactCountry?: string | null, workspaceLocale?: s
   } catch {
     return undefined;
   }
+}
+
+/** An example mobile number of the country, written internationally (from libphonenumber, never a constant); null without a country. */
+export function exampleMobile(country?: CountryCode | null): string | null {
+  return country && isSupportedCountry(country) ? getExampleNumber(country, mobileExamples)?.formatInternational() ?? null : null;
 }
 
 /** WhatsApp requires the full international number, with digits only in the URL path. */

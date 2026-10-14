@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { groupNational, phoneDigits, phoneProblem, splitPhone } from "./phone";
+import { exampleMobile, groupNational, phoneCountry, phoneDigits, phoneProblem, splitPhone } from "./phone";
+
+describe("exampleMobile", () => {
+  it("gives the region's own example mobile number, never a fixed country's", () => {
+    expect(exampleMobile(phoneCountry(undefined, "en-GB"))).toMatch(/^\+44 7/);
+    expect(exampleMobile(phoneCountry(undefined, "en-IN"))).toMatch(/^\+91 /);
+    expect(exampleMobile(phoneCountry(undefined, "en"))).toBeNull();
+  });
+});
 
 const text = {
   mobile: (c: string, digits: string) => `Enter a valid mobile number for ${c} (${digits} digits)`,
