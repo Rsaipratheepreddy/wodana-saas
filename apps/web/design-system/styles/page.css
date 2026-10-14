@@ -143,9 +143,10 @@
 .wd-page-shell-tabs:not([data-tabs]) > .wd-page-shell-tools { flex: 1 1 auto; }
 .wd-page-shell-tabs:not([data-tabs]) > .wd-page-shell-tools > * { flex: 1 1 auto; min-inline-size: 0; }
 .wd-page-shell-tabs:not([data-tabs]):not(:has(> .wd-page-shell-action)):has(> .wd-page-shell-tools:empty) { display: none; }
-.wd-page-shell .wd-page-shell-tools > .wd-grid-toolbar.wd-record-toolbar { margin: 0; padding: 0; border: 0; min-block-size: 0; background: transparent; }
+/* (Specific enough to win over module rules that space a grid toolbar sitting above its table.) */
+.wd-page-shell .wd-page-shell-tabs > .wd-page-shell-tools > .wd-grid-toolbar.wd-record-toolbar { flex-direction: row; align-items: center; margin: 0; padding: 0; border: 0; min-block-size: 0; background: transparent; }
 /* A section's tools moved up into the row (PageTools) keep the row's height: no padding of their own. */
-.wd-page-shell .wd-page-shell-tools > * { margin-block: 0; padding-block: 0; }
+.wd-page-shell .wd-page-shell-tabs > .wd-page-shell-tools > * { margin-block: 0; padding-block: 0; }
 .wd-page-shell > .wd-page-shell-header { padding-block-start: var(--wd-space-4); }
 /* Named by the chrome: the header is just the one row. */
 .wd-page-shell[data-named] > .wd-page-shell-header { padding-block-start: var(--wd-space-2); }

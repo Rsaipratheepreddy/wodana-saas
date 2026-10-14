@@ -52,6 +52,8 @@
 .emptyNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); }
 
 @media (max-width:1000px) { .salesBoard { --board-track:minmax(13rem,1fr); } }
+/* A phone: Board and List show their icons (their names stay for screen readers), so the tools and the page's action share one line. */
+@media (max-width:40rem) { .viewLabel { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; } }
 @media (max-width:600px) { .toolbarActions { margin-inline-start:0; } .salesBoard { --board-track:minmax(calc(100vw - 4rem),1fr); --board-empty-track:minmax(calc(100vw - 4rem),1fr); scroll-snap-type:inline mandatory; } .boardColumn { scroll-snap-align:start; } }
 .opportunityModal { block-size: min(56rem, calc(100dvh - 4rem)); }
 .opportunityModal :global(.wd-dialog) { position: relative; block-size: 100%; }

@@ -226,8 +226,8 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
   const cardsOf = (column: BoardStage) => (column.id === "unplaced" ? unplaced : boardItems.filter((item) => String(item.stageId ?? item.stage_id) === column.id));
   const toolbar = <div className={styles.boardToolbar}>
     <div role="group" aria-label={t("Pipeline view")} className={styles.viewSwitch}>
-      <ToggleButton size="compact" variant="quiet" isSelected={layout === "board"} onPress={() => setLayout("board")}><Columns3 aria-hidden="true" size={14} />{t("Board")}</ToggleButton>
-      <ToggleButton size="compact" variant="quiet" isSelected={layout === "list"} onPress={() => setLayout("list")}><List aria-hidden="true" size={14} />{t("List")}</ToggleButton>
+      <ToggleButton size="compact" variant="quiet" isSelected={layout === "board"} onPress={() => setLayout("board")}><Columns3 aria-hidden="true" size={14} /><span className={styles.viewLabel}>{t("Board")}</span></ToggleButton>
+      <ToggleButton size="compact" variant="quiet" isSelected={layout === "list"} onPress={() => setLayout("list")}><List aria-hidden="true" size={14} /><span className={styles.viewLabel}>{t("List")}</span></ToggleButton>
     </div>
     {chips.length ? <div aria-label={t("Filters in use")} className="wd-filter-chips" role="group">{chips.map(chip => <span className="wd-filter-chip" key={chip.id}>
       <span>{chip.label}</span><IconButton aria-label={t("Remove filter {name}", { name: chip.label })} onPress={chip.clear} size="compact"><X size={12} /></IconButton></span>)}</div> : null}
