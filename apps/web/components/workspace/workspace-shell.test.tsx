@@ -6,6 +6,7 @@ import { useWorkspaceBreadcrumb } from "./workspace-breadcrumb";
 import { WorkspaceShell } from "./workspace-shell";
 import { renderToString } from "react-dom/server";
 import { CrmProductShell } from "../crm/crm-product-shell";
+import { PageShell, SettingsPage } from "@/design-system";
 
 const route = vi.hoisted(() => ({ pathname: "/workspace/members", search: "" }));
 
@@ -40,6 +41,42 @@ describe("WorkspaceShell theme", () => {
     route.pathname = "/workspace/projects";
     view.rerender(<WorkspaceShell {...shellProps}><p>Project list</p></WorkspaceShell>);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).not.toHaveTextContent("Jumeirah Garden Villa");
+  });
+  it("ends the breadcrumb at Projects when the project names itself in its header", () => {
+    route.pathname = "/workspace/projects/12345678-1234-4234-8234-123456789abc";
+    function Page() { useWorkspaceBreadcrumb("Jumeirah Garden Villa", { ownTitle: true }); return <h1>Jumeirah Garden Villa</h1>; }
+    render(<WorkspaceShell {...shellProps}><Page /></WorkspaceShell>);
+    const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(breadcrumb).getByRole("link", { name: "Projects" })).toBeInTheDocument();
+    expect(breadcrumb).not.toHaveTextContent("Jumeirah Garden Villa");
+    expect(screen.getAllByText("Jumeirah Garden Villa")).toHaveLength(1);
+  });
+  it("names each page once: the top bar or the module's tabs name it, the page keeps its title for screen readers", () => {
+    route.pathname = "/workspace/crm/opportunities";
+    const view = render(<WorkspaceShell {...shellProps}><PageShell title="Pipeline" action={<button type="button">Convert enquiry</button>}>Board</PageShell></WorkspaceShell>);
+    expect(within(screen.getByRole("navigation", { name: "Sales sections" })).getByRole("link", { name: "Pipeline" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { level: 1, name: "Pipeline" })).toHaveClass("wd-visually-hidden");
+    // A page the chrome doesn't name keeps its visible title.
+    route.pathname = "/workspace/crm/follow-ups";
+    view.rerender(<WorkspaceShell {...shellProps}><PageShell title="Something else">List</PageShell></WorkspaceShell>);
+    expect(screen.getByRole("heading", { level: 1, name: "Something else" })).not.toHaveClass("wd-visually-hidden");
+    // Calendar is named by the breadcrumb.
+    route.pathname = "/workspace/crm/follow-ups";
+    route.search = "view=schedule";
+    view.rerender(<WorkspaceShell {...shellProps}><PageShell title="Calendar">Grid</PageShell></WorkspaceShell>);
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^Calendar$/);
+    expect(screen.getByRole("heading", { level: 1, name: "Calendar" })).toHaveClass("wd-visually-hidden");
+  });
+  it("ends the breadcrumb at People and Settings on their tabs, and the open tab names the page", () => {
+    route.pathname = "/workspace/teams";
+    const view = render(<WorkspaceShell {...shellProps}><SettingsPage title="Teams">Teams</SettingsPage></WorkspaceShell>);
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^People$/);
+    expect(screen.getByRole("heading", { level: 1, name: "Teams" })).toHaveClass("wd-visually-hidden");
+    route.pathname = "/workspace/settings/profile";
+    view.rerender(<WorkspaceShell {...shellProps}><SettingsPage title="Profile">Profile</SettingsPage></WorkspaceShell>);
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^Settings$/);
+    expect(within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { level: 1, name: "Profile" })).toHaveClass("wd-visually-hidden");
   });
   it("ends the breadcrumb at Sales on a Sales tab, so Enquiries is named by its tab and title only", () => {
     route.pathname = "/workspace/crm/leads";
