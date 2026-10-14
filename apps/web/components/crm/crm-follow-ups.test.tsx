@@ -98,6 +98,8 @@ it("filters Sales Kanban by the first five owners and searches the rest beside F
   const user = userEvent.setup();
   const tasks = Array.from({ length: 6 }, (_, index) => ({ ...initial, id: `task-${index + 1}`, title: `Sales task ${index + 1}`, type: "task", ownerMembershipId: `owner-${index + 1}`, ownerName: `Owner ${index + 1}` }));
   render(<CrmFollowUps initialLayout="kanban" tasksOnly initialData={fixture(tasks)} />);
+  // The Sales | Projects boards switch in the page's one row, beside the lists (no row of their own).
+  expect(screen.getByRole("navigation", { name: "Task boards" }).closest(".wd-page-shell-tabs")).not.toBeNull();
   const owners = screen.getByRole("group", { name: "Filter sales tasks by assignee" });
   expect(owners.querySelectorAll("button")).toHaveLength(5);
   await user.click(screen.getByRole("button", { name: "Show tasks assigned to Owner 1" }));

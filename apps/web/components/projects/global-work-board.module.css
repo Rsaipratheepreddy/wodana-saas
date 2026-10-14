@@ -70,7 +70,6 @@
 .page .group { padding-block:var(--wd-space-0-5); }
 .errorActions { display:flex; align-items:center; flex-wrap:wrap; gap:var(--wd-space-3); }
 @media(max-width:640px) { .page { padding:var(--wd-space-2); gap:var(--wd-space-2); } .page > .toolbar > :global(.wd-field) { flex:1 1 140px; } }
-.boardHeader { display:flex; align-items:center; justify-content:space-between; gap:var(--wd-space-3); flex-wrap:wrap; }
 .boardSwitcher { display:inline-flex; align-items:center; gap:var(--wd-space-0-5); padding:var(--wd-space-0-5); border-radius:var(--wd-radius-sm); background:var(--wd-color-surface-muted); }
 .boardSwitcher a { color:var(--wd-color-text-secondary); text-decoration:none; border-radius:var(--wd-radius-xs); padding:var(--wd-space-1-5) var(--wd-space-3); font-size:var(--wd-text-xs); font-weight:var(--wd-weight-semibold); }
 .boardSwitcher a[aria-current=page] { color:var(--wd-color-text); background:var(--wd-color-surface); box-shadow:var(--wd-shadow-xs); }
