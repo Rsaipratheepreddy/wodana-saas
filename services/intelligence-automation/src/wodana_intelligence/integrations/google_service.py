@@ -9,7 +9,11 @@ from typing import Any, Optional
 from uuid import UUID
 
 from wodana_intelligence.integrations.business_core import BusinessCoreClient, BusinessCoreError
-from wodana_intelligence.integrations.google_client import GoogleApiError, GoogleCalendarClient
+from wodana_intelligence.integrations.google_client import (
+    RECONNECT_REQUIRED,
+    GoogleApiError,
+    GoogleCalendarClient,
+)
 from wodana_intelligence.integrations.models import (
     AvailabilityRequest,
     AvailabilityResponse,
@@ -321,67 +325,86 @@ class GoogleIntegrationService:
         self, request: AvailabilityRequest, actor_headers: Mapping[str, str]
     ) -> dict[str, Any]:
         events: list[dict[str, Any]] = []
+        # One account that can't be read (access revoked, no calendar chosen) doesn't hide the
+        # others: their events come back with the failed account's code. Only when every account
+        # fails is it an error.
+        failures: list[dict[str, str]] = []
+        first_error: Optional[IntegrationFlowError | GoogleApiError] = None
         for connection_id in request.connection_ids:
-            public = await self._business_core.validate_connection(
-                str(request.workspace_id), str(connection_id), actor_headers
-            )
-            runtime = await self._active_runtime(request.workspace_id, connection_id, public)
-            if not {READ_EVENTS_SCOPE, MANAGE_EVENTS_SCOPE}.intersection(runtime.granted_scopes):
-                raise IntegrationFlowError(
-                    "calendar_read_consent_required",
-                    "Reconnect Google with calendar read access",
-                    403,
-                )
-            selected = [r for r in runtime.resources if r.enabled and r.direction != "outbound"]
-            if not selected:
-                raise IntegrationFlowError(
-                    "no_calendars_selected", "Select a calendar in Integrations", 422
-                )
-            if len(selected) > 20:
-                raise IntegrationFlowError("too_many_calendars", "Select at most 20 calendars", 422)
-            credential = await self._access_credential(runtime)
-            for calendar in selected:
-                items = await self._google.list_events(
-                    credential.access_token,
-                    calendar.external_id,
-                    request.time_min.isoformat(),
-                    request.time_max.isoformat(),
-                    request.time_zone,
-                )
-                for event in items:
-                    events.append(
-                        {
-                            "id": event.get("id"),
-                            "connectionId": str(connection_id),
-                            "calendarId": calendar.external_id,
-                            "calendarName": calendar.display_name,
-                            "title": event.get("summary") or "Busy",
-                            "start": event.get("start", {}),
-                            "end": event.get("end", {}),
-                            "status": event.get("status"),
-                            "htmlLink": event.get("htmlLink"),
-                            "etag": event.get("etag"),
-                            "description": event.get("description"),
-                            "location": event.get("location"),
-                            "attendees": [
-                                {
-                                    "email": attendee.get("email"),
-                                    "displayName": attendee.get("displayName"),
-                                    "responseStatus": attendee.get("responseStatus"),
-                                }
-                                for attendee in event.get("attendees", [])
-                                if attendee.get("email")
-                            ],
-                        }
-                    )
-            await self._business_core.record_health(
-                str(connection_id), str(request.workspace_id), "google.events.read", True
-            )
+            try:
+                events.extend(await self._connection_events(request, connection_id, actor_headers))
+            except (IntegrationFlowError, GoogleApiError) as error:
+                first_error = first_error or error
+                failures.append({"connectionId": str(connection_id), "code": error.code})
+        if first_error is not None and len(failures) == len(request.connection_ids):
+            raise first_error
         return {
             "events": events,
+            "failures": failures,
             "fetchedAt": datetime.now(timezone.utc).isoformat(),
             "mode": "live_read",
         }
+
+    async def _connection_events(
+        self, request: AvailabilityRequest, connection_id: UUID, actor_headers: Mapping[str, str]
+    ) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        public = await self._business_core.validate_connection(
+            str(request.workspace_id), str(connection_id), actor_headers
+        )
+        runtime = await self._active_runtime(request.workspace_id, connection_id, public)
+        if not {READ_EVENTS_SCOPE, MANAGE_EVENTS_SCOPE}.intersection(runtime.granted_scopes):
+            raise IntegrationFlowError(
+                "calendar_read_consent_required",
+                "Reconnect Google with calendar read access",
+                403,
+            )
+        selected = [r for r in runtime.resources if r.enabled and r.direction != "outbound"]
+        if not selected:
+            raise IntegrationFlowError(
+                "no_calendars_selected", "Select a calendar in Integrations", 422
+            )
+        if len(selected) > 20:
+            raise IntegrationFlowError("too_many_calendars", "Select at most 20 calendars", 422)
+        credential = await self._access_credential(runtime)
+        for calendar in selected:
+            items = await self._google.list_events(
+                credential.access_token,
+                calendar.external_id,
+                request.time_min.isoformat(),
+                request.time_max.isoformat(),
+                request.time_zone,
+            )
+            for event in items:
+                events.append(
+                    {
+                        "id": event.get("id"),
+                        "connectionId": str(connection_id),
+                        "calendarId": calendar.external_id,
+                        "calendarName": calendar.display_name,
+                        "title": event.get("summary") or "Busy",
+                        "start": event.get("start", {}),
+                        "end": event.get("end", {}),
+                        "status": event.get("status"),
+                        "htmlLink": event.get("htmlLink"),
+                        "etag": event.get("etag"),
+                        "description": event.get("description"),
+                        "location": event.get("location"),
+                        "attendees": [
+                            {
+                                "email": attendee.get("email"),
+                                "displayName": attendee.get("displayName"),
+                                "responseStatus": attendee.get("responseStatus"),
+                            }
+                            for attendee in event.get("attendees", [])
+                            if attendee.get("email")
+                        ],
+                    }
+                )
+        await self._business_core.record_health(
+            str(connection_id), str(request.workspace_id), "google.events.read", True
+        )
+        return events
 
     async def availability(
         self,
@@ -816,6 +839,17 @@ class GoogleIntegrationService:
         try:
             refreshed = await self._google.refresh_token(credential.refresh_token)
         except GoogleApiError as error:
+            if error.code == RECONNECT_REQUIRED:
+                # Google revoked or expired the access: the connection needs attention (Connections
+                # offers Reconnect), and the calendar shows Wodana's events with a quiet note.
+                with suppress(Exception):
+                    await self._business_core.record_health(
+                        str(runtime.id),
+                        str(runtime.workspace_id),
+                        "google.token.refresh",
+                        False,
+                        RECONNECT_REQUIRED,
+                    )
             raise IntegrationFlowError(error.code, str(error), error.status_code) from error
         updated = credential.model_copy(
             update={

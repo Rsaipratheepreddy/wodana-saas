@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import quote, urlencode
@@ -29,6 +30,12 @@ SHEET_LINK_FIELDS = (
 SHEET_LINK_FIELDS_WITHOUT_CHIPS = (
     f"sheets(properties(title),data(startRow,startColumn,rowData(values({_SHEET_LINK_CELL}))))"
 )
+
+
+logger = logging.getLogger("wodana.google")
+
+# A Google connection whose access ended (revoked or expired): the person must connect it again.
+RECONNECT_REQUIRED = "reconnect_required"
 
 
 class GoogleApiError(RuntimeError):
@@ -378,10 +385,26 @@ class GoogleCalendarClient:
         except ValueError as error:
             raise GoogleApiError(code, "Google returned an invalid response") from error
         if response.is_error:
-            detail = payload.get("error_description") or payload.get("error", {}).get("message")
-            if not isinstance(detail, str):
-                detail = "Google request failed"
-            raise GoogleApiError(code, detail, response.status_code)
+            error = payload.get("error") if isinstance(payload, dict) else None
+            # Google's own words ("Token has been expired or revoked.") are for the logs only.
+            detail = payload.get("error_description") if isinstance(payload, dict) else None
+            if isinstance(error, dict):
+                detail = detail or error.get("message")
+            logger.warning(
+                "Google request failed: %s (HTTP %s): %s",
+                code,
+                response.status_code,
+                detail if isinstance(detail, str) else "no detail",
+            )
+            # The person's access ended (revoked, expired, new password): only reconnecting helps.
+            # (A 401 from the token endpoint is Wodana's app credentials, not the person's.)
+            if error == "invalid_grant" or (
+                response.status_code == 401 and not code.startswith("oauth_")
+            ):
+                raise GoogleApiError(RECONNECT_REQUIRED, "Reconnect Google in Connections", 409)
+            raise GoogleApiError(
+                code, "Google could not complete the request", response.status_code
+            )
         if not isinstance(payload, dict):
             raise GoogleApiError(code, "Google returned an invalid response")
         return payload
