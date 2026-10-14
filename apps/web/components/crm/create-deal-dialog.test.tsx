@@ -42,8 +42,8 @@ it("never offers an enquiry's overdue follow-up as the new opportunity's next fo
   render(<CreateDealDialog lead={data.items[0]} initialData={data} onClose={vi.fn()} onCreated={onCreated} />);
   await userEvent.setup().click(screen.getByRole("button", { name: "Convert to opportunity" }));
   await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());
-  const qualify = fetchMock.mock.calls.find(([url, init]) => init.method === "POST" && String(url).includes("/qualify"))!;
-  expect(Date.parse(JSON.parse(String(qualify[1].body)).nextActionAt)).toBeGreaterThan(Date.now());
+  const qualify = fetchMock.mock.calls.find(([url, init]) => init?.method === "POST" && String(url).includes("/qualify"));
+  expect(Date.parse(JSON.parse(String(qualify?.[1]?.body)).nextActionAt)).toBeGreaterThan(Date.now());
 });
 
 it("tells a salesperson who to ask when no pipeline exists, instead of creating one and failing with 403", async () => {
