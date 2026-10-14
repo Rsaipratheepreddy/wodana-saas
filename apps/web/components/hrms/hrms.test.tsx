@@ -116,7 +116,8 @@ describe("People", () => {
       expect(screen.queryByRole("button", { name: "Switch place" })).toBeNull();
       // One title; someone who runs HR has eight sections, so the occasional ones sit under More (at most six tabs).
       expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Attendance & leave"]);
-      expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Attendance", "Leave", "Team", "HR records", "Crews", "More"]);
+      expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Attendance", "Leave", "Team", "HR records", "Crews"]);
+      expect(screen.getByRole("button", { name: "More" })).toBeInTheDocument();
       expect(within(screen.getByRole("group", { name: "Today" })).getByText("Not checked in")).toBeInTheDocument();
       first.unmount();
 

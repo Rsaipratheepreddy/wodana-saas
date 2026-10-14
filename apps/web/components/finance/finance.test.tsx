@@ -88,10 +88,17 @@ describe("finance", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 1, name: "Finance" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Enter invoice" })).toHaveLength(1);
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Supplier invoices1", "Payments", "Payment runs", "Client invoices", "Requests", "More"]);
-    await userEvent.click(screen.getByRole("tab", { name: "More" }));
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Supplier invoices1", "Payments", "Payment runs", "Client invoices", "Requests"]);
+    // The occasional views are in the row's More menu: opening one adds no second row of tabs.
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Owed to suppliers", "Petty cash", "Accounting"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Owed to suppliers" }));
     expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/finance/suppliers");
-    expect(within(screen.getByRole("group", { name: "More" })).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Owed to suppliers", "Petty cash", "Accounting"]);
+    expect(screen.getByRole("tab", { name: "Owed to suppliers" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    expect(screen.queryByRole("group", { name: "More" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Petty cash", "Accounting"]);
   });
 
   it("lists the invoices still to act on with where each stands, and shows why one is held", async () => {
