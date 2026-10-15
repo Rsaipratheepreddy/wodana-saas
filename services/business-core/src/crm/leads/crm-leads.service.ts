@@ -32,8 +32,9 @@ import {
 } from "./dto/leads.dto";
 import { notifyUserInApp, queueUserEmail } from "../../notifications/default-templates";
 import { checkContact, statusForOutcome, UNANSWERED_OUTCOMES, UNREACHABLE_REASON, unansweredNote } from "./contact-outcomes";
-import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
+import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError, workingDayAfter } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
+import { inTurnOrder, queueAssignmentMode, takeTurn } from "./round-robin";
 import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
 import { hasResolvedEnquiryType } from "./lead-options";
 import { loadEnquiryFacts, requirementContext, requirementProblems } from "./enquiry-problems";
@@ -42,7 +43,7 @@ import { clearPartySpam, flagPartySpam } from "../spam/contact-spam";
 import { canReadNotes, isNotesField, notesReader, redactNotes } from "./internal-notes";
 import {
   formatDeadline, leadFacts, leadLink, loadSalesSettings, memberPerson, refreshUnownedEscalation,
-  salesEscalationRecipients, salesSchedule, tell, workspaceClock,
+  salesEscalationRecipients, salesSchedule, tell, workspaceClock, workspaceOwners,
 } from "./sales-attention";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
@@ -263,6 +264,7 @@ export class CrmLeadsService {
       const engaged: string[] = [];
       const kept: string[] = [];
       const escalated: string[] = [];
+      const unassigned: string[] = [];
       for (const item of due.rows) {
         const lead = await this.requireLead(client, workspaceId, item.id, false);
         if (!lead.owner_membership_id || !lead.queue_id) {
@@ -316,8 +318,19 @@ export class CrmLeadsService {
           });
           continue;
         }
-        // S-1: the takeover rotates an enquiry at most `takeoverCap` times; then a manager is told instead.
         const settings = await loadSalesSettings(client, workspaceId);
+        if (settings.unassignAfterWorkingDay) {
+          // PLM-180: a full working day after it was given out, nobody having picked it up, it goes back to Unassigned.
+          const deadline = await this.unassignDeadline(client, workspaceId, lead.id, lead.queue_id);
+          if (deadline && deadline.getTime() <= Date.now()) {
+            await this.unassignUnanswered(client, workspaceId, lead, deadline);
+            unassigned.push(lead.id);
+            continue;
+          }
+        }
+        // S-1: the takeover rotates an enquiry at most `takeoverCap` times; then a manager is told instead.
+        // PLM-180: with "unassign after a working day" on, hand-offs keep rotating without a cap until then.
+        const cap = settings.unassignAfterWorkingDay ? Number.POSITIVE_INFINITY : settings.takeoverCap;
         const tries = await client.query<{ attempts: number }>(
           // Counted since the last hand-picked or first assignment, so a manager's reassignment starts a fresh count.
           `SELECT count(*)::int AS attempts FROM crm_assignment_history attempt
@@ -328,7 +341,7 @@ export class CrmLeadsService {
                   AND NOT (other.assignment_method='automatic' AND coalesce(other.explanation->>'reason', '') IN ('unanswered_takeover','no_eligible_alternate'))), '-infinity')`,
           [workspaceId, lead.id]);
         const attempts = Number(tries.rows[0]?.attempts ?? 0);
-        if (attempts >= settings.takeoverCap) {
+        if (attempts >= cap) {
           await this.escalateTakeover(client, workspaceId, lead, attempts);
           escalated.push(lead.id);
           continue;
@@ -338,7 +351,8 @@ export class CrmLeadsService {
         });
         if (!selection.ownerMembershipId) {
           // Nobody else can take it: it stays with its owner, now urgent, and both the owner and the admin know.
-          await this.keepWithOwner(client, workspaceId, lead, selection, attempts + 1, settings.takeoverCap);
+          await this.keepWithOwner(client, workspaceId, lead, selection, attempts + 1, cap);
+          if (settings.unassignAfterWorkingDay) await this.holdToUnassignDeadline(client, workspaceId, lead.id, lead.queue_id);
           kept.push(lead.id);
           continue;
         }
@@ -362,7 +376,66 @@ export class CrmLeadsService {
         if (previous) await notifyUserInApp(client, { workspaceId, recipientUserId: previous.userId, code: "crm.lead_taken_over_from", eventType: "crm.lead_taken_over_from", variables: { reference, newOwner: next?.name ?? "the queue" }, deepLink: `/workspace/crm/leads?lead=${lead.id}`, idempotencyKey: `takeover-from:${lead.id}:${stamp}` });
         if (next) await notifyUserInApp(client, { workspaceId, recipientUserId: next.userId, code: "crm.lead_taken_over_to", eventType: "crm.lead_taken_over_to", variables: { reference, previousOwner: previous?.name ?? "The previous owner" }, deepLink: `/workspace/crm/leads?lead=${lead.id}`, idempotencyKey: `takeover-to:${lead.id}:${stamp}` });
       }
-      return { reassigned, engaged, kept, escalated };
+      return { reassigned, engaged, kept, escalated, unassigned };
+    });
+  }
+
+  /**
+   * PLM-180: one full working day, on the handoff's clock, after the enquiry was given out. Counted from the assignment
+   * that started this run of hand-offs (a person picking it, or the first routing), so a manager's reassignment starts
+   * a new day. Null when it was never given to anyone.
+   */
+  private async unassignDeadline(client: PoolClient, workspaceId: string, leadId: string, queueId: string | null): Promise<Date | null> {
+    const start = await client.query<{ at: Date | null }>(
+      `SELECT max(history.assigned_at) AS at FROM crm_assignment_history history
+        WHERE history.workspace_id=$1 AND history.lead_id=$2 AND history.owner_membership_id IS NOT NULL
+          AND NOT (history.assignment_method='automatic' AND coalesce(history.explanation->>'reason', '') IN ('unanswered_takeover','no_eligible_alternate'))`,
+      [workspaceId, leadId]);
+    const at = start.rows[0]?.at;
+    if (!at) return null;
+    const queue = queueId ? await client.query<{ schedule: unknown }>(
+      `SELECT takeover_schedule AS schedule FROM crm_queues WHERE workspace_id=$1 AND id=$2`, [workspaceId, queueId]) : null;
+    return workingDayAfter(new Date(at), await this.takeoverClock(client, workspaceId, queue?.rows[0]?.schedule));
+  }
+
+  /** PLM-180: the next hand-off never runs past the working-day deadline, so the enquiry is unassigned on time. */
+  private async holdToUnassignDeadline(client: PoolClient, workspaceId: string, leadId: string, queueId: string | null) {
+    const deadline = await this.unassignDeadline(client, workspaceId, leadId, queueId);
+    if (!deadline) return;
+    await client.query(
+      `UPDATE crm_leads SET ownership_due_at = LEAST(COALESCE(ownership_due_at, $3::timestamptz), $3::timestamptz)
+        WHERE workspace_id=$1 AND id=$2 AND owner_membership_id IS NOT NULL`, [workspaceId, leadId, deadline]);
+  }
+
+  /**
+   * PLM-180: nobody picked the enquiry up within a working day of it being given out. It goes back to Unassigned (in its
+   * queue), urgent; the Owners are told in the app and by email, to reassign it or move it to Lost, and the person who
+   * had it last is told it moved. The Owners are the ones told, so the no-owner escalation (S-2) doesn't repeat it.
+   */
+  private async unassignUnanswered(client: PoolClient, workspaceId: string, lead: LeadContext, deadline: Date) {
+    const previous = await memberPerson(client, workspaceId, lead.owner_membership_id);
+    await this.applyAssignment(client, workspaceId, lead, {
+      ownerMembershipId: null, queueId: lead.queue_id, ruleId: null,
+      explanation: { reason: "unassigned_after_working_day", previousOwnerMembershipId: lead.owner_membership_id, deadline: deadline.toISOString() },
+    }, null, "automatic", "Nobody picked it up within a working day", true);
+    await client.query(
+      `UPDATE crm_leads SET escalation_due_at=NULL, escalated_at=now(), priority='urgent' WHERE workspace_id=$1 AND id=$2`, [workspaceId, lead.id]);
+    await client.query(
+      `UPDATE crm_activities SET priority='urgent', version=version+1, updated_at=now()
+        WHERE workspace_id=$1 AND lead_id=$2 AND sla_instance_id IS NOT NULL AND status='pending'`, [workspaceId, lead.id]);
+    const facts = await leadFacts(client, workspaceId, lead.id);
+    const owners = await workspaceOwners(client, workspaceId);
+    const told = await tell(client, workspaceId, owners, {
+      code: "crm.lead_unassigned", channels: ["in_app", "email"], deepLink: leadLink(lead.id),
+      key: `crm:unassigned:${lead.id}:${deadline.toISOString()}`, variables: { ...facts, ownerName: previous?.name ?? "" },
+    });
+    if (previous) {
+      await notifyUserInApp(client, { workspaceId, recipientUserId: previous.userId, code: "crm.lead_taken_over_from", eventType: "crm.lead_taken_over_from",
+        variables: { reference: facts.reference, newOwner: "Unassigned" }, deepLink: leadLink(lead.id), idempotencyKey: `unassigned-from:${lead.id}:${deadline.toISOString()}` });
+    }
+    await this.events.record(client, {
+      workspaceId, actorUserId: null, source: "automation", action: "crm.lead.unassigned_after_working_day.v1", entityType: "crm_lead", entityId: lead.id,
+      after: { previousOwnerMembershipId: lead.owner_membership_id, queueId: lead.queue_id, deadline: deadline.toISOString(), ownersTold: owners.map((person) => person.membershipId), told },
     });
   }
 
@@ -673,12 +746,12 @@ export class CrmLeadsService {
         await client.query(`UPDATE crm_queues SET is_fallback = false, version = version + 1 WHERE workspace_id = $1 AND is_fallback`, [workspaceId]);
       }
       const result = await client.query(
-        `INSERT INTO crm_queues (workspace_id, business_unit_id, code, name, is_fallback, takeover_after_minutes, takeover_schedule)
-         VALUES ($1, $2, lower($3), $4, $5, $6, $7)
+        `INSERT INTO crm_queues (workspace_id, business_unit_id, code, name, is_fallback, takeover_after_minutes, takeover_schedule, assignment_mode)
+         VALUES ($1, $2, lower($3), $4, $5, $6, $7, $8)
          RETURNING id, business_unit_id AS "businessUnitId", code, name, status,
                    is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes", takeover_schedule AS "takeoverSchedule",
-                   round_robin_cursor AS "roundRobinCursor", version`,
-        [workspaceId, input.businessUnitId ?? null, input.code, input.name, input.isFallback ?? false, input.takeoverAfterMinutes ?? null, this.takeoverSchedule(input.takeoverSchedule)],
+                   assignment_mode AS "assignmentMode", round_robin_cursor AS "roundRobinCursor", version`,
+        [workspaceId, input.businessUnitId ?? null, input.code, input.name, input.isFallback ?? false, input.takeoverAfterMinutes ?? null, this.takeoverSchedule(input.takeoverSchedule), input.assignmentMode ?? "balanced"],
       );
       const response = result.rows[0] as Record<string, unknown>;
       await this.events.record(client, {
@@ -876,7 +949,7 @@ export class CrmLeadsService {
   }
 
   /** The Sales rules the timers read (S-1, S-2, S-3, S-10): one row per workspace, version-checked and audited. */
-  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null; internalNotesVisibility?: "team" | "sales"; opportunityReferencePrefix?: string; stuckDealDays?: number; timelineCheckRoles?: string[] }) {
+  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null; internalNotesVisibility?: "team" | "sales"; opportunityReferencePrefix?: string; stuckDealDays?: number; timelineCheckRoles?: string[]; unassignAfterWorkingDay?: boolean }) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       const before = await loadSalesSettings(client, workspaceId);
       if (before.version !== input.version) throw new ConflictException("Sales settings changed; reload and try again");
@@ -894,18 +967,20 @@ export class CrmLeadsService {
         opportunityReferencePrefix: input.opportunityReferencePrefix ?? before.opportunityReferencePrefix,
         stuckDealDays: input.stuckDealDays ?? before.stuckDealDays,
         timelineCheckRoles: input.timelineCheckRoles ? [...new Set(input.timelineCheckRoles.map((code) => code.trim().toLowerCase()).filter(Boolean))] : before.timelineCheckRoles,
+        unassignAfterWorkingDay: input.unassignAfterWorkingDay ?? before.unassignAfterWorkingDay,
       };
       if (!/^[A-Z][A-Z0-9]{0,5}-?$/.test(next.opportunityReferencePrefix)) throw new UnprocessableEntityException("Use capital letters and digits, for example O-");
       const saved = await client.query(
-        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by, internal_notes_visibility, opportunity_reference_prefix, stuck_deal_days, timeline_check_roles)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$10,$11,$12::text[])
+        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by, internal_notes_visibility, opportunity_reference_prefix, stuck_deal_days, timeline_check_roles, unassign_after_working_day)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$10,$11,$12::text[],$13)
          ON CONFLICT (workspace_id) DO UPDATE SET takeover_cap=EXCLUDED.takeover_cap, unowned_escalation_minutes=EXCLUDED.unowned_escalation_minutes,
            client_review_minutes=EXCLUDED.client_review_minutes, duplicate_window_days=EXCLUDED.duplicate_window_days,
            sales_admin_membership_id=EXCLUDED.sales_admin_membership_id, updated_by=EXCLUDED.updated_by, internal_notes_visibility=EXCLUDED.internal_notes_visibility,
-           opportunity_reference_prefix=EXCLUDED.opportunity_reference_prefix, stuck_deal_days=EXCLUDED.stuck_deal_days, timeline_check_roles=EXCLUDED.timeline_check_roles, version=workspace_sales_settings.version+1, updated_at=now()
+           opportunity_reference_prefix=EXCLUDED.opportunity_reference_prefix, stuck_deal_days=EXCLUDED.stuck_deal_days, timeline_check_roles=EXCLUDED.timeline_check_roles,
+           unassign_after_working_day=EXCLUDED.unassign_after_working_day, version=workspace_sales_settings.version+1, updated_at=now()
          WHERE workspace_sales_settings.version=$8
          RETURNING version`,
-        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version, next.internalNotesVisibility, next.opportunityReferencePrefix, next.stuckDealDays, next.timelineCheckRoles]);
+        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version, next.internalNotesVisibility, next.opportunityReferencePrefix, next.stuckDealDays, next.timelineCheckRoles, next.unassignAfterWorkingDay]);
       if (!saved.rowCount) throw new ConflictException("Sales settings changed; reload and try again");
       const after = await loadSalesSettings(client, workspaceId);
       await this.events.record(client, {
@@ -922,7 +997,7 @@ export class CrmLeadsService {
         `SELECT queue.id, queue.code, queue.name, queue.status,
                 queue.business_unit_id AS "businessUnitId", queue.is_fallback AS "isFallback",
                 queue.takeover_after_minutes AS "takeoverAfterMinutes", queue.takeover_schedule AS "takeoverSchedule",
-                queue.round_robin_cursor AS "roundRobinCursor", queue.version,
+                queue.assignment_mode AS "assignmentMode", queue.round_robin_cursor AS "roundRobinCursor", queue.version,
                 COALESCE(jsonb_agg(jsonb_build_object(
                   'membershipId', member.membership_id, 'name', account.display_name,
                   'capacity', member.capacity, 'weight', member.weight,
@@ -963,12 +1038,13 @@ export class CrmLeadsService {
            is_fallback = COALESCE($4, is_fallback), status = COALESCE($5, status),
            takeover_after_minutes = CASE WHEN $9::boolean THEN $10::integer ELSE takeover_after_minutes END,
            takeover_schedule = CASE WHEN $11::boolean THEN $12::jsonb ELSE takeover_schedule END,
+           assignment_mode = COALESCE($13, assignment_mode),
            version = version + 1, updated_at = now()
          WHERE workspace_id = $6 AND id = $7 AND version = $8
          RETURNING id, business_unit_id AS "businessUnitId", code, name, status,
                    is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes", takeover_schedule AS "takeoverSchedule",
-                   round_robin_cursor AS "roundRobinCursor", version`,
-        [input.name?.trim() ?? null, input.businessUnitId !== undefined, input.businessUnitId ?? null, input.isFallback ?? null, input.status ?? null, workspaceId, queueId, input.version, input.takeoverAfterMinutes !== undefined, input.takeoverAfterMinutes ?? null, input.takeoverSchedule !== undefined, this.takeoverSchedule(input.takeoverSchedule)],
+                   assignment_mode AS "assignmentMode", round_robin_cursor AS "roundRobinCursor", version`,
+        [input.name?.trim() ?? null, input.businessUnitId !== undefined, input.businessUnitId ?? null, input.isFallback ?? null, input.status ?? null, workspaceId, queueId, input.version, input.takeoverAfterMinutes !== undefined, input.takeoverAfterMinutes ?? null, input.takeoverSchedule !== undefined, this.takeoverSchedule(input.takeoverSchedule), input.assignmentMode ?? null],
       );
       if (!result.rowCount) throw new ConflictException("Queue changed; reload and try again");
       if (input.takeoverAfterMinutes !== undefined) {
@@ -985,9 +1061,11 @@ export class CrmLeadsService {
         );
         const minutes = input.takeoverAfterMinutes ?? null;
         const clock = minutes === null ? null : await this.takeoverClock(client, workspaceId, result.rows[0].takeoverSchedule);
+        const unassign = (await loadSalesSettings(client, workspaceId)).unassignAfterWorkingDay;
         for (const lead of owned.rows) {
           const due = minutes === null || !clock ? null : addSlaMinutes(new Date(lead.assignedAt ?? Date.now()), minutes, clock);
           await client.query(`UPDATE crm_leads SET ownership_due_at=$3 WHERE workspace_id=$1 AND id=$2`, [workspaceId, lead.id, due]);
+          if (unassign) await this.holdToUnassignDeadline(client, workspaceId, lead.id, queueId);
         }
       }
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.queue.updated.v1", entityType: "crm_queue", entityId: queueId, before, after: result.rows[0] as Record<string, unknown> });
@@ -1804,16 +1882,29 @@ export class CrmLeadsService {
         },
       };
     }
-    const bestRatio = Number(eligible[0].loadRatio);
-    const tied = eligible.filter((candidate) => Number(candidate.loadRatio) === bestRatio);
-    const queue = await client.query<{ round_robin_cursor: number }>(
-      `SELECT round_robin_cursor FROM crm_queues WHERE id = $1 AND workspace_id = $2${advanceCursor ? " FOR UPDATE" : ""}`,
+    const queue = await client.query<{ round_robin_cursor: number; assignment_mode: string | null }>(
+      `SELECT round_robin_cursor, assignment_mode FROM crm_queues WHERE id = $1 AND workspace_id = $2${advanceCursor ? " FOR UPDATE" : ""}`,
       [queueId, workspaceId],
     );
     const cursor = Number(queue.rows[0]?.round_robin_cursor ?? 0);
-    const selected = tied[cursor % tied.length];
-    if (advanceCursor) {
-      await client.query(`UPDATE crm_queues SET round_robin_cursor = round_robin_cursor + 1, version = version + 1 WHERE id = $1 AND workspace_id = $2`, [queueId, workspaceId]);
+    const mode = queueAssignmentMode(queue.rows[0]?.assignment_mode);
+    let selected: Record<string, any>;
+    if (mode === "round_robin") {
+      // Strict turns through everyone in the queue; whoever isn't eligible now is passed over for this turn.
+      const eligibleIds = new Set(eligible.map((candidate) => String(candidate.membershipId)));
+      const turn = takeTurn(inTurnOrder(candidates.rows as Array<Record<string, any> & { membershipId: string }>), cursor,
+        (candidate) => eligibleIds.has(String(candidate.membershipId)))!;
+      selected = turn.person;
+      if (advanceCursor) {
+        await client.query(`UPDATE crm_queues SET round_robin_cursor = $3, version = version + 1 WHERE id = $1 AND workspace_id = $2`, [queueId, workspaceId, turn.next]);
+      }
+    } else {
+      const bestRatio = Number(eligible[0].loadRatio);
+      const tied = eligible.filter((candidate) => Number(candidate.loadRatio) === bestRatio);
+      selected = tied[cursor % tied.length];
+      if (advanceCursor) {
+        await client.query(`UPDATE crm_queues SET round_robin_cursor = round_robin_cursor + 1, version = version + 1 WHERE id = $1 AND workspace_id = $2`, [queueId, workspaceId]);
+      }
     }
     return {
       ownerMembershipId: selected.membershipId as string,
@@ -1821,7 +1912,7 @@ export class CrmLeadsService {
       ruleId: matchedRule?.id ?? null,
       explanation: {
         reason: takeover ? "unanswered_takeover" : matchedRule ? "matching_rule" : policy.id ? "policy_fallback" : "workspace_fallback",
-        policyId: policy.id, ruleId: matchedRule?.id ?? null, queueId, ...(relationshipSkipped ? { relationshipOwner: relationshipSkipped } : {}),
+        mode, policyId: policy.id, ruleId: matchedRule?.id ?? null, queueId, ...(relationshipSkipped ? { relationshipOwner: relationshipSkipped } : {}),
         selected: { membershipId: selected.membershipId, activeLoad: selected.activeLoad, capacity: selected.capacity, loadRatio: selected.loadRatio },
         eligible: eligible.map((candidate) => ({ membershipId: candidate.membershipId, activeLoad: candidate.activeLoad, capacity: candidate.capacity })),
       },
@@ -1885,6 +1976,9 @@ export class CrmLeadsService {
         selection.queueId, method, selection.ruleId, selection.explanation, reason, actorUserId,
       ],
     );
+    if (selection.ownerMembershipId && selection.queueId && (await loadSalesSettings(client, workspaceId)).unassignAfterWorkingDay) {
+      await this.holdToUnassignDeadline(client, workspaceId, lead.id, selection.queueId);
+    }
     await client.query(`UPDATE crm_activities SET owner_membership_id = $3, version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND opportunity_id IS NULL AND status = 'pending' AND (owner_membership_id IS NULL OR owner_membership_id IS NOT DISTINCT FROM $4::uuid)`, [workspaceId, lead.id, selection.ownerMembershipId, lead.owner_membership_id]);
     await this.slas.transferFirstResponseResponsibility(client, workspaceId, lead.id, {
       ownerMembershipId: selection.ownerMembershipId,

@@ -5,6 +5,7 @@
  */
 const EVENT_ACTIONS: Record<string, string> = {
   "crm.lead.assigned": "Open enquiry",
+  "crm.lead_unassigned": "Reassign enquiry",
   "crm.meeting.booked": "Open meeting",
   "design.site_visit.booked": "Open site visit",
   "design.review_requested": "Review design",

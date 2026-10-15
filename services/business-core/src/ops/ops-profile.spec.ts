@@ -165,15 +165,15 @@ describe("route changes", () => {
     expect(palm.inbox?.closingAfterHours).toBe(3);
     expect(Object.keys(palm.inbox?.closingMessages ?? {})).toEqual(["received", "form", "closing"]);
     expect(palm.inbox?.closingMessages?.form).toContain("{{form_link}}");
-    expect(palm.sales).toEqual({ timelineCheckTeams: ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"] });
+    expect(palm.sales).toEqual({ timelineCheckTeams: ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"], assignmentMode: "round_robin", unassignAfterWorkingDay: true });
     expect(palm.enquiryRequirements).toEqual([{ field: "area", requiredAt: "book_intro" }, { field: "targetCompletion", requiredAt: "book_intro" }]);
     expect(palm.rolePermissions).toContainEqual({ roles: ["team_sales_admin"], permissions: ["crm.inbox.team", "crm.inbox.close_chats"] });
     expect(validateProfile({ inbox: { closingMessages: { received: null } } })).toEqual({ inbox: { closingMessages: { received: null } } });
     expect(problems({ inbox: { closingMessages: { closing: "Hi {{client}}" }, closingFormUrl: "palm.example/form", closingAfterHours: 0 },
-      sales: { timelineCheckTeams: ["Interior design"] }, enquiryRequirements: [{ field: "area", requiredAt: "later" }] })).toEqual([
+      sales: { timelineCheckTeams: ["Interior design"], assignmentMode: "lightest", unassignAfterWorkingDay: "yes" }, enquiryRequirements: [{ field: "area", requiredAt: "later" }] })).toEqual([
       "inbox.closingMessages.closing can fill {{name}} and {{form_link}} only.", "inbox.closingFormUrl is a full https:// link, or null.",
       "inbox.closingAfterHours is a whole number from 1 to 72.", "sales.timelineCheckTeams are team codes like INTERIOR_DESIGN.",
-      "enquiryRequirements[0].requiredAt is one of create, convert, book_intro."]);
+      "sales.assignmentMode is one of balanced, round_robin.", "sales.unassignAfterWorkingDay is true or false.", "enquiryRequirements[0].requiredAt is one of create, convert, book_intro."]);
   });
 
   it("reads Palm's design packages file (PLM-139, PLM-145): Concept per space, the Creative Director package priced from its rate and reviewed", () => {

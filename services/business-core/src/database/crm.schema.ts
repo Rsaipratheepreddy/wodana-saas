@@ -457,6 +457,8 @@ export const crmQueues = pgTable(
     isFallback: boolean("is_fallback").notNull().default(false),
     takeoverAfterMinutes: integer("takeover_after_minutes"),
     roundRobinCursor: integer("round_robin_cursor").notNull().default(0),
+    /** balanced (lightest load first) or round_robin (strict turns), 0346. */
+    assignmentMode: varchar("assignment_mode", { length: 20 }).notNull().default("balanced"),
     ...versionColumn,
     ...auditColumns,
   },
@@ -464,6 +466,7 @@ export const crmQueues = pgTable(
     uniqueIndex("crm_queues_code_uidx").on(table.workspaceId, table.code),
     index("crm_queues_fallback_idx").on(table.workspaceId, table.isFallback),
     check("crm_queues_takeover_after_minutes_check", sql`${table.takeoverAfterMinutes} IS NULL OR ${table.takeoverAfterMinutes} BETWEEN 1 AND 10080`),
+    check("crm_queues_assignment_mode_check", sql`${table.assignmentMode} IN ('balanced', 'round_robin')`),
   ],
 );
 

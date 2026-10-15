@@ -8,23 +8,57 @@ import { LeadRouting } from "./lead-operations";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Auto-assignment settings", () => {
-  it("sets the unanswered-owner handoff on the selected queue", async () => {
+  it("sets the unanswered-owner handoff on the selected queue, keeping how it shares enquiries", async () => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
     data.queues[0].takeoverAfterMinutes = 60;
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadRouting initialData={data} />);
     expect(await screen.findByText(/working minutes/i)).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "Lead handoff" }));
-    const dialog = await screen.findByRole("dialog", { name: "Unanswered lead handoff" });
+    await user.click(await screen.findByRole("button", { name: "Queue settings" }));
+    const dialog = await screen.findByRole("dialog", { name: "Queue settings" });
     const minutes = within(dialog).getByRole("textbox", { name: /Working minutes before another sales owner/ });
     await user.clear(minutes);
     await user.type(minutes, "60");
-    await user.click(within(dialog).getByRole("button", { name: "Save handoff" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
     const call = fetchMock.mock.calls.find(([, init]) => init.method === "PATCH")!;
     expect(String(call[0])).toContain(`/queues/${data.queues[0].id}`);
-    expect(JSON.parse(String(call[1].body))).toEqual({ version: data.queues[0].version, takeoverAfterMinutes: 60 });
+    expect(JSON.parse(String(call[1].body))).toEqual({ version: data.queues[0].version, assignmentMode: "balanced", takeoverAfterMinutes: 60 });
+  });
+
+  it("turns on unassigning an enquiry nobody picked up after a working day (PLM-180)", async () => {
+    const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
+    data.canManageSales = true;
+    data.salesSettings = { takeoverCap: 2, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90, stuckDealDays: 14, salesAdminMembershipId: null, version: 3 };
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? { ...data.salesSettings, unassignAfterWorkingDay: true, version: 4 } : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LeadRouting initialData={data} />);
+    await user.click(await screen.findByRole("button", { name: "Escalation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Escalation" });
+    const toggle = within(dialog).getByRole("checkbox", { name: "Unassign after a working day and tell the owner" });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await user.click(within(dialog).getByRole("button", { name: "Save escalation" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
+    const call = fetchMock.mock.calls.find(([, init]) => init.method === "PATCH")!;
+    expect(String(call[0])).toContain("/sales-settings");
+    expect(JSON.parse(String(call[1].body))).toMatchObject({ version: 3, unassignAfterWorkingDay: true, takeoverCap: 2 });
+  });
+
+  it("switches a queue to round-robin (each sales owner in turn)", async () => {
+    const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LeadRouting initialData={data} />);
+    await user.click(await screen.findByRole("button", { name: "Queue settings" }));
+    const dialog = await screen.findByRole("dialog", { name: "Queue settings" });
+    await user.click(within(dialog).getByRole("button", { name: /New enquiries go to/ }));
+    await user.click(await screen.findByRole("option", { name: "Each sales owner in turn" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
+    const call = fetchMock.mock.calls.find(([, init]) => init.method === "PATCH")!;
+    expect(JSON.parse(String(call[1].body))).toMatchObject({ version: data.queues[0].version, assignmentMode: "round_robin" });
   });
   it("updates capacity without clearing existing skills, languages, or territories", async () => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture);

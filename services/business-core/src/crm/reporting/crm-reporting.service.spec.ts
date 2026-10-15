@@ -91,3 +91,19 @@ describe("walk-ins in the lead-flow report (S-14)", () => {
     expect(walkInChannelsOf({ channels: { referral: [{ id: "internal", label: "Internal" }] } })).toEqual([]);
   });
 });
+
+describe("won deals that were cancelled", () => {
+  it("are left out of Won in the won and sources reports, on the order's or the job's cancellation", async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const access = { withPermissions: vi.fn(async (_actor, _workspaceId, _permissions, work) => work({ query })) };
+    const service = new CrmReportingService(access as never);
+    for (const report of ["won", "sources"]) await service.report({} as never, "workspace", report, {});
+    const [won, sources] = query.mock.calls.map((call) => String((call as unknown as [string])[0]));
+    for (const sql of [won, sources]) {
+      expect(sql).toContain("FROM crm_deal_fulfilment f");
+      expect(sql).toContain("deal_case.status = 'cancelled'");
+    }
+    // Both halves of Won: the proposals won and the deals won before proposals existed.
+    expect(won.match(/deal_case\.cancelled_at END\)\s+IS NULL/g)?.length).toBe(2);
+  });
+});

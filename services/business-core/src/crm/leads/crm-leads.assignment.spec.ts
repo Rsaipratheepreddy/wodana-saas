@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { CrmLeadsService } from "./crm-leads.service";
 
-function setup(candidates: Record<string, unknown>[], configured = true) {
+function setup(candidates: Record<string, unknown>[], configured = true, queue: Record<string, unknown> = { round_robin_cursor: 1 }) {
   const query = vi.fn(async (sql: string) => {
     if (sql.includes("FROM crm_assignment_policies")) return { rows: [], rowCount: 0 };
     if (sql.includes("is_fallback")) return { rows: configured ? [{ id: "queue" }] : [], rowCount: configured ? 1 : 0 };
     if (sql.includes("FROM crm_effective_queue_members")) return { rows: candidates, rowCount: candidates.length };
-    if (sql.includes("SELECT round_robin_cursor")) return { rows: [{ round_robin_cursor: 1 }], rowCount: 1 };
+    if (sql.includes("SELECT round_robin_cursor")) return { rows: [queue], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   });
   const service = new CrmLeadsService({} as never, {} as never, {} as never);
-  return { query, select: () => service["selectAssignment"]({ query } as never, "workspace", { source: "website", service_type: "architecture" } as never, true) };
+  return { query, select: (takeover?: { queueId: string; excludedOwnerId: string }) => service["selectAssignment"]({ query } as never, "workspace", { source: "website", service_type: "architecture" } as never, true, takeover) };
 }
 const candidate = (membershipId: string, extra = {}) => ({ membershipId, name: membershipId, capacity: 3, weight: 1, skills: [], languages: [], activeLoad: 0, loadRatio: 0, isAvailable: true, ...extra });
 describe("Default queue auto-assignment without custom policies", () => {
@@ -26,6 +26,36 @@ describe("Default queue auto-assignment without custom policies", () => {
   });
   it("reports missing setup instead of assigning outside a queue", async () => {
     await expect(setup([], false).select()).rejects.toThrow("No active assignment policy or fallback queue");
+  });
+});
+
+describe("round-robin queues", () => {
+  // Rows come back lightest load first, as the SQL orders them; round-robin ignores that order.
+  const rows = () => [candidate("carol", { activeLoad: 0, loadRatio: 0 }), candidate("bilal", { activeLoad: 1, loadRatio: 0.33 }), candidate("asha", { activeLoad: 2, loadRatio: 0.66 })];
+
+  it("takes the person whose turn it is, not the lightest load, and moves the cursor past them", async () => {
+    const { select, query } = setup(rows(), true, { round_robin_cursor: 0, assignment_mode: "round_robin" });
+    expect(await select()).toMatchObject({ ownerMembershipId: "asha", explanation: { mode: "round_robin", reason: "workspace_fallback" } });
+    const advance = query.mock.calls.find(([sql]) => sql.includes("SET round_robin_cursor = $3"));
+    expect(advance?.[1]).toEqual(["queue", "workspace", 1]);
+  });
+
+  it("passes over someone full or away and keeps strict turns after the one who took it", async () => {
+    const { select, query } = setup([candidate("carol"), candidate("bilal", { activeLoad: 3 }), candidate("asha", { isAvailable: false })], true,
+      { round_robin_cursor: 0, assignment_mode: "round_robin" });
+    expect(await select()).toMatchObject({ ownerMembershipId: "carol" });
+    expect(query.mock.calls.find(([sql]) => sql.includes("SET round_robin_cursor = $3"))?.[1]).toEqual(["queue", "workspace", 0]);
+  });
+
+  it("never hands a takeover back to the owner it is taken from", async () => {
+    const { select } = setup(rows(), true, { round_robin_cursor: 1, assignment_mode: "round_robin" });
+    expect(await select({ queueId: "queue", excludedOwnerId: "bilal" })).toMatchObject({ ownerMembershipId: "carol", explanation: { reason: "unanswered_takeover" } });
+  });
+
+  it("leaves the cursor alone when nobody can take it", async () => {
+    const { select, query } = setup([candidate("carol", { activeLoad: 3 })], true, { round_robin_cursor: 0, assignment_mode: "round_robin" });
+    expect(await select()).toMatchObject({ ownerMembershipId: null, explanation: { reason: "no_eligible_member" } });
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_queues"))).toBe(false);
   });
 });
 

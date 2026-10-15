@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { inTurnOrder, queueAssignmentMode, takeTurn } from "../../leads/round-robin";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -88,24 +89,36 @@ export async function inboxQueue(db: Db, workspaceId: string, channel: string) {
 }
 
 /**
- * Round-robin over the inbox queue by open chats per person against their capacity, skipping people who
- * are away or full. Serialised per workspace so two chats arriving together never pick the same slot.
+ * The next person in the inbox queue, skipping people who are away or full. A balanced queue picks the lightest load
+ * (open chats against capacity and weight; the cursor breaks ties); a round-robin queue takes strict turns, sharing its
+ * cursor with the queue's enquiries. Serialised per workspace so two chats arriving together never pick the same slot.
  */
 export async function queueMember(db: Db, workspaceId: string, queueId: string) {
   await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:inbox-assignment`]);
-  const candidates = await db.query<{ membershipId: string; capacity: number; weight: number; load: number }>(
+  const queue = await db.query<{ cursor: number; mode: string | null }>(
+    `SELECT round_robin_cursor AS cursor, assignment_mode AS mode FROM crm_queues WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
+    [workspaceId, queueId],
+  );
+  const candidates = await db.query<{ membershipId: string; capacity: number; weight: number; load: number; free: boolean }>(
     `SELECT member.membership_id AS "membershipId", member.capacity, member.weight,
             (SELECT count(*) FROM crm_conversations chat
               WHERE chat.workspace_id = member.workspace_id AND chat.owner_membership_id = member.membership_id
-                AND chat.status = 'open')::int AS load
+                AND chat.status = 'open')::int AS load,
+            (member.is_available AND (member.unavailable_until IS NULL OR member.unavailable_until <= now())
+              AND member.membership_id IN (SELECT inbox."membershipId" FROM (${INBOX_MEMBERS_SQL}) inbox)) AS free
        FROM crm_effective_queue_members member
-      WHERE member.workspace_id = $1 AND member.queue_id = $2 AND member.is_available
-        AND (member.unavailable_until IS NULL OR member.unavailable_until <= now())
-        AND member.membership_id IN (SELECT inbox."membershipId" FROM (${INBOX_MEMBERS_SQL}) inbox)
+      WHERE member.workspace_id = $1 AND member.queue_id = $2
       ORDER BY member.membership_id`,
     [workspaceId, queueId],
   );
-  const open = candidates.rows.filter((candidate) => candidate.load < Math.max(1, Number(candidate.capacity)));
+  const canTake = (candidate: { load: number; capacity: number; free: boolean }) => candidate.free && candidate.load < Math.max(1, Number(candidate.capacity));
+  if (queueAssignmentMode(queue.rows[0]?.mode) === "round_robin") {
+    const turn = takeTurn(inTurnOrder(candidates.rows), Number(queue.rows[0]?.cursor ?? 0), canTake);
+    if (!turn) return null;
+    await db.query(`UPDATE crm_queues SET round_robin_cursor = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, queueId, turn.next]);
+    return turn.person.membershipId;
+  }
+  const open = candidates.rows.filter(canTake);
   if (!open.length) return null;
   const ratio = (candidate: { load: number; capacity: number; weight: number }) => candidate.load / Math.max(1, candidate.capacity) / Math.max(1, candidate.weight);
   const best = Math.min(...open.map(ratio));

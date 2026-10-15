@@ -126,18 +126,23 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
           {queues.length ? <div className={assignmentStyles.queue}><SelectField label={t("Queue")} selectedKey={queue?.id ?? null} onSelectionChange={(key) => setQueueId(String(key))} items={queueOptions} /></div> : null}
           <Button size="compact" isDisabled={!queue || addingDefaults} isLoading={addingDefaults} onPress={async () => { if (!queue || addingDefaults) return; setAddingDefaults(true); setFailure(''); setNotice(''); try { const result = await crmRequest<{added:number}>(workspaceId, `queues/${queue.id}/default-managers`, 'POST', {}); await refresh(); setNotice(result.added ? t("{count} default sales owners added.", { count: result.added }) : t("Default sales owners are already included.")); } catch(error) { setFailure((error as Error).message); } finally { setAddingDefaults(false); } }}>{t("Add default sales owners")}</Button>
           <Button size="compact" isDisabled={!queue} onPress={() => queue && setAction({
-            title: t("Unanswered lead handoff"), path: `queues/${queue.id}`, method: "PATCH",
-            initial: { version: queue.version, takeoverAfterMinutes: queue.takeoverAfterMinutes },
-            fields: [{ key: "takeoverAfterMinutes", label: t("Working minutes before another sales owner takes over"), type: "number", min: 1, max: 10080 }],
-            transform: (values) => ({ version: values.version, takeoverAfterMinutes: values.takeoverAfterMinutes ?? null }),
-            submit: t("Save handoff"),
-          })}>{t("Lead handoff")}</Button>
+            title: t("Queue settings"), path: `queues/${queue.id}`, method: "PATCH",
+            initial: { version: queue.version, assignmentMode: queue.assignmentMode ?? "balanced", takeoverAfterMinutes: queue.takeoverAfterMinutes },
+            fields: [
+              { key: "assignmentMode", label: t("New enquiries go to"), required: true,
+                options: [{ id: "balanced", label: t("The lightest workload") }, { id: "round_robin", label: t("Each sales owner in turn") }] },
+              { key: "takeoverAfterMinutes", label: t("Working minutes before another sales owner takes over"), type: "number", min: 1, max: 10080 },
+            ],
+            transform: (values) => ({ version: values.version, assignmentMode: values.assignmentMode, takeoverAfterMinutes: values.takeoverAfterMinutes ?? null }),
+          })}>{t("Queue settings")}</Button>
           {initialData.canManageSales && salesSettings ? <Button size="compact" onPress={() => setAction({
             // S-1, S-2, S-3, S-10: when a manager is told, and who the Sales admin is.
             title: t("Escalation"), path: "sales-settings", method: "PATCH", submit: t("Save escalation"),
-            initial: { ...salesSettings, stuckDealDays: salesSettings.stuckDealDays ?? 14, salesAdminMembershipId: salesSettings.salesAdminMembershipId ?? "" },
+            initial: { ...salesSettings, stuckDealDays: salesSettings.stuckDealDays ?? 14, salesAdminMembershipId: salesSettings.salesAdminMembershipId ?? "", unassignAfterWorkingDay: salesSettings.unassignAfterWorkingDay === true },
             fields: [
               { key: "salesAdminMembershipId", label: t("Sales admin"), options: initialData.members.filter((person) => person.status === "active").map((person) => ({ id: person.id, label: person.displayName || person.email })) },
+              // PLM-180: hand-offs without a cap; unpicked after a working day, the enquiry is unassigned and the Owners told.
+              { key: "unassignAfterWorkingDay", label: t("Unassign after a working day and tell the owner"), type: "checkbox" },
               { key: "takeoverCap", label: t("Handoffs before a manager is told"), type: "number", min: 0, max: 10, required: true },
               { key: "unownedEscalationMinutes", label: t("Working minutes without an owner before escalating"), type: "number", min: 1, max: 1440, required: true },
               { key: "clientReviewMinutes", label: t("Working minutes to confirm a possible existing client"), type: "number", min: 1, max: 1440, required: true },
@@ -148,6 +153,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
                 options: initialData.teams.map((team) => ({ id: team.code.toLowerCase(), label: team.name })) }] : []),
             ],
             transform: (values) => ({ version: salesSettings.version, takeoverCap: values.takeoverCap, unownedEscalationMinutes: values.unownedEscalationMinutes, clientReviewMinutes: values.clientReviewMinutes, duplicateWindowDays: values.duplicateWindowDays, stuckDealDays: values.stuckDealDays, salesAdminMembershipId: values.salesAdminMembershipId || null,
+              unassignAfterWorkingDay: values.unassignAfterWorkingDay === true,
               ...(Array.isArray(values.timelineCheckRoles) ? { timelineCheckRoles: values.timelineCheckRoles } : {}) }),
           })}>{t("Escalation")}</Button> : null}
           <Button size="compact" onPress={() => setAction({ title: t("Add queue"), path: "queues", initial: { isFallback: queues.length === 0 }, fields: [{ key: "name", label: t("Name"), required: true }, { key: "code", label: t("Code"), required: true }, { key: "isFallback", label: t("Default queue"), type: "checkbox" }] })}>{t("Add queue")}</Button>

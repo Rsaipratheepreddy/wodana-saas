@@ -16,6 +16,7 @@ import {
   Min,
   ValidateNested,
 } from "class-validator";
+import { QUEUE_ASSIGNMENT_MODES, type QueueAssignmentMode } from "../round-robin";
 
 export class ListLeadsQueryDto {
   @IsOptional() @IsIn(["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused", "duplicate"])
@@ -39,6 +40,8 @@ export class CreateQueueDto {
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number;
   /** Working hours for the takeover countdown (same shape as an SLA schedule); omit for elapsed time. */
   @IsOptional() @IsObject() takeoverSchedule?: Record<string, unknown>;
+  /** How the queue shares enquiries: the lightest load first (balanced, the default) or strict turns (round_robin). */
+  @IsOptional() @IsIn(QUEUE_ASSIGNMENT_MODES) assignmentMode?: QueueAssignmentMode;
 }
 
 export class UpdateQueueDto {
@@ -48,6 +51,7 @@ export class UpdateQueueDto {
   @IsOptional() @IsBoolean() isFallback?: boolean;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number | null;
   @IsOptional() @IsObject() takeoverSchedule?: Record<string, unknown> | null;
+  @IsOptional() @IsIn(QUEUE_ASSIGNMENT_MODES) assignmentMode?: QueueAssignmentMode;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
 }
 
@@ -171,6 +175,8 @@ export class UpdateSalesSettingsDto {
   @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
   /** PLM-024: who reads internal notes. */
   @IsOptional() @IsIn(["team", "sales"]) internalNotesVisibility?: "team" | "sales";
+  /** PLM-180: hand-offs without a cap; unpicked after a working day, the enquiry is unassigned and the Owners told. */
+  @IsOptional() @IsBoolean() unassignAfterWorkingDay?: boolean;
   /** PLM-099: the prefix new opportunity references take, for example O- (existing references keep theirs). */
   @IsOptional() @IsString() @Matches(/^[A-Z][A-Z0-9]{0,5}-?$/) opportunityReferencePrefix?: string;
 }

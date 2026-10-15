@@ -24,7 +24,8 @@ export type CrmProfileFixture = {
   referralBrokers?: Array<{ code: string; label: string }>;
   referralPartners?: Array<{ code: string; label: string }>;
   operations: {
-    queue: { code: string; name: string; takeoverAfterMinutes: number; takeoverSchedule?: Record<string, unknown> };
+    /** assignmentMode: how the queue shares enquiries and chats (balanced unless the profile says round_robin). */
+    queue: { code: string; name: string; takeoverAfterMinutes: number; takeoverSchedule?: Record<string, unknown>; assignmentMode?: "balanced" | "round_robin" };
     firstResponseSla: { name: string; warningAfterMinutes: number; breachAfterMinutes: number; calculationMode: string; schedule?: Record<string, unknown> };
   };
 };

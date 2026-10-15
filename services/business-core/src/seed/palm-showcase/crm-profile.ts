@@ -20,7 +20,7 @@ function roleCodes(teams: string[] | undefined) {
 
 /**
  * The CRM intake profile (the lead-flow report as Palm approved it): sources and their channels, enquiry types,
- * budget ranges, client types, referral lists; the Sales queue with its takeover clock, the first-response SLA,
+ * budget ranges, client types, referral lists; the Sales queue with its takeover clock and how it shares enquiries, the first-response SLA,
  * the default assignment policy, and the Sales team linked to the queue. Compared first, written only when different.
  */
 export async function ensureCrmProfile(core: Core, data: SeedData, workspaceId: string, owner: Actor) {
@@ -65,22 +65,25 @@ export async function ensureCrmProfile(core: Core, data: SeedData, workspaceId: 
   // The Sales queue: the fallback, with the takeover clock on Palm's working hours, in the Sales business unit.
   const detail = (await workspaces.get(actor, workspaceId)) as unknown as { businessUnits: Array<{ id: string; code: string; status: string }> };
   const salesUnit = detail.businessUnits.find((unit) => unit.code === "SALES" && unit.status === "active");
-  type Queue = { id: string; code: string; name: string; status: string; isFallback: boolean; takeoverAfterMinutes: number | null; takeoverSchedule: unknown; businessUnitId: string | null; version: number };
+  type Queue = { id: string; code: string; name: string; status: string; isFallback: boolean; takeoverAfterMinutes: number | null; takeoverSchedule: unknown; assignmentMode?: string; businessUnitId: string | null; version: number };
   const queues = (await leads.listQueues(actor, workspaceId)) as Queue[];
   const wanted = profile.operations.queue;
+  // How the queue shares enquiries: the profile's mode, else balanced (the lightest load first).
+  const assignmentMode = wanted.assignmentMode ?? "balanced";
   let queue = queues.find((row) => row.code === wanted.code) ?? null;
   const queueSame = (row: Queue) => row.status === "active" && row.name === wanted.name && row.isFallback === true && row.takeoverAfterMinutes === wanted.takeoverAfterMinutes
-    && isDeepStrictEqual(row.takeoverSchedule ?? null, wanted.takeoverSchedule ?? null) && (!salesUnit || row.businessUnitId === salesUnit.id);
+    && isDeepStrictEqual(row.takeoverSchedule ?? null, wanted.takeoverSchedule ?? null) && (!salesUnit || row.businessUnitId === salesUnit.id)
+    && (row.assignmentMode ?? "balanced") === assignmentMode;
   if (queue) {
     const found = queue;
     await core.ensure("crm queue", `queue ${wanted.code}`, async () => queueSame(found), async () => {
       queue = (await leads.updateQueue(actor, workspaceId, found.id, await core.validated(UpdateQueueDto, { version: found.version, name: wanted.name, isFallback: true,
-        takeoverAfterMinutes: wanted.takeoverAfterMinutes, takeoverSchedule: wanted.takeoverSchedule, status: "active", ...(salesUnit ? { businessUnitId: salesUnit.id } : {}) }))) as Queue;
+        takeoverAfterMinutes: wanted.takeoverAfterMinutes, takeoverSchedule: wanted.takeoverSchedule, assignmentMode, status: "active", ...(salesUnit ? { businessUnitId: salesUnit.id } : {}) }))) as Queue;
     });
   } else {
     queue = await core.step("crm queue", `queue ${wanted.code}`, async () => null, async () =>
       leads.createQueue(actor, workspaceId, await core.validated(CreateQueueDto, { code: wanted.code, name: wanted.name, isFallback: true, takeoverAfterMinutes: wanted.takeoverAfterMinutes,
-        takeoverSchedule: wanted.takeoverSchedule, ...(salesUnit ? { businessUnitId: salesUnit.id } : {}) })) as Promise<Queue>).catch(swallow);
+        takeoverSchedule: wanted.takeoverSchedule, assignmentMode, ...(salesUnit ? { businessUnitId: salesUnit.id } : {}) })) as Promise<Queue>).catch(swallow);
   }
 
   // First-response SLA on the same working hours.

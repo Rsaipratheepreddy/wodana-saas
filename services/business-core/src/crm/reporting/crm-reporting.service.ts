@@ -3,11 +3,20 @@ import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { ReportRangeQueryDto } from "./dto/reporting.dto";
 import { loadLeadOptions } from "../leads/lead-options";
+import { dealCancelledAt } from "../../management-reports/report-scope";
 
 const WALK_IN = /walk[\s_-]?in/i;
 /** S-28: an enquiry closed because the client never answered: its own bucket, apart from "not interested". */
 const UNREACHABLE = `lead.status='disqualified' AND EXISTS (SELECT 1 FROM crm_activities attempt WHERE attempt.workspace_id=lead.workspace_id AND attempt.lead_id=lead.id
   AND attempt.status='completed' AND attempt.completion_outcome='unreachable')`;
+
+/**
+ * A won deal whose order or job was later cancelled isn't Won: it is reported apart, as Management reports do
+ * (dealCancelledAt). `o` is a crm_opportunities alias; its first planning case is joined as `deal_case`.
+ */
+const DEAL_CASE = (o: string) => `LEFT JOIN LATERAL (SELECT c.status, c.cancelled_at FROM pre_project_cases c
+    WHERE c.workspace_id = ${o}.workspace_id AND c.opportunity_id = ${o}.id ORDER BY c.created_at LIMIT 1) deal_case ON true`;
+const NOT_CANCELLED = (o: string) => `${dealCancelledAt(o, "deal_case")} IS NULL`;
 
 /** "source/channel" for every channel the taxonomy calls a walk-in, by its code or its label ("Showroom Walk-in"). */
 export function walkInChannelsOf(options: { channels: Record<string, Array<{ id: string; label: string }>> }) {
@@ -57,7 +66,8 @@ export class CrmReportingService {
           count(*) FILTER (WHERE lead.status='qualified')::int AS qualified,
           count(*) FILTER (WHERE lead.status='disqualified')::int AS disqualified,
           count(*) FILTER (WHERE ${UNREACHABLE})::int AS unreachable,
-          count(*) FILTER (WHERE EXISTS (SELECT 1 FROM crm_opportunities opportunity WHERE opportunity.workspace_id=lead.workspace_id AND opportunity.lead_id=lead.id AND opportunity.status='won'))::int AS won,
+          count(*) FILTER (WHERE EXISTS (SELECT 1 FROM crm_opportunities opportunity ${DEAL_CASE("opportunity")}
+            WHERE opportunity.workspace_id=lead.workspace_id AND opportunity.lead_id=lead.id AND opportunity.status='won' AND ${NOT_CANCELLED("opportunity")}))::int AS won,
           count(*) FILTER (WHERE EXISTS (SELECT 1 FROM crm_opportunities opportunity WHERE opportunity.workspace_id=lead.workspace_id AND opportunity.lead_id=lead.id AND opportunity.status='lost'))::int AS lost,
           count(*) FILTER (WHERE lead.status NOT IN ('qualified','disqualified') AND greatest(lead.updated_at,enquiry.updated_at) < now()-interval '7 days')::int AS stale,
           round(avg(extract(epoch FROM now()-greatest(lead.updated_at,enquiry.updated_at))/86400)::numeric,1) AS "averageDaysSinceUpdate",
@@ -179,19 +189,23 @@ export class CrmReportingService {
       }
       const reports: Record<string, { sql: string; values: unknown[] }> = {
         funnel: { sql: `SELECT history.to_status AS status, COALESCE(stage.name, history.to_status::text) AS stage, count(*)::int AS count FROM crm_stage_history history LEFT JOIN crm_pipeline_stages stage ON stage.id = history.to_stage_id WHERE history.workspace_id = $1 AND history.changed_at >= $2 AND history.changed_at < $3 GROUP BY history.to_status, stage.name ORDER BY count DESC`, values: [workspaceId, from, to] },
-        sources: { sql: `SELECT enquiry.source, enquiry.channel, count(DISTINCT enquiry.id)::int AS enquiries, count(DISTINCT lead.id)::int AS leads, count(DISTINCT opportunity.id)::int AS opportunities, count(DISTINCT opportunity.id) FILTER (WHERE opportunity.status = 'won')::int AS won FROM crm_enquiries enquiry LEFT JOIN crm_leads lead ON lead.enquiry_id = enquiry.id AND lead.workspace_id = enquiry.workspace_id LEFT JOIN crm_opportunities opportunity ON opportunity.lead_id = lead.id AND opportunity.workspace_id = lead.workspace_id WHERE enquiry.workspace_id = $1 AND enquiry.created_at >= $2 AND enquiry.created_at < $3 AND NOT EXISTS (SELECT 1 FROM crm_leads spam WHERE spam.workspace_id = enquiry.workspace_id AND spam.enquiry_id = enquiry.id AND spam.spam_at IS NOT NULL) GROUP BY enquiry.source, enquiry.channel ORDER BY enquiries DESC`, values: [workspaceId, from, to] },
+        sources: { sql: `SELECT enquiry.source, enquiry.channel, count(DISTINCT enquiry.id)::int AS enquiries, count(DISTINCT lead.id)::int AS leads, count(DISTINCT opportunity.id)::int AS opportunities, count(DISTINCT opportunity.id) FILTER (WHERE opportunity.status = 'won' AND ${NOT_CANCELLED("opportunity")})::int AS won FROM crm_enquiries enquiry LEFT JOIN crm_leads lead ON lead.enquiry_id = enquiry.id AND lead.workspace_id = enquiry.workspace_id LEFT JOIN crm_opportunities opportunity ON opportunity.lead_id = lead.id AND opportunity.workspace_id = lead.workspace_id ${DEAL_CASE("opportunity")} WHERE enquiry.workspace_id = $1 AND enquiry.created_at >= $2 AND enquiry.created_at < $3 AND NOT EXISTS (SELECT 1 FROM crm_leads spam WHERE spam.workspace_id = enquiry.workspace_id AND spam.enquiry_id = enquiry.id AND spam.spam_at IS NOT NULL) GROUP BY enquiry.source, enquiry.channel ORDER BY enquiries DESC`, values: [workspaceId, from, to] },
         assignment: { sql: `SELECT history.assignment_method AS method, account.display_name AS owner, count(*)::int AS count FROM crm_assignment_history history LEFT JOIN workspace_memberships membership ON membership.id = history.owner_membership_id LEFT JOIN users account ON account.id = membership.user_id WHERE history.workspace_id = $1 AND history.assigned_at >= $2 AND history.assigned_at < $3 GROUP BY history.assignment_method, account.display_name ORDER BY count DESC`, values: [workspaceId, from, to] },
         pipeline: { sql: `SELECT pipeline.name AS pipeline, stage.name AS stage, opportunity.status, count(*)::int AS count, opportunity.currency_code AS currency, sum(opportunity.amount) AS value FROM crm_opportunities opportunity JOIN crm_pipelines pipeline ON pipeline.id = opportunity.pipeline_id JOIN crm_pipeline_stages stage ON stage.id = opportunity.stage_id WHERE opportunity.workspace_id = $1 AND opportunity.created_at >= $2 AND opportunity.created_at < $3 GROUP BY pipeline.name, stage.name, stage.position, opportunity.status, opportunity.currency_code ORDER BY pipeline.name, stage.position`, values: [workspaceId, from, to] },
         // PLM-009 / PLM-103: Won counted when the payment proof is attached, once per proposal — Proposal 1 (design fee) and
         // Proposal 2 (main) apart, so design and production revenue read separately; `opportunities` counts each job once.
-        // Deals won before proposals existed count as main.
+        // Deals won before proposals existed count as main. A deal cancelled after it was won isn't Won.
         won: { sql: `SELECT proposal.kind AS proposal, proposal.currency_code AS currency, count(*)::int AS count, sum(proposal.amount)::text AS value,
             count(DISTINCT proposal.opportunity_id)::int AS opportunities
-          FROM crm_opportunity_proposals proposal WHERE proposal.workspace_id = $1 AND proposal.won_at >= $2 AND proposal.won_at < $3
+          FROM crm_opportunity_proposals proposal
+          JOIN crm_opportunities opportunity ON opportunity.workspace_id = proposal.workspace_id AND opportunity.id = proposal.opportunity_id
+          ${DEAL_CASE("opportunity")}
+          WHERE proposal.workspace_id = $1 AND proposal.won_at >= $2 AND proposal.won_at < $3 AND ${NOT_CANCELLED("opportunity")}
           GROUP BY proposal.kind, proposal.currency_code
           UNION ALL
           SELECT 'main' AS proposal, opportunity.currency_code AS currency, count(*)::int AS count, sum(opportunity.amount)::text AS value, count(*)::int AS opportunities
-          FROM crm_opportunities opportunity WHERE opportunity.workspace_id = $1 AND opportunity.status = 'won' AND opportunity.closed_at >= $2 AND opportunity.closed_at < $3
+          FROM crm_opportunities opportunity ${DEAL_CASE("opportunity")}
+          WHERE opportunity.workspace_id = $1 AND opportunity.status = 'won' AND opportunity.closed_at >= $2 AND opportunity.closed_at < $3 AND ${NOT_CANCELLED("opportunity")}
             AND NOT EXISTS (SELECT 1 FROM crm_opportunity_proposals proposal WHERE proposal.workspace_id = opportunity.workspace_id AND proposal.opportunity_id = opportunity.id AND proposal.won_at IS NOT NULL)
           GROUP BY opportunity.currency_code
           ORDER BY proposal, currency`, values: [workspaceId, from, to] },

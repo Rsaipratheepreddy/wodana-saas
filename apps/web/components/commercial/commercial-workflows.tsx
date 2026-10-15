@@ -82,7 +82,8 @@ const commissionReady = (line: CommissionDraft) => Boolean(line.recipientName.tr
 const commissionBlank = (line: CommissionDraft) => !line.recipientName.trim() && !Number(line.value || 0);
 const commissionTypes = [
   { id: "sales", label: tKey("Sales") },
-  { id: "designer", label: tKey("Designer") },
+  // The stored type stays "designer"; only the label reads "Designer fee".
+  { id: "designer", label: tKey("Designer fee") },
   { id: "referral", label: tKey("Referral") },
 ] as const;
 const checklistLabel: Record<string, string> = {
