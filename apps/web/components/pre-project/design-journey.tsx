@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CalendarClock, CalendarPlus, Check, CheckCircle2, ListChecks, NotebookPen, PackageCheck, Play, UserPlus, Users } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
 import {
-  Badge, Button, DateField, EmptyState, FormDialog, FormRow, InlineNotice, PersonName, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar,
+  Badge, Button, Card, DateField, EmptyState, FormDialog, FormRow, InlineNotice, PersonName, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
@@ -97,17 +97,12 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
   const allocating = task("team_allocation");
   const hasChecks = Boolean(view.checklist?.some((item) => item.kind === "check"));
 
-  return <section aria-labelledby="design-journey-title" className={styles.journey}>
-    <header className={styles.header}>
-      <div className={styles.heading}>
-        <h3 id="design-journey-title">{siteAndMaterials ? t("Site visit & materials") : t("Design")}</h3>
-        {view.journey?.packageName ? <span className={styles.package}>{view.journey.packageName}</span> : null}
-      </div>
-      {view.journey ? <span className={styles.progress} aria-label={t("{done} of {total} stages done", { done, total: view.stages.length })}>
-        <span className={styles.progressTrack}><span style={{ inlineSize: `${Math.round((done / Math.max(view.stages.length, 1)) * 100)}%` }} /></span>
-        {done}/{view.stages.length}
-      </span> : view.canStart ? <Button isLoading={starting} size="compact" variant="primary" onPress={() => void start()}><Play aria-hidden="true" size={14} />{siteAndMaterials ? t("Start site visit") : t("Start design")}</Button> : null}
-    </header>
+  // A titled section card like every other: the package beside the title, then how many stages are done (no bar) or the way to start.
+  return <Card level={3} id="design-journey" title={siteAndMaterials ? t("Site visit & materials") : t("Design")}
+    chip={view.journey?.packageName ? <span className={styles.package}>{view.journey.packageName}</span> : null}
+    action={view.journey ? <span className={styles.progress} aria-label={t("{done} of {total} stages done", { done, total: view.stages.length })}>{t("{done} of {total} done", { done, total: view.stages.length })}</span>
+      : view.canStart ? <Button isLoading={starting} size="compact" variant="primary" onPress={() => void start()}><Play aria-hidden="true" size={14} />{siteAndMaterials ? t("Start site visit") : t("Start design")}</Button> : null}>
+    <div className={styles.journey}>
     {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
     {/* The job's open items: pending checklist lines; after the visit they are confirmed from here. */}
@@ -247,7 +242,8 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
       <p className={styles.muted}>{t("Recorded with your name and today's date.")}</p>
     </FormDialog> : null}
     {dialog?.kind === "assign" ? <AssignDialog members={members} onClose={() => setDialog(null)} onSubmit={async (membershipId) => saved(t("Visualiser assigned."), await post(`design-journey/stages/${dialog.stage.stage}/assign`, { version: dialog.stage.version, membershipId }))} /> : null}
-  </section>;
+    </div>
+  </Card>;
 }
 
 function CloseInspirationDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (note: string) => Promise<unknown> }) {

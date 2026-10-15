@@ -56,7 +56,11 @@ describe("planning case overview", () => {
     expect(header).toHaveTextContent("D-0007");
     expect(header).toHaveTextContent("Fit-out");
     const strip = screen.getByLabelText("Where the case stands");
-    expect(strip).toHaveTextContent("Scope confirmation · 2 of 6");
+    // KPI tiles: the stage by name with its place in the line; the tile opens the Stages sub-tab.
+    const stage = within(strip).getByText("Stage", { selector: "dt" }).closest(".wd-kpi-tile")!;
+    expect(stage).toHaveTextContent("Scope confirmationStage 2 of 6");
+    expect(within(stage as HTMLElement).getByRole("button")).toBeInTheDocument();
+    expect(within(screen.getByRole("tablist", { name: "Lists" })).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Stages", "History"]);
     // Defining the scope is next; it opens where it's done.
     expect(await screen.findByRole("heading", { level: 3, name: "Confirm the scope" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Open the scope" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/definition");

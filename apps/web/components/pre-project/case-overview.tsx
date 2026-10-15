@@ -3,9 +3,9 @@
 import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CalendarClock, CircleDollarSign, Flag, UserRound, UserRoundCheck } from "lucide-react";
+import { CalendarClock, CircleDollarSign, Flag, TriangleAlert, UserRound, UserRoundCheck, Wallet } from "lucide-react";
 import {
-  Badge, Button, EditableField, EditableFieldList, EmptyState, FactRow, FormDialog, IconMenuButton, InlineNotice, PersonName, Progress, SelectField, Skeleton, TextAreaField,
+  Badge, Button, Card, EditableField, EditableFieldList, EmptyState, FactRow, FormDialog, IconMenuButton, InlineNotice, KpiStrip, KpiTile, PersonName, SelectField, Skeleton, TextAreaField,
   type ActionItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -22,7 +22,7 @@ import type { CommercialState } from "@/lib/commercial/types";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import { valueEngineeringApi, type ValueEngineeringView } from "@/lib/value-engineering/client";
-import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
+import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, SectionTabs, SideSection, useSectionTabs } from "@/components/record/record-layout";
 import { FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
 import { useProjectFormat } from "@/components/project-core/format";
@@ -187,6 +187,8 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
   assetHref: (assetId: string) => string;
 }) {
   const t = useT();
+  // The first sub-tab until someone picks one; the Stage tile opens Stages.
+  const sections = useSectionTabs("");
   const format = useProjectFormat();
   const input = useMemo(() => ({ record, commercial, journey, project, today, valueEngineering }), [record, commercial, journey, project, today, valueEngineering]);
   const next = useMemo(() => caseNextStep(input), [input]);
@@ -205,9 +207,12 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
   const completeUntil = until(completeBy);
   const value = money?.agreed ? { label: t("Agreed value"), amount: money.agreed } : money?.quoted ? { label: t("Quoted"), amount: money.quoted } : record.amount ? { label: t("Estimated value"), amount: record.amount } : null;
   const currency = money?.currency ?? record.currencyCode ?? commercial?.currency ?? "";
-  const stageText = record.projectId && project
-    ? project.project.status === "completed" ? t("Project completed") : currentStage ? t("{stage} · {position} of {count}", { stage: t(currentStage.name as MessageKey), position: currentStage.position + 1, count: project.stages.length }) : t("Released")
-    : t("{stage} · {position} of {count}", { stage: t(casePhaseText(effectivePhase(record, commercial), record.plan).stage), ...position });
+  // The stage by name, and where it sits in the line ("Stage 3 of 6") under it.
+  const stage = record.projectId && project
+    ? project.project.status === "completed" ? { name: t("Project completed"), position: null }
+      : currentStage ? { name: t(currentStage.name as MessageKey), position: t("Stage {number} of {total}", { number: currentStage.position + 1, total: project.stages.length }) }
+      : { name: t("Released"), position: null }
+    : { name: t(casePhaseText(effectivePhase(record, commercial), record.plan).stage), position: t("Stage {number} of {total}", { number: position.position, total: position.count }) };
   const site = record.siteAddress || record.siteLatitude != null ? record : null;
   const quote = commercial?.data.quotes.find((item) => item.status === "issued");
   const dates = [
@@ -238,7 +243,6 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
         money.paid ? { label: t("Paid"), value: format.money(money.paid, money.currency), tone: "success" } : null,
         money.outstanding && Number(money.outstanding) > 0 ? { label: t("Outstanding"), value: format.money(money.outstanding, money.currency) } : null,
       ]} />
-      {money.paidShare !== null ? <Progress label={t("{percent}% paid", { percent: money.paidShare })} value={money.paidShare} /> : null}
     </SideSection> : null}
   </RecordPanel>;
 
@@ -264,14 +268,16 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
       {record.enquiryTypeName ? <span>{record.enquiryTypeName}</span> : null}
       <Badge data-chip="" tone={caseStatusTone(record.status)}>{t(caseStatusLabel(record.status))}</Badge>
     </>} />
-    <RecordStrip label={t("Where the case stands")}>
-      <StripItem icon={<Flag aria-hidden="true" size={13} />} label={t("Stage")}>{stageText}</StripItem>
-      {record.engagementOwnerName ? <StripItem icon={<UserRound aria-hidden="true" size={13} />} label={t("Owner")}><PersonChip id={record.ownerMembershipId ?? "owner"} name={record.engagementOwnerName} /></StripItem> : null}
-      {completeBy ? <StripItem icon={<CalendarClock aria-hidden="true" size={13} />} label={t("Complete by")}>{day(completeBy)}{completeUntil ? <>&nbsp;·&nbsp;<span data-late={completeUntil.late || undefined}>{completeUntil.text}</span></> : null}</StripItem> : null}
-      {overdue ? <StripItem label={t("Overdue")}><Badge tone="danger">{t("{count} overdue", { count: overdue })}</Badge></StripItem> : null}
-      {value ? <StripItem icon={<CircleDollarSign aria-hidden="true" size={13} />} label={value.label}>{format.money(value.amount, currency)}</StripItem> : null}
-      {money?.paidShare !== null && money?.paidShare !== undefined ? <StripItem label={t("Paid")}>{t("{percent}%", { percent: money.paidShare })}</StripItem> : null}
-    </RecordStrip>
+    {/* Where the case stands, as tiles: the stage (n of N), its owner, when it is due (late in danger), what is overdue, the value and the share paid. */}
+    <KpiStrip label={t("Where the case stands")}>
+      <KpiTile icon={<Flag size={13} />} label={t("Stage")} value={stage.name} detail={stage.position} onPress={() => sections.open("stages")} />
+      {record.engagementOwnerName ? <KpiTile icon={<UserRound size={13} />} label={t("Owner")} value={<PersonChip id={record.ownerMembershipId ?? "owner"} name={record.engagementOwnerName} />} /> : null}
+      {completeBy ? <KpiTile icon={<CalendarClock size={13} />} label={t("Complete by")} value={day(completeBy)} detail={completeUntil?.text} tone={completeUntil?.late ? "danger" : undefined} /> : null}
+      {overdue ? <KpiTile icon={<TriangleAlert size={13} />} label={t("Overdue")} value={overdue} tone="danger" /> : null}
+      {value ? <KpiTile icon={<CircleDollarSign size={13} />} label={value.label} value={format.money(value.amount, currency)} /> : null}
+      {money?.paidShare !== null && money?.paidShare !== undefined ? <KpiTile icon={<Wallet size={13} />} label={t("Paid")} value={t("{percent}%", { percent: money.paidShare })}
+        tone={money.paidShare >= 100 ? "success" : undefined} /> : null}
+    </KpiStrip>
     <RecordColumns sideLabel={t("Case overview")} tabs={[
       { id: "overview", label: t("Overview"), panel: overview },
       { id: "details", label: t("Details"), panel: detailsPanel },
@@ -279,15 +285,18 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
     ]}
       next={<>
         {loading ? <Skeleton lines={3} shape="facts" /> : <CaseNextStepCard next={next} busy={busy} onCommand={onCommand} />}
-        <SideSection title={t("Stages")}>
-          <RecordTimeline label={t("Stages")} steps={steps.map((step) => ({
-            id: step.id, label: say(t, step.label), state: step.state, people: step.people,
-            date: step.doneAt ? day(step.doneAt) : null, detail: step.detail ? say(t, step.detail) : null,
-          }))} />
-        </SideSection>
-        {journeySlot}
-      </>}
-      activity={historySlot ? <SideSection title={t("History")}>{historySlot}</SideSection> : null} />
+        {/* The long lists as sub-tabs under the next step (the design journey first while it runs), each in its card. */}
+        <SectionTabs tab={sections.tab} onTabChange={sections.setTab} tabsRef={sections.ref} tabs={[
+          ...(journeySlot ? [{ id: "design", label: t("Design"), panel: journeySlot }] : []),
+          { id: "stages", label: t("Stages"), panel: <Card>
+            <RecordTimeline label={t("Stages")} steps={steps.map((step) => ({
+              id: step.id, label: say(t, step.label), state: step.state, people: step.people,
+              date: step.doneAt ? day(step.doneAt) : null, detail: step.detail ? say(t, step.detail) : null,
+            }))} />
+          </Card> },
+          ...(historySlot ? [{ id: "history", label: t("History"), panel: <Card>{historySlot}</Card> }] : []),
+        ]} />
+      </>} />
   </RecordFrame>;
 }
 
