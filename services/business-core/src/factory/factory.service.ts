@@ -35,6 +35,9 @@ import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
 import { normaliseProductionSteps, parseProductionSteps, parseProductionWeeks, readProduction } from "./production-status";
 import { useForProduction } from "../fulfilment/stock-reservations";
 import { tellKeepInformed } from "../project-core/project-keep-informed";
+import { bespokeOrder } from "../project-core/project-drawing-needs";
+import { lineRequirementsSettled, qsApproved } from "../project-core/project-bespoke-gates";
+import { technicalHandoverAccepted } from "../project-core/project-technical-handover";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -496,7 +499,8 @@ export class FactoryService {
     return this.access.withPermission(actor, workspaceId, "workspace.settings.manage", async (client, user) => {
       const current = await ensureFactorySettings(client, workspaceId);
       if (body.version !== current.version) throw new ConflictException("Someone else changed these settings. Reload to see their changes.");
-      const flag = (key: "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck") => (body[key] === undefined ? current[key] : body[key] === true);
+      const flag = (key: "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck" | "requireTechnicalHandover" | "requireFactoryRequirements" | "requireQs") =>
+        (body[key] === undefined ? current[key] : body[key] === true);
       // PLM-063: the production steps the firm keeps, in its own words, and its internal production target.
       const steps = body.productionSteps === undefined ? normaliseProductionSteps(current.productionSteps) : parseProductionSteps(body.productionSteps);
       const weeks = body.productionWeeks === undefined ? current.productionWeeks : parseProductionWeeks(body.productionWeeks);
@@ -508,9 +512,11 @@ export class FactoryService {
         .then((choices) => ({ roles: choices.roles.map((role) => role.key), workPackages: choices.workPackages.map((entry) => entry.id), designPackages: choices.designPackages.map((entry) => entry.code) })));
       await client.query(`UPDATE workspace_factory_settings SET require_drawing = $2, require_payment = $3, require_materials = $4, require_check = $5, production_steps = $7::jsonb,
         production_weeks = $8, balance_reminder_days = $9, inspections_enabled = $10, inspection_stages = $11::jsonb, inspection_work_packages = $12::uuid[], inspector_role = $13,
-        director_role = $14, director_packages = $15::varchar[], inspection_days = $16, version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
+        director_role = $14, director_packages = $15::varchar[], inspection_days = $16, require_technical_handover = $17, require_factory_requirements = $18, require_qs = $19,
+        version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId, JSON.stringify(steps), weeks, reminderDays,
-          inspections.enabled, JSON.stringify(inspections.stages), inspections.workPackageIds, inspections.inspectorRole, inspections.directorRole, inspections.directorPackages, inspections.days]);
+          inspections.enabled, JSON.stringify(inspections.stages), inspections.workPackageIds, inspections.inspectorRole, inspections.directorRole, inspections.directorPackages, inspections.days,
+          flag("requireTechnicalHandover"), flag("requireFactoryRequirements"), flag("requireQs")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return this.settingsView(client, workspaceId, user.userId);
     });
@@ -669,6 +675,16 @@ export class FactoryService {
       const short = materials.length ? (await materialsShort(client, workspaceId, order.id, materials)).map((row) => `${row.itemName} ${plain(row.short)} ${row.unit}`.trim())
         : needsNotIn(await projectNeeds(), order.packageId).map((need) => need.title);
       checks.push({ key: "materials", passed: !short.length, missing: `materials aren't in: ${short.slice(0, 5).join(", ")}${short.length > 5 ? ` and ${short.length - 5} more` : ""}`, detail: short });
+    }
+    // PLM-174: on a bespoke (path E) job, the technical handover accepted, the line's requirements settled and the QS step passed, where the firm asks.
+    if ((settings.requireTechnicalHandover || settings.requireFactoryRequirements || settings.requireQs) && await bespokeOrder(client, workspaceId, order.projectId)) {
+      if (settings.requireTechnicalHandover) checks.push({ key: "technical_handover", passed: await technicalHandoverAccepted(client, workspaceId, order.projectId), missing: "the technical team hasn't accepted the handover pack" });
+      if (settings.requireFactoryRequirements) {
+        const requirements = await lineRequirementsSettled(client, workspaceId, order.projectId, order.boqLineId);
+        checks.push({ key: "factory_requirements", passed: requirements.settled,
+          missing: requirements.state === "pending" ? "the factory lead hasn't confirmed its materials and labour" : "its materials and labour aren't recorded (no verified recipe)" });
+      }
+      if (settings.requireQs) checks.push({ key: "qs", passed: project ? await qsApproved(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the quotation hasn't passed its QS step" });
     }
     checks.push({ key: "schedule", passed: Boolean(order.workcenterId && order.plannedStart && order.plannedEnd), missing: "it has no workcenter or dates" });
     return checks;
@@ -1001,6 +1017,8 @@ export class FactoryService {
       designs: await this.approvedDesigns(client, workspaceId, order.projectId),
       // The drawing it's made to when none is recorded on it: the project's client-approved drawings, or its catalogue drawing.
       drawing: await readWorkOrderDrawing(client, workspaceId, order),
+      // PLM-166: where its line's material and labour requirements stand (a verified recipe, or the factory's record).
+      requirements: await lineRequirementsSettled(client, workspaceId, order.projectId, order.boqLineId),
       projectStatus: (await client.query<{ status: string }>(`SELECT status FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.projectId])).rows[0]?.status ?? "active",
       operations: await this.operations(client, workspaceId, orderId),
       // Suppliers a step can go to (not archived, approved first).

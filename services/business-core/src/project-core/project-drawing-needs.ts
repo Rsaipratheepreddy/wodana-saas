@@ -44,8 +44,8 @@ export type DrawingItem = {
   override: { needed: boolean; reason: string; byName: string | null; at: string | null } | null; version: number;
 };
 
-/** Whether the job is bespoke as a whole (its furniture path), so every item is drawn. */
-async function bespokeOrder(db: Db, workspaceId: string, projectId: string) {
+/** Whether the job is bespoke as a whole (its furniture path, path E), so every item is drawn and the path E checks hold (PLM-174). */
+export async function bespokeOrder(db: Db, workspaceId: string, projectId: string) {
   return (await db.query<{ path: string | null }>(
     `SELECT opportunity.furniture_path AS path FROM delivery_projects project
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = project.workspace_id AND pre_case.id = project.case_id

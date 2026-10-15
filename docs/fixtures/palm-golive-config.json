@@ -80,8 +80,12 @@
           ]
         },
         {
+          "_note": "PLM-174 (path E): on a bespoke job production waits for the technical handover accepted (PLM-165), every custom line's factory requirements confirmed (PLM-166) and the QS step; on other jobs these checks pass by themselves.",
           "stage": "Production",
           "checks": [
+            "technical_handover_accepted",
+            "factory_requirements_confirmed",
+            "qs_approved",
             "everything_made"
           ]
         }
@@ -133,6 +137,12 @@
       "directorPackages": [
         "creative_director"
       ]
+    },
+    "release": {
+      "_source": "PLM-174 (path E, 15 Oct 2026): before a work order on a bespoke job is released, the technical handover pack is accepted, the line's factory requirements are confirmed (or its recipe verified) and the quotation passed QS.",
+      "technicalHandover": true,
+      "factoryRequirements": true,
+      "qsApproved": true
     }
   },
   "quotations": {

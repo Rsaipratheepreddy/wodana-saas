@@ -55,6 +55,8 @@ export type Profile = {
      */
     inspections?: { enabled?: boolean; stages?: InspectionStage[]; trades?: string[]; inspectorRole?: string; directorRole?: string | null; directorPackages?: string[];
       workingDays?: number };
+    /** PLM-174: the path E checks before a work order on a bespoke job is released (each off unless switched on). */
+    release?: { technicalHandover?: boolean; factoryRequirements?: boolean; qsApproved?: boolean };
   };
   quotations?: { validityDays?: number; qsReview?: boolean; qsPrices?: "all" | "rules"; qsItemTypes?: string[]; qsWorkPackages?: string[]; valueEngineeringFreeRounds?: number | null };
   firstResponse?: { minutes: number; warningMinutes?: number; workingCalendar?: { days: string[]; start: string; end: string; timeZone?: string } };
@@ -213,9 +215,17 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.factory !== undefined) {
-    const section = at("factory").object(raw.factory, ["productionSteps", "clientPaymentReminderDays", "permits", "inspections"]);
+    const section = at("factory").object(raw.factory, ["productionSteps", "clientPaymentReminderDays", "permits", "inspections", "release"]);
     if (section) {
       const factory: NonNullable<Profile["factory"]> = {};
+      if (section.release !== undefined) {
+        const release = at("factory.release").object(section.release, ["technicalHandover", "factoryRequirements", "qsApproved"]);
+        if (release) factory.release = {
+          technicalHandover: optional(release, "technicalHandover", (value) => at("factory.release.technicalHandover").bool(value)),
+          factoryRequirements: optional(release, "factoryRequirements", (value) => at("factory.release.factoryRequirements").bool(value)),
+          qsApproved: optional(release, "qsApproved", (value) => at("factory.release.qsApproved").bool(value)),
+        };
+      }
       if (section.productionSteps !== undefined) {
         const steps = at("factory.productionSteps").list(section.productionSteps, 4).flatMap((entry, index): ProductionStep[] => {
           const path = `factory.productionSteps[${index}]`;

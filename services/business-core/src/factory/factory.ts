@@ -20,6 +20,11 @@ export type FactorySettings = {
    */
   inspectionsEnabled: boolean; inspectionStages: unknown; inspectionWorkPackages: string[]; inspectorRole: string; directorRole: string | null;
   directorPackages: string[]; inspectionDays: number;
+  /**
+   * PLM-174: the path E checks before a work order on a bespoke job is released: the technical handover pack accepted
+   * (PLM-165), the line's factory requirements confirmed or its recipe verified (PLM-166), the quotation past its QS step.
+   */
+  requireTechnicalHandover: boolean; requireFactoryRequirements: boolean; requireQs: boolean;
 };
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
 
@@ -131,7 +136,8 @@ export async function ensureFactorySettings(db: Db, workspaceId: string): Promis
     `SELECT require_drawing AS "requireDrawing", require_payment AS "requirePayment", require_materials AS "requireMaterials", require_check AS "requireCheck", version,
             production_steps AS "productionSteps", production_weeks AS "productionWeeks", balance_reminder_days AS "balanceReminderDays",
             inspections_enabled AS "inspectionsEnabled", inspection_stages AS "inspectionStages", inspection_work_packages::text[] AS "inspectionWorkPackages",
-            inspector_role AS "inspectorRole", director_role AS "directorRole", director_packages::text[] AS "directorPackages", inspection_days AS "inspectionDays"
+            inspector_role AS "inspectorRole", director_role AS "directorRole", director_packages::text[] AS "directorPackages", inspection_days AS "inspectionDays",
+            require_technical_handover AS "requireTechnicalHandover", require_factory_requirements AS "requireFactoryRequirements", require_qs AS "requireQs"
        FROM workspace_factory_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 
