@@ -36,6 +36,38 @@ function signable(items: MaterialItem[]) {
     quantity: item.quantity, unit: item.unit, note: item.note, catalogItemId: item.catalogItemId, boqLineIds: [...item.boqLineIds].sort() }));
 }
 
+/** The whole list in a stable shape, for the QS's confirmation (PLM-159): its fingerprint changes only when the list does. */
+function listFingerprint(items: MaterialItem[]) {
+  return canonicalHash(items.map((item) => ({ id: item.id, name: item.name, code: item.code, specification: item.specification, supplier: item.supplier,
+    quantity: item.quantity, unit: item.unit, catalogItemId: item.catalogItemId, boqLineIds: [...item.boqLineIds].sort() })));
+}
+
+export type MaterialListConfirmation = { confirmedAt: string; confirmedByName: string | null; current: boolean };
+
+/** The QS's confirmation of the material list: when, by whom, and whether the list is still as confirmed. Null when never confirmed. */
+export async function readMaterialListConfirmation(db: Db, workspaceId: string, projectId: string): Promise<MaterialListConfirmation | null> {
+  const row = (await db.query<{ confirmedAt: string | null; confirmedByName: string | null; hash: string | null }>(
+    `SELECT project.material_list_confirmed_at AS "confirmedAt", person.display_name AS "confirmedByName", project.material_list_confirmed_hash AS hash
+       FROM delivery_projects project LEFT JOIN users person ON person.id = project.material_list_confirmed_by WHERE project.workspace_id = $1 AND project.id = $2`, [workspaceId, projectId])).rows[0];
+  if (!row?.confirmedAt) return null;
+  return { confirmedAt: row.confirmedAt, confirmedByName: row.confirmedByName, current: row.hash === listFingerprint(await readItems(db, workspaceId, projectId)) };
+}
+
+/** Whether the QS confirmed the material list as it is now (a project with no list has nothing to confirm: false, so the gate asks). */
+export async function materialListConfirmed(db: Db, workspaceId: string, projectId: string) {
+  return (await readMaterialListConfirmation(db, workspaceId, projectId))?.current ?? false;
+}
+
+/** The QS confirms the list as it is now; confirming an unchanged list again changes nothing. */
+export async function confirmMaterialList(db: Db, workspaceId: string, projectId: string, actorUserId: string) {
+  const items = await readItems(db, workspaceId, projectId);
+  if (!items.length) throw new ConflictException("Add the materials before confirming the list.");
+  const hash = listFingerprint(items);
+  await db.query(`UPDATE delivery_projects SET material_list_confirmed_by = $3, material_list_confirmed_at = now(), material_list_confirmed_hash = $4 WHERE workspace_id = $1 AND id = $2`,
+    [workspaceId, projectId, actorUserId, hash]);
+  return { items: items.length, hash };
+}
+
 async function latestRevision(db: Db, workspaceId: string, projectId: string, lock = false): Promise<Revision | undefined> {
   return (await db.query<Revision>(
     `SELECT revision.id, revision.number, revision.status, revision.content_hash AS "contentHash", revision.sent_at AS "sentAt", sender.display_name AS "sentByName",

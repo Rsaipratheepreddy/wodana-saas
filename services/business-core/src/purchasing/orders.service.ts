@@ -14,9 +14,10 @@ import { SignatureMissingException, signatureGate, tellSignatureMissing } from "
 import { orderFitProblem } from "../product-sourcing/fit-check.store";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
-  DELIVER_TO, SHIPMENT_STATUSES, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, linesNeededBy, nextOrderNumber, packQuantity, orderEvent, orderTotals, priceLine, readNeeds, readOrder,
-  readOrderEvents, readOrderLines, readOrders, readShipments, type OrderDetail, type OrderLine,
+  DELIVER_TO, PURCHASING_FLAGS, SHIPMENT_STATUSES, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, linesNeededBy, nextOrderNumber, packQuantity, orderEvent, orderTotals, priceLine, readNeeds, readOrder,
+  readOrderEvents, readOrderLines, readOrders, readShipments, type OrderDetail, type OrderLine, type PurchasingFlag,
 } from "./orders";
+import { GATE_KEYS, clearGateWaiver, gateBlocks, readGate, waiveGateCheck, type GateKey } from "./ordering-gates";
 import { readBills } from "./payables";
 import { closeSettledBlockers, readLineBlockers } from "./purchasing-blockers";
 import { dealPaymentIn, orderPaymentIn } from "./client-payment";
@@ -61,7 +62,7 @@ export class OrdersService {
   needs(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "purchasing.view", async (client, user) => {
       const settings = await ensurePurchasingSettings(client, workspaceId);
-      return { needs: await readNeeds(client, workspaceId, settings.requireMaterialSignoff, null, settings.requireClientPayment), settings, ...(await this.rights(client, workspaceId, user.userId)) };
+      return { needs: await readNeeds(client, workspaceId, settings.requireMaterialSignoff, null, settings.requireClientPayment, settings.requireBoqApproved), settings, ...(await this.rights(client, workspaceId, user.userId)) };
     });
   }
 
@@ -74,7 +75,8 @@ export class OrdersService {
   }
 
   get(actor: RequestActor, workspaceId: string, orderId: string) {
-    return this.access.withPermission(actor, workspaceId, "purchasing.view", async (client, user) => this.detail(client, workspaceId, orderId, user.userId));
+    // The QS reads an order to sign it off (PLM-159) without the purchasing pages.
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "commercial.estimate"], async (client, user) => this.detail(client, workspaceId, orderId, user.userId));
   }
 
   settings(actor: RequestActor, workspaceId: string) {
@@ -93,7 +95,8 @@ export class OrdersService {
       const threshold = body.approvalThreshold === undefined ? current.approvalThreshold
         : body.approvalThreshold === null || body.approvalThreshold === "" ? null : String(body.approvalThreshold);
       if (threshold !== null && !NUMBER.test(threshold)) throw new BadRequestException("Enter the amount from which orders need approval, or leave it empty.");
-      const flag = (key: "requireMaterialSignoff" | "requireClientPayment" | "requireApprovedSupplier" | "requireInspection" | "requireSitePhoto" | "paymentRunsRequired") => (body[key] === undefined ? current[key] : body[key] === true);
+      const flag = (key: PurchasingFlag) => (body[key] === undefined ? current[key] : body[key] === true);
+      for (const key of PURCHASING_FLAGS) if (body[key] !== undefined && typeof body[key] !== "boolean") throw new BadRequestException(`${key} is on or off.`);
       const tolerance = body.receiveTolerancePercent === undefined ? current.receiveTolerancePercent : String(body.receiveTolerancePercent || "0");
       if (!NUMBER.test(tolerance) || Dec.of(tolerance).cmp(50) > 0) throw new BadRequestException("Over-delivery is a percentage from 0 to 50.");
       const adjustLimit = body.stockAdjustApprovalValue === undefined ? current.stockAdjustApprovalValue
@@ -107,10 +110,13 @@ export class OrdersService {
       if (!["off", "warn", "strict"].includes(guard)) throw new BadRequestException("Choose how orders beyond a project's money are handled.");
       await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, require_inspection = $5,
         receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, order_ahead_days = $10, invoice_tolerance_percent = $11, spending_guard = $12,
-        payment_runs_required = $13, require_client_payment = $14, version = version + 1, updated_by = $7, updated_at = now()
+        payment_runs_required = $13, require_client_payment = $14,
+        require_drawings_verified = $15, require_boq_approved = $16, require_price_approval = $17, require_qs_signoff = $18, require_material_list_confirmed = $19,
+        version = version + 1, updated_by = $7, updated_at = now()
         WHERE workspace_id = $1`,
         [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto"), adjustLimit, ahead,
-          invoiceTolerance, guard, flag("paymentRunsRequired"), flag("requireClientPayment")]);
+          invoiceTolerance, guard, flag("paymentRunsRequired"), flag("requireClientPayment"),
+          flag("requireDrawingsVerified"), flag("requireBoqApproved"), flag("requirePriceApproval"), flag("requireQsSignoff"), flag("requireMaterialListConfirmed")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchasing.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return ensurePurchasingSettings(client, workspaceId);
     });
@@ -159,17 +165,19 @@ export class OrdersService {
   }
 
   command(actor: RequestActor, workspaceId: string, orderId: string, body: Record<string, unknown>) {
-    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "purchasing.approve"], async (client, user) => {
+    // The QS (commercial.estimate) reaches one action, the sign-off; everything else stays with the people who buy or approve.
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "purchasing.approve", "commercial.estimate"], async (client, user) => {
+      const action = String(body.action ?? "");
+      const can = async (code: string) => this.access.hasPermission(client, workspaceId, user.userId, code);
+      const need = async (code: string, message: string) => { if (!(await can(code))) throw new ForbiddenException(message); };
+      if (action !== "qs_signoff" && !(await can("purchasing.manage")) && !(await can("purchasing.approve"))) throw new ForbiddenException("You can't change purchase orders.");
       // A command sent again with the same id returns the order as it is now.
       const commandId = body.commandId === undefined || body.commandId === null ? null : uuid(body.commandId, "Command");
-      if (commandId && !(await firstTime(client, workspaceId, commandId, orderId, String(body.action ?? ""), user.userId)))
+      if (commandId && !(await firstTime(client, workspaceId, commandId, orderId, action, user.userId)))
         return { ...(await this.detail(client, workspaceId, orderId, user.userId)), email: null };
       const order = await readOrder(client, workspaceId, orderId, true);
       if (!order) throw new NotFoundException("Order not found.");
       if (body.version !== order.version) throw new ConflictException("Someone else changed this order. Reload to see their changes.");
-      const action = String(body.action ?? "");
-      const can = async (code: string) => this.access.hasPermission(client, workspaceId, user.userId, code);
-      const need = async (code: string, message: string) => { if (!(await can(code))) throw new ForbiddenException(message); };
       const status = (...allowed: string[]) => { if (!allowed.includes(order.status)) throw new ConflictException(statusMessage(order.status)); };
       const set = (sql: string, values: unknown[]) => client.query(`UPDATE purchase_orders SET ${sql}, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId, ...values]);
       let audit: Record<string, unknown> = {};
@@ -192,8 +200,37 @@ export class OrdersService {
           await this.writeLines(client, workspaceId, orderId, lines, order.currency);
           // An override was for the order as it was.
           if (order.fundsOverrideReason) await set(`funds_override_by = NULL, funds_override_at = NULL, funds_override_reason = NULL`, []);
+          // PLM-159: so was the QS's sign-off.
+          if (order.qsSignedOffAt) { await set(`qs_signed_off_by = NULL, qs_signed_off_at = NULL`, []); await orderEvent(client, workspaceId, orderId, "qs_signoff_cleared", { reason: "lines changed" }, user.userId); }
         }
         audit = { header, terms, lines: lines?.length };
+      } else if (action === "qs_signoff") {
+        // PLM-159: the QS signs off the draft order form (its lines, quantities and prices) before it is placed.
+        await need("commercial.estimate", "Only the QS signs off an order.");
+        status("draft");
+        if (order.qsSignedOffAt) throw new ConflictException("The QS already signed off this order.");
+        if (!(await readOrderLines(client, workspaceId, orderId)).length) throw new ConflictException("Add at least one line.");
+        await set(`qs_signed_off_by = $3, qs_signed_off_at = now()`, [user.userId]);
+        await orderEvent(client, workspaceId, orderId, "qs_signed_off", {}, user.userId);
+        await this.tell(client, workspaceId, order, "purchasing.qs_signed_off", [order.createdBy], user.userId, "");
+        audit = { signedOff: true };
+      } else if (action === "waive_check" || action === "clear_waiver") {
+        // PLM-159: someone who approves orders marks a gate check "Not applicable" on this order, with the reason (or takes the mark off).
+        await need("purchasing.approve", "Someone who approves orders decides what doesn't apply.");
+        status("draft", "pending_approval", "approved");
+        const key = oneOf(body.checkKey, GATE_KEYS, "Check") as GateKey;
+        if (action === "waive_check") {
+          const reason = text(body.reason, 500, "Reason");
+          if (!reason) throw new BadRequestException("Say why this check doesn't apply to the order.");
+          await waiveGateCheck(client, workspaceId, orderId, key, reason, user.userId);
+          await orderEvent(client, workspaceId, orderId, "check_waived", { check: key, reason }, user.userId);
+          audit = { check: key, reason };
+        } else {
+          if (!(await clearGateWaiver(client, workspaceId, orderId, key))) throw new ConflictException("This check wasn't marked not applicable.");
+          await orderEvent(client, workspaceId, orderId, "waiver_cleared", { check: key }, user.userId);
+          audit = { check: key };
+        }
+        await set(`notes = notes`, []);
       } else if (action === "submit") {
         await need("purchasing.manage", "You can't raise purchase orders.");
         status("draft");
@@ -528,8 +565,13 @@ export class OrdersService {
     const supplier = await readSupplier(client, workspaceId, order.vendorId);
     const rights = await this.rights(client, workspaceId, userId);
     const lines = await readOrderLines(client, workspaceId, orderId);
+    // PLM-159: the gate's checks while the order isn't placed (afterwards only what was marked not applicable is kept on it).
+    const settings = await ensurePurchasingSettings(client, workspaceId);
+    const gate = ["draft", "pending_approval"].includes(order.status) ? await readGate(client, workspaceId, order, settings) : [];
     return {
       order, lines, events: await readOrderEvents(client, workspaceId, orderId),
+      gate: gate.filter((check) => check.required || check.waiver),
+      canQsSignOff: order.status === "draft" && settings.requireQsSignoff && !order.qsSignedOffAt && await this.access.hasPermission(client, workspaceId, userId, "commercial.estimate"),
       receipts: await readReceipts(client, workspaceId, { orderId }),
       returns: await readReturns(client, workspaceId, orderId),
       revisions: (await client.query<{ revision: number; reason: string; at: string; byName: string }>(
@@ -855,6 +897,10 @@ export class OrdersService {
     // E5-6: an item that doesn't fit through the site's measured access waits for an override with a reason.
     const fit = await orderFitProblem(client, workspaceId, order.id);
     if (fit) throw new ConflictException(fit);
+    // PLM-159 / PLM-163 / PLM-169: the firm's optional checks (drawings verified, BOQ approved, price approved, QS sign-off,
+    // material list confirmed), unless someone who approves orders marked one not applicable here.
+    const blocked = gateBlocks(await readGate(client, workspaceId, order, settings));
+    if (blocked) throw new ConflictException(`${blocked.missing} Someone who approves orders can mark the check not applicable to this order.`);
   }
 
   /** The projects on an order that are on hold now. */

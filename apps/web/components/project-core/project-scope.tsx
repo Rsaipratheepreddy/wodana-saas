@@ -20,6 +20,7 @@ import { FinishesSchedule } from "../finishes/finishes-schedule";
 import { ProjectReadiness } from "./project-readiness";
 import { ProjectBrief } from "./project-brief";
 import { SealedDocument } from "./sealed-document";
+import { ProjectBoqState } from "./project-boq-state";
 import { ProjectChanges } from "../change-requests/project-changes";
 import { RecordLink, recordHrefs } from "../record/linked-records";
 import { orderNumber } from "../factory/factory-labels";
@@ -146,6 +147,8 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
       items={[{ id: "items", label: t("Items") }, { id: "brief", label: t("Brief") }, { id: "readiness", label: t("Readiness") }, { id: "materials", label: t("Materials") }, { id: "finishes", label: t("Finishes") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, ...(priced ? [{ id: "sealed", label: t("Sealed") }] : [])]} />
 
     {view === "items" ? <>
+      {/* PLM-167 / PLM-168: the BOQ's lifecycle, where the firm uses it (or a price hold shows, PLM-169). */}
+      {scope.boq && (scope.boq.enabled || scope.boq.priceHolds.length) ? <ProjectBoqState boq={scope.boq} currency={scope.currency} run={run} /> : null}
       <div className={styles.scopeToolbar}>
         <div className={styles.toolbarActions}>
           <SegmentedControl label={t("Group by")} value={group} onChange={(value) => setGroup(value as Group)}

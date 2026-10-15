@@ -383,6 +383,38 @@ describe("projects", () => {
     expect(await screen.findByText("Agreed in R3 · 6.5 m")).toBeInTheDocument();
   });
 
+  it("PLM-167 / PLM-168 / PLM-169: shows the BOQ's state with the one step open to this person, its approved revisions, its history and the lines held for a price", async () => {
+    const live: LiveScope = {
+      lines: [{ id: "a", position: 0, kind: "item", areaId: "k", areaName: "Kitchen", workPackageId: null, tradeName: null, title: "Kitchen cabinets", description: "", unit: "m", quantity: "6.5000", rate: "4200", net: "27300.0000", status: "active", packageId: null, origin: "R3", catalogImageId: null, imageAssetId: null }],
+      packages: [], seals: [], currency: "AED", version: 4, canManage: true, members: [], variations: [], caseId: "c1", baselineQuoteId: "q1",
+      boq: { enabled: true, status: "technical_verified", revision: 1, label: "R1", version: 3, current: false, verifiedByName: "Tariq Technical", verifiedAt: "2026-10-14T09:00:00Z", approvedByName: "Quinn QS", approvedAt: "2026-10-10T09:00:00Z",
+        lockedByName: null, lockedAt: null, returnedByName: null, returnedAt: null, returnReason: "", actions: ["qs_approve", "return"],
+        history: [{ id: "h2", kind: "verified", detail: {}, byName: "Tariq Technical", at: "2026-10-14T09:00:00Z" }, { id: "h1", kind: "qs_approved", detail: { revision: "R1" }, byName: "Quinn QS", at: "2026-10-10T09:00:00Z" }],
+        revisions: [{ id: "r1", number: 1, label: "R1", total: "27300.0000", cost: null, lines: 1, note: "", approvedByName: "Quinn QS", approvedAt: "2026-10-10T09:00:00Z", currency: "AED" }],
+        priceHolds: [{ lineId: "a", reason: "Kitchen cabinets: AED 30000.00 ordered against AED 27300.00 agreed; the client approves the price correction first" }] },
+    };
+    const fetcher = mount((url, body) => (body ? detail({ version: 5 }) : url.includes("/scope") ? live : detail()));
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
+    const panel = await screen.findByRole("region", { name: "BOQ status" });
+    // The state, and the same step in the history.
+    expect(within(panel).getAllByText("Verified by the technical team")).toHaveLength(2);
+    expect(within(panel).getByText("BOQ R1")).toBeInTheDocument();
+    expect(within(panel).getByText("Changed since R1")).toBeInTheDocument();
+    expect(within(panel).getByText(/Verified by Tariq Technical on/)).toBeInTheDocument();
+    expect(within(panel).getByText(/1 item waits for the client's approved price/)).toBeInTheDocument();
+    expect(within(within(panel).getByRole("list", { name: "Approved revisions" })).getByText(/BOQ R1 · 1 item · AED 27,300\.00/)).toBeInTheDocument();
+    expect(within(panel).getByText("Approved by the QS as R1")).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Verify" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Lock" })).not.toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole("button", { name: "QS approve" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "qs_approve_boq", version: 4 })]));
+    await userEvent.click(within(panel).getByRole("button", { name: "Return to draft" }));
+    const dialog = await screen.findByRole("dialog", { name: "Return to draft" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Why it goes back to draft" }), "Worktop quantity is wrong");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Return to draft" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual(expect.objectContaining({ action: "return_boq", reason: "Worktop quantity is wrong" })));
+  });
+
   it("lists the project's changes (and variations made in the builder before), and raises a new one from Changes", async () => {
     const live: LiveScope = { lines: [], packages: [], seals: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1", variations: [] };
     const changes = { canRaise: true, projectOpen: true,

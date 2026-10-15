@@ -5,6 +5,7 @@ import { clientChoicesSignedOff } from "../project-core/project-materials";
 import { ledgerProcurementProblem } from "../design/design-ledger.store";
 import { signatureGate } from "../design/finishes.store";
 import { boqRequiredForProject } from "../fulfilment/fulfilment-rules";
+import { boqApproved } from "../project-core/project-boq-state";
 import { orderPaymentIn } from "./client-payment";
 
 type Db = Pick<PoolClient, "query">;
@@ -67,10 +68,10 @@ export type Need = {
   /** A material the client chooses (it waits for their sign-off); scope lines never do. */
   clientChoice: boolean;
   /**
-   * Why it can't be ordered yet, if it can't: the client's material sign-off, the client's signed samples and data sheets
-   * (PLM-148), or the client's payment for the order (PLM-071).
+   * Why it can't be ordered yet, if it can't: the QS's approval of the project BOQ (PLM-163), the client's material
+   * sign-off, the client's signed samples and data sheets (PLM-148), or the client's payment for the order (PLM-071).
    */
-  blocked: "material_signoff" | "client_signature" | "client_payment" | null;
+  blocked: "boq_approval" | "material_signoff" | "client_signature" | "client_payment" | null;
   /** The supplier the catalog prefers for it, when it knows one. */
   supplierId: string | null;
   /**
@@ -111,7 +112,7 @@ export async function linesNeededBy(db: Db, workspaceId: string, lines: Array<{ 
  * and the scope lines of packages that are bought (ready-made, bought materials) or subcontracted. For
  * each, how much is needed, how much is on placed orders and in draft, and what's left.
  */
-export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boolean, projectId: string | null = null, requirePayment = false): Promise<Need[]> {
+export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boolean, projectId: string | null = null, requirePayment = false, requireBoqApproved = false): Promise<Need[]> {
   const rows = (await db.query<Omit<Need, "blocked" | "remaining" | "orderBy" | "fromStock" | "status"> & { remaining: string | null; scopeInstalled: boolean; siteFinished: boolean }>(
     `WITH projects AS (
        SELECT project.id, project.reference, project.name, project.status, project.site_finished_on FROM delivery_projects project
@@ -212,6 +213,9 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
   // PLM-071: nothing is ordered for a project before the client's payment for its order is in.
   const paid = new Map<string, boolean>();
   if (requirePayment) for (const projectId of new Set(rows.map((row) => row.projectId))) paid.set(projectId, await orderPaymentIn(db, workspaceId, projectId));
+  // PLM-163: with the BOQ gate on, a project's lines are offered only once the QS approved (or locked) its BOQ.
+  const approved = new Map<string, boolean>();
+  if (requireBoqApproved) for (const projectId of new Set(rows.map((row) => row.projectId))) approved.set(projectId, await boqApproved(db, workspaceId, projectId));
   // PLM-148: a project's materials wait for the client's signed samples and data sheets (the categories the firm marks).
   const unsigned = new Set<string>();
   if (requireSignoff || requirePayment) for (const projectId of new Set(rows.map((row) => row.projectId)))
@@ -228,7 +232,8 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
   return rows.map(({ scopeInstalled, siteFinished, ...row }) => {
     const stock = fromStock.get(row.key) ?? Dec.ZERO;
     return { ...row, fromStock: stock.toString(), remaining: row.remaining === null ? null : Dec.of(row.remaining).sub(stock).toFixed(4), orderBy: orderBy(row.neededBy, row.leadDays),
-      blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const
+      blocked: requireBoqApproved && !approved.get(row.projectId) ? "boq_approval" as const
+        : requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const
         : unsigned.has(row.projectId) ? "client_signature" as const
         : (requirePayment && !paid.get(row.projectId)) || variationUnpaid(row) ? "client_payment" as const : null,
       status: lineStatus({ required: row.required, placed: row.placed, received: row.received, fromStock: stock.toString(), scopeInstalled, siteFinished }) };
@@ -379,6 +384,8 @@ export type OrderDetail = OrderRow & {
   fundsOverrideAt: string | null; fundsOverrideReason: string | null; fundsOverrideByName: string | null;
   /** Who said it goes ahead while one of its projects is on hold, and why. */
   holdOverrideAt: string | null; holdOverrideReason: string | null; holdOverrideByName: string | null;
+  /** PLM-159: the QS's sign-off on the draft (cleared when its lines change). */
+  qsSignedOffAt: string | null; qsSignedOffByName: string | null;
 };
 
 export async function readOrder(db: Db, workspaceId: string, orderId: string, lock = false): Promise<OrderDetail | undefined> {
@@ -392,14 +399,16 @@ export async function readOrder(db: Db, workspaceId: string, orderId: string, lo
             purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", purchase.over_reason AS "overReason",
             purchase.continue_on_hold_at AS "continuedAt", purchase.continue_on_hold_note AS "continuedNote", continuer.display_name AS "continuedByName", entity.display_name AS "companyName",
             purchase.funds_override_at AS "fundsOverrideAt", purchase.funds_override_reason AS "fundsOverrideReason", overrider.display_name AS "fundsOverrideByName",
-            purchase.hold_override_at AS "holdOverrideAt", purchase.hold_override_reason AS "holdOverrideReason", holder.display_name AS "holdOverrideByName"
+            purchase.hold_override_at AS "holdOverrideAt", purchase.hold_override_reason AS "holdOverrideReason", holder.display_name AS "holdOverrideByName",
+            purchase.qs_signed_off_at AS "qsSignedOffAt", qs.display_name AS "qsSignedOffByName"
        FROM (${ORDER_SELECT} WHERE purchase.workspace_id = $1 AND purchase.id = $2) listed
        JOIN purchase_orders purchase ON purchase.workspace_id = $1 AND purchase.id = listed.id
        JOIN legal_entities entity ON entity.workspace_id = $1 AND entity.id = purchase.legal_entity_id
        LEFT JOIN users approver ON approver.id = purchase.approved_by
        LEFT JOIN users continuer ON continuer.id = purchase.continue_on_hold_by
        LEFT JOIN users overrider ON overrider.id = purchase.funds_override_by
-       LEFT JOIN users holder ON holder.id = purchase.hold_override_by`, [workspaceId, orderId])).rows[0];
+       LEFT JOIN users holder ON holder.id = purchase.hold_override_by
+       LEFT JOIN users qs ON qs.id = purchase.qs_signed_off_by`, [workspaceId, orderId])).rows[0];
 }
 
 export async function readOrderLines(db: Db, workspaceId: string, orderId: string): Promise<OrderLine[]> {
@@ -468,7 +477,22 @@ export type PurchasingSettings = {
   spendingGuard: "off" | "warn" | "strict";
   /** Invoices are paid only through a payment run someone else approved; advances on orders are still recorded directly. */
   paymentRunsRequired: boolean; version: number;
+  /** PLM-159: the ordering gate's optional checks (each may be marked "Not applicable" on one order, with a reason). */
+  requireDrawingsVerified: boolean;
+  /** PLM-163: the project BOQ is QS-approved (or locked) before its lines are offered in "To order" or placed on an order. */
+  requireBoqApproved: boolean;
+  /** PLM-169: an order or work order whose cost is above the agreed amount, or whose scope change is pending, waits for the client's approved price correction. */
+  requirePriceApproval: boolean;
+  /** The QS signs off a draft order before it is placed. */
+  requireQsSignoff: boolean;
+  /** The QS confirmed the project's material list as it is now. */
+  requireMaterialListConfirmed: boolean;
 };
+
+/** The purchasing settings that are on/off switches (saved as given, kept when left out). */
+export const PURCHASING_FLAGS = ["requireMaterialSignoff", "requireClientPayment", "requireApprovedSupplier", "requireInspection", "requireSitePhoto", "paymentRunsRequired",
+  "requireDrawingsVerified", "requireBoqApproved", "requirePriceApproval", "requireQsSignoff", "requireMaterialListConfirmed"] as const;
+export type PurchasingFlag = (typeof PURCHASING_FLAGS)[number];
 
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
   await db.query(`INSERT INTO workspace_purchasing_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
@@ -477,7 +501,9 @@ export async function ensurePurchasingSettings(db: Db, workspaceId: string): Pro
             require_approved_supplier AS "requireApprovedSupplier",
             require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue",
             order_ahead_days AS "orderAheadDays", invoice_tolerance_percent::text AS "invoiceTolerancePercent", spending_guard AS "spendingGuard",
-            payment_runs_required AS "paymentRunsRequired", version
+            payment_runs_required AS "paymentRunsRequired", version,
+            require_drawings_verified AS "requireDrawingsVerified", require_boq_approved AS "requireBoqApproved", require_price_approval AS "requirePriceApproval",
+            require_qs_signoff AS "requireQsSignoff", require_material_list_confirmed AS "requireMaterialListConfirmed"
        FROM workspace_purchasing_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

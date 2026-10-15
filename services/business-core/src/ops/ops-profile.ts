@@ -90,8 +90,16 @@ export type Profile = {
    * records the client's approval (null: the project manager), and the working days the technical measure is due in.
    * What must be true before a project starts (Settings › Projects › Starting a project): the deal approved, the
    * agreement signed, the first payment verified.
+   * PLM-161 / PLM-167: the BOQ lifecycle on the Scope tab, the project starting by itself on the verified upfront payment,
+   * and the project role that verifies the BOQ (null: the technical designer).
    */
-  projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null } & Partial<Record<ProjectStartRule, boolean>>;
+  projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null; boqReview?: boolean; autoStartOnPayment?: boolean; boqTechnicalRole?: string | null } & Partial<Record<ProjectStartRule, boolean>>;
+  /**
+   * Purchasing (PLM-159 / PLM-163 / PLM-169): the ordering gate's optional checks, each on or off: technical drawings
+   * verified, the project BOQ QS-approved, the client's approval of a revised price, the QS's sign-off on the order form,
+   * and the QS-confirmed material list. A key left out keeps its value.
+   */
+  purchasing?: { requireDrawingsVerified?: boolean; requireBoqApproved?: boolean; requirePriceApproval?: boolean; requireQsSignoff?: boolean; requireMaterialListConfirmed?: boolean };
   /**
    * The finishes schedule (PLM-146/148/156/157): the finish categories in order (which the client signs before
    * procurement), whether the final quotation waits for the final specification, the days to send the finishes to QS,
@@ -131,7 +139,8 @@ export const DESIGN_TEAM_KEYS = ["lead_designer", "junior_designer", "sales_admi
 export type DesignTeamKey = (typeof DESIGN_TEAM_KEYS)[number];
 
 export const PROFILE_SECTIONS = ["enquiryTypes", "vehicles", "factory", "quotations", "firstResponse", "financeRequests", "approvals", "routes", "rolePermissions",
-  "design", "orderPaths", "clientUpdates", "clientPortal", "catalogCategories", "projects", "finishes", "inbox", "sales", "enquiryRequirements"] as const;
+  "design", "orderPaths", "clientUpdates", "clientPortal", "catalogCategories", "projects", "purchasing", "finishes", "inbox", "sales", "enquiryRequirements"] as const;
+export const PURCHASING_GATE_KEYS = ["requireDrawingsVerified", "requireBoqApproved", "requirePriceApproval", "requireQsSignoff", "requireMaterialListConfirmed"] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 export const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -521,17 +530,33 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.projects !== undefined) {
-    const section = at("projects").object(raw.projects, ["drawingsClientRole", "technicalMeasureDays", ...PROJECT_START_RULES]);
+    const section = at("projects").object(raw.projects, ["drawingsClientRole", "technicalMeasureDays", "boqReview", "autoStartOnPayment", "boqTechnicalRole", ...PROJECT_START_RULES]);
     if (section) {
+      const roleKey = (key: "drawingsClientRole" | "boqTechnicalRole", example: string) => nullable(section, key, (value) => {
+        if (typeof value !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(value)) { problems.push(`projects.${key} is a project role key like ${example}, or null.`); return null; }
+        return value;
+      });
       const projects: NonNullable<Profile["projects"]> = {
-        drawingsClientRole: nullable(section, "drawingsClientRole", (value) => {
-          if (typeof value !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(value)) { problems.push("projects.drawingsClientRole is a project role key like designer, or null."); return null; }
-          return value;
-        }),
+        drawingsClientRole: roleKey("drawingsClientRole", "designer"),
         technicalMeasureDays: nullable(section, "technicalMeasureDays", (value) => at("projects.technicalMeasureDays").int(value, 1, 60) ?? null),
+        boqReview: optional(section, "boqReview", (value) => at("projects.boqReview").bool(value)),
+        autoStartOnPayment: optional(section, "autoStartOnPayment", (value) => at("projects.autoStartOnPayment").bool(value)),
+        boqTechnicalRole: roleKey("boqTechnicalRole", "technical_designer"),
         ...Object.fromEntries(PROJECT_START_RULES.map((rule) => [rule, optional(section, rule, (value) => at(`projects.${rule}`).bool(value))])),
       };
       profile.projects = Object.fromEntries(Object.entries(projects).filter(([, value]) => value !== undefined));
+    }
+  }
+
+  if (raw.purchasing !== undefined) {
+    const section = at("purchasing").object(raw.purchasing, [...PURCHASING_GATE_KEYS]);
+    if (section) {
+      const purchasing: NonNullable<Profile["purchasing"]> = {};
+      for (const key of PURCHASING_GATE_KEYS) {
+        const value = optional(section, key, (entry) => at(`purchasing.${key}`).bool(entry));
+        if (value !== undefined) purchasing[key] = value;
+      }
+      profile.purchasing = purchasing;
     }
   }
 

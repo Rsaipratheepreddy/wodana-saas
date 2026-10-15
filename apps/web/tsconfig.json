@@ -91,7 +91,11 @@
     ".next-goal-bookmarks/types/**/*.ts",
     ".next-goal-bookmarks/dev/types/**/*.ts",
     ".next-review/types/**/*.ts",
-    ".next-review/dev/types/**/*.ts"
+    ".next-review/dev/types/**/*.ts",
+    ".next-video/types/**/*.ts",
+    ".next-video/dev/types/**/*.ts",
+    ".next-prodcheck/types/**/*.ts",
+    ".next-prodcheck/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

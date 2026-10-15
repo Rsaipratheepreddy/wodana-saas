@@ -98,12 +98,22 @@
       ]
     }
   ],
-  "_projects": "PLM-149: the lead designer sends the drawings to the client and records the approval (switch to the Lead Interior Designer role key once PLM-151 adds it); the technical measure is due 5 working days after its task opens (to confirm with Palm).",
+  "_projects": "PLM-149: the lead designer sends the drawings to the client and records the approval (switch to the Lead Interior Designer role key once PLM-151 adds it); the technical measure is due 5 working days after its task opens (to confirm with Palm). PLM-161 / PLM-167 / PLM-168 (15 Oct 2026): the project (and its draft BOQ) starts by itself once Proposal 2 is accepted and the upfront payment is verified by Finance; the technical team verifies the BOQ and the QS approves it (BOQ R-n) before ordering; the technical designer role verifies it unless Palm names another.",
   "_projectStart": "Palm (15 Oct 2026): a project starts only after the owner approved the deal (Settings › Projects › Starting a project › Deal approved).",
   "projects": {
     "drawingsClientRole": "designer",
     "technicalMeasureDays": 5,
+    "boqReview": true,
+    "autoStartOnPayment": true,
     "requireApproval": true
+  },
+  "_purchasing": "PLM-159 / PLM-163 / PLM-169 (15 Oct 2026): nothing is ordered before the technical drawings are verified, the BOQ is QS-approved, the client approved any revised price, the QS signed off the order form and confirmed the material list. Someone who approves orders can mark a check not applicable on one order, with a reason.",
+  "purchasing": {
+    "requireDrawingsVerified": true,
+    "requireBoqApproved": true,
+    "requirePriceApproval": true,
+    "requireQsSignoff": true,
+    "requireMaterialListConfirmed": true
   },
   "factory": {
     "productionSteps": [

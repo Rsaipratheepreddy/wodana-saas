@@ -18,7 +18,7 @@ import { CreateOrderDialog } from "./create-order-dialog";
 import { LineStatusLabel, quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
-export type ToOrderView = "order" | "late" | "signoff" | "payment" | "hold" | "over" | "restock" | "all";
+export type ToOrderView = "order" | "late" | "signoff" | "boq" | "payment" | "hold" | "over" | "restock" | "all";
 
 const running = (need: Need) => (need.projectStatus ?? "active") === "active";
 /** What the buyer can order now: signed off (or no client choice), its project running, and something still open. */
@@ -68,6 +68,8 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
     && (!needle || `${need.title} ${need.detail} ${need.projectReference} ${need.projectName} ${need.packageName ?? ""}`.toLocaleLowerCase().includes(needle))), [state, projectId, needle]);
   const queues: Record<Exclude<ToOrderView, "restock">, (need: Need) => boolean> = {
     order: orderable, late: (need) => orderable(need) && Boolean(need.orderBy && need.orderBy < today), signoff: (need) => (need.blocked === "material_signoff" || need.blocked === "client_signature") && running(need),
+    // PLM-163: lines of a project whose BOQ the QS hasn't approved yet.
+    boq: (need) => need.blocked === "boq_approval" && running(need),
     payment: (need) => need.blocked === "client_payment" && running(need), hold: onHold, over,
     all: () => true,
   };
@@ -83,6 +85,8 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
     if (need.blocked === "client_payment") return <Link className={styles.rowLink} href={projectHref(need.projectId, "money")}>{t("Open payments")}</Link>;
     // PLM-148: the client signs the samples and data sheets on the job's finishes.
     if (need.blocked === "client_signature") return <Link className={styles.rowLink} href={`${projectHref(need.projectId, "scope")}?view=finishes`}>{t("Get the signatures")}</Link>;
+    // PLM-163: the BOQ is approved on the project's Scope tab.
+    if (need.blocked === "boq_approval") return <Link className={styles.rowLink} href={projectHref(need.projectId, "scope")}>{t("Get the BOQ approved")}</Link>;
     if (need.blocked) return <Link className={styles.rowLink} href={projectHref(need.projectId, "scope")}>{t("Get sign-off")}</Link>;
     if (over(need)) return <Button size="compact" variant="quiet" onPress={onOrders}>{t("Open orders")}</Button>;
     if (onHold(need)) return <Button size="compact" aria-label={t("Order {name} anyway", { name: need.title })} onPress={() => openOrder([need])}>{t("Order anyway")}</Button>;
@@ -102,6 +106,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
         Number(need.fromStock) ? t("{quantity} from stock", { quantity: unit(need.fromStock, need.unit) }) : ""].filter(Boolean).join(" · ");
       const main = need.blocked === "client_payment" ? <span className={styles.muted}>{t("Waiting for the client's payment")}</span>
         : need.blocked === "client_signature" ? <span className={styles.muted}>{t("Waiting for the client's signed samples")}</span>
+        : need.blocked === "boq_approval" ? <span className={styles.muted}>{t("Waiting for the QS to approve the BOQ")}</span>
         : need.blocked ? <span className={styles.muted}>{t("Waiting for the client's sign-off")}</span>
         : need.remaining === null ? <span className={styles.muted}>{t("Quantity to confirm")}</span>
         : Number(need.remaining) > 0 ? <strong className={styles.money}>{unit(need.remaining, need.unit)}</strong>
@@ -134,7 +139,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const filtered = Boolean(needle || projectId);
   const empty = {
     order: [t("Nothing left to order"), t("Materials appear here from each project's material list, and bought items from its scope.")],
-    late: [t("Nothing is late to order"), null], signoff: [t("Nothing waits for the client"), null], payment: [t("Nothing waits for a payment"), null], hold: [t("No project is on hold"), null],
+    late: [t("Nothing is late to order"), null], signoff: [t("Nothing waits for the client"), null], boq: [t("Nothing waits for the QS"), null], payment: [t("Nothing waits for a payment"), null], hold: [t("No project is on hold"), null],
     over: [t("Nothing is over-ordered"), null], restock: [t("No stock is low"), t("Set a reorder point on an item in Inventory to be told when it runs low.")], all: [t("Nothing to order yet"), null],
   }[view];
   // At most six tabs (To order, four of these, Everything): the views that hold something, most pressing first; the
@@ -142,6 +147,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const optional = [
     { id: "late" as const, label: t("Late to order"), count: count("late") },
     { id: "signoff" as const, label: t("Client sign-off"), count: count("signoff") },
+    { id: "boq" as const, label: t("BOQ approval"), count: count("boq") },
     { id: "payment" as const, label: t("Client payment"), count: count("payment") },
     { id: "hold" as const, label: t("On hold"), count: count("hold") },
     { id: "over" as const, label: t("Over-ordered"), count: count("over") },

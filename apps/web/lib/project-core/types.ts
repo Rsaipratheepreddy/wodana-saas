@@ -37,6 +37,12 @@ export type ProjectSettings = {
   /** PLM-179: how a job's client updates start: by call, a portal update or either; and how often (off: they don't start). */
   clientUpdateMode?: "call" | "portal" | "either";
   clientUpdateFrequency?: "weekly" | "fortnightly" | "monthly" | "off";
+  /** PLM-167 / PLM-168: the BOQ lifecycle (technical verification, QS approval, lock) shows on the Scope tab. */
+  boqReview?: boolean;
+  /** PLM-161: the project starts by itself, with its draft BOQ, when the accepted quotation's upfront payment is verified. */
+  autoStartOnPayment?: boolean;
+  /** PLM-167: the project role that verifies the BOQ; null: the technical designer. */
+  boqTechnicalRole?: string | null;
 };
 /** The project's key moments people can be kept informed about (PLM-055). */
 export type KeepInformedEvent = "drawings_started" | "production_started" | "installation_scheduled";
@@ -324,6 +330,17 @@ export type RecordLinks = {
 export type ScopePackage = { id: string; name: string; supply: Supply; ownerMembershipId: string | null; ownerName: string | null; dueDate: string | null; version: number };
 export type SealSummary = { id: string; kind: "baseline" | "variation"; revisionLabel: string; quoteNumber: number; total: string | null; currency: string; acceptedAt: string; acceptedBy: string };
 export type VariationSummary = { id: string; number: number; title: string; status: string; total: string | null; appliedAs: string | null };
+export type BoqStatus = "draft" | "technical_verified" | "qs_approved" | "locked";
+export type BoqAction = "verify" | "qs_approve" | "return" | "lock";
+export type BoqRevision = { id: string; number: number; label: string; total: string | null; cost: string | null; lines: number; note: string; approvedByName: string; approvedAt: string; currency: string };
+export type BoqStateEvent = { id: string; kind: "drafted" | "verified" | "qs_approved" | "returned" | "locked" | "changed"; detail: Record<string, unknown>; byName: string | null; at: string };
+/** PLM-167 / PLM-168 / PLM-169: the BOQ's lifecycle, what this person may do to it, its revisions and history, and the lines held for a price. */
+export type BoqState = {
+  enabled: boolean; status: BoqStatus; revision: number; label: string | null; version: number; current: boolean;
+  verifiedByName: string | null; verifiedAt: string | null; approvedByName: string | null; approvedAt: string | null;
+  lockedByName: string | null; lockedAt: string | null; returnedByName: string | null; returnedAt: string | null; returnReason: string;
+  actions: BoqAction[]; history: BoqStateEvent[]; revisions: BoqRevision[]; priceHolds: Array<{ lineId: string; reason: string }>;
+};
 export type LiveScope = {
   lines: ScopeLine[]; packages: ScopePackage[]; seals: SealSummary[]; variations: VariationSummary[];
   currency: string; version: number; canManage: boolean; members: Member[]; caseId: string; baselineQuoteId: string;
@@ -332,6 +349,7 @@ export type LiveScope = {
   /** PLM-170: whether the internal view (cost, committed, margin) is there, and whether the margin is. */
   canSeeCosts?: boolean;
   canSeeMargin?: boolean;
+  boq?: BoqState;
 };
 export type LineHistoryEntry = { id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string };
 
@@ -354,6 +372,8 @@ export type MaterialRevision = {
 export type MaterialsState = {
   state: "draft" | "sent" | "signed_off" | "changes_requested" | "changed";
   items: MaterialItem[]; revisions: MaterialRevision[]; version: number; canEdit: boolean;
+  /** PLM-159: the QS's confirmation of the list (null: never), whether the ordering gate asks for it, and whether this person is the QS. */
+  qsConfirmation?: { confirmedAt: string; confirmedByName: string | null; current: boolean } | null; qsGate?: boolean; canConfirmQs?: boolean;
 };
 
 export type WorkType = "task" | "blocker" | "client_request" | "snag";
