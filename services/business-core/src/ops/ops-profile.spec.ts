@@ -36,6 +36,11 @@ describe("configuration profile", () => {
     expect(palm.finishes?.categories?.filter((category) => category.clientSignature).map((category) => category.key)).toEqual(["whitegoods", "sanitary_ware"]);
     expect(palm.finishes?.priceBands?.map((band) => band.label)).toEqual(["Entry", "Mid range", "Premium", "Luxury"]);
     expect(palm.clientUpdates).toEqual({ mode: "call", frequency: "weekly" });
+    // PLM-170: the client BOQ on, for fit-out, ID & furniture, renovation and bespoke joinery jobs.
+    expect(palm.clientPortal).toEqual({ sections: { boq: true }, boqEnquiryTypes: ["full_fit_out", "interior_design_furniture", "renovation_fit_out", "bespoke"] });
+    expect(problems({ clientPortal: { sections: { boq: "yes", nope: true }, boqEnquiryTypes: "full_fit_out" } })).toEqual([
+      "clientPortal.sections has unknown keys: nope.", "clientPortal.sections.boq is true or false.", "clientPortal.boqEnquiryTypes is a list.",
+    ]);
     expect(palm.catalogCategories).toEqual([{ catalog: "Palm Living Core Collection", merge: [{ from: "BED & MATTRESS", into: "Beds & Mattress" }], deleteEmpty: [],
       deleteEmptyDuplicates: true, rename: [{ from: "DINING CHAIRS", to: "Dining Chairs" }, { from: "LOUNGE CHAIRS", to: "Lounge Chairs" }],
       parent: [{ category: "Dining Chairs", parent: "Chairs" }, { category: "Lounge Chairs", parent: "Chairs" }] }]);

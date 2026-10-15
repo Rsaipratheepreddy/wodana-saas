@@ -22,7 +22,7 @@ const quote: PortalQuote = {
 };
 const base: PortalProject = {
   id: "c1", title: "Villa 12", reference: null, role: "approver", status: "active", paused: false,
-  sections: { progress: false, moodboard: false, decisions: true, payments: false, documents: false, warranty: true, meetings: false, designs: false, messages: true },
+  sections: { progress: false, moodboard: false, decisions: true, payments: false, boq: false, documents: false, warranty: true, meetings: false, designs: false, messages: true },
   manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, rooms: [], unread: 0, next: [], latestUpdate: null, progress: null, moodboard: null,
   decisions: { quotes: [quote], designs: [], requests: [], definition: null, materials: null,
     handovers: [{ id: "k1", revision: 1, title: "Villa handover", status: "issued", areas: [], issuedAt: "2026-09-26T09:00:00.000Z", decidedOn: null, decidedBy: null, note: "",

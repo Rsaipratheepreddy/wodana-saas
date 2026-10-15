@@ -11,6 +11,7 @@ import { readIssues } from "./portal-issues";
 import { readMessages } from "./portal-messages";
 import { readMeetings } from "./portal-meetings";
 import { readDesignFolder } from "./portal-designs";
+import { readPortalBoq } from "./portal-boq";
 import { readMoodboard, takesIdeas } from "./portal-moodboard";
 import { readDesignChoices } from "./portal-design-decisions";
 import { readPayments } from "./portal-payments";
@@ -34,6 +35,8 @@ type Db = Pick<PoolClient, "query">;
 type CaseRow = {
   caseId: string; caseStatus: string; title: string; projectId: string | null; projectName: string | null; reference: string | null; projectStatus: string | null;
   startedAt: string | null; startDate: string | null; promiseDate: string | null; completedOn: string | null; currency: string | null;
+  /** The kind of job (PLM-170): its enquiry type's code and, for a furniture order, its path; the sections shown for some jobs only read these. */
+  enquiryType: string | null; furniturePath: string | null;
 };
 
 const IMAGE = /^image\/(png|jpeg|webp|gif)$/;
@@ -48,10 +51,13 @@ export async function readCase(db: Db, workspaceId: string, caseId: string): Pro
     `SELECT pre_case.id AS "caseId", pre_case.status AS "caseStatus", opportunity.title, project.id AS "projectId", project.name AS "projectName",
             project.reference, project.status AS "projectStatus", project.started_at AS "startedAt", project.start_date::text AS "startDate",
             project.promise_date::text AS "promiseDate", trim(project.currency) AS currency,
-            (project.completed_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS "completedOn"
+            (project.completed_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS "completedOn",
+            enquiry.service_type AS "enquiryType", opportunity.furniture_path AS "furniturePath"
        FROM pre_project_cases pre_case
        JOIN workspaces workspace ON workspace.id = pre_case.workspace_id
        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_leads lead ON lead.workspace_id = opportunity.workspace_id AND lead.id = opportunity.lead_id
+       LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
        LEFT JOIN delivery_projects project ON project.workspace_id = pre_case.workspace_id AND project.case_id = pre_case.id AND project.started_at IS NOT NULL
                                            AND project.status <> 'archived'
       WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0];
@@ -73,7 +79,7 @@ export async function readView(db: Db, workspaceId: string, contact: PortalConta
 async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseRow, settings: PortalSettings, today: string, definitions: DefinitionSource,
   files: FilePresence, since?: string | null) {
   const access = row.projectId ? await readProjectAccess(db, workspaceId, row.projectId) : null;
-  const sections = effectiveSections(settings, access);
+  const sections = effectiveSections(settings, access, { enquiryType: row.enquiryType, furniturePath: row.furniturePath });
   const started = Boolean(row.projectId);
   const running = started && ["active", "on_hold"].includes(row.projectStatus ?? "");
   const base = {
@@ -83,7 +89,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   };
   if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, address: null, startDate: null,
     team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, updates: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
-    messages: null, meetings: null, designs: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
+    messages: null, meetings: null, designs: null, boq: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
   const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, grant.id, today) : null;
@@ -97,6 +103,8 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   const meetings = on("meetings") ? await readMeetings(db, workspaceId, grant, row.caseId) : null;
   // PLM-153: every design file shared with the client, by stage, to view and comment on.
   const designs = on("designs") ? await readDesignFolder(db, workspaceId, grant, row, files) : null;
+  // PLM-170: the live bill of quantities at selling rates, once the project has started (the section already knows the kind of job).
+  const boq = started && on("boq") ? await readPortalBoq(db, workspaceId, row.projectId!, row.currency) : null;
   // The designs and their pinned comments, one conversation with the design team (part of what the client decides on).
   const design = on("decisions") ? await readDesignReview(db, workspaceId, grant, row, files) : null;
   // The concepts shown to the client to pick from, and the materials and decisions they confirm (plan §6.7a).
@@ -126,7 +134,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
     next: nextSteps(decisions, payments, progress, choices, changes),
     unread: messages?.unread ?? 0,
-    latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, meetings, designs, design, choices, changes, budget,
+    latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, meetings, designs, boq, design, choices, changes, budget,
     feed: feedCards(source), digest: since === undefined ? null : whatChanged(source, since),
   };
 }

@@ -2,7 +2,7 @@ import type { ClientPresentation } from "@/lib/proposals/client";
 import type { DocumentLetterhead } from "../brand/letterhead";
 /** The client portal as the business core returns it (services/business-core/src/client-portal). */
 
-export const PORTAL_SECTIONS = ["progress", "moodboard", "designs", "decisions", "payments", "documents", "warranty", "meetings", "messages"] as const;
+export const PORTAL_SECTIONS = ["progress", "moodboard", "designs", "decisions", "payments", "boq", "documents", "warranty", "meetings", "messages"] as const;
 export type PortalSection = (typeof PORTAL_SECTIONS)[number];
 export type PortalSections = Record<PortalSection, boolean>;
 
@@ -237,6 +237,8 @@ export type PortalProject = {
   meetings?: null | { meetings: PortalMeeting[] };
   /** PLM-153: every design file shared with the client, by stage. */
   designs?: null | { groups: Array<{ key: PortalDesignGroup; designs: PortalFolderDesign[] }> };
+  /** PLM-170: the live bill of quantities at selling rates (never cost or margin), for the kinds of job the firm lists. */
+  boq?: PortalBoq | null;
   /** Shared designs with their pinned comment threads, one conversation with the design team (plan §6.7a). */
   design?: PortalDesignReview | null;
   /** Concept presentations to choose from and the materials and decisions to confirm (plan §6.7a). */
@@ -250,6 +252,10 @@ export type PortalProject = {
   /** What changed since this contact last looked (AI2). */
   digest?: PortalDigest | null;
 };
+
+/** PLM-170: the client's bill of quantities: room by room, each line at its selling rate, with totals; labelled with the latest sealed revision. */
+export type PortalBoqLine = { id: string; title: string; description: string; quantity: string; unit: string; rate: string; amount: string };
+export type PortalBoq = { currency: string | null; revision: string | null; rooms: Array<{ id: string | null; name: string | null; lines: PortalBoqLine[]; total: string }>; total: string };
 
 /** A tax invoice as the client prints it. */
 export type PortalInvoiceDocument = {
@@ -270,8 +276,12 @@ export type PortalView = { contact: { name: string; nameConfirmed: boolean; phon
 export type PortalSettings = {
   workspaceId: string; slug: string; enabled: boolean; version: number; sections: PortalSections;
   progress: { stageNames: boolean; dates: boolean; updates: boolean; photos: boolean }; invoiceAmounts: boolean;
+  /** PLM-170: the enquiry type codes and order paths whose projects show the bill of quantities (empty: every project). */
+  boqEnquiryTypes: string[];
   welcomeTitle: string; welcomeText: string; support: { phone: string; email: string; whatsapp: string };
 };
+/** A kind of job a portal section can be limited to: an enquiry type of the workspace, or a furniture order path. */
+export type PortalJobType = { code: string; label: string; kind: "enquiry_type" | "path" };
 
 export type PortalContact = {
   id: string; name: string; confirmedName: string | null; phone: string; email: string | null; role: "approver" | "viewer"; active: boolean; testContact: boolean;

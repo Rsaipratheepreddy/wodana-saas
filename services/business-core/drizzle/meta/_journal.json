@@ -1499,6 +1499,13 @@
       "when": 1801740010600,
       "tag": "0344_login_backgrounds",
       "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1801740012700,
+      "tag": "0365_portal_boq_section",
+      "breakpoints": true
     }
   ]
 }

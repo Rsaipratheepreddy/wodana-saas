@@ -4,11 +4,12 @@ import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  DesignSystemProvider, EmailInput, ErrorState, InlineNotice, PhoneField, SaveBar, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput,
+  Checkbox, DesignSystemProvider, EmailInput, ErrorState, InlineNotice, PhoneField, SaveBar, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { staffPortalApi } from "@/lib/client-portal/client";
-import { PORTAL_SECTIONS, type PortalSection, type PortalSettings, type PortalSite } from "@/lib/client-portal/types";
+import { PORTAL_SECTIONS, type PortalJobType, type PortalSection, type PortalSettings, type PortalSite } from "@/lib/client-portal/types";
+import { FURNITURE_PATHS } from "@/lib/crm/opportunity-flow";
 import { joinPhone, splitPhone } from "@/lib/phone";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import { usePortalLabels } from "../portal-labels";
@@ -30,6 +31,7 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
   const [saved, setSaved] = useState<Draft | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [canManage, setCanManage] = useState(false);
+  const [jobTypes, setJobTypes] = useState<PortalJobType[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
     try {
       const result = await api.settings();
       const next = toDraft(result.settings, result.site.region.country ?? "");
-      setSite(result.site); setSaved(next); setDraft(next); setCanManage(result.canManage); setError("");
+      setSite(result.site); setSaved(next); setDraft(next); setCanManage(result.canManage); setJobTypes(result.jobTypes ?? []); setError("");
     } catch (cause) { setError((cause as Error).message); }
   }, [api]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -52,7 +54,7 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
     try {
       const result = await api.saveSettings({
         version: draft.version, enabled: draft.enabled, sections: draft.sections, progress: draft.progress, invoiceAmounts: draft.invoiceAmounts,
-        welcomeTitle: draft.welcomeTitle, welcomeText: draft.welcomeText,
+        boqEnquiryTypes: draft.boqEnquiryTypes ?? [], welcomeTitle: draft.welcomeTitle, welcomeText: draft.welcomeText,
         support: { phone: joinPhone(draft.support.phone.country, draft.support.phone.national), email: draft.support.email,
           whatsapp: joinPhone(draft.support.whatsapp.country, draft.support.whatsapp.national) },
       });
@@ -63,6 +65,12 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
   };
   const progressRows: Array<[keyof Draft["progress"], string]> = [["stageNames", t("Stage names")], ["dates", t("Dates")], ["updates", t("Updates the team shares")],
     ["photos", t("Site photos the team shares")]];
+  // An enquiry type by its own label; an order path by its letter and name, as Settings › Orders by path shows it.
+  const jobLabel = (job: PortalJobType) => {
+    if (job.kind !== "path") return job.label;
+    const path = FURNITURE_PATHS.find((item) => item.id === job.code);
+    return path ? `${path.letter} · ${t(path.label)}` : job.label;
+  };
   return <SettingsPage title={t("Client portal")}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
@@ -76,6 +84,15 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
       {PORTAL_SECTIONS.map((section: PortalSection) => <SettingsRow key={section} label={labels.sections[section]}>
         <Switch aria-label={labels.sections[section]} isDisabled={!editable} isSelected={draft.sections[section]} onChange={(on) => change({ sections: { ...draft.sections, [section]: on } })} />
       </SettingsRow>)}
+      {/* PLM-170: the bill of quantities shows only for the kinds of job chosen here (none chosen: every project). */}
+      {draft.sections.boq && jobTypes.length ? <SettingsRow label={t("Bill of quantities for")} hint={t("Only projects of these enquiry types or order paths; none chosen means every project.")}>
+        <div className={styles.choices} role="group" aria-label={t("Bill of quantities for")}>
+          {jobTypes.map((job) => <Checkbox key={job.code} isDisabled={!editable} isSelected={(draft.boqEnquiryTypes ?? []).includes(job.code)}
+            onChange={(on) => change({ boqEnquiryTypes: on ? [...(draft.boqEnquiryTypes ?? []), job.code] : (draft.boqEnquiryTypes ?? []).filter((code) => code !== job.code) })}>
+            {jobLabel(job)}
+          </Checkbox>)}
+        </div>
+      </SettingsRow> : null}
     </SettingsSection>
     <SettingsSection id="portal-progress" title={t("Progress shows")}>
       {progressRows.map(([key, label]) => <SettingsRow key={key} label={label}>

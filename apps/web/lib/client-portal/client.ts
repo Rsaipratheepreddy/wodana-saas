@@ -1,4 +1,4 @@
-import type { PortalContact, PortalFile, PortalSettings, PortalSite, PortalView, ProjectPortal, StaffIssue, StaffMoodboard, StaffPaymentReport, StaffThreads } from "./types";
+import type { PortalContact, PortalFile, PortalJobType, PortalSettings, PortalSite, PortalView, ProjectPortal, StaffIssue, StaffMoodboard, StaffPaymentReport, StaffThreads } from "./types";
 import type { Translate } from "@/lib/i18n/keys";
 
 const untranslated: Translate = (key) => key;
@@ -54,7 +54,7 @@ export type PortalApi = ReturnType<typeof portalApi>;
 /** The firm's side: settings, a project's portal and client contacts. */
 export function staffPortalApi(workspaceId: string, t: Translate = untranslated) {
   const at = (path: string) => `/api/client-portal-admin/${path}?${new URLSearchParams({ workspaceId })}`;
-  type Settings = { settings: PortalSettings; site: PortalSite; canManage: boolean; demo: boolean };
+  type Settings = { settings: PortalSettings; site: PortalSite; canManage: boolean; demo: boolean; jobTypes?: PortalJobType[] };
   type Contacts = { contacts: PortalContact[]; canManage: boolean; demo: boolean };
   return {
     settings: () => call<Settings>(t, at("settings")),

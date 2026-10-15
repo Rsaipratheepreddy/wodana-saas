@@ -46,6 +46,9 @@ const ALLOWED = new Set(`
 contact contact.name contact.nameConfirmed contact.phone today projects projects[]
 projects[].id projects[].title projects[].reference projects[].role projects[].status projects[].paused projects[].sections
 projects[].sections.progress projects[].sections.decisions projects[].sections.payments projects[].sections.documents projects[].sections.warranty projects[].sections.messages
+projects[].sections.boq projects[].boq projects[].boq.currency projects[].boq.revision projects[].boq.total projects[].boq.rooms projects[].boq.rooms[] projects[].boq.rooms[].id
+projects[].boq.rooms[].name projects[].boq.rooms[].total projects[].boq.rooms[].lines projects[].boq.rooms[].lines[] projects[].boq.rooms[].lines[].id projects[].boq.rooms[].lines[].title
+projects[].boq.rooms[].lines[].description projects[].boq.rooms[].lines[].quantity projects[].boq.rooms[].lines[].unit projects[].boq.rooms[].lines[].rate projects[].boq.rooms[].lines[].amount
 projects[].manager projects[].stage projects[].stage.number projects[].stage.total projects[].stage.name projects[].handoverDate
 projects[].next projects[].next[] projects[].next[].kind projects[].next[].id projects[].next[].title projects[].next[].due
 projects[].latestUpdate projects[].latestUpdate.id projects[].latestUpdate.at projects[].latestUpdate.text
@@ -884,12 +887,55 @@ integration("client portal (plan §6.22)", () => {
       const access = await w.admin.project(actor, w.workspaceId, projectId);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version, sections: ["progress", "decisions"] });
       const narrow = (await w.portal.view(w.slug, token)).projects[0];
-      expect(narrow.sections).toEqual({ progress: true, moodboard: false, designs: false, decisions: true, payments: false, documents: false, warranty: false, meetings: false, messages: false });
+      expect(narrow.sections).toEqual({ progress: true, moodboard: false, designs: false, decisions: true, payments: false, boq: false, documents: false, warranty: false, meetings: false, messages: false });
       expect([narrow.payments, narrow.documents, narrow.messages]).toEqual([null, null, null]);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version + 1, paused: true });
       const paused = (await w.portal.view(w.slug, token)).projects[0];
       expect(paused).toMatchObject({ paused: true, progress: null, decisions: null, payments: null, next: [] });
       await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "request", caseId: w.caseId, title: "Hi", detail: "Hello" })).rejects.toThrow(/paused/);
+    });
+  });
+
+  it("PLM-170: shows the bill of quantities at selling rates to clients of the kinds of job the firm lists, off by default, and never a cost", async () => {
+    await world(async (w) => {
+      await open(w);
+      const { projectId } = await started(w);
+      // The job is a furniture order with a bespoke path (its enquiry says so).
+      const enquiry = randomUUID(), lead = randomUUID();
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO crm_enquiries(id,workspace_id,intake_event_id,party_id,title,source,channel,received_at,reference,service_type,details)
+        VALUES($1,$2,$3,$4,'Villa 12','referral','external',now(),'E-1','furniture_only','{}')`, [enquiry, w.workspaceId, randomUUID(), w.party]);
+      await w.client.query("INSERT INTO crm_leads(id,workspace_id,enquiry_id,party_id) VALUES($1,$2,$3,$4)", [lead, w.workspaceId, enquiry, w.party]);
+      await w.client.query("UPDATE crm_opportunities SET lead_id = $2, furniture_path = 'bespoke' WHERE workspace_id = $1 AND id = (SELECT opportunity_id FROM pre_project_cases WHERE id = $3)",
+        [w.workspaceId, lead, w.caseId]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      const token = await signIn(w, APPROVER);
+      // Off by default: the section isn't there.
+      let project = (await w.portal.view(w.slug, token)).projects[0];
+      expect(project.sections.boq).toBe(false);
+      expect(project.boq).toBeNull();
+      // On for fit-out jobs only: this furniture order doesn't get it.
+      await savePortalSettings(w.client, w.workspaceId, w.manager, { version: 1, sections: { boq: true }, boqEnquiryTypes: ["full_fit_out"] });
+      project = (await w.portal.view(w.slug, token)).projects[0];
+      expect([project.sections.boq, project.boq]).toEqual([false, null]);
+      // On for bespoke joinery too: the client sees room, item, quantity, unit, rate and amount, at the latest revision.
+      await savePortalSettings(w.client, w.workspaceId, w.manager, { version: 2, boqEnquiryTypes: ["full_fit_out", "Bespoke"] });
+      const view = await w.portal.view(w.slug, token);
+      project = view.projects[0];
+      expect(project.sections.boq).toBe(true);
+      expect(project.boq).toMatchObject({ currency: "AED", revision: "R1", total: "7850.00" });
+      expect(project.boq!.rooms.map((room) => [room.name, room.total])).toEqual([["Kitchen", "7200.00"], [null, "650.00"]]);
+      expect(project.boq!.rooms[0].lines[0]).toEqual({ id: expect.any(String), title: "Kitchen cabinets", description: "", quantity: "4.5", unit: "m", rate: "1200.00", amount: "5400.00" });
+      expect(Object.keys(project.boq!.rooms[0].lines[0]).sort()).toEqual(["amount", "description", "id", "quantity", "rate", "title", "unit"]);
+      // No cost field leaks, and no field outside the portal's contract.
+      expect(JSON.stringify(project.boq)).not.toMatch(/424242|999111|cost|margin|package|supplier/i);
+      expect([...new Set(paths(view))].filter((path) => !ALLOWED.has(path) && !path.includes(".presentation."))).toEqual([]);
+      // The project can still narrow it away.
+      const access = await w.admin.project(actor, w.workspaceId, projectId);
+      expect(access.sections).toContain("boq");
+      await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version, sections: ["progress", "payments"] });
+      project = (await w.portal.view(w.slug, token)).projects[0];
+      expect([project.sections.boq, project.boq]).toEqual([false, null]);
     });
   });
 

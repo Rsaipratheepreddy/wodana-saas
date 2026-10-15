@@ -45,3 +45,5 @@
   font-weight: var(--wd-weight-semibold);
 }
 .previewFooter { padding: var(--wd-space-3) var(--wd-space-4); background: var(--wd-color-brand-surface); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+.choices { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-2); }

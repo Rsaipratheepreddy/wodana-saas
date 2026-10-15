@@ -20,6 +20,19 @@ import { readStaffBoard, replyBoard, shareBoard } from "./portal-moodboard";
 import { decideNotice, readCaseNotices } from "./portal-payments";
 import { readView } from "./portal-read";
 import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSettings, saveProjectAccess, SECTIONS } from "./portal-settings";
+import { FURNITURE_PATHS } from "../crm/opportunities/flow-gates";
+
+/**
+ * PLM-170: the kinds of job a section can be limited to (Settings › Client portal › Bill of quantities): the workspace's active
+ * enquiry types by code, and the furniture order paths.
+ */
+export async function readJobTypes(db: Pick<PoolClient, "query">, workspaceId: string): Promise<Array<{ code: string; label: string; kind: "enquiry_type" | "path" }>> {
+  const types = (await db.query<{ code: string; label: string }>(
+    `SELECT choice.code, choice.label FROM crm_taxonomy_options choice
+       JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = choice.workspace_id AND taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
+      WHERE choice.workspace_id = $1 AND choice.status = 'active' ORDER BY choice.position, choice.label`, [workspaceId])).rows;
+  return [...types.map((type) => ({ ...type, kind: "enquiry_type" as const })), ...FURNITURE_PATHS.map((path) => ({ code: path, label: path, kind: "path" as const }))];
+}
 import { portalUrl, readSite } from "./portal-site";
 import { contactEmailSql } from "./contact-email";
 import { phoneProblem } from "../crm/intake/intake-phone";
@@ -101,7 +114,7 @@ export class ClientPortalAdminService {
   private async readSettings(client: PoolClient, workspaceId: string, canManage: boolean) {
     const settings = await readPortalSettings(client, workspaceId);
     // The live preview shows the real brand, exactly as clients will see it.
-    return { settings, site: await readSite(client, workspaceId, settings, this.demo), canManage, demo: this.demo };
+    return { settings, site: await readSite(client, workspaceId, settings, this.demo), canManage, demo: this.demo, jobTypes: await readJobTypes(client, workspaceId) };
   }
 
   /** A project's portal: which sections its client sees, whether it's paused, and who can sign in. */
