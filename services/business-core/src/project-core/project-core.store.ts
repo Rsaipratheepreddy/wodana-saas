@@ -40,6 +40,12 @@ export type ProjectSettings = {
   drawingsClientRole: string | null;
   /** PLM-149: working days the technical site measure is due in once its task opens; null: no due date. */
   technicalMeasureDays: number | null;
+  /** PLM-167 / PLM-168: the BOQ lifecycle shows on the Scope tab (technical verification, QS approval, lock). */
+  boqReview: boolean;
+  /** PLM-161: the project starts by itself, with its draft BOQ, when the accepted quotation's upfront payment is verified by Finance. */
+  autoStartOnPayment: boolean;
+  /** PLM-167: the project role that verifies the BOQ; null: the technical designer. */
+  boqTechnicalRole: string | null;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -51,11 +57,13 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
             require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish",
             client_update_auto_send_hours AS "clientUpdateAutoSendHours", to_char(report_due_time, 'HH24:MI') AS "reportDueTime",
             auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup", keep_informed AS "keepInformed",
-            variation_payment_rule AS "variationPaymentRule", drawings_client_role AS "drawingsClientRole", technical_measure_days AS "technicalMeasureDays"
+            variation_payment_rule AS "variationPaymentRule", drawings_client_role AS "drawingsClientRole", technical_measure_days AS "technicalMeasureDays",
+            boq_review AS "boqReview", auto_start_on_payment AS "autoStartOnPayment", boq_technical_role AS "boqTechnicalRole"
        FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
-  // Roles removed since drop out of who is kept informed, and of who sends the drawings to the client.
+  // Roles removed since drop out of who is kept informed, of who sends the drawings to the client and of who verifies the BOQ.
   return { ...row, keepInformed: normaliseKeepInformed(row.keepInformed, row.roles),
     drawingsClientRole: row.drawingsClientRole && row.roles.some((role) => role.key === row.drawingsClientRole) ? row.drawingsClientRole : null,
+    boqTechnicalRole: row.boqTechnicalRole && row.roles.some((role) => role.key === row.boqTechnicalRole) ? row.boqTechnicalRole : null,
     technicalMeasureDays: row.technicalMeasureDays === null || row.technicalMeasureDays === undefined ? null : Number(row.technicalMeasureDays) };
 }
 

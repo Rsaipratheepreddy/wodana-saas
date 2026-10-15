@@ -8,6 +8,7 @@ import { canonicalHash } from "../crm/shared/crm-types";
 import { tellScopeChanges } from "../factory/factory-changes";
 import { tellOverOrdered } from "../purchasing/purchasing-changes";
 import { acceptedScope } from "../quotation/quotation-builder.service";
+import { boqChanged } from "./project-boq-state";
 import { applyVariation } from "./project-scope";
 
 type Db = Pick<PoolClient, "query">;
@@ -45,6 +46,8 @@ export async function sealVariation(db: Db, input: { workspaceId: string; projec
     [sealId, workspaceId, projectId, quote.id, quote.number, label, decision.quoteHash, JSON.stringify(snapshot), canonicalHash(snapshot), scope.quote.currency,
       scope.pricing.total, decision.decidedAt, decision.decidedBy, decision.method ?? "portal", decision.recordedBy ?? null, actorUserId]);
   await applyVariation(db, workspaceId, projectId, { id: sealId, label }, scope.lines, actorUserId);
+  // PLM-167: the live BOQ changed, so a verified or approved BOQ goes back to draft for the technical check and the QS.
+  await boqChanged(db, workspaceId, projectId, label, actorUserId);
   // Work orders the variation removed or reduced stop; the factory hears which.
   await tellScopeChanges(db as PoolClient, workspaceId, projectId, actorUserId, sealId);
   // Orders it leaves past what the project needs: the people who buy hear which (D-41).

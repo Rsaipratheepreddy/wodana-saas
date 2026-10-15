@@ -18,7 +18,10 @@ import { readNeeds } from "../purchasing/orders";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
-import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, setMaterialDetails, suggestMaterials } from "./project-materials";
+import { confirmMaterialList, deleteMaterial, readMaterialListConfirmation, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, setMaterialDetails, suggestMaterials } from "./project-materials";
+import { applyBoqAction, BOQ_COMMANDS, boqActionsFor, boqTechnicalRoleOf, canActOnBoq, membershipsWithPermission, readBoqState } from "./project-boq-state";
+import { ensurePurchasingSettings } from "../purchasing/orders";
+import { priceHolds } from "../purchasing/price-hold";
 import { assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, SUPPLY, type Supply } from "./project-scope";
 import { sealVariation } from "./variation-seal";
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
@@ -126,13 +129,20 @@ export class ProjectCoreService {
       const measureDays = body.technicalMeasureDays === undefined ? current.technicalMeasureDays : body.technicalMeasureDays;
       if (measureDays !== null && !(Number.isInteger(measureDays) && Number(measureDays) >= 1 && Number(measureDays) <= 60))
         throw new BadRequestException("Give the technical measure 1 to 60 working days, or no due date.");
+      // PLM-161 / PLM-167: the BOQ lifecycle, the project starting by itself on the verified upfront payment, and who verifies the BOQ.
+      const boqReview = body.boqReview === undefined ? current.boqReview : body.boqReview === true;
+      const autoStart = body.autoStartOnPayment === undefined ? current.autoStartOnPayment : body.autoStartOnPayment === true;
+      const technicalRole = body.boqTechnicalRole === undefined ? (roles.some((role) => role.key === current.boqTechnicalRole) ? current.boqTechnicalRole : null)
+        : body.boqTechnicalRole === null || body.boqTechnicalRole === "" ? null : String(body.boqTechnicalRole);
+      if (technicalRole !== null && !roles.some((role) => role.key === technicalRole)) throw new BadRequestException("Choose who verifies the BOQ from the project roles.");
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
                 require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, report_due_time = $11::time, auto_send_pending_reports = $12, weekly_rollup = $13,
                 keep_informed = $14::jsonb, variation_payment_rule = $15, drawings_client_role = $16, technical_measure_days = $17,
+                boq_review = $18, auto_start_on_payment = $19, boq_technical_role = $20,
                 version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend,
-          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule, clientRole, measureDays]);
+          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule, clientRole, measureDays, boqReview, autoStart, technicalRole]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };
@@ -237,7 +247,7 @@ export class ProjectCoreService {
   /** The live BOQ, its packages and the sealed documents it comes from. */
   scope(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      const { all, membershipId, project } = await this.visible(client, workspaceId, projectId, user);
+      const { all, membershipId, project } = await this.visible(client, workspaceId, projectId, user, { qs: true });
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
       const scope = await readScope(client, workspaceId, projectId);
@@ -247,9 +257,28 @@ export class ProjectCoreService {
         ...scope, lines: scope.lines.map((line) => ({ ...line, rate: null, net: null })),
         seals: scope.seals.map((seal) => ({ ...seal, total: null })), variations: scope.variations.map((variation) => ({ ...variation, total: null })),
       };
+      // PLM-167 / PLM-168 / PLM-169: the BOQ's state with what this person may do to it, and the lines held for a price the client hasn't approved.
+      const settings = await ensureSettings(client, workspaceId);
+      const state = await readBoqState(client, workspaceId, projectId);
+      const rights = await this.boqRights(client, workspaceId, user.userId, { manager, team, membershipId, settings });
+      const open = ["active", "on_hold"].includes(project.status);
+      const holds = (await ensurePurchasingSettings(client, workspaceId)).requirePriceApproval ? await priceHolds(client, workspaceId, { projectId }) : new Map<string, string>();
+      const boq = { enabled: settings.boqReview, ...(canSeeValue ? state : { ...state, revisions: state.revisions.map((revision) => ({ ...revision, total: null, cost: null })) }),
+        actions: open ? boqActionsFor(state.status).filter((action) => canActOnBoq(action, rights)) : [],
+        priceHolds: [...holds.entries()].map(([lineId, reason]) => ({ lineId, reason })) };
       return { ...priced, currency: project.currency, version: project.version, caseId: project.caseId, baselineQuoteId: project.quoteId,
-        canManage: manager && ["active", "on_hold"].includes(project.status), members: manager ? await activeMembers(client, workspaceId) : [], canSeeValue };
+        canManage: manager && open, members: manager ? await activeMembers(client, workspaceId) : [], canSeeValue, boq };
     });
+  }
+
+  /** Who the person is to the BOQ: the project manager (or anyone who manages projects), the technical team, the QS. */
+  private async boqRights(client: Db, workspaceId: string, userId: string, input: { manager: boolean; team: TeamMember[]; membershipId: string | null; settings: { boqTechnicalRole: string | null; roles: Array<{ key: string }> } }) {
+    const technicalRole = boqTechnicalRoleOf(input.settings);
+    return {
+      manager: input.manager,
+      technical: Boolean(technicalRole && input.team.some((member) => member.membershipId === input.membershipId && member.roles.includes(technicalRole))),
+      qs: await this.access.hasPermission(client, workspaceId, userId, "commercial.estimate"),
+    };
   }
 
   /** One sealed document exactly as the client accepted it, with a fresh check that it's untouched. */
@@ -272,14 +301,18 @@ export class ProjectCoreService {
   /** The material list, where each material is used, and what the client decided. */
   materials(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      const { project, all, membershipId } = await this.visible(client, workspaceId, projectId, user);
+      const { project, all, membershipId } = await this.visible(client, workspaceId, projectId, user, { qs: true });
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const onTeam = all || team.some((member) => member.membershipId === membershipId);
       const materials = await readMaterials(client, workspaceId, projectId);
       // PLM-072: where each material has got to (required, ordered, received, installed), as Purchasing works it out.
       const status = new Map((await readNeeds(client, workspaceId, false, projectId)).filter((need) => need.source === "material").map((need) => [need.sourceId, need.status]));
+      // PLM-159: the QS's confirmation of the list (the ordering gate reads it), and whether this person is the QS.
+      const purchasing = await ensurePurchasingSettings(client, workspaceId);
       return { ...materials, items: materials.items.map((item) => ({ ...item, status: status.get(item.id) ?? null })), version: project.version,
-        canEdit: onTeam && ["active", "on_hold"].includes(project.status) };
+        canEdit: onTeam && ["active", "on_hold"].includes(project.status),
+        qsConfirmation: await readMaterialListConfirmation(client, workspaceId, projectId), qsGate: purchasing.requireMaterialListConfirmed,
+        canConfirmQs: ["active", "on_hold"].includes(project.status) && await this.access.hasPermission(client, workspaceId, user.userId, "commercial.estimate") };
     });
   }
 
@@ -329,11 +362,13 @@ export class ProjectCoreService {
       if (!project) throw new NotFoundException("Project not found.");
       // The people who run the factory book its slot (PLM-068) and take the technical measure (PLM-149) on a project they aren't on.
       const factoryHand = (body.action === "book_factory_slot" || body.action === "record_technical_measure") && await this.any(client, workspaceId, user.userId, ["factory.manage"]);
-      const { all } = factoryHand ? { all: await this.any(client, workspaceId, user.userId, ["projects.manage"]) } : await this.viewer(client, workspaceId, user);
+      // PLM-168 / PLM-159: the QS approves or returns the BOQ and confirms the material list on a project they aren't on.
+      const qsHand = (String(body.action) in BOQ_COMMANDS || body.action === "confirm_material_list") && await this.any(client, workspaceId, user.userId, ["commercial.estimate"]);
+      const { all } = factoryHand || qsHand ? { all: await this.any(client, workspaceId, user.userId, ["projects.manage"]) } : await this.viewer(client, workspaceId, user);
       const membershipId = await membershipOf(client, workspaceId, user.userId);
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
-      if (!manager && !factoryHand && !team.some((member) => member.membershipId === membershipId)) throw new NotFoundException("Project not found.");
+      if (!manager && !factoryHand && !qsHand && !team.some((member) => member.membershipId === membershipId)) throw new NotFoundException("Project not found.");
       if (body.version !== project.version) throw new ConflictException("Someone else changed this project. Reload to see their changes.");
       const settings = await ensureSettings(client, workspaceId);
       const action = String(body.action ?? "");
@@ -535,6 +570,26 @@ export class ProjectCoreService {
             ? { code: "project.materials_signed_off", revision: `R${result.number}`, note: "", memberships: teamIds() }
             : { code: "project.materials_changes", revision: `R${result.number}`, note: result.note, memberships: teamIds() } });
         }
+      } else if (action in BOQ_COMMANDS) {
+        // PLM-167 / PLM-168: the BOQ's lifecycle. The technical team verifies, the QS approves (a snapshot is kept as BOQ R-n),
+        // anyone involved returns it with a reason, the project manager locks it. Each step tells its next owner.
+        open();
+        const rights = await this.boqRights(client, workspaceId, user.userId, { manager, team, membershipId, settings });
+        const result = await applyBoqAction(client, workspaceId, projectId, BOQ_COMMANDS[action], { reason: body.reason, actorUserId: user.userId, rights });
+        const technicalRole = boqTechnicalRoleOf(settings);
+        const holders = (...roles: Array<string | null>) => team.filter((member) => member.roles.some((role) => roles.includes(role))).map((member) => member.membershipId);
+        const next = result.status === "technical_verified" ? await membershipsWithPermission(client, workspaceId, "commercial.estimate")
+          : result.status === "draft" ? holders(LEAD_ROLE, technicalRole)
+          : [...holders(LEAD_ROLE, "procurement"), ...await membershipsWithPermission(client, workspaceId, "purchasing.manage")];
+        const code = result.status === "technical_verified" ? "project.boq_verified" : result.status === "qs_approved" ? "project.boq_approved"
+          : result.status === "locked" ? "project.boq_locked" : "project.boq_returned";
+        notices.push({ key: `boq:${action}:${project.version}`, notice: { code, revision: result.label ?? "", note: result.reason, memberships: next } });
+        audit = { from: result.from, to: result.status, revision: result.label, reason: result.reason };
+      } else if (action === "confirm_material_list") {
+        // PLM-159: the QS confirms the project's material list as it is now; a list that changes since needs confirming again.
+        open();
+        if (!(await this.access.hasPermission(client, workspaceId, user.userId, "commercial.estimate"))) throw new ForbiddenException("Only the QS confirms the material list.");
+        audit = await confirmMaterialList(client, workspaceId, projectId, user.userId);
       } else if (action === "apply_variation") {
         needManager();
         if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
@@ -715,6 +770,12 @@ export class ProjectCoreService {
       for (const item of notices) await noticeProject(client, { workspaceId, projectId, key: item.key, actorUserId: user.userId, notice: item.notice });
       // A check read from records may pass now (a role named, a material list signed off): the stage owner hears it can finish.
       await noticeStageReady(client, workspaceId, projectId, user.userId);
+      // A QS who isn't on the project and doesn't see projects gets the BOQ back, nothing else of the project (QA-007).
+      if (qsHand && !manager && !team.some((member) => member.membershipId === membershipId)) {
+        const fresh = (await readProject(client, workspaceId, projectId))!;
+        const slim = { project: { id: fresh.id, reference: fresh.reference, name: fresh.name, status: fresh.status, version: fresh.version }, boq: await readBoqState(client, workspaceId, projectId) };
+        return slim as unknown as Awaited<ReturnType<ProjectCoreService["detail"]>>;
+      }
       return this.detail(client, workspaceId, projectId, user);
     });
   }
@@ -801,7 +862,8 @@ export class ProjectCoreService {
     };
   }
 
-  private async visible(client: Db, workspaceId: string, projectId: string, user: ActorUser) {
+  /** Who may read the project; `qs` opens the BOQ reads (the scope, the material list) to the QS, never the project record itself (QA-007). */
+  private async visible(client: Db, workspaceId: string, projectId: string, user: ActorUser, options: { qs?: boolean } = {}) {
     const project = await readProject(client, workspaceId, projectId);
     if (!project) throw new NotFoundException("Project not found.");
     const membershipId = await membershipOf(client, workspaceId, user.userId);
@@ -813,15 +875,18 @@ export class ProjectCoreService {
       const route = await drawingRoute(client, workspaceId, projectId);
       return route.factorySlot || route.needsMeasure;
     };
+    // PLM-168 / PLM-159: the QS reads the BOQ and the material list to approve and confirm them, where the read allows it.
+    const qsReader = async () => options.qs === true && await this.any(client, workspaceId, user.userId, ["commercial.estimate"]);
     const projects = await this.any(client, workspaceId, user.userId, ["projects.manage", "projects.view"]);
     if (!projects) {
       if (await factoryReader()) return { project, all: false, membershipId, factory: true };
+      if (await qsReader()) return { project, all: false, membershipId, factory: false };
       throw new ForbiddenException("You don't have access to projects.");
     }
     const { all } = await this.viewer(client, workspaceId, user);
     if (!all) {
       const assigned = (await client.query(`SELECT 1 FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND membership_id = $3 AND active`, [workspaceId, projectId, membershipId])).rowCount;
-      if (!assigned && !(await factoryReader())) throw new NotFoundException("Project not found.");
+      if (!assigned && !(await factoryReader()) && !(await qsReader())) throw new NotFoundException("Project not found.");
     }
     return { project, all, membershipId, factory: false };
   }

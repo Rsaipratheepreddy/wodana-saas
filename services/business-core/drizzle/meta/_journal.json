@@ -1499,6 +1499,27 @@
       "when": 1801740010600,
       "tag": "0344_login_backgrounds",
       "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1801740011700,
+      "tag": "0355_project_boq_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1801740011800,
+      "tag": "0356_ordering_gates",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1801740011900,
+      "tag": "0357_boq_notices",
+      "breakpoints": true
     }
   ]
 }

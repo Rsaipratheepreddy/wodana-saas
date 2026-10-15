@@ -10,6 +10,7 @@ import { move, stockItemFor } from "../inventory/stock";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { productionPaid } from "../project-core/project-core.store";
 import { ensurePurchasingSettings, needsNotIn, readNeeds, readOrderLines } from "../purchasing/orders";
+import { priceHolds } from "../purchasing/price-hold";
 import { OrdersService } from "../purchasing/orders.service";
 import { outstanding, readLocations, resolvePlace } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
@@ -663,6 +664,11 @@ export class FactoryService {
     // A line a variation added waits for that variation's payment before the work, where the firm asks (§6.20).
     const heldBy = (await variationHolds(client, workspaceId, [order.projectId])).get(order.boqLineId);
     if (heldBy) checks.push({ key: "variation_payment", passed: false, missing: `the client hasn't paid ${heldBy} yet` });
+    // PLM-169: where the firm asks, a line whose cost is above the agreed amount, or whose scope change is pending, waits for the client's approved price correction.
+    if ((await ensurePurchasingSettings(client, workspaceId)).requirePriceApproval) {
+      const hold = (await priceHolds(client, workspaceId, { lineIds: [order.boqLineId] })).get(order.boqLineId);
+      checks.push({ key: "price_hold", passed: !hold, missing: hold ?? "" });
+    }
     if (settings.requireMaterials) {
       // Its own materials when it lists them (issued, or covered by the project's stock); otherwise its package's.
       const materials = (await readWorkOrderMaterials(client, workspaceId, order.id)).filter((row) => row.status === "active");

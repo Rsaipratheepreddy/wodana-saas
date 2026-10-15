@@ -15,7 +15,12 @@ export type ProjectNotice =
   | { code: "project.drawings_approved"; revision: string; date: string; memberships: string[] }
   | { code: "project.factory_slot_booked"; date: string; memberships: string[] }
   | { code: "project.drawings_started" | "project.production_started" | "project.installation_scheduled"; date: string; note: string; memberships: string[] }
-  | { code: "project.material_details"; item: string; note: string; memberships: string[] };
+  | { code: "project.material_details"; item: string; note: string; memberships: string[] }
+  /** PLM-161 / PLM-167 / PLM-168: the BOQ's steps, each to its next owner; `revision` is BOQ R-n once approved. */
+  | { code: "project.boq_draft_ready" | "project.boq_verified" | "project.boq_approved" | "project.boq_returned" | "project.boq_locked" | "project.ready_to_start"; revision: string; note: string; memberships: string[] };
+
+/** The BOQ steps that also go by email: the next owner acts on them. */
+const BOQ_EMAILED = new Set(["project.boq_draft_ready", "project.boq_verified", "project.ready_to_start"]);
 
 /**
  * Who hears about a project: the team when it starts, a person when they're named for a role, the
@@ -71,6 +76,9 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
     for (const person of await users(notice.memberships)) await tell(person.userId, { date, note: notice.note }, true);
   } else if (notice.code === "project.material_details") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { item: notice.item, note: notice.note }, false);
+  } else if (notice.code === "project.boq_draft_ready" || notice.code === "project.boq_verified" || notice.code === "project.boq_approved" || notice.code === "project.boq_returned"
+    || notice.code === "project.boq_locked" || notice.code === "project.ready_to_start") {
+    for (const person of await users(notice.memberships)) await tell(person.userId, { revision: notice.revision, note: notice.note }, BOQ_EMAILED.has(notice.code));
   } else {
     for (const person of await users(notice.memberships)) await tell(person.userId, { note: notice.note }, notice.code === "project.cancelled");
   }

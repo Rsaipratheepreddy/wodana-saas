@@ -13,12 +13,15 @@ import { caseDesigner } from "../crm/opportunities/dedicated-designer";
 import { ensureJobForSource } from "../jobs/job-identity.store";
 import { acceptedScope } from "../quotation/quotation-builder.service";
 import type { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { notifyUserInApp } from "../notifications/default-templates";
 import { LEAD_ROLE } from "./project-checks";
 import { activeMembers, ensureSettings, ensureTemplates, setRole } from "./project-core.store";
 import { noticeProject } from "./project-notices";
-import { carryTeamToProject } from "./project-team";
+import { carryTeamToProject, opportunityTeam, settledTeam } from "./project-team";
 import { calendarDay as optionalDate } from "./calendar-day";
+import { boqTechnicalRoleOf, ensureBoqDraft, membershipsWithPermission } from "./project-boq-state";
 import { proposePackages, seedBoq } from "./project-scope";
+import { noticeStageReady } from "./project-stage-watch";
 
 type Db = PoolClient;
 
@@ -179,7 +182,69 @@ export async function startProject(client: Db, access: WorkspaceAccessService, w
   const labels = new Map(settings.roles.map((role) => [role.key, role.label]));
   await noticeProject(client, { workspaceId, projectId, key: "start", actorUserId: user.userId,
     notice: { code: "project.started", memberships: named.map((member) => ({ membershipId: member.membershipId, role: labels.get(member.role) ?? member.role })) } });
+  // PLM-161 / PLM-167: the live BOQ is a draft from here; with the BOQ lifecycle on, the technical team and the project manager hear it is ready to verify.
+  await ensureBoqDraft(client, workspaceId, projectId, user.userId, `Seeded from ${snapshot.revisionLabel}`);
+  if (settings.boqReview) {
+    const technicalRole = boqTechnicalRoleOf(settings);
+    const owners = named.filter((member) => member.role === LEAD_ROLE || (technicalRole && member.role === technicalRole)).map((member) => member.membershipId);
+    await noticeProject(client, { workspaceId, projectId, key: "boq-draft", actorUserId: user.userId, deepLink: `/workspace/projects/${projectId}/scope`,
+      notice: { code: "project.boq_draft_ready", revision: snapshot.revisionLabel, note: technicalRole && !owners.some((id) => id !== lead) ? "Nobody holds the technical role on this project yet." : "", memberships: owners } });
+  }
   return { projectId, existing: false };
+}
+
+/**
+ * PLM-161: with "Start the project when the upfront payment is verified" on (Settings › Projects), the project starts
+ * by itself, with its draft BOQ seeded from the accepted quotation, once the main quotation is accepted and the firm's
+ * start rules pass (the upfront payment Finance verified among them). Run after every commercial change; idempotent: a
+ * started project is left alone, and nothing happens until the rules pass. The project manager is the one settled on the
+ * planning record (else tagged on the opportunity); with none, the people who manage projects are told to start it.
+ * A failure never fails the caller's command: it is rolled back to its savepoint and reported to the same people.
+ */
+export async function autoStartProject(client: Db, access: WorkspaceAccessService, workspaceId: string, caseId: string, actorUserId: string | null)
+  : Promise<{ started: boolean; projectId: string | null; reason: "off" | "started" | "not_ready" | "no_manager" | "failed" | null }> {
+  const settings = await ensureSettings(client, workspaceId);
+  if (!settings.autoStartOnPayment) return { started: false, projectId: null, reason: "off" };
+  const existing = (await client.query<{ id: string }>(`SELECT id FROM delivery_projects WHERE workspace_id = $1 AND case_id = $2 AND started_at IS NOT NULL`, [workspaceId, caseId])).rows[0];
+  if (existing) return { started: false, projectId: existing.id, reason: "started" };
+  const facts = (await client.query<{ status: string; name: string; opportunityId: string; clientName: string }>(
+    `SELECT pre_case.status, opportunity.title AS name, opportunity.id AS "opportunityId", coalesce(party.display_name, opportunity.title) AS "clientName"
+       FROM pre_project_cases pre_case JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+      WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0];
+  if (!facts || facts.status !== "active") return { started: false, projectId: null, reason: "not_ready" };
+  const data = await commercial(client, workspaceId, caseId);
+  const quote = data ? startQuote(data) : undefined;
+  // The upfront payment is the trigger whatever the firm's start rules say; the other rules apply as set.
+  if (!data || !quote || !startChecks(data, quote, { ...settings, requirePayment: true }).every((check) => check.ok)) return { started: false, projectId: null, reason: "not_ready" };
+  // The project manager: settled on the planning record, else tagged on the opportunity.
+  const lead = (await settledTeam(client, workspaceId, { caseId })).get(LEAD_ROLE)?.membershipId
+    ?? (await opportunityTeam(client, workspaceId, facts.opportunityId)).get(LEAD_ROLE)?.membershipId ?? null;
+  const tellManagers = async (note: string) => {
+    const managers = await membershipsWithPermission(client, workspaceId, "projects.manage");
+    const people = (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`,
+      [workspaceId, managers])).rows;
+    for (const person of people)
+      await notifyUserInApp(client, { workspaceId, recipientUserId: person.userId, code: "project.ready_to_start", eventType: "project.ready_to_start",
+        variables: { title: facts.name, clientName: facts.clientName, actor: "", revision: "", note }, deepLink: "/workspace/projects",
+        idempotencyKey: `project.ready_to_start:${caseId}:${quote.id}:${person.userId}` });
+  };
+  if (!lead) { await tellManagers("name the project manager first."); return { started: false, projectId: null, reason: "no_manager" }; }
+  const template = (await ensureTemplates(client, workspaceId, actorUserId)).find((item) => item.isDefault);
+  await client.query("SAVEPOINT auto_start");
+  try {
+    const user = { userId: actorUserId ?? (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2`, [workspaceId, lead])).rows[0].userId } as ActorUser;
+    const started = await startProject(client, access, workspaceId, caseId, { quoteId: quote.id, leadMembershipId: lead, templateId: template?.id }, user);
+    await client.query("RELEASE SAVEPOINT auto_start");
+    await recordAudit(client, { workspaceId, actorUserId, action: "project.auto_started", entityType: "project", entityId: started.projectId, after: { caseId, quoteId: quote.id, lead } });
+    // The first stage's record-driven tasks open, as when someone starts the project by hand.
+    if (!started.existing) await noticeStageReady(client, workspaceId, started.projectId, actorUserId);
+    return { started: !started.existing, projectId: started.projectId, reason: started.existing ? "started" : null };
+  } catch (error) {
+    await client.query("ROLLBACK TO SAVEPOINT auto_start");
+    await tellManagers((error as Error).message.slice(0, 300));
+    return { started: false, projectId: null, reason: "failed" };
+  }
 }
 
 // ---------- helpers ----------

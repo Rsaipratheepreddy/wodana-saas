@@ -7,6 +7,7 @@ import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-
 import { dealAmount, dealApprovalView, decideDealStep, openDealApproval } from "./deal-file-approval";
 import { dealInsightFor } from "./deal-file-insight";
 import { readCaseTeam } from "../project-core/project-team";
+import { autoStartProject } from "../project-core/project-start";
 import { markProposalWon } from "../crm/opportunities/opportunity-proposals";
 import { decisionEvidenceFile, decisionRecorder } from "./quote-decision-access";
 import { extendQuoteValidity } from "./quote-expiry";
@@ -414,6 +415,9 @@ export class CommercialService {
         ],
       );
     }
+    // PLM-161: with "Start the project when the upfront payment is verified" on, the project (and so its draft BOQ) starts
+    // by itself once the accepted quotation's start rules pass. Only a staff command gets here; idempotent and never fails the save.
+    if (actorUserId && /^[a-z_]+$/.test(action)) await autoStartProject(client, this.access, workspaceId, caseId, actorUserId);
   }
   private async seedPreparationRooms(
     client: PoolClient,

@@ -458,6 +458,15 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.materials_signed_off", channel: "in_app", subject: "{{title}}: material list signed off", body: "{{clientName}} signed off {{revision}}.", variables: ["title", "clientName", "actor", "revision"] },
   { code: "project.materials_changes", channel: "in_app", subject: "{{title}}: changes to the material list", body: "{{clientName}} asked for changes to {{revision}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   { code: "project.variation_applied", channel: "in_app", subject: "{{title}}: {{variation}} applied", body: "{{actor}} applied {{variation}} ({{amount}}).", variables: ["title", "clientName", "actor", "variation", "amount"] },
+  // PLM-161 / PLM-167 / PLM-168 (0357 seeds them into existing workspaces): the BOQ's steps, each to its next owner.
+  { code: "project.boq_draft_ready", channel: "in_app", subject: "BOQ to verify · {{title}}", body: "The draft BOQ for {{clientName}} is ready for the technical check. {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
+  { code: "project.boq_draft_ready", channel: "email", subject: "BOQ to verify: {{title}}", body: "The draft BOQ for {{title}} ({{clientName}}) is ready for the technical check.\n\n{{note}}\n\nOpen the project's Scope tab and verify it once the quantities and specifications are right.", variables: ["title", "clientName", "actor", "revision", "note"] },
+  { code: "project.boq_verified", channel: "in_app", subject: "BOQ for QS approval · {{title}}", body: "{{actor}} verified the BOQ. It waits for your approval. {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
+  { code: "project.boq_verified", channel: "email", subject: "BOQ for QS approval: {{title}}", body: "{{actor}} verified the BOQ for {{title}} ({{clientName}}).\n\nIt waits for your approval on the project's Scope tab. {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
+  { code: "project.boq_approved", channel: "in_app", subject: "BOQ approved {{revision}} · {{title}}", body: "{{actor}} approved the BOQ as {{revision}}. Ordering can go ahead. {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
+  { code: "project.boq_returned", channel: "in_app", subject: "BOQ returned to draft · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
+  { code: "project.boq_locked", channel: "in_app", subject: "BOQ locked {{revision}} · {{title}}", body: "{{actor}} locked the BOQ. A change is a variation from here.", variables: ["title", "clientName", "actor", "revision", "note"] },
+  { code: "project.ready_to_start", channel: "in_app", subject: "Ready to start · {{title}}", body: "The upfront payment for {{clientName}} is verified. Start the project: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   // Delivery reminders (the daily run): the week in numbers, a stage whose checks all pass, a material list
   // left with the client, a milestone to invoice and the drafted client update.
   { code: "project.weekly_summary", channel: "in_app", subject: "This week on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
@@ -616,6 +625,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "purchasing.materials_ready", channel: "in_app", subject: "Materials are in for {{project}}", body: "All {{lines}} lines are received.", variables: ["project", "lines"] },
   { code: "purchasing.materials_ready", channel: "email", subject: "Materials are in for {{project}}", body: "Everything {{project}} buys is received: {{lines}} lines.\n\nPlan production and site work.", variables: ["project", "lines"] },
   { code: "purchasing.hold_override", channel: "in_app", subject: "{{order}} goes ahead while its project is on hold", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  // PLM-159: the QS signed off the draft order; the buyer who raised it hears it can be placed.
+  { code: "purchasing.qs_signed_off", channel: "in_app", subject: "{{order}} signed off by the QS", body: "{{actor}} signed off {{order}} to {{supplier}} ({{amount}}). It can be placed.", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "factory.rework", channel: "in_app", subject: "{{order}} goes back into production", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "factory.drawing_stale", channel: "in_app", subject: "{{order}}: its drawing has a newer revision", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
