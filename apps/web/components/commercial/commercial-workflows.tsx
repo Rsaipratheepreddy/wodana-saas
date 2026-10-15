@@ -63,6 +63,7 @@ import { ClientFiles } from "@/components/client-activity/client-files";
 import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
 import { SeenByClient, useClientThreads } from "@/components/client-activity/client-threads";
 import { DealApprovalSteps, DealFileInsight } from "./deal-file-insight";
+import { LinkedRecords } from "@/components/record/linked-records";
 import s from "./commercial.module.css";
 import tableStyles from "../workspace/workspace.module.css";
 type Props = {
@@ -715,6 +716,8 @@ export function ApprovalRelease({
             {d.dealFile && <div className={s.dealBanner}><div><small>{t("DEAL FILE")}</small><strong>{d.dealFile.reference}</strong><span>{t("Approved")}{" "}{day(d.dealFile.approvedAt)} {t("by")}{" "}{d.dealFile.approvedBy}</span></div><div><small>{t("Current round")}</small><strong>{d.dealFile.quoteId === accepted.id ? accepted.round === "design" ? t("Design") : t("Main quotation") : t("Design approved · main pending")}</strong></div><div><small>{t("Frozen evidence")}</small><strong>{d.dealFile.designEvidence?.links?.length ?? 0} {t("files ·")}{" "}{d.dealFile.materialEvidence?.length ?? 0} {t("materials")}</strong></div><div><small>{t("Deal value")}</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div></div>}
             {/* PLM-066 / PLM-102 / PLM-123: money, closing and contents; E3: the approval's steps and who holds the current one. */}
             {state.dealInsight ? <DealFileInsight insight={state.dealInsight} /> : null}
+            {/* PLM-164: once the deal is a project, every record it runs through, each a link. */}
+            {state.dealInsight?.links ? <LinkedRecords links={state.dealInsight.links} current="deal_file" /> : null}
             {state.dealApproval && (state.dealApproval.status === "pending" || d.ownerReview?.status === "approved") ? <DealApprovalSteps approval={state.dealApproval} /> : null}
             {d.dealFile ? <MoreDetails label={t("History")}><RecordHistory workspaceId={state.workspaceId} recordType="deal_file" recordId={d.dealFile.id} /></MoreDetails> : null}
             {d.ownerReview?.status === "pending_finance" ? <Form className={s.ownerForm} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void run("review_deal_finance", { decision: "confirm", note: decisionNote, paymentVerified, commissionLines: editableFinanceLines.map(sent) }); }}>

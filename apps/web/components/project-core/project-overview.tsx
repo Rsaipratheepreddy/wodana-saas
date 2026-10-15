@@ -12,6 +12,7 @@ import { projectPeople, projectStrip, projectTimeline, stageLateDays, type Proje
 import { nextStepText } from "@/lib/project-core/next-step";
 import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
+import { LinkedRecords } from "@/components/record/linked-records";
 import { SiteLocation } from "@/components/ui/site-location";
 import { SiteUpdates } from "@/components/site/site-updates";
 import { PRODUCTION_TONE, useProductionStepLabel } from "../factory/factory-labels";
@@ -228,6 +229,10 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
             <SiteUpdates workspaceId={api.workspaceId} projectId={projectId} latest={LATEST}
               fallback={<ActivityList label={t("Site updates")} items={reports.map((report) => ({ id: report.id, text: report.text || t("Site report"), meta: report.byName, at: format.short(report.date) }))} />} />
           </SideSection> : null}
+          {/* PLM-164: the records the project runs through, each a link; self-contained so the layout can place it. */}
+          <SideSection title={t("Linked records")}>
+            <LinkedRecords workspaceId={api.workspaceId} projectId={projectId} current="project" title={null} />
+          </SideSection>
           <SideSection title={t("History")}>
             <RecordHistory workspaceId={api.workspaceId} recordType="project" recordId={projectId} />
           </SideSection>

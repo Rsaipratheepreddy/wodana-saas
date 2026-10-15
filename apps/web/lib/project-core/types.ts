@@ -296,11 +296,27 @@ export type StartState = {
 export type ReadyCase = { caseId: string; name: string; clientName: string; quoteNumber: number; total: string; currency: string };
 
 export type Supply = "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work";
+/** PLM-170: a line's cost side, present only for people with cost access; the margin only for those who see margins. */
+export type ScopeLineCost = { unitCost: string | null; estimate: string | null; committed: string; committedForeign: number; margin: string | null; marginPercent: string | null };
 export type ScopeLine = {
   id: string; position: number; kind: string; areaId: string | null; areaName: string | null; workPackageId: string | null; tradeName: string | null;
   /** Rate and amount are null for people who don't see the project's value (QA-006). */
   title: string; description: string; unit: string; quantity: string; rate: string | null; net: string | null; status: "active" | "omitted"; packageId: string | null;
   origin: string; catalogImageId: string | null; imageAssetId: string | null;
+  /** PLM-164: the purchase orders and work orders this line is on. */
+  purchaseOrders?: Array<{ id: string; number: string; status: string }>;
+  workOrders?: Array<{ id: string; number: number; status: string }>;
+  cost?: ScopeLineCost;
+};
+
+/** PLM-164: the records a job runs through, each by id: quotation, Deal File, project, purchase orders and work orders. */
+export type RecordLinks = {
+  caseId: string;
+  quote: { id: string; number: number; title: string } | null;
+  dealFile: { id: string; reference: string } | null;
+  project: { id: string; reference: string; name: string };
+  purchaseOrders: Array<{ id: string; number: string; status: string }>;
+  workOrders: Array<{ id: string; number: number; status: string }>;
 };
 export type ScopePackage = { id: string; name: string; supply: Supply; ownerMembershipId: string | null; ownerName: string | null; dueDate: string | null; version: number };
 export type SealSummary = { id: string; kind: "baseline" | "variation"; revisionLabel: string; quoteNumber: number; total: string | null; currency: string; acceptedAt: string; acceptedBy: string };
@@ -310,6 +326,9 @@ export type LiveScope = {
   currency: string; version: number; canManage: boolean; members: Member[]; caseId: string; baselineQuoteId: string;
   /** Whether prices, amounts and the sealed documents are shown (QA-006). */
   canSeeValue?: boolean;
+  /** PLM-170: whether the internal view (cost, committed, margin) is there, and whether the margin is. */
+  canSeeCosts?: boolean;
+  canSeeMargin?: boolean;
 };
 export type LineHistoryEntry = { id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string };
 

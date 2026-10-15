@@ -1,6 +1,6 @@
 import type { ProjectReadiness } from "@/lib/readiness/types";
 import type { ChecklistGroupRead } from "@/lib/pre-project/design-workspace";
-import type { DrawingsState, CloseOut, LabourRates, LineHistoryEntry, Milestones, Profitability, ProjectCashFlow, ProjectMoney, ProjectOverview, ProjectPnl, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { DrawingsState, CloseOut, LabourRates, LineHistoryEntry, Milestones, Profitability, ProjectCashFlow, ProjectMoney, ProjectOverview, ProjectPnl, LiveScope, MaterialsState, OpenWork, PackagePlan, RecordLinks, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -33,6 +33,8 @@ export function projectApi(workspaceId: string) {
     ready: () => request<{ cases: ReadyCase[] }>(path("ready")),
     get: (projectId: string) => request<ProjectDetail>(path(`projects/${projectId}`)),
     scope: (projectId: string) => request<LiveScope>(path(`projects/${projectId}/scope`)),
+    /** PLM-164: the records the project runs through (quotation, Deal File, orders), each by id. */
+    links: (projectId: string) => request<RecordLinks>(path(`projects/${projectId}/links`)),
     materials: (projectId: string) => request<MaterialsState>(path(`projects/${projectId}/materials`)),
     /** Each scope line with what it still needs, worked out from the records. */
     readiness: (projectId: string) => request<ProjectReadiness>(path(`projects/${projectId}/readiness`)),

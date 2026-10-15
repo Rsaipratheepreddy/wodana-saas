@@ -199,8 +199,9 @@ describe("projects", () => {
 
   it("shows why a change was refused and reloads when someone else changed the project", async () => {
     let loads = 0;
+    // The linked-records read is not a reload of the project.
     mount((url, body) => (body ? new Error("Someone else changed this project. Reload to see their changes.")
-      : url.includes("/api/history/") ? { items: [], next: null, timeZone: "UTC" } : (loads++, detail())));
+      : url.includes("/api/history/") ? { items: [], next: null, timeZone: "UTC" } : url.includes("/links") ? null : (loads++, detail())));
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
     await userEvent.click(await screen.findByRole("checkbox", { name: "Kickoff meeting held" }));
     expect(await screen.findByText(/Someone else changed this project/)).toBeInTheDocument();
