@@ -19,7 +19,9 @@ import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeo
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, setMaterialDetails, suggestMaterials } from "./project-materials";
-import { assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, SUPPLY, type Supply } from "./project-scope";
+import { assignLines, deletePackage, lineHistory, proposePackages, readScope, readScopeCosts, readScopeLinks, savePackage, SUPPLY, withLineDetails, type PricedScopeLine, type Supply } from "./project-scope";
+import { readRecordLinks } from "./record-links";
+import { currencyDecimals } from "../common/currency";
 import { sealVariation } from "./variation-seal";
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
 import { readReadyCases, readStartState, startProject } from "./project-start";
@@ -241,14 +243,32 @@ export class ProjectCoreService {
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
       const scope = await readScope(client, workspaceId, projectId);
+      const onTeam = team.some((member) => member.membershipId === membershipId);
       // QA-006: the BOQ's prices and the sealed totals only for the people who see the project's value.
-      const canSeeValue = await valueAccess(client, this.access, workspaceId, user.userId, { all, onTeam: team.some((member) => member.membershipId === membershipId) });
+      const canSeeValue = await valueAccess(client, this.access, workspaceId, user.userId, { all, onTeam });
       const priced = canSeeValue ? scope : {
         ...scope, lines: scope.lines.map((line) => ({ ...line, rate: null, net: null })),
         seals: scope.seals.map((seal) => ({ ...seal, total: null })), variations: scope.variations.map((variation) => ({ ...variation, total: null })),
       };
-      return { ...priced, currency: project.currency, version: project.version, caseId: project.caseId, baselineQuoteId: project.quoteId,
-        canManage: manager && ["active", "on_hold"].includes(project.status), members: manager ? await activeMembers(client, workspaceId) : [], canSeeValue };
+      // PLM-170: the internal view (each line's cost, what is committed on orders, and the margin) only for the people who see costs;
+      // the cost fields are never on the line for anyone else. PLM-164: every line names the orders it is on.
+      const money = await moneyAccess(client, this.access, workspaceId, user.userId, { all, onTeam });
+      const links = await readScopeLinks(client, workspaceId, projectId);
+      const costs = money.costs ? await readScopeCosts(client, workspaceId, { id: projectId, caseId: project.caseId, currency: project.currency }) : null;
+      const lines = withLineDetails(priced.lines as PricedScopeLine[], links, costs, { costs: money.costs, margin: money.margin && canSeeValue }, currencyDecimals(project.currency));
+      return { ...priced, lines, currency: project.currency, version: project.version, caseId: project.caseId, baselineQuoteId: project.quoteId,
+        canManage: manager && ["active", "on_hold"].includes(project.status), members: manager ? await activeMembers(client, workspaceId) : [], canSeeValue,
+        canSeeCosts: money.costs, canSeeMargin: money.margin && canSeeValue };
+    });
+  }
+
+  /** PLM-164: the records the project runs through (quotation, Deal File, purchase orders, work orders), for the linked-records block. */
+  links(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      await this.visible(client, workspaceId, projectId, user);
+      const links = await readRecordLinks(client, workspaceId, projectId);
+      if (!links) throw new NotFoundException("Project not found.");
+      return links;
     });
   }
 

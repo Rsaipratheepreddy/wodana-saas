@@ -260,6 +260,57 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("PLM-170 / PLM-164: shows a line's cost, what is committed and its margin only to people with cost access, and names the orders each line is on", async () => {
+    await world(async (w) => {
+      // The QS priced the cabinets at 800 a metre; the client accepted the quotation and the project started.
+      await w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: 1, unitCost: "800" } }] });
+      await accept(w);
+      const manager = w.as(w.manager);
+      const { projectId } = await manager.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      // Without cost access the API never returns a cost field, and there is no internal view to switch to.
+      const plain = await manager.scope(actor, w.workspaceId, projectId);
+      expect(plain).toMatchObject({ canSeeValue: true, canSeeCosts: false, canSeeMargin: false });
+      expect(plain.lines.some((line) => "cost" in line)).toBe(false);
+      expect(JSON.stringify(plain.lines)).not.toMatch(/unitCost|estimate|margin|committed/);
+      // Commercial costs: cost, estimate, margin.
+      const finance = w.as(w.manager, ["projects.manage", "projects.view", "commercial.costs.view"]);
+      const internal = await finance.scope(actor, w.workspaceId, projectId);
+      expect(internal).toMatchObject({ canSeeCosts: true, canSeeMargin: true });
+      const cabinets = internal.lines.find((line) => line.title === "Kitchen cabinets")!;
+      expect(cabinets.cost).toEqual({ unitCost: "800.0000", estimate: "3600.0000", committed: "0.0000", committedForeign: 0, margin: "1800.0000", marginPercent: "33.3" });
+      expect(internal.lines.find((line) => line.title === "Worktop")!.cost).toMatchObject({ unitCost: null, estimate: null, margin: null });
+      // A project's own costs (on the team, projects.costs.view): the estimate, never the margin.
+      const site = w.as(w.manager, ["projects.manage", "projects.view", "projects.costs.view"]);
+      const own = await site.scope(actor, w.workspaceId, projectId);
+      expect(own).toMatchObject({ canSeeCosts: true, canSeeMargin: false });
+      expect(own.lines.find((line) => line.title === "Kitchen cabinets")!.cost).toMatchObject({ estimate: "3600.0000", margin: null, marginPercent: null });
+
+      // A purchase order and a work order for the cabinets: both show on the line, and in the project's linked records.
+      const po = randomUUID(), wo = randomUUID();
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO purchase_orders (id, workspace_id, number, legal_entity_id, vendor_id, currency, status, payment_terms, approved_at, approved_by, sent_at, created_by)
+        VALUES ($1, $2, 'PO-0001', $3, $4, 'AED', 'sent', 'upfront', now(), $5, now(), $5)`, [po, w.workspaceId, randomUUID(), randomUUID(), w.manager]);
+      await w.client.query(`INSERT INTO purchase_order_lines (id, workspace_id, order_id, position, project_id, source, boq_line_id, description, quantity, unit, unit_price, net, tax, total)
+        VALUES ($1, $2, $3, 0, $4, 'line', $5, 'Cabinets', 4.5, 'm', 700, 3150, 0, 3150)`, [randomUUID(), w.workspaceId, po, projectId, cabinets.id]);
+      await w.client.query(`INSERT INTO work_orders (id, workspace_id, number, project_id, boq_line_id, title, quantity, unit, created_by) VALUES ($1, $2, 1, $3, $4, 'Cabinets', 4.5, 'm', $5)`,
+        [wo, w.workspaceId, projectId, cabinets.id, w.manager]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      const linked = (await finance.scope(actor, w.workspaceId, projectId)).lines.find((line) => line.id === cabinets.id)!;
+      expect(linked.purchaseOrders).toEqual([{ id: po, number: "PO-0001", status: "sent" }]);
+      expect(linked.workOrders).toEqual([{ id: wo, number: 1, status: "planned" }]);
+      expect(linked.cost).toMatchObject({ committed: "3150.0000", estimate: "3600.0000" });
+      // Everyone on the project sees the links, with no cost beside them.
+      const forAll = (await manager.scope(actor, w.workspaceId, projectId)).lines.find((line) => line.id === cabinets.id)!;
+      expect(forAll.purchaseOrders.map((order) => order.number)).toEqual(["PO-0001"]);
+      expect("cost" in forAll).toBe(false);
+      const links = await manager.links(actor, w.workspaceId, projectId);
+      expect(links).toEqual({
+        caseId: w.caseId, quote: { id: w.quoteId, number: 1, title: "Main quote" }, dealFile: null, project: { id: projectId, reference: "PRJ-0001", name: "Villa 12" },
+        purchaseOrders: [{ id: po, number: "PO-0001", status: "sent" }], workOrders: [{ id: wo, number: 1, status: "planned" }],
+      });
+    });
+  });
+
   it("finishes a stage only when its checks pass, lets its owner work it, and blocks work while on hold", async () => {
     await world(async (w) => {
       await accept(w);
