@@ -59,6 +59,8 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => { setForm({ ...form, [key]: value }); setSaved(false); };
   const number = (value: string) => value.replace(/[^\d.]/g, "");
   const kinds = qsItemTypeLabels(t);
+  // The rules and the lines scope both name lines by marked work packages and catalogue kinds.
+  const qsRules = Boolean(form.qsReview) && (form.qsReviewScope === "rules" || form.qsReviewScope === "lines");
 
   const save = async () => {
     setBusy(true); setError("");
@@ -133,10 +135,10 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("QS prices quotations")} hint={t("A QS confirms the pricing before a quotation can go to the client.")}>
         <Switch aria-label={t("QS prices quotations")} isDisabled={readOnly} isSelected={Boolean(form.qsReview)} onChange={(value) => set("qsReview", value)} />
       </SettingsRow>
-      {form.qsReview ? <SettingsRow label={t("Quotations the QS prices")} hint={t("Rules: work packages and catalogue kinds marked for QS review, and orders that need a BOQ. Design Fee proposals skip the QS.")}>
+      {form.qsReview ? <SettingsRow label={t("Quotations the QS prices")} hint={t("Rules: lines in work packages or catalogue kinds marked for QS review, and orders that need a BOQ. Lines: those lines only. Design Fee proposals skip the QS.")}>
         <SelectField aria-label={t("Quotations the QS prices")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.qsReviewScope ?? "all"}
-          onSelectionChange={(key) => set("qsReviewScope", key === "rules" ? "rules" : "all")}
-          items={[{ id: "all", label: t("Every quotation") }, { id: "rules", label: t("Only where the rules apply") }]} />
+          onSelectionChange={(key) => set("qsReviewScope", key === "rules" || key === "lines" ? key : "all")}
+          items={[{ id: "all", label: t("Every quotation") }, { id: "rules", label: t("Only where the rules apply") }, { id: "lines", label: t("Only quotations with lines marked for QS review") }]} />
       </SettingsRow> : null}
       {form.qsReview ? <SettingsRow label={t("Variations the QS prices")} hint={t("By the same rules as quotations, and every variation from the size below.")}>
         <SelectField aria-label={t("Variations the QS prices")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.qsVariations ?? "rules"}
@@ -147,7 +149,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
         <MoneyField aria-label={t("Variations from (amount)")} label={null} isReadOnly={readOnly} value={form.qsVariationThreshold ?? ""}
           onChange={(value) => set("qsVariationThreshold", value ? value : null)} />
       </SettingsRow> : null}
-      {form.qsReview && form.qsReviewScope === "rules" ? <SettingsRow align="start" label={t("Catalogue kinds for QS review")}>
+      {qsRules ? <SettingsRow align="start" label={t("Catalogue kinds for QS review")}>
         <div className={styles.kinds}>{QS_ITEM_TYPES.map((type) => <Checkbox key={type} isDisabled={readOnly} isSelected={(form.qsReviewItemTypes ?? []).includes(type)}
           onChange={(on) => set("qsReviewItemTypes", QS_ITEM_TYPES.filter((item) => (item === type ? on : (form.qsReviewItemTypes ?? []).includes(item))))}>{kinds[type]}</Checkbox>)}</div>
       </SettingsRow> : null}
@@ -185,7 +187,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
     <SettingsSection id="work-packages" title={t("Work packages")}>
       {data.workPackages.length ? <ul className={styles.trades}>{data.workPackages.map((item) => <li key={item.id} data-archived={item.archived || undefined}>
         <TradeName name={item.name} readOnly={readOnly || item.archived} onRename={(name) => void updateTrade(item.id, { name })} />
-        {form.qsReview && form.qsReviewScope === "rules" && !item.archived ? <Checkbox isDisabled={readOnly} isSelected={Boolean(item.qsReview)}
+        {qsRules && !item.archived ? <Checkbox isDisabled={readOnly} isSelected={Boolean(item.qsReview)}
           onChange={(qsReview) => void updateTrade(item.id, { qsReview })}>{t("QS review")}</Checkbox> : null}
         {readOnly ? null : <Button size="compact" variant="quiet" onPress={() => void updateTrade(item.id, { archived: !item.archived })}>{item.archived ? t("Restore") : t("Archive")}</Button>}
       </li>)}</ul> : <p className={styles.muted}>{t("No work packages yet. Add the trades you quote by, like joinery or electrical.")}</p>}

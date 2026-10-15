@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideQsRequirement, quoteReviewAction, type QsInputs } from "./qs-requirement";
+import { decideQsRequirement, qsRequirement, quoteReviewAction, type QsInputs } from "./qs-requirement";
 
 const main = { kind: "quotation", round: "main" };
 const base: QsInputs = { qsReview: true, scope: "rules", quote: main, boqRequired: null, workPackages: [], itemTypes: [] };
@@ -45,6 +45,45 @@ describe("QS review only where it applies (PLM-082/083/084)", () => {
       .toEqual({ required: false, reason: { code: "design_fee" } });
     expect(decideQsRequirement(base)).toEqual({ required: false, reason: { code: "standard_only" } });
     expect(decideQsRequirement({ ...base, boqRequired: false })).toEqual({ required: false, reason: { code: "standard_only" } });
+  });
+
+  it("under the lines scope: only lines marked for QS review send a quotation; a BOQ-required deal or path alone doesn't", () => {
+    // Palm: "QS only for joinery, bespoke and Proposal 2 with joinery", while fit-out and design paths keep boqRequired for the material sign-off.
+    const lines: QsInputs = { ...base, scope: "lines" };
+    expect(decideQsRequirement({ ...lines, boqRequired: true })).toEqual({ required: false, reason: { code: "standard_only" } });
+    expect(decideQsRequirement({ ...lines, boqRequired: true, workPackages: ["Joinery"] }))
+      .toEqual({ required: true, reason: { code: "lines", workPackages: ["Joinery"], itemTypes: [] } });
+    expect(decideQsRequirement({ ...lines, boqRequired: false, itemTypes: ["assembly"] }))
+      .toEqual({ required: true, reason: { code: "lines", workPackages: [], itemTypes: ["assembly"] } });
+    expect(decideQsRequirement({ ...lines, boqRequired: null, workPackages: ["Bespoke furniture", "Joinery"] }))
+      .toEqual({ required: true, reason: { code: "lines", workPackages: ["Bespoke furniture", "Joinery"], itemTypes: [] } });
+    // Design Fee rounds still skip the QS, whatever the lines.
+    expect(decideQsRequirement({ ...lines, quote: { kind: "quotation", round: "design" }, workPackages: ["Joinery"], boqRequired: true }))
+      .toEqual({ required: false, reason: { code: "design_fee" } });
+    // Variations follow the same rules as before: their size, or lines the rules name.
+    const variation = { kind: "variation", round: null };
+    const rules = (total: string, threshold: string | null = "10000") => ({ rule: "rules" as const, threshold, total });
+    expect(decideQsRequirement({ ...lines, quote: variation, variation: rules("12000") })).toEqual({ required: true, reason: { code: "variation_amount" } });
+    expect(decideQsRequirement({ ...lines, quote: variation, workPackages: ["Joinery"], variation: rules("800", null) }))
+      .toEqual({ required: true, reason: { code: "lines", workPackages: ["Joinery"], itemTypes: [] } });
+    expect(decideQsRequirement({ ...lines, quote: variation, variation: rules("800") })).toEqual({ required: false, reason: { code: "standard_only" } });
+    expect(decideQsRequirement({ ...lines, quote: variation, variation: { rule: "never", threshold: null, total: "50000" } })).toEqual({ required: false, reason: { code: "not_quotation" } });
+  });
+
+  it("reads the quotation's lines under the lines scope, and never the deal's BOQ rule", async () => {
+    const asked: string[] = [];
+    const db = (joinery: boolean) => ({
+      query: async (sql: string) => {
+        asked.push(sql);
+        if (sql.includes("workspace_quotation_settings")) return { rows: [{ qsReview: true, scope: "lines", itemTypes: [], variations: "rules", variationThreshold: null }] };
+        if (sql.includes("FROM commercial_quotes")) return { rows: [{ kind: "quotation", round: "main", total: "50000" }] };
+        if (sql.includes("workspace_work_packages")) return { rows: joinery ? [{ name: "Joinery" }] : [] };
+        return { rows: [] };
+      },
+    });
+    expect(await qsRequirement(db(true) as never, "w", "c", "q")).toEqual({ required: true, reason: { code: "lines", workPackages: ["Joinery"], itemTypes: [] } });
+    expect(await qsRequirement(db(false) as never, "w", "c", "q")).toEqual({ required: false, reason: { code: "standard_only" } });
+    expect(asked.some((sql) => /pre_project_cases|boq_required/.test(sql))).toBe(false);
   });
 
   it("asks the QS once: a quotation the QS confirmed through Send to QS takes the plain approval", async () => {

@@ -7,8 +7,12 @@ type Db = Pick<PoolClient, "query">;
 /** Catalogue item kinds a firm can mark for QS review (catalog_items.item_type). */
 export const QS_ITEM_TYPES = ["product", "material", "assembly", "service", "package", "ready_made"] as const;
 export type QsItemType = (typeof QS_ITEM_TYPES)[number];
-/** Whether the QS prices every quotation (as before) or only where the rules apply. */
-export const QS_SCOPES = ["all", "rules"] as const;
+/**
+ * Which quotations the QS prices: every quotation (as before), only where the rules apply (a BOQ order, or lines the
+ * rules name), or only quotations with lines the rules name ("lines": a BOQ-required deal or path alone sends nothing,
+ * so a firm can keep the BOQ for its material sign-off before ordering and still send the QS only joinery and bespoke).
+ */
+export const QS_SCOPES = ["all", "rules", "lines"] as const;
 export type QsScope = (typeof QS_SCOPES)[number];
 
 /**
@@ -18,10 +22,10 @@ export type QsScope = (typeof QS_SCOPES)[number];
  *   variation_amount — a variation at or above the amount from which the firm always asks the QS;
  *   every_quotation — the firm's QS prices every quotation;
  *   no_boq         — the deal's order (or its path) needs no BOQ;
- *   design_fee     — a Design Fee (first, paid design round) proposal, under the rules;
- *   boq_required   — the deal's order (or its path) needs a BOQ, under the rules;
+ *   design_fee     — a Design Fee (first, paid design round) proposal, under the rules or the lines scope;
+ *   boq_required   — the deal's order (or its path) needs a BOQ, under the rules (never under the lines scope);
  *   lines          — it has lines the rules name: in a work package or of a catalogue kind marked for QS review;
- *   standard_only  — none of its lines needs the QS (standard items only), under the rules.
+ *   standard_only  — none of its lines needs the QS (standard items only), under the rules or the lines scope.
  */
 export type QsReason =
   | { code: "off" | "not_quotation" | "every_quotation" | "no_boq" | "design_fee" | "boq_required" | "standard_only" | "variation_amount" }
@@ -65,7 +69,9 @@ export function decideQsRequirement(input: QsInputs): QsRequirement {
     return input.boqRequired === false ? { required: false, reason: { code: "no_boq" } } : { required: true, reason: { code: "every_quotation" } };
   }
   if (input.quote.round === "design") return { required: false, reason: { code: "design_fee" } };
-  if (input.boqRequired === true) return { required: true, reason: { code: "boq_required" } };
+  // Under the rules a deal whose order (or path) needs a BOQ goes to the QS even with standard items; under the lines
+  // scope only the lines decide, so a path that needs a BOQ for its material sign-off sends nothing on its own.
+  if (input.scope === "rules" && input.boqRequired === true) return { required: true, reason: { code: "boq_required" } };
   if (input.workPackages.length || input.itemTypes.length)
     return { required: true, reason: { code: "lines", workPackages: [...input.workPackages].sort(), itemTypes: [...input.itemTypes].sort() } };
   return { required: false, reason: { code: "standard_only" } };
@@ -92,11 +98,13 @@ export async function qsRequirement(db: Db, workspaceId: string, caseId: string,
   const variation = quote.kind === "variation" ? { rule: rules.variations, threshold: rules.variationThreshold, total: quote.total } : undefined;
   if (!rules.qsReview || (quote.kind !== "quotation" && variation?.rule !== "rules"))
     return decideQsRequirement({ ...rules, quote, boqRequired: null, workPackages: [], itemTypes: [], variation });
-  const opportunityId = quote.kind === "quotation" ? await opportunityOfCase(db, workspaceId, caseId) : null;
+  // The deal's BOQ choice has no say under the lines scope, so it isn't read there.
+  const opportunityId = quote.kind === "quotation" && rules.scope !== "lines" ? await opportunityOfCase(db, workspaceId, caseId) : null;
   const boqRequired = opportunityId ? (await dealRule(db, workspaceId, opportunityId))?.boqRequired ?? null : null;
   let workPackages: string[] = [], itemTypes: QsItemType[] = [];
-  // A variation always reads its lines: the rules name the work (joinery) whatever the firm's quotation scope.
-  if (rules.scope === "rules" || variation) {
+  // The rules and the lines scope read the lines; a variation always does: the rules name the work (joinery) whatever
+  // the firm's quotation scope.
+  if (rules.scope !== "all" || variation) {
     workPackages = (await db.query<{ name: string }>(
       `SELECT DISTINCT trade.name FROM commercial_quote_lines line
          JOIN workspace_work_packages trade ON trade.workspace_id = line.workspace_id AND trade.id = line.work_package_id AND trade.qs_review
