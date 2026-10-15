@@ -99,9 +99,10 @@ export function SectionTabs({ tabs, tab, onTabChange, tabsRef }: {
   /** Where a KPI tile brings the reader when it opens a tab. */
   tabsRef?: RefObject<HTMLDivElement | null>;
 }) {
+  const t = useT();
   const selected = tabs.some((item) => item.id === tab) ? tab : tabs[0]?.id ?? "";
   if (!tabs.length) return null;
-  return <div ref={tabsRef} className={styles.sectionTabs}><Tabs items={tabs} selectedKey={selected} onSelectionChange={onTabChange} /></div>;
+  return <div ref={tabsRef} className={styles.sectionTabs}><Tabs ariaLabel={t("Lists")} items={tabs} selectedKey={selected} onSelectionChange={onTabChange} /></div>;
 }
 
 /** The sub-tab shown, and a way for a KPI tile to open one and bring it into view. */

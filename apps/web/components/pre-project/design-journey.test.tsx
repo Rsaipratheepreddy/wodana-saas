@@ -24,7 +24,8 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     expect(screen.getByRole("button", { name: "Close inspiration" })).toBeInTheDocument();
     const steps = screen.getAllByRole("listitem");
     expect(steps.map((step) => step.getAttribute("data-status"))).toEqual(["active", "locked", "locked"]);
-    expect(screen.getByLabelText("0 of 3 stages done")).toHaveTextContent("0/3");
+    expect(screen.getByLabelText("0 of 3 stages done")).toHaveTextContent("0 of 3 done");
+    expect(screen.getByRole("region", { name: "Design" })).toHaveAttribute("id", "design-journey");
     expect(screen.getByText("Bespoke Interior Design")).toBeInTheDocument();
   });
 

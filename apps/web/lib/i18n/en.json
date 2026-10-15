@@ -15254,5 +15254,6 @@
   "{count} missing": "{count} missing",
   "Not verified": "Not verified",
   "{count} people": "{count} people",
-  "{paid} of {agreed} paid": "{paid} of {agreed} paid"
+  "{paid} of {agreed} paid": "{paid} of {agreed} paid",
+  "Lists": "Lists"
 }

@@ -244,7 +244,7 @@ it("lays the Deal File out as KPI tiles, the next step and titled sections: requ
   expect(within(checklist).getByText("BOQ").closest("li")).not.toHaveAttribute("data-done");
   expect(within(next).getByRole("button", { name: "Approve Deal File" })).toBeDisabled();
   // The long lists are sub-tabs under the next step (requirements first); the small facts are titled cards beside them.
-  expect(within(screen.getByRole("tablist", { name: "Sections" })).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Requirements", "Approvals"]);
+  expect(within(screen.getByRole("tablist", { name: "Lists" })).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Requirements", "Approvals"]);
   expect(within(screen.getByRole("tabpanel", { name: "Requirements" })).getByText("Missing")).toBeInTheDocument();
   fireEvent.click(within(tile("Internal approval") as HTMLElement).getByRole("button"));
   expect(within(screen.getByRole("tabpanel", { name: "Approvals" })).getByText("Finance verifies")).toBeInTheDocument();
