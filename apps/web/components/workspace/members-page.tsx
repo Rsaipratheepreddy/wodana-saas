@@ -33,13 +33,14 @@ type BulkInvitationResult = {
   failedEmails: string[];
 };
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const CSV_EMAIL_PATTERN = /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const MAX_BULK_INVITATIONS = 50;
 
-function parseEmailList(value: string): string[] {
+/** Addresses typed or pasted into the invite box; punctuation around one ("name@firm.com." or "<name@firm.com>") is dropped. */
+export function parseEmailList(value: string): string[] {
   return Array.from(new Set(
-    value.split(/[\s,;]+/).map((email) => email.trim().toLowerCase()).filter(Boolean),
+    value.split(/[\s,;]+/).map((email) => email.trim().replace(/^[<("'.:]+|[>)"'.:]+$/g, "").toLowerCase()).filter(Boolean),
   ));
 }
 

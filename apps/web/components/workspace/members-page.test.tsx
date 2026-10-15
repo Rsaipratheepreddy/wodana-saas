@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { membersPageFixture } from "@/lib/workspace/members";
-import { MembersPage } from "./members-page";
+import { MembersPage, parseEmailList } from "./members-page";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -325,5 +325,12 @@ describe("MembersPage", () => {
     const started = JSON.parse(String((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body));
     expect(started).toMatchObject({ workspaceId: data.workspaceId, kind: "person", membershipId: teammate.id, returnPath: "/workspace/settings/members" });
     expect(started.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe("invite box addresses", () => {
+  it("drops punctuation typed around an address, so a trailing full stop doesn't fail the invite", () => {
+    expect(parseEmailList("operations@palmlivingae.com.")).toEqual(["operations@palmlivingae.com"]);
+    expect(parseEmailList("<A@Firm.com>, b@firm.com; (c@firm.co.uk)")).toEqual(["a@firm.com", "b@firm.com", "c@firm.co.uk"]);
   });
 });
