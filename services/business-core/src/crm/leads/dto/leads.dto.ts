@@ -175,6 +175,8 @@ export class UpdateSalesSettingsDto {
   @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
   /** PLM-024: who reads internal notes. */
   @IsOptional() @IsIn(["team", "sales"]) internalNotesVisibility?: "team" | "sales";
+  /** PLM-180: hand-offs without a cap; unpicked after a working day, the enquiry is unassigned and the Owners told. */
+  @IsOptional() @IsBoolean() unassignAfterWorkingDay?: boolean;
   /** PLM-099: the prefix new opportunity references take, for example O- (existing references keep theirs). */
   @IsOptional() @IsString() @Matches(/^[A-Z][A-Z0-9]{0,5}-?$/) opportunityReferencePrefix?: string;
 }

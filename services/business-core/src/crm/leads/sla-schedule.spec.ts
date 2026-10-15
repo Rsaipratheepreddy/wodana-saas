@@ -5,6 +5,7 @@ import {
   normalizeSlaSchedule,
   remainingSlaMinutes,
   SlaScheduleValidationError,
+  workingDayAfter,
 } from "./sla-schedule";
 
 const dubaiWeek = () => normalizeSlaSchedule({
@@ -176,5 +177,34 @@ describe("SLA deadline calculation", () => {
       .toThrow(SlaScheduleValidationError);
     expect(() => calculateSlaDeadlines(new Date(), 20, 20, dubaiWeek()))
       .toThrow(/later than warning/i);
+  });
+});
+
+describe("workingDayAfter (PLM-180)", () => {
+  const iso = (date: Date) => date.toISOString();
+  it("ends at the same working time on the next working day", () => {
+    // Monday 14:00 Dubai, 09:00-17:00: eight working hours later is Tuesday 14:00.
+    expect(iso(workingDayAfter(new Date("2026-09-14T10:00:00.000Z"), dubaiWeek()))).toBe("2026-09-15T10:00:00.000Z");
+  });
+
+  it("skips the weekend and holidays: Friday 14:00 runs to Monday 14:00", () => {
+    expect(iso(workingDayAfter(new Date("2026-09-18T10:00:00.000Z"), dubaiWeek()))).toBe("2026-09-21T10:00:00.000Z");
+    const withHoliday = normalizeSlaSchedule({ ...dubaiWeek(), holidays: ["2026-09-21"] });
+    expect(iso(workingDayAfter(new Date("2026-09-18T10:00:00.000Z"), withHoliday))).toBe("2026-09-22T10:00:00.000Z");
+  });
+
+  it("after hours, it is the whole of the next working day", () => {
+    // Friday 18:05 Dubai: Monday 09:00-17:00 is the day, so it ends Monday 17:00.
+    expect(iso(workingDayAfter(new Date("2026-09-18T14:05:00.000Z"), dubaiWeek()))).toBe("2026-09-21T13:00:00.000Z");
+  });
+
+  it("is as long as the day it starts in, so a short day gives a short working day", () => {
+    const halfFriday = normalizeSlaSchedule({ ...dubaiWeek(), weeklyHours: { ...dubaiWeek().weeklyHours, friday: [{ start: "09:00", end: "13:00" }] } });
+    // Friday 10:00, a four-hour day: three hours on Friday and one on Monday, 10:00.
+    expect(iso(workingDayAfter(new Date("2026-09-18T06:00:00.000Z"), halfFriday))).toBe("2026-09-21T06:00:00.000Z");
+  });
+
+  it("counts 24 hours on elapsed time", () => {
+    expect(iso(workingDayAfter(new Date("2026-09-18T14:05:00.000Z"), { version: 1, mode: "elapsed" }))).toBe("2026-09-19T14:05:00.000Z");
   });
 });

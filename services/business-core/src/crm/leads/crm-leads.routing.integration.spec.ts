@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEFAULT_NOTIFICATION_TEMPLATES } from "../../notifications/default-templates";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { queueMember } from "../conversations/inbox/inbox-assignment";
 import { CrmEventsService } from "../shared/crm-events.service";
@@ -141,6 +142,57 @@ integration("lead routing on a real database", () => {
       const audit = await client.query(`SELECT after->>'assignmentMode' AS mode FROM audit_events WHERE workspace_id = $1 AND action = 'crm.queue.updated.v1'`, [workspaceId]);
       expect(audit.rows.map((row) => row.mode)).toEqual(["round_robin"]);
       await expect(tenant((c) => c.query("UPDATE crm_queues SET assignment_mode = 'lightest' WHERE workspace_id = $1 AND id = $2", [workspaceId, queueId]))).rejects.toThrow(/assignment_mode_check/);
+    });
+  });
+
+  it("PLM-180: hand-offs rotate past the cap, then a day later nobody having picked it up, the enquiry is unassigned and the Owners told", async () => {
+    await withWorkspace(pool, { mode: "round_robin", takeoverMinutes: 60 }, async ({ client, workspaceId, people, owner, leads, tenant, newLead }) => {
+      // The notices this workspace sends (new workspaces get them from the defaults; existing ones from the migrations).
+      await client.query("SET LOCAL session_replication_role = replica");
+      for (const template of DEFAULT_NOTIFICATION_TEMPLATES.filter((entry) => entry.code.startsWith("crm.lead"))) {
+        await client.query(`INSERT INTO notification_templates(workspace_id,code,channel,locale,version_number,status,subject_template,body_template,variables,approved_at)
+          VALUES($1,$2,$3,'en',1,'approved',$4,$5,$6::jsonb,now()) ON CONFLICT DO NOTHING`, [workspaceId, template.code, template.channel, template.subject, template.body, JSON.stringify(template.variables)]);
+      }
+      await client.query("SET LOCAL session_replication_role = origin");
+      const order = [...people].map((person) => person.member).sort();
+      // Off by default; the Owner turns it on in Sales settings (version-checked, audited). The cap no longer applies.
+      expect((await leads.salesSettings(actor, workspaceId)).unassignAfterWorkingDay).toBe(false);
+      await leads.updateSalesSettings(actor, workspaceId, { version: 0, takeoverCap: 0, unassignAfterWorkingDay: true });
+      const settings = await leads.salesSettings(actor, workspaceId);
+      expect(settings).toMatchObject({ unassignAfterWorkingDay: true, takeoverCap: 0 });
+      await expect(leads.updateSalesSettings(actor, workspaceId, { version: 0, unassignAfterWorkingDay: false })).rejects.toThrow("Sales settings changed");
+
+      const lead = await newLead("Layla");
+      const routed = await tenant((c) => leads.autoAssignForAutomation(c, workspaceId, lead)) as { ownerMembershipId: string };
+      expect(routed.ownerMembershipId).toBe(order[0]);
+      const state = () => tenant(async (c) => (await c.query<{ owner: string | null; due: Date | null; escalationDue: Date | null; priority: string }>(
+        `SELECT owner_membership_id AS owner, ownership_due_at AS due, escalation_due_at AS "escalationDue", priority FROM crm_leads WHERE workspace_id = $1 AND id = $2`, [workspaceId, lead])).rows[0]);
+      // Time passes: the response window ran out two hours after it was given out.
+      const shift = (hours: number) => tenant((c) => c.query(`UPDATE crm_assignment_history SET assigned_at = assigned_at - make_interval(hours => $3) WHERE workspace_id = $1 AND lead_id = $2`, [workspaceId, lead, hours]));
+      const due = () => tenant((c) => c.query(`UPDATE crm_leads SET ownership_due_at = now() - interval '1 minute' WHERE workspace_id = $1 AND id = $2`, [workspaceId, lead]));
+      await shift(2); await due();
+      // With a cap of 0 the old rule would have told a manager; now it moves to the next person in turn.
+      expect(await leads.processDueTakeoversInternal(workspaceId)).toMatchObject({ reassigned: [{ leadId: lead, ownerMembershipId: order[1] }], escalated: [], unassigned: [] });
+      const firstGivenOut = Date.now() - 2 * 3_600_000;
+      expect(new Date((await state()).due!).getTime()).toBeLessThanOrEqual(firstGivenOut + 24 * 3_600_000 + 60_000);
+
+      // A day after it was first given out, nobody has picked it up.
+      await shift(23); await due();
+      expect(await leads.processDueTakeoversInternal(workspaceId)).toMatchObject({ reassigned: [], unassigned: [lead] });
+      expect(await state()).toMatchObject({ owner: null, due: null, escalationDue: null, priority: "urgent" });
+      const history = await client.query(`SELECT owner_membership_id AS owner, previous_owner_membership_id AS previous, explanation->>'reason' AS reason FROM crm_assignment_history
+        WHERE workspace_id = $1 AND lead_id = $2 ORDER BY assigned_at DESC LIMIT 1`, [workspaceId, lead]);
+      expect(history.rows[0]).toEqual({ owner: null, previous: order[1], reason: "unassigned_after_working_day" });
+      const notices = await client.query(`SELECT recipient_id AS recipient, channel, subject, deep_link AS link FROM notifications
+        WHERE workspace_id = $1 AND event_type = 'crm.lead_unassigned' ORDER BY channel`, [workspaceId]);
+      expect(notices.rows).toEqual([
+        { recipient: owner, channel: "email", subject: "E-1 is unassigned", link: `/workspace/crm/leads?lead=${lead}` },
+        { recipient: owner, channel: "in_app", subject: "E-1 is unassigned", link: `/workspace/crm/leads?lead=${lead}` },
+      ]);
+      const audit = await client.query(`SELECT action FROM audit_events WHERE workspace_id = $1 AND entity_id = $2 AND action = 'crm.lead.unassigned_after_working_day.v1'`, [workspaceId, lead]);
+      expect(audit.rowCount).toBe(1);
+      // Nothing is due any more: a second pass changes nothing.
+      expect(await leads.processDueTakeoversInternal(workspaceId)).toMatchObject({ reassigned: [], unassigned: [] });
     });
   });
 });

@@ -339,9 +339,10 @@
     "closingAfterHours": 3
   },
   "sales": {
-    "_note": "PLM-155: timeline questions go to the design team and Production. New enquiries and chats go round-robin, not to the lightest load.",
+    "_note": "PLM-155: timeline questions go to the design team and Production. New enquiries and chats go round-robin, not to the lightest load. PLM-180: hand-offs keep rotating; an enquiry nobody picks up within a working day goes back to Unassigned and the Owners are told.",
     "timelineCheckTeams": ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"],
-    "assignmentMode": "round_robin"
+    "assignmentMode": "round_robin",
+    "unassignAfterWorkingDay": true
   },
   "enquiryRequirements": [
     { "_note": "PLM-096 / PLM-155: location and the client's target completion before the Intro (plot size and floor plan are already required to book it).", "field": "area", "requiredAt": "book_intro" },

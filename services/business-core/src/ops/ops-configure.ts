@@ -845,6 +845,7 @@ const inbox: Section = async (ctx, profile, step) => {
 const sales: Section = async (ctx, profile, step) => {
   const wanted = profile.sales!;
   if (wanted.assignmentMode) await queueAssignment(ctx, wanted.assignmentMode, step);
+  if (wanted.unassignAfterWorkingDay !== undefined) await unassignAfterWorkingDay(ctx, wanted.unassignAfterWorkingDay, step);
   if (!wanted.timelineCheckTeams) return;
   const teams = await ctx.get(WorkspacesService).listTeams(ctx.actor, ctx.workspace.id) as Array<{ code: string; status: string }>;
   const key = (code: string) => lower(code).replace(/^team_/, "");
@@ -875,6 +876,18 @@ async function queueAssignment(ctx: OpsContext, mode: QueueAssignmentMode, step:
       return leads.updateQueue(ctx.actor, ctx.workspace.id, queue.id, await ctx.validated(UpdateQueueDto, { version: fresh.version, assignmentMode: mode }));
     });
   }
+}
+
+/** PLM-180: hand-offs without a cap; an enquiry nobody picked up in a working day goes back to Unassigned, Owners told. */
+async function unassignAfterWorkingDay(ctx: OpsContext, wanted: boolean, step: Step) {
+  const leads = ctx.get(CrmLeadsService);
+  const current = await leads.salesSettings(ctx.actor, ctx.workspace.id) as { unassignAfterWorkingDay?: boolean; version: number };
+  const now = current.unassignAfterWorkingDay === true;
+  if (now === wanted) { step.same("unassign after a working day", wanted ? "on" : "off"); return; }
+  await step.change([diff("unassign after a working day", now ? "on" : "off", wanted ? "on" : "off")], async () => {
+    const fresh = await leads.salesSettings(ctx.actor, ctx.workspace.id) as { version: number };
+    return leads.updateSalesSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, unassignAfterWorkingDay: wanted });
+  });
 }
 
 // ---------- enquiry requirements (PLM-096, PLM-155) ----------

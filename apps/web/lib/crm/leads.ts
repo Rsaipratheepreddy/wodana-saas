@@ -106,6 +106,8 @@ export type SalesSettings = {
   salesAdminMembershipId: string | null;
   /** PLM-024: who reads internal notes, the enquiry team (default) or everyone with Sales access. */
   internalNotesVisibility?: "team" | "sales";
+  /** PLM-180: hand-offs without a cap; an enquiry nobody picks up in a working day is unassigned and the Owners told. */
+  unassignAfterWorkingDay?: boolean;
   version: number;
 };
 

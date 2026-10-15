@@ -1506,6 +1506,13 @@
       "when": 1801740011000,
       "tag": "0346_queue_assignment_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1801740011100,
+      "tag": "0347_unassign_after_working_day",
+      "breakpoints": true
     }
   ]
 }

@@ -96,12 +96,17 @@ export type SalesSettings = {
   stuckDealDays: number;
   /** PLM-155: the team or role codes whose people answer timeline questions (none: anyone in the workspace). */
   timelineCheckRoles: string[];
+  /**
+   * PLM-180: hand-offs rotate without a cap, and an enquiry nobody picked up a full working day after it was given out
+   * goes back to Unassigned with the Owners told. Off by default (the takeover cap and manager escalation apply).
+   */
+  unassignAfterWorkingDay: boolean;
   version: number;
 };
 
 export const DEFAULT_SALES_SETTINGS: SalesSettings = {
   takeoverCap: 2, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90,
-  salesAdminMembershipId: null, internalNotesVisibility: "team", opportunityReferencePrefix: "O-", stuckDealDays: 14, timelineCheckRoles: [], version: 0,
+  salesAdminMembershipId: null, internalNotesVisibility: "team", opportunityReferencePrefix: "O-", stuckDealDays: 14, timelineCheckRoles: [], unassignAfterWorkingDay: false, version: 0,
 };
 
 export async function loadSalesSettings(db: Db, workspaceId: string): Promise<SalesSettings> {
@@ -109,9 +114,10 @@ export async function loadSalesSettings(db: Db, workspaceId: string): Promise<Sa
     `SELECT takeover_cap AS "takeoverCap", unowned_escalation_minutes AS "unownedEscalationMinutes",
             client_review_minutes AS "clientReviewMinutes", duplicate_window_days AS "duplicateWindowDays",
             sales_admin_membership_id AS "salesAdminMembershipId", internal_notes_visibility AS "internalNotesVisibility",
-            opportunity_reference_prefix AS "opportunityReferencePrefix", stuck_deal_days AS "stuckDealDays", timeline_check_roles AS "timelineCheckRoles", version
+            opportunity_reference_prefix AS "opportunityReferencePrefix", stuck_deal_days AS "stuckDealDays", timeline_check_roles AS "timelineCheckRoles",
+            unassign_after_working_day AS "unassignAfterWorkingDay", version
        FROM workspace_sales_settings WHERE workspace_id = $1`, [workspaceId]);
-  return row.rows[0] ? { ...row.rows[0], timelineCheckRoles: row.rows[0].timelineCheckRoles ?? [], internalNotesVisibility: row.rows[0].internalNotesVisibility === "sales" ? "sales" : "team", version: Number(row.rows[0].version) } : { ...DEFAULT_SALES_SETTINGS };
+  return row.rows[0] ? { ...row.rows[0], timelineCheckRoles: row.rows[0].timelineCheckRoles ?? [], unassignAfterWorkingDay: row.rows[0].unassignAfterWorkingDay === true, internalNotesVisibility: row.rows[0].internalNotesVisibility === "sales" ? "sales" : "team", version: Number(row.rows[0].version) } : { ...DEFAULT_SALES_SETTINGS };
 }
 
 export type Recipient = { userId: string; membershipId: string; name: string };
@@ -140,6 +146,17 @@ export async function salesEscalationRecipients(db: Db, workspaceId: string, exc
   return result.rows;
 }
 
+/** The workspace's Owners (the owner role), active people only. */
+export async function workspaceOwners(db: Db, workspaceId: string): Promise<Recipient[]> {
+  return (await db.query<Recipient>(
+    `SELECT DISTINCT membership.user_id AS "userId", membership.id AS "membershipId", coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS name
+       FROM workspace_memberships membership
+       JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+       JOIN effective_member_roles assigned ON assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
+       JOIN roles role ON role.id = assigned.role_id AND role.code = 'owner'
+      WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows;
+}
+
 function moneyText(amount: string, currency: string, locale: string) {
   try { return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount as unknown as number); } catch { return `${currency} ${amount}`; }
 }
@@ -154,13 +171,7 @@ export async function tellDealOutcome(db: Db, workspaceId: string, input: { oppo
        FROM crm_opportunities opportunity LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
       WHERE opportunity.workspace_id = $1 AND opportunity.id = $2`, [workspaceId, input.opportunityId])).rows[0];
   if (!deal) return 0;
-  const owners = (await db.query<Recipient>(
-    `SELECT DISTINCT membership.user_id AS "userId", membership.id AS "membershipId", coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS name
-       FROM workspace_memberships membership
-       JOIN users account ON account.id = membership.user_id AND account.status = 'active'
-       JOIN effective_member_roles assigned ON assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
-       JOIN roles role ON role.id = assigned.role_id AND role.code = 'owner'
-      WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows;
+  const owners = await workspaceOwners(db, workspaceId);
   const recipients = [...await salesEscalationRecipients(db, workspaceId), ...owners].filter((person) => person.userId !== input.actorUserId);
   // The stored decimal, formatted exactly in the workspace's language (no float arithmetic).
   const { locale } = await workspaceClock(db, workspaceId);

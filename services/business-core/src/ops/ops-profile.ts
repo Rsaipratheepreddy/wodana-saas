@@ -100,10 +100,11 @@ export type Profile = {
    */
   inbox?: { closingMessages?: { received?: string | null; form?: string | null; closing?: string | null }; closingFormUrl?: string | null; closingAfterHours?: number };
   /**
-   * Sales: the teams (by code) whose people answer timeline questions on an opportunity (PLM-155), and how every active
-   * Sales queue shares new enquiries and chats (balanced: the lightest load first; round_robin: strict turns).
+   * Sales: the teams (by code) whose people answer timeline questions on an opportunity (PLM-155), how every active
+   * Sales queue shares new enquiries and chats (balanced: the lightest load first; round_robin: strict turns), and
+   * whether an enquiry nobody picks up goes back to Unassigned after a working day, with the Owners told (PLM-180).
    */
-  sales?: { timelineCheckTeams?: string[]; assignmentMode?: QueueAssignmentMode };
+  sales?: { timelineCheckTeams?: string[]; assignmentMode?: QueueAssignmentMode; unassignAfterWorkingDay?: boolean };
   /**
    * Enquiry fields required from a gate (PLM-096, PLM-155), for every enquiry type unless some are named. A field already
    * required from an earlier gate stays so (the profile never loosens a rule).
@@ -592,14 +593,16 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.sales !== undefined) {
-    const section = at("sales").object(raw.sales, ["timelineCheckTeams", "assignmentMode"]);
+    const section = at("sales").object(raw.sales, ["timelineCheckTeams", "assignmentMode", "unassignAfterWorkingDay"]);
     if (section) {
       const teams = optional(section, "timelineCheckTeams", (value) => at("sales.timelineCheckTeams").texts(value, 64));
       if (teams?.some((code) => !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(code))) problems.push("sales.timelineCheckTeams are team codes like INTERIOR_DESIGN.");
       const assignmentMode = optional(section, "assignmentMode", (value) => at("sales.assignmentMode").oneOf(value, QUEUE_ASSIGNMENT_MODES));
+      const unassignAfterWorkingDay = optional(section, "unassignAfterWorkingDay", (value) => at("sales.unassignAfterWorkingDay").bool(value));
       profile.sales = {
         ...(teams === undefined ? {} : { timelineCheckTeams: teams }),
         ...(assignmentMode === undefined ? {} : { assignmentMode }),
+        ...(unassignAfterWorkingDay === undefined ? {} : { unassignAfterWorkingDay }),
       };
     }
   }
