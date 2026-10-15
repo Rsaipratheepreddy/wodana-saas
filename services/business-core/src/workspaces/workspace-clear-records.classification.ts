@@ -392,6 +392,11 @@ const clear = [
   "project_bookings",
   "project_boq_events",
   "project_boq_lines",
+  // Factory requirements per custom line and the technical handover pack (PLM-165, PLM-166).
+  "project_factory_requirements",
+  "project_factory_requirement_items",
+  "project_technical_handovers",
+  "project_technical_handover_waivers",
   "project_budgets",
   "project_drawing_files",
   "project_drawing_revisions",

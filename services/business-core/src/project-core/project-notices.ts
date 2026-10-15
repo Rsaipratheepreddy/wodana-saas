@@ -15,7 +15,11 @@ export type ProjectNotice =
   | { code: "project.drawings_approved"; revision: string; date: string; memberships: string[] }
   | { code: "project.factory_slot_booked"; date: string; memberships: string[] }
   | { code: "project.drawings_started" | "project.production_started" | "project.installation_scheduled"; date: string; note: string; memberships: string[] }
-  | { code: "project.material_details"; item: string; note: string; memberships: string[] };
+  | { code: "project.material_details"; item: string; note: string; memberships: string[] }
+  // PLM-165: the technical pack handed over (to the technical team, also by email) and accepted (to whoever handed it over and the lead).
+  | { code: "project.technical_handover" | "project.technical_handover_accepted"; note: string; memberships: string[] }
+  // PLM-166: a custom line's factory requirements confirmed, or changed after confirmation so they need confirming again.
+  | { code: "project.factory_requirements_confirmed" | "project.factory_requirements_reopened"; item: string; note: string; memberships: string[] };
 
 /**
  * Who hears about a project: the team when it starts, a person when they're named for a role, the
@@ -69,8 +73,11 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
     // PLM-055 / PLM-069: the key moments, in the app and by email.
     const date = notice.date ? await workspaceDay(db, input.workspaceId, notice.date) : "";
     for (const person of await users(notice.memberships)) await tell(person.userId, { date, note: notice.note }, true);
-  } else if (notice.code === "project.material_details") {
+  } else if (notice.code === "project.material_details" || notice.code === "project.factory_requirements_confirmed" || notice.code === "project.factory_requirements_reopened") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { item: notice.item, note: notice.note }, false);
+  } else if (notice.code === "project.technical_handover" || notice.code === "project.technical_handover_accepted") {
+    // PLM-165: the pack handed over goes by email too; the technical team acts on it.
+    for (const person of await users(notice.memberships)) await tell(person.userId, { item: "", note: notice.note }, notice.code === "project.technical_handover");
   } else {
     for (const person of await users(notice.memberships)) await tell(person.userId, { note: notice.note }, notice.code === "project.cancelled");
   }

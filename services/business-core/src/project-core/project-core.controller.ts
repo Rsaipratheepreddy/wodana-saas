@@ -79,6 +79,12 @@ export class ProjectCoreController {
     return this.projects.readiness(actor, workspaceId, projectId);
   }
 
+  /** PLM-165 / PLM-166: the technical handover pack with each line's requirements and missing-information checklist. */
+  @Get("projects/:projectId/technical-handover")
+  technicalHandover(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.projects.technicalHandover(actor, workspaceId, projectId);
+  }
+
   @Get("projects/:projectId/drawings")
   drawings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.drawingFiles.read(actor, workspaceId, projectId);
