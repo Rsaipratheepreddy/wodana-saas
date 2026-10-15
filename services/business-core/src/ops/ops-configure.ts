@@ -884,11 +884,26 @@ const enquiryRequirements: Section = async (ctx, profile, step) => {
 
 // ---------- client updates ----------
 
-const clientUpdates: Section = async (_ctx, profile, step) => {
+type ClientUpdateSettings = { settings: { version: number; clientUpdateMode: string; clientUpdateFrequency: string } };
+
+/**
+ * PLM-179: how every job's client updates start (by call, a portal update, or either; how often), through Settings ›
+ * Projects. Jobs whose updates already started keep theirs; each job can still change its own.
+ */
+const clientUpdates: Section = async (ctx, profile, step) => {
   const wanted = profile.clientUpdates!;
-  // Every case starts its client updates weekly, by call, from design approval; each case can change it. There is no workspace default to set.
-  if (wanted.mode === "call" && wanted.frequency === "weekly") step.same("client updates", "weekly by call (the product's default from design approval)");
-  else step.manual("client updates", `no workspace default; ${wanted.frequency} by ${wanted.mode} is set per case (Pre-project › Client updates)`);
+  const service = ctx.get(ProjectCoreService);
+  const current = (await service.settings(ctx.actor, ctx.workspace.id) as ClientUpdateSettings).settings;
+  const changes: Change[] = [];
+  const patch: Record<string, unknown> = {};
+  if (current.clientUpdateMode === wanted.mode) step.same("client updates by", wanted.mode);
+  else { patch.clientUpdateMode = wanted.mode; changes.push(diff("client updates by", current.clientUpdateMode, wanted.mode)); }
+  if (current.clientUpdateFrequency === wanted.frequency) step.same("client updates how often", wanted.frequency);
+  else { patch.clientUpdateFrequency = wanted.frequency; changes.push(diff("client updates how often", current.clientUpdateFrequency, wanted.frequency)); }
+  if (changes.length) await step.change(changes, async () => {
+    const fresh = (await service.settings(ctx.actor, ctx.workspace.id) as ClientUpdateSettings).settings;
+    return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, ...patch });
+  });
 };
 
 // ---------- catalogue categories ----------

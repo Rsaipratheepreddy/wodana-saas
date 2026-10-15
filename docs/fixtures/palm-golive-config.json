@@ -240,8 +240,9 @@
       { "key": "creative_director", "label": "Creative Director" }
     ]
   },
+  "_clientUpdates": "PLM-179: each job's weekly client update is a call with the Account Manager or a written progress update in the client portal, whichever they do; no call is booked by default.",
   "clientUpdates": {
-    "mode": "call",
+    "mode": "either",
     "frequency": "weekly"
   },
   "orderPaths": [

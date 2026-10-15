@@ -403,6 +403,9 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   // PLM-046: the client follows the work in the portal instead of calls; the Account Manager posts the update on the same cadence.
   { code: "client_calls.portal_update_due", channel: "in_app", subject: "Post a progress update · {{clientName}}", body: "They follow the work in the portal ({{frequency}}). Share an update today.", variables: ["clientName", "frequency", "when"] },
   { code: "client_calls.portal_update_due", channel: "email", subject: "Post a progress update: {{clientName}}", body: "{{clientName}} follows the work in the client portal instead of calls ({{frequency}}).\n\nShare a progress update with them today.", variables: ["clientName", "frequency", "when"] },
+  // PLM-179: in "either" mode the Account Manager hears on the day that a call or a portal update is due.
+  { code: "client_calls.update_due", channel: "in_app", subject: "Update {{clientName}} today", body: "Call them, or share a progress update in the portal ({{frequency}}).", variables: ["clientName", "frequency", "when"] },
+  { code: "client_calls.update_due", channel: "email", subject: "Client update due: {{clientName}}", body: "{{clientName}} hears how the work goes from a call with you or a progress update in the client portal ({{frequency}}).\n\nLog the call or share an update today.", variables: ["clientName", "frequency", "when"] },
   { code: "client_calls.client_changed", channel: "in_app", subject: "{{clientName}} changed their updates", body: "{{choice}}", variables: ["clientName", "choice"] },
   { code: "site.report_waiting", channel: "in_app", subject: "Site report to approve · {{title}}", body: "{{actor}} reported {{note}}.", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.report_returned", channel: "in_app", subject: "Your site report came back · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },

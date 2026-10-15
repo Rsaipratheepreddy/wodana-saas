@@ -75,7 +75,8 @@ export type Profile = {
     projectRoles?: Array<{ key: string; label: string }>;
   };
   orderPaths?: OrderPathChange[];
-  clientUpdates?: { mode: "call" | "portal"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
+  /** PLM-179: how every job's client updates start (Settings › Projects): by call, by a portal update, or either; and how often. */
+  clientUpdates?: { mode: "call" | "portal" | "either"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
   catalogCategories?: CategoryCleanup[];
   /**
    * Project settings (PLM-149): the project role that checks the drawings match the design, sends them to the client and
@@ -611,7 +612,7 @@ export function validateProfile(raw: unknown): Profile {
   if (raw.clientUpdates !== undefined) {
     const section = at("clientUpdates").object(raw.clientUpdates, ["mode", "frequency"]);
     if (section) {
-      const mode = at("clientUpdates.mode").oneOf(section.mode, ["call", "portal"] as const);
+      const mode = at("clientUpdates.mode").oneOf(section.mode, ["call", "portal", "either"] as const);
       const frequency = at("clientUpdates.frequency").oneOf(section.frequency, ["weekly", "fortnightly", "monthly", "off"] as const);
       if (mode && frequency) profile.clientUpdates = { mode, frequency };
     }

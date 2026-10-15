@@ -161,7 +161,7 @@ integration("operator CLI: import and configure through the app's services (real
     expect(apply.code).toBe(0);
     expect(applied.counts.failed ?? 0).toBe(0);
     const sections = new Set(applied.lines.filter((line) => line.status === "changed").map((line) => line.section));
-    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "design", "enquiryRequirements", "enquiryTypes", "factory", "financeRequests", "finishes", "firstResponse", "inbox", "orderPaths", "quotations", "rolePermissions", "routes", "sales", "vehicles"]);
+    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "clientUpdates", "design", "enquiryRequirements", "enquiryTypes", "factory", "financeRequests", "finishes", "firstResponse", "inbox", "orderPaths", "quotations", "rolePermissions", "routes", "sales", "vehicles"]);
     // PLM-146/148/156/157: the finish categories, the gates and the sample price bands, in the workspace's currency.
     const finishes = (await pool.query<{ categories: Array<{ key: string; clientSignature: boolean }>; gate: boolean; days: number; slots: string[]; since: Date | null }>(
       `SELECT categories, specification_gate AS gate, finishes_to_qs_days AS days, material_editor_slots AS slots, signature_required_since AS since FROM workspace_finish_settings WHERE workspace_id = $1`,
@@ -174,7 +174,9 @@ integration("operator CLI: import and configure through the app's services (real
     expect(applied.lines).toEqual(expect.arrayContaining([
       expect.objectContaining({ section: "enquiryTypes", status: "not found", label: "enquiry type no_such_type" }),
       expect.objectContaining({ section: "quotations", status: "not found", label: "work package Missing package" }),
-      expect.objectContaining({ section: "clientUpdates", status: "manual" }),
+      // PLM-179: the workspace default for client updates, through Settings › Projects (weekly stays as it was).
+      expect.objectContaining({ section: "clientUpdates", status: "changed", label: "client updates by" }),
+      expect.objectContaining({ section: "clientUpdates", status: "unchanged", label: "client updates how often" }),
       expect.objectContaining({ section: "rolePermissions", status: "unchanged", label: "role administrator" }),
       expect.objectContaining({ section: "catalogCategories", status: "not found", label: "catalogue No such catalogue" }),
       expect.objectContaining({ section: "catalogCategories", status: "unchanged", label: "Main catalogue › delete Never there" }),

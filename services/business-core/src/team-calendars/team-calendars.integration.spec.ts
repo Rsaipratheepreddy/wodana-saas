@@ -8,6 +8,7 @@ import { starterFlow } from "../crm/flows/starter-flows";
 import { OpportunityProposalsService } from "../crm/opportunities/opportunity-proposals.service";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { projectAreas } from "../project-core/project-areas";
+import { ProjectCoreService } from "../project-core/project-core.service";
 import { plusDays } from "./team-calendars.domain";
 import { TeamCalendarsService } from "./team-calendars.service";
 import { processTeamCalendarDeadlines } from "./team-calendars.store";
@@ -73,7 +74,8 @@ integration("team calendars, client update calls and areas after Won", () => {
       try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT command"); return result; }
       catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT command"); throw error; }
     };
-    return { withPermission: run, withAnyPermission: run, withPermissions: run, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
+    return { withPermission: run, withAnyPermission: run, withPermissions: run, asMember: (a: unknown, ws: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => run(a, ws, permissions, fn),
+      hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
   };
 
   const told = async (w: World, event: string, channel = "in_app") => (await w.client.query<{ recipient: string; subject: string; body: string }>(
@@ -290,6 +292,59 @@ integration("team calendars, client update calls and areas after Won", () => {
     expect(back.mode).toBe("call");
     expect((await w.client.query(`SELECT 1 FROM crm_activities activity JOIN crm_appointments appointment ON appointment.workspace_id = activity.workspace_id AND appointment.activity_id = activity.id
       WHERE activity.workspace_id = $1 AND activity.id = $2 AND activity.type = 'call' AND activity.status = 'pending'`, [w.workspaceId, back.next!.activityId])).rowCount).toBe(1);
+  }));
+
+  it("starts the client updates the firm set; in either mode a logged call or a shared portal update does each one, and no call is booked (PLM-179)", () => world(async (w) => {
+    const projects = new ProjectCoreService(access(w, w.people.manager, ["workspace.settings.manage"]));
+    const current = (await projects.settings(actor, w.workspaceId)).settings;
+    expect(current).toMatchObject({ clientUpdateMode: "call", clientUpdateFrequency: "weekly" });
+    await expect(projects.saveSettings(actor, w.workspaceId, { version: current.version, clientUpdateMode: "letter" })).rejects.toThrow("Choose a call, a portal update or either");
+    const saved = await projects.saveSettings(actor, w.workspaceId, { version: current.version, clientUpdateMode: "either", clientUpdateFrequency: "weekly" });
+    expect(saved.settings).toMatchObject({ clientUpdateMode: "either", clientUpdateFrequency: "weekly" });
+    expect((await w.client.query(`SELECT 1 FROM audit_events WHERE workspace_id = $1 AND action = 'project.settings_changed'`, [w.workspaceId])).rowCount).toBe(1);
+
+    // The design is approved: the job's updates start weekly, either way, with a reminder for the Account Manager and no call booked.
+    const started = (await startClientCalls(w.client, w.workspaceId, w.caseId, "design_approval", w.people.designer))!;
+    expect(started).toMatchObject({ mode: "either", frequency: "weekly", callsBooked: 0 });
+    const reminder = (await w.client.query<{ type: string; title: string; owner: string }>(`SELECT type::text, title, owner_membership_id AS owner FROM crm_activities WHERE workspace_id = $1 AND id = $2`,
+      [w.workspaceId, started.nextActivityId])).rows[0];
+    expect(reminder).toEqual({ type: "task", title: "Update the client: call or portal update · Maya Client", owner: w.members.owner });
+    expect((await w.client.query(`SELECT 1 FROM crm_appointments WHERE workspace_id = $1`, [w.workspaceId])).rowCount).toBe(0);
+    expect(await told(w, "client_calls.booked")).toEqual([]);
+    const calls = new ClientCallsService(access(w, w.people.owner, DESIGN));
+    expect(await calls.get(actor, w.workspaceId, w.caseId)).toMatchObject({ mode: "either", frequency: "weekly", next: { activityId: started.nextActivityId, on: started.nextOn } });
+
+    // On the day the Account Manager hears it once.
+    await w.client.query("UPDATE client_update_calls SET next_on = $3 WHERE workspace_id = $1 AND case_id = $2", [w.workspaceId, w.caseId, w.today]);
+    await processClientCalls(w.client, w.workspaceId);
+    await processClientCalls(w.client, w.workspaceId);
+    expect((await told(w, "client_calls.update_due")).map((row) => [row.recipient, row.subject])).toEqual([[w.people.owner, "Update Maya Client today"]]);
+
+    // A call with the client, logged since, does this week's update; the next follows a week on.
+    const status = async (id: string) => (await w.client.query<{ status: string; outcome: string | null }>(
+      `SELECT status::text, completion_outcome AS outcome FROM crm_activities WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, id])).rows[0];
+    await w.client.query("UPDATE crm_activities SET created_at = now() - interval '1 hour' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, started.nextActivityId]);
+    await w.client.query(`INSERT INTO crm_activities (workspace_id, opportunity_id, type, interaction_direction, title, owner_membership_id, status, completed_at, created_by)
+      VALUES ($1, $2, 'call', 'outbound', 'Weekly update', $3, 'completed', now(), $4)`, [w.workspaceId, w.opportunityId, w.members.owner, w.people.owner]);
+    expect(await processClientCalls(w.client, w.workspaceId)).toEqual({ booked: 1 });
+    expect(await status(started.nextActivityId!)).toEqual({ status: "completed", outcome: "Client called" });
+    const second = (await calls.get(actor, w.workspaceId, w.caseId)).next!;
+    expect(second.activityId).not.toBe(started.nextActivityId);
+    expect(Date.parse(second.on!) - Date.parse(w.today)).toBeGreaterThanOrEqual(7 * 86_400_000);
+
+    // A progress update shared in the portal does the next one just as well.
+    await w.client.query("UPDATE crm_activities SET created_at = now() - interval '1 hour' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, second.activityId]);
+    await w.client.query(`INSERT INTO project_status_updates (id, workspace_id, project_id, health, note, created_by, shared_at, shared_by) VALUES ($1, $2, $3, 'on_track', 'Kitchen fitted', $4, now(), $4)`,
+      [randomUUID(), w.workspaceId, w.projectId, w.people.manager]);
+    expect(await processClientCalls(w.client, w.workspaceId)).toEqual({ booked: 1 });
+    expect(await status(second.activityId)).toEqual({ status: "completed", outcome: "Progress update shared" });
+    expect((await w.client.query(`SELECT 1 FROM crm_appointments WHERE workspace_id = $1`, [w.workspaceId])).rowCount).toBe(0);
+
+    // The firm turns them off by default: a job whose updates start now has them off until someone turns them on.
+    const off = await projects.saveSettings(actor, w.workspaceId, { version: saved.settings.version, clientUpdateFrequency: "off" });
+    expect(off.settings.clientUpdateFrequency).toBe("off");
+    await w.client.query("DELETE FROM client_update_calls WHERE workspace_id = $1 AND case_id = $2", [w.workspaceId, w.caseId]);
+    expect(await startClientCalls(w.client, w.workspaceId, w.caseId, "design_approval", w.people.designer)).toMatchObject({ frequency: "off", mode: "either", nextActivityId: null });
   }));
 
   it("starts the calls from the accepted estimate on a job without design (PLM-046)", () => world(async (w) => {

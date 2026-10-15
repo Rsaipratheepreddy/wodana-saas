@@ -11,15 +11,23 @@ export type Frequency = (typeof FREQUENCIES)[number];
 export const isFrequency = (value: unknown): value is Frequency => typeof value === "string" && (FREQUENCIES as readonly string[]).includes(value);
 export const FREQUENCY_LABEL: Record<Frequency, string> = { weekly: "Weekly", fortnightly: "Every two weeks", monthly: "Monthly", off: "Off" };
 
-/** How the client hears how the work goes: a call with the Account Manager, or a progress update posted to the client portal. */
-export const MODES = ["call", "portal"] as const;
+/**
+ * How the client hears how the work goes: a call with the Account Manager (booked in their calendar), a progress update
+ * posted to the client portal, or either (PLM-179: a logged call or a shared update does it; no call is booked).
+ */
+export const MODES = ["call", "portal", "either"] as const;
 export type Mode = (typeof MODES)[number];
 export const isMode = (value: unknown): value is Mode => typeof value === "string" && (MODES as readonly string[]).includes(value);
+
+/** PLM-179: how a job's client updates start, unless the job says otherwise (workspace configuration). */
+export type UpdateDefaults = { mode: Mode; frequency: Frequency };
+export const DEFAULT_UPDATES: UpdateDefaults = { mode: "call", frequency: "weekly" };
 
 /** The client's choice as the Account Manager reads it ("Weekly calls", "Portal updates instead of calls, monthly", "No update calls"). */
 export function choiceText(mode: Mode, frequency: Frequency) {
   if (frequency === "off") return "No update calls";
   if (mode === "portal") return `Portal updates instead of calls, ${FREQUENCY_LABEL[frequency].toLowerCase()}`;
+  if (mode === "either") return `A call or a portal update, ${FREQUENCY_LABEL[frequency].toLowerCase()}`;
   return { weekly: "Weekly calls", fortnightly: "Calls every two weeks", monthly: "Monthly calls" }[frequency];
 }
 

@@ -35,7 +35,7 @@ describe("configuration profile", () => {
     expect(palm.finishes).toMatchObject({ specificationGate: true, finishesToQsDays: 3, materialEditors: ["lead_designer", "junior_designer", "sales_admin"] });
     expect(palm.finishes?.categories?.filter((category) => category.clientSignature).map((category) => category.key)).toEqual(["whitegoods", "sanitary_ware"]);
     expect(palm.finishes?.priceBands?.map((band) => band.label)).toEqual(["Entry", "Mid range", "Premium", "Luxury"]);
-    expect(palm.clientUpdates).toEqual({ mode: "call", frequency: "weekly" });
+    expect(palm.clientUpdates).toEqual({ mode: "either", frequency: "weekly" });
     expect(palm.catalogCategories).toEqual([{ catalog: "Palm Living Core Collection", merge: [{ from: "BED & MATTRESS", into: "Beds & Mattress" }], deleteEmpty: [],
       deleteEmptyDuplicates: true, rename: [{ from: "DINING CHAIRS", to: "Dining Chairs" }, { from: "LOUNGE CHAIRS", to: "Lounge Chairs" }],
       parent: [{ category: "Dining Chairs", parent: "Chairs" }, { category: "Lounge Chairs", parent: "Chairs" }] }]);
@@ -95,7 +95,7 @@ describe("configuration profile", () => {
       expect.stringContaining("routes[0].addStages[0].checks[1] is one of"),
       expect.stringContaining("orderPaths[0].path is one of"),
       expect.stringContaining("orderPaths[0].leadDays.min is at most max"),
-      expect.stringContaining("clientUpdates.mode is one of call, portal"),
+      expect.stringContaining("clientUpdates.mode is one of call, portal, either"),
       expect.stringContaining("catalogCategories[0].merge: Beds merges into another category"),
       expect.stringContaining("catalogCategories[0].parent[0]: a category can't sit under itself"),
       expect.stringContaining("catalogCategories[0].rename[0].to is non-empty text"),

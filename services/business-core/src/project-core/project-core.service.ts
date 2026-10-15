@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
+import { isFrequency, isMode } from "../client-calls/client-calls.domain";
 import { tellClients } from "../client-portal/portal-notices";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
@@ -126,13 +127,18 @@ export class ProjectCoreService {
       const measureDays = body.technicalMeasureDays === undefined ? current.technicalMeasureDays : body.technicalMeasureDays;
       if (measureDays !== null && !(Number.isInteger(measureDays) && Number(measureDays) >= 1 && Number(measureDays) <= 60))
         throw new BadRequestException("Give the technical measure 1 to 60 working days, or no due date.");
+      // PLM-179: how a job's client updates start (each job can still change its own).
+      const updateMode = body.clientUpdateMode === undefined ? current.clientUpdateMode : body.clientUpdateMode;
+      if (!isMode(updateMode)) throw new BadRequestException("Choose a call, a portal update or either for client updates.");
+      const updateFrequency = body.clientUpdateFrequency === undefined ? current.clientUpdateFrequency : body.clientUpdateFrequency;
+      if (!isFrequency(updateFrequency)) throw new BadRequestException("Choose how often clients hear from you.");
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
                 require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, report_due_time = $11::time, auto_send_pending_reports = $12, weekly_rollup = $13,
-                keep_informed = $14::jsonb, variation_payment_rule = $15, drawings_client_role = $16, technical_measure_days = $17,
+                keep_informed = $14::jsonb, variation_payment_rule = $15, drawings_client_role = $16, technical_measure_days = $17, client_update_mode = $18, client_update_frequency = $19,
                 version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend,
-          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule, clientRole, measureDays]);
+          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed), paymentRule, clientRole, measureDays, updateMode, updateFrequency]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };

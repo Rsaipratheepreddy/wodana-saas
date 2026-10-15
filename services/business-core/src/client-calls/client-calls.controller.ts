@@ -5,7 +5,7 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { ClientCallsService } from "./client-calls.service";
 
-class FrequencyDto { @IsIn(["weekly", "fortnightly", "monthly", "off"]) frequency!: string; @IsOptional() @IsIn(["call", "portal"]) mode?: string; @IsInt() @Min(0) version!: number; }
+class FrequencyDto { @IsIn(["weekly", "fortnightly", "monthly", "off"]) frequency!: string; @IsOptional() @IsIn(["call", "portal", "either"]) mode?: string; @IsInt() @Min(0) version!: number; }
 
 /** PLM-046: the recurring client update of a job (a call, or a progress update in the portal). */
 @ApiTags("client-calls")

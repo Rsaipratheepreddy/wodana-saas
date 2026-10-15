@@ -12,10 +12,12 @@ import type { CheckKind, KeepInformedEvent, ProjectRole, ProjectRoute, RouteStag
 import { useSupplyLabels } from "./project-scope";
 import { WarrantySettingsSection } from "../site/project-warranty";
 import { LabourRatesSection } from "./labour-rates";
+import { FREQUENCY_LABEL, UPDATE_MODE_LABEL, UPDATE_MODES, type ClientCallFrequency } from "../pre-project/client-calls";
 import styles from "./project-settings.module.css";
 
 type Tab = "start" | "roles" | "informed" | "routes" | "work" | "warranty" | "labour";
 const LEAD = "project_manager";
+const UPDATE_FREQUENCIES: ClientCallFrequency[] = ["weekly", "fortnightly", "monthly", "off"];
 
 /**
  * Settings → Projects: what must be true before a project starts, the roles on a project team, the
@@ -133,6 +135,17 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="client-updates" title={t("Client updates")}>
+      {/* PLM-179: how each job's client updates start (from the design approval, or the accepted estimate); each job can change its own. */}
+      <SettingsRow label={t("Update by")} hint={t("How every job's client updates start. Each job can change its own.")}>
+        <SelectField aria-label={t("Update by")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.clientUpdateMode ?? "call"}
+          onSelectionChange={(key) => setForm({ ...form, clientUpdateMode: (key ?? "call") as NonNullable<typeof form.clientUpdateMode> })}
+          items={UPDATE_MODES.map((id) => ({ id, label: t(UPDATE_MODE_LABEL[id]) }))} />
+      </SettingsRow>
+      <SettingsRow label={t("How often")}>
+        <SelectField aria-label={t("How often")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.clientUpdateFrequency ?? "weekly"}
+          onSelectionChange={(key) => setForm({ ...form, clientUpdateFrequency: (key ?? "weekly") as NonNullable<typeof form.clientUpdateFrequency> })}
+          items={UPDATE_FREQUENCIES.map((id) => ({ id, label: t(FREQUENCY_LABEL[id]) }))} />
+      </SettingsRow>
       <SettingsRow label={t("Daily report due")} hint={t("The supervisor is reminded then if there's no report, and the project manager an hour later.")}>
         <TimeField aria-label={t("Daily report due")} label={undefined} hourCycle={24} isDisabled={readOnly} value={parseTime(form.reportDueTime ?? "18:00")}
           onChange={(value) => { if (value) setForm({ ...form, reportDueTime: value.toString().slice(0, 5) }); }} />
@@ -160,7 +173,8 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
       onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment,
         variationPaymentRule: form.variationPaymentRule ?? "before_work", autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
         reportDueTime: form.reportDueTime ?? "18:00", autoSendPendingReports: Boolean(form.autoSendPendingReports), weeklyRollup: Boolean(form.weeklyRollup),
-        drawingsClientRole: form.drawingsClientRole ?? null, technicalMeasureDays: form.technicalMeasureDays ?? null }); setBusy(false); }} />}
+        drawingsClientRole: form.drawingsClientRole ?? null, technicalMeasureDays: form.technicalMeasureDays ?? null,
+        clientUpdateMode: form.clientUpdateMode ?? "call", clientUpdateFrequency: form.clientUpdateFrequency ?? "weekly" }); setBusy(false); }} />}
   </>;
 }
 
