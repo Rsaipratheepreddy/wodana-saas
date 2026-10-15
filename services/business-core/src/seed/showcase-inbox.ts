@@ -7,13 +7,15 @@ import { renderTemplate } from "../crm/conversations/inbox/inbox-rules";
 import { resolveTemplateSources } from "../crm/conversations/inbox/template-variables";
 import { STARTER_PACK, starterByName, type StarterEvent } from "../crm/conversations/inbox/whatsapp-starter-pack";
 import { zonedLocalToUtc } from "../ai-tools/tool-kit";
+import type { ShowcaseCast, ShowcaseCastMember } from "./showcase-cast";
 
 /**
  * The showcase's team inbox: WhatsApp chats with the seeded clients (their enquiries and projects), a few
  * WhatsApp templates in Meta's states, the default quick replies and auto replies switched on.
  *
  * Records only: every message is written as already sent or received, with no notification queued, so nothing
- * is ever delivered to anyone. Clients are the showcase's own fictional people, found by their demo phone numbers;
+ * is ever delivered to anyone. Clients are the showcase's own fictional people in the workspace's country (its cast,
+ * showcase-cast.ts), found by their demo phone numbers;
  * a client the showcase hasn't created (or who already has a WhatsApp chat) is skipped. Idempotent: each chat,
  * message and template has a stable key, so a second run finds them and adds nothing.
  */
@@ -24,6 +26,8 @@ type Db = Pick<PoolClient, "query">;
 
 export type InboxSeedContext = {
   workspaceId: string;
+  /** The showcase's clients, as the rest of the showcase made them. */
+  cast: ShowcaseCast;
   owner: Staff;
   inbox: CrmInboxService;
   /** Runs work in one tenant transaction as the owner (forced RLS applies). */
@@ -46,7 +50,7 @@ type Line =
   /** An automatic client message from the starter pack; a visit is tomorrow at `meetingAt` (local time). */
   | { at: number; from: "automatic"; event: StarterEvent; template: string; meetingAt?: string; place?: string };
 
-type Chat = {
+export type Chat = {
   key: string; client: string; mobile: string; subject: string; owner: StaffRole;
   state: "open" | "snoozed" | "closed"; unread: boolean; labels: string[];
   /** For a snoozed chat: when it comes back, in hours from now. */
@@ -75,25 +79,30 @@ const TEMPLATES: Array<{ code: string; body: string; category: "utility" | "mark
   })),
 ];
 
-const CHATS: Chat[] = [
-  { key: "hessa", client: "Hessa Al Suwaidi", mobile: "+971506000011", subject: "Majlis and dining room", owner: "sales", state: "open", unread: true, labels: ["Quote request"], lines: [
-    { at: 2.2, from: "client", text: "Hello! I saw your majlis project on Instagram. We want to redo the majlis and the dining room before Ramadan. Can you help?" },
+/** A cast member as a chat's client. */
+const chatWith = (person: ShowcaseCastMember) => ({ client: person.displayName, mobile: person.mobile });
+const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** The chats, with the workspace's cast: the clients, their names and the room one of them asks about. */
+export const showcaseChats = ({ people: { hessa, daniel, mariam, aisha, sofia, haddad, faris, nikolai }, formalRoom, season }: ShowcaseCast): Chat[] => [
+  { key: "hessa", ...chatWith(hessa), subject: `${capitalized(formalRoom)} and dining room`, owner: "sales", state: "open", unread: true, labels: ["Quote request"], lines: [
+    { at: 2.2, from: "client", text: `Hello! I saw your ${formalRoom} project on Instagram. We want to redo the ${formalRoom} and the dining room before ${season}. Can you help?` },
     { at: 2.19, from: "auto_reply" },
-    { at: 2.0, from: "client", text: "The majlis is about 6 by 8 metres. Do you also do the curtains and the lighting?" },
+    { at: 2.0, from: "client", text: `The ${formalRoom} is about 6 by 8 metres. Do you also do the curtains and the lighting?` },
   ] },
-  { key: "daniel", client: "Daniel Okafor", mobile: "+971506000012", subject: "Living room refresh", owner: "salesAdmin", state: "open", unread: true, labels: ["Quote request"], lines: [
+  { key: "daniel", ...chatWith(daniel), subject: "Living room refresh", owner: "salesAdmin", state: "open", unread: true, labels: ["Quote request"], lines: [
     { at: 26, from: "client", text: "Hi, I'm looking to refresh the living room of my one-bedroom apartment: sofa, rug, lighting and curtains." },
-    { at: 25.5, from: "salesAdmin", text: "Hi Daniel, thanks for reaching out! Could you share your floor plan? A photo or a PDF is fine. It helps us plan the space and prepare an accurate quotation." },
+    { at: 25.5, from: "salesAdmin", text: `Hi ${daniel.firstName}, thanks for reaching out! Could you share your floor plan? A photo or a PDF is fine. It helps us plan the space and prepare an accurate quotation.` },
     { at: 3.1, from: "client", text: "Here is the floor plan.", file: { kind: "image", name: "floor-plan-living-room.jpg" } },
     { at: 3.0, from: "client", text: "The wall facing the window is 4.2 m long, if that helps." },
   ] },
-  { key: "mariam", client: "Mariam Haddad", mobile: "+971506000013", subject: "Kitchen", owner: "sales", state: "snoozed", snoozeFor: 20, unread: false, labels: [], lines: [
-    { at: 70, from: "sales", text: "Hi Mariam, I tried calling about your kitchen. When is a good time to talk?" },
+  { key: "mariam", ...chatWith(mariam), subject: "Kitchen", owner: "sales", state: "snoozed", snoozeFor: 20, unread: false, labels: [], lines: [
+    { at: 70, from: "sales", text: `Hi ${mariam.firstName}, I tried calling about your kitchen. When is a good time to talk?` },
     { at: 50, from: "client", text: "Sorry, I was travelling. Can you call me tomorrow after 4?" },
     { at: 49.6, from: "sales", text: "Of course, I'll call you tomorrow after 4 pm." },
     { at: 49.5, from: "note", by: "sales", text: "Snoozed until her call tomorrow afternoon. She prefers calls after 4 pm." },
   ] },
-  { key: "aisha", client: "Aisha Karim", mobile: "+971506000015", subject: "Master suite", owner: "sales", state: "open", unread: false, labels: ["Site visit"], lines: [
+  { key: "aisha", ...chatWith(aisha), subject: "Master suite", owner: "sales", state: "open", unread: false, labels: ["Site visit"], lines: [
     { at: 30, from: "client", text: "Hi, I'd like to see the dressing room options in your showroom." },
     { at: 29, from: "sales", text: "Happy to show you! A showroom visit takes about an hour. Which day and time suit you best?" },
     { at: 27, from: "client", text: "Tuesday at 11 works for me." },
@@ -101,12 +110,12 @@ const CHATS: Chat[] = [
     { at: 26.45, from: "automatic", event: "crm.meeting.booked", template: "wd_visit_confirmed", meetingAt: "11:00", place: "Showroom, Building 7, Design District" },
     { at: 26.4, from: "note", by: "sales", text: "Bring the walnut and oak veneer samples for the dressing room." },
   ] },
-  { key: "sofia", client: "Sofia Bennett", mobile: "+971565000005", subject: "Penthouse quotation", owner: "manager", state: "open", unread: true, labels: ["Quote request", "Urgent"], lines: [
-    { at: 52, from: "manager", text: "Hi Sofia, your quotation has been sent. Take your time to review it, and let us know if you have any questions." },
+  { key: "sofia", ...chatWith(sofia), subject: "Penthouse quotation", owner: "manager", state: "open", unread: true, labels: ["Quote request", "Urgent"], lines: [
+    { at: 52, from: "manager", text: `Hi ${sofia.firstName}, your quotation has been sent. Take your time to review it, and let us know if you have any questions.` },
     { at: 5, from: "client", text: "Thanks. Could you split the lighting into a separate option? We may do it in a second phase." },
     { at: 4.8, from: "note", by: "manager", text: "Asking the estimator for a lighting-only option before we reply." },
   ] },
-  { key: "haddad", client: "Omar and Layla Haddad", mobile: "+971553000003", subject: "Villa project", owner: "projectManager", state: "open", unread: true, labels: ["Payment"], lines: [
+  { key: "haddad", ...chatWith(haddad), subject: "Villa project", owner: "projectManager", state: "open", unread: true, labels: ["Payment"], lines: [
     { at: 400, from: "automatic", event: "crm.opportunity.won", template: "wd_deal_won" },
     { at: 75, from: "reminder", template: "payment_reminder_friendly" },
     { at: 73, from: "client", text: "Thanks for the reminder. We paid today; here is the receipt.", file: { kind: "document", name: "payment-receipt.pdf" } },
@@ -115,14 +124,14 @@ const CHATS: Chat[] = [
     { at: 19.5, from: "projectManager", text: "Your project is nearly ready for handover. Which day and time work for you to walk through it with us?" },
     { at: 4, from: "client", text: "Saturday morning would be perfect." },
   ] },
-  { key: "faris", client: "Faris Khoury", mobile: "+971524000004", subject: "Office walk-through", owner: "salesAdmin", state: "closed", unread: false, labels: ["Site visit"], lines: [
+  { key: "faris", ...chatWith(faris), subject: "Office walk-through", owner: "salesAdmin", state: "closed", unread: false, labels: ["Site visit"], lines: [
     { at: 100, from: "client", text: "Can your team walk the office with me this week?" },
     { at: 99, from: "salesAdmin", text: "Sure. How about Thursday at 4 pm?" },
     { at: 98, from: "client", text: "Perfect, thanks." },
     { at: 97, from: "salesAdmin", text: "Great, see you on Thursday." },
   ] },
-  { key: "nikolai", client: "Nikolai Petrov", mobile: "+971506000016", subject: "Apartment fit-out", owner: "salesAdmin", state: "closed", unread: false, labels: [], lines: [
-    { at: 222, from: "salesAdmin", text: "Hi Nikolai, our proposal for the apartment fit-out is ready. Happy to go through it whenever suits you." },
+  { key: "nikolai", ...chatWith(nikolai), subject: "Apartment fit-out", owner: "salesAdmin", state: "closed", unread: false, labels: [], lines: [
+    { at: 222, from: "salesAdmin", text: `Hi ${nikolai.firstName}, our proposal for the apartment fit-out is ready. Happy to go through it whenever suits you.` },
     { at: 150, from: "automatic", event: "crm.enquiry.quiet", template: "wd_enquiry_follow_up" },
     { at: 148, from: "client", text: "Thanks for your time. We decided to go with another studio this time." },
     { at: 147, from: "salesAdmin", text: "Understood, thank you for letting us know. We're here whenever you need us." },
@@ -138,7 +147,7 @@ export async function seedShowcaseInbox(ctx: InboxSeedContext) {
   const labels = await ensureLabels(ctx);
   const templates = await ensureTemplates(ctx);
   const greeting = await ensureAutoReplies(ctx);
-  for (const chat of CHATS) {
+  for (const chat of showcaseChats(ctx.cast)) {
     try { await seedChat(ctx, chat, labels, templates, greeting); }
     catch (error) { ctx.skip(`inbox · ${chat.client}`, error instanceof Error ? error.message : String(error)); }
   }
