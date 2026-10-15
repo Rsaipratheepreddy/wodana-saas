@@ -62,19 +62,49 @@ export function designFee(pkg: { pricingMethod: PricingMethod; rate: string }, m
 }
 
 /**
- * The minimum design deposit a workspace has set, or null when it has none. An empty row, a missing
- * currency or a zero amount all mean "no minimum": nothing is shown or gated as "0".
+ * The minimum design deposit: a fixed amount in a currency, or a share of the job's design fee (the accepted design
+ * quotation), e.g. 100 for the whole fee before the design starts.
  */
-export function effectiveMinimumDeposit(row: { amount?: string | null; currency?: string | null } | null | undefined): { amount: string; currency: string } | null {
+export type MinimumDeposit = { amount: string; currency: string } | { percent: string };
+export const isPercentDeposit = (minimum: MinimumDeposit | null | undefined): minimum is { percent: string } => Boolean(minimum && "percent" in minimum);
+
+/** A percentage of the design fee: more than 0 and at most 100, with up to two decimals. */
+export function depositPercentProblem(percent: unknown) {
+  const text = typeof percent === "number" ? String(percent) : percent;
+  if (typeof text !== "string" || !/^\d{1,3}(\.\d{1,2})?$/.test(text)) return "Enter the minimum deposit as a percentage of the design fee, e.g. 50 or 100";
+  const value = Dec.of(text);
+  if (value.isZero() || value.cmp("100") > 0) return "The minimum deposit is more than 0% and at most 100% of the design fee";
+  return null;
+}
+
+/**
+ * The minimum design deposit a workspace has set, or null when it has none. An empty row, a missing currency or a zero
+ * amount (or percentage) all mean "no minimum": nothing is shown or gated as "0". A percentage wins over an amount.
+ */
+export function effectiveMinimumDeposit(row: { amount?: string | null; currency?: string | null; percent?: string | number | null } | null | undefined): MinimumDeposit | null {
+  if (row?.percent !== null && row?.percent !== undefined && row.percent !== "") {
+    const percent = Dec.of(String(row.percent));
+    if (!percent.isZero() && !percent.isNegative()) return { percent: (percent.cmp("100") > 0 ? Dec.of("100") : percent).toFixed(2) };
+  }
   if (!row?.amount || !row.currency) return null;
   const amount = Dec.of(String(row.amount));
   if (amount.isZero() || amount.isNegative()) return null;
   return { amount: amount.toFixed(2), currency: row.currency };
 }
 
-/** Is the received design deposit enough? Amounts compared as decimals in the quote's currency. */
-export function depositMeetsMinimum(paid: string | number, minimum: { amount: string; currency: string } | null | undefined, currency: string) {
+/** The deposit a job needs in its quote's currency: the fixed amount, or the share of its design fee (rounded to the cent). */
+export function minimumDepositAmount(minimum: MinimumDeposit | null | undefined, fee: string | number) {
+  if (!minimum) return null;
+  if (isPercentDeposit(minimum)) return Dec.of(String(fee)).mul(minimum.percent).div(100).round(2).toFixed(2);
+  return minimum.amount;
+}
+
+/**
+ * Is the received design deposit enough? Amounts compared as decimals in the quote's currency. A fixed minimum set in
+ * another currency is never met; a percentage is of the design fee (`fee`, in the quote's currency).
+ */
+export function depositMeetsMinimum(paid: string | number, minimum: MinimumDeposit | null | undefined, currency: string, fee: string | number = 0) {
   if (!minimum) return true;
-  if (minimum.currency !== currency) return false;
-  return Dec.of(String(paid)).cmp(minimum.amount) >= 0;
+  if (!isPercentDeposit(minimum) && minimum.currency !== currency) return false;
+  return Dec.of(String(paid)).cmp(minimumDepositAmount(minimum, fee)!) >= 0;
 }

@@ -8,7 +8,8 @@ import { Badge, Button, DateField, FormDialog, InspectorSheet, MoreDetails, Nume
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { RecordData } from "@/lib/crm/client";
 import type { CalendarConnection } from "@/lib/crm/calendar-sources";
-import { ENTRY_LABEL, TEAM_LABEL, teamEntryTitle, teamRequest, type BookingOptions, type Team, type TeamEntry, type TeamSettings } from "@/lib/crm/team-calendar";
+import { BOOKING_KINDS, BOOKING_PERSON_LABEL, BOOKING_WORK_LABEL, bookingAssignees, bookingDefaultDays, ENTRY_LABEL, isBookingKind, TEAM_LABEL, teamEntryTitle, teamRequest,
+  type BookingKind, type BookingOptions, type Team, type TeamEntry, type TeamSettings } from "@/lib/crm/team-calendar";
 import { FactList } from "./crm-workbench";
 import styles from "./crm-calendar.module.css";
 
@@ -24,7 +25,7 @@ export function TeamEntrySheet({ workspaceId, entry, canBook, onClose, onChanged
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const booking = (entry.kind === "render" || entry.kind === "drawing") && entry.status === "booked" && canBook;
+  const booking = isBookingKind(entry.kind) && entry.status === "booked" && canBook;
   const when = entry.allDay
     ? entry.end && entry.end !== entry.start ? t("{from} – {to}", { from: shortDay(entry.start, locale), to: shortDay(entry.end, locale) }) : shortDay(entry.start, locale)
     : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(entry.start));
@@ -51,7 +52,7 @@ export function TeamEntrySheet({ workspaceId, entry, canBook, onClose, onChanged
         ...(entry.days ? [[t("Days needed"), entry.days === 1 ? t("1 day") : t("{count} days", { count: entry.days })] as [string, string]] : []),
         [t("Status"), status[entry.status] ?? entry.status],
         ...(entry.ownerName ? [[t("With"), entry.ownerName] as [string, string]] : []),
-        ...(entry.kind === "render" || entry.kind === "drawing" ? entry.detail ? [[t("Note"), entry.detail] as [string, string]] : [] : []),
+        ...(isBookingKind(entry.kind) ? entry.detail ? [[t("Note"), entry.detail] as [string, string]] : [] : []),
       ]} />
       <Link href={entry.href}>{t("Open the job")}</Link>
     </div>
@@ -74,15 +75,16 @@ function MoveBookingDialog({ workspaceId, entry, onClose, onSaved }: { workspace
 }
 
 /**
- * A designer books render or 2D time on a job and tags who does it (the Visualiser for renders). The days default to
- * the firm's setting for each kind; the work item goes to that person.
+ * A designer books design time on a job and tags who does it (PLM-177): 2D design drawings one of the job's designers,
+ * 3D renders the Visualiser, technical drawings the technical team. The days default to the firm's setting for each
+ * kind; the work item goes to that person.
  */
 export function BookDesignTimeDialog({ workspaceId, date, onClose, onSaved }: { workspaceId: string; date: string; onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const [options, setOptions] = useState<BookingOptions | null>(null);
   const [failure, setFailure] = useState("");
   const [caseId, setCaseId] = useState("");
-  const [kind, setKind] = useState<"render" | "drawing">("render");
+  const [kind, setKind] = useState<BookingKind>("render");
   const [assignee, setAssignee] = useState("");
   const [start, setStart] = useState<CalendarDate | null>(() => parseDate(date));
   const [days, setDays] = useState<number | null>(null);
@@ -92,12 +94,21 @@ export function BookDesignTimeDialog({ workspaceId, date, onClose, onSaved }: { 
     const controller = new AbortController();
     teamRequest<BookingOptions>(workspaceId, "booking-options", "GET", undefined, controller.signal).then((next) => {
       setOptions(next);
-      setAssignee(next.members.find((member) => member.visualiser)?.id ?? "");
+      setAssignee(bookingAssignees(next, "", "render").find((person) => person.team)?.id ?? "");
     }).catch((cause: Error) => { if (!controller.signal.aborted) setFailure(cause.message); });
     return () => controller.abort();
   }, [workspaceId]);
-  const defaultDays = options ? (kind === "render" ? options.renderDays : options.drawingDays) : 1;
-  const members = (options?.members ?? []).map((member) => ({ id: member.id, label: member.visualiser ? t("{name} · Visualiser", { name: member.name }) : member.name }));
+  // The job and the work decide who is offered: the person picked stays while they still fit, else the first who does.
+  const choose = (nextCase: string, nextKind: BookingKind) => {
+    setCaseId(nextCase); setKind(nextKind);
+    if (!options) return;
+    const fit = bookingAssignees(options, nextCase, nextKind);
+    if (!fit.some((person) => person.id === assignee && (person.team || !fit.some((other) => other.team)))) setAssignee(fit.find((person) => person.team)?.id ?? "");
+  };
+  const defaultDays = options ? bookingDefaultDays(options, kind) : 1;
+  const names = new Map((options?.members ?? []).map((member) => [member.id, member.name]));
+  const members = options ? bookingAssignees(options, caseId, kind).map((person) => ({ id: person.id,
+    label: person.team ? t(BOOKING_PERSON_LABEL[kind], { name: names.get(person.id) ?? "" }) : names.get(person.id) ?? "" })) : [];
   return <FormDialog title={t("Book design time")} submitLabel={t("Book")} error={failure || undefined} onClose={onClose} isDirty={Boolean(caseId || note)}
     isSubmitDisabled={!options || !caseId || !assignee || !start}
     lead={!options && !failure ? <Skeleton lines={3} shape="form" /> : null}
@@ -106,9 +117,9 @@ export function BookDesignTimeDialog({ workspaceId, date, onClose, onSaved }: { 
       onSaved();
     }}>
     {options ? <>
-      <SelectField isRequired label={t("Job")} selectedKey={caseId || null} onSelectionChange={(key) => setCaseId(String(key ?? ""))} items={options.cases.map((item) => ({ id: item.id, label: item.title }))} />
-      <SegmentedControl label={t("Work")} value={kind} onChange={(value) => { setKind(value as "render" | "drawing"); setDays(null); }}
-        options={[{ id: "render", label: t("Visualiser renders") }, { id: "drawing", label: t("Technical team") }]} />
+      <SelectField isRequired label={t("Job")} selectedKey={caseId || null} onSelectionChange={(key) => choose(String(key ?? ""), kind)} items={options.cases.map((item) => ({ id: item.id, label: item.title }))} />
+      <SegmentedControl label={t("Work")} value={kind} onChange={(value) => { choose(caseId, value as BookingKind); setDays(null); }}
+        options={BOOKING_KINDS.map((id) => ({ id, label: t(BOOKING_WORK_LABEL[id]) }))} />
       <SelectField isRequired label={t("Who does it")} selectedKey={assignee || null} onSelectionChange={(key) => setAssignee(String(key ?? ""))} items={members} />
       <DateField isRequired label={t("Starts")} value={start} onChange={(value) => setStart(value as Day)} />
       <NumericInput isRequired label={t("Days needed")} description={t("Working days")} minValue={1} maxValue={60} value={days ?? defaultDays}
@@ -120,7 +131,7 @@ export function BookDesignTimeDialog({ workspaceId, date, onClose, onSaved }: { 
 
 /**
  * Where a team calendar goes besides Wodana: one connected Google calendar (or none, everything stays in Wodana), and
- * for the design team the days the Visualiser and the technical team need by default.
+ * for the design team the days the designers, the Visualiser and the technical team need by default.
  */
 export function TeamCalendarSettingsDialog({ workspaceId, team, settings, connections, onClose, onSaved }: {
   workspaceId: string; team: Team; settings: TeamSettings; connections: CalendarConnection[]; onClose: () => void; onSaved: (next: TeamSettings) => void;
@@ -129,6 +140,7 @@ export function TeamCalendarSettingsDialog({ workspaceId, team, settings, connec
   const target = settings.targets[team];
   const [calendars, setCalendars] = useState<Array<{ id: string; connectionId: string; calendarId: string; label: string }> | null>(null);
   const [choice, setChoice] = useState(target.connectionId && target.calendarId ? `${target.connectionId}|${target.calendarId}` : "none");
+  const [designDrawingDays, setDesignDrawingDays] = useState(settings.designDrawingDays ?? 3);
   const [renderDays, setRenderDays] = useState(settings.renderDays);
   const [drawingDays, setDrawingDays] = useState(settings.drawingDays);
   const [failure, setFailure] = useState("");
@@ -152,16 +164,17 @@ export function TeamCalendarSettingsDialog({ workspaceId, team, settings, connec
     ...(choice !== "none" && calendars && !calendars.some((item) => item.id === choice) ? [{ id: choice, label: target.calendarId ?? choice }] : [])];
   const initial = target.connectionId && target.calendarId ? `${target.connectionId}|${target.calendarId}` : "none";
   return <FormDialog size="md" title={t("{team} calendar", { team: t(TEAM_LABEL[team]) })} submitLabel={t("Save")} error={failure || undefined} onClose={onClose}
-    isDirty={choice !== initial || renderDays !== settings.renderDays || drawingDays !== settings.drawingDays} isSubmitDisabled={!calendars}
+    isDirty={choice !== initial || designDrawingDays !== (settings.designDrawingDays ?? 3) || renderDays !== settings.renderDays || drawingDays !== settings.drawingDays} isSubmitDisabled={!calendars}
     onSubmit={async () => {
       const [connectionId, ...rest] = choice === "none" ? [null] : choice.split("|");
       const next = await teamRequest<TeamSettings>(workspaceId, `${team}/settings`, "PUT", { connectionId, calendarId: connectionId ? rest.join("|") : null, version: target.version,
-        ...(team === "design" ? { renderDays, drawingDays } : {}) });
+        ...(team === "design" ? { designDrawingDays, renderDays, drawingDays } : {}) });
       onSaved(next);
     }}>
     {!calendars ? <Skeleton lines={2} shape="form" /> : <SelectField label={t("Google calendar")} description={t("The team's work is also sent there. Everyone still sees it in Wodana.")}
       selectedKey={choice} onSelectionChange={(key) => setChoice(String(key ?? "none"))} items={items} />}
     {team === "design" ? <>
+      <NumericInput isRequired label={t("Days the designers need for 2D drawings")} minValue={1} maxValue={60} value={designDrawingDays} onChange={(value) => setDesignDrawingDays(Number.isFinite(value) ? value : 1)} />
       <NumericInput isRequired label={t("Days the Visualiser needs")} minValue={1} maxValue={60} value={renderDays} onChange={(value) => setRenderDays(Number.isFinite(value) ? value : 1)} />
       <NumericInput isRequired label={t("Days the technical team needs")} minValue={1} maxValue={60} value={drawingDays} onChange={(value) => setDrawingDays(Number.isFinite(value) ? value : 1)} />
     </> : null}

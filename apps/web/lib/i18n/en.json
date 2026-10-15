@@ -15263,5 +15263,15 @@
   "+{count} in another currency": "+{count} in another currency",
   "Bill of quantities for": "Bill of quantities for",
   "Only projects of these enquiry types or order paths; none chosen means every project.": "Only projects of these enquiry types or order paths; none chosen means every project.",
-  "Not costed": "Not costed"
+  "Not costed": "Not costed",
+  "2D design drawings": "2D design drawings",
+  "{name} · Interior Designer": "{name} · Interior Designer",
+  "{name} · Technical team": "{name} · Technical team",
+  "Days the designers need for 2D drawings": "Days the designers need for 2D drawings",
+  "Call or portal update": "Call or portal update",
+  "How every job's client updates start. Each job can change its own.": "How every job's client updates start. Each job can change its own.",
+  "Minimum deposit as": "Minimum deposit as",
+  "% of the design fee": "% of the design fee",
+  "Between 0 and 100%": "Between 0 and 100%",
+  "Design complete": "Design complete"
 }

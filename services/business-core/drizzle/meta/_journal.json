@@ -1520,6 +1520,34 @@
       "when": 1801740012700,
       "tag": "0365_portal_boq_section",
       "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1801740020000,
+      "tag": "0350_design_work_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1801740020100,
+      "tag": "0351_client_update_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1801740020200,
+      "tag": "0352_design_deposit_percent",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1801740020300,
+      "tag": "0353_design_complete",
+      "breakpoints": true
     }
   ]
 }

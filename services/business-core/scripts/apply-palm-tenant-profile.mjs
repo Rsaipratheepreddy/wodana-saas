@@ -215,7 +215,9 @@ if (websiteForm) {
 
 // Design packages and minimum design deposit (PLM-041): configuration, applied idempotently.
 const designSettings = await request(`/workspaces/${workspaceId}/design/settings`);
-if (JSON.stringify(designSettings.minimumDeposit) === JSON.stringify(design.minimumDeposit)) unchanged.push("design:minimum-deposit");
+// A percentage of the design fee comes back as text ("100.00"); the file gives it as a number.
+const sameDeposit = (current, wanted) => (wanted && "percent" in wanted ? Boolean(current && "percent" in current) && Number(current.percent) === Number(wanted.percent) : JSON.stringify(current) === JSON.stringify(wanted));
+if (sameDeposit(designSettings.minimumDeposit, design.minimumDeposit)) unchanged.push("design:minimum-deposit");
 else await act("design:minimum-deposit", () => request(`/workspaces/${workspaceId}/design/settings`, { method: "PUT", expected: 200, body: { minimumDeposit: design.minimumDeposit, version: designSettings.version } }));
 for (const desired of design.packages) {
   const existing = designSettings.packages.find((row) => row.code === desired.code);

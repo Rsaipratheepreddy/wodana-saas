@@ -25,6 +25,7 @@ import {
 import { allocationMissing, DESIGNER_SLOTS, designerPairProblem, settableSlots, TEAM_SLOTS, type DesignTeamConfig, type TeamSlot } from "./design-team.domain";
 import { lockLedger, readLedger } from "./design-ledger.store";
 import { startClientCalls } from "../client-calls/client-calls.store";
+import { isDesignOnlyJob } from "./design-only";
 import { presentedRounds } from "./design-presentations.store";
 import { completeConceptIfReady, isDeliverableStage, stageProgress, syncDesignStages } from "./design-stage-sync";
 import { casePlan } from "../pre-projects/case-plan";
@@ -633,27 +634,36 @@ export class DesignJourneyService {
       const ledger = await readLedger(client, workspaceId, caseId);
       const lockNumber = ledger.entries.some((entry) => !entry.archivedAt) ? await lockLedger(client, workspaceId, caseId, userId, "design_sign_off", input.note?.trim() || null) : null;
       await completeStage(client, workspaceId, caseId, "approval", userId, input.note?.trim() || null, "signed_off");
-      const journey = (await client.query<{ estimateDueAt: Date }>(
-        `UPDATE design_journeys SET approved_on = $3, approval_asset_id = $4, approval_signer = $5, approval_method = $6, estimate_due_at = now() + make_interval(days => estimate_days), version = version + 1
-          WHERE workspace_id = $1 AND case_id = $2 RETURNING estimate_due_at AS "estimateDueAt"`, [workspaceId, caseId, input.approvedOn, input.assetId, input.signer!.trim(), method])).rows[0];
+      // A design-only job (Full ID) ends here as "Design complete": no estimate is due and no client updates start.
+      const designOnly = await isDesignOnlyJob(client, workspaceId, caseId);
+      const journey = (await client.query<{ estimateDueAt: Date | null }>(
+        `UPDATE design_journeys SET approved_on = $3, approval_asset_id = $4, approval_signer = $5, approval_method = $6,
+                estimate_due_at = CASE WHEN $7 THEN NULL ELSE now() + make_interval(days => estimate_days) END, design_complete = $7, version = version + 1
+          WHERE workspace_id = $1 AND case_id = $2 RETURNING estimate_due_at AS "estimateDueAt"`, [workspaceId, caseId, input.approvedOn, input.assetId, input.signer!.trim(), method, designOnly])).rows[0];
       const facts = await caseFacts(client, workspaceId, caseId);
       if (facts) {
         const workspace = (await client.query<{ timezone: string; locale: string }>(`SELECT default_timezone AS timezone, default_locale AS locale FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
         const members = [...new Set([facts.accountManagerId, await salesAdminMembership(client, workspaceId, caseId)].filter((id): id is string => Boolean(id)))];
         const recipients = (await client.query<{ userId: string }>(`SELECT DISTINCT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`, [workspaceId, members])).rows;
-        const variables = { clientName: facts.clientName, approvedOn: formatDay(input.approvedOn!, workspace?.locale ?? "en"), due: formatDue(journey.estimateDueAt, workspace?.timezone ?? "UTC", workspace?.locale ?? "en") };
+        const approvedOn = formatDay(input.approvedOn!, workspace?.locale ?? "en");
+        const variables: Record<string, string> = designOnly ? { clientName: facts.clientName, approvedOn }
+          : { clientName: facts.clientName, approvedOn, due: formatDue(journey.estimateDueAt!, workspace?.timezone ?? "UTC", workspace?.locale ?? "en") };
         for (const recipient of recipients) {
-          const message = { workspaceId, recipientUserId: recipient.userId, code: "design.approved_estimate", eventType: "design.signed_off", variables, deepLink: `/workspace/pre-projects/cases/${caseId}/quotations` };
+          const message = { workspaceId, recipientUserId: recipient.userId, code: designOnly ? "design.completed" : "design.approved_estimate", eventType: "design.signed_off", variables,
+            deepLink: `/workspace/pre-projects/cases/${caseId}/${designOnly ? "overview" : "quotations"}` };
           await notifyUserInApp(client, { ...message, idempotencyKey: `design-signed-off:${caseId}:${recipient.userId}` });
           await queueUserEmail(client, { ...message, idempotencyKey: `design-signed-off:${caseId}:${recipient.userId}:email` });
         }
       }
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.signed_off.v1", entityType: "pre_project_case", entityId: caseId,
-        after: { note: input.note?.trim() || null, approvedOn: input.approvedOn, signer: input.signer!.trim(), method, assetId: input.assetId, estimateDueAt: journey.estimateDueAt, ledgerLock: lockNumber } });
-      // PLM-046: from the design approval the Account Manager's weekly client update call is booked (changed or declined on the case).
-      await startClientCalls(client, workspaceId, caseId, "design_approval", userId);
+        after: { note: input.note?.trim() || null, approvedOn: input.approvedOn, signer: input.signer!.trim(), method, assetId: input.assetId, estimateDueAt: journey.estimateDueAt, ledgerLock: lockNumber,
+          designComplete: designOnly } });
+      // PLM-046: from the design approval the Account Manager's client updates start (changed or declined on the case); a design-only job has none.
+      if (!designOnly) await startClientCalls(client, workspaceId, caseId, "design_approval", userId);
       return this.view(client, workspaceId, caseId, userId);
     });
+    // The Proposal 2 estimate follows the design, except on a design-only job, which the approval closes.
+    if (view.journey?.designComplete) return { ...view, handoff: { quoteId: null, problem: null } };
     const handoff = await this.handOff(actor, workspaceId, caseId).catch((error: unknown) => ({ quoteId: null, problem: error instanceof Error ? error.message : "The estimate could not be prepared." }));
     return { ...view, handoff };
   }
@@ -664,9 +674,10 @@ export class DesignJourneyService {
    */
   async handOff(actor: RequestActor, workspaceId: string, caseId: string): Promise<{ quoteId: string | null; problem: string | null }> {
     const state = await this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.edit"], async (client) => {
-      const journey = (await client.query<{ approvedOn: string | null; quoteId: string | null }>(
-        `SELECT approved_on AS "approvedOn", estimate_quote_id AS "quoteId" FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
+      const journey = (await client.query<{ approvedOn: string | null; quoteId: string | null; designComplete: boolean }>(
+        `SELECT approved_on AS "approvedOn", estimate_quote_id AS "quoteId", design_complete AS "designComplete" FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
       if (!journey?.approvedOn) throw new ConflictException("Record the design approval first");
+      if (journey.designComplete) throw new ConflictException("This design-only job ended with the design approval. There is no estimate to prepare.");
       const existing = await this.mainQuote(client, workspaceId, caseId);
       if (journey.quoteId && existing === journey.quoteId) return { linked: journey.quoteId, revision: null };
       if (existing) return { linked: existing, revision: null };
@@ -706,7 +717,7 @@ export class DesignJourneyService {
 
   private async view(client: PoolClient, workspaceId: string, caseId: string, userId?: string) {
     const journey = (await client.query<{ packageId: string | null; packageName: string | null; includedRevisions: number; questions: unknown; approvedOn: string | null; approvalAssetId: string | null;
-      approvalAssetName: string | null; estimateDueAt: Date | null; version: number; flowVersion: number; reviewerRoleCode: string | null } & Record<string, unknown>>(
+      approvalAssetName: string | null; estimateDueAt: Date | null; version: number; flowVersion: number; reviewerRoleCode: string | null; designComplete: boolean } & Record<string, unknown>>(
       `SELECT journey.package_id AS "packageId", journey.package_name AS "packageName", journey.included_revisions AS "includedRevisions", journey.includes_space_planning AS "includesSpacePlanning", journey.includes_renders AS "includesRenders",
               journey.reviewer_role_code AS "reviewerRoleCode", journey.inspiration_days AS "inspirationDays", journey.site_visit_hours AS "siteVisitHours", journey.started_at AS "startedAt",
               journey.design_internal_days AS "designInternalDays", journey.design_client_days AS "designClientDays", journey.material_selection_days AS "materialSelectionDays", journey.estimate_days AS "estimateDays",
@@ -714,7 +725,8 @@ export class DesignJourneyService {
               journey.concept_options_max AS "conceptOptionsMax", to_char(journey.render_signoff_due_on, 'YYYY-MM-DD') AS "renderSignoffDueOn",
               to_char(journey.render_signed_on, 'YYYY-MM-DD') AS "renderSignedOn", journey.render_signoff_signer AS "renderSignoffSigner", render_asset.original_name AS "renderSignoffAssetName",
               journey.site_visit_questions AS questions, to_char(journey.approved_on, 'YYYY-MM-DD') AS "approvedOn", journey.approval_asset_id AS "approvalAssetId", asset.original_name AS "approvalAssetName",
-              journey.approval_signer AS "approvalSigner", journey.approval_method AS "approvalMethod", journey.estimate_due_at AS "estimateDueAt", journey.estimate_quote_id AS "estimateQuoteId", journey.version
+              journey.approval_signer AS "approvalSigner", journey.approval_method AS "approvalMethod", journey.estimate_due_at AS "estimateDueAt", journey.estimate_quote_id AS "estimateQuoteId", journey.version,
+              journey.design_complete AS "designComplete"
          FROM design_journeys journey LEFT JOIN pre_project_brief_assets asset ON asset.workspace_id = journey.workspace_id AND asset.id = journey.approval_asset_id
          LEFT JOIN pre_project_brief_assets render_asset ON render_asset.workspace_id = journey.workspace_id AND render_asset.id = journey.render_signoff_asset_id
         WHERE journey.workspace_id = $1 AND journey.case_id = $2`, [workspaceId, caseId])).rows[0] ?? null;

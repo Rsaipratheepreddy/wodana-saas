@@ -17,7 +17,7 @@ export async function readUpdatePreference(db: Db, workspaceId: string, caseId: 
   return row ? { mode: row.mode, frequency: row.frequency, version: row.version } : null;
 }
 
-const CHOICES = ["call", "portal", "off"] as const;
+const CHOICES = ["call", "portal", "either", "off"] as const;
 
 /** The decision-maker changes their updates; the Account Manager hears what they chose. Version-checked; audited by the portal command. */
 export async function chooseUpdates(ctx: DecisionContext, body: Record<string, unknown>) {

@@ -12,8 +12,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("team calendar entries (PLM-090/091)", () => {
   it("say what the work is, for whom, and how many days a render needs", () => {
-    expect(teamEntryTitle(render(), t)).toBe("Visualiser renders · Maya Client · 4 days");
-    expect(teamEntryTitle(render({ kind: "drawing", days: 1 }), t)).toBe("Technical team · Maya Client · 1 day");
+    expect(teamEntryTitle(render(), t)).toBe("3D renders · Maya Client · 4 days");
+    expect(teamEntryTitle(render({ kind: "drawing", days: 1 }), t)).toBe("Technical drawings · Maya Client · 1 day");
     expect(teamEntryTitle(render({ kind: "design_deadline", detail: "concepts", days: null }), t)).toBe("Concepts due · Maya Client");
     expect(teamEntryTitle(render({ kind: "production", detail: "WO-0012 Wardrobe", subject: "P-7 · Villa 12", days: null }), t)).toBe("WO-0012 Wardrobe · P-7 · Villa 12");
     expect(teamEntryTitle(render({ kind: "installation", subject: "P-7 · Villa 12", days: null }), t)).toBe("Installation · P-7 · Villa 12");
@@ -28,7 +28,7 @@ describe("team calendar entries (PLM-090/091)", () => {
 
   it("become Google events over the firm's working hours in its zone", () => {
     const event = googleEvent(render(), { timeZone: "Asia/Dubai", workingHours: { start: "09:00", end: "18:00" } }, t, "https://palm.wodana.ai");
-    expect(event).toMatchObject({ summary: "Visualiser renders · Maya Client · 4 days", start: "2026-10-12T05:00:00.000Z", end: "2026-10-15T14:00:00.000Z", timeZone: "Asia/Dubai" });
+    expect(event).toMatchObject({ summary: "3D renders · Maya Client · 4 days", start: "2026-10-12T05:00:00.000Z", end: "2026-10-15T14:00:00.000Z", timeZone: "Asia/Dubai" });
     expect(event.description).toContain("https://palm.wodana.ai/workspace/pre-projects/cases/c1/overview");
     // Google's limit: at most 31 days, ending after it starts.
     const long = googleEvent(render({ start: "2026-10-01", end: "2026-12-31" }), { timeZone: "UTC", workingHours: { start: "09:00", end: "18:00" } }, t);
@@ -67,7 +67,7 @@ describe("sending a team calendar to Google", () => {
     const create = calls.find((call) => call.body.action === "calendar.create")!;
     expect(create.url).toBe("/api/workspace/integration-connections/conn-1/tools");
     expect(create.body).toMatchObject({ workspaceId: "w1", idempotencyKey: `team.design.booking:b1.${"a".repeat(12)}`,
-      payload: { calendarId: "design@example.com", summary: "Visualiser renders · Maya Client · 4 days", sendUpdates: "none", attendeeEmails: [] } });
+      payload: { calendarId: "design@example.com", summary: "3D renders · Maya Client · 4 days", sendUpdates: "none", attendeeEmails: [] } });
     expect(calls.find((call) => call.body.action === "calendar.update")!.body).toMatchObject({ eventId: "ev3", payload: { etag: "e3" } });
     expect(calls.find((call) => call.body.action === "calendar.cancel")!.body).toMatchObject({ eventId: "ev4", payload: { etag: "e4" } });
     const recorded = calls.find((call) => call.url.includes("/pushes"))!.body;

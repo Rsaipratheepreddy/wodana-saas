@@ -182,7 +182,7 @@ export type PortalStep = { kind: "quote" | "design" | "definition" | "materials"
   due: string | null };
 
 export type PortalUpdateFrequency = "weekly" | "fortnightly" | "monthly" | "off";
-export type PortalUpdates = { mode: "call" | "portal"; frequency: PortalUpdateFrequency; version: number };
+export type PortalUpdates = { mode: "call" | "portal" | "either"; frequency: PortalUpdateFrequency; version: number };
 
 /** Someone the client deals with: their project manager, designer or sales contact (one person may be two). */
 export type PortalTeamRole = "manager" | "designer" | "sales";

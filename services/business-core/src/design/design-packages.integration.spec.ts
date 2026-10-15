@@ -75,6 +75,26 @@ integration("design packages (PLM-041)", () => {
     });
   });
 
+  it("stores the minimum design deposit as a share of the design fee instead of an amount (Palm: 100%)", async () => {
+    await withWorkspace(async (client, { workspaceId, service }) => {
+      const amount = await service.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: { amount: "15000.00", currency: "AED" } });
+      await expect((async () => service.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: { percent: 120 }, version: amount.version }))()).rejects.toThrow(/at most 100%/);
+      await expect((async () => service.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: { percent: 50, amount: "1.00", currency: "AED" }, version: amount.version }))()).rejects.toThrow(/not both/);
+      const whole = await service.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: { percent: 100 }, version: amount.version });
+      expect(whole.minimumDeposit).toEqual({ percent: "100.00" });
+      // The percentage replaces the amount; a new case freezes it.
+      expect((await client.query("SELECT minimum_design_deposit, currency, minimum_design_deposit_percent::text AS percent FROM workspace_design_settings WHERE workspace_id=$1", [workspaceId])).rows[0])
+        .toEqual({ minimum_design_deposit: null, currency: null, percent: "100.00" });
+      expect(await DesignPackagesService.minimumDeposit(client, workspaceId)).toEqual({ percent: "100.00" });
+      const audit = (await client.query<{ before: unknown; after: { minimumDeposit: unknown } }>(
+        "SELECT before, after FROM audit_events WHERE workspace_id=$1 AND action='design.minimum_deposit_changed' AND after->'minimumDeposit' ? 'percent'", [workspaceId])).rows[0];
+      expect(audit).toMatchObject({ before: { amount: "15000.00", currency: "AED" }, after: { minimumDeposit: { percent: "100.00" } } });
+      // Back to an amount clears the percentage.
+      const back = await service.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: { amount: "5000.00", currency: "AED" }, version: whole.version });
+      expect(back.minimumDeposit).toEqual({ amount: "5000.00", currency: "AED" });
+    });
+  });
+
   it("keeps a new company's minimum deposit empty: timings alone or a zero amount never read as 0", async () => {
     await withWorkspace(async (client, { workspaceId, service }) => {
       const timingsOnly = await service.saveMinimumDeposit(actor, workspaceId, { timings: { inspirationDays: 5, siteVisitHours: 48 } });

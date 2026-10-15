@@ -183,7 +183,7 @@ function Team({ project, site }: { project: PortalProject; site: PortalSite }) {
   </section>;
 }
 
-type UpdateChoice = "call" | "portal" | "off";
+type UpdateChoice = "call" | "portal" | "either" | "off";
 
 /**
  * PLM-046: how the client hears how the work goes: a call with their Account Manager, a progress update in the portal
@@ -205,7 +205,8 @@ function Updates({ project, api, reload }: { project: PortalProject; api: Portal
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     finally { setSaving(false); }
   };
-  const choices: Array<{ id: UpdateChoice; label: string }> = [{ id: "call", label: t("Call") }, { id: "portal", label: t("Portal update") }, { id: "off", label: t("No updates") }];
+  const choices: Array<{ id: UpdateChoice; label: string }> = [{ id: "call", label: t("Call") }, { id: "portal", label: t("Portal update") }, { id: "either", label: t("Call or portal update") },
+    { id: "off", label: t("No updates") }];
   const rhythms: Array<{ id: Exclude<PortalUpdateFrequency, "off">; label: string }> = [
     { id: "weekly", label: t("Weekly") }, { id: "fortnightly", label: t("Every two weeks") }, { id: "monthly", label: t("Monthly") }];
   return <section className={styles.profileBlock} aria-labelledby={`updates-${project.id}`}>

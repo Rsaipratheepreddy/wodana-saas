@@ -1,6 +1,6 @@
 import { FURNITURE_PATHS } from "../crm/opportunities/flow-gates";
 import { QUEUE_ASSIGNMENT_MODES, type QueueAssignmentMode } from "../crm/leads/round-robin";
-import { checkDesignPackage } from "../design/design-packages.domain";
+import { checkDesignPackage, depositPercentProblem } from "../design/design-packages.domain";
 import {
   MAX_CHECKLIST_SCOPES, MAX_SITE_QUESTIONS, normaliseChecklistScopes, normaliseSiteQuestions, scopeKey, type ChecklistScope, type SiteQuestion,
 } from "../design/design-journey.domain";
@@ -77,7 +77,8 @@ export type Profile = {
     projectRoles?: Array<{ key: string; label: string }>;
   };
   orderPaths?: OrderPathChange[];
-  clientUpdates?: { mode: "call" | "portal"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
+  /** PLM-179: how every job's client updates start (Settings › Projects): by call, by a portal update, or either; and how often. */
+  clientUpdates?: { mode: "call" | "portal" | "either"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
   /**
    * The client portal (PLM-170): which sections clients see (a section left out keeps its switch), and the enquiry type codes
    * and order paths whose projects show the bill of quantities (empty: every project the section is on for).
@@ -87,8 +88,10 @@ export type Profile = {
   /**
    * Project settings (PLM-149): the project role that checks the drawings match the design, sends them to the client and
    * records the client's approval (null: the project manager), and the working days the technical measure is due in.
+   * What must be true before a project starts (Settings › Projects › Starting a project): the deal approved, the
+   * agreement signed, the first payment verified.
    */
-  projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null };
+  projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null } & Partial<Record<ProjectStartRule, boolean>>;
   /**
    * The finishes schedule (PLM-146/148/156/157): the finish categories in order (which the client signs before
    * procurement), whether the final quotation waits for the final specification, the days to send the finishes to QS,
@@ -121,6 +124,9 @@ export type Profile = {
 export const DESIGN_STEP_KEYS = ["allocationDays", "kickoffDays", "conceptDays", "siteMeasureDays", "developmentMinDays", "developmentMaxDays", "developmentDaysPerRoom",
   "sampleCollectionDays", "sampleMeetingDays"] as const;
 export type DesignStepKey = (typeof DESIGN_STEP_KEYS)[number];
+/** What must be true before a project starts (Settings › Projects): the deal approved, the agreement signed, the first payment verified. */
+export const PROJECT_START_RULES = ["requireApproval", "requireAgreement", "requirePayment"] as const;
+export type ProjectStartRule = (typeof PROJECT_START_RULES)[number];
 export const DESIGN_TEAM_KEYS = ["lead_designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator", "technicalLeadRoleCode"] as const;
 export type DesignTeamKey = (typeof DESIGN_TEAM_KEYS)[number];
 
@@ -515,7 +521,7 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.projects !== undefined) {
-    const section = at("projects").object(raw.projects, ["drawingsClientRole", "technicalMeasureDays"]);
+    const section = at("projects").object(raw.projects, ["drawingsClientRole", "technicalMeasureDays", ...PROJECT_START_RULES]);
     if (section) {
       const projects: NonNullable<Profile["projects"]> = {
         drawingsClientRole: nullable(section, "drawingsClientRole", (value) => {
@@ -523,6 +529,7 @@ export function validateProfile(raw: unknown): Profile {
           return value;
         }),
         technicalMeasureDays: nullable(section, "technicalMeasureDays", (value) => at("projects.technicalMeasureDays").int(value, 1, 60) ?? null),
+        ...Object.fromEntries(PROJECT_START_RULES.map((rule) => [rule, optional(section, rule, (value) => at(`projects.${rule}`).bool(value))])),
       };
       profile.projects = Object.fromEntries(Object.entries(projects).filter(([, value]) => value !== undefined));
     }
@@ -628,7 +635,7 @@ export function validateProfile(raw: unknown): Profile {
   if (raw.clientUpdates !== undefined) {
     const section = at("clientUpdates").object(raw.clientUpdates, ["mode", "frequency"]);
     if (section) {
-      const mode = at("clientUpdates.mode").oneOf(section.mode, ["call", "portal"] as const);
+      const mode = at("clientUpdates.mode").oneOf(section.mode, ["call", "portal", "either"] as const);
       const frequency = at("clientUpdates.frequency").oneOf(section.frequency, ["weekly", "fortnightly", "monthly", "off"] as const);
       if (mode && frequency) profile.clientUpdates = { mode, frequency };
     }
@@ -702,7 +709,8 @@ export type PackageSpec = {
  * and each checklist's match words. The list is set whole when given, as Settings › Design saves it.
  */
 export type PackagesFile = {
-  minimumDeposit?: { amount: string; currency?: string } | null; packages: PackageSpec[];
+  /** An amount (in the workspace's currency when left out), or a percentage of the design fee, e.g. { "percent": 100 }. */
+  minimumDeposit?: { amount: string; currency?: string } | { percent: number } | null; packages: PackageSpec[];
   siteVisitQuestions?: SiteQuestion[]; siteVisitScopes?: ChecklistScope[];
 };
 
@@ -726,7 +734,12 @@ export function validatePackagesFile(raw: unknown): PackagesFile {
   if (file.minimumDeposit !== undefined) {
     const deposit = file.minimumDeposit;
     if (deposit === null) result.minimumDeposit = null;
-    else if (!isObject(deposit) || Object.keys(deposit).some((key) => key !== "amount" && key !== "currency")) problems.push("minimumDeposit is null or { amount, currency }.");
+    else if (isObject(deposit) && "percent" in deposit) {
+      if (Object.keys(deposit).some((key) => key !== "percent")) problems.push("minimumDeposit is { amount, currency } or { percent }, not both.");
+      else if (typeof deposit.percent !== "number" || depositPercentProblem(deposit.percent)) problems.push("minimumDeposit.percent is a percentage of the design fee, more than 0 and at most 100.");
+      else result.minimumDeposit = { percent: deposit.percent };
+    }
+    else if (!isObject(deposit) || Object.keys(deposit).some((key) => key !== "amount" && key !== "currency")) problems.push("minimumDeposit is null, { amount, currency } or { percent }.");
     else if (typeof deposit.amount !== "string" || !AMOUNT.test(deposit.amount)) problems.push("minimumDeposit.amount is an amount as text, e.g. \"15000.00\".");
     else if (deposit.currency !== undefined && (typeof deposit.currency !== "string" || !CURRENCY.test(deposit.currency))) problems.push("minimumDeposit.currency is a currency code, e.g. EUR.");
     else result.minimumDeposit = { amount: deposit.amount, ...(deposit.currency ? { currency: deposit.currency as string } : {}) };

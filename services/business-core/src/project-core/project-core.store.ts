@@ -14,6 +14,7 @@ import { readInstallationFacts } from "./project-installation";
 import { normaliseKeepInformed, type KeepInformed } from "./project-keep-informed";
 import { boqRequiredForProject } from "../fulfilment/fulfilment-rules";
 import { readPermitCollected } from "../logistics/permits";
+import type { Frequency, Mode } from "../client-calls/client-calls.domain";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -40,6 +41,12 @@ export type ProjectSettings = {
   drawingsClientRole: string | null;
   /** PLM-149: working days the technical site measure is due in once its task opens; null: no due date. */
   technicalMeasureDays: number | null;
+  /**
+   * PLM-179: how a job's client updates start (from the design approval, or the accepted estimate): by call, by a
+   * progress update in the portal, or either; and how often (off: they don't start). Each job can change its own.
+   */
+  clientUpdateMode: Mode;
+  clientUpdateFrequency: Frequency;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -51,7 +58,8 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
             require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish",
             client_update_auto_send_hours AS "clientUpdateAutoSendHours", to_char(report_due_time, 'HH24:MI') AS "reportDueTime",
             auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup", keep_informed AS "keepInformed",
-            variation_payment_rule AS "variationPaymentRule", drawings_client_role AS "drawingsClientRole", technical_measure_days AS "technicalMeasureDays"
+            variation_payment_rule AS "variationPaymentRule", drawings_client_role AS "drawingsClientRole", technical_measure_days AS "technicalMeasureDays",
+            client_update_mode AS "clientUpdateMode", client_update_frequency AS "clientUpdateFrequency"
        FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   // Roles removed since drop out of who is kept informed, and of who sends the drawings to the client.
   return { ...row, keepInformed: normaliseKeepInformed(row.keepInformed, row.roles),

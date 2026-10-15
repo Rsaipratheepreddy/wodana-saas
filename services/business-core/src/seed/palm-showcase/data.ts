@@ -69,7 +69,7 @@ export type Showcase = {
 };
 export type TeamsFixture = { teams: Array<{ code: string; name: string; scope: string; permissions: string[] }> };
 export type WorkflowFixture = { code: string; name: string; description: string; isDefault: boolean; stages: unknown[] };
-export type DesignFixture = { minimumDeposit: { amount: string; currency: string }; packages: Array<Record<string, unknown> & { code: string }> };
+export type DesignFixture = { minimumDeposit: { amount: string; currency: string } | { percent: number }; packages: Array<Record<string, unknown> & { code: string }> };
 export type SuppliersFixture = { suppliers: Array<{ name: string; categories: string[]; locality: string | null; approval: "approved" | "pending"; approvalNote: string; paymentTerms: string; advancePercent?: string; creditDays?: number; termsNote: string; deal: string; dealNote: string; email: string | null; notes: string }> };
 export type CollectionManifest = {
   schemaVersion: number; source: { itemRows: number; sha256: string }; catalog: { id: string; name: string; description: string };

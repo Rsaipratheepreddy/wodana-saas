@@ -19,7 +19,7 @@ export class ClientCallsService {
   /** By call or by portal update; weekly, every two weeks, monthly, or off (the client declined). Version-checked; audited. */
   set(actor: RequestActor, workspaceId: string, caseId: string, input: { frequency?: unknown; mode?: unknown; version?: unknown }) {
     if (!isFrequency(input.frequency)) throw new UnprocessableEntityException("Choose how often");
-    if (input.mode !== undefined && !isMode(input.mode)) throw new UnprocessableEntityException("Choose a call or a portal update");
+    if (input.mode !== undefined && !isMode(input.mode)) throw new UnprocessableEntityException("Choose a call, a portal update or either");
     const frequency = input.frequency;
     const mode = isMode(input.mode) ? input.mode : undefined;
     const version = Number(input.version ?? 0);

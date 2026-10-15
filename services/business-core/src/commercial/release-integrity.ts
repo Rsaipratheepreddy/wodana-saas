@@ -1,7 +1,7 @@
 import { Dec } from "../catalog-core/decimal";
-import { depositMeetsMinimum } from "../design/design-packages.domain";
+import { depositMeetsMinimum, isPercentDeposit, minimumDepositAmount, type MinimumDeposit } from "../design/design-packages.domain";
 import { paymentIsVerified } from "./accounting-invoice";
-import { acceptedQuoteLines } from "./commercial.domain";
+import { acceptedQuoteLines, acceptedQuoteValue } from "./commercial.domain";
 import {
   agreementMatchesFinanceContext,
   paymentHasFinanceVerifiedReceipt,
@@ -95,7 +95,10 @@ export function financeGatePaymentsReady(
   );
 }
 
-/** Design starts only after the case's minimum design deposit (workspace configuration) is actually received. */
+/**
+ * Design starts only after the case's minimum design deposit (workspace configuration, frozen on the case) is actually
+ * received: a fixed amount, or a share of the design fee (the accepted design quotation's value).
+ */
 export function designDepositReady(data: CommercialData, quote: Quote) {
   if (quote.round !== "design" || !financeGatePaymentsReady(data, "release", quote.id)) return false;
   const paid = data.payments
@@ -103,7 +106,16 @@ export function designDepositReady(data: CommercialData, quote: Quote) {
       payment.currency === quote.currency && releasePaymentIsOperational(payment) &&
       paymentHasFinanceVerifiedReceipt(data, payment))
     .reduce((total, payment) => Dec.of(total).add(String(payment.amount)).toString(), "0");
-  return depositMeetsMinimum(paid, data.servicePath?.designMinimumDeposit, quote.currency);
+  return depositMeetsMinimum(paid, data.servicePath?.designMinimumDeposit, quote.currency, acceptedQuoteValue(quote));
+}
+
+/** What the deal approval asks for when the design deposit isn't in: the amount, and the share of the fee when it is one. */
+export function designDepositMessage(minimum: MinimumDeposit | null | undefined, quote: Quote) {
+  if (!minimum) return "Verify the design proposal payment before the deal is approved.";
+  const amount = minimumDepositAmount(minimum, acceptedQuoteValue(quote));
+  if (isPercentDeposit(minimum))
+    return `Verify at least ${Number(minimum.percent)}% of the design fee (${quote.currency} ${amount}) for the design proposal before the deal is approved.`;
+  return `Verify at least ${minimum.currency} ${amount} for the design proposal before the deal is approved.`;
 }
 
 export function variationReleasePaymentsReady(

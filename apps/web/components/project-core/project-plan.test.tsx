@@ -431,4 +431,23 @@ describe("standard tasks", () => {
     const put = fetcher.mock.calls.find(([url, init]) => String(url).includes("/settings") && init?.method === "PUT")!;
     expect(JSON.parse(String(put[1]!.body))).toMatchObject({ version: 2, autoFinish: true, clientUpdateAutoSendHours: 24 });
   });
+
+  it("sets how every job's client updates start: a call or a portal update, weekly (PLM-179)", async () => {
+    const state: SettingsState = {
+      settings: { requireAgreement: true, requirePayment: true, requireApproval: false, requireVariationPayment: false, autoFinish: false, clientUpdateAutoSendHours: null, referencePrefix: "PRJ", version: 4,
+        roles: [{ key: "project_manager", label: "Project manager" }], clientUpdateMode: "call", clientUpdateFrequency: "weekly" },
+      templates: [], workTemplates: [], canManage: true,
+    };
+    const fetcher = mount(() => state);
+    render(<DesignSystemProvider><ProjectSettingsPage workspaceId="w" /></DesignSystemProvider>);
+    const updateBy = await screen.findByRole("button", { name: /Update by/ });
+    expect(updateBy).toHaveTextContent("Call");
+    expect(screen.getByRole("button", { name: /How often/ })).toHaveTextContent("Weekly");
+    await userEvent.click(updateBy);
+    await userEvent.click(await screen.findByRole("option", { name: "Call or portal update" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Save/ }));
+    await waitFor(() => expect(fetcher.mock.calls.find(([url, init]) => String(url).includes("/settings") && init?.method === "PUT")).toBeTruthy());
+    const put = fetcher.mock.calls.find(([url, init]) => String(url).includes("/settings") && init?.method === "PUT")!;
+    expect(JSON.parse(String(put[1]!.body))).toMatchObject({ version: 4, clientUpdateMode: "either", clientUpdateFrequency: "weekly" });
+  });
 });

@@ -293,11 +293,11 @@
   "designTeam": {
     "source": "PLM-151, PLM-143, PLM-144, PLM-145, PLM-157 (13 Oct 2026). No fixed lead/junior pairs: each job's design team is allocated once the design fee is paid. Team roles live on the job (Settings > Projects > Roles); Settings > Design > Design team names which role each part uses.",
     "projectRoles": [
-      { "key": "designer", "label": "Lead Interior Designer", "part": "lead_designer", "setBy": "Account Manager; on Designed by the Creative Director, the Creative Director" },
-      { "key": "junior_designer", "label": "Junior Interior Designer", "part": "junior_designer", "setBy": "Account Manager" },
+      { "key": "designer", "label": "Lead Interior Designer", "part": "lead_designer", "setBy": "Account Manager; on Designed by the Creative Director, the Creative Director", "does": "2D design drawings (layouts and elevations for the client)" },
+      { "key": "junior_designer", "label": "Junior Interior Designer", "part": "junior_designer", "setBy": "Account Manager", "does": "2D design drawings (layouts and elevations for the client)" },
       { "key": "sales_admin", "label": "Sales Admin", "part": "sales_admin", "setBy": "Account Manager" },
-      { "key": "visualiser", "label": "Visualiser", "part": "visualiser", "setBy": "Lead Interior Designer (2D renders)" },
-      { "key": "draftsman", "label": "Draftsman", "part": "draftsman", "setBy": "Technical Lead (3D renders)" },
+      { "key": "visualiser", "label": "Visualiser", "part": "visualiser", "setBy": "Lead Interior Designer", "does": "3D renders" },
+      { "key": "draftsman", "label": "Draftsman", "part": "draftsman", "setBy": "Technical Lead", "does": "Technical drawings" },
       { "key": "material_coordinator", "label": "Material Coordinator", "part": "material_coordinator", "setBy": "Account Manager or Lead Interior Designer; without one on the job, the Material Coordinator team collects the samples" }
     ],
     "technicalLeadRoleCode": "technical_lead",

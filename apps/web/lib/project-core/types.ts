@@ -34,6 +34,9 @@ export type ProjectSettings = {
   drawingsClientRole?: string | null;
   /** PLM-149: working days the technical site measure is due in once its task opens; null: no due date. */
   technicalMeasureDays?: number | null;
+  /** PLM-179: how a job's client updates start: by call, a portal update or either; and how often (off: they don't start). */
+  clientUpdateMode?: "call" | "portal" | "either";
+  clientUpdateFrequency?: "weekly" | "fortnightly" | "monthly" | "off";
 };
 /** The project's key moments people can be kept informed about (PLM-055). */
 export type KeepInformedEvent = "drawings_started" | "production_started" | "installation_scheduled";

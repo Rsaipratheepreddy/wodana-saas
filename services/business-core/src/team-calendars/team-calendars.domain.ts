@@ -3,7 +3,7 @@ import { workdays, type WorkCalendar } from "../project-core/work-calendar";
 
 /**
  * Team calendars (PLM-090, PLM-091): one view of a team's work across every job, read from the records that hold it.
- *   design     render and 2D time designers book, design-journey deadlines, design appointments and presentations
+ *   design     2D design, 3D render and technical drawing time designers book, design-journey deadlines, design appointments and presentations
  *   logistics  what the factory produces (work-order planned dates), deliveries, installations and factory slots
  * Nothing is copied into a calendar table: each entry is its source record. A workspace can name one Google calendar
  * per team; the entries are pushed there through the existing Google connection, and the push remembers which event
@@ -13,10 +13,27 @@ export const TEAMS = ["design", "logistics"] as const;
 export type Team = (typeof TEAMS)[number];
 export const isTeam = (value: unknown): value is Team => typeof value === "string" && (TEAMS as readonly string[]).includes(value);
 
-/** Render or 2D time: the Visualiser renders, the technical team draws. */
-export const BOOKING_KINDS = ["render", "drawing"] as const;
+/**
+ * PLM-177: the design time a designer books, and who does each kind of work.
+ *   design_2d  2D design drawings (layouts and elevations for the client): the job's Interior Designers
+ *   render     3D renders: the Visualiser
+ *   drawing    technical drawings: the technical team (the job's Draftsman or the Technical Lead)
+ * A booking made before the split as "drawing" was always for the technical team, so it keeps its meaning.
+ */
+export const BOOKING_KINDS = ["design_2d", "render", "drawing"] as const;
 export type BookingKind = (typeof BOOKING_KINDS)[number];
-export const BOOKING_LABEL: Record<BookingKind, string> = { render: "3D render", drawing: "2D drawings" };
+export const isBookingKind = (value: unknown): value is BookingKind => typeof value === "string" && (BOOKING_KINDS as readonly string[]).includes(value);
+export const BOOKING_LABEL: Record<BookingKind, string> = { design_2d: "2D design drawings", render: "3D render", drawing: "Technical drawings" };
+/** The team each kind belongs to, as a refusal names it. */
+export const BOOKING_TEAM: Record<BookingKind, string> = { design_2d: "an Interior Designer on this job", render: "a Visualiser", drawing: "the technical team" };
+
+/**
+ * Who may be tagged on a kind of work: the people the job and the firm's roles name for it. When nobody holds the role
+ * (a firm without a Visualiser, a job before its team is allocated), anyone active may be tagged.
+ */
+export function assigneeProblem(kind: BookingKind, assignee: string, eligible: readonly string[]) {
+  return eligible.length && !eligible.includes(assignee) ? `Tag ${BOOKING_TEAM[kind]}` : null;
+}
 
 export type EntryKind = BookingKind | "design_deadline" | "appointment" | "presentation" | "production" | "delivery" | "installation" | "factory_slot" | "permit";
 
@@ -61,7 +78,7 @@ export function bookingDays(startsOn: string, days: number, calendar: WorkCalend
 }
 
 export function bookingProblem(input: { kind?: unknown; startsOn?: unknown; days?: unknown; note?: unknown }) {
-  if (!(BOOKING_KINDS as readonly string[]).includes(String(input.kind))) return "Choose a render or 2D drawings";
+  if (!isBookingKind(input.kind)) return "Choose 2D design drawings, a 3D render or technical drawings";
   if (typeof input.startsOn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(input.startsOn) || Number.isNaN(Date.parse(input.startsOn))) return "Choose the day it starts";
   if (!Number.isInteger(input.days) || (input.days as number) < 1 || (input.days as number) > 60) return "Days are between 1 and 60";
   if (input.note !== undefined && input.note !== null && (typeof input.note !== "string" || input.note.length > 500)) return "Keep the note under 500 characters";

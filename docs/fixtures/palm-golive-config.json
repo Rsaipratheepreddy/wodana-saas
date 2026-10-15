@@ -99,9 +99,11 @@
     }
   ],
   "_projects": "PLM-149: the lead designer sends the drawings to the client and records the approval (switch to the Lead Interior Designer role key once PLM-151 adds it); the technical measure is due 5 working days after its task opens (to confirm with Palm).",
+  "_projectStart": "Palm (15 Oct 2026): a project starts only after the owner approved the deal (Settings › Projects › Starting a project › Deal approved).",
   "projects": {
     "drawingsClientRole": "designer",
-    "technicalMeasureDays": 5
+    "technicalMeasureDays": 5,
+    "requireApproval": true
   },
   "factory": {
     "productionSteps": [
@@ -240,8 +242,9 @@
       { "key": "creative_director", "label": "Creative Director" }
     ]
   },
+  "_clientUpdates": "PLM-179: each job's weekly client update is a call with the Account Manager or a written progress update in the client portal, whichever they do; no call is booked by default.",
   "clientUpdates": {
-    "mode": "call",
+    "mode": "either",
     "frequency": "weekly"
   },
   "clientPortal": {

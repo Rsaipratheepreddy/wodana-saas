@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDesignPackage, depositMeetsMinimum, designFee, effectiveMinimumDeposit } from "./design-packages.domain";
+import { checkDesignPackage, depositMeetsMinimum, depositPercentProblem, designFee, effectiveMinimumDeposit, minimumDepositAmount } from "./design-packages.domain";
 
 describe("design packages (PLM-041)", () => {
   it("prices per space, per area and fixed without floating point", () => {
@@ -38,5 +38,25 @@ describe("design packages (PLM-041)", () => {
     expect(effectiveMinimumDeposit({ amount: "0.00", currency: "AED" })).toBeNull();
     expect(effectiveMinimumDeposit({ amount: "15000", currency: "AED" })).toEqual({ amount: "15000.00", currency: "AED" });
     expect(depositMeetsMinimum(0, effectiveMinimumDeposit({ amount: "0.00", currency: "AED" }), "USD")).toBe(true);
+  });
+
+  it("takes the minimum deposit as a share of the design fee, in any currency (Palm: 100%)", () => {
+    expect(effectiveMinimumDeposit({ amount: null, currency: null, percent: "100.00" })).toEqual({ percent: "100.00" });
+    expect(effectiveMinimumDeposit({ percent: 50 })).toEqual({ percent: "50.00" });
+    expect(effectiveMinimumDeposit({ percent: "0" })).toBeNull();
+    const whole = { percent: "100.00" };
+    expect(minimumDepositAmount(whole, 24000)).toBe("24000.00");
+    expect(depositMeetsMinimum("23999.99", whole, "AED", 24000)).toBe(false);
+    expect(depositMeetsMinimum(24000, whole, "AED", "24000.00")).toBe(true);
+    expect(depositMeetsMinimum(1000, whole, "USD", 1000)).toBe(true);
+    // Rounded to the cent: 12.5% of 99.99 is 12.49875.
+    expect(minimumDepositAmount({ percent: "12.50" }, "99.99")).toBe("12.50");
+    expect(minimumDepositAmount({ percent: "33.33" }, "1000.00")).toBe("333.30");
+    expect(depositMeetsMinimum("333.29", { percent: "33.33" }, "AED", "1000.00")).toBe(false);
+    expect(depositPercentProblem(100)).toBeNull();
+    expect(depositPercentProblem("12.5")).toBeNull();
+    expect(depositPercentProblem(0)).toMatch(/more than 0%/);
+    expect(depositPercentProblem(101)).toMatch(/at most 100%/);
+    expect(depositPercentProblem("ten")).toMatch(/percentage/);
   });
 });

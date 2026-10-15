@@ -1,13 +1,13 @@
 import type { PoolClient } from "pg";
 import type { JourneyStage, JourneyTask } from "../design/design-journey.domain";
-import { formatDay } from "../design/design-journey.store";
+import { designTeamConfig, formatDay, membersWithRole } from "../design/design-journey.store";
 import { readOpenInspections } from "../factory/factory-inspections";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { INSTALLATION_ROLE, installationRoles, readInstallation } from "../project-core/project-installation";
 import type { StageCheck } from "../project-core/project-checks";
 import { permitStatus, readSlots } from "../logistics/logistics.store";
 import { workspaceClock, type Clock } from "./workspace-clock";
-import { ALERT_LOOKBACK_DAYS, BOOKING_LABEL, plusDays, type BookingKind, type Team, type TeamEntry } from "./team-calendars.domain";
+import { ALERT_LOOKBACK_DAYS, BOOKING_KINDS, BOOKING_LABEL, plusDays, type BookingKind, type Team, type TeamEntry } from "./team-calendars.domain";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -22,7 +22,7 @@ export type DesignCalendarSource = (db: Db, workspaceId: string, from: string, t
 const clientOf = `LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id`;
 
-/** Render and 2D time booked by the designers (PLM-090). */
+/** 2D design, render and technical drawing time booked by the designers (PLM-090, PLM-177). */
 const renderBookings: DesignCalendarSource = async (db, workspaceId, from, to, clock) => {
   const rows = (await db.query<{ id: string; caseId: string; kind: BookingKind; note: string; startsOn: string; dueOn: string; days: number; status: string; version: number; assigneeName: string | null; clientName: string }>(
     `SELECT booking.id, booking.case_id AS "caseId", booking.kind, booking.note, booking.starts_on::text AS "startsOn", booking.due_on::text AS "dueOn", booking.days,
@@ -235,9 +235,67 @@ export async function readTargets(db: Db, workspaceId: string): Promise<Record<T
 }
 
 export async function bookingDefaults(db: Db, workspaceId: string) {
-  const row = (await db.query<{ renderDays: number; drawingDays: number; visualiserRoleCode: string | null; version: number }>(
-    `SELECT render_days AS "renderDays", drawing_days AS "drawingDays", visualiser_role_code AS "visualiserRoleCode", version FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
-  return { renderDays: Number(row?.renderDays ?? 5), drawingDays: Number(row?.drawingDays ?? 3), visualiserRoleCode: row?.visualiserRoleCode ?? "visualiser", version: Number(row?.version ?? 0) };
+  const row = (await db.query<{ designDrawingDays: number; renderDays: number; drawingDays: number; visualiserRoleCode: string | null; version: number }>(
+    `SELECT design_drawing_days AS "designDrawingDays", render_days AS "renderDays", drawing_days AS "drawingDays", visualiser_role_code AS "visualiserRoleCode", version
+       FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+  return { designDrawingDays: Number(row?.designDrawingDays ?? 3), renderDays: Number(row?.renderDays ?? 5), drawingDays: Number(row?.drawingDays ?? 3),
+    visualiserRoleCode: row?.visualiserRoleCode ?? "visualiser", version: Number(row?.version ?? 0) };
+}
+
+/** The days a kind of work needs by default (PLM-177). */
+export function defaultBookingDays(defaults: { designDrawingDays: number; renderDays: number; drawingDays: number }, kind: BookingKind) {
+  return kind === "design_2d" ? defaults.designDrawingDays : kind === "render" ? defaults.renderDays : defaults.drawingDays;
+}
+
+/**
+ * PLM-177: who does each kind of work on each job, the job's own people first.
+ *   2D design drawings  the job's lead and junior designers (and its dedicated designer); before the job has any, the
+ *                       people holding the designer roles
+ *   3D renders          the job's Visualiser, then everyone in the Visualiser role or team
+ *   technical drawings  the job's Draftsman, then everyone in the Draftsman or Technical Lead role or team
+ * Which role keys and codes these are is the firm's design team configuration (Settings › Design). An empty list means
+ * nobody holds the role: anyone active may be tagged.
+ */
+export async function bookingPeople(db: Db, workspaceId: string, caseIds: string[]) {
+  const config = await designTeamConfig(db, workspaceId);
+  const defaults = await bookingDefaults(db, workspaceId);
+  const present = (keys: Array<string | null | undefined>) => [...new Set(keys.filter((key): key is string => Boolean(key?.trim())))];
+  const jobKeys: Record<BookingKind, string[]> = {
+    design_2d: present([config.lead_designer, config.junior_designer]), render: present([config.visualiser]), drawing: present([config.draftsman]),
+  };
+  const roleCodes: Record<BookingKind, string[]> = {
+    design_2d: present([config.lead_designer, config.junior_designer]), render: present([defaults.visualiserRoleCode, config.visualiser]),
+    drawing: present([config.draftsman, config.technicalLeadRoleCode]),
+  };
+  const roles = {} as Record<BookingKind, string[]>;
+  for (const kind of BOOKING_KINDS) {
+    const holders: string[] = [];
+    for (const code of roleCodes[kind]) holders.push(...await membersWithRole(db, workspaceId, code));
+    roles[kind] = [...new Set(holders)];
+  }
+  const ids = [...new Set(caseIds)];
+  const allKeys = present(Object.values(jobKeys).flat());
+  const held = ids.length && allKeys.length ? (await db.query<{ caseId: string; id: string; keys: string[] }>(
+    `SELECT assignment.case_id AS "caseId", assignment.membership_id AS id, assignment.role_keys AS keys FROM project_assignments assignment
+       JOIN workspace_memberships member ON member.workspace_id = assignment.workspace_id AND member.id = assignment.membership_id AND member.status = 'active'
+      WHERE assignment.workspace_id = $1 AND assignment.case_id = ANY($2::uuid[]) AND assignment.active AND assignment.role_keys && $3::varchar[]
+      ORDER BY assignment.id`, [workspaceId, ids, allKeys])).rows : [];
+  // A job allocated before the design team existed keeps the opportunity's dedicated designer.
+  const dedicated = ids.length ? (await db.query<{ caseId: string; id: string }>(
+    `SELECT pre_case.id AS "caseId", designer.membership_id AS id FROM pre_project_cases pre_case
+       JOIN crm_opportunity_designer designer ON designer.workspace_id = pre_case.workspace_id AND designer.opportunity_id = pre_case.opportunity_id
+       JOIN workspace_memberships member ON member.workspace_id = designer.workspace_id AND member.id = designer.membership_id AND member.status = 'active'
+      WHERE pre_case.workspace_id = $1 AND pre_case.id = ANY($2::uuid[])`, [workspaceId, ids])).rows : [];
+  const people = (caseId: string): Record<BookingKind, string[]> => {
+    const job = (kind: BookingKind) => held.filter((row) => row.caseId === caseId && row.keys.some((key) => jobKeys[kind].includes(key))).map((row) => row.id);
+    const designers = [...new Set([...job("design_2d"), ...dedicated.filter((row) => row.caseId === caseId).map((row) => row.id)])];
+    return {
+      design_2d: designers.length ? designers : roles.design_2d,
+      render: [...new Set([...job("render"), ...roles.render])],
+      drawing: [...new Set([...job("drawing"), ...roles.drawing])],
+    };
+  };
+  return { roles, people };
 }
 
 async function usersOf(db: Db, workspaceId: string, memberships: Array<string | null | undefined>) {

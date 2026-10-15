@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { ClientPortalAdminService } from "../../client-portal/client-portal-admin.service";
+import { effectiveMinimumDeposit, type MinimumDeposit } from "../../design/design-packages.domain";
 import { DesignPackagesService } from "../../design/design-packages.service";
 import { ProjectWorkflowService } from "../../projects/project-workflow.service";
 import { QuotationBuilderService } from "../../quotation/quotation-builder.service";
@@ -42,8 +43,10 @@ export async function ensureSettings(core: Core, data: SeedData, workspaceId: st
 
   // Design packages and the minimum design deposit (configuration, not constants).
   const design = core.get(DesignPackagesService);
-  const designState = (await design.get(actor, workspaceId)) as { minimumDeposit: { amount: string; currency: string } | null; version: number; packages: Array<Record<string, unknown> & { id: string; code: string; version: number }> };
-  await core.ensure("design settings", "minimum design deposit", async () => isDeepStrictEqual(designState.minimumDeposit, data.design.minimumDeposit),
+  const designState = (await design.get(actor, workspaceId)) as { minimumDeposit: MinimumDeposit | null; version: number; packages: Array<Record<string, unknown> & { id: string; code: string; version: number }> };
+  // The fixture gives an amount, or a percentage of the design fee as a number; compared as the app keeps it.
+  const wantedDeposit = effectiveMinimumDeposit(data.design.minimumDeposit as { amount?: string; currency?: string; percent?: number });
+  await core.ensure("design settings", "minimum design deposit", async () => isDeepStrictEqual(designState.minimumDeposit, wantedDeposit),
     () => design.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: data.design.minimumDeposit, version: designState.version }));
   for (const desired of data.design.packages) {
     const existing = designState.packages.find((row) => row.code === desired.code);

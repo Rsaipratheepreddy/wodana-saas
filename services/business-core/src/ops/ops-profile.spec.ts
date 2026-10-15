@@ -35,7 +35,7 @@ describe("configuration profile", () => {
     expect(palm.finishes).toMatchObject({ specificationGate: true, finishesToQsDays: 3, materialEditors: ["lead_designer", "junior_designer", "sales_admin"] });
     expect(palm.finishes?.categories?.filter((category) => category.clientSignature).map((category) => category.key)).toEqual(["whitegoods", "sanitary_ware"]);
     expect(palm.finishes?.priceBands?.map((band) => band.label)).toEqual(["Entry", "Mid range", "Premium", "Luxury"]);
-    expect(palm.clientUpdates).toEqual({ mode: "call", frequency: "weekly" });
+    expect(palm.clientUpdates).toEqual({ mode: "either", frequency: "weekly" });
     // PLM-170: the client BOQ on, for fit-out, ID & furniture, renovation and bespoke joinery jobs.
     expect(palm.clientPortal).toEqual({ sections: { boq: true }, boqEnquiryTypes: ["full_fit_out", "interior_design_furniture", "renovation_fit_out", "bespoke"] });
     expect(problems({ clientPortal: { sections: { boq: "yes", nope: true }, boqEnquiryTypes: "full_fit_out" } })).toEqual([
@@ -100,7 +100,7 @@ describe("configuration profile", () => {
       expect.stringContaining("routes[0].addStages[0].checks[1] is one of"),
       expect.stringContaining("orderPaths[0].path is one of"),
       expect.stringContaining("orderPaths[0].leadDays.min is at most max"),
-      expect.stringContaining("clientUpdates.mode is one of call, portal"),
+      expect.stringContaining("clientUpdates.mode is one of call, portal, either"),
       expect.stringContaining("catalogCategories[0].merge: Beds merges into another category"),
       expect.stringContaining("catalogCategories[0].parent[0]: a category can't sit under itself"),
       expect.stringContaining("catalogCategories[0].rename[0].to is non-empty text"),
@@ -145,9 +145,10 @@ describe("route changes", () => {
       .toEqual(["technical_measure_done", "drawings_uploaded", "drawings_design_checked", "drawings_client_approved", "factory_slot_booked"]);
     expect(plan.changes.map((entry) => entry.detail)).toEqual(["check removed", "check removed", "check added", "check added"]);
     expect(planRoute({ ...palm, stages: plan.stages }, swap, roles).changes).toEqual([]);
-    expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5 });
-    expect(problems({ projects: { drawingsClientRole: "Lead Designer", technicalMeasureDays: 0 } })).toEqual([
-      "projects.drawingsClientRole is a project role key like designer, or null.", "projects.technicalMeasureDays is a whole number from 1 to 60."]);
+    // Palm: a project starts only after the deal is approved.
+    expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5, requireApproval: true });
+    expect(problems({ projects: { drawingsClientRole: "Lead Designer", technicalMeasureDays: 0, requirePayment: "yes" } })).toEqual([
+      "projects.drawingsClientRole is a project role key like designer, or null.", "projects.technicalMeasureDays is a whole number from 1 to 60.", "projects.requirePayment is true or false."]);
   });
 
   it("refuses finishes it can't apply, in words (PLM-146/148/156/157)", () => {
@@ -183,7 +184,8 @@ describe("route changes", () => {
 
   it("reads Palm's design packages file (PLM-139, PLM-145): Concept per space, the Creative Director package priced from its rate and reviewed", () => {
     const file = validatePackagesFile(json("../../../../docs/fixtures/palm-design-packages.json"));
-    expect(file.minimumDeposit).toEqual({ amount: "15000.00", currency: "AED" });
+    // Palm takes the whole design fee before the design starts.
+    expect(file.minimumDeposit).toEqual({ percent: 100 });
     expect(file.packages.map((entry) => entry.code)).toEqual(["concept", "bespoke", "creative_director"]);
     expect(file.packages[0]).toMatchObject({ pricingMethod: "per_space", rate: "10000.00", unitDefinition: "1 space = 1 room with a door" });
     expect(file.packages[2]).toMatchObject({ pricingMethod: "per_area", areaUnit: "sqft", rate: "100.00", rateFrom: true, reviewRoleCode: "creative_director" });
@@ -192,6 +194,9 @@ describe("route changes", () => {
     expect("requiredRoleCode" in file.packages[2]).toBe(false);
     expect(validatePackagesFile({ packages: [{ code: "Basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] })).toEqual({ packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] });
     expect(validatePackagesFile({ minimumDeposit: null, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] }).minimumDeposit).toBeNull();
+    expect(validatePackagesFile({ minimumDeposit: { percent: 50 }, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] }).minimumDeposit).toEqual({ percent: 50 });
+    for (const minimumDeposit of [{ percent: 0 }, { percent: 120 }, { percent: "50" }, { percent: 50, amount: "100.00" }])
+      expect(() => validatePackagesFile({ minimumDeposit, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] })).toThrow();
   });
 
   it("reads Palm's design questions file: the same packages, 31 discovery questions under 6 sections, 14 joinery checklists and the release record", () => {

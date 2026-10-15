@@ -20,7 +20,7 @@ import { REQUIREMENT_GATES } from "../crm/leads/enquiry-problems";
 import { Dec } from "../catalog-core/decimal";
 import { DesignFlowSettingsDto, DesignPackageDto, DesignSettingsDto } from "../design/design-packages.controller";
 import type { ChecklistScope, SiteQuestion } from "../design/design-journey.domain";
-import { checkDesignPackage, effectiveMinimumDeposit, type DesignPackageInput } from "../design/design-packages.domain";
+import { checkDesignPackage, effectiveMinimumDeposit, isPercentDeposit, type DesignPackageInput, type MinimumDeposit } from "../design/design-packages.domain";
 import { DesignPackagesService } from "../design/design-packages.service";
 import { FinishesService } from "../design/finishes.service";
 import { FactoryService } from "../factory/factory.service";
@@ -33,7 +33,7 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
 import { WorkspacesService } from "../workspaces/workspaces.service";
 import type { OpsContext, Report } from "./ops-context";
-import { WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type PackagesFile, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
+import { PROJECT_START_RULES, WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type PackagesFile, type Profile, type ProfileSection, type ProjectStartRule, type RouteChange } from "./ops-profile";
 import type { TeamSpec } from "./ops-sandbox-plan";
 import { applyTeams } from "./ops-teams";
 
@@ -630,22 +630,27 @@ const packageText = (entry: DesignPackageInput) => `${entry.name}: ${entry.rateF
  */
 async function designPackages(ctx: OpsContext, file: PackagesFile, step: Step) {
   const service = ctx.get(DesignPackagesService);
-  const current = await service.get(ctx.actor, ctx.workspace.id) as DesignSettings & { minimumDeposit: { amount: string; currency: string } | null };
+  const current = await service.get(ctx.actor, ctx.workspace.id) as DesignSettings & { minimumDeposit: MinimumDeposit | null };
   // A currency the file leaves out is the workspace's (from its region pack).
   const currency = await ctx.read(async (client) => (await client.query<{ currency: string | null }>(
     `SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [ctx.workspace.id])).rows[0]?.currency ?? null);
 
   if (file.minimumDeposit !== undefined) {
     const label = "minimum design deposit";
-    const wantedCurrency = file.minimumDeposit?.currency ?? currency;
-    const deposit = (value: { amount: string; currency: string } | null) => (value ? `${value.amount} ${value.currency}` : "none");
-    if (file.minimumDeposit && !wantedCurrency) step.failed(label, "the file gives no currency and the workspace has none");
+    const asked = file.minimumDeposit;
+    const percentAsked = asked && "percent" in asked ? asked : null;
+    const amountAsked = asked && !("percent" in asked) ? asked : null;
+    const wantedCurrency = amountAsked?.currency ?? currency;
+    const deposit = (value: MinimumDeposit | null) => (!value ? "none" : isPercentDeposit(value) ? `${Number(value.percent)}% of the design fee` : `${value.amount} ${value.currency}`);
+    if (amountAsked && !wantedCurrency) step.failed(label, "the file gives no currency and the workspace has none");
     else {
-      const wanted = effectiveMinimumDeposit(file.minimumDeposit ? { amount: file.minimumDeposit.amount, currency: wantedCurrency } : null);
+      const wanted = effectiveMinimumDeposit(percentAsked ? { percent: percentAsked.percent } : amountAsked ? { amount: amountAsked.amount, currency: wantedCurrency } : null);
+      // The settings command takes a percentage as a number and an amount as text.
+      const command = !wanted ? null : isPercentDeposit(wanted) ? { percent: Number(wanted.percent) } : wanted;
       if (deposit(current.minimumDeposit) === deposit(wanted)) step.same(label, deposit(wanted));
       else await step.change([diff(label, deposit(current.minimumDeposit), deposit(wanted))], async () => {
         const fresh = await service.get(ctx.actor, ctx.workspace.id) as { version: number };
-        const body = await ctx.validated(DesignSettingsDto, { minimumDeposit: wanted, version: fresh.version });
+        const body = await ctx.validated(DesignSettingsDto, { minimumDeposit: command, version: fresh.version });
         return service.saveMinimumDeposit(ctx.actor, ctx.workspace.id, { minimumDeposit: body.minimumDeposit ?? null, version: body.version });
       });
     }
@@ -782,15 +787,29 @@ const orderPaths: Section = async (ctx, profile, step) => {
 
 // ---------- project settings ----------
 
-type ProjectSettingsView = { settings: { version: number; roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null; technicalMeasureDays: number | null } };
+type ProjectSettingsView = { settings: { version: number; roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null; technicalMeasureDays: number | null } & Record<ProjectStartRule, boolean> };
 
-/** PLM-149: who talks to the client about drawings, and when the technical measure is due, through Settings › Projects. */
+const START_RULE_LABEL: Record<ProjectStartRule, string> = {
+  requireApproval: "a project starts after the deal is approved", requireAgreement: "a project starts after the agreement is signed",
+  requirePayment: "a project starts after the first payment is verified",
+};
+
+/**
+ * Through Settings › Projects: what must be true before a project starts (the deal approved, the agreement signed, the
+ * first payment verified), who talks to the client about drawings, and when the technical measure is due (PLM-149).
+ */
 const projects: Section = async (ctx, profile, step) => {
   const wanted = profile.projects!;
   const service = ctx.get(ProjectCoreService);
   const current = (await service.settings(ctx.actor, ctx.workspace.id) as ProjectSettingsView).settings;
   const patch: Record<string, unknown> = {};
   const changes: Change[] = [];
+  for (const rule of PROJECT_START_RULES) {
+    const want = wanted[rule];
+    if (want === undefined) continue;
+    if (current[rule] === want) step.same(START_RULE_LABEL[rule], want ? "on" : "off");
+    else { patch[rule] = want; changes.push(diff(START_RULE_LABEL[rule], current[rule] ? "on" : "off", want ? "on" : "off")); }
+  }
   if (wanted.drawingsClientRole !== undefined) {
     const label = "drawings go to the client through";
     if (wanted.drawingsClientRole !== null && !current.roles.some((role) => role.key === wanted.drawingsClientRole))
@@ -917,11 +936,26 @@ const enquiryRequirements: Section = async (ctx, profile, step) => {
 
 // ---------- client updates ----------
 
-const clientUpdates: Section = async (_ctx, profile, step) => {
+type ClientUpdateSettings = { settings: { version: number; clientUpdateMode: string; clientUpdateFrequency: string } };
+
+/**
+ * PLM-179: how every job's client updates start (by call, a portal update, or either; how often), through Settings ›
+ * Projects. Jobs whose updates already started keep theirs; each job can still change its own.
+ */
+const clientUpdates: Section = async (ctx, profile, step) => {
   const wanted = profile.clientUpdates!;
-  // Every case starts its client updates weekly, by call, from design approval; each case can change it. There is no workspace default to set.
-  if (wanted.mode === "call" && wanted.frequency === "weekly") step.same("client updates", "weekly by call (the product's default from design approval)");
-  else step.manual("client updates", `no workspace default; ${wanted.frequency} by ${wanted.mode} is set per case (Pre-project › Client updates)`);
+  const service = ctx.get(ProjectCoreService);
+  const current = (await service.settings(ctx.actor, ctx.workspace.id) as ClientUpdateSettings).settings;
+  const changes: Change[] = [];
+  const patch: Record<string, unknown> = {};
+  if (current.clientUpdateMode === wanted.mode) step.same("client updates by", wanted.mode);
+  else { patch.clientUpdateMode = wanted.mode; changes.push(diff("client updates by", current.clientUpdateMode, wanted.mode)); }
+  if (current.clientUpdateFrequency === wanted.frequency) step.same("client updates how often", wanted.frequency);
+  else { patch.clientUpdateFrequency = wanted.frequency; changes.push(diff("client updates how often", current.clientUpdateFrequency, wanted.frequency)); }
+  if (changes.length) await step.change(changes, async () => {
+    const fresh = (await service.settings(ctx.actor, ctx.workspace.id) as ClientUpdateSettings).settings;
+    return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, ...patch });
+  });
 };
 
 // ---------- client portal ----------

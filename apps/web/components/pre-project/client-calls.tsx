@@ -9,8 +9,8 @@ import { SideSection } from "@/components/record/record-layout";
 import { FactList } from "@/components/record/record-parts";
 
 export type ClientCallFrequency = "weekly" | "fortnightly" | "monthly" | "off";
-/** A call with the Account Manager, or a progress update posted to the client portal instead. */
-export type ClientUpdateMode = "call" | "portal";
+/** A call with the Account Manager, a progress update posted to the client portal instead, or either (PLM-179). */
+export type ClientUpdateMode = "call" | "portal" | "either";
 export type ClientCallsView = {
   caseId: string; frequency: ClientCallFrequency; mode: ClientUpdateMode; started: boolean; startedFrom: string | null; version: number; ownerName: string | null; hasOwner: boolean;
   /** The booked call (its start), or the reminder to post an update (due by the end of `on`). */
@@ -18,7 +18,8 @@ export type ClientCallsView = {
 };
 
 export const FREQUENCY_LABEL: Record<ClientCallFrequency, MessageKey> = { weekly: tKey("Weekly"), fortnightly: tKey("Every two weeks"), monthly: tKey("Monthly"), off: tKey("Off") };
-const MODE_LABEL: Record<ClientUpdateMode, MessageKey> = { call: tKey("Call"), portal: tKey("Portal update") };
+export const UPDATE_MODES: ClientUpdateMode[] = ["call", "portal", "either"];
+export const UPDATE_MODE_LABEL: Record<ClientUpdateMode, MessageKey> = { call: tKey("Call"), portal: tKey("Portal update"), either: tKey("Call or portal update") };
 
 /**
  * PLM-046: the Account Manager's recurring client update. A call booked weekly by default from the design approval (or
@@ -45,7 +46,8 @@ export function ClientCallsSection({ workspaceId, caseId }: { workspaceId: strin
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     finally { setSaving(false); }
   };
-  const portal = view.mode === "portal";
+  // A portal update, or either kind of update, is due by its day; only a call has its time.
+  const portal = view.mode !== "call";
   // A call at its time; an update by its day (shown as a calendar day, whatever the zone).
   const when = !view.next ? null : portal && view.next.on
     ? new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${view.next.on}T12:00:00Z`))
@@ -53,7 +55,7 @@ export function ClientCallsSection({ workspaceId, caseId }: { workspaceId: strin
   const on = view.frequency !== "off";
   return <SideSection title={t("Client updates")}>
     <SelectField label={t("Update by")} isDisabled={saving} selectedKey={view.mode} onSelectionChange={(key) => void change(view.frequency, String(key ?? "call") as ClientUpdateMode)}
-      items={(Object.keys(MODE_LABEL) as ClientUpdateMode[]).map((id) => ({ id, label: t(MODE_LABEL[id]) }))} />
+      items={UPDATE_MODES.map((id) => ({ id, label: t(UPDATE_MODE_LABEL[id]) }))} />
     <SelectField label={t("How often")} isDisabled={saving} selectedKey={view.frequency} onSelectionChange={(key) => void change(String(key ?? "off") as ClientCallFrequency, view.mode)}
       items={(Object.keys(FREQUENCY_LABEL) as ClientCallFrequency[]).map((id) => ({ id, label: t(FREQUENCY_LABEL[id]) }))} />
     {error ? <InlineNotice tone="error" message={error} /> : null}

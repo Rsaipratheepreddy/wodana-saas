@@ -40,7 +40,9 @@ export type DesignFlow = {
   renderInternalDays?: number | null; renderClientDays?: number | null;
   steps?: DesignSteps; team?: DesignTeamRoles;
 };
-export type DesignSettings = { minimumDeposit: { amount: string; currency: string } | null; version: number; timings?: DesignTimings; packages: DesignPackage[];
+/** The minimum design deposit: an amount in a currency, or a percentage of the design fee ("100.00" for the whole fee). */
+export type MinimumDeposit = { amount: string; currency: string } | { percent: string };
+export type DesignSettings = { minimumDeposit: MinimumDeposit | null; version: number; timings?: DesignTimings; packages: DesignPackage[];
   flow?: DesignFlow; bookingTypes?: Array<{ id: string; name: string }>;
   /** The workspace's team roles (Settings › Projects), to name each part of the design team. */
   roles?: Array<{ key: string; label: string }> };
@@ -53,7 +55,7 @@ async function call<T>(workspaceId: string, path: string, init?: RequestInit): P
 }
 
 export const loadDesignSettings = (workspaceId: string) => call<DesignSettings>(workspaceId, "settings");
-export const saveMinimumDeposit = (workspaceId: string, minimumDeposit: DesignSettings["minimumDeposit"], version: number) =>
+export const saveMinimumDeposit = (workspaceId: string, minimumDeposit: { amount: string; currency: string } | { percent: number } | null, version: number) =>
   call<DesignSettings>(workspaceId, "settings", { method: "PUT", body: JSON.stringify({ minimumDeposit, version }) });
 export const saveDesignTimings = (workspaceId: string, timings: DesignTimings, version: number) =>
   call<DesignSettings>(workspaceId, "settings", { method: "PUT", body: JSON.stringify({ timings, version }) });

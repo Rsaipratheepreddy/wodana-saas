@@ -3,7 +3,7 @@ import { recordAudit } from "../audit/record-audit";
 import { caseFacts } from "../design/design-journey.store";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { endOfWorkingDay, startOfWorkingDay, workspaceClock, type Clock } from "../team-calendars/workspace-clock";
-import { FREQUENCY_LABEL, nextCallDay, planChange, type Frequency, type Mode } from "./client-calls.domain";
+import { DEFAULT_UPDATES, FREQUENCY_LABEL, isFrequency, isMode, nextCallDay, planChange, type Frequency, type Mode, type UpdateDefaults } from "./client-calls.domain";
 
 type Db = Pick<PoolClient, "query">;
 const CALL_MINUTES = 30;
@@ -55,22 +55,32 @@ async function bookCall(db: Db, workspaceId: string, caseId: string, ownerId: st
 
 /**
  * PLM-046 portal mode: instead of a call, the Account Manager is reminded on `day` to post a progress update to the
- * client portal. A task in their name, due by the end of that working day; the notice goes out on the day itself.
+ * client portal. PLM-179 either mode: they are reminded to update the client, by a call they log or by a progress update
+ * in the portal, whichever they choose; no call is booked. A task in their name, due by the end of that working day; the
+ * notice goes out on the day itself.
  */
-async function remindUpdate(db: Db, workspaceId: string, caseId: string, ownerId: string, day: string, clock: Clock, userId: string | null) {
+async function remindUpdate(db: Db, workspaceId: string, caseId: string, mode: Exclude<Mode, "call">, ownerId: string, day: string, clock: Clock, userId: string | null) {
   const facts = await caseFacts(db, workspaceId, caseId);
   if (!facts) return null;
+  const title = mode === "portal" ? `Post a progress update · ${facts.clientName}` : `Update the client: call or portal update · ${facts.clientName}`;
   const activity = (await db.query<{ id: string }>(
     `INSERT INTO crm_activities (workspace_id, party_id, lead_id, opportunity_id, type, interaction_direction, title, owner_membership_id, priority, due_at, is_next_action, customer_visible, created_by)
      VALUES ($1, $2, $3, $4, 'task'::crm_activity_type, 'internal', $5, $6, 'normal', $7, false, false, $8) RETURNING id`,
-    [workspaceId, facts.partyId, facts.leadId, facts.opportunityId, `Post a progress update · ${facts.clientName}`.slice(0, 240), ownerId, endOfWorkingDay(day, clock), userId])).rows[0];
+    [workspaceId, facts.partyId, facts.leadId, facts.opportunityId, title.slice(0, 240), ownerId, endOfWorkingDay(day, clock), userId])).rows[0];
   await db.query(`UPDATE client_update_calls SET next_activity_id = $3, next_on = $4, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId, activity.id, day]);
   return { activityId: activity.id };
 }
 
-/** The next call, or the next reminder to post an update, on `day`. */
+/** The next call, or the next reminder to post an update (or to call or post, in either mode), on `day`. */
 function planNext(db: Db, workspaceId: string, caseId: string, mode: Mode, ownerId: string, day: string, clock: Clock, userId: string | null) {
-  return mode === "portal" ? remindUpdate(db, workspaceId, caseId, ownerId, day, clock, userId) : bookCall(db, workspaceId, caseId, ownerId, day, clock, userId);
+  return mode === "call" ? bookCall(db, workspaceId, caseId, ownerId, day, clock, userId) : remindUpdate(db, workspaceId, caseId, mode, ownerId, day, clock, userId);
+}
+
+/** PLM-179: how a job's client updates start, unless the job says otherwise: the firm's setting (Settings › Projects), else weekly by call. */
+export async function readUpdateDefaults(db: Db, workspaceId: string): Promise<UpdateDefaults> {
+  const row = (await db.query<{ mode: string; frequency: string }>(
+    `SELECT client_update_mode AS mode, client_update_frequency AS frequency FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+  return { mode: isMode(row?.mode) ? row.mode : DEFAULT_UPDATES.mode, frequency: isFrequency(row?.frequency) ? row.frequency : DEFAULT_UPDATES.frequency };
 }
 
 async function ownerUser(db: Db, workspaceId: string, membershipId: string) {
@@ -91,25 +101,36 @@ function formatWhen(at: Date, clock: Clock) {
 }
 
 /**
- * Offers and books the recurring client update call when a job reaches the point it starts from: the design approval,
- * or the accepted estimate for a job without design. Weekly by default, in the Account Manager's calendar; they hear it
- * and can change how often or turn it off on the case. Idempotent: a job that already has its calls keeps them.
+ * Offers and books the recurring client update when a job reaches the point it starts from: the design approval, or
+ * the accepted estimate for a job without design. How (a call in the Account Manager's calendar, a portal update, or
+ * either) and how often come from the firm's setting (PLM-179: weekly by call unless set), or from the case when it is
+ * set there; the Account Manager hears it and can change it or turn it off on the case. Idempotent: a job that already
+ * has its updates keeps them.
  */
 export async function startClientCalls(db: Db, workspaceId: string, caseId: string, source: "design_approval" | "estimate_accepted" | "manual", userId: string | null,
-  frequency: Exclude<Frequency, "off"> = "weekly", mode: Mode = "call") {
+  chosenFrequency?: Exclude<Frequency, "off">, chosenMode?: Mode) {
   const facts = await caseFacts(db, workspaceId, caseId);
   if (!facts) return null;
+  const defaults = chosenFrequency && chosenMode ? null : await readUpdateDefaults(db, workspaceId);
+  const frequency: Frequency = chosenFrequency ?? defaults!.frequency;
+  const mode: Mode = chosenMode ?? defaults!.mode;
   const created = (await db.query(
     `INSERT INTO client_update_calls (workspace_id, case_id, frequency, mode, owner_membership_id, started_from, created_by, updated_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
      ON CONFLICT (workspace_id, case_id) DO NOTHING`, [workspaceId, caseId, frequency, mode, facts.accountManagerId, source, userId])).rowCount;
   if (!created) return readClientCalls(db, workspaceId, caseId);
+  // The firm doesn't run client updates by default: the job has them off until someone turns them on.
+  if (frequency === "off") {
+    await recordAudit(db, { workspaceId, actorUserId: userId, action: "client_calls.started.v1", entityType: "pre_project_case", entityId: caseId,
+      after: { source, frequency, mode, ownerMembershipId: facts.accountManagerId, firstCall: null, firstUpdateDue: null } });
+    return readClientCalls(db, workspaceId, caseId);
+  }
   const clock = await workspaceClock(db, workspaceId);
   const day = nextCallDay(clock.today, clock.today, frequency, clock);
   const owner = facts.accountManagerId;
   const booked = owner && mode === "call" ? await bookCall(db, workspaceId, caseId, owner, day, clock, userId) : null;
-  const planned = owner && mode === "portal" ? await remindUpdate(db, workspaceId, caseId, owner, day, clock, userId) : booked;
+  const planned = owner && mode !== "call" ? await remindUpdate(db, workspaceId, caseId, mode, owner, day, clock, userId) : booked;
   await recordAudit(db, { workspaceId, actorUserId: userId, action: "client_calls.started.v1", entityType: "pre_project_case", entityId: caseId,
-    after: { source, frequency, mode, ownerMembershipId: facts.accountManagerId, firstCall: booked?.startsAt ?? null, firstUpdateDue: mode === "portal" && planned ? day : null } });
+    after: { source, frequency, mode, ownerMembershipId: facts.accountManagerId, firstCall: booked?.startsAt ?? null, firstUpdateDue: mode !== "call" && planned ? day : null } });
   const recipient = booked && owner ? await ownerUser(db, workspaceId, owner) : null;
   if (booked && recipient) {
     const message = { workspaceId, recipientUserId: recipient, code: "client_calls.booked", eventType: "client_calls.booked",
@@ -142,7 +163,7 @@ export async function setClientCalls(db: Db, workspaceId: string, caseId: string
   const before = await readClientCalls(db, workspaceId, caseId, true);
   if ((before?.version ?? 0) !== version) return { conflict: true as const, changed: false };
   const { frequency } = input;
-  const mode = input.mode ?? before?.mode ?? "call";
+  const mode = input.mode ?? before?.mode ?? (await readUpdateDefaults(db, workspaceId)).mode;
   const source = by === "client" ? "client_portal" as const : "user" as const;
   if (!before) {
     if (frequency !== "off") await startClientCalls(db, workspaceId, caseId, "manual", userId, frequency, mode);
@@ -179,7 +200,8 @@ export async function setClientCalls(db: Db, workspaceId: string, caseId: string
 /**
  * The daily pass for one workspace. Calls: every job with calls on whose booked call is done, cancelled or past gets
  * its next call, one interval after the last planned day, on a working day ahead. Portal updates: a reminder is
- * closed when an update was shared with the client since it was set; one done, cancelled or past gets the next on the
+ * closed when an update was shared with the client since it was set (in either mode, also when a call with the client
+ * was logged since; PLM-179); one done, cancelled or past gets the next on the
  * same rhythm; and on its day the Account Manager is told (in the app and by email, once per job and day). The Account
  * Manager is read again each time, so a job handed to someone else plans with them. Idempotent: a job whose next call or
  * reminder is still ahead is left alone.
@@ -190,10 +212,19 @@ export async function processClientCalls(db: Db, workspaceId: string) {
   await db.query(
     `UPDATE crm_activities activity SET status = 'completed', completed_at = now(), completion_outcome = 'Progress update shared', version = activity.version + 1
        FROM client_update_calls calls
-      WHERE calls.workspace_id = $1 AND calls.mode = 'portal' AND calls.frequency <> 'off'
+      WHERE calls.workspace_id = $1 AND calls.mode IN ('portal', 'either') AND calls.frequency <> 'off'
         AND activity.workspace_id = calls.workspace_id AND activity.id = calls.next_activity_id AND activity.type = 'task' AND activity.status = 'pending'
         AND EXISTS (SELECT 1 FROM delivery_projects project JOIN project_status_updates shared ON shared.workspace_id = project.workspace_id AND shared.project_id = project.id
                      WHERE project.workspace_id = calls.workspace_id AND project.case_id = calls.case_id AND shared.shared_at > activity.created_at)`, [workspaceId]);
+  // PLM-179: in either mode a call with the client, logged since the reminder was set, closes it too.
+  await db.query(
+    `UPDATE crm_activities activity SET status = 'completed', completed_at = now(), completion_outcome = 'Client called', version = activity.version + 1
+       FROM client_update_calls calls
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = calls.workspace_id AND pre_case.id = calls.case_id
+      WHERE calls.workspace_id = $1 AND calls.mode = 'either' AND calls.frequency <> 'off'
+        AND activity.workspace_id = calls.workspace_id AND activity.id = calls.next_activity_id AND activity.type = 'task' AND activity.status = 'pending'
+        AND EXISTS (SELECT 1 FROM crm_activities logged WHERE logged.workspace_id = calls.workspace_id AND logged.opportunity_id = pre_case.opportunity_id
+                     AND logged.type = 'call' AND logged.status = 'completed' AND logged.completed_at > activity.created_at)`, [workspaceId]);
   const due = (await db.query<{ caseId: string }>(
     `SELECT calls.case_id AS "caseId" FROM client_update_calls calls
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = calls.workspace_id AND pre_case.id = calls.case_id AND pre_case.status <> 'cancelled'
@@ -219,16 +250,17 @@ export async function processClientCalls(db: Db, workspaceId: string) {
   return { booked };
 }
 
-/** On the day a portal update is due, the Account Manager hears it: in the app and by email, once per job and day. */
+/** On the day a portal update (or, in either mode, a call or an update) is due, the Account Manager hears it: in the app and by email, once per job and day. */
 async function tellUpdatesDue(db: Db, workspaceId: string, clock: Clock) {
-  const today = (await db.query<{ caseId: string; frequency: Exclude<Frequency, "off">; ownerId: string; day: string }>(
-    `SELECT calls.case_id AS "caseId", calls.frequency, activity.owner_membership_id AS "ownerId", calls.next_on::text AS day FROM client_update_calls calls
+  const today = (await db.query<{ caseId: string; mode: Exclude<Mode, "call">; frequency: Exclude<Frequency, "off">; ownerId: string; day: string }>(
+    `SELECT calls.case_id AS "caseId", calls.mode, calls.frequency, activity.owner_membership_id AS "ownerId", calls.next_on::text AS day FROM client_update_calls calls
        JOIN crm_activities activity ON activity.workspace_id = calls.workspace_id AND activity.id = calls.next_activity_id AND activity.status = 'pending'
-      WHERE calls.workspace_id = $1 AND calls.mode = 'portal' AND calls.frequency <> 'off' AND calls.next_on = $2::date`, [workspaceId, clock.today])).rows;
+      WHERE calls.workspace_id = $1 AND calls.mode IN ('portal', 'either') AND calls.frequency <> 'off' AND calls.next_on = $2::date`, [workspaceId, clock.today])).rows;
   for (const row of today) {
     const [userId, facts] = [await ownerUser(db, workspaceId, row.ownerId), await caseFacts(db, workspaceId, row.caseId)];
     if (!userId || !facts) continue;
-    const message = { workspaceId, recipientUserId: userId, code: "client_calls.portal_update_due", eventType: "client_calls.portal_update_due",
+    const code = row.mode === "either" ? "client_calls.update_due" : "client_calls.portal_update_due";
+    const message = { workspaceId, recipientUserId: userId, code, eventType: code,
       variables: { clientName: facts.clientName, frequency: FREQUENCY_LABEL[row.frequency], when: formatDay(row.day, clock) }, deepLink: await updatesLink(db, workspaceId, row.caseId) };
     await notifyUserInApp(db, { ...message, idempotencyKey: `client-calls:${row.caseId}:portal-update:${row.day}` });
     await queueUserEmail(db, { ...message, idempotencyKey: `client-calls:${row.caseId}:portal-update:${row.day}:email` });

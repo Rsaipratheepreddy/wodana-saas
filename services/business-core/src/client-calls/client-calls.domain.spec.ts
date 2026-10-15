@@ -30,6 +30,7 @@ describe("client update calls (PLM-046)", () => {
     expect(choiceText("portal", "weekly")).toBe("Portal updates instead of calls, weekly");
     expect(choiceText("portal", "monthly")).toBe("Portal updates instead of calls, monthly");
     expect(choiceText("portal", "off")).toBe("No update calls");
+    expect(choiceText("either", "weekly")).toBe("A call or a portal update, weekly");
   });
 
   it("re-plan from today when calls turn on or the mode changes; keep the planned one between rhythms", () => {
