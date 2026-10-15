@@ -1291,6 +1291,8 @@ export class ShowcaseSeed {
     await this.stage(at("payments"), () => this.paymentsAfterStart(ctx, caseId, quoteId));
     await this.stage(at("plan"), () => this.plan(ctx, projectId));
     await this.stage(at("material list"), () => this.materials(ctx, projectId, caseId));
+    // PLM-167 / PLM-168: where the firm reviews the BOQ, it is verified and QS-approved before the first order.
+    if (s.execution.orders.length) await this.stage(at("BOQ review"), () => this.boqReview(ctx, projectId));
     await this.stage(at("purchasing"), async () => { ids.orderId = await this.purchasing(ctx, projectId); });
     await this.stage(at("factory"), async () => { ids.workOrderId = await this.factory(ctx, projectId); });
     // A project already completed (an earlier run) opens again for what the story still publishes, then closes again below.
@@ -2394,6 +2396,77 @@ export class ShowcaseSeed {
     else throw new Skip(`the material list is ${state()}`);
   }
 
+  // ---------------------------------------------------------------- BOQ review and the ordering gate
+
+  /**
+   * PLM-167 / PLM-168: with the BOQ lifecycle on, the live BOQ is verified (the technical team, else the project
+   * manager) and approved by the QS, kept as BOQ R1, before anything is ordered. A BOQ a change reopened later stays
+   * as the team left it, and a project with nothing left to order (its orders placed before the firm switched the
+   * lifecycle on) isn't reviewed after the fact. Nothing happens on a firm without the lifecycle.
+   */
+  protected async boqReview(ctx: Ctx, projectId: string) {
+    const projects = this.get(ProjectCoreService);
+    const pm = await this.as("projectManager");
+    type Scope = { version: number; boq: { enabled: boolean; status: string; revision: number; label: string | null } };
+    const read = async () => (await projects.scope(pm, this.w, projectId)) as unknown as Scope;
+    let scope = await read();
+    if (!scope.boq.enabled) return;
+    if (["qs_approved", "locked"].includes(scope.boq.status)) { this.kept(`BOQ ${scope.boq.label} approved by the QS`); return; }
+    if (scope.boq.revision > 0) { this.kept(`BOQ back in draft after ${scope.boq.label} (a change reopened it)`); return; }
+    const needs = ((await this.get(OrdersService).needs(await this.as("buyer"), this.w)) as unknown as { needs: Array<{ projectId: string; remaining: string | null }> }).needs;
+    if (!needs.some((need) => need.projectId === projectId && Number(need.remaining ?? 0) > 0)) return;
+    if (scope.boq.status === "draft") {
+      await this.advance("BOQ verified against the sealed scope", false, () => projects.command(pm, this.w, projectId, { action: "verify_boq", version: scope.version }));
+      scope = await read();
+    }
+    if (scope.boq.status === "technical_verified") {
+      const surveyor = await this.as("estimator");
+      await this.advance("BOQ approved by the QS (R1)", false, () => this.tryAs(surveyor, (actor) => projects.command(actor, this.w, projectId,
+        { action: "qs_approve_boq", version: scope.version, reason: "Quantities and rates checked against the quotation." })));
+    }
+    void ctx;
+  }
+
+  /** PLM-159: the QS confirms the project's material list as it stands (confirmed again once it changes). */
+  protected async confirmMaterialList(projectId: string) {
+    const projects = this.get(ProjectCoreService);
+    const pm = await this.as("projectManager"), surveyor = await this.as("estimator");
+    const version = ((await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number } }).project.version;
+    await this.advance("material list confirmed by the QS", false, () => this.tryAs(surveyor, (actor) => projects.command(actor, this.w, projectId, { action: "confirm_material_list", version })));
+  }
+
+  /**
+   * PLM-159 / PLM-163 / PLM-169: what the firm's ordering gate asks of a draft order before it is placed, done the way
+   * the team does it: the project's drawings checked, its BOQ approved by the QS, the QS's confirmation of the material
+   * list, and the QS's sign-off of this order form. A line held for a price the client hasn't approved can't be settled
+   * here (the client decides that in the portal): the order waits, with the product's reason.
+   */
+  protected async settleOrderGate(ctx: Ctx, orderId: string, projectId: string | null) {
+    const orders = this.get(OrdersService);
+    const buyer = await this.as("buyer");
+    type Gate = { key: string; required: boolean; passed: boolean; missing: string; waiver: unknown | null };
+    const read = async () => (await orders.get(buyer, this.w, orderId)) as unknown as { order: { number: string; version: number; status: string }; gate: Gate[] };
+    let detail = await read();
+    if (detail.order.status !== "draft") return;
+    const blocking = () => detail.gate.filter((check) => check.required && !check.passed && !check.waiver);
+    if (!blocking().length) return;
+    // The project's own checks first (they clear for every order on it), the QS's sign-off of this order last.
+    for (const check of blocking()) {
+      if (check.key === "drawings_verified" && projectId) await this.drawings(ctx, projectId, "checked");
+      else if (check.key === "boq_approved" && projectId) await this.boqReview(ctx, projectId);
+      else if (check.key === "material_list_confirmed" && projectId) await this.confirmMaterialList(projectId);
+    }
+    detail = await read();
+    if (blocking().some((check) => check.key === "qs_signoff")) {
+      const surveyor = await this.as("estimator");
+      await this.advance(`${detail.order.number} · order form signed off by the QS`, false, () => this.tryAs(surveyor, (actor) => orders.command(actor, this.w, orderId,
+        { action: "qs_signoff", version: detail.order.version })));
+      detail = await read();
+    }
+    const left = blocking();
+    if (left.length) throw new Skip(`ordering held: ${left.map((check) => check.missing).join(" ")}`);
+  }
+
   // ---------------------------------------------------------------- Purchasing
 
   /**
@@ -2410,9 +2483,13 @@ export class ShowcaseSeed {
     if (!usable.length) throw new Skip("the supplier register has no approved supplier");
     type Need = { title: string; source: string; sourceId: string; projectId: string; remaining: string | null; blocked: string | null; unit: string };
     const needs = async () => ((await orders.needs(buyer, this.w)) as unknown as { needs: Need[] }).needs.filter((need) => need.projectId === projectId);
-    const price = (need: { title: string; source: string }) => this.money(need.source === "material"
-      ? (/veneer/i.test(need.title) ? "180" : /led/i.test(need.title) ? "95" : "12")
-      : (/floor|tile/i.test(need.title) ? "190" : /pendant/i.test(need.title) ? "950" : /sofa|bed|console/i.test(need.title) ? "8000" : /chair|worktop|sink/i.test(need.title) ? "400" : "45"));
+    // A bought scope line is ordered at the quotation's cost side (PLM-169: a cost above the agreed amount waits for the
+    // client's approved price correction); a material at its list price.
+    const costs = new Map(ctx.s.lines.map((line) => [(line.title ?? line.catalog[0]).toLowerCase(), line.unitCost]));
+    const price = (need: { title: string; source: string }) => need.source === "material"
+      ? this.money(/veneer/i.test(need.title) ? "180" : /led/i.test(need.title) ? "95" : "12")
+      : costs.get(need.title.toLowerCase())
+        ?? this.money(/floor|tile/i.test(need.title) ? "190" : /pendant/i.test(need.title) ? "950" : /sofa|bed|console/i.test(need.title) ? "8000" : /chair|worktop|sink/i.test(need.title) ? "400" : "45");
     const tag = ctx.s.key.toUpperCase().replace(/[^A-Z0-9]+/g, "");
     let firstId = "";
     for (const [index, plan] of ctx.s.execution.orders.entries()) {
@@ -2460,7 +2537,11 @@ export class ShowcaseSeed {
       await this.advance(`${key} · cancelled`, status === "cancelled", () => command(buyer, "cancel", { reason: "Ordered twice by mistake; the first order covers it." }));
       return orderId;
     }
-    if (status === "draft" && wants("pending_approval")) { await this.advance(`${key} · submitted`, false, () => command(buyer, "submit")); order = (await get())!; status = order.order.status; }
+    if (status === "draft" && wants("pending_approval")) {
+      // PLM-159: what the firm's ordering gate asks before the order is placed.
+      await this.settleOrderGate(ctx, orderId, projectId);
+      await this.advance(`${key} · submitted`, false, () => command(buyer, "submit")); order = (await get())!; status = order.order.status;
+    }
     if (status === "pending_approval" && wants("approved")) {
       const approver = await this.other(buyer, ["owner", "manager", "projectManager", "finance"]);
       await this.advance(`${key} · approved`, false, () => command(approver, "approve"));
@@ -2541,7 +2622,13 @@ export class ShowcaseSeed {
       if (status === "planned") {
         await this.advance(`${short} · drawing approved`, order.releaseChecks.some((check) => check.key === "drawing" && check.passed), () => command(maker, "approve_drawing", { reference: `${short.slice(0, 2).toUpperCase()}-${index + 1} rev B` }));
         order = (await get())!;
-        const blocked = order.releaseChecks.filter((check) => !check.passed);
+        let blocked = order.releaseChecks.filter((check) => !check.passed);
+        // PLM-174: a bespoke job's path E checks, done as the team does them, then read again.
+        if (blocked.some((check) => check.key === "technical_handover" || check.key === "factory_requirements")) {
+          await this.bespokeRelease(ctx, projectId, line.lineId, blocked.map((check) => check.key));
+          order = (await get())!;
+          blocked = order.releaseChecks.filter((check) => !check.passed);
+        }
         if (blocked.length) { this.skip(`factory · ${short}`, `not releasable: ${blocked.map((check) => check.missing).join("; ")}`); continue; }
         await this.advance(`${short} · work order released`, false, () => command(maker, "release"));
         status = "released";
@@ -2594,6 +2681,71 @@ export class ShowcaseSeed {
       return;
     }
     throw new Skip(`${short}: nobody in the design team can record ${name}`);
+  }
+
+  /**
+   * PLM-174 (path E): what a bespoke job's work order waits for before release, done as the team does it: the technical
+   * handover pack handed over and accepted (PLM-165) and the line's factory requirements recorded and confirmed by the
+   * factory lead (PLM-166). The quotation's QS step can't be made up here: a quotation that skipped it keeps the order held.
+   */
+  protected async bespokeRelease(ctx: Ctx, projectId: string, lineId: string, missing: string[]) {
+    if (missing.includes("technical_handover")) await this.technicalHandover(ctx, projectId);
+    if (missing.includes("factory_requirements")) await this.factoryRequirements(ctx, projectId, lineId);
+  }
+
+  /**
+   * PLM-165: the technical handover pack handed over by the project manager and accepted by the factory. A picture or
+   * size the records can't give is marked not applicable with why (the approved drawings show it); a material or
+   * selection still missing is left for the team, and the pack waits.
+   */
+  protected async technicalHandover(ctx: Ctx, projectId: string) {
+    const projects = this.get(ProjectCoreService);
+    const pm = await this.as("projectManager"), maker = await this.as("factory");
+    type Pack = { status: string; version: number; missing: number; projectVersion: number; rows: Array<{ lineId: string; title: string; missing: string[] }> };
+    const read = async () => (await projects.technicalHandover(pm, this.w, projectId)) as unknown as Pack;
+    let pack = await read();
+    if (pack.status === "accepted") { this.kept("technical handover accepted"); return; }
+    for (let guard = 0; guard < 40; guard += 1) {
+      const row = pack.rows.find((entry) => entry.missing.some((item) => item === "picture" || item === "size"));
+      const item = row?.missing.find((entry) => entry === "picture" || entry === "size");
+      if (!row || !item) break;
+      await this.advance(`technical handover · ${row.title.split("·")[0].trim().toLowerCase()}: ${item} not applicable`, false, () => projects.command(pm, this.w, projectId,
+        { action: "waive_handover_item", version: pack.projectVersion, lineId: row.lineId, item, reason: "Shown on the approved technical drawings." }));
+      pack = await read();
+    }
+    if (pack.missing > 0) throw new Skip(`technical handover: ${pack.missing} checklist item${pack.missing === 1 ? "" : "s"} still missing`);
+    if (pack.status !== "handed_over") {
+      await this.advance("technical handover pack handed over to the factory", false, () => projects.command(pm, this.w, projectId,
+        { action: "hand_over_technical", version: pack.projectVersion, handoverVersion: pack.version, note: "Drawings, materials and selections as the client approved them." }));
+      pack = await read();
+    }
+    await this.advance("technical handover accepted by the factory", false, () => this.tryAs(maker, (actor) => projects.command(actor, this.w, projectId,
+      { action: "accept_technical_handover", version: pack.projectVersion, handoverVersion: pack.version })));
+    void ctx;
+  }
+
+  /** PLM-166: a custom line's materials and labour recorded by the factory and confirmed by the factory lead (a verified recipe needs neither). */
+  protected async factoryRequirements(ctx: Ctx, projectId: string, lineId: string) {
+    const projects = this.get(ProjectCoreService);
+    const pm = await this.as("projectManager"), maker = await this.as("factory");
+    type Pack = { projectVersion: number; requirements: Array<{ lineId: string; title: string; state: string; factory: { version: number } | null }> };
+    const read = async () => (await projects.technicalHandover(pm, this.w, projectId)) as unknown as Pack;
+    let pack = await read();
+    let row = pack.requirements.find((entry) => entry.lineId === lineId);
+    if (!row) throw new Skip("the work order's line isn't in the project's scope");
+    const short = row.title.split("·")[0].trim().toLowerCase();
+    if (["verified", "confirmed", "not_needed"].includes(row.state)) { this.kept(`${short} · factory requirements settled`); return; }
+    if (row.state === "needs_requirements") {
+      await this.advance(`${short} · factory requirements recorded`, false, () => this.tryAs(maker, (actor) => projects.command(actor, this.w, projectId, { action: "save_factory_requirement",
+        version: pack.projectVersion, lineId, labourHours: "40", notes: "From the approved shop drawings.",
+        items: [{ componentType: "board", name: "MDF 18 mm, veneered", quantity: "6", unit: "sheet", note: "" }, { componentType: "hardware", name: "Soft-close hinges and runners", quantity: "12", unit: "nos", note: "" }] })));
+      pack = await read();
+      row = pack.requirements.find((entry) => entry.lineId === lineId)!;
+    }
+    if (row.state === "pending")
+      await this.advance(`${short} · factory requirements confirmed by the factory lead`, false, () => this.tryAs(maker, (actor) => projects.command(actor, this.w, projectId,
+        { action: "confirm_factory_requirement", version: pack.projectVersion, lineId, requirementVersion: row!.factory?.version })));
+    void ctx;
   }
 
   // ---------------------------------------------------------------- Site
@@ -2967,41 +3119,13 @@ export class ShowcaseSeed {
     const pm = await this.as("projectManager");
     const version = async () => ((await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number } }).project.version;
     const want = (kind: string) => kinds.includes(kind);
-    if (want("technical_measure_done") || want("drawings_uploaded") || want("drawings_site_checked") || want("drawings_design_checked") || want("drawings_client_approved")) {
-      const { ProjectDrawingsService } = await import("../project-core/project-drawings.service");
-      const drawings = this.get(ProjectDrawingsService);
-      type Revision = { id: string; number: number; status: string };
-      type DrawingsRead = { revisions?: Revision[]; measure?: { done: boolean; unit: string } | null };
-      const latest = async () => (((await drawings.read(pm, this.w, projectId)) as unknown as DrawingsRead).revisions ?? [])
-        .slice().sort((a, b) => b.number - a.number)[0] ?? null;
-      // PLM-149: on a route that asks for it, the project manager takes the technical site measure before shop drawings.
-      const measure = ((await drawings.read(pm, this.w, projectId)) as unknown as DrawingsRead).measure;
-      if (measure && !measure.done)
-        await this.advance("technical site measure recorded", false, async () => projects.command(pm, this.w, projectId, { action: "record_technical_measure", version: await version(),
-          measureId: this.id(ctx, "drawings:measure"), measuredOn: this.day(0), note: "Final site dimensions for the joinery.",
-          lines: [{ area: "Living", label: "TV wall width", value: 4200, unit: measure.unit }, { area: "Living", label: "Ceiling height", value: 2950, unit: measure.unit }] }));
-      const revisionId = this.id(ctx, "drawings:r1");
-      let revision = await latest();
-      if (!revision) {
-        await this.advance("technical drawings uploaded", false, () => drawings.upload(pm, this.w, projectId, revisionId, this.id(ctx, "drawings:r1:file"), "drawing", tile(`${ctx.s.key}-drawings`)));
-        revision = await latest();
-      }
-      if (revision?.status === "uploaded") {
-        // The site check, or the design check (PLM-149), as the route asks; the project manager may record either.
-        await this.advance("drawings checked", false, async () => projects.command(pm, this.w, projectId, { action: "check_drawings", version: await version(), revisionId: revision!.id, result: "ok", note: "The drawings match." }));
-        revision = await latest();
-      }
-      if (revision && ["checked", "uploaded"].includes(revision.status)) {
-        await this.advance("drawings sent to the client", false, async () => projects.command(pm, this.w, projectId, { action: "send_drawings", version: await version(), revisionId: revision!.id }));
-        revision = await latest();
-      }
-      if (revision?.status === "sent") {
-        await this.advance("client's signed approval of the drawings recorded", false, async () => {
-          await drawings.upload(pm, this.w, projectId, revision!.id, this.id(ctx, `drawings:${revision!.id}:approval`), "approval", tile(`${ctx.s.key}-drawings-approval`));
-          await projects.command(pm, this.w, projectId, { action: "decide_drawings", version: await version(), revisionId: revision!.id, decision: "approve", decidedOn: this.day(0),
-            decidedBy: ctx.s.client.displayName, note: "Signed on site." });
-        });
-      }
+    if (want("technical_measure_done") || want("drawings_uploaded") || want("drawings_site_checked") || want("drawings_design_checked") || want("drawings_client_approved"))
+      await this.drawings(ctx, projectId, "approved");
+    // PLM-174: a bespoke job's path E checks on the production stage (the quotation's QS step isn't made up here).
+    if (want("technical_handover_accepted")) await this.technicalHandover(ctx, projectId);
+    if (want("factory_requirements_confirmed")) {
+      const pack = (await projects.technicalHandover(pm, this.w, projectId)) as unknown as { requirements: Array<{ lineId: string; state: string }> };
+      for (const row of pack.requirements.filter((entry) => !["verified", "confirmed", "not_needed"].includes(entry.state))) await this.factoryRequirements(ctx, projectId, row.lineId);
     }
     if (want("factory_slot_booked"))
       await this.advance("factory slot booked", false, async () => projects.command(pm, this.w, projectId, { action: "book_factory_slot", version: await version(), date: this.day(2), note: "Joinery line." }));
@@ -3025,6 +3149,52 @@ export class ShowcaseSeed {
       if (!started?.started) await this.advance("site work started", false, () => site.command(pm, this.w, projectId, { action: "start_site", on: this.day(-1) }));
       if (!started?.finished) await this.advance("installation signed off (site work finished)", false, () => site.command(pm, this.w, projectId, { action: "finish_site", on: this.day(0),
         owedReason: "Balance agreed with the client at handover." }));
+    }
+  }
+
+  /**
+   * The technical drawings as far as `until`: the technical site measure where the route asks (PLM-149), the drawings
+   * uploaded and checked (the design check or the site check, as the route asks: enough for the ordering gate, PLM-159)
+   * and, with "approved", sent to the client and their signed approval recorded by the project manager.
+   */
+  protected async drawings(ctx: Ctx, projectId: string, until: "checked" | "approved") {
+    const projects = this.get(ProjectCoreService);
+    const pm = await this.as("projectManager");
+    const version = async () => ((await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number } }).project.version;
+    const { ProjectDrawingsService } = await import("../project-core/project-drawings.service");
+    const drawings = this.get(ProjectDrawingsService);
+    type Revision = { id: string; number: number; status: string };
+    type DrawingsRead = { revisions?: Revision[]; measure?: { done: boolean; unit: string } | null };
+    const latest = async () => (((await drawings.read(pm, this.w, projectId)) as unknown as DrawingsRead).revisions ?? [])
+      .slice().sort((a, b) => b.number - a.number)[0] ?? null;
+    // PLM-149: on a route that asks for it, the project manager takes the technical site measure before shop drawings.
+    const measure = ((await drawings.read(pm, this.w, projectId)) as unknown as DrawingsRead).measure;
+    if (measure && !measure.done)
+      await this.advance("technical site measure recorded", false, async () => projects.command(pm, this.w, projectId, { action: "record_technical_measure", version: await version(),
+        measureId: this.id(ctx, "drawings:measure"), measuredOn: this.day(0), note: "Final site dimensions for the joinery.",
+        lines: [{ area: "Living", label: "TV wall width", value: 4200, unit: measure.unit }, { area: "Living", label: "Ceiling height", value: 2950, unit: measure.unit }] }));
+    const revisionId = this.id(ctx, "drawings:r1");
+    let revision = await latest();
+    if (!revision) {
+      await this.advance("technical drawings uploaded", false, () => drawings.upload(pm, this.w, projectId, revisionId, this.id(ctx, "drawings:r1:file"), "drawing", tile(`${ctx.s.key}-drawings`)));
+      revision = await latest();
+    }
+    if (revision?.status === "uploaded") {
+      // The site check, or the design check (PLM-149), as the route asks; the project manager may record either.
+      await this.advance("drawings checked", false, async () => projects.command(pm, this.w, projectId, { action: "check_drawings", version: await version(), revisionId: revision!.id, result: "ok", note: "The drawings match." }));
+      revision = await latest();
+    }
+    if (until === "checked") return;
+    if (revision && ["checked", "uploaded"].includes(revision.status)) {
+      await this.advance("drawings sent to the client", false, async () => projects.command(pm, this.w, projectId, { action: "send_drawings", version: await version(), revisionId: revision!.id }));
+      revision = await latest();
+    }
+    if (revision?.status === "sent") {
+      await this.advance("client's signed approval of the drawings recorded", false, async () => {
+        await drawings.upload(pm, this.w, projectId, revision!.id, this.id(ctx, `drawings:${revision!.id}:approval`), "approval", tile(`${ctx.s.key}-drawings-approval`));
+        await projects.command(pm, this.w, projectId, { action: "decide_drawings", version: await version(), revisionId: revision!.id, decision: "approve", decidedOn: this.day(0),
+          decidedBy: ctx.s.client.displayName, note: "Signed on site." });
+      });
     }
   }
 

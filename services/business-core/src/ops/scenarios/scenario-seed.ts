@@ -282,7 +282,11 @@ export class ScenarioSeed extends ShowcaseSeed {
     const ladder = ["draft", "pending_approval", "approved", "sent", "confirmed", "partly_received", "received", "closed"];
     const wants = (status: string) => ladder.indexOf(state) >= ladder.indexOf(status);
     let status = order.order.status as string;
-    if (status === "draft" && wants("pending_approval")) { await this.advance(`${key} · submitted`, false, () => command(buyer, "submit")); status = (await get())!.order.status; }
+    if (status === "draft" && wants("pending_approval")) {
+      // PLM-159: the QS signs off the order form (and whatever else the firm's ordering gate asks) before it is placed.
+      await this.settleOrderGate(ctx, orderId, projectId);
+      await this.advance(`${key} · submitted`, false, () => command(buyer, "submit")); status = (await get())!.order.status;
+    }
     if (status === "pending_approval" && wants("approved")) { const approver = await this.other(buyer, ["owner", "manager", "projectManager", "finance"]); await this.advance(`${key} · approved`, false, () => command(approver, "approve")); status = "approved"; }
     if (status === "approved" && wants("sent")) { await this.advance(`${key} · sent (no email)`, false, () => command(buyer, "send", { to: null })); status = "sent"; }
     if (!["partly_received", "received"].includes(state) || !["sent", "confirmed", "partly_received"].includes(status)) return orderId;

@@ -168,7 +168,7 @@ integration("operator CLI sandbox --organization-of: a second organization in th
   it("applies the profile, teams and lead options without real addresses, and seeds the showcase in B's currency", async () => {
     const idB = (await workspaceOf(b))!;
     expect(first.output).toContain("financeRequests.inbox: an email address: not copied into a sandbox");
-    expect(await count(`SELECT count(*) FROM workspace_teams WHERE workspace_id = $1`, [idB])).toBe(19);
+    expect(await count(`SELECT count(*) FROM workspace_teams WHERE workspace_id = $1`, [idB])).toBe(20);
     expect(await count(`SELECT count(*) FROM crm_taxonomy_options choice JOIN crm_taxonomies taxonomy ON taxonomy.id = choice.taxonomy_id
       WHERE choice.workspace_id = $1 AND taxonomy.code = 'enquiry_type' AND choice.code = 'furniture_only' AND choice.status = 'active'`, [idB])).toBe(1);
     expect(first.output).toMatch(/\[seed\] changed +showcase: [1-9]\d* created/);

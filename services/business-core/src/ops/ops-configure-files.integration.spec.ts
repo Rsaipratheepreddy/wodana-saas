@@ -156,7 +156,7 @@ integration("operator CLI configure: teams access and design packages on an exis
       // A role the workspace has with the team's name is the team's (no second Finance role).
       expect.objectContaining({ section: "teams", status: "would change", label: "role finance_team" }),
       expect.objectContaining({ section: "teams", status: "unchanged", label: "team SALES", detail: "has role team_sales" }),
-      expect.objectContaining({ section: "packages", status: "would change", label: "minimum design deposit", detail: "none → 15000.00 AED" }),
+      expect.objectContaining({ section: "packages", status: "would change", label: "minimum design deposit", detail: "none → 100% of the design fee" }),
       expect.objectContaining({ section: "packages", status: "would change", label: "design package concept one unit is", detail: "(none) → 1 space = 1 room with a door" }),
       expect.objectContaining({ section: "packages", status: "would change", label: "design package concept space planning", detail: "false → true" }),
       expect.objectContaining({ section: "packages", status: "would change", label: "design package concept inclusions", detail: "changed" }),
@@ -210,8 +210,9 @@ integration("operator CLI configure: teams access and design packages on an exis
     expect(await pkg("bespoke")).toMatchObject({ pricingMethod: "per_area", areaUnit: "sqft", rate: "40.00", currency: "AED", status: "active", version: 1 });
     expect(await pkg("creative_director")).toMatchObject({ pricingMethod: "per_area", areaUnit: "sqft", rate: "100.00", rateFrom: true, reviewRoleCode: "creative_director",
       requiredRoleCode: null, includedRevisions: 2, version: 2 });
-    expect((await pool.query("SELECT minimum_design_deposit::text AS amount, currency FROM workspace_design_settings WHERE workspace_id = $1", [workspaceId])).rows[0])
-      .toEqual({ amount: "15000.00", currency: "AED" });
+    // Palm's deposit is the whole design fee (a percentage), so no amount or currency is kept.
+    expect((await pool.query("SELECT minimum_design_deposit::text AS amount, currency, minimum_design_deposit_percent::text AS percent FROM workspace_design_settings WHERE workspace_id = $1", [workspaceId])).rows[0])
+      .toEqual({ amount: null, currency: null, percent: "100.00" });
   });
 
   it("applies teams and packages before the profile's sections that name them", () => {

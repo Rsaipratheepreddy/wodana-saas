@@ -155,7 +155,7 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
     expect(await count(`SELECT count(*) FROM notifications WHERE workspace_id = $1 AND (coalesce(subject, '') || body) ILIKE ANY (ARRAY['%palm living%', '%palmliving%'])`, [id])).toBe(0);
     expect(await count(`SELECT count(*) FROM crm_contact_points WHERE workspace_id = $1 AND raw_value ILIKE '%palmliving%'`, [id])).toBe(0);
     // The rest of the profile, the teams and the lead options are there.
-    expect(await count(`SELECT count(*) FROM workspace_teams WHERE workspace_id = $1`, [id])).toBe(19);
+    expect(await count(`SELECT count(*) FROM workspace_teams WHERE workspace_id = $1`, [id])).toBe(20);
     expect(await count(`SELECT count(*) FROM crm_taxonomy_options choice JOIN crm_taxonomies taxonomy ON taxonomy.id = choice.taxonomy_id
       WHERE choice.workspace_id = $1 AND taxonomy.code = 'enquiry_type' AND choice.code = 'furniture_only' AND choice.status = 'active'`, [id])).toBe(1);
     // QA-002: each enquiry type's steps start from its flow (Design, Fit-out, Furniture), not a two-step Basic copy.
