@@ -1499,6 +1499,13 @@
       "when": 1801740010600,
       "tag": "0344_login_backgrounds",
       "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1801740020000,
+      "tag": "0350_design_work_kinds",
+      "breakpoints": true
     }
   ]
 }

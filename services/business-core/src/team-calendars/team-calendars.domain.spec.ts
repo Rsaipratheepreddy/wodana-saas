@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingDays, bookingProblem, entryFingerprint, pushPlan, rangeProblem, type TeamEntry } from "./team-calendars.domain";
+import { assigneeProblem, bookingDays, bookingProblem, entryFingerprint, pushPlan, rangeProblem, type TeamEntry } from "./team-calendars.domain";
 
 const entry = (key: string, start: string, patch: Partial<TeamEntry> = {}): TeamEntry => ({
   key, kind: "render", recordId: key, subject: "Villa 12", detail: null, start, end: start, allDay: true, days: 3, status: "booked", overdue: false, ownerName: "Vic", href: "/x", ...patch,
@@ -20,9 +20,18 @@ describe("render and 2D bookings (PLM-090)", () => {
 
   it("are validated", () => {
     expect(bookingProblem({ kind: "render", startsOn: "2026-10-05", days: 5 })).toBeNull();
-    expect(bookingProblem({ kind: "video", startsOn: "2026-10-05", days: 5 })).toBe("Choose a render or 2D drawings");
+    expect(bookingProblem({ kind: "design_2d", startsOn: "2026-10-05", days: 2 })).toBeNull();
+    expect(bookingProblem({ kind: "video", startsOn: "2026-10-05", days: 5 })).toBe("Choose 2D design drawings, a 3D render or technical drawings");
     expect(bookingProblem({ kind: "drawing", startsOn: "5 Oct", days: 5 })).toBe("Choose the day it starts");
     expect(bookingProblem({ kind: "drawing", startsOn: "2026-10-05", days: 0 })).toBe("Days are between 1 and 60");
+  });
+
+  it("go to the right people: the job's designers, a Visualiser, the technical team; anyone when nobody holds the role (PLM-177)", () => {
+    expect(assigneeProblem("design_2d", "dana", ["dana", "jules"])).toBeNull();
+    expect(assigneeProblem("design_2d", "vic", ["dana", "jules"])).toBe("Tag an Interior Designer on this job");
+    expect(assigneeProblem("render", "dana", ["vic"])).toBe("Tag a Visualiser");
+    expect(assigneeProblem("drawing", "vic", ["tariq"])).toBe("Tag the technical team");
+    expect(assigneeProblem("drawing", "vic", [])).toBeNull();
   });
 });
 

@@ -11,7 +11,11 @@ import type { Crew } from "../logistics/types";
  */
 export type Team = "design" | "logistics";
 export const TEAMS: Team[] = ["design", "logistics"];
-export type EntryKind = "render" | "drawing" | "design_deadline" | "appointment" | "presentation" | "production" | "delivery" | "installation" | "factory_slot" | "permit";
+/** PLM-177: 2D design drawings (the job's designers), 3D renders (the Visualiser), technical drawings (the technical team). */
+export type BookingKind = "design_2d" | "render" | "drawing";
+export const BOOKING_KINDS: BookingKind[] = ["design_2d", "render", "drawing"];
+export const isBookingKind = (kind: string): kind is BookingKind => (BOOKING_KINDS as string[]).includes(kind);
+export type EntryKind = BookingKind | "design_deadline" | "appointment" | "presentation" | "production" | "delivery" | "installation" | "factory_slot" | "permit";
 export type TeamEntry = {
   key: string; kind: EntryKind; recordId: string; subject: string; detail: string | null; start: string; end: string | null; allDay: boolean;
   days: number | null; status: string; overdue: boolean; ownerName: string | null; href: string; version?: number;
@@ -22,13 +26,38 @@ export type TeamEntry = {
 };
 export type TeamCalendarView = { team: Team; today: string; timeZone: string; entries: TeamEntry[]; canBook: boolean; canManage: boolean; google: boolean };
 export type TeamTarget = { connectionId: string | null; calendarId: string | null; version: number };
-export type TeamSettings = { targets: Record<Team, TeamTarget>; renderDays: number; drawingDays: number; designVersion: number; canRead: Record<Team, boolean>; canManage: Record<Team, boolean> };
-export type BookingOptions = { cases: Array<{ id: string; title: string }>; members: Array<{ id: string; name: string; visualiser: boolean }>; renderDays: number; drawingDays: number };
-export type Booking = { id: string; caseId: string; kind: "render" | "drawing"; startsOn: string; dueOn: string; days: number; status: string; version: number };
+export type TeamSettings = {
+  targets: Record<Team, TeamTarget>; designDrawingDays: number; renderDays: number; drawingDays: number; designVersion: number; canRead: Record<Team, boolean>; canManage: Record<Team, boolean>;
+};
+export type BookingOptions = {
+  /** Who does each kind of work on the job, its own people first; empty when nobody holds the role (then anyone may be tagged). */
+  cases: Array<{ id: string; title: string; people?: Record<BookingKind, string[]> }>;
+  members: Array<{ id: string; name: string; visualiser: boolean; kinds?: BookingKind[] }>;
+  designDrawingDays?: number; renderDays: number; drawingDays: number;
+};
+export type Booking = { id: string; caseId: string; kind: BookingKind; startsOn: string; dueOn: string; days: number; status: string; version: number };
 
 export const TEAM_LABEL: Record<Team, MessageKey> = { design: tKey("Design team"), logistics: tKey("Factory and logistics") };
+/** The work, and who it belongs to, as the booking dialog offers it. */
+export const BOOKING_WORK_LABEL: Record<BookingKind, MessageKey> = { design_2d: tKey("2D design drawings"), render: tKey("3D renders"), drawing: tKey("Technical drawings") };
+export const BOOKING_PERSON_LABEL: Record<BookingKind, MessageKey> = { design_2d: tKey("{name} · Interior Designer"), render: tKey("{name} · Visualiser"), drawing: tKey("{name} · Technical team") };
+/** The days each kind of work needs by default. */
+export const bookingDefaultDays = (defaults: { designDrawingDays?: number; renderDays: number; drawingDays: number }, kind: BookingKind) =>
+  kind === "design_2d" ? defaults.designDrawingDays ?? 3 : kind === "render" ? defaults.renderDays : defaults.drawingDays;
+
+/**
+ * Who the booking dialog offers for a kind of work on a job: the people the job and the firm's roles name for it (the
+ * job's own first), each labelled with what they are; everyone when nobody holds the role.
+ */
+export function bookingAssignees(options: BookingOptions, caseId: string, kind: BookingKind) {
+  const people = options.cases.find((item) => item.id === caseId)?.people?.[kind] ?? null;
+  if (!people) return options.members.map((member) => ({ id: member.id, team: kind === "render" ? member.visualiser : Boolean(member.kinds?.includes(kind)) }))
+    .sort((a, b) => Number(b.team) - Number(a.team));
+  if (!people.length) return options.members.map((member) => ({ id: member.id, team: false }));
+  return people.filter((id) => options.members.some((member) => member.id === id)).map((id) => ({ id, team: true }));
+}
 export const ENTRY_LABEL: Record<EntryKind, MessageKey> = {
-  render: tKey("Visualiser renders"), drawing: tKey("Technical team"), design_deadline: tKey("Design deadline"), appointment: tKey("Design appointment"),
+  design_2d: tKey("2D design drawings"), render: tKey("3D renders"), drawing: tKey("Technical drawings"), design_deadline: tKey("Design deadline"), appointment: tKey("Design appointment"),
   presentation: tKey("Presentation"), production: tKey("Production"), delivery: tKey("Delivery"), installation: tKey("Installation"), factory_slot: tKey("Factory slot"),
   permit: tKey("Permit collection"),
 };
@@ -68,7 +97,7 @@ const DESIGN_TASK_LABELS: Record<string, MessageKey> = {
 
 /** An entry's title in the viewer's language: what it is and for whom (and how many days render or 2D time needs). */
 export function teamEntryTitle(entry: TeamEntry, t: Translate) {
-  if (entry.kind === "render" || entry.kind === "drawing") return [t(ENTRY_LABEL[entry.kind]), entry.subject, days(t, entry.days)].filter(Boolean).join(" · ");
+  if (isBookingKind(entry.kind)) return [t(ENTRY_LABEL[entry.kind]), entry.subject, days(t, entry.days)].filter(Boolean).join(" · ");
   if (entry.kind === "design_deadline") return t("{stage} due · {client}", { stage: t(DESIGN_STAGE_LABELS[entry.detail as DesignStage] ?? DESIGN_TASK_LABELS[entry.detail ?? ""] ?? tKey("Design deadline")), client: entry.subject });
   if (entry.kind === "appointment" || entry.kind === "production") return [entry.detail, entry.subject].filter(Boolean).join(" · ");
   return `${t(ENTRY_LABEL[entry.kind])} · ${entry.subject}`;

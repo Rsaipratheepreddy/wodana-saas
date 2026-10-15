@@ -4,6 +4,7 @@ import { Type } from "class-transformer";
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { BOOKING_KINDS } from "./team-calendars.domain";
 import { TeamCalendarsService } from "./team-calendars.service";
 
 class RangeQuery { @Matches(/^\d{4}-\d{2}-\d{2}$/) from!: string; @Matches(/^\d{4}-\d{2}-\d{2}$/) to!: string; }
@@ -11,12 +12,13 @@ class SettingsDto {
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() connectionId?: string | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(500) calendarId?: string | null;
   @IsInt() @Min(0) version!: number;
+  @IsOptional() @IsInt() @Min(1) @Max(60) designDrawingDays?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) renderDays?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) drawingDays?: number;
 }
 class BookDto {
   @IsUUID() caseId!: string;
-  @IsIn(["render", "drawing"]) kind!: string;
+  @IsIn([...BOOKING_KINDS]) kind!: string;
   @IsUUID() assigneeMembershipId!: string;
   @Matches(/^\d{4}-\d{2}-\d{2}$/) startsOn!: string;
   @IsOptional() @IsInt() @Min(1) @Max(60) days?: number;

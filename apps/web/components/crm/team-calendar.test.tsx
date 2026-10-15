@@ -49,7 +49,7 @@ describe("team calendars in the Wodana calendar (PLM-090)", () => {
     // A team the person can't read isn't offered.
     expect(screen.queryByRole("option", { name: "Factory and logistics" })).toBeNull();
     await user.click(await screen.findByRole("option", { name: "Design team" }));
-    expect((await screen.findAllByRole("button", { name: /Visualiser renders · Maya Client · 4 days/ })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("button", { name: /3D renders · Maya Client · 4 days/ })).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /Overdue · Concepts due · Omar Client/ }).length).toBeGreaterThan(0);
     // One primary action: book design time, instead of a new event.
     expect(screen.getByRole("button", { name: "Book design time" })).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe("team calendars in the Wodana calendar (PLM-090)", () => {
     await waitFor(() => expect(calls.some((call) => call.url.startsWith("/api/workspace/team-calendars/settings"))).toBe(true));
     await user.click(within(toolbar).getByRole("button", { name: /Whose calendar/ }));
     await user.click(await screen.findByRole("option", { name: "Design team" }));
-    await user.click((await screen.findAllByRole("button", { name: /Visualiser renders · Maya Client · 4 days/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /3D renders · Maya Client · 4 days/ }))[0]);
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByText("Vic Visualiser")).toBeInTheDocument();
     await user.click(within(sheet).getByRole("button", { name: "Mark done" }));
@@ -85,5 +85,37 @@ describe("team calendars in the Wodana calendar (PLM-090)", () => {
     expect(within(dialog).getByRole("textbox", { name: /Days needed/ })).toHaveValue("5");
     await user.click(within(dialog).getByRole("button", { name: "Book" }));
     await waitFor(() => expect(calls.find((call) => call.method === "POST" && call.url.includes("/team-calendars/bookings?"))?.body).toMatchObject({ caseId: "c1", kind: "render", assigneeMembershipId: "m-vic", days: 5 }));
+  });
+
+  it("books 2D design drawings for the job's designer and technical drawings for the technical team (PLM-177)", async () => {
+    const people = { design_2d: ["m-dana"], render: ["m-vic"], drawing: ["m-tariq"] };
+    const members = [{ id: "m-vic", name: "Vic Visualiser", visualiser: true, kinds: ["render"] }, { id: "m-dana", name: "Dana Designer", visualiser: false, kinds: [] },
+      { id: "m-tariq", name: "Tariq Technical", visualiser: false, kinds: ["drawing"] }];
+    const fetchMock = vi.mocked(fetch);
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url, init) => String(url).startsWith("/api/workspace/team-calendars/booking-options")
+      ? ({ ok: true, status: 200, json: async () => ({ cases: [{ id: "c1", title: "O-1 · Maya Client", people }], members, designDrawingDays: 2, renderDays: 5, drawingDays: 3 }) }) as never
+      : base(url, init));
+    const user = userEvent.setup();
+    render(<CrmCalendar workspaceId={workspaceId} />);
+    const toolbar = await screen.findByRole("toolbar", { name: "Calendar controls" });
+    await waitFor(() => expect(calls.some((call) => call.url.startsWith("/api/workspace/team-calendars/settings"))).toBe(true));
+    await user.click(within(toolbar).getByRole("button", { name: /Whose calendar/ }));
+    await user.click(await screen.findByRole("option", { name: "Design team" }));
+    await user.click(await screen.findByRole("button", { name: "Book design time" }));
+    const dialog = await screen.findByRole("dialog", { name: "Book design time" });
+    await user.click(await within(dialog).findByRole("button", { name: /Job/ }));
+    await user.click(await screen.findByRole("option", { name: "O-1 · Maya Client" }));
+    await user.click(within(dialog).getByRole("radio", { name: "2D design drawings" }));
+    expect(within(dialog).getByRole("button", { name: /Who does it/ })).toHaveTextContent("Dana Designer · Interior Designer");
+    expect(within(dialog).getByRole("textbox", { name: /Days needed/ })).toHaveValue("2");
+    // Only the job's designers are offered for its 2D drawings.
+    await user.click(within(dialog).getByRole("button", { name: /Who does it/ }));
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Dana Designer · Interior Designer"]);
+    await user.keyboard("{Escape}");
+    await user.click(within(dialog).getByRole("radio", { name: "Technical drawings" }));
+    expect(within(dialog).getByRole("button", { name: /Who does it/ })).toHaveTextContent("Tariq Technical · Technical team");
+    await user.click(within(dialog).getByRole("button", { name: "Book" }));
+    await waitFor(() => expect(calls.find((call) => call.method === "POST" && call.url.includes("/team-calendars/bookings?"))?.body).toMatchObject({ caseId: "c1", kind: "drawing", assigneeMembershipId: "m-tariq", days: 3 }));
   });
 });

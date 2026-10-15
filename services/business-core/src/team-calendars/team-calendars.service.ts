@@ -2,11 +2,11 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
-import { caseFacts, formatDay, membersWithRole } from "../design/design-journey.store";
+import { caseFacts, formatDay } from "../design/design-journey.store";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { BOOKING_LABEL, bookingDays, bookingProblem, isTeam, plusDays, pushPlan, rangeProblem, type BookingKind, type Pushed, type Team } from "./team-calendars.domain";
-import { bookingDefaults, readEntries, readTargets } from "./team-calendars.store";
+import { assigneeProblem, BOOKING_KINDS, BOOKING_LABEL, bookingDays, bookingProblem, isTeam, plusDays, pushPlan, rangeProblem, type BookingKind, type Pushed, type Team } from "./team-calendars.domain";
+import { bookingDefaults, bookingPeople, defaultBookingDays, readEntries, readTargets } from "./team-calendars.store";
 import { endOfWorkingDay, workspaceClock } from "./workspace-clock";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,20 +19,20 @@ const MANAGE: Record<Team, string[]> = {
   design: ["crm.settings.manage", "workspace.settings.manage"],
   logistics: ["factory.manage", "logistics.manage", "workspace.settings.manage"],
 };
-/** Who books on each team's calendar: designers their render and 2D time; the factory and logistics managers deliveries, installations, permits and production. */
+/** Who books on each team's calendar: designers their 2D design, render and technical drawing time; the factory and logistics managers deliveries, installations, permits and production. */
 const BOOK: Record<Team, string[]> = { design: ["pre_projects.edit"], logistics: ["logistics.manage", "factory.manage"] };
 /** Push window: last week to three months ahead. */
 const PUSH_BACK = 7, PUSH_AHEAD = 90;
 
 export type BookInput = { caseId?: unknown; kind?: unknown; assigneeMembershipId?: unknown; startsOn?: unknown; days?: unknown; note?: unknown; commandId?: unknown };
-export type TargetInput = { connectionId?: string | null; calendarId?: string | null; version?: number; renderDays?: number; drawingDays?: number };
+export type TargetInput = { connectionId?: string | null; calendarId?: string | null; version?: number; designDrawingDays?: number; renderDays?: number; drawingDays?: number };
 export type PushResult = { entryKey: string; eventId?: string | null; etag?: string | null; fingerprint?: string | null; startsOn?: string | null; removed?: boolean };
 
 type BookingRow = { id: string; caseId: string; kind: BookingKind; status: string; startsOn: string; dueOn: string; days: number; activityId: string | null; version: number; assigneeId: string };
 
 /**
  * Team calendars (PLM-090, PLM-091). The design and the factory/logistics calendars read their teams' work from the
- * records; designers book render and 2D time (the work item is a task for the person tagged); each team can name one
+ * records; designers book 2D design, render and technical drawing time (the work item is a task for the person tagged, PLM-177); each team can name one
  * Google calendar its work is pushed to. Commands are validated, idempotent (a command id), version-checked and audited.
  */
 @Injectable()
@@ -55,14 +55,14 @@ export class TeamCalendarsService {
     });
   }
 
-  /** The two teams' Google targets and the days render and 2D time need by default. */
+  /** The two teams' Google targets and the days each kind of design work needs by default. */
   settings(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(actor, workspaceId, [...READ.design, ...READ.logistics], (client, user) => this.settingsView(client, workspaceId, user.userId));
   }
 
   /**
    * Where a team calendar is pushed (a connected Google calendar, or none to keep it in Wodana) and, for the design
-   * team, the days a render and 2D drawings need by default. Version-checked; audited.
+   * team, the days 2D design drawings, a render and technical drawings need by default. Version-checked; audited.
    */
   saveSettings(actor: RequestActor, workspaceId: string, team: string, input: TargetInput) {
     const which = this.team(team);
@@ -70,8 +70,9 @@ export class TeamCalendarsService {
     if (Boolean(connectionId) !== Boolean(calendarId)) throw new UnprocessableEntityException("Choose a Google calendar, or none");
     if (connectionId && !UUID.test(connectionId)) throw new BadRequestException("Choose a Google calendar");
     if (calendarId && calendarId.length > 500) throw new BadRequestException("Choose a Google calendar");
-    for (const days of [input.renderDays, input.drawingDays]) if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 60)) throw new UnprocessableEntityException("Days are between 1 and 60");
-    if (which !== "design" && (input.renderDays !== undefined || input.drawingDays !== undefined)) throw new BadRequestException("Render days belong to the design team");
+    for (const days of [input.designDrawingDays, input.renderDays, input.drawingDays]) if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 60)) throw new UnprocessableEntityException("Days are between 1 and 60");
+    const daysGiven = input.designDrawingDays !== undefined || input.renderDays !== undefined || input.drawingDays !== undefined;
+    if (which !== "design" && daysGiven) throw new BadRequestException("Render days belong to the design team");
     return this.access.withAnyPermission(actor, workspaceId, MANAGE[which], async (client, user) => {
       const before = (await client.query<{ connectionId: string | null; calendarId: string | null; version: number }>(
         `SELECT connection_id AS "connectionId", calendar_id AS "calendarId", version FROM workspace_team_calendars WHERE workspace_id = $1 AND team = $2 FOR UPDATE`, [workspaceId, which])).rows[0];
@@ -87,16 +88,16 @@ export class TeamCalendarsService {
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "team_calendar.target_changed.v1", entityType: "workspace_team_calendar", entityId: workspaceId,
           before: before ? { team: which, connectionId: before.connectionId, calendarId: before.calendarId } : null, after: { team: which, connectionId, calendarId } });
       }
-      if (which === "design" && (input.renderDays !== undefined || input.drawingDays !== undefined)) {
+      if (which === "design" && daysGiven) {
         const defaults = await bookingDefaults(client, workspaceId);
-        const renderDays = input.renderDays ?? defaults.renderDays, drawingDays = input.drawingDays ?? defaults.drawingDays;
-        if (renderDays !== defaults.renderDays || drawingDays !== defaults.drawingDays) {
+        const designDrawingDays = input.designDrawingDays ?? defaults.designDrawingDays, renderDays = input.renderDays ?? defaults.renderDays, drawingDays = input.drawingDays ?? defaults.drawingDays;
+        if (designDrawingDays !== defaults.designDrawingDays || renderDays !== defaults.renderDays || drawingDays !== defaults.drawingDays) {
           await client.query(
-            `INSERT INTO workspace_design_settings (workspace_id, render_days, drawing_days, updated_by) VALUES ($1, $2, $3, $4)
-             ON CONFLICT (workspace_id) DO UPDATE SET render_days = excluded.render_days, drawing_days = excluded.drawing_days, updated_by = excluded.updated_by,
-               updated_at = now(), version = workspace_design_settings.version + 1`, [workspaceId, renderDays, drawingDays, user.userId]);
+            `INSERT INTO workspace_design_settings (workspace_id, design_drawing_days, render_days, drawing_days, updated_by) VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (workspace_id) DO UPDATE SET design_drawing_days = excluded.design_drawing_days, render_days = excluded.render_days, drawing_days = excluded.drawing_days,
+               updated_by = excluded.updated_by, updated_at = now(), version = workspace_design_settings.version + 1`, [workspaceId, designDrawingDays, renderDays, drawingDays, user.userId]);
           await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.booking_days_changed.v1", entityType: "workspace_design_settings", entityId: workspaceId,
-            before: { renderDays: defaults.renderDays, drawingDays: defaults.drawingDays }, after: { renderDays, drawingDays } });
+            before: { designDrawingDays: defaults.designDrawingDays, renderDays: defaults.renderDays, drawingDays: defaults.drawingDays }, after: { designDrawingDays, renderDays, drawingDays } });
         }
       }
       return this.settingsView(client, workspaceId, user.userId);
@@ -107,35 +108,42 @@ export class TeamCalendarsService {
   private async settingsView(client: PoolClient, workspaceId: string, userId: string) {
     const defaults = await bookingDefaults(client, workspaceId);
     const can = async (codes: Record<Team, string[]>) => ({ design: await this.allowed(client, workspaceId, userId, codes.design), logistics: await this.allowed(client, workspaceId, userId, codes.logistics) });
-    return { targets: await readTargets(client, workspaceId), renderDays: defaults.renderDays, drawingDays: defaults.drawingDays, designVersion: defaults.version,
+    return { targets: await readTargets(client, workspaceId), designDrawingDays: defaults.designDrawingDays, renderDays: defaults.renderDays, drawingDays: defaults.drawingDays, designVersion: defaults.version,
       canRead: await can(READ), canManage: await can(MANAGE) };
   }
 
-  /** What a designer picks from to book render or 2D time: the open cases and the people (the Visualisers first). */
+  /**
+   * What a designer picks from to book design time: the open cases, with who does each kind of work on each (PLM-177:
+   * its designers for 2D design drawings, the Visualiser for renders, the technical team for technical drawings; empty
+   * when nobody holds the role), and the people (the Visualisers first).
+   */
   bookingOptions(actor: RequestActor, workspaceId: string) {
     return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.edit"], async (client) => {
       const defaults = await bookingDefaults(client, workspaceId);
-      const visualisers = new Set(await membersWithRole(client, workspaceId, defaults.visualiserRoleCode));
-      const cases = (await client.query<{ id: string; title: string }>(
+      const found = (await client.query<{ id: string; title: string }>(
         `SELECT pre_case.id, concat_ws(' · ', nullif(opportunity.reference, ''), coalesce(party.display_name, opportunity.title)) AS title
            FROM pre_project_cases pre_case
            JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
            LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
           WHERE pre_case.workspace_id = $1 AND pre_case.status IN ('draft', 'active', 'on_hold', 'released')
           ORDER BY pre_case.updated_at DESC NULLS LAST, pre_case.id LIMIT 300`, [workspaceId])).rows;
+      const team = await bookingPeople(client, workspaceId, found.map((item) => item.id));
+      const cases = found.map((item) => ({ ...item, people: team.people(item.id) }));
+      const visualisers = new Set(team.roles.render);
       const members = (await client.query<{ id: string; name: string }>(
         `SELECT member.id, person.display_name AS name FROM workspace_memberships member JOIN users person ON person.id = member.user_id
           WHERE member.workspace_id = $1 AND member.status = 'active' ORDER BY person.display_name, member.id`, [workspaceId])).rows
-        .map((member) => ({ ...member, visualiser: visualisers.has(member.id) }))
+        .map((member) => ({ ...member, visualiser: visualisers.has(member.id), kinds: BOOKING_KINDS.filter((kind) => team.roles[kind].includes(member.id)) }))
         .sort((a, b) => Number(b.visualiser) - Number(a.visualiser));
-      return { cases, members, renderDays: defaults.renderDays, drawingDays: defaults.drawingDays };
+      return { cases, members, designDrawingDays: defaults.designDrawingDays, renderDays: defaults.renderDays, drawingDays: defaults.drawingDays };
     });
   }
 
   /**
-   * A designer books render or 2D time on a case and tags the person who does it: the booking (the calendar entry) and
-   * that person's task (the work item) are made together; they hear it. Runs the work calendar's working days from the
-   * first working day on or after the day asked. Idempotent per command id.
+   * A designer books design time on a case and tags the person who does it: 2D design drawings one of the job's
+   * designers, a render the Visualiser, technical drawings the technical team (PLM-177; anyone active when nobody holds
+   * the role). The booking (the calendar entry) and that person's task (the work item) are made together; they hear it.
+   * Runs the work calendar's working days from the first working day on or after the day asked. Idempotent per command id.
    */
   book(actor: RequestActor, workspaceId: string, input: BookInput) {
     const problem = bookingProblem({ ...input, days: input.days ?? 1 });
@@ -154,8 +162,10 @@ export class TeamCalendarsService {
         `SELECT member.user_id AS "userId", person.display_name AS name FROM workspace_memberships member JOIN users person ON person.id = member.user_id
           WHERE member.workspace_id = $1 AND member.id = $2 AND member.status = 'active'`, [workspaceId, assignee])).rows[0];
       if (!member) throw new UnprocessableEntityException("Tag an active member of the team");
+      const wrongPerson = assigneeProblem(kind, assignee, (await bookingPeople(client, workspaceId, [caseId])).people(caseId)[kind]);
+      if (wrongPerson) throw new UnprocessableEntityException(wrongPerson);
       const defaults = await bookingDefaults(client, workspaceId);
-      const days = input.days === undefined || input.days === null ? (kind === "render" ? defaults.renderDays : defaults.drawingDays) : Number(input.days);
+      const days = input.days === undefined || input.days === null ? defaultBookingDays(defaults, kind) : Number(input.days);
       const clock = await workspaceClock(client, workspaceId);
       const span = bookingDays(String(input.startsOn), days, clock);
       const activity = (await client.query<{ id: string }>(

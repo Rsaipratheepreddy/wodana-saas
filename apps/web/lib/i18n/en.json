@@ -15245,5 +15245,9 @@
   "Keep background": "Keep background",
   "Remove background": "Remove background",
   "Remove sign-in background?": "Remove sign-in background?",
-  "The sign-in screen will show the default image.": "The sign-in screen will show the default image."
+  "The sign-in screen will show the default image.": "The sign-in screen will show the default image.",
+  "2D design drawings": "2D design drawings",
+  "{name} · Interior Designer": "{name} · Interior Designer",
+  "{name} · Technical team": "{name} · Technical team",
+  "Days the designers need for 2D drawings": "Days the designers need for 2D drawings"
 }

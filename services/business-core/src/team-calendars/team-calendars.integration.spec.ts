@@ -120,6 +120,48 @@ integration("team calendars, client update calls and areas after Won", () => {
     expect((await w.client.query<{ status: string }>(`SELECT status::text FROM crm_activities WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, booked.activityId])).rows[0].status).toBe("completed");
   }));
 
+  it("books 2D design drawings for the job's designers, renders for a Visualiser and technical drawings for the technical team (PLM-177)", () => world(async (w) => {
+    // The job's team: Dana leads the design and Faris is its Draftsman; Vic is in the firm's Visualiser team.
+    await w.client.query("SET LOCAL session_replication_role = replica");
+    await w.client.query(`INSERT INTO project_assignments(workspace_id,case_id,membership_id,is_manager,active,role_keys) VALUES($1,$2,$3,false,true,ARRAY['designer']),($1,$2,$4,false,true,ARRAY['draftsman'])`,
+      [w.workspaceId, w.caseId, w.members.designer, w.members.maker]);
+    const team = randomUUID();
+    await w.client.query("INSERT INTO workspace_teams(id,workspace_id,business_unit_id,code,name) VALUES($1,$2,$3,'VISUALISER','Visualisers')", [team, w.workspaceId, randomUUID()]);
+    await w.client.query("INSERT INTO workspace_team_members(workspace_id,team_id,membership_id) VALUES($1,$2,$3)", [w.workspaceId, team, w.members.visualiser]);
+    await w.client.query("SET LOCAL session_replication_role = origin");
+    const calendars = new TeamCalendarsService(access(w, w.people.designer, DESIGN));
+    const settings = await calendars.saveSettings(actor, w.workspaceId, "design", { connectionId: null, calendarId: null, version: 0, designDrawingDays: 2 });
+    expect(settings).toMatchObject({ designDrawingDays: 2, renderDays: 5, drawingDays: 3 });
+    const options = await calendars.bookingOptions(actor, w.workspaceId);
+    expect(options.cases.find((item) => item.id === w.caseId)!.people).toEqual({ design_2d: [w.members.designer], render: [w.members.visualiser], drawing: [w.members.maker] });
+    expect(options.members.find((member) => member.id === w.members.visualiser)).toMatchObject({ visualiser: true, kinds: ["render"] });
+    const monday = (() => { let day = plusDays(w.today, 7); while (new Date(`${day}T00:00:00Z`).getUTCDay() !== 1) day = plusDays(day, 1); return day; })();
+    const book = (kind: string, assignee: string) => calendars.book(actor, w.workspaceId, { caseId: w.caseId, kind, assigneeMembershipId: assignee, startsOn: monday, commandId: randomUUID() }) as Promise<Record<string, unknown>>;
+
+    // Each kind goes to its own people.
+    await expect(book("design_2d", w.members.visualiser)).rejects.toThrow("Tag an Interior Designer on this job");
+    await expect(book("render", w.members.designer)).rejects.toThrow("Tag a Visualiser");
+    await expect(book("drawing", w.members.visualiser)).rejects.toThrow("Tag the technical team");
+    const design = await book("design_2d", w.members.designer);
+    expect(design).toMatchObject({ kind: "design_2d", days: 2, assigneeMembershipId: w.members.designer });
+    const technical = await book("drawing", w.members.maker);
+    expect(technical).toMatchObject({ kind: "drawing", days: 3 });
+    const titles = (await w.client.query<{ title: string }>(`SELECT title FROM crm_activities WHERE workspace_id = $1 AND id = ANY($2::uuid[]) ORDER BY title`,
+      [w.workspaceId, [design.activityId, technical.activityId]])).rows.map((row) => row.title);
+    expect(titles).toEqual(["2D design drawings · Maya Client", "Technical drawings · Maya Client"]);
+    // Dana booked her own 2D time, so only Faris hears of his.
+    expect((await told(w, "design.work_booked")).map((row) => [row.recipient, row.subject])).toEqual([[w.people.maker, "Technical drawings booked · Maya Client"]]);
+    const view = await calendars.entries(actor, w.workspaceId, "design", w.today, plusDays(w.today, 30));
+    expect(view.entries.filter((entry) => entry.key.startsWith("booking:")).map((entry) => [entry.kind, entry.ownerName]).sort())
+      .toEqual([["design_2d", "Dana Designer"], ["drawing", "Faris Factory"]]);
+
+    // A job before its team is allocated: the 2D drawings go to its dedicated designer; with nobody in a role, anyone may be tagged.
+    await w.client.query("UPDATE project_assignments SET active = false WHERE workspace_id = $1 AND case_id = $2", [w.workspaceId, w.caseId]);
+    await w.client.query("DELETE FROM workspace_team_members WHERE workspace_id = $1 AND team_id = $2", [w.workspaceId, team]);
+    expect((await calendars.bookingOptions(actor, w.workspaceId)).cases.find((item) => item.id === w.caseId)!.people).toEqual({ design_2d: [w.members.designer], render: [], drawing: [] });
+    expect(await book("render", w.members.owner)).toMatchObject({ kind: "render" });
+  }));
+
   it("shows production, delivery and installation, alerts once when they run late, and plans the Google push (PLM-091)", () => world(async (w) => {
     await w.client.query("SET LOCAL session_replication_role = replica");
     const order = randomUUID();
