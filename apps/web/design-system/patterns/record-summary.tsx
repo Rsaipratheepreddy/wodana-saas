@@ -62,10 +62,12 @@ export function StateChip({ state, label }: { state: ItemState; label?: string }
 export type CheckItem = { id: string; label: ReactNode; done: boolean; detail?: ReactNode; action?: ReactNode };
 
 /** To-dos as checklist rows: a tick when done, an empty ring when not, what it is, and where to do it. */
-export function CheckList({ label, items }: { label: string; items: CheckItem[] }) {
+export function CheckList({ label, items, layout = "rows" }: { label: string; items: CheckItem[];
+  /** "inline": short checks side by side on one wrapping line (an owner's checklist inside a card). */
+  layout?: "rows" | "inline" }) {
   const t = useT();
   if (!items.length) return null;
-  return <ul className="wd-check-list" aria-label={label}>{items.map((item) => <li key={item.id} data-done={item.done || undefined}>
+  return <ul className="wd-check-list" aria-label={label} data-layout={layout === "inline" ? "inline" : undefined}>{items.map((item) => <li key={item.id} data-done={item.done || undefined}>
     <span className="wd-check-list-mark" aria-hidden="true">{item.done ? <Check size={12} strokeWidth={3} /> : null}</span>
     <span className="wd-check-list-text">
       <span className="wd-check-list-label">{item.label}<span className="wd-visually-hidden"> · {item.done ? t("Done") : t("Not done")}</span></span>

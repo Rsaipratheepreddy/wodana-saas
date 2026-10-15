@@ -4,13 +4,13 @@ import { RecordHistory } from "../history/record-history";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarClock, CircleCheck, Flag, ListChecks, TriangleAlert, Wallet } from "lucide-react";
-import { Badge, Button, EmptyState, ErrorState, IconMenuButton, KpiStrip, KpiTile, Skeleton, StateChip, type ItemState } from "@/design-system";
+import { Badge, Button, Card, EmptyState, ErrorState, IconMenuButton, KpiStrip, KpiTile, Skeleton, StateChip, type ItemState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { BlockerKey, HealthReason, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
 import { projectPeople, projectStrip, projectTimeline, stageLateDays, type ProjectStep } from "@/lib/project-core/project-record";
 import { nextStepText } from "@/lib/project-core/next-step";
-import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, SideSection } from "@/components/record/record-layout";
+import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, SectionTabs, SideSection, useSectionTabs } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { LinkedRecords } from "@/components/record/linked-records";
 import { SiteLocation } from "@/components/ui/site-location";
@@ -73,6 +73,7 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
   const t = useT();
   const format = useProjectFormat();
   const attentionRows = useAttentionRows();
+  const sections = useSectionTabs("stages");
   const { project } = detail;
   const projectId = project.id;
   const running = project.status === "active";
@@ -104,7 +105,7 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
   // the money and what needs attention. The health is the header's badge.
   const kpis = [
     strip.stage ? <KpiTile key="stage" icon={<Flag size={13} />} label={t("Stage")} value={t(strip.stage.name as never)}
-      detail={t("Stage {number} of {total}", { number: strip.stage.position, total: strip.stage.count })} href="#project-stages" /> : null,
+      detail={t("Stage {number} of {total}", { number: strip.stage.position, total: strip.stage.count })} onPress={() => sections.open("stages")} /> : null,
     strip.handover ? <KpiTile key="handover" icon={<CalendarClock size={13} />} label={t("Handover")} value={format.short(strip.handover.date)}
       detail={until?.text} tone={until?.late ? "danger" : undefined} /> : null,
     strip.progress !== null ? <KpiTile key="progress" icon={<ListChecks size={13} />} label={t("Progress")} value={t("{percent}% done", { percent: strip.progress })}
@@ -119,11 +120,11 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
   ].filter(Boolean);
 
   // Every stage as a step (done, now, to come) with its date, owner and lateness.
-  const stages = steps.length ? <SideSection id="project-stages" title={t("Stages")}>
+  const stages = steps.length ? <Card>
     <RecordTimeline layout="list" label={t("Stages")} steps={steps.map((step) => ({
       id: step.id, label: t(step.name as never), state: step.state, date: stepDate(step), late: stepLate(step), people: step.person ? [step.person] : [],
     }))} />
-  </SideSection> : null;
+  </Card> : null;
 
   const attention = error && !overview ? <ErrorState description={error} onRetry={onRetry} /> : !overview ? <Skeleton lines={2} shape="rows" />
     : open ? <SideSection id="project-attention" title={t("Needs attention")}>
@@ -207,6 +208,10 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
         money.available !== null && money.costCurrency ? { label: t("Cash in hand"), value: format.money(money.available, money.costCurrency), tone: Number(money.available) < 0 ? "danger" : undefined } : null,
       ]} />
     </SideSection> : null}
+    {/* PLM-164: the records the project runs through, each a link. */}
+    <SideSection title={t("Linked records")}>
+      <LinkedRecords workspaceId={api.workspaceId} projectId={projectId} current="project" title={null} />
+    </SideSection>
   </RecordPanel>;
 
   const files = [
@@ -228,21 +233,16 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
         next={<>
           <ProjectNextStep api={api} detail={detail} overview={overview} next={next} run={run} onTeam={onTeam} />
           {attention}
-          {stages}
-        </>}
-        activity={<>
-          {reports.length ? <SideSection title={t("Site updates")} action={<Link className={styles.sideLink} href={`/workspace/projects/${projectId}/site`}>{t("View all")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link>}>
-            {/* The same day cards as the Site tab (compact); the summary lines until they load. */}
-            <SiteUpdates workspaceId={api.workspaceId} projectId={projectId} latest={LATEST}
-              fallback={<ActivityList label={t("Site updates")} items={reports.map((report) => ({ id: report.id, text: report.text || t("Site report"), meta: report.byName, at: format.short(report.date) }))} />} />
-          </SideSection> : null}
-          {/* PLM-164: the records the project runs through, each a link; self-contained so the layout can place it. */}
-          <SideSection title={t("Linked records")}>
-            <LinkedRecords workspaceId={api.workspaceId} projectId={projectId} current="project" title={null} />
-          </SideSection>
-          <SideSection title={t("History")}>
-            <RecordHistory workspaceId={api.workspaceId} recordType="project" recordId={projectId} />
-          </SideSection>
+          {/* The long lists as sub-tabs, so the overview stays about one screen; each in its card (the tab names it). */}
+          <SectionTabs tab={sections.tab} onTabChange={sections.setTab} tabsRef={sections.ref} tabs={[
+            ...(stages ? [{ id: "stages", label: t("Stages"), panel: stages }] : []),
+            ...(reports.length ? [{ id: "site", label: t("Site updates"), panel: <Card action={<Link className={styles.sideLink} href={`/workspace/projects/${projectId}/site`}>{t("View all")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link>}>
+              {/* The same day cards as the Site tab (compact); the summary lines until they load. */}
+              <SiteUpdates workspaceId={api.workspaceId} projectId={projectId} latest={LATEST}
+                fallback={<ActivityList label={t("Site updates")} items={reports.map((report) => ({ id: report.id, text: report.text || t("Site report"), meta: report.byName, at: format.short(report.date) }))} />} />
+            </Card> }] : []),
+            { id: "history", label: t("History"), panel: <Card><RecordHistory workspaceId={api.workspaceId} recordType="project" recordId={projectId} /></Card> },
+          ]} />
         </>} />
     </RecordFrame>
   </div>;

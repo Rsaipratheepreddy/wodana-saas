@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { AmountList, CheckList, StateChip, useDesignSystem, type ItemState } from "@/design-system";
+import { AmountList, Card, CheckList, StateChip, useDesignSystem, type ItemState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import { amountText } from "@/lib/approvals/policies";
@@ -66,13 +66,15 @@ export function dealPaidShare(insight: DealInsight) {
  * PLM-066 / PLM-102 / PLM-123: what the Deal File holds, each requirement a link to its live record with its state
  * (done, in progress, missing), grouped as the enquiry type sets them.
  */
-export function DealRequirements({ insight, id }: { insight: DealInsight; id?: string }) {
+export function DealRequirements({ insight, id, title }: { insight: DealInsight; id?: string;
+  /** None inside the Requirements tab, which names it already. */
+  title?: string }) {
   const t = useT();
   const groups = (["common", "furniture", "design", "production"] as const).map((group) => [group, insight.sections.filter((section) => section.group === group)] as const)
     .filter(([, sections]) => sections.length);
   if (!groups.length) return null;
   const count = dealRequirementCount(insight);
-  return <SideSection id={id} title={t("Requirements")} chip={<span className={s.count}>{t("{done} of {total} done", { done: count.done, total: count.total })}</span>}>
+  return <Card level={3} id={id} title={title} chip={<span className={s.count}>{t("{done} of {total} done", { done: count.done, total: count.total })}</span>}>
     {groups.map(([group, sections]) => <div key={group} className={s.group}>
       <h4>{t(GROUP[group])}</h4>
       <ul className={s.sections} aria-label={t(GROUP[group])}>{sections.map((section) => <li key={section.key} data-state={section.state}>
@@ -81,7 +83,7 @@ export function DealRequirements({ insight, id }: { insight: DealInsight; id?: s
         <StateChip state={STATE[section.state]} />
       </li>)}</ul>
     </div>)}
-  </SideSection>;
+  </Card>;
 }
 
 /** PLM-066: the Deal File's money (paid, outstanding, next due, each proposal's own), amounts at the end. */

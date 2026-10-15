@@ -30,7 +30,7 @@ describe("Deal File sections (PLM-066 / PLM-102 / PLM-123)", () => {
   });
 
   it("lists the requirements by group, each a link to its live record with its state as a chip", () => {
-    wrap(<DealRequirements id="deal-requirements" insight={insight} />);
+    wrap(<DealRequirements id="deal-requirements" title="Requirements" insight={insight} />);
     const card = screen.getByRole("region", { name: "Requirements" });
     expect(card).toHaveAttribute("id", "deal-requirements");
     expect(within(card).getByText("1 of 3 done")).toBeInTheDocument();
