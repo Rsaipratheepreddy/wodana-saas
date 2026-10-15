@@ -140,9 +140,19 @@ describe("route changes", () => {
       .toEqual(["technical_measure_done", "drawings_uploaded", "drawings_design_checked", "drawings_client_approved", "factory_slot_booked"]);
     expect(plan.changes.map((entry) => entry.detail)).toEqual(["check removed", "check removed", "check added", "check added"]);
     expect(planRoute({ ...palm, stages: plan.stages }, swap, roles).changes).toEqual([]);
-    expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5 });
+    expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5, boqReview: true, autoStartOnPayment: true });
     expect(problems({ projects: { drawingsClientRole: "Lead Designer", technicalMeasureDays: 0 } })).toEqual([
       "projects.drawingsClientRole is a project role key like designer, or null.", "projects.technicalMeasureDays is a whole number from 1 to 60."]);
+  });
+
+  it("PLM-159 / PLM-161 / PLM-167: reads Palm's BOQ lifecycle and ordering gates, and refuses what isn't on or off", () => {
+    const palm = validateProfile(json("../../../../docs/fixtures/palm-golive-config.json"));
+    expect(palm.purchasing).toEqual({ requireDrawingsVerified: true, requireBoqApproved: true, requirePriceApproval: true, requireQsSignoff: true, requireMaterialListConfirmed: true });
+    expect(validateProfile({ purchasing: { requireQsSignoff: false }, projects: { boqTechnicalRole: "draftsman", boqReview: false } }))
+      .toEqual({ purchasing: { requireQsSignoff: false }, projects: { boqTechnicalRole: "draftsman", boqReview: false } });
+    expect(problems({ purchasing: { requireBoqApproved: "yes", other: true }, projects: { autoStartOnPayment: 1, boqTechnicalRole: "Technical Lead" } })).toEqual([
+      "projects.autoStartOnPayment is true or false.", "projects.boqTechnicalRole is a project role key like technical_designer, or null.",
+      "purchasing has unknown keys: other.", "purchasing.requireBoqApproved is true or false."]);
   });
 
   it("refuses finishes it can't apply, in words (PLM-146/148/156/157)", () => {

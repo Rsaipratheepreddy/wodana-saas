@@ -26,11 +26,12 @@ import { FulfilmentService } from "../fulfilment/fulfilment.service";
 import { LogisticsService } from "../logistics/logistics.service";
 import { DRAWING_CHECKS, type StageCheck, type TemplateStage } from "../project-core/project-checks";
 import { ProjectCoreService } from "../project-core/project-core.service";
+import { OrdersService } from "../purchasing/orders.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
 import { WorkspacesService } from "../workspaces/workspaces.service";
 import type { OpsContext, Report } from "./ops-context";
-import { WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type PackagesFile, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
+import { PURCHASING_GATE_KEYS, WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type PackagesFile, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
 import type { TeamSpec } from "./ops-sandbox-plan";
 import { applyTeams } from "./ops-teams";
 
@@ -779,29 +780,67 @@ const orderPaths: Section = async (ctx, profile, step) => {
 
 // ---------- project settings ----------
 
-type ProjectSettingsView = { settings: { version: number; roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null; technicalMeasureDays: number | null } };
+type ProjectSettingsView = { settings: { version: number; roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null; technicalMeasureDays: number | null;
+  boqReview: boolean; autoStartOnPayment: boolean; boqTechnicalRole: string | null } };
 
-/** PLM-149: who talks to the client about drawings, and when the technical measure is due, through Settings › Projects. */
+/**
+ * PLM-149: who talks to the client about drawings, and when the technical measure is due; PLM-161 / PLM-167: the BOQ
+ * lifecycle, the project starting by itself on the verified upfront payment, and who verifies the BOQ. Through Settings › Projects.
+ */
 const projects: Section = async (ctx, profile, step) => {
   const wanted = profile.projects!;
   const service = ctx.get(ProjectCoreService);
   const current = (await service.settings(ctx.actor, ctx.workspace.id) as ProjectSettingsView).settings;
   const patch: Record<string, unknown> = {};
   const changes: Change[] = [];
-  if (wanted.drawingsClientRole !== undefined) {
-    const label = "drawings go to the client through";
-    if (wanted.drawingsClientRole !== null && !current.roles.some((role) => role.key === wanted.drawingsClientRole))
-      step.missing(label, `no project role "${wanted.drawingsClientRole}"`);
-    else if (current.drawingsClientRole === wanted.drawingsClientRole) step.same(label, shown(wanted.drawingsClientRole));
-    else { patch.drawingsClientRole = wanted.drawingsClientRole; changes.push(diff(label, current.drawingsClientRole, wanted.drawingsClientRole)); }
-  }
+  const role = (key: "drawingsClientRole" | "boqTechnicalRole", label: string) => {
+    if (wanted[key] === undefined) return;
+    if (wanted[key] !== null && !current.roles.some((entry) => entry.key === wanted[key])) step.missing(label, `no project role "${wanted[key]}"`);
+    else if (current[key] === wanted[key]) step.same(label, shown(wanted[key]));
+    else { patch[key] = wanted[key]; changes.push(diff(label, current[key], wanted[key])); }
+  };
+  const flag = (key: "boqReview" | "autoStartOnPayment", label: string) => {
+    if (wanted[key] === undefined) return;
+    if (current[key] === wanted[key]) step.same(label, shown(wanted[key]));
+    else { patch[key] = wanted[key]; changes.push(diff(label, current[key], wanted[key])); }
+  };
+  role("drawingsClientRole", "drawings go to the client through");
   if (wanted.technicalMeasureDays !== undefined) {
     const label = "technical measure due in working days";
     if (current.technicalMeasureDays === wanted.technicalMeasureDays) step.same(label, shown(wanted.technicalMeasureDays));
     else { patch.technicalMeasureDays = wanted.technicalMeasureDays; changes.push(diff(label, current.technicalMeasureDays, wanted.technicalMeasureDays)); }
   }
+  flag("boqReview", "BOQ verified by the technical team and approved by the QS");
+  flag("autoStartOnPayment", "project starts when the upfront payment is verified");
+  role("boqTechnicalRole", "BOQ verified by");
   if (changes.length) await step.change(changes, async () => {
     const fresh = (await service.settings(ctx.actor, ctx.workspace.id) as ProjectSettingsView).settings;
+    return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, ...patch });
+  });
+};
+
+// ---------- purchasing (PLM-159 / PLM-163 / PLM-169) ----------
+
+const PURCHASING_LABELS: Record<(typeof PURCHASING_GATE_KEYS)[number], string> = {
+  requireDrawingsVerified: "orders wait for verified technical drawings", requireBoqApproved: "orders wait for the QS-approved BOQ",
+  requirePriceApproval: "orders and work orders wait for the client's approval of a revised price", requireQsSignoff: "orders are signed off by the QS",
+  requireMaterialListConfirmed: "orders wait for the QS-confirmed material list",
+};
+
+/** The ordering gate's optional checks, through Settings › Purchasing. */
+const purchasing: Section = async (ctx, profile, step) => {
+  const wanted = profile.purchasing!;
+  const service = ctx.get(OrdersService);
+  const current = (await service.settings(ctx.actor, ctx.workspace.id) as { settings: Record<string, unknown> & { version: number } }).settings;
+  const patch: Record<string, unknown> = {};
+  const changes: Change[] = [];
+  for (const key of PURCHASING_GATE_KEYS) {
+    if (wanted[key] === undefined) continue;
+    if (current[key] === wanted[key]) step.same(PURCHASING_LABELS[key], shown(wanted[key]));
+    else { patch[key] = wanted[key]; changes.push(diff(PURCHASING_LABELS[key], current[key], wanted[key])); }
+  }
+  if (changes.length) await step.change(changes, async () => {
+    const fresh = (await service.settings(ctx.actor, ctx.workspace.id) as { settings: { version: number } }).settings;
     return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, ...patch });
   });
 };
@@ -1047,7 +1086,7 @@ export const SECTIONS: Array<[ProfileSection, Section]> = [
   // Design before factory: the design team's project roles (e.g. the Creative Director) exist before the inspections name them.
   ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["quotations", quotations], ["firstResponse", firstResponse],
   ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["factory", factory], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
-  ["catalogCategories", catalogCategories], ["projects", projects], ["finishes", finishes], ["inbox", inbox], ["sales", sales], ["enquiryRequirements", enquiryRequirements],
+  ["catalogCategories", catalogCategories], ["projects", projects], ["purchasing", purchasing], ["finishes", finishes], ["inbox", inbox], ["sales", sales], ["enquiryRequirements", enquiryRequirements],
 ];
 
 /** The files `configure` applies beside its profile (--teams, --packages). */
