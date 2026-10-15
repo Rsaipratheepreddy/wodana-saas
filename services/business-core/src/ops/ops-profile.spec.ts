@@ -20,7 +20,8 @@ describe("configuration profile", () => {
     // PLM-150: two design inspections on joinery and bespoke furniture; the Creative Director inspects on its own package's projects.
     expect(palm.factory?.inspections).toEqual({ enabled: true, stages: [{ kind: "raw", label: "Inspection 1 (raw material)" }, { kind: "final", label: "Inspection 2 (finished)" }],
       trades: ["Joinery", "Bespoke furniture"], inspectorRole: "designer", directorRole: "creative_director", directorPackages: ["creative_director"], workingDays: undefined });
-    expect(palm.quotations).toMatchObject({ validityDays: 7, qsReview: true, qsPrices: "rules", qsWorkPackages: ["Joinery", "Bespoke furniture"] });
+    // Palm: the QS prices only quotations with joinery or bespoke lines; a BOQ-required path alone sends nothing.
+    expect(palm.quotations).toMatchObject({ validityDays: 7, qsReview: true, qsPrices: "lines", qsWorkPackages: ["Joinery", "Bespoke furniture"] });
     expect(palm.firstResponse).toEqual({ minutes: 60, workingCalendar: { days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "18:00" } });
     expect(palm.financeRequests?.inbox).toBe("accounts@palmlivingae.com");
     expect(palm.financeRequests?.paymentMethods?.map((method) => [method.name, method.refundDays])).toEqual([["Bank transfer / card", null], ["Stripe", null], ["Tabby", null]]);
@@ -87,7 +88,7 @@ describe("configuration profile", () => {
       expect.stringContaining("factory.inspections.inspectorRole is a project role key"),
       expect.stringContaining("factory.inspections.workingDays is a whole number from 1 to 30"),
       expect.stringContaining("quotations.validityDays is a whole number from 1 to 365"),
-      expect.stringContaining("quotations.qsPrices is one of all, rules"),
+      expect.stringContaining("quotations.qsPrices is one of all, rules, lines"),
       expect.stringContaining("firstResponse.warningMinutes is less than minutes"),
       expect.stringContaining("firstResponse.workingCalendar.days"),
       expect.stringContaining("firstResponse.workingCalendar.end is after start"),

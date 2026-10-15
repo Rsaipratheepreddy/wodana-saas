@@ -10,8 +10,11 @@ export type QuotationSettings = {
   markupDisclosure?: "all_inclusive" | "disclosed_markup" | "fee_based";
   /** PLM-082: a QS confirms the pricing before a quotation goes to the client (the master switch). */
   qsReview?: boolean;
-  /** Every quotation, or only where the rules apply: a BOQ order, or lines in a marked work package or catalogue kind. */
-  qsReviewScope?: "all" | "rules";
+  /**
+   * Every quotation; only where the rules apply (a BOQ order, or lines in a marked work package or catalogue kind); or
+   * only quotations with such lines (a BOQ order alone sends nothing).
+   */
+  qsReviewScope?: "all" | "rules" | "lines";
   /** Catalogue kinds whose lines need the QS under the rules. */
   qsReviewItemTypes?: string[];
   /** §6.20: variations follow the QS rules, or never go to the QS. */

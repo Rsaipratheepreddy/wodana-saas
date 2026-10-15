@@ -9,7 +9,7 @@ import { PRODUCTION_STEP_KINDS, type ProductionStep } from "../factory/productio
 import { DEDUCT_EVENTS, LEAD_FROM, RESERVE_EVENTS } from "../fulfilment/fulfilment-rules";
 import { CHECK_KINDS } from "../project-core/project-checks";
 import { SECTIONS as PORTAL_SECTIONS, type Section as PortalSection } from "../client-portal/portal-settings";
-import { QS_ITEM_TYPES, QS_SCOPES } from "../proposals/qs-requirement";
+import { QS_ITEM_TYPES, QS_SCOPES, type QsScope } from "../proposals/qs-requirement";
 
 /**
  * A workspace configuration profile for the operator CLI's `configure` command: generic configuration as data
@@ -60,7 +60,8 @@ export type Profile = {
     /** PLM-174: the path E checks before a work order on a bespoke job is released (each off unless switched on). */
     release?: { technicalHandover?: boolean; factoryRequirements?: boolean; qsApproved?: boolean };
   };
-  quotations?: { validityDays?: number; qsReview?: boolean; qsPrices?: "all" | "rules"; qsItemTypes?: string[]; qsWorkPackages?: string[]; valueEngineeringFreeRounds?: number | null };
+  /** qsPrices: which quotations the QS prices (all, rules, or lines: only quotations with lines marked for QS review). */
+  quotations?: { validityDays?: number; qsReview?: boolean; qsPrices?: QsScope; qsItemTypes?: string[]; qsWorkPackages?: string[]; valueEngineeringFreeRounds?: number | null };
   firstResponse?: { minutes: number; warningMinutes?: number; workingCalendar?: { days: string[]; start: string; end: string; timeZone?: string } };
   financeRequests?: {
     inbox?: string | null; autoStageInvoiceRequests?: boolean;

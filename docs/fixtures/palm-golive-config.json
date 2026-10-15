@@ -160,7 +160,7 @@
   "quotations": {
     "validityDays": 7,
     "qsReview": true,
-    "qsPrices": "rules",
+    "qsPrices": "lines",
     "qsWorkPackages": [
       "Joinery",
       "Bespoke furniture"

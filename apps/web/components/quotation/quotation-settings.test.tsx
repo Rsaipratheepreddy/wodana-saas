@@ -58,4 +58,23 @@ describe("Settings → Quotations: the default payment plan (m24)", () => {
     const patch = fetcher.mock.calls.find(([url, init]) => String(url).includes("work-packages/wp-1") && init?.method === "PATCH")!;
     expect(JSON.parse(String(patch[1]!.body))).toEqual({ qsReview: true });
   });
+
+  it("sets QS review to the lines only: the catalogue kinds and the work packages marked for QS still apply", async () => {
+    let current: Record<string, unknown> = { ...settings, qsReview: true, qsReviewScope: "all", qsReviewItemTypes: [] };
+    const trades = [{ id: "wp-1", name: "Joinery", archived: false, qsReview: true }];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+      if (url.includes("/settings") && init?.method === "PUT") { current = { ...body, version: Number(current.version) + 1 }; return { ok: true, status: 200, json: async () => current }; }
+      return { ok: true, status: 200, json: async () => ({ settings: current, workPackages: trades, priceBooks: [], paymentTemplates: [], canManage: true }) };
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<DesignSystemProvider><QuotationSettingsPage workspaceId="w" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: /Quotations the QS prices/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Only quotations with lines marked for QS review" }));
+    expect(screen.getByRole("button", { name: /Quotations the QS prices/ })).toHaveTextContent("Only quotations with lines marked for QS review");
+    expect(screen.getByRole("checkbox", { name: "Assembly" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "QS review" })).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(current).toMatchObject({ qsReviewScope: "lines" }));
+  });
 });
