@@ -46,7 +46,9 @@ export class BrandAssetStorageService {
     const accessKeyId = config.get<string>("OBJECT_STORAGE_ACCESS_KEY_ID");
     const secretAccessKey = config.get<string>("OBJECT_STORAGE_SECRET_ACCESS_KEY");
     const credentials = accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined;
-    const common = { region, forcePathStyle, credentials };
+    // A browser PUTs the file to a signed link, so the link must not carry a checksum: the SDK's default
+    // (WHEN_SUPPORTED) signs the CRC32 of an empty body into it, and S3 then rejects every real upload.
+    const common = { region, forcePathStyle, credentials, requestChecksumCalculation: "WHEN_REQUIRED" as const, responseChecksumValidation: "WHEN_REQUIRED" as const };
     this.dataClient = new S3Client({ ...common, endpoint });
     this.signingClient = new S3Client({ ...common, endpoint: publicEndpoint });
   }

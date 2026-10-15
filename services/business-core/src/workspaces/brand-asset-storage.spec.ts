@@ -36,6 +36,8 @@ describe('release image and object storage compatibility', () => {
     expect(url.pathname).toBe('/workspace-assets/workspace/report/photo.png');
     expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
     expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[a-f0-9]{64}$/);
+    // A browser upload carries its own body: a checksum signed into the link (the empty body's) would be refused.
+    expect([...url.searchParams.keys()].filter((key) => key.toLowerCase().includes('checksum'))).toEqual([]);
   });
 
   it('writes a checksum-bearing system artifact outside tenant upload quota', async () => {
