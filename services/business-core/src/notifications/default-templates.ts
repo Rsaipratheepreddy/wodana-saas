@@ -485,7 +485,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.client_update_auto_sent", channel: "in_app", subject: "{{title}}: the client update went out", body: "Nobody sent or discarded it within {{note}}, so it went to the client by itself.", variables: ["title", "clientName", "actor", "note"] },
   // Technical drawings to production release (project-core/project-drawings.ts, project-release.ts): who starts the
   // project, the technical team, the factory.
-  { code: "project.ready_to_start", channel: "in_app", subject: "Ready to start · {{title}}", body: "{{actor}} approved the deal. Name the project manager and start the project.", variables: ["title", "clientName", "actor", "note"] },
+  // The sentence comes from the event: the deal approved, or the upfront payment verified without a project manager.
+  { code: "project.ready_to_start", channel: "in_app", subject: "Ready to start · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.ready_to_start", channel: "email", subject: "Ready to start: {{title}}", body: "{{actor}} approved the deal for {{clientName}}.\n\nName the project manager and start the project.", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.drawings_changes", channel: "in_app", subject: "Drawings {{revision}} need changes · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note", "date"] },
   { code: "project.drawings_approved", channel: "in_app", subject: "Drawings approved · {{title}}", body: "{{clientName}} approved drawings {{revision}} on {{date}}. The drawings, material list and BOQ are in the project.", variables: ["title", "clientName", "actor", "revision", "note", "date"] },

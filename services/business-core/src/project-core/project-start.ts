@@ -229,7 +229,10 @@ export async function autoStartProject(client: Db, access: WorkspaceAccessServic
         variables: { title: facts.name, clientName: facts.clientName, actor: "", revision: "", note }, deepLink: "/workspace/projects",
         idempotencyKey: `project.ready_to_start:${caseId}:${quote.id}:${person.userId}` });
   };
-  if (!lead) { await tellManagers("name the project manager first."); return { started: false, projectId: null, reason: "no_manager" }; }
+  if (!lead) {
+    await tellManagers(`The upfront payment for ${facts.clientName} is verified. Name the project manager, then start the project.`);
+    return { started: false, projectId: null, reason: "no_manager" };
+  }
   const template = (await ensureTemplates(client, workspaceId, actorUserId)).find((item) => item.isDefault);
   await client.query("SAVEPOINT auto_start");
   try {
@@ -242,7 +245,7 @@ export async function autoStartProject(client: Db, access: WorkspaceAccessServic
     return { started: !started.existing, projectId: started.projectId, reason: started.existing ? "started" : null };
   } catch (error) {
     await client.query("ROLLBACK TO SAVEPOINT auto_start");
-    await tellManagers((error as Error).message.slice(0, 300));
+    await tellManagers(`The upfront payment for ${facts.clientName} is verified, but the project could not start: ${(error as Error).message.slice(0, 300)}`);
     return { started: false, projectId: null, reason: "failed" };
   }
 }

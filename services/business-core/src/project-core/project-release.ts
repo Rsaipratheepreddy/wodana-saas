@@ -34,7 +34,8 @@ export async function noticeReadyToStart(db: Db, input: { workspaceId: string; c
   for (const person of await permissionHolders(db, input.workspaceId, ["projects.manage"])) {
     if (person.userId === input.actorUserId) continue;
     const message = { workspaceId: input.workspaceId, recipientUserId: person.userId, code: "project.ready_to_start", eventType: "project.ready_to_start",
-      variables: { title: facts.title, clientName: facts.clientName, actor: actor || "Someone", note: "" }, deepLink: `/workspace/projects?start=${input.caseId}` };
+      variables: { title: facts.title, clientName: facts.clientName, actor: actor || "Someone", note: `${actor || "Someone"} approved the deal. Name the project manager and start the project.` },
+      deepLink: `/workspace/projects?start=${input.caseId}` };
     const key = `project.ready_to_start:${input.caseId}:${person.userId}`;
     const result = await notifyUserInApp(db, { ...message, idempotencyKey: key });
     await queueUserEmail(db, { ...message, idempotencyKey: `${key}:email` });

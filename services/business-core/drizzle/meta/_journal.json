@@ -1611,6 +1611,13 @@
       "when": 1801740020400,
       "tag": "0370_qs_scope_lines",
       "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1801740020500,
+      "tag": "0371_ready_to_start_notice",
+      "breakpoints": true
     }
   ]
 }
