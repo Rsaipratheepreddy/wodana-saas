@@ -48,7 +48,13 @@ export type PurchasingSettings = {
   requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; orderAheadDays: number; invoiceTolerancePercent: string; spendingGuard: "off" | "warn" | "strict";
   /** Invoices are paid only through an approved payment run; advances on orders are still recorded directly. */
   paymentRunsRequired: boolean; version: number;
+  /** PLM-159 / PLM-163 / PLM-169: the ordering gate's optional checks. */
+  requireDrawingsVerified?: boolean; requireBoqApproved?: boolean; requirePriceApproval?: boolean; requireQsSignoff?: boolean; requireMaterialListConfirmed?: boolean;
 };
+
+/** PLM-159: one check of the ordering gate on an order, and the "Not applicable" mark on it when someone who approves orders made one. */
+export type GateKey = "drawings_verified" | "boq_approved" | "price_approved" | "qs_signoff" | "material_list_confirmed";
+export type GateCheck = { key: GateKey; required: boolean; passed: boolean; missing: string; waiver: { reason: string; byName: string | null; at: string } | null };
 
 /** Something a running project still needs to order. */
 export type Need = {
@@ -57,7 +63,8 @@ export type Need = {
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; clientChoice: boolean;
   /** Why it can't be ordered yet: the client's material sign-off, or the client's payment for the order. */
   /** PLM-148: client_signature: the client hasn't signed the samples or data sheets of the job's finishes yet. */
-  blocked: "material_signoff" | "client_signature" | "client_payment" | null;
+  /** PLM-163: boq_approval: the project BOQ isn't QS-approved yet. */
+  blocked: "boq_approval" | "material_signoff" | "client_signature" | "client_payment" | null;
   /** The supplier the catalog prefers for it. */
   supplierId?: string | null;
   /** When the work that uses it starts; ordered its lead time (in days) before that. */
@@ -114,6 +121,8 @@ export type OrderDetail = OrderRow & {
   fundsOverrideAt: string | null; fundsOverrideReason: string | null; fundsOverrideByName: string | null;
   /** Who said it goes ahead while its project is on hold, and why. */
   holdOverrideAt?: string | null; holdOverrideReason?: string | null; holdOverrideByName?: string | null;
+  /** PLM-159: the QS's sign-off on the draft (cleared when its lines change). */
+  qsSignedOffAt?: string | null; qsSignedOffByName?: string | null;
 };
 export type Shipment = {
   id: string; carrier: string; trackingRef: string; trackingUrl: string; status: ShipmentStatus; shippedOn: string | null; eta: string | null; note: string;
@@ -157,6 +166,8 @@ export type OrderState = {
   holdProjects?: Array<{ id: string; reference: string }>;
   bills?: OrderBill[] | null;
   blockers?: LineBlocker[];
+  /** PLM-159: the ordering gate's checks while the order isn't placed, and whether this person (the QS) may sign it off. */
+  gate?: GateCheck[]; canQsSignOff?: boolean;
 };
 
 export type PriceRequestStatus = "open" | "awarded" | "cancelled";

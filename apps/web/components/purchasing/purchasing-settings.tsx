@@ -12,7 +12,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const t = useT();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
-  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; paid: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict"; runs: boolean } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; paid: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict"; runs: boolean;
+    drawings: boolean; boq: boolean; price: boolean; qsSignoff: boolean; materialList: boolean } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   // The form as last loaded or saved, to tell unsaved changes apart and to discard them.
@@ -25,7 +26,9 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       signoff: next.settings.requireMaterialSignoff, paid: Boolean(next.settings.requireClientPayment), approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
       tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto,
       adjustLimit: next.settings.stockAdjustApprovalValue ? quantityText(next.settings.stockAdjustApprovalValue) : "", ahead: String(next.settings.orderAheadDays),
-      invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0", guard: next.settings.spendingGuard, runs: next.settings.paymentRunsRequired });
+      invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0", guard: next.settings.spendingGuard, runs: next.settings.paymentRunsRequired,
+      drawings: Boolean(next.settings.requireDrawingsVerified), boq: Boolean(next.settings.requireBoqApproved), price: Boolean(next.settings.requirePriceApproval),
+      qsSignoff: Boolean(next.settings.requireQsSignoff), materialList: Boolean(next.settings.requireMaterialListConfirmed) });
     setForm(loaded); setBaseline(JSON.stringify(loaded));
   };
   const load = useCallback(async () => {
@@ -42,7 +45,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireClientPayment: form.paid, requireApprovedSupplier: form.approved,
         requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto,
         stockAdjustApprovalValue: form.adjustLimit || null, orderAheadDays: Number(form.ahead || "0"), invoiceTolerancePercent: form.invoiceTolerance || "0", spendingGuard: form.guard,
-        paymentRunsRequired: form.runs });
+        paymentRunsRequired: form.runs, requireDrawingsVerified: form.drawings, requireBoqApproved: form.boq, requirePriceApproval: form.price, requireQsSignoff: form.qsSignoff,
+        requireMaterialListConfirmed: form.materialList });
       accept({ ...data, settings }); setJustSaved(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
@@ -70,6 +74,22 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       </SettingsRow>
       <SettingsRow label={t("Supplier approved")} hint={t("Orders go only to approved suppliers.")}>
         <Switch aria-label={t("Supplier approved")} isDisabled={readOnly} isSelected={form.approved} onChange={(approved) => setForm({ ...form, approved })} />
+      </SettingsRow>
+      {/* PLM-159 / PLM-163 / PLM-169: the optional checks; someone who approves orders can mark any one not applicable on an order, with a reason. */}
+      <SettingsRow label={t("Technical drawings verified")} hint={t("The project's drawings or data sheets passed their check, where an item needs them.")}>
+        <Switch aria-label={t("Technical drawings verified")} isDisabled={readOnly} isSelected={form.drawings} onChange={(drawings) => setForm({ ...form, drawings })} />
+      </SettingsRow>
+      <SettingsRow label={t("BOQ approved by the QS")} hint={t("A project's lines are offered and ordered only once the QS approved its BOQ.")}>
+        <Switch aria-label={t("BOQ approved by the QS")} isDisabled={readOnly} isSelected={form.boq} onChange={(boq) => setForm({ ...form, boq })} />
+      </SettingsRow>
+      <SettingsRow label={t("Client approved a revised price")} hint={t("An order or work order whose cost is above the agreed amount, or whose change is pending, waits for the client's approved price correction.")}>
+        <Switch aria-label={t("Client approved a revised price")} isDisabled={readOnly} isSelected={form.price} onChange={(price) => setForm({ ...form, price })} />
+      </SettingsRow>
+      <SettingsRow label={t("Order signed off by the QS")} hint={t("The QS signs off the draft order before it is placed.")}>
+        <Switch aria-label={t("Order signed off by the QS")} isDisabled={readOnly} isSelected={form.qsSignoff} onChange={(qsSignoff) => setForm({ ...form, qsSignoff })} />
+      </SettingsRow>
+      <SettingsRow label={t("Material list confirmed by the QS")} hint={t("The QS confirmed the project's material list as it is now.")}>
+        <Switch aria-label={t("Material list confirmed by the QS")} isDisabled={readOnly} isSelected={form.materialList} onChange={(materialList) => setForm({ ...form, materialList })} />
       </SettingsRow>
       <SettingsRow label={t("Order ahead")} hint={t("Days before it's needed that something is ordered, when the supplier's lead time isn't known.")}>
         <TextInput aria-label={t("Order ahead")} label={null} isReadOnly={readOnly} inputMode="numeric" suffix={t("days")} value={form.ahead}

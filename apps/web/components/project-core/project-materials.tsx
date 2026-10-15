@@ -75,9 +75,14 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
     { id: "status", label: t("Status"), width: "14%", render: (item) => item.status ? <LineStatusLabel status={item.status} /> : <span className={styles.muted}>—</span> },
   ];
 
+  // PLM-159: the QS's confirmation of the list as it is now (the ordering gate reads it where the firm asks).
+  const qs = data.qsConfirmation;
+  const qsText = qs?.current ? t("Confirmed by the QS ({name}, {date})", { name: qs.confirmedByName ?? "", date: format.when(qs.confirmedAt) })
+    : qs ? t("Changed since the QS confirmed it on {date}", { date: format.when(qs.confirmedAt) }) : data.qsGate ? t("Not confirmed by the QS yet") : "";
   return <div className={styles.changes}>
     <div className={styles.scopeToolbar}>
       <span className={styles.materialStatus} data-state={data.state}>{status}</span>
+      {data.canConfirmQs && data.items.length && !qs?.current ? <Button size="compact" onPress={() => void run("confirm_material_list")}>{t("Confirm material list (QS)")}</Button> : null}
       {data.canEdit ? <div className={styles.toolbarActions}>
         {!locked ? <>
           {suggested ? <span className={styles.muted} role="status">{suggested}</span> : null}
@@ -91,6 +96,7 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
         </>}
       </div> : null}
     </div>
+    {qsText ? <p className={styles.muted} role="status">{qsText}</p> : null}
     {data.items.length
       ? <GroupedTable<MaterialItem> ariaLabel={t("Material list")} columns={columns} selectable={false} getRowId={(item) => item.id} getRowLabel={(item) => item.name}
           sections={[{ id: "all", label: t("{count} materials", { count: data.items.length }), rows: data.items, emptyMessage: "" }]}

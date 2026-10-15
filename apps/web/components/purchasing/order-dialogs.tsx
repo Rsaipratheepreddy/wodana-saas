@@ -11,15 +11,17 @@ import { quantityText, useOrderLabels } from "./order-labels";
 import styles from "./purchasing.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
-export type ReasonKind = "cancel" | "change" | "return" | "close" | "continue" | "funds";
+export type ReasonKind = "cancel" | "change" | "return" | "close" | "continue" | "funds" | "waive";
 
-/** One reason, and the action it's for (cancel, change, send back, close, continue on hold, go ahead beyond the money). */
+/** One reason, and the action it's for (cancel, change, send back, close, continue on hold, go ahead beyond the money, a check that doesn't apply). */
 export function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind: ReasonKind; optional?: boolean; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : kind === "continue" ? t("Continue this order") : kind === "funds" ? t("Let it go ahead") : t("Send back");
+  const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : kind === "continue" ? t("Continue this order")
+    : kind === "funds" ? t("Let it go ahead") : kind === "waive" ? t("Not applicable") : t("Send back");
   const label = kind === "cancel" ? t("Why it's cancelled") : kind === "change" ? t("What's changing") : kind === "close" ? t("Why the rest won't come")
-    : kind === "continue" ? t("Why it continues while the supplier is on hold") : kind === "funds" ? t("Why it goes ahead beyond the money in hand") : t("What needs to change");
+    : kind === "continue" ? t("Why it continues while the supplier is on hold") : kind === "funds" ? t("Why it goes ahead beyond the money in hand")
+    : kind === "waive" ? t("Why this check doesn't apply to the order") : t("What needs to change");
   return <FormDialog size="md" title={title} description={kind === "change" ? t("The order goes back to draft and through approval again.") : undefined}
     onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!optional && !reason.trim()} submitLabel={title}
     submitVariant={kind === "cancel" ? "danger" : "primary"} onSubmit={() => onSave(reason.trim())}>

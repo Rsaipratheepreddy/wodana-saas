@@ -449,6 +449,39 @@ describe("ordering", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "submit", overReason: "Cutting waste" }));
   });
 
+  it("PLM-159 / PLM-163: shows the ordering gate's checks on a draft, lets an approver mark one not applicable with a reason, and keeps lines waiting for the QS's BOQ approval apart", async () => {
+    nav.query = "order=o1";
+    const gate = (waived: boolean) => [
+      { key: "boq_approved" as const, required: true, passed: false, missing: "The BOQ of PRJ-0007 isn't approved by the QS yet.", waiver: waived ? { reason: "Agreed separately", byName: "Ava Approver", at: "2026-10-15T09:00:00Z" } : null },
+      { key: "qs_signoff" as const, required: true, passed: true, missing: "", waiver: null },
+    ];
+    let current = orderState({}, { gate: gate(false) });
+    const fetcher = mount((url, body) => {
+      if (body?.action === "waive_check") current = orderState({ version: 2 }, { gate: gate(true) });
+      return url.includes("/orders/o1") ? current : ordersList;
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    const checks = within(sheet).getByRole("list", { name: "Before it's placed" });
+    expect(within(checks).getByText("BOQ approved by the QS")).toBeInTheDocument();
+    expect(within(checks).getByText("The BOQ of PRJ-0007 isn't approved by the QS yet.")).toBeInTheDocument();
+    expect(within(checks).getByText("Signed off by the QS")).toBeInTheDocument();
+    await userEvent.click(within(checks).getByRole("button", { name: "Not applicable" }));
+    const dialog = await screen.findByRole("dialog", { name: "Not applicable" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Why this check doesn't apply to the order" }), "Agreed separately");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Not applicable" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "waive_check", checkKey: "boq_approved", reason: "Agreed separately", version: 1 }));
+    expect(await within(sheet).findByText("Not applicable, Ava Approver: Agreed separately")).toBeInTheDocument();
+  });
+
+  it("PLM-163: keeps lines waiting for the QS's approval of the BOQ in their own queue, with the way to the project", async () => {
+    mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ blocked: "boq_approval" })] } : url.includes("/suppliers") ? state() : ordersList));
+    page("to-order");
+    await userEvent.click(await screen.findByRole("button", { name: /^BOQ approval\s*1$/ }));
+    expect(await screen.findByText("Waiting for the QS to approve the BOQ")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Get the BOQ approved" })).toHaveAttribute("href", expect.stringContaining("/scope"));
+  });
+
   it("keeps over-ordered items in To order with how much too many", async () => {
     mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ placed: "14.0000", remaining: "-2.0000", changedBy: "VO-2" })] } : ordersList));
     page("to-order");

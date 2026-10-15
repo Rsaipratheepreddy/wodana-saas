@@ -98,6 +98,21 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
       <SettingsRow label={t("Project numbers")} hint={t("{example} and onwards.", { example: `${form.referencePrefix || "PRJ"}-0001` })}>
         <TextInput aria-label={t("Project numbers")} label={null} isReadOnly={readOnly} value={form.referencePrefix} onChange={(value) => setForm({ ...form, referencePrefix: value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12) })} />
       </SettingsRow>
+      {/* PLM-161: the project (and its draft BOQ) starts by itself once the accepted quotation's upfront payment is verified and the rules above pass. */}
+      <SettingsRow label={t("Start when the upfront payment is verified")} hint={t("The project starts by itself, with its draft BOQ, once Finance verifies the payment and the rules above pass. The project manager comes from the planning record.")}>
+        <Switch aria-label={t("Start when the upfront payment is verified")} isDisabled={readOnly} isSelected={Boolean(form.autoStartOnPayment)} onChange={(value) => setForm({ ...form, autoStartOnPayment: value })} />
+      </SettingsRow>
+    </SettingsSection>
+    <SettingsSection id="boq" title={t("Project BOQ")}>
+      {/* PLM-167 / PLM-168: the BOQ lifecycle on the Scope tab, and who verifies it before the QS approves. */}
+      <SettingsRow label={t("Verified and approved")} hint={t("The technical team verifies the BOQ, the QS approves it (kept as BOQ R-n), the project manager locks it.")}>
+        <Switch aria-label={t("Verified and approved")} isDisabled={readOnly} isSelected={Boolean(form.boqReview)} onChange={(value) => setForm({ ...form, boqReview: value })} />
+      </SettingsRow>
+      {form.boqReview ? <SettingsRow label={t("Verified by")} hint={t("The project manager can always verify it.")}>
+        <SelectField aria-label={t("Verified by")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.boqTechnicalRole ?? "technical_designer"}
+          onSelectionChange={(key) => setForm({ ...form, boqTechnicalRole: key === "technical_designer" ? null : String(key) })}
+          items={form.roles.filter((role) => role.key !== LEAD).map((role) => ({ id: role.key, label: t(role.label as never) }))} />
+      </SettingsRow> : null}
     </SettingsSection>
     <SettingsSection id="variations" title={t("Changes")}>
       <SettingsRow label={t("Variations are paid")}>
@@ -160,7 +175,8 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
       onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment,
         variationPaymentRule: form.variationPaymentRule ?? "before_work", autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
         reportDueTime: form.reportDueTime ?? "18:00", autoSendPendingReports: Boolean(form.autoSendPendingReports), weeklyRollup: Boolean(form.weeklyRollup),
-        drawingsClientRole: form.drawingsClientRole ?? null, technicalMeasureDays: form.technicalMeasureDays ?? null }); setBusy(false); }} />}
+        drawingsClientRole: form.drawingsClientRole ?? null, technicalMeasureDays: form.technicalMeasureDays ?? null,
+        boqReview: Boolean(form.boqReview), autoStartOnPayment: Boolean(form.autoStartOnPayment), boqTechnicalRole: form.boqTechnicalRole ?? null }); setBusy(false); }} />}
   </>;
 }
 

@@ -10,7 +10,7 @@ import {
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, currencyDecimals, orderTotals, priceLine, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
-import type { DeliverTo, OrderLine, OrderState, PaymentTerms, PurchasingSettings, Shipment } from "@/lib/purchasing/types";
+import type { DeliverTo, GateCheck, GateKey, OrderLine, OrderState, PaymentTerms, PurchasingSettings, Shipment } from "@/lib/purchasing/types";
 import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import {
@@ -32,7 +32,7 @@ type Form = {
 };
 /** What the list asked the order to do when it opened it. */
 export type OrderIntent = "send" | "confirm" | "chase" | "receive" | "close";
-type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | "funds" | { shipment: Shipment | null } | null;
+type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | "funds" | { shipment: Shipment | null } | { waive: GateKey } | null;
 /** Still to come on a line: ordered less cancelled, credited, accepted and waiting for inspection. */
 const stillToCome = (line: OrderLine) => subtractExact(line.quantity, addExact(line.cancelled, line.credited, line.accepted, line.pending));
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
@@ -163,6 +163,16 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
     return Boolean(state?.neededBy[lineId] && due && due > state.neededBy[lineId] && (!line || stillToCome(line) !== "0"));
   };
   const contractOf = (lineId: string) => (state?.contracts ?? []).find((item) => item.lineId === lineId);
+  // PLM-159: the ordering gate's checks, in the firm's words, with where each is put right.
+  const gate = state?.gate ?? [];
+  const gateLabel: Record<GateKey, string> = { drawings_verified: t("Technical drawings verified"), boq_approved: t("BOQ approved by the QS"), price_approved: t("Client approved the price"),
+    qs_signoff: t("Signed off by the QS"), material_list_confirmed: t("Material list confirmed by the QS") };
+  const gateFix = (check: GateCheck) => {
+    const project = order?.projects[0];
+    if (!project || check.key === "qs_signoff") return null;
+    const view = check.key === "drawings_verified" ? "drawings" : check.key === "price_approved" ? "changes" : check.key === "material_list_confirmed" ? "materials" : null;
+    return <Link className={ops.projectLink} href={`${projectHref(project.id, "scope")}${view ? `?view=${view}` : ""}`}>{t("Open the project")}</Link>;
+  };
   const canDecide = (line: OrderLine) => Boolean(state?.canApprove && line.alternateStatus === "offered" && line.alternateOfferedBy !== state?.me);
   /** What has arrived on a line so far, once anything has. */
   const arrived = (line: OrderLine | undefined) => {
@@ -401,6 +411,17 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
       {over.length ? <InlineNotice tone="info" message={t("More than the project needs: {lines}", { lines: over.map((line) => `${line.description} +${quantityText(line.over)} ${line.unit}`.trim()).join(", ") })} /> : null}
       {over.length && draft ? <TextInput label={t("Why order more than needed")} isRequired value={overReason || order.overReason || ""} onChange={setOverReason} /> : null}
       {order.overReason && !draft ? <InlineNotice tone="info" message={t("Ordered more than needed: {reason}", { reason: order.overReason })} /> : null}
+      {/* PLM-159: what must hold before the order is placed; someone who approves orders can mark a check not applicable here, with a reason. */}
+      {gate.length ? <ul className={ops.list} aria-label={t("Before it's placed")}>{gate.map((check) => <li key={check.key}>
+        <Cell title={gateLabel[check.key]} tone={check.passed ? "success" : check.waiver ? "info" : "danger"}
+          meta={check.passed ? t("Done") : check.waiver ? t("Not applicable, {name}: {reason}", { name: check.waiver.byName ?? "", reason: check.waiver.reason }) : check.missing} />
+        {check.passed ? null : check.waiver ? (state.canApprove ? <Button size="compact" variant="quiet" isLoading={busy} onPress={() => void run("clear_waiver", { checkKey: check.key })}>{t("Applies again")}</Button> : null)
+          : <span className={styles.lineActions}>
+            {check.key === "qs_signoff" && state.canQsSignOff ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void run("qs_signoff")}>{t("Sign off (QS)")}</Button> : gateFix(check)}
+            {state.canApprove ? <Button size="compact" variant="quiet" onPress={() => setDialog({ waive: check.key })}>{t("Not applicable")}</Button> : null}
+          </span>}
+      </li>)}</ul> : null}
+      {order.qsSignedOffAt && !gate.some((check) => check.key === "qs_signoff") ? <InlineNotice tone="info" message={t("Signed off by the QS ({name}, {date})", { name: order.qsSignedOffByName ?? "", date: format.when(order.qsSignedOffAt) })} /> : null}
       {(state.blockers ?? []).length ? <ul className={ops.list} aria-label={t("Work held up")}>{state.blockers!.map((blocker) => <li key={blocker.workItemId}>
         <Cell title={<Link className={ops.projectLink} href={`${projectHref(blocker.projectId, "plan")}?item=${blocker.workItemId}`}>{`${blocker.projectReference} #${blocker.number} · ${blocker.title}`}</Link>}
           meta={blocker.blocks === 1 ? t("Holding up 1 task") : t("Holding up {count} tasks", { count: blocker.blocks })} tone="danger" />
@@ -423,7 +444,9 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
     {dialog === "continue" ? <ReasonDialog kind="continue" onClose={() => setDialog(null)} onSave={async (note) => { await run("continue_on_hold", { note }, undefined, true); setDialog(null); }} /> : null}
     {dialog === "funds" ? <ReasonDialog kind="funds" onClose={() => setDialog(null)} onSave={async (reason) => { await run("override_funds", { reason }, undefined, true); setDialog(null); }} /> : null}
     {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { await run("chase", { note, promisedDate }, undefined, true); setDialog(null); }} /> : null}
-    {dialog && typeof dialog === "object" ? <ShipmentDialog shipment={dialog.shipment} onClose={() => setDialog(null)}
+    {dialog && typeof dialog === "object" && "waive" in dialog ? <ReasonDialog kind="waive" onClose={() => setDialog(null)}
+      onSave={async (reason) => { await run("waive_check", { checkKey: dialog.waive, reason }, undefined, true); setDialog(null); }} /> : null}
+    {dialog && typeof dialog === "object" && "shipment" in dialog ? <ShipmentDialog shipment={dialog.shipment} onClose={() => setDialog(null)}
       onSave={async (input) => { await run("track", input, undefined, true); { setDialog(null); setTab("deliveries"); } }} /> : null}
     {offering ? <OfferAlternateDialog line={offering} currency={order?.currency} onClose={() => setOffering(null)}
       onSave={async (input) => { await run("offer_alternate", { lineId: offering.id, ...input }, undefined, true); setOffering(null); }} /> : null}
