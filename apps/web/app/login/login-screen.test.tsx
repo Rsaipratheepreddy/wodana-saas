@@ -359,3 +359,14 @@ describe("tenant sign-in background", () => {
     expect(panel(container)).toHaveAttribute("data-custom-background", "true");
   });
 });
+
+describe("the firm's logo on the sign-in card", () => {
+  it("shows the logo alone when there is one, and the name when there isn't", () => {
+    const { unmount } = render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "La'espace", loginSlug: "laespace", logoUrl: "/api/auth/tenant-logo/laespace" }} />);
+    expect(screen.getByRole("img", { name: "La'espace" })).toBeInTheDocument();
+    expect(document.querySelector("strong")?.textContent ?? "").not.toBe("La'espace");
+    unmount();
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Studio B", loginSlug: "studio-b", logoUrl: null }} />);
+    expect(screen.getByText("Studio B", { selector: "strong" })).toBeInTheDocument();
+  });
+});

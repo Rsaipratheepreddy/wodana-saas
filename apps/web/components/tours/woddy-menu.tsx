@@ -16,7 +16,7 @@ type WoddyMenuProps = {
 };
 
 /**
- * The top-bar Woddy button. On desktop and tablet it opens a menu: explain this screen, the tours with their
+ * The top-bar Woddy button. On desktop and tablet it opens a menu: explain this screen (on a screen with a tour), the tours with their
  * length, and the chat; the first time someone arrives it also highlights the full walkthrough. On a phone
  * there are no tours, so it opens the chat directly.
  */
@@ -39,7 +39,8 @@ export function WoddyMenu({ onChat, className, avatarClassName, labelClassName }
       <AriaButton aria-label={t("Ask Woddy")} className={className} data-tour="woddy-menu" ref={button}>{face}</AriaButton>
       <Popover {...portalTheme} className="wd-popover" dir={direction} placement="bottom end">
         <Menu aria-label={t("Ask Woddy")} className="wd-menu wd-tour-menu" onAction={onAction}>
-          <MenuItem className="wd-menu-item" id="explain" isDisabled={!tours.current}>{t("Explain this screen")}</MenuItem>
+          {/* Only on a screen that has its own tour: a greyed-out choice is noise. */}
+          {tours.current ? <MenuItem className="wd-menu-item" id="explain">{t("Explain this screen")}</MenuItem> : null}
           {onChat ? <MenuItem className="wd-menu-item" id="chat">{t("Ask a question")}</MenuItem> : null}
           <MenuSection className="wd-tour-menu-section">
             <Header className="wd-tour-menu-heading">{t("Tours")}</Header>

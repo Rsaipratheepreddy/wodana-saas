@@ -134,3 +134,16 @@ describe("the first-run highlight", () => {
     expect(screen.queryByText(callout)).not.toBeInTheDocument();
   });
 });
+
+describe("the Ask Woddy menu", () => {
+  it("leaves out Explain this screen on a screen without its own tour, and still lists the tours", async () => {
+    window.localStorage.setItem(walkthroughKey("u1"), "true");
+    window.history.replaceState({}, "", "/workspace/members");
+    const user = userEvent.setup();
+    page(<WoddyMenu />);
+    await user.click(screen.getByRole("button", { name: "Ask Woddy" }));
+    expect(await screen.findByText("Tours")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Explain this screen" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem").length).toBeGreaterThan(0);
+  });
+});

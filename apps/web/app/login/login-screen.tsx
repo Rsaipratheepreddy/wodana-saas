@@ -534,10 +534,10 @@ export function LoginScreen({
             <header className={styles.tenantBrand} aria-label={t("{name} workspace", { name: tenant.displayName })}>
               {tenant.logoUrl ? (
                 <span className={styles.tenantLogo}>
-                  <Image alt={tenant.displayName} fill preload sizes="88px" src={tenant.logoUrl} />
+                  <Image alt={tenant.displayName} fill preload sizes="160px" src={tenant.logoUrl} />
                 </span>
               ) : null}
-              <strong className={styles.tenantName}>{tenant.displayName}</strong>
+              {tenant.logoUrl ? null : <strong className={styles.tenantName}>{tenant.displayName}</strong>}
             </header>
             <div className={styles.formArea} data-security={mfaStage !== "credentials"}>
             <div className={styles.formIntro}>

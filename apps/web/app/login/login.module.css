@@ -70,18 +70,17 @@
   margin-block-end: var(--wd-space-6);
 }
 
+/* The firm's logo at its own proportions: a wordmark up to 10rem wide, a monogram 2.5rem square; it names the firm, so no name beside it. */
 .tenantLogo {
   position: relative;
-  display: grid;
-  inline-size: 2rem;
-  block-size: 2rem;
-  flex: 0 0 2rem;
-  place-items: center;
+  display: block;
+  inline-size: 10rem;
+  block-size: 2.5rem;
+  flex: 0 1 10rem;
   overflow: hidden;
-  border-radius: var(--wd-radius-md);
-  background: var(--wd-color-surface-muted);
 }
-.tenantLogo img { object-fit: contain; }
+.tenantLogo img { object-fit: contain; object-position: left center; }
+:global([dir="rtl"]) .tenantLogo img { object-position: right center; }
 .brandIdentity { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .tenantName { overflow: hidden; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-overflow: ellipsis; white-space: nowrap; }
 .brandIdentity > span { color: var(--login-muted); font-size: var(--wd-text-xs); }
