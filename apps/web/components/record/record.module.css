@@ -27,18 +27,16 @@
 .strip dd :global(.wd-select-button) { inline-size: auto; min-block-size: var(--wd-control-sm); block-size: var(--wd-control-sm); gap: var(--wd-space-1); margin-inline-start: calc(-1 * var(--wd-space-1-5)); padding-inline: var(--wd-space-1-5); border-color: transparent; background: transparent; box-shadow: none; }
 .strip dd :global(.wd-select-button:hover) { background: var(--wd-color-surface-hover); }
 
-/* The next step. */
-.now { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+/* The next step: its own card on the subtle surface, headed "Next step", so it never reads as history. */
+.now { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle);
+  box-shadow: 0 0 0 1px var(--wd-color-structural-divider); }
+.nowLabel { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 .nowHead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-4); }
 .nowMain { display: grid; gap: var(--wd-space-1); flex: 1 1 16rem; min-inline-size: 0; }
 .nowMain h3 { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
 .why { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .nowMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
 
-/* A sidebar (or main column) group. */
-.sideSection { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
-.sideSection > header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-control-sm); }
-.sideSection h4 { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 
 /* The columns. Narrow: the next step, the sidebar, then the activity. */
 .layout { display: grid; gap: var(--wd-phi-3); align-items: start; }
@@ -59,7 +57,9 @@
   .layout { flex: 1 1 auto; min-block-size: 0; grid-template-columns: minmax(0, 1fr) 25rem; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
   .main { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
   .main, .side { min-block-size: 0; overflow-y: auto; }
-  .main { padding-block-end: var(--wd-space-4); }
+  /* A hair of room so the section cards' outline isn't cut by the scrolling column. */
+  .main { padding: var(--wd-space-0-5) var(--wd-space-0-5) var(--wd-space-4); }
+  .side { padding-block-start: var(--wd-space-0-5); }
   .next, .side, .activity { order: 0; }
   .side { padding-inline: var(--wd-space-5) var(--wd-space-2); border-inline-start: 1px solid var(--wd-color-structural-divider); scrollbar-gutter: stable; }
 }

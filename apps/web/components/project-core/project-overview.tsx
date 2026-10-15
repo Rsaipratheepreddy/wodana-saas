@@ -3,14 +3,14 @@
 import { RecordHistory } from "../history/record-history";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, CalendarClock, CircleCheck, Flag, ListChecks, Wallet } from "lucide-react";
-import { Badge, Button, EmptyState, ErrorState, IconMenuButton, MoreDetails, Skeleton } from "@/design-system";
+import { ArrowRight, CalendarClock, CircleCheck, Flag, ListChecks, TriangleAlert, Wallet } from "lucide-react";
+import { Badge, Button, EmptyState, ErrorState, IconMenuButton, KpiStrip, KpiTile, Skeleton, StateChip, type ItemState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { BlockerKey, HealthReason, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
 import { projectPeople, projectStrip, projectTimeline, stageLateDays, type ProjectStep } from "@/lib/project-core/project-record";
 import { nextStepText } from "@/lib/project-core/next-step";
-import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
+import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, SideSection } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
 import { SiteUpdates } from "@/components/site/site-updates";
@@ -23,6 +23,9 @@ import coreStyles from "./project-core.module.css";
 import styles from "./project-overview.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
+
+const DELIVERY_STATE: Record<"not_booked" | "booked" | "part_delivered" | "delivered", ItemState> = { not_booked: "upcoming", booked: "in_progress", part_delivered: "in_progress", delivered: "done" };
+const INSTALLATION_STATE: Record<"not_started" | "in_progress" | "done", ItemState> = { not_started: "upcoming", in_progress: "in_progress", done: "done" };
 
 /** Who goes on a booking, the lead first, as one fact. */
 function crewFact(label: string, crew: { people: Array<{ name: string; lead: boolean }>; crew: { name: string } | null } | null | undefined) {
@@ -47,10 +50,10 @@ function useReasonText() {
 }
 
 /**
- * A project's Overview (§5c D.7), each fact once: the strip says where it stands (stage, handover, progress,
- * money; the health is the header's badge); a thin bar shows the stages, the full list one click away; the
- * one next step with its checks; what needs attention, most severe first; then the latest site updates and
- * activity. The sidebar: Overview (team, the roles nobody holds, site, key dates, production, delivery,
+ * A project's Overview (§5c D.7), each fact once: KPI tiles say where it stands (stage, handover, progress,
+ * money, what needs attention; the health is the header's badge); then titled section cards: the one next step
+ * with its checks, what needs attention (most severe first), every stage as a step, the latest site updates and
+ * the history. The sidebar: Overview (team, the roles nobody holds, site, key dates, production, delivery,
  * money) · Details · Files.
  */
 export function ProjectOverview({ api, detail, overview, error, onRetry, run, onTeam, onInstallation, onCrew, onPermit, next, details }: {
@@ -92,33 +95,37 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
   const stepDate = (step: ProjectStep) => step.doneAt ? format.short(format.dayOf(step.doneAt))
     : step.plannedStart ? (step.plannedEnd && step.plannedEnd !== step.plannedStart ? t("{from} – {to}", { from: format.short(step.plannedStart), to: format.short(step.plannedEnd) }) : format.short(step.plannedStart)) : null;
   const stepLate = (step: ProjectStep) => step.lateDays ? (step.lateDays === 1 ? t("1 day late") : t("{count} days late", { count: step.lateDays })) : null;
-  const stepState = (step: ProjectStep) => step.state === "done" ? t("Done") : step.state === "current" ? t("Now") : step.state === "blocked" ? t("On hold") : step.state === "skipped" ? t("Skipped") : t("Not started");
-
-  const stripItems = [
-    strip.stage ? <StripItem key="stage" icon={<Flag aria-hidden="true" size={13} />} label={t("Stage")}>{t("{stage} · {position} of {count}", { stage: t(strip.stage.name as never), position: strip.stage.position, count: strip.stage.count })}</StripItem> : null,
-    strip.handover ? <StripItem key="handover" icon={<CalendarClock aria-hidden="true" size={13} />} label={t("Handover")}>{format.short(strip.handover.date)}{until ? <>&nbsp;·&nbsp;<span className={until.late ? styles.late : styles.muted}>{until.text}</span></> : null}</StripItem> : null,
-    strip.progress !== null ? <StripItem key="progress" icon={<ListChecks aria-hidden="true" size={13} />} label={t("Progress")}>{t("{percent}% done", { percent: strip.progress })}</StripItem> : null,
-    strip.budgetUsed !== null ? <StripItem key="budget" icon={<Wallet aria-hidden="true" size={13} />} label={t("Budget used")}><span className={strip.budgetUsed > 100 ? styles.late : undefined}>{t("{percent}%", { percent: strip.budgetUsed })}</span></StripItem>
-      : strip.paid !== null ? <StripItem key="paid" icon={<Wallet aria-hidden="true" size={13} />} label={t("Paid")}>{t("{percent}%", { percent: strip.paid })}</StripItem> : null,
-  ].filter(Boolean);
-
-  // The stages at a glance: one segment each (the strip names the current one); every stage with its date,
-  // owner and lateness in the full list. Read by screen readers from the strip and the list, so the bar is hidden.
-  const stages = steps.length ? <div className={styles.stages}>
-    <ol className={styles.stageBar} aria-hidden="true">
-      {steps.map((step) => <li key={step.id} data-state={step.state} data-late={step.lateDays > 0 || undefined}
-        title={[t(step.name as never), stepState(step), stepDate(step), stepLate(step)].filter(Boolean).join(" · ")}><span /></li>)}
-    </ol>
-    <MoreDetails label={t("All stages")}>
-      <RecordTimeline layout="list" label={t("Stages")} steps={steps.map((step) => ({
-        id: step.id, label: t(step.name as never), state: step.state, date: stepDate(step), late: stepLate(step), people: step.person ? [step.person] : [],
-      }))} />
-    </MoreDetails>
-  </div> : null;
 
   const rows = overview ? attentionRows(detail, overview) : [];
+  const attentionTone = rows.some((row) => row.tone === "danger") ? "danger" : rows.length ? "warning" : "success";
+
+  // The few numbers that matter, each a tile that opens where it is worked: the stage, the handover, the work done,
+  // the money and what needs attention. The health is the header's badge.
+  const kpis = [
+    strip.stage ? <KpiTile key="stage" icon={<Flag size={13} />} label={t("Stage")} value={t(strip.stage.name as never)}
+      detail={t("Stage {number} of {total}", { number: strip.stage.position, total: strip.stage.count })} href="#project-stages" /> : null,
+    strip.handover ? <KpiTile key="handover" icon={<CalendarClock size={13} />} label={t("Handover")} value={format.short(strip.handover.date)}
+      detail={until?.text} tone={until?.late ? "danger" : undefined} /> : null,
+    strip.progress !== null ? <KpiTile key="progress" icon={<ListChecks size={13} />} label={t("Progress")} value={t("{percent}% done", { percent: strip.progress })}
+      detail={strip.work ? t("{done} of {total} tasks", { done: strip.work.done, total: strip.work.total }) : null} href={`/workspace/projects/${projectId}/plan`} /> : null,
+    strip.budgetUsed !== null ? <KpiTile key="budget" icon={<Wallet size={13} />} label={t("Budget used")} value={t("{percent}%", { percent: strip.budgetUsed })}
+      tone={strip.budgetUsed > 100 ? "danger" : undefined} href={detail.canSeeMoney ? `/workspace/projects/${projectId}/money` : undefined} />
+      : strip.paid !== null ? <KpiTile key="paid" icon={<Wallet size={13} />} label={t("Paid")} value={t("{percent}%", { percent: strip.paid })}
+        href={detail.canSeeMoney ? `/workspace/projects/${projectId}/money` : undefined} /> : null,
+    // How many things wait (a late task counts once per task); the one kind under it when there is only one.
+    overview && open ? <KpiTile key="attention" icon={<TriangleAlert size={13} />} label={t("Needs attention")} value={rows.length ? rows.reduce((sum, row) => sum + (row.count ?? 1), 0) : t("None")}
+      detail={rows.length === 1 ? rows[0].label : null} tone={attentionTone} href="#project-attention" /> : null,
+  ].filter(Boolean);
+
+  // Every stage as a step (done, now, to come) with its date, owner and lateness.
+  const stages = steps.length ? <SideSection id="project-stages" title={t("Stages")}>
+    <RecordTimeline layout="list" label={t("Stages")} steps={steps.map((step) => ({
+      id: step.id, label: t(step.name as never), state: step.state, date: stepDate(step), late: stepLate(step), people: step.person ? [step.person] : [],
+    }))} />
+  </SideSection> : null;
+
   const attention = error && !overview ? <ErrorState description={error} onRetry={onRetry} /> : !overview ? <Skeleton lines={2} shape="rows" />
-    : open ? <SideSection title={t("Needs attention")}>
+    : open ? <SideSection id="project-attention" title={t("Needs attention")}>
       {rows.length ? <ul className={styles.attention}>{rows.map((row) => <AttentionItem key={row.key} row={row} />)}</ul>
         : <p className={styles.clear}><CircleCheck aria-hidden="true" size={16} />{t("Nothing is holding the project up.")}</p>}
     </SideSection> : null;
@@ -172,11 +179,11 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
       action={detail.canScheduleInstallation && onInstallation && (installation.installationOn || nextKind !== "installation_scheduled")
         ? <Button size="compact" variant="quiet" onPress={onInstallation}>{installation.installationOn ? t("Change") : t("Schedule")}</Button> : null}>
       <FactList facts={[
-        { label: t("Delivery"), value: <>{deliveryLabel[installation.delivery]}{installation.deliveryOn ? <small>{format.short(installation.deliveryOn)}</small> : null}</> },
-        { label: t("Installation"), tone: installation.late ? "danger" : undefined, value: <>{installationLabel[installation.installation]}
+        { label: t("Delivery"), value: <><StateChip state={DELIVERY_STATE[installation.delivery]} label={deliveryLabel[installation.delivery]} />{installation.deliveryOn ? <small>{format.short(installation.deliveryOn)}</small> : null}</> },
+        { label: t("Installation"), value: <><StateChip state={installation.late && installation.installation !== "done" ? "late" : INSTALLATION_STATE[installation.installation]} label={installationLabel[installation.installation]} />
           {installation.installationOn ? <small>{[format.short(installation.installationOn), installation.late ? t("Late") : ""].filter(Boolean).join(" · ")}</small> : null}</> },
-        installation.permit?.required || installation.permit?.collected ? { label: t("Building permit"), tone: installation.permit.valid ? undefined : "danger",
-          value: <>{installation.permit.valid ? t("Collected") : installation.permit.collected ? t("Doesn't cover the delivery day") : t("Missing")}
+        installation.permit?.required || installation.permit?.collected ? { label: t("Building permit"),
+          value: <>{installation.permit.valid ? <StateChip state="done" label={t("Collected")} /> : installation.permit.collected ? <StateChip state="blocked" label={t("Doesn't cover the delivery day")} /> : <StateChip state="missing" />}
             <small>{[installation.permit.validTo ? t("Valid until {date}", { date: format.short(installation.permit.validTo) }) : "",
               installation.permit.valid && installation.permit.reminderOn ? t("Reminder on {date}", { date: format.short(installation.permit.reminderOn) }) : "",
               installation.permit.collectOn && !installation.permit.valid ? t("Collection on {date}", { date: format.short(installation.permit.collectOn) }) : ""].filter(Boolean).join(" · ")}</small></> } : null,
@@ -211,16 +218,16 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
 
   return <div className={styles.overview}>
     <RecordFrame tour="project-record">
-      {stripItems.length ? <RecordStrip label={t("Where the project stands")}>{stripItems}</RecordStrip> : null}
+      {kpis.length ? <KpiStrip label={t("Where the project stands")}>{kpis}</KpiStrip> : null}
       <RecordColumns sideLabel={t("Project overview")} tabs={[
         { id: "overview", label: t("Overview"), panel: overviewPanel },
         { id: "details", label: t("Details"), panel: <RecordPanel>{details}</RecordPanel> },
         { id: "files", label: t("Files"), panel: <RecordPanel><FileList label={t("Files")} items={files} /></RecordPanel> },
       ]}
         next={<>
-          {stages}
           <ProjectNextStep api={api} detail={detail} overview={overview} next={next} run={run} onTeam={onTeam} />
           {attention}
+          {stages}
         </>}
         activity={<>
           {reports.length ? <SideSection title={t("Site updates")} action={<Link className={styles.sideLink} href={`/workspace/projects/${projectId}/site`}>{t("View all")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link>}>

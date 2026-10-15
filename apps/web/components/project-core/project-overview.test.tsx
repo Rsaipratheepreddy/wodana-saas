@@ -88,14 +88,21 @@ const exactly = (text: string) => screen.queryAllByText((_, element) => element?
 describe("project overview, each fact once", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("keeps the strip to the key facts and shows the health once, on the header", async () => {
+  it("shows the key numbers as KPI tiles, each opening its section, and the health once, on the header", async () => {
     await open();
     const strip = screen.getByLabelText("Where the project stands");
     const terms = within(strip).getAllByRole("term").map((term) => term.textContent);
-    expect(terms).toEqual(["Stage", "Handover", "Progress", "Paid"]);
-    expect(strip).toHaveTextContent("Permit collection · 6 of 9");
-    expect(strip).toHaveTextContent("56% done");
-    expect(strip).toHaveTextContent("90%");
+    expect(terms).toEqual(["Stage", "Handover", "Progress", "Paid", "Needs attention"]);
+    const tile = (label: string) => within(strip).getByText(label, { selector: "dt" }).closest(".wd-kpi-tile")!;
+    expect(tile("Stage")).toHaveTextContent("Permit collectionStage 6 of 9");
+    expect(within(tile("Stage") as HTMLElement).getByRole("link")).toHaveAttribute("href", "#project-stages");
+    expect(tile("Progress")).toHaveTextContent("56% done");
+    expect(tile("Paid")).toHaveTextContent("90%");
+    // Four things wait (1 late order, 2 missing reports, 1 client decision); a late order makes it danger.
+    expect(tile("Needs attention")).toHaveTextContent("4");
+    expect(tile("Needs attention")).toHaveAttribute("data-tone", "danger");
+    expect(within(tile("Needs attention") as HTMLElement).getByRole("link")).toHaveAttribute("href", "#project-attention");
+    expect(screen.getByRole("region", { name: "Needs attention" })).toHaveAttribute("id", "project-attention");
     // Health is the header's badge; why is the attention list, not the strip.
     expect(screen.getByRole("heading", { level: 1, name: "Arabian Ranches Townhouse 7" }).closest("header")).toHaveTextContent("At risk");
     expect(screen.getAllByText("At risk")).toHaveLength(1);
@@ -109,8 +116,10 @@ describe("project overview, each fact once", () => {
 
   it("names the stage once and keeps the next step to its one action, without the stage or the unnamed owner", async () => {
     await open();
-    expect(exactly("Permit collection · 6 of 9")).toHaveLength(1);
+    expect(within(screen.getByLabelText("Where the project stands")).getAllByText("Permit collection")).toHaveLength(1);
     const card = screen.getByRole("heading", { level: 3, name: "Collect the building permit" }).closest("section")!;
+    // The card is headed as the next step, apart from the history.
+    expect(within(card).getByText("Next step")).toBeInTheDocument();
     expect(card).not.toHaveTextContent(/6 of 9|Permit collection|not named/);
     expect(within(card).getByRole("button", { name: "Record the building permit" })).toBeInTheDocument();
     // The same action isn't offered again in the sidebar.
@@ -180,27 +189,31 @@ describe("project overview, each fact once", () => {
     expect(planEnds).not.toHaveAttribute("data-tone");
   });
 
-  it("shows the stages as a compact bar and the full list on request, without per-stage owner lines", async () => {
+  it("shows every stage as a step in its own section (done, now, to come), without a progress bar or per-stage owner lines", async () => {
     const { container } = await open();
-    const bar = container.querySelector('ol[aria-hidden="true"]')!;
-    const segments = [...bar.querySelectorAll("li")];
-    expect(segments.map((segment) => segment.getAttribute("data-state"))).toEqual(["done", "done", "done", "done", "done", "current", "upcoming", "upcoming", "upcoming"]);
-    // Each segment names its stage in its tooltip.
-    expect(segments[3].getAttribute("title")).toMatch(/^Material sign-off · Done · /);
-    expect(segments[6].getAttribute("title")).toBe("Delivery and installation · Not started");
-    const toggle = screen.getByRole("button", { name: "All stages" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("list", { name: "Stages" })).toBeNull();
-    await userEvent.click(toggle);
-    const stages = screen.getByRole("list", { name: "Stages" });
+    expect(container.querySelector('ol[aria-hidden="true"]')).toBeNull();
+    const section = screen.getByRole("region", { name: "Stages" });
+    expect(section).toHaveAttribute("id", "project-stages");
+    const stages = within(section).getByRole("list", { name: "Stages" });
     expect(stages.closest("[data-layout]")).toHaveAttribute("data-layout", "list");
     const items = within(stages).getAllByRole("listitem");
     expect(items).toHaveLength(9);
+    expect(items.map((item) => item.getAttribute("data-state"))).toEqual(["done", "done", "done", "done", "done", "current", "upcoming", "upcoming", "upcoming"]);
     // Whole names (a long one keeps its full name as its tooltip), the current stage marked, no "not named" lines.
     const label = within(items[6]).getByText("Delivery and installation");
     expect(label).toHaveAttribute("title", "Delivery and installation");
     expect(items[5]).toHaveAttribute("aria-current", "step");
     expect(stages).not.toHaveTextContent(/not named/i);
+  });
+
+  it("shows delivery, installation and the permit as state chips, each with its icon", async () => {
+    await open();
+    const section = screen.getByRole("region", { name: "Delivery and installation" });
+    const chip = (text: string) => within(section).getByText(text).closest(".wd-badge")!;
+    expect(chip("Booked")).toHaveAttribute("data-state", "in_progress");
+    expect(chip("Not started")).toHaveAttribute("data-state", "upcoming");
+    expect(chip("Missing")).toHaveAttribute("data-state", "missing");
+    expect(chip("Missing").querySelector("svg")).not.toBeNull();
   });
 
   it("keeps the latest three site updates, the rest a click away, and the project's History beside them", async () => {

@@ -35,6 +35,7 @@ export * from "./patterns/settings";
 export * from "./patterns/save-bar";
 export * from "./patterns/list-tabs";
 export * from "./patterns/page-shell";
+export * from "./patterns/record-summary";
 export * from "./patterns/table-cells";
 export * from "./patterns/stage-header";
 export * from "./patterns/month-calendar";

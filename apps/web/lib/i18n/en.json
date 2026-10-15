@@ -15245,5 +15245,6 @@
   "Keep background": "Keep background",
   "Remove background": "Remove background",
   "Remove sign-in background?": "Remove sign-in background?",
-  "The sign-in screen will show the default image.": "The sign-in screen will show the default image."
+  "The sign-in screen will show the default image.": "The sign-in screen will show the default image.",
+  "{done} of {total} tasks": "{done} of {total} tasks"
 }
