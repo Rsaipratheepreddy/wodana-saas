@@ -312,8 +312,8 @@ describe("projects", () => {
     const blockers = await screen.findByRole("region", { name: "Needs attention" });
     expect(within(blockers).getByRole("link", { name: /1 task late/ })).toHaveAttribute("href", `/workspace/projects/${PID}/plan?filter=late`);
     expect(screen.getByRole("heading", { level: 3, name: "Kickoff meeting held" })).toBeInTheDocument();
-    // Who did what is the project's History (the shared component).
-    expect(screen.getByRole("region", { name: "History" })).toBeInTheDocument();
+    // Who did what is the project's History (the shared component), a sub-tab beside the stages.
+    expect(screen.getByRole("tab", { name: "History" })).toBeInTheDocument();
     // Kickoff's planned work ended on the 25th and is still open: on the next step, and in the Stages section.
     expect(screen.getByText("3 days past its plan")).toBeInTheDocument();
     expect(within(screen.getByRole("list", { name: "Stages" })).getByText("3 days late")).toBeVisible();

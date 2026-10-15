@@ -136,6 +136,10 @@
 .wd-check-list > li[data-done] .wd-check-list-label { color: var(--wd-color-text-secondary); }
 .wd-check-list-detail { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
 .wd-check-list-action { display: flex; flex: none; align-items: center; gap: var(--wd-space-1); }
+.wd-check-list[data-layout="inline"] { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-5); }
+.wd-check-list[data-layout="inline"] > li { min-block-size: var(--wd-control-sm); padding-block: 0; }
+.wd-check-list[data-layout="inline"] > li + li { border-block-start: 0; }
+.wd-check-list[data-layout="inline"] .wd-check-list-text { flex: 0 1 auto; }
 
 /* Amounts: the label at the start, the amount at the end (tabular), a hairline between rows, the total in bold. */
 .wd-amount-list { display: grid; margin: 0; }

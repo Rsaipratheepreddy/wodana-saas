@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Card, Tabs, type TabItem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import styles from "./record.module.css";
@@ -88,4 +88,29 @@ export function NextStepCard({ title, why, meta, status, tour, children, label, 
     </div>
     {children}
   </section>;
+}
+
+/**
+ * The record's long sections (stages, site updates, requirements, approvals, history) as sub-tabs under the next
+ * step, so the overview stays about one screen; the small facts stay beside them as titled cards.
+ */
+export function SectionTabs({ tabs, tab, onTabChange, tabsRef }: {
+  tabs: TabItem[]; tab: string; onTabChange: (key: string) => void;
+  /** Where a KPI tile brings the reader when it opens a tab. */
+  tabsRef?: RefObject<HTMLDivElement | null>;
+}) {
+  const selected = tabs.some((item) => item.id === tab) ? tab : tabs[0]?.id ?? "";
+  if (!tabs.length) return null;
+  return <div ref={tabsRef} className={styles.sectionTabs}><Tabs items={tabs} selectedKey={selected} onSelectionChange={onTabChange} /></div>;
+}
+
+/** The sub-tab shown, and a way for a KPI tile to open one and bring it into view. */
+export function useSectionTabs(initial: string) {
+  const [tab, setTab] = useState(initial);
+  const ref = useRef<HTMLDivElement>(null);
+  const open = useCallback((id: string) => {
+    setTab(id);
+    requestAnimationFrame(() => ref.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
+  }, []);
+  return { tab, setTab, open, ref };
 }

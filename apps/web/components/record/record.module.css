@@ -67,3 +67,6 @@
 @media (max-width: 40rem) {
   .now { padding: var(--wd-space-3); }
 }
+
+/* The long sections as sub-tabs under the next step; each tab's content is a titled card. */
+.sectionTabs { min-inline-size: 0; scroll-margin-block-start: var(--wd-space-4); }

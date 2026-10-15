@@ -95,7 +95,10 @@ describe("project overview, each fact once", () => {
     expect(terms).toEqual(["Stage", "Handover", "Progress", "Paid", "Needs attention"]);
     const tile = (label: string) => within(strip).getByText(label, { selector: "dt" }).closest(".wd-kpi-tile")!;
     expect(tile("Stage")).toHaveTextContent("Permit collectionStage 6 of 9");
-    expect(within(tile("Stage") as HTMLElement).getByRole("link")).toHaveAttribute("href", "#project-stages");
+    // The stage tile opens the Stages sub-tab.
+    await userEvent.click(screen.getByRole("tab", { name: "History" }));
+    await userEvent.click(within(tile("Stage") as HTMLElement).getByRole("button"));
+    expect(screen.getByRole("tab", { name: "Stages" })).toHaveAttribute("aria-selected", "true");
     expect(tile("Progress")).toHaveTextContent("56% done");
     expect(tile("Paid")).toHaveTextContent("90%");
     // Four things wait (1 late order, 2 missing reports, 1 client decision); a late order makes it danger.
@@ -189,11 +192,12 @@ describe("project overview, each fact once", () => {
     expect(planEnds).not.toHaveAttribute("data-tone");
   });
 
-  it("shows every stage as a step in its own section (done, now, to come), without a progress bar or per-stage owner lines", async () => {
+  it("shows every stage as a step in the first sub-tab (done, now, to come), without a progress bar or per-stage owner lines", async () => {
     const { container } = await open();
     expect(container.querySelector('ol[aria-hidden="true"]')).toBeNull();
-    const section = screen.getByRole("region", { name: "Stages" });
-    expect(section).toHaveAttribute("id", "project-stages");
+    // The long lists are sub-tabs under the next step; the small facts stay cards beside them.
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent).filter((name) => ["Stages", "Site updates", "History"].includes(name ?? ""))).toEqual(["Stages", "Site updates", "History"]);
+    const section = screen.getByRole("tabpanel", { name: "Stages" });
     const stages = within(section).getByRole("list", { name: "Stages" });
     expect(stages.closest("[data-layout]")).toHaveAttribute("data-layout", "list");
     const items = within(stages).getAllByRole("listitem");
@@ -216,12 +220,14 @@ describe("project overview, each fact once", () => {
     expect(chip("Missing").querySelector("svg")).not.toBeNull();
   });
 
-  it("keeps the latest three site updates, the rest a click away, and the project's History beside them", async () => {
+  it("keeps the latest three site updates, the rest a click away, and the project's History, each in its sub-tab", async () => {
     await open();
-    const site = screen.getByRole("region", { name: "Site updates" });
+    await userEvent.click(screen.getByRole("tab", { name: "Site updates" }));
+    const site = screen.getByRole("tabpanel", { name: "Site updates" });
     expect(within(site).getAllByRole("listitem")).toHaveLength(3);
     expect(within(site).getByRole("link", { name: "View all" })).toHaveAttribute("href", `/workspace/projects/${PID}/site`);
-    expect(screen.getByRole("region", { name: "History" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "History" }));
+    expect(screen.getByRole("tabpanel", { name: "History" })).toBeInTheDocument();
   });
 
   it("wraps stage names only between words and lays the overview out with logical properties (LTR and RTL)", () => {

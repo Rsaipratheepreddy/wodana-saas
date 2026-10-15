@@ -12,6 +12,7 @@ import Image from "next/image";
 import { Check, Circle, Plus, X } from "lucide-react";
 import {
   AmountList,
+  Card,
   Avatar,
   Badge,
   CheckList,
@@ -69,7 +70,7 @@ import { ClientFiles } from "@/components/client-activity/client-files";
 import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
 import { SeenByClient, useClientThreads } from "@/components/client-activity/client-threads";
 import { DealApprovalSteps, DealClosing, DealMoney, DealRequirements, DealTeam, dealPaidShare, dealRequirementCount, dealRiskText } from "./deal-file-insight";
-import { NextStepCard, SideSection } from "@/components/record/record-layout";
+import { NextStepCard, SectionTabs, SideSection, useSectionTabs } from "@/components/record/record-layout";
 import { FactList, PersonChip } from "@/components/record/record-parts";
 import ds from "./deal-file-insight.module.css";
 import s from "./commercial.module.css";
@@ -612,6 +613,8 @@ export function ApprovalRelease({
         payment: false,
       },
     );
+  // The Deal File's long lists (requirements, approvals, history) as sub-tabs; a KPI tile opens its tab.
+  const sections = useSectionTabs("requirements");
   const d = state.data,
     accepted = d.servicePath
       ? d.quotes.find(q => q.kind === "quotation" && q.round === "main" && q.status === "accepted")
@@ -744,7 +747,7 @@ export function ApprovalRelease({
     <div className={ds.stepForm}>
       <div className={ds.checklist}>
         <h4 className={ds.subhead}>{t("Owner checklist")}</h4>
-        <CheckList label={t("Owner checklist")} items={Object.entries(review.checklist).filter(([key]) => !d.servicePath || key !== "materials")
+        <CheckList layout="inline" label={t("Owner checklist")} items={Object.entries(review.checklist).filter(([key]) => !d.servicePath || key !== "materials")
           .map(([key, done]) => ({ id: key, label: translateKnown(t, checklistLabel[key] ?? key), done }))} />
       </div>
       {!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals) && <p className={ds.stepNote}>{t("Complete every client material decision before creating the Deal File.")}</p>}
@@ -801,22 +804,25 @@ export function ApprovalRelease({
             {state.canViewCosts && totals ? <KpiTile label={t("Gross margin")} value={marginText(totals.margin)}
               tone={totals.margin === null ? "warning" : insight?.risks.includes("margin_below_floor") ? "danger" : undefined} /> : null}
             {requirements ? <KpiTile label={t("Requirements")} value={t("{done} of {total}", { done: requirements.done, total: requirements.total })}
-              detail={requirements.missing ? t("{count} missing", { count: requirements.missing }) : null} tone={requirements.missing ? "warning" : "success"} href="#deal-requirements" /> : null}
+              detail={requirements.missing ? t("{count} missing", { count: requirements.missing }) : null} tone={requirements.missing ? "warning" : "success"} onPress={() => sections.open("requirements")} /> : null}
             <KpiTile label={t("Payment")} value={paymentChecked ? t("Verified") : t("Not verified")} tone={paymentChecked ? "success" : "warning"}
               detail={paidShare !== null ? t("{percent}% paid", { percent: paidShare }) : null} href={sectionHref?.("payment-plan") ?? `${root}/payment-plan`} />
             <KpiTile label={t("Internal approval")} value={reviewText} tone={reviewTone}
               detail={d.dealFile?.quoteId === accepted.id ? formatDate(d.dealFile.approvedAt, { locale, timeZone }) : null}
-              href={showApprovalSteps ? "#deal-approvals" : "#deal-next"} />
+              {...(showApprovalSteps ? { onPress: () => sections.open("approvals") } : { href: "#deal-next" })} />
             {commission.length ? <KpiTile label={t("Commission")} value={money(commissionTotal, accepted.currency, locale)}
               detail={commission.length === 1 ? commission[0].recipientName : t("{count} people", { count: commission.length })} href="#deal-commission" /> : null}
           </KpiStrip>
           <div className={ds.columns}>
             <div className={ds.column}>
               {stepCard}
-              {/* PLM-066 / PLM-102 / PLM-123: what the Deal File holds, each a link to its live record. */}
-              {insight ? <DealRequirements id="deal-requirements" insight={insight} /> : null}
-              {/* E3: the approval's steps and who holds the current one. */}
-              {showApprovalSteps && state.dealApproval ? <SideSection id="deal-approvals" title={t("Approvals")}><DealApprovalSteps approval={state.dealApproval} /></SideSection> : null}
+              {/* The long lists as sub-tabs under the next step, each in its card (the tab names it): what the Deal File
+                  holds (PLM-066 / PLM-102 / PLM-123), the approval's steps (E3) and the history. */}
+              <SectionTabs tab={sections.tab} onTabChange={sections.setTab} tabsRef={sections.ref} tabs={[
+                ...(insight ? [{ id: "requirements", label: t("Requirements"), panel: <DealRequirements insight={insight} /> }] : []),
+                ...(showApprovalSteps && state.dealApproval ? [{ id: "approvals", label: t("Approvals"), panel: <Card><DealApprovalSteps approval={state.dealApproval} /></Card> }] : []),
+                ...(d.dealFile ? [{ id: "history", label: t("History"), panel: <Card><RecordHistory workspaceId={state.workspaceId} recordType="deal_file" recordId={d.dealFile.id} /></Card> }] : []),
+              ]} />
             </div>
             <div className={ds.column}>
               {d.dealFile ? <SideSection title={t("Deal File")} chip={<StateChip state="done" label={t("Approved")} />}>
@@ -839,7 +845,6 @@ export function ApprovalRelease({
               {insight ? <DealTeam insight={insight} /> : null}
             </div>
           </div>
-          {d.dealFile ? <SideSection title={t("History")}><RecordHistory workspaceId={state.workspaceId} recordType="deal_file" recordId={d.dealFile.id} /></SideSection> : null}
         </div>
       ) : tab === "materials" ? (
         <>
