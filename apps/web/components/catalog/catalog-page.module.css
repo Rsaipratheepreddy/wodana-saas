@@ -71,6 +71,9 @@ button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outl
 /* One header row instead of a label on every line; labels stay for screen readers. */
 .componentLine :global(.wd-field-label) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .componentRow :global(.wd-input) { font-family: inherit; }
+/* PLM-162: a recipe line is its component row plus a row for its kind, basis and hours (labels shown). */
+.recipeLine { display: grid; gap: var(--wd-space-2); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-border); }
+.recipeRow { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); align-items: end; gap: var(--wd-space-2); }
 .form > :global(.wd-button) { justify-self: start; }
 @media (max-width: 48rem) { .componentRow { grid-template-columns: minmax(0, 1fr) 6rem 2.25rem; } .componentRow > :first-child { grid-column: 1 / -1; } .componentHead { display: none; } }
 .ideas { display: grid; gap: var(--wd-space-1); margin: 0; padding: var(--wd-space-2); list-style: none; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }

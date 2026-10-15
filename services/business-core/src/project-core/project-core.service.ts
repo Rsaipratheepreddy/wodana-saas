@@ -50,12 +50,19 @@ import { readProjectReadiness } from "./project-readiness";
 import { projectBrief } from "../design/design-checklists";
 import { readReadinessSettings } from "../catalog-core/item-readiness";
 import { calendarDay as optionalDate } from "./calendar-day";
+import { confirmFactoryRequirement, saveFactoryRequirement } from "./project-factory-requirements";
+import { acceptTechnicalHandover, handOverTechnical, readTechnicalHandover, waiveHandoverItem } from "./project-technical-handover";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PRIORITIES = ["normal", "high", "critical"] as const;
 const HEALTH = ["on_track", "at_risk", "off_track"] as const;
+/** Commands the factory runs on a project it isn't on (PLM-165, PLM-166): the technical pack and a custom line's requirements. */
+const FACTORY_ACTIONS = ["save_factory_requirement", "confirm_factory_requirement", "accept_technical_handover", "waive_handover_item"];
+/** PLM-165: the technical team: the roles that own a stage with drawing checks, and the technical designer. */
+const technicalRoles = (stages: Array<{ ownerRole: string | null; checks: Array<{ kind: string }> }>) =>
+  new Set(["technical_designer", ...stages.filter((stage) => stage.ownerRole && stage.checks.some((check) => (DRAWING_CHECKS as readonly string[]).includes(check.kind))).map((stage) => stage.ownerRole!)]);
 
 /**
  * Projects (plan §6.10). A project starts only from an accepted quotation once the firm's start rules
@@ -363,6 +370,32 @@ export class ProjectCoreService {
     });
   }
 
+  /**
+   * PLM-165 / PLM-166: the technical handover pack: every line with its drawing need, requirements (verified recipe or
+   * the factory's record), selections, sizes and missing-information checklist, and what the viewer may do with it.
+   */
+  technicalHandover(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { project, all, membershipId } = await this.visible(client, workspaceId, projectId, user);
+      const areas = await projectAreas(client, workspaceId, projectId, project.caseId ?? null);
+      const pack = await readTechnicalHandover(client, workspaceId, projectId, await readReadinessSettings(client, workspaceId), areas);
+      const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
+      const mine = team.find((member) => member.membershipId === membershipId);
+      const manager = all || Boolean(mine?.lead);
+      const technical = technicalRoles(await readStages(client, workspaceId, [projectId]));
+      const factory = await this.any(client, workspaceId, user.userId, ["factory.manage", "factory.approve"]);
+      const open = ["active", "on_hold"].includes(project.status);
+      return {
+        ...pack, caseId: project.caseId, projectVersion: project.version,
+        canHandOver: open && pack.status !== "accepted" && (manager || Boolean(mine)),
+        canAccept: open && pack.status === "handed_over" && (manager || factory || Boolean(mine?.roles.some((role) => technical.has(role)))),
+        canWaive: open && (manager || factory || Boolean(mine)),
+        canSaveRequirements: open && (manager || factory || Boolean(mine)),
+        canConfirmRequirements: open && await this.any(client, workspaceId, user.userId, ["factory.approve"]),
+      };
+    });
+  }
+
   /** A line's history: agreed, changed by variations, packaged, signed off… */
   line(actor: RequestActor, workspaceId: string, projectId: string, lineId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
@@ -386,8 +419,10 @@ export class ProjectCoreService {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const project = await readProject(client, workspaceId, projectId, true);
       if (!project) throw new NotFoundException("Project not found.");
-      // The people who run the factory book its slot (PLM-068) and take the technical measure (PLM-149) on a project they aren't on.
-      const factoryHand = (body.action === "book_factory_slot" || body.action === "record_technical_measure") && await this.any(client, workspaceId, user.userId, ["factory.manage"]);
+      // The people who run the factory book its slot (PLM-068) and take the technical measure (PLM-149) on a project they aren't on;
+      // the factory also records and confirms a custom line's requirements and accepts the technical pack (PLM-165, PLM-166).
+      const factoryHand = (body.action === "book_factory_slot" || body.action === "record_technical_measure") ? await this.any(client, workspaceId, user.userId, ["factory.manage"])
+        : FACTORY_ACTIONS.includes(String(body.action)) ? await this.any(client, workspaceId, user.userId, ["factory.manage", "factory.approve"]) : false;
       // PLM-168 / PLM-159: the QS approves or returns the BOQ and confirms the material list on a project they aren't on.
       const qsHand = (String(body.action) in BOQ_COMMANDS || body.action === "confirm_material_list") && await this.any(client, workspaceId, user.userId, ["commercial.estimate"]);
       const { all } = factoryHand || qsHand ? { all: await this.any(client, workspaceId, user.userId, ["projects.manage"]) } : await this.viewer(client, workspaceId, user);
@@ -402,7 +437,7 @@ export class ProjectCoreService {
       const running = () => { if (project.status !== "active") throw new ConflictException(project.status === "on_hold" ? "The project is on hold. Resume it first." : "The project is closed."); };
       // A completed or cancelled project is a record: its details, team and status don't change any more.
       const open = () => { if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed."); };
-      const notices: Array<{ key: string; notice: ProjectNotice }> = [];
+      const notices: Array<{ key: string; notice: ProjectNotice; deepLink?: string }> = [];
       const teamIds = () => team.map((member) => member.membershipId);
       let audit: Record<string, unknown> = {};
 
@@ -632,6 +667,55 @@ export class ProjectCoreService {
         const { label, total, currency } = await sealVariation(client, { workspaceId, projectId, caseId: project.caseId, quote, actorUserId: user.userId });
         notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${currency} ${total}`, memberships: teamIds() } });
         audit = { quoteId: quote.id, label, total };
+      } else if (action === "hand_over_technical") {
+        // PLM-165: sales or design (anyone on the project, or its manager) hands the technical pack over; the technical team hears, also by email.
+        open();
+        const result = await handOverTechnical(client, { workspaceId, projectId, userId: user.userId, note: body.note, version: body.handoverVersion });
+        const stages = await readStages(client, workspaceId, [projectId]);
+        const technical = technicalRoles(stages);
+        notices.push({ key: `technical_handover:${project.version}`, deepLink: `/workspace/projects/${projectId}/scope?view=technical`, notice: { code: "project.technical_handover", note: result.note,
+          memberships: team.filter((member) => member.roles.some((role) => technical.has(role))).map((member) => member.membershipId) } });
+        audit = { note: result.note, again: result.again };
+      } else if (action === "accept_technical_handover") {
+        // PLM-165: the technical team (or the factory, or the project manager) accepts the pack once nothing required is missing.
+        open();
+        const stages = await readStages(client, workspaceId, [projectId]);
+        const technical = technicalRoles(stages);
+        if (!manager && !factoryHand && !team.some((member) => member.membershipId === membershipId && member.roles.some((role) => technical.has(role))))
+          throw new ForbiddenException("Only the technical team or the project manager accepts the technical handover.");
+        const areas = await projectAreas(client, workspaceId, projectId, project.caseId ?? null);
+        const pack = await readTechnicalHandover(client, workspaceId, projectId, await readReadinessSettings(client, workspaceId), areas);
+        if (!(await acceptTechnicalHandover(client, { workspaceId, projectId, userId: user.userId, version: body.handoverVersion, missing: pack.missing }))) return this.detail(client, workspaceId, projectId, user);
+        // Whoever handed it over hears, and the lead.
+        const hander = (await client.query<{ membershipId: string | null }>(
+          `SELECT membership.id AS "membershipId" FROM project_technical_handovers handover JOIN workspace_memberships membership ON membership.workspace_id = handover.workspace_id AND membership.user_id = handover.handed_over_by
+            WHERE handover.workspace_id = $1 AND handover.project_id = $2`, [workspaceId, projectId])).rows[0]?.membershipId ?? null;
+        notices.push({ key: `technical_handover_accepted:${project.version}`, deepLink: `/workspace/projects/${projectId}/scope?view=technical`, notice: { code: "project.technical_handover_accepted", note: "",
+          memberships: [...team.filter((member) => member.lead).map((member) => member.membershipId), ...(hander ? [hander] : [])] } });
+        audit = { lines: pack.rows.length, waived: pack.rows.reduce((sum, row) => sum + Object.keys(row.waivers).length, 0) };
+      } else if (action === "waive_handover_item") {
+        // PLM-165: a checklist item marked "Not applicable" on one line, with the reason (anyone on the project, the factory or the manager).
+        open();
+        const result = await waiveHandoverItem(client, { workspaceId, projectId, lineId: body.lineId, item: body.item, reason: body.reason === null ? null : body.reason, userId: user.userId });
+        audit = { lineId: body.lineId, title: result.title, item: result.item, reason: result.reason };
+      } else if (action === "save_factory_requirement") {
+        // PLM-166: the materials, labour hours and notes a custom line needs, by the factory or the project team; a confirmed record edited is open again.
+        open();
+        if (typeof body.lineId !== "string" || !UUID.test(body.lineId)) throw new BadRequestException("Choose the item.");
+        const result = await saveFactoryRequirement(client, { workspaceId, projectId, lineId: body.lineId, body, userId: user.userId });
+        if (result.reopened) notices.push({ key: `requirements_reopened:${body.lineId}:${project.version}`, deepLink: `/workspace/projects/${projectId}/scope?view=technical`,
+          notice: { code: "project.factory_requirements_reopened", item: result.title, note: "", memberships: team.filter((member) => member.roles.includes("factory_lead") || member.lead).map((member) => member.membershipId) } });
+        audit = { lineId: body.lineId, title: result.title, items: result.items, labourHours: result.labourHours, created: result.created, reopened: result.reopened };
+      } else if (action === "confirm_factory_requirement") {
+        // PLM-166: the Factory Lead (whoever approves factory work) confirms a line's requirements; from then on they are its quantities.
+        open();
+        if (!(await this.any(client, workspaceId, user.userId, ["factory.approve"]))) throw new ForbiddenException("Only the factory lead confirms factory requirements.");
+        if (typeof body.lineId !== "string" || !UUID.test(body.lineId)) throw new BadRequestException("Choose the item.");
+        const result = await confirmFactoryRequirement(client, { workspaceId, projectId, lineId: body.lineId, version: body.requirementVersion, userId: user.userId });
+        if (!result.changed) return this.detail(client, workspaceId, projectId, user);
+        notices.push({ key: `requirements_confirmed:${body.lineId}:${project.version}`, deepLink: `/workspace/projects/${projectId}/scope?view=technical`,
+          notice: { code: "project.factory_requirements_confirmed", item: result.title, note: "", memberships: team.filter((member) => member.lead).map((member) => member.membershipId) } });
+        audit = { lineId: body.lineId, title: result.title, requirementId: result.requirementId };
       } else if (action === "set_drawing_need") {
         // PLM-057: whether an item needs technical drawings, decided by the project manager or the technical team against
         // the rule (bespoke and made-to-order always; standard only without a catalogue drawing), with the reason.
@@ -793,7 +877,7 @@ export class ProjectCoreService {
       }
       await client.query(`UPDATE delivery_projects SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `project.${action}`, entityType: "project", entityId: projectId, after: audit });
-      for (const item of notices) await noticeProject(client, { workspaceId, projectId, key: item.key, actorUserId: user.userId, notice: item.notice });
+      for (const item of notices) await noticeProject(client, { workspaceId, projectId, key: item.key, actorUserId: user.userId, notice: item.notice, ...(item.deepLink ? { deepLink: item.deepLink } : {}) });
       // A check read from records may pass now (a role named, a material list signed off): the stage owner hears it can finish.
       await noticeStageReady(client, workspaceId, projectId, user.userId);
       // A QS who isn't on the project and doesn't see projects gets the BOQ back, nothing else of the project (QA-007).

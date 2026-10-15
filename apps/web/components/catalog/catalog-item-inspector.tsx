@@ -7,7 +7,8 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { CatalogRequestError, catalogApi } from "@/lib/workspace/catalog-v2";
 import type { CatalogStructure } from "@/lib/workspace/catalog-v2";
 import { CatalogPrices, type PriceRow } from "./catalog-prices";
-import { CatalogComponentsEditor, CatalogItemForm } from "./catalog-item-editors";
+import { CatalogComponentsEditor, CatalogItemForm, type RecipeComponent } from "./catalog-item-editors";
+import { CatalogRecipe } from "./catalog-recipe";
 import { CatalogItemImages } from "./catalog-item-images";
 import { CatalogItemProvenance, CatalogItemSize, useItemSource } from "./catalog-item-source";
 import styles from "./catalog-page.module.css";
@@ -17,7 +18,10 @@ type ItemDetail = {
   /** A link to the item's technical drawing (PLM-057: a standard item with one needs no project drawing). */
   technicalDrawingUrl?: string | null;
   values: Record<string, string>;
-  components: Array<{ componentItemId: string; name: string; quantityFormula: string; unitCode: string }>;
+  components: RecipeComponent[];
+  /** PLM-166: who verified the recipe and when (null: its quantities aren't used on projects yet), and whether the viewer may verify it. */
+  recipeVerified?: { at: string; byName: string | null } | null;
+  canVerifyRecipe?: boolean;
   prices: PriceRow[];
   suppliers: Array<{ id: string; vendorName: string; vendorSku: string | null; cost: string | null; currency: string | null; leadTimeDays: number | null }>;
   canViewCosts: boolean;
@@ -125,13 +129,10 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
       </dl>
     </div>;
 
+  // PLM-162 / PLM-166: the production recipe by kind, with its verification (the factory marks it; a change clears it).
   const components = editing === "components" && structure
     ? <CatalogComponentsEditor catalogId={catalogId} item={item} onCancel={() => setEditing(null)} onSaved={saved} structure={structure} workspaceId={workspaceId} />
-    : <div className={styles.inspector}>
-      {canEdit && isAssembly ? <div className={styles.actions}><Button onPress={() => setEditing("components")} size="compact"><Pencil aria-hidden="true" size={14} />{t("Edit components")}</Button></div> : null}
-      {item.components.length ? <ul className={styles.list}>{item.components.map((component) => <li key={component.componentItemId}><strong>{component.name}</strong><code dir="ltr">{component.quantityFormula}</code><small>{component.unitCode}</small></li>)}</ul>
-        : <p className={styles.muted}>{t("No components yet")}</p>}
-    </div>;
+    : <CatalogRecipe catalogId={catalogId} item={item} workspaceId={workspaceId} canEdit={canEdit && isAssembly} onEdit={() => setEditing("components")} onChanged={reload} />;
 
   const sizeNotes = filled(notes) ? <dl className="wd-editable-list" data-layout="stacked">
     <EditableField canEdit={canEdit && Boolean(notesAttribute)} kind="multiline" label={t("Size notes")} maxLength={500} onReload={reload}
@@ -142,7 +143,7 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
     { id: "details", label: t("Details"), panel: details },
     { id: "photos", label: t("Photos"), panel: <CatalogItemImages workspaceId={workspaceId} itemId={item.id} canManage={canManage} /> },
     ...(sized ? [{ id: "size", label: t("Size"), panel: <CatalogItemSize canManage={canManage} itemId={item.id} notes={sizeNotes} source={source} workspaceId={workspaceId} /> }] : []),
-    ...(item.components.length || isAssembly ? [{ id: "components", label: t("Components"), panel: components }] : []),
+    ...(item.components.length || isAssembly ? [{ id: "components", label: t("Recipe"), panel: components }] : []),
     { id: "prices", label: t("Prices"), panel: <CatalogPrices canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={item.id} itemType={item.itemType} locale={locale} onChanged={() => { setAttempt((value) => value + 1); onChanged?.(); }} prices={item.prices} unitCode={item.unitCode} workspaceId={workspaceId} /> },
     ...(item.canViewCosts ? [{ id: "suppliers", label: t("Suppliers"), panel: item.suppliers.length ? <ul className={styles.list}>{item.suppliers.map((supplier) => <li key={supplier.id}><strong>{supplier.vendorName}</strong><small dir="ltr">{supplier.vendorSku ?? ""}</small><span dir="ltr">{money(supplier.cost, supplier.currency)}</span></li>)}</ul> : <p className={styles.muted}>{t("No suppliers linked")}</p> }] : []),
     ...(provenance ? [{ id: "source", label: t("Source"), panel: <CatalogItemProvenance source={provenance} /> }] : []),

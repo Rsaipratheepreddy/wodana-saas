@@ -184,6 +184,24 @@ const factory: Section = async (ctx, profile, step) => {
     });
   }
   if (wanted.inspections) await inspections(ctx, wanted.inspections, step);
+  // PLM-174: the path E checks before a work order on a bespoke job is released.
+  if (wanted.release) {
+    const { settings } = await service.settings(ctx.actor, ctx.workspace.id) as { settings: { requireTechnicalHandover: boolean; requireFactoryRequirements: boolean; requireQs: boolean; version: number } };
+    const patch: Record<string, unknown> = {};
+    const changes: Change[] = [];
+    const compare = (label: string, key: "requireTechnicalHandover" | "requireFactoryRequirements" | "requireQs", value: boolean | undefined) => {
+      if (value === undefined) return;
+      if (settings[key] === value) step.same(label, String(value));
+      else { patch[key] = value; changes.push(diff(label, settings[key], value)); }
+    };
+    compare("bespoke release: technical handover accepted", "requireTechnicalHandover", wanted.release.technicalHandover);
+    compare("bespoke release: factory requirements confirmed", "requireFactoryRequirements", wanted.release.factoryRequirements);
+    compare("bespoke release: QS approved", "requireQs", wanted.release.qsApproved);
+    if (changes.length) await step.change(changes, async () => {
+      const fresh = await service.settings(ctx.actor, ctx.workspace.id) as { settings: { version: number } };
+      return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.settings.version, ...patch });
+    });
+  }
   const permits = wanted.permits;
   if (!permits) return;
   const logistics = ctx.get(LogisticsService);

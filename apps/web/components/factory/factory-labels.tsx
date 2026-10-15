@@ -30,11 +30,14 @@ export function useFactoryLabels() {
     check: {
       running: t("Project running"), scope: t("Scope unchanged"), client_drawings: t("Client approved the drawings"), drawing: t("Drawing approved"), payment: t("Payment before production verified"), materials: t("Materials in"),
       schedule: t("Workcenter and dates"), technical_measure: t("Technical site measure done"), variation_payment: t("Variation paid"), price_hold: t("Client approved the price"),
+      // PLM-174: the path E checks on a bespoke job.
+      technical_handover: t("Technical handover accepted"), factory_requirements: t("Factory requirements confirmed"), qs: t("QS approved the quotation"),
     } satisfies Record<ReleaseCheck["key"], string>,
     /** What's missing, in a few words, for a list. */
     blocked: {
       running: t("Project on hold"), scope: t("Scope changed"), client_drawings: t("Client hasn't approved the drawings"), drawing: t("Drawing not approved"), payment: t("Payment not in"), materials: t("Materials not in"),
       schedule: t("No workcenter or dates"), technical_measure: t("Technical site measure not done"), variation_payment: t("Variation not paid"), price_hold: t("Price not approved by the client"),
+      technical_handover: t("Technical handover not accepted"), factory_requirements: t("Factory requirements not confirmed"), qs: t("QS hasn't approved the quotation"),
     } satisfies Record<ReleaseCheck["key"], string>,
   }), [t]);
 }

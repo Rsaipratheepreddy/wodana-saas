@@ -9,7 +9,8 @@ import { everythingOrdered } from "../purchasing/orders";
 import { materialsSignedOff } from "./project-materials";
 import { readDrawingFacts } from "./project-drawings";
 import { projectNeedsDrawings } from "./project-drawing-needs";
-import { checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, DRAWING_CHECKS, INSTALLATION_CHECKS, LEAD_ROLE, type ProjectRole, type StageCheck, type TemplateStage } from "./project-checks";
+import { BESPOKE_CHECKS, checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, DRAWING_CHECKS, INSTALLATION_CHECKS, LEAD_ROLE, type ProjectRole, type StageCheck, type TemplateStage } from "./project-checks";
+import { bespokeGates } from "./project-bespoke-gates";
 import { readInstallationFacts } from "./project-installation";
 import { normaliseKeepInformed, type KeepInformed } from "./project-keep-informed";
 import { boqRequiredForProject } from "../fulfilment/fulfilment-rules";
@@ -225,6 +226,9 @@ export async function evaluateStages(db: Db, workspaceId: string, project: Pick<
   // The building permit for the delivery day (Palm, 6 Oct), read only when a current stage asks.
   const needsPermit = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "permit_collected"));
   const permitCollected = needsPermit ? await readPermitCollected(db, workspaceId, project.id) : false;
+  // PLM-174: the path E checks (technical handover, factory requirements, QS), read only when a current stage asks; null off the bespoke path.
+  const needsBespoke = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => BESPOKE_CHECKS.includes(check.kind)));
+  const bespoke = needsBespoke ? await bespokeGates(db, workspaceId, project) : null;
   const snags = (await db.query<{ open: number; critical: number }>(
     `SELECT count(*)::int AS open, count(*) FILTER (WHERE severity = 'critical')::int AS critical FROM work_items
       WHERE workspace_id = $1 AND project_id = $2 AND type = 'snag' AND status NOT IN ('done', 'cancelled')`, [workspaceId, project.id])).rows[0];
@@ -232,7 +236,7 @@ export async function evaluateStages(db: Db, workspaceId: string, project: Pick<
     const mine = confirmations.filter((confirmation) => confirmation.stageId === stage.id);
     const facts = { filledRoles, confirmed: new Set(mine.map((confirmation) => confirmation.checkKey)), productionPaid: paid, materialsSignedOff: materialsDone, everythingOrdered: ordered,
       everythingMade: made, openSnags: snags.open, openCriticalSnags: snags.critical, handedOver: handover, drawings, factorySlotBooked, notApplicableRoles, installation,
-      permitCollected };
+      permitCollected, bespoke };
     const checks = stage.checks.map((check) => {
       const confirmation = mine.find((item) => item.checkKey === check.key);
       return { ...check, passed: stage.status === "done" ? true : checkPasses(check, facts), confirmedBy: confirmation?.byName ?? null, confirmedAt: confirmation?.at ?? null, note: confirmation?.note ?? "" };

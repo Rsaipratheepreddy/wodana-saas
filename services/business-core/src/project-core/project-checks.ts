@@ -11,7 +11,8 @@ export type ProjectRole = { key: string; label: string };
  */
 export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed", "no_critical_snags",
   "handover_accepted", "drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked",
-  "installation_scheduled", "goods_delivered", "installation_done", "permit_collected", "technical_measure_done", "drawings_design_checked"] as const;
+  "installation_scheduled", "goods_delivered", "installation_done", "permit_collected", "technical_measure_done", "drawings_design_checked",
+  "technical_handover_accepted", "factory_requirements_confirmed", "qs_approved"] as const;
 export type CheckKind = (typeof CHECK_KINDS)[number];
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
 export type TemplateStage = { key: string; name: string; ownerRole: string | null; checks: StageCheck[] };
@@ -194,7 +195,16 @@ export type CheckFacts = {
   installation?: { scheduled: boolean; delivered: boolean; installed: boolean };
   /** A collected building permit covers the delivery day (before one is booked: is still valid today). */
   permitCollected?: boolean;
+  /**
+   * Path E checks before production (PLM-174), read only on a bespoke job: the technical handover pack accepted
+   * (PLM-165), every custom line's factory requirements confirmed or its recipe verified (PLM-166), and the quotation
+   * past its QS step. On a job that isn't bespoke they pass: the checks are about made-to-order work.
+   */
+  bespoke?: { technicalHandoverAccepted: boolean; factoryRequirementsConfirmed: boolean; qsApproved: boolean } | null;
 };
+
+/** The path E checks (PLM-174): held on a bespoke job, passed on any other. */
+export const BESPOKE_CHECKS: readonly CheckKind[] = ["technical_handover_accepted", "factory_requirements_confirmed", "qs_approved"];
 
 /** Whether a check passes, from the facts gathered for the stage. */
 export function checkPasses(check: StageCheck, facts: CheckFacts) {
@@ -219,5 +229,9 @@ export function checkPasses(check: StageCheck, facts: CheckFacts) {
     case "permit_collected": return Boolean(facts.permitCollected);
     case "technical_measure_done": return Boolean(facts.drawings?.measured);
     case "drawings_design_checked": return Boolean(facts.drawings?.designChecked);
+    // PLM-174: on a job that isn't bespoke there is nothing to hold.
+    case "technical_handover_accepted": return facts.bespoke ? facts.bespoke.technicalHandoverAccepted : true;
+    case "factory_requirements_confirmed": return facts.bespoke ? facts.bespoke.factoryRequirementsConfirmed : true;
+    case "qs_approved": return facts.bespoke ? facts.bespoke.qsApproved : true;
   }
 }

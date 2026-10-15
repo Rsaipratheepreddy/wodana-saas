@@ -16,6 +16,7 @@ import { CheckDialog, DispatchDialog, DrawingDialog, QuantityDialog, ReportDialo
 import { RecordHistory } from "../history/record-history";
 import { WorkOrderMaterials } from "./work-order-materials";
 import { ChecklistAnswers } from "../pre-project/site-checklist";
+import { useRequirementLabels } from "../project-core/project-technical-handover";
 import styles from "./factory.module.css";
 
 /** The "no payment stage" choice of the payment field. */
@@ -35,6 +36,7 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
   const t = useT();
   const format = useProjectFormat();
   const labels = useFactoryLabels();
+  const requirementLabels = useRequirementLabels();
   const [state, setState] = useState<WorkOrderState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -133,6 +135,9 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
       // PLM-169: the client's approval of a revised price is a change request on the project.
       case "price_hold": return <Link className={ops.projectLink} href={`${projectHref(order.projectId, "scope")}?view=changes`}>{t("Open the changes")}</Link>;
       case "client_drawings": case "technical_measure": return <Link className={ops.projectLink} href={`/workspace/projects/${order.projectId}/scope?view=drawings`}>{t("Open the drawings")}</Link>;
+      // PLM-174: the path E checks are settled on the project's technical handover (the QS step on its quotation).
+      case "technical_handover": case "factory_requirements": return <Link className={ops.projectLink} href={`/workspace/projects/${order.projectId}/scope?view=technical`}>{t("Open the technical handover")}</Link>;
+      case "qs": return <Link className={ops.projectLink} href={projectHref(order.projectId, "scope")}>{t("Open the scope")}</Link>;
       case "running": return <Link className={ops.projectLink} href={projectHref(order.projectId)}>{t("Open the project")}</Link>;
       default: return null;
     }
@@ -226,6 +231,7 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
   // PLM-150: the snags still to fix (or fixed and waiting for the next round), each marked fixed by the factory here.
   const snagsToFix = (state?.snags ?? []).filter((snag) => ["todo", "in_progress", "in_review"].includes(snag.status));
   const severity: Record<string, string> = { minor: t("Minor"), major: t("Major"), critical: t("Critical") };
+  const requirementWords = requirementLabels.state;
   const workPanel = !state || !order ? null : <div className={styles.sheet}>
     {snagsToFix.length ? <Section title={t("Snags")}>
       <ul className={ops.list}>{snagsToFix.map((snag) => <li key={snag.id}>
@@ -261,6 +267,10 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         {reminder.reason === "before_ready" && reminder.plannedReadyOn ? <small>{t("Ahead of the planned ready date {date}", { date: format.day(reminder.plannedReadyOn) })}</small>
           : reminder.reason === "all_ready" ? <small>{t("Everything tied to this payment was ready")}</small> : null}</dd></div> : null}
       {order.batchName ? <div><dt>{t("Batch")}</dt><dd>{t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName })}</dd></div> : null}
+      {state.requirements && state.requirements.state !== "not_needed" ? <div><dt>{t("Materials & labour")}</dt><dd>
+        <Badge tone={state.requirements.settled ? "success" : state.requirements.state === "pending" ? "warning" : "danger"}>{requirementWords[state.requirements.state]}</Badge>
+        <Link className={ops.projectLink} href={`/workspace/projects/${order.projectId}/scope?view=technical`}>{t("Open the technical handover")}</Link>
+      </dd></div> : null}
       <div><dt>{t("Drawing")}</dt><dd>
         <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })
           : state.drawing?.source === "project" && state.drawing.project ? t("Drawings R{number}, approved by {name} on {date}", { number: state.drawing.project.number,

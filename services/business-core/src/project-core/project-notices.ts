@@ -17,7 +17,11 @@ export type ProjectNotice =
   | { code: "project.drawings_started" | "project.production_started" | "project.installation_scheduled"; date: string; note: string; memberships: string[] }
   | { code: "project.material_details"; item: string; note: string; memberships: string[] }
   /** PLM-161 / PLM-167 / PLM-168: the BOQ's steps, each to its next owner; `revision` is BOQ R-n once approved. */
-  | { code: "project.boq_draft_ready" | "project.boq_verified" | "project.boq_approved" | "project.boq_returned" | "project.boq_locked" | "project.ready_to_start"; revision: string; note: string; memberships: string[] };
+  | { code: "project.boq_draft_ready" | "project.boq_verified" | "project.boq_approved" | "project.boq_returned" | "project.boq_locked" | "project.ready_to_start"; revision: string; note: string; memberships: string[] }
+  // PLM-165: the technical pack handed over (to the technical team, also by email) and accepted (to whoever handed it over and the lead).
+  | { code: "project.technical_handover" | "project.technical_handover_accepted"; note: string; memberships: string[] }
+  // PLM-166: a custom line's factory requirements confirmed, or changed after confirmation so they need confirming again.
+  | { code: "project.factory_requirements_confirmed" | "project.factory_requirements_reopened"; item: string; note: string; memberships: string[] };
 
 /** The BOQ steps that also go by email: the next owner acts on them. */
 const BOQ_EMAILED = new Set(["project.boq_draft_ready", "project.boq_verified", "project.ready_to_start"]);
@@ -74,11 +78,14 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
     // PLM-055 / PLM-069: the key moments, in the app and by email.
     const date = notice.date ? await workspaceDay(db, input.workspaceId, notice.date) : "";
     for (const person of await users(notice.memberships)) await tell(person.userId, { date, note: notice.note }, true);
-  } else if (notice.code === "project.material_details") {
+  } else if (notice.code === "project.material_details" || notice.code === "project.factory_requirements_confirmed" || notice.code === "project.factory_requirements_reopened") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { item: notice.item, note: notice.note }, false);
   } else if (notice.code === "project.boq_draft_ready" || notice.code === "project.boq_verified" || notice.code === "project.boq_approved" || notice.code === "project.boq_returned"
     || notice.code === "project.boq_locked" || notice.code === "project.ready_to_start") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { revision: notice.revision, note: notice.note }, BOQ_EMAILED.has(notice.code));
+  } else if (notice.code === "project.technical_handover" || notice.code === "project.technical_handover_accepted") {
+    // PLM-165: the pack handed over goes by email too; the technical team acts on it.
+    for (const person of await users(notice.memberships)) await tell(person.userId, { item: "", note: notice.note }, notice.code === "project.technical_handover");
   } else {
     for (const person of await users(notice.memberships)) await tell(person.userId, { note: notice.note }, notice.code === "project.cancelled");
   }
