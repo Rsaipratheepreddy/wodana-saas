@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { ApprovalPoliciesService } from "../approvals/approval-policies.service";
 import { CatalogV2Service } from "../catalog-core/catalog-v2.service";
+import { ClientPortalAdminService } from "../client-portal/client-portal-admin.service";
+import type { PortalSettings, Section as PortalSection } from "../client-portal/portal-settings";
 import { categoryKey } from "../catalog-core/category-names";
 import { OWNER_ROLE } from "../approvals/approval-policy";
 import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
@@ -922,6 +924,34 @@ const clientUpdates: Section = async (_ctx, profile, step) => {
   else step.manual("client updates", `no workspace default; ${wanted.frequency} by ${wanted.mode} is set per case (Pre-project › Client updates)`);
 };
 
+// ---------- client portal ----------
+
+/** PLM-170: the portal's sections and the kinds of job the bill of quantities shows for, through the portal's own settings command. */
+const clientPortal: Section = async (ctx, profile, step) => {
+  const wanted = profile.clientPortal!;
+  const service = ctx.get(ClientPortalAdminService);
+  const read = async () => (await service.settings(ctx.actor, ctx.workspace.id) as { settings: PortalSettings }).settings;
+  const current = await read();
+  const patch: Record<string, unknown> = {};
+  const changes: Change[] = [];
+  const sections: Record<string, boolean> = {};
+  for (const [key, on] of Object.entries(wanted.sections ?? {}) as Array<[PortalSection, boolean]>) {
+    const label = `portal section ${key}`;
+    if (current.sections[key] === on) step.same(label, on ? "shown" : "hidden");
+    else { sections[key] = on; changes.push(diff(label, current.sections[key] ? "shown" : "hidden", on ? "shown" : "hidden")); }
+  }
+  if (Object.keys(sections).length) patch.sections = sections;
+  if (wanted.boqEnquiryTypes !== undefined) {
+    const label = "bill of quantities shown for";
+    if (stable([...current.boqEnquiryTypes].sort()) === stable([...wanted.boqEnquiryTypes].sort())) step.same(label, shown(wanted.boqEnquiryTypes));
+    else { patch.boqEnquiryTypes = wanted.boqEnquiryTypes; changes.push(diff(label, current.boqEnquiryTypes, wanted.boqEnquiryTypes)); }
+  }
+  if (changes.length) await step.change(changes, async () => {
+    const fresh = await read();
+    return service.saveSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, ...patch });
+  });
+};
+
 // ---------- catalogue categories ----------
 
 type Category = { id: string; name: string; parentId: string | null; version: number; itemCount: number };
@@ -1078,7 +1108,7 @@ export const SECTIONS: Array<[ProfileSection, Section]> = [
   // Design before factory: the design team's project roles (e.g. the Creative Director) exist before the inspections name them.
   ["enquiryTypes", enquiryTypes], ["vehicles", vehicles], ["routes", routes], ["quotations", quotations], ["firstResponse", firstResponse],
   ["financeRequests", financeRequests], ["approvals", approvals], ["rolePermissions", rolePermissions], ["design", design], ["factory", factory], ["orderPaths", orderPaths], ["clientUpdates", clientUpdates],
-  ["catalogCategories", catalogCategories], ["projects", projects], ["finishes", finishes], ["inbox", inbox], ["sales", sales], ["enquiryRequirements", enquiryRequirements],
+  ["clientPortal", clientPortal], ["catalogCategories", catalogCategories], ["projects", projects], ["finishes", finishes], ["inbox", inbox], ["sales", sales], ["enquiryRequirements", enquiryRequirements],
 ];
 
 /** The files `configure` applies beside its profile (--teams, --packages). */

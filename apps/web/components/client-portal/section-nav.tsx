@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Images, LayoutGrid, ListChecks, MessageCircle, NotebookPen, Palette, ShieldCheck, TrendingUp, Wallet, type LucideIcon } from "lucide-react";
+import { FileText, Images, LayoutGrid, ListChecks, ListOrdered, MessageCircle, NotebookPen, Palette, ShieldCheck, TrendingUp, Wallet, type LucideIcon } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalSection } from "@/lib/client-portal/types";
@@ -10,8 +10,8 @@ export type PortalPage = "overview" | PortalSection;
 export type NavItem = { id: PortalPage; label: string; badge?: { text: string; tone: "warning" | "danger" | "info" } };
 
 const ICONS: Record<PortalPage, LucideIcon> = {
-  overview: LayoutGrid, progress: TrendingUp, decisions: ListChecks, moodboard: Images, designs: Palette, payments: Wallet, documents: FileText, warranty: ShieldCheck, meetings: NotebookPen,
-  messages: MessageCircle,
+  overview: LayoutGrid, progress: TrendingUp, decisions: ListChecks, moodboard: Images, designs: Palette, payments: Wallet, boq: ListOrdered, documents: FileText, warranty: ShieldCheck,
+  meetings: NotebookPen, messages: MessageCircle,
 };
 
 /**

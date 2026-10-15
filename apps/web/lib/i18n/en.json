@@ -15251,5 +15251,17 @@
   "Keep background": "Keep background",
   "Remove background": "Remove background",
   "Remove sign-in background?": "Remove sign-in background?",
-  "The sign-in screen will show the default image.": "The sign-in screen will show the default image."
+  "The sign-in screen will show the default image.": "The sign-in screen will show the default image.",
+  "Bill of quantities": "Bill of quantities",
+  "Your bill of quantities will appear here once your quotation is accepted.": "Your bill of quantities will appear here once your quotation is accepted.",
+  "{quantity} {unit} × {rate}": "{quantity} {unit} × {rate}",
+  "Agreed total · {revision}": "Agreed total · {revision}",
+  "Agreed total": "Agreed total",
+  "Est. cost": "Est. cost",
+  "Linked records": "Linked records",
+  "V{number} · {title}": "V{number} · {title}",
+  "+{count} in another currency": "+{count} in another currency",
+  "Bill of quantities for": "Bill of quantities for",
+  "Only projects of these enquiry types or order paths; none chosen means every project.": "Only projects of these enquiry types or order paths; none chosen means every project.",
+  "Not costed": "Not costed"
 }

@@ -66,6 +66,10 @@ export class ProjectCoreController {
   @Get("projects/:projectId/scope")
   scope(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.scope(actor, workspaceId, projectId); }
 
+  /** PLM-164: the records the project runs through, each by id, for the linked-records block. */
+  @Get("projects/:projectId/links")
+  links(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.links(actor, workspaceId, projectId); }
+
   @Get("projects/:projectId/materials")
   materials(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.materials(actor, workspaceId, projectId); }
 

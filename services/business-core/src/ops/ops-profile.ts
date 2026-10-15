@@ -8,6 +8,7 @@ import { parseInspectionStages, type InspectionStage } from "../factory/factory-
 import { PRODUCTION_STEP_KINDS, type ProductionStep } from "../factory/production-status";
 import { DEDUCT_EVENTS, LEAD_FROM, RESERVE_EVENTS } from "../fulfilment/fulfilment-rules";
 import { CHECK_KINDS } from "../project-core/project-checks";
+import { SECTIONS as PORTAL_SECTIONS, type Section as PortalSection } from "../client-portal/portal-settings";
 import { QS_ITEM_TYPES, QS_SCOPES } from "../proposals/qs-requirement";
 
 /**
@@ -77,6 +78,11 @@ export type Profile = {
   };
   orderPaths?: OrderPathChange[];
   clientUpdates?: { mode: "call" | "portal"; frequency: "weekly" | "fortnightly" | "monthly" | "off" };
+  /**
+   * The client portal (PLM-170): which sections clients see (a section left out keeps its switch), and the enquiry type codes
+   * and order paths whose projects show the bill of quantities (empty: every project the section is on for).
+   */
+  clientPortal?: { sections?: Partial<Record<PortalSection, boolean>>; boqEnquiryTypes?: string[] };
   catalogCategories?: CategoryCleanup[];
   /**
    * Project settings (PLM-149): the project role that checks the drawings match the design, sends them to the client and
@@ -119,7 +125,7 @@ export const DESIGN_TEAM_KEYS = ["lead_designer", "junior_designer", "sales_admi
 export type DesignTeamKey = (typeof DESIGN_TEAM_KEYS)[number];
 
 export const PROFILE_SECTIONS = ["enquiryTypes", "vehicles", "factory", "quotations", "firstResponse", "financeRequests", "approvals", "routes", "rolePermissions",
-  "design", "orderPaths", "clientUpdates", "catalogCategories", "projects", "finishes", "inbox", "sales", "enquiryRequirements"] as const;
+  "design", "orderPaths", "clientUpdates", "clientPortal", "catalogCategories", "projects", "finishes", "inbox", "sales", "enquiryRequirements"] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 export const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -625,6 +631,20 @@ export function validateProfile(raw: unknown): Profile {
       const mode = at("clientUpdates.mode").oneOf(section.mode, ["call", "portal"] as const);
       const frequency = at("clientUpdates.frequency").oneOf(section.frequency, ["weekly", "fortnightly", "monthly", "off"] as const);
       if (mode && frequency) profile.clientUpdates = { mode, frequency };
+    }
+  }
+
+  if (raw.clientPortal !== undefined) {
+    const section = at("clientPortal").object(raw.clientPortal, ["sections", "boqEnquiryTypes"]);
+    if (section) {
+      const portal: NonNullable<Profile["clientPortal"]> = {};
+      if (section.sections !== undefined) {
+        const sections = at("clientPortal.sections").object(section.sections, [...PORTAL_SECTIONS]);
+        if (sections) portal.sections = Object.fromEntries(Object.entries(sections).filter(([key]) => !key.startsWith("_") && (PORTAL_SECTIONS as readonly string[]).includes(key))
+          .flatMap(([key, value]) => { const on = at(`clientPortal.sections.${key}`).bool(value); return on === undefined ? [] : [[key, on]]; }));
+      }
+      if (section.boqEnquiryTypes !== undefined) portal.boqEnquiryTypes = at("clientPortal.boqEnquiryTypes").texts(section.boqEnquiryTypes, 80).map(word);
+      profile.clientPortal = portal;
     }
   }
 

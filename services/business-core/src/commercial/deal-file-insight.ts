@@ -13,6 +13,7 @@ import { permitRequired, readPermitFacts } from "../logistics/permits";
 import { dealRule } from "../fulfilment/fulfilment-rules";
 import type { FlowDefinition } from "../crm/flows/flow-definition";
 import { flowCapabilities, type FlowCapabilities } from "../crm/flows/flow-capabilities";
+import { readRecordLinks, type RecordLinks } from "../project-core/record-links";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -44,6 +45,8 @@ export type DealInsight = DealMoney & {
   proposals: Array<{ kind: ProposalKind; valueStatus: ValueStatus; wonAt: string | null }>;
   /** PLM-100: who works on the deal, role by role (a person or "not applicable"), as tagged on the enquiry and the opportunity. */
   team?: TeamRoleView[];
+  /** PLM-164: the records the deal runs through once it is a project (quotation, Deal File, project, orders), each by id. */
+  links?: RecordLinks | null;
 };
 
 const text = (value: Dec, currency: string) => value.toFixed(currency ? currencyDecimals(currency) : 2);
@@ -176,9 +179,10 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
     if (path === "core_collection_factory" || path === "bespoke")
       sections.push({ key: "approved_drawing", group: "furniture", state: state(live.workOrders.drawingsApproved > 0 || Boolean(live.drawingsClientApproved), true), count: live.workOrders.drawingsApproved, href: projectHref() ?? opportunityHref });
     if (live.materialsChange) sections.push({ key: "materials_approval", group: "furniture", state: state(Boolean(dealFile?.materialEvidence?.length), true), href: caseHref("execution-release") });
+    // PLM-164: the orders list narrowed to this deal's project, once there is one.
     if (path === "supplier_order")
       sections.push({ key: "supplier_orders", group: "furniture", state: state(live.supplierOrders.total > 0 && live.supplierOrders.arrived === live.supplierOrders.total, live.supplierOrders.total > 0),
-        count: live.supplierOrders.total, href: "/workspace/purchasing/orders" });
+        count: live.supplierOrders.total, href: live.projectId ? `/workspace/purchasing/orders?project=${live.projectId}` : "/workspace/purchasing/orders" });
     // The order's own BOQ choice (or its path's rule) asks the QS for one even when nothing is made.
     if (!production && live.boqRequired) sections.push({ key: "boq", group: "furniture", state: state(live.boqLines > 0, Boolean(live.projectId)), count: live.boqLines, href: projectHref() ?? caseHref("quotations") });
     if (path !== "take_home_now" && (live.permit?.required || live.permit?.collected) && (!live.projectId || !production))
@@ -293,5 +297,6 @@ export async function dealInsightFor(db: Db, workspaceId: string, input: { caseI
     closing: input.opportunityId ? await loadDealClosing(db, workspaceId, input.opportunityId) : null,
     proposals: live.proposals,
     team: input.team ?? [],
+    links: live.projectId ? await readRecordLinks(db, workspaceId, live.projectId) : null,
   };
 }

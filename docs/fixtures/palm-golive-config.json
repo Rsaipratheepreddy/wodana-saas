@@ -244,6 +244,11 @@
     "mode": "call",
     "frequency": "weekly"
   },
+  "clientPortal": {
+    "_source": "PLM-170 (15 Oct 2026): clients of fit-out, ID & furniture, renovation and bespoke joinery jobs see the bill of quantities at selling rates in their portal; never cost or margin.",
+    "sections": { "boq": true },
+    "boqEnquiryTypes": ["full_fit_out", "interior_design_furniture", "renovation_fit_out", "bespoke"]
+  },
   "orderPaths": [
     {
       "enquiryType": "interior_design_furniture",

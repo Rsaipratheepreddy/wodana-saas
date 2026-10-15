@@ -12,6 +12,7 @@ import { addExact, currencyDecimals, orderTotals, priceLine, subtractExact } fro
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { DeliverTo, OrderLine, OrderState, PaymentTerms, PurchasingSettings, Shipment } from "@/lib/purchasing/types";
 import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
+import { LinkedRecords } from "../record/linked-records";
 import { useProjectFormat } from "../project-core/format";
 import {
   CancelLineDialog, ChaseDialog, ConfirmDialog, OfferAlternateDialog, ReasonDialog, RefuseAlternateDialog, SendDialog, ShipmentDialog,
@@ -375,6 +376,8 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
         {order.status !== "cancelled" ? <StageTracker ariaLabel={t("Where the order is")} stages={stages()} /> : null}
         {step ? <NextStep title={step.title} detail={step.detail} tone={step.tone} /> : null}
       </div>
+      {/* PLM-164: the records of each project this order is for, each a link; this order is named. */}
+      {order.projects.map((project) => <LinkedRecords key={project.id} workspaceId={api.workspaceId} projectId={project.id} current="purchase_order" currentId={order.id} />)}
       {notice ? <InlineNotice tone={notice.tone} message={notice.text} /> : null}
       {order.status === "cancelled" ? <InlineNotice tone="info" message={t("Cancelled: {reason}", { reason: order.cancelReason ?? "" })} /> : null}
       {order.status === "closed" && order.closeReason ? <InlineNotice tone="info" message={t("Closed: {reason}", { reason: order.closeReason })} /> : null}

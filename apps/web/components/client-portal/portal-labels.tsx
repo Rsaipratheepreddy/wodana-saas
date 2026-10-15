@@ -13,7 +13,7 @@ export function usePortalLabels() {
   return useMemo(() => {
     const sections: Record<"overview" | PortalSection, string> = {
       overview: t("Overview"), progress: t("Progress"), moodboard: t("Moodboard"), decisions: t("Decisions"), payments: t("Payments"), documents: t("Documents"), warranty: t("Warranty"),
-      designs: t("Designs"), meetings: t("Meetings"), messages: t("Messages"),
+      designs: t("Designs"), meetings: t("Meetings"), messages: t("Messages"), boq: t("Bill of quantities"),
     };
     const states: Record<string, [string, Tone]> = {
       issued: [t("Waiting for you"), "warning"], client_review: [t("Waiting for you"), "warning"], sent: [t("Waiting for you"), "warning"],

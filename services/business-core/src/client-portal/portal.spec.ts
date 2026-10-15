@@ -3,20 +3,60 @@ import type { ChangeRequest, Quote } from "../commercial/commercial.types";
 import { maskEmail, mobileNumber, PortalCodes } from "./portal-auth";
 import { portalQuote } from "./portal-quote";
 import { portalRequest, portalTeam } from "./portal-read";
-import { effectiveSections, type PortalSettings } from "./portal-settings";
+import { boqApplies, effectiveSections, jobCodes, type PortalSettings } from "./portal-settings";
+import { portalBoq } from "./portal-boq";
 
-const settings = (sections: Partial<PortalSettings["sections"]> = {}): PortalSettings => ({
+const settings = (sections: Partial<PortalSettings["sections"]> = {}, boqEnquiryTypes: string[] = []): PortalSettings => ({
   workspaceId: "w", slug: "s", enabled: true, version: 1,
-  sections: { progress: true, moodboard: true, decisions: true, payments: true, documents: true, warranty: true, meetings: true, designs: true, messages: true, ...sections },
-  progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, welcomeTitle: "", welcomeText: "", support: { phone: "", email: "", whatsapp: "" },
+  sections: { progress: true, moodboard: true, decisions: true, payments: true, boq: true, documents: true, warranty: true, meetings: true, designs: true, messages: true, ...sections },
+  progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, boqEnquiryTypes, welcomeTitle: "", welcomeText: "", support: { phone: "", email: "", whatsapp: "" },
 });
 
 describe("client portal rules", () => {
   it("shows a project the workspace's sections, narrowed by the project, and nothing while it's paused", () => {
     expect(effectiveSections(settings({ payments: false }), null)).toMatchObject({ progress: true, payments: false });
     expect(effectiveSections(settings(), { sections: ["progress", "payments"], paused: false, pausedAt: null, version: 1 }))
-      .toEqual({ progress: true, moodboard: false, decisions: false, payments: true, documents: false, warranty: false, meetings: false, designs: false, messages: false });
-    expect(Object.values(effectiveSections(settings(), { sections: null, paused: true, pausedAt: "2026-09-27", version: 1 }))).toEqual(Array(9).fill(false));
+      .toEqual({ progress: true, moodboard: false, decisions: false, payments: true, boq: false, documents: false, warranty: false, meetings: false, designs: false, messages: false });
+    expect(Object.values(effectiveSections(settings(), { sections: null, paused: true, pausedAt: "2026-09-27", version: 1 }))).toEqual(Array(10).fill(false));
+  });
+
+  it("PLM-170: shows the bill of quantities only for the kinds of job the firm lists (its enquiry type or its order path), every job without a list", () => {
+    const palm = settings({}, ["full_fit_out", "bespoke"]);
+    expect(boqApplies(palm, { enquiryType: "full_fit_out", furniturePath: null })).toBe(true);
+    expect(boqApplies(palm, { enquiryType: "furniture_only", furniturePath: "bespoke" })).toBe(true);
+    expect(boqApplies(palm, { enquiryType: "Full_Fit_Out", furniturePath: null })).toBe(true);
+    expect(boqApplies(palm, { enquiryType: "furniture_only", furniturePath: "take_home_now" })).toBe(false);
+    expect(boqApplies(palm, { enquiryType: null, furniturePath: null })).toBe(false);
+    expect(boqApplies(settings(), { enquiryType: null, furniturePath: null })).toBe(true);
+    // Without the job at hand (a file, a command) the list doesn't narrow.
+    expect(boqApplies(palm, undefined)).toBe(true);
+    expect(effectiveSections(palm, null, { enquiryType: "interior_design", furniturePath: null })).toMatchObject({ boq: false, payments: true });
+    expect(effectiveSections(palm, null, { enquiryType: "full_fit_out", furniturePath: null }).boq).toBe(true);
+    // The switch itself is off by default and still rules.
+    expect(effectiveSections(settings({ boq: false }), null, { enquiryType: "full_fit_out", furniturePath: null }).boq).toBe(false);
+    expect(jobCodes([" Full_Fit_Out ", "bespoke", "bespoke", ""], "x")).toEqual(["full_fit_out", "bespoke"]);
+    expect(() => jobCodes("full_fit_out", "x")).toThrow(/isn't valid/);
+  });
+
+  it("PLM-170: projects the bill of quantities by room at selling rates, with totals, and nothing from the cost side", () => {
+    const lines = [
+      { id: "l1", roomId: "r1", room: "Kitchen", title: "Cabinets", description: "Oak veneer", quantity: "4.5000", unit: "m", rate: "1200.0000", amount: "5400.0000" },
+      { id: "l2", roomId: "r1", room: "Kitchen", title: "Worktop", description: "", quantity: "2.2500", unit: "m²", rate: "800.0000", amount: "1800.0000" },
+      { id: "l3", roomId: null, room: null, title: "Lights", description: "", quantity: "1.0000", unit: "nos", rate: "650.0000", amount: "650.0000" },
+    ];
+    const boq = portalBoq(lines, "AED", "R2");
+    expect(boq).toEqual({
+      currency: "AED", revision: "R2", total: "7850.00",
+      rooms: [
+        { id: "r1", name: "Kitchen", total: "7200.00", lines: [
+          { id: "l1", title: "Cabinets", description: "Oak veneer", quantity: "4.5", unit: "m", rate: "1200.00", amount: "5400.00" },
+          { id: "l2", title: "Worktop", description: "", quantity: "2.25", unit: "m²", rate: "800.00", amount: "1800.00" },
+        ] },
+        { id: null, name: null, total: "650.00", lines: [{ id: "l3", title: "Lights", description: "", quantity: "1", unit: "nos", rate: "650.00", amount: "650.00" }] },
+      ],
+    });
+    expect(JSON.stringify(boq)).not.toMatch(/cost|margin|package|supplier|unitCost/i);
+    expect(portalBoq([], null, null)).toEqual({ currency: null, revision: null, rooms: [], total: "0.00" });
   });
 
   it("takes a mobile number in international form and never shows an email in full", () => {

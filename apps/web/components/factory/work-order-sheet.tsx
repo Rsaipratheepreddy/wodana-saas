@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { InspectionSnag, InspectionStageKind, ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
 import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
+import { LinkedRecords } from "../record/linked-records";
 import { useProjectFormat } from "../project-core/format";
 import { SavedPhotos } from "../purchasing/delivery-photos";
 import { quantityText } from "../purchasing/order-labels";
@@ -368,6 +369,8 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         {!["cancelled", "short_closed"].includes(order.status) ? <StageTracker ariaLabel={t("Where the work order is")} stages={stages()} /> : null}
         {step ? <NextStep title={step.title} detail={step.detail} tone={step.tone} actions={step.actions} /> : null}
       </div>
+      {/* PLM-164: the records of the project this work order is for, each a link; this work order is named. */}
+      <LinkedRecords workspaceId={api.workspaceId} projectId={order.projectId} current="work_order" currentId={order.id} />
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {state.projectStatus === "on_hold" && open ? <InlineNotice tone="info" message={t("{project} is on hold.", { project: order.projectReference })} /> : null}
       {open && order.lineStatus === "omitted" ? <InlineNotice tone="error" message={t("A variation removed its scope line: cancel it, or close it short.")} />

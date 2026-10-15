@@ -89,6 +89,8 @@ describe("Deal File contents per enquiry type (PLM-123)", () => {
     for (const projectId of [null, "p"]) {
       const supplier = dealSections(data(), live({ projectId, flow: "furniture", furniturePath: "supplier_order", permit }), delivered);
       expect(keys(supplier).slice(8)).toEqual(["items", "collection_delivery", "supplier_orders", "building_permit", "proof_of_delivery"]);
+      // PLM-164: the supplier orders link opens the orders of this deal's project, not every order.
+      expect(supplier.find((section) => section.key === "supplier_orders")?.href).toBe(projectId ? "/workspace/purchasing/orders?project=p" : "/workspace/purchasing/orders");
     }
     expect(keys(dealSections(data(), live({ flow: "furniture", furniturePath: "in_stock_delivery" }), delivered)).slice(8)).toEqual(["items", "collection_delivery", "proof_of_delivery"]);
     // Before a path is chosen, a scope without manufacturing makes nothing either.

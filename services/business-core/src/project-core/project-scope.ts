@@ -167,6 +167,118 @@ export async function readScope(db: Db, workspaceId: string, projectId: string) 
   return { lines, packages, seals, variations };
 }
 
+/** A scope line as the person sees it: the rate and amount are null for someone who doesn't see the project's value (QA-006). */
+export type PricedScopeLine = Omit<ScopeLine, "rate" | "net"> & { rate: string | null; net: string | null };
+
+export type PurchaseOrderLink = { id: string; number: string; status: string };
+export type WorkOrderLink = { id: string; number: number; status: string };
+/** PLM-164: the records a live scope line is on: the purchase orders placed for it (or for its work orders) and its work orders. */
+export type ScopeLineLinks = { purchaseOrders: PurchaseOrderLink[]; workOrders: WorkOrderLink[] };
+export const NO_LINKS: ScopeLineLinks = { purchaseOrders: [], workOrders: [] };
+
+/**
+ * PLM-164: which purchase orders and work orders each line of the project's scope is on. A purchase order counts for a line
+ * when one of its lines is for the scope line, or buys materials or outside work for a work order of it; cancelled orders don't count.
+ */
+export async function readScopeLinks(db: Db, workspaceId: string, projectId: string): Promise<Map<string, ScopeLineLinks>> {
+  const links = new Map<string, ScopeLineLinks>();
+  const of = (lineId: string) => { const found = links.get(lineId) ?? { purchaseOrders: [], workOrders: [] }; links.set(lineId, found); return found; };
+  const orders = (await db.query<PurchaseOrderLink & { lineId: string }>(
+    `SELECT DISTINCT coalesce(ordered.boq_line_id, work.boq_line_id) AS "lineId", purchase.id, purchase.number, purchase.status
+       FROM purchase_order_lines ordered
+       JOIN purchase_orders purchase ON purchase.workspace_id = ordered.workspace_id AND purchase.id = ordered.order_id
+       LEFT JOIN work_orders work ON work.workspace_id = ordered.workspace_id AND work.id = ordered.work_order_id
+      WHERE ordered.workspace_id = $1 AND (ordered.project_id = $2 OR work.project_id = $2) AND purchase.status <> 'cancelled'
+        AND coalesce(ordered.boq_line_id, work.boq_line_id) IS NOT NULL
+      ORDER BY purchase.number`, [workspaceId, projectId])).rows;
+  for (const { lineId, ...order } of orders) of(lineId).purchaseOrders.push(order);
+  const work = (await db.query<WorkOrderLink & { lineId: string }>(
+    `SELECT boq_line_id AS "lineId", id, number, status FROM work_orders WHERE workspace_id = $1 AND project_id = $2 AND status <> 'cancelled' ORDER BY number`,
+    [workspaceId, projectId])).rows;
+  for (const { lineId, ...order } of work) of(lineId).workOrders.push(order);
+  return links;
+}
+
+/** The cost side of one live line, for the people who see costs (PLM-170). */
+export type ScopeLineCost = {
+  /** The QS's unit cost sealed with the quotation the line came from; null when the quotation had none. */
+  unitCost: string | null;
+  /** quantity × unit cost at the line's current quantity (null without a unit cost). */
+  estimate: string | null;
+  /** What is on placed orders for the line (directly, or as materials and outside work for its work orders), in the project's currency. */
+  committed: string;
+  /** Order lines in another currency, left out of `committed`. */
+  committedForeign: number;
+  /** amount − estimate, and as a share of the amount; null without a unit cost, an amount, or margin access. */
+  margin: string | null;
+  marginPercent: string | null;
+};
+export type LineCostSource = { unitCost: string | null; committed: Dec; committedForeign: number };
+
+/**
+ * PLM-170: the cost behind each live scope line: the unit cost sealed with its quotation line (the QS estimate), and what
+ * placed purchase orders commit for it (its own order lines, and the materials and outside work bought for its work orders),
+ * summed in the project's currency; order lines in another currency are counted, not converted.
+ */
+export async function readScopeCosts(db: Db, workspaceId: string, project: { id: string; caseId: string; currency: string }): Promise<Map<string, LineCostSource>> {
+  const costs = new Map<string, LineCostSource>();
+  const of = (lineId: string) => { const found = costs.get(lineId) ?? { unitCost: null, committed: Dec.ZERO, committedForeign: 0 }; costs.set(lineId, found); return found; };
+  const estimates = (await db.query<{ lineId: string; unitCost: string | null }>(
+    `SELECT boq.id AS "lineId", quoted.unit_cost::text AS "unitCost"
+       FROM project_boq_lines boq
+       JOIN project_scope_seals seal ON seal.workspace_id = boq.workspace_id AND seal.id = boq.origin_seal_id
+       JOIN commercial_quote_lines quoted ON quoted.workspace_id = seal.workspace_id AND quoted.case_id = $3 AND quoted.quote_id = seal.quote_id AND quoted.id = boq.source_line_id
+      WHERE boq.workspace_id = $1 AND boq.project_id = $2`, [workspaceId, project.id, project.caseId])).rows;
+  for (const row of estimates) of(row.lineId).unitCost = row.unitCost;
+  const committed = (await db.query<{ lineId: string; net: string; currency: string }>(
+    `SELECT coalesce(ordered.boq_line_id, work.boq_line_id) AS "lineId",
+            ((ordered.quantity - coalesce(ordered.cancelled_quantity, 0)) * ordered.unit_price * (1 - ordered.discount_percent / 100))::numeric(18, 4)::text AS net,
+            btrim(purchase.currency) AS currency
+       FROM purchase_order_lines ordered
+       JOIN purchase_orders purchase ON purchase.workspace_id = ordered.workspace_id AND purchase.id = ordered.order_id
+       LEFT JOIN work_orders work ON work.workspace_id = ordered.workspace_id AND work.id = ordered.work_order_id
+      WHERE ordered.workspace_id = $1 AND (ordered.project_id = $2 OR work.project_id = $2) AND purchase.status NOT IN ('draft', 'pending_approval', 'cancelled')
+        AND coalesce(ordered.boq_line_id, work.boq_line_id) IS NOT NULL`, [workspaceId, project.id])).rows;
+  for (const row of committed) {
+    const line = of(row.lineId);
+    if (row.currency === project.currency) line.committed = line.committed.add(row.net);
+    else line.committedForeign += 1;
+  }
+  return costs;
+}
+
+/** part ÷ base × 100 to one place; null without a base. */
+const percent = (part: Dec, base: Dec) => (base.isZero() ? null : part.mul(100).div(base).round(1).toFixed(1));
+
+/**
+ * One line's cost figures from its source, to the currency's places. The margin needs the line's amount (which the
+ * person may not see) and margin access; without either it stays null. An omitted line has no estimate or margin.
+ */
+export function lineCost(line: { quantity: string; net: string | null; status: string }, source: LineCostSource | undefined, places: number, margin: boolean): ScopeLineCost {
+  const unitCost = source?.unitCost ?? null;
+  const omitted = line.status === "omitted";
+  const estimate = unitCost === null || omitted ? null : Dec.of(line.quantity).mul(unitCost).round(places);
+  const amount = margin && line.net !== null && !omitted ? Dec.of(line.net) : null;
+  const gross = estimate !== null && amount !== null ? amount.sub(estimate) : null;
+  return {
+    unitCost: unitCost === null ? null : Dec.of(unitCost).toFixed(4), estimate: estimate === null ? null : estimate.toFixed(4),
+    committed: (source?.committed ?? Dec.ZERO).toFixed(4), committedForeign: source?.committedForeign ?? 0,
+    margin: gross === null ? null : gross.toFixed(4), marginPercent: gross === null || amount === null ? null : percent(gross, amount),
+  };
+}
+
+/**
+ * The scope's lines as this person may see them: every line with the orders it is on; its cost figures only for someone with
+ * cost access (the cost fields are never on the line otherwise), and its margin only for someone who sees margins and the amount.
+ */
+export function withLineDetails<T extends { id: string; quantity: string; net: string | null; status: string }>(lines: readonly T[], links: Map<string, ScopeLineLinks>,
+  costs: Map<string, LineCostSource> | null, access: { costs: boolean; margin: boolean }, places: number): Array<T & ScopeLineLinks & { cost?: ScopeLineCost }> {
+  return lines.map((line) => ({
+    ...line, ...(links.get(line.id) ?? NO_LINKS),
+    ...(access.costs && costs ? { cost: lineCost(line, costs.get(line.id), places, access.margin) } : {}),
+  }));
+}
+
 export async function lineHistory(db: Db, workspaceId: string, projectId: string, lineId: string) {
   const exists = (await db.query(`SELECT 1 FROM project_boq_lines WHERE workspace_id = $1 AND project_id = $2 AND id = $3`, [workspaceId, projectId, lineId])).rowCount;
   if (!exists) throw new NotFoundException("Item not found.");

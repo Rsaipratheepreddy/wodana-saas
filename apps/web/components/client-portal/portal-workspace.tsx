@@ -41,11 +41,12 @@ import { PaymentsSection } from "./sections/payments-section";
 import { ProgressSection } from "./sections/progress-section";
 import type { PortalTarget, SectionProps } from "./sections/section-types";
 import { WarrantySection } from "./sections/warranty-section";
+import { BoqSection } from "./sections/boq-section";
 
 const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: MoodboardSection, designs: DesignsSection, decisions: DecisionsSection, payments: PaymentsSection,
-  documents: DocumentsSection, warranty: WarrantySection, meetings: MeetingsSection, messages: MessagesSection } as const;
-/** The order the client reads them in: where it stands, what to decide, the ideas and designs, then money, papers, cover, meeting notes and talk. */
-const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "designs", "payments", "documents", "warranty", "meetings", "messages"];
+  boq: BoqSection, documents: DocumentsSection, warranty: WarrantySection, meetings: MeetingsSection, messages: MessagesSection } as const;
+/** The order the client reads them in: where it stands, what to decide, the ideas and designs, then money, the bill of quantities, papers, cover, meeting notes and talk. */
+const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "designs", "payments", "boq", "documents", "warranty", "meetings", "messages"];
 const DECISION_STEPS = ["quote", "design", "definition", "materials", "drawings", "handover", "request", "change", "presentation", "choice"];
 /** The side column opens from a small laptop up; below it the profile is a card above the sections. */
 const WIDE = "(min-width: 64rem)";

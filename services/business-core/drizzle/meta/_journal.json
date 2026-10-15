@@ -1513,6 +1513,13 @@
       "when": 1801740011100,
       "tag": "0347_unassign_after_working_day",
       "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1801740012700,
+      "tag": "0365_portal_boq_section",
+      "breakpoints": true
     }
   ]
 }
