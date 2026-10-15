@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { HttpException, type INestApplicationContext } from "@nestjs/common";
 import { runWithCommandOrigin } from "../database/command-origin";
 import { parseArgs, USAGE, UsageError, type ConfigureArgs, type OpsArgs } from "./ops-args";
+import { readBrandFile, runBrand } from "./ops-brand";
 import { runConfigure } from "./ops-configure";
 import { openContext, OpsError, Report } from "./ops-context";
 import { runImport } from "./ops-import";
@@ -38,9 +39,11 @@ export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs
       }
       // Every file is read and checked whole before anything connects to the workspace.
       const files = args.command === "configure" ? await readConfigureFiles(args) : null;
+      const brand = args.command === "brand" ? await readBrandFile(args.file) : null;
       const ctx = await openContext(app, args.workspace, args.as, args.apply);
       report.note(`${args.command} in ${ctx.workspace.slug} as ${args.as}: ${args.apply ? "APPLY" : "dry run"}`);
       if (args.command === "import") await runImport(ctx, args, report);
+      else if (args.command === "brand") await runBrand(ctx, brand!, report);
       else await runConfigure(ctx, files!.profile, report, files!);
       report.finish({ command: args.command, workspace: ctx.workspace.slug, mode: args.apply ? "apply" : "dry-run" });
       return report.failed ? 1 : 0;

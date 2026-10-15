@@ -2,7 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import { IsIn, IsInt, IsOptional, IsString, Matches, Min, ValidateIf } from "class-validator";
 
-const normalizeHex = ({ value }: { value: unknown }) =>
+/** The brand fonts a workspace may choose (the tenant_login_branding font checks hold the same lists). */
+export const HEADING_FONTS = ["alta"] as const;
+export const BODY_FONTS = ["montserrat"] as const;
+
+const normalizeHex =({ value }: { value: unknown }) =>
   typeof value === "string" ? value.trim().toUpperCase() : value;
 
 export class UpdateWorkspaceAppearanceDto {
@@ -30,15 +34,15 @@ export class UpdateWorkspaceAppearanceDto {
   @Matches(/^#[0-9A-F]{6}$/)
   secondaryColor?: string | null;
 
-  @ApiPropertyOptional({ enum: ["alta"], nullable: true })
+  @ApiPropertyOptional({ enum: HEADING_FONTS, nullable: true })
   @IsOptional()
   @ValidateIf((_object, value) => value !== null)
-  @IsIn(["alta"])
-  headingFont?: "alta" | null;
+  @IsIn(HEADING_FONTS)
+  headingFont?: typeof HEADING_FONTS[number] | null;
 
-  @ApiPropertyOptional({ enum: ["montserrat"], nullable: true })
+  @ApiPropertyOptional({ enum: BODY_FONTS, nullable: true })
   @IsOptional()
   @ValidateIf((_object, value) => value !== null)
-  @IsIn(["montserrat"])
-  bodyFont?: "montserrat" | null;
+  @IsIn(BODY_FONTS)
+  bodyFont?: typeof BODY_FONTS[number] | null;
 }
