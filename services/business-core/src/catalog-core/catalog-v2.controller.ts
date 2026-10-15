@@ -5,7 +5,7 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import { AllowWhenReadOnly } from "../auth/tenant-write-block.guard";
 import { CatalogV2Service } from "./catalog-v2.service";
 import { ItemReadinessService } from "./item-readiness.service";
-import { AiCleanDto, ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, MergeCategoryDto, UpdateCategoryDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto } from "./catalog-v2.dto";
+import { AiCleanDto, ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, MergeCategoryDto, UpdateCategoryDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto, VerifyRecipeDto } from "./catalog-v2.dto";
 
 @ApiTags("catalogs")
 @ApiBearerAuth()
@@ -39,6 +39,8 @@ export class CatalogV2Controller {
   @Put(":catalogId/items/:itemId") updateItem(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Param("itemId", ParseUUIDPipe) i: string, @Body() body: ItemDto) { return this.catalogs.updateItem(a, w, c, i, body); }
   @Post(":catalogId/items/:itemId/archive") archive(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Param("itemId", ParseUUIDPipe) i: string, @Body() body: ArchiveItemDto) { return this.catalogs.archiveItem(a, w, c, i, body.version); }
   @Post(":catalogId/items/:itemId/ai-components") aiComponents(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Param("itemId", ParseUUIDPipe) i: string) { return this.catalogs.aiSuggestComponents(a, w, c, i); }
+  /** PLM-166: the factory or technical team verifies a recipe, so its quantities are used on projects (or takes that back). */
+  @Post(":catalogId/items/:itemId/recipe-verification") verifyRecipe(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Param("itemId", ParseUUIDPipe) i: string, @Body() body: VerifyRecipeDto) { return this.catalogs.verifyRecipe(a, w, c, i, body); }
   @Put(":catalogId/items/:itemId/components") components(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Param("itemId", ParseUUIDPipe) i: string, @Body() body: SetComponentsDto) { return this.catalogs.setComponents(a, w, c, i, body); }
   @Get(":catalogId/price-books") books(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string) { return this.catalogs.listPriceBooks(a, w, c); }
   @Post(":catalogId/price-books") createBook(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: CreatePriceBookDto) { return this.catalogs.createPriceBook(a, w, c, body); }

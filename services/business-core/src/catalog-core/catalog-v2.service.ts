@@ -9,7 +9,7 @@ import { CLEAN_SYSTEM, COMPONENTS_SYSTEM, cleanPrompt, componentsPrompt, validat
 import { PACK_UNITS, planCatalogImport, type ImportRow } from "./catalog-import";
 import { categoryKey, categoryTitle } from "./category-names";
 import { AttributeValueError, normalizeAttributeValues, type AttributeDefinition, type AttributeType } from "./attributes";
-import { assertNoCycle, BomError, checkFormulas, explode, type BomComponent } from "./bom";
+import { assertNoCycle, BomError, checkFormulas, checkRecipeFields, explode, type BomComponent } from "./bom";
 import { Dec } from "./decimal";
 import { formulaInputs, FormulaError, parseFormula } from "./formula";
 import { price, type PriceMethod } from "./pricing";
@@ -18,6 +18,8 @@ import { convert, STANDARD_UNITS, UnitError, type Unit } from "./units";
 const VIEW = "catalog.view";
 const MANAGE = "catalog.manage";
 const COST_PERMISSIONS = ["commercial.costs.view", "supplier_offers.view"];
+/** PLM-166: who verifies a recipe: the factory (its lead or whoever approves factory work). */
+const RECIPE_VERIFIERS = ["factory.manage", "factory.approve"];
 /**
  * Approving a list price outright (a supplier's or the firm's official price list) skips the QS review, so it takes
  * both halves of that path: reviewing prices (QS) and making them live (catalog).
@@ -272,9 +274,12 @@ export class CatalogV2Service {
   }
 
   getItem(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string) {
-    return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
+    return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => {
       const canViewCosts = await this.canViewCosts(actor, workspaceId);
-      return this.itemDetail(client, workspaceId, catalogId, itemId, canViewCosts);
+      // PLM-166: whether the viewer verifies recipes (the factory).
+      let canVerifyRecipe = false;
+      for (const code of RECIPE_VERIFIERS) if (!canVerifyRecipe && await this.access.hasPermission(client, workspaceId, user.userId, code)) canVerifyRecipe = true;
+      return { ...(await this.itemDetail(client, workspaceId, catalogId, itemId, canViewCosts)), canVerifyRecipe };
     });
   }
 
@@ -403,7 +408,8 @@ export class CatalogV2Service {
     });
   }
 
-  setComponents(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string, input: { version: number; components: Array<{ componentItemId: string; componentVariantId?: string | null; quantityFormula: string; unitCode: string }> }) {
+  setComponents(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string, input: { version: number; components: Array<{ componentItemId: string; componentVariantId?: string | null; quantityFormula: string; unitCode: string;
+    componentType?: BomComponent["componentType"]; quantityBasis?: BomComponent["quantityBasis"]; batchSize?: string | null; labourHours?: string | null }> }) {
     return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => {
       const before = await this.lockItem(client, workspaceId, catalogId, itemId);
       if (input.version !== before.version) throw new ConflictException("This item changed; reload and try again");
@@ -416,8 +422,11 @@ export class CatalogV2Service {
       if (missing) throw new UnprocessableEntityException("A component is missing or archived");
       for (const component of input.components) await this.unit(client, workspaceId, component.unitCode);
       const components: BomComponent[] = input.components.map((component) => ({ ...component, label: byId.get(component.componentItemId)!.name }));
+      let recipe: ReturnType<typeof checkRecipeFields>[];
       try {
         checkFormulas(components);
+        // PLM-162: each line's kind, basis (and batch size) and labour hours.
+        recipe = components.map((component) => checkRecipeFields(component));
         const edges = await client.query<{ parent: string; child: string }>(
           `SELECT parent_item_id AS parent, component_item_id AS child FROM catalog_components WHERE workspace_id = $1`, [workspaceId]);
         const children = new Map<string, string[]>();
@@ -429,13 +438,40 @@ export class CatalogV2Service {
       }
       await client.query(`DELETE FROM catalog_components WHERE workspace_id = $1 AND parent_item_id = $2`, [workspaceId, itemId]);
       for (const [index, component] of input.components.entries()) {
+        const fields = recipe[index];
         await client.query(
-          `INSERT INTO catalog_components (workspace_id, parent_item_id, component_item_id, component_variant_id, quantity_formula, unit_code, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [workspaceId, itemId, component.componentItemId, component.componentVariantId ?? null, component.quantityFormula.trim(), component.unitCode, index]);
+          `INSERT INTO catalog_components (workspace_id, parent_item_id, component_item_id, component_variant_id, quantity_formula, unit_code, sort_order, component_type, quantity_basis, batch_size, labour_hours)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [workspaceId, itemId, component.componentItemId, component.componentVariantId ?? null, component.quantityFormula.trim(), component.unitCode, index,
+            fields.componentType, fields.quantityBasis, fields.batchSize, fields.labourHours]);
       }
-      await client.query(`UPDATE catalog_items SET version = version + 1, updated_by = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, itemId, user.userId]);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.components_set", entityType: "catalog_item", entityId: itemId, after: input.components });
+      // PLM-166: a changed recipe is checked again before its quantities are used; the verification is cleared.
+      const wasVerified = Boolean((await client.query(`SELECT 1 FROM catalog_items WHERE workspace_id = $1 AND id = $2 AND recipe_verified_at IS NOT NULL`, [workspaceId, itemId])).rowCount);
+      await client.query(`UPDATE catalog_items SET version = version + 1, updated_by = $3, updated_at = now(), recipe_verified_at = NULL, recipe_verified_by = NULL WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, itemId, user.userId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.components_set", entityType: "catalog_item", entityId: itemId,
+        after: { components: input.components.map((component, index) => ({ ...component, ...recipe[index] })), verificationCleared: wasVerified } });
+      return this.itemDetail(client, workspaceId, catalogId, itemId, await this.canViewCosts(actor, workspaceId));
+    });
+  }
+
+  /**
+   * PLM-166: the factory or technical team marks an item's recipe verified, so projects take their quantities from it
+   * (or takes that back). Who and when are kept; the item's version moves on.
+   */
+  verifyRecipe(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string, input: { version: number; verified: boolean }) {
+    return this.access.withAnyPermission(actor, workspaceId, RECIPE_VERIFIERS, async (client, user) => {
+      const before = await this.lockItem(client, workspaceId, catalogId, itemId);
+      if (input.version !== before.version) throw new ConflictException("This item changed; reload and try again");
+      const current = (await client.query<{ verifiedAt: Date | null; components: number }>(
+        `SELECT recipe_verified_at AS "verifiedAt", (SELECT count(*)::int FROM catalog_components component WHERE component.workspace_id = item.workspace_id AND component.parent_item_id = item.id) AS components
+           FROM catalog_items item WHERE workspace_id = $1 AND id = $2`, [workspaceId, itemId])).rows[0];
+      if (input.verified && !current.components) throw new UnprocessableEntityException("Add the recipe's components before verifying it");
+      if (input.verified === Boolean(current.verifiedAt)) return this.itemDetail(client, workspaceId, catalogId, itemId, await this.canViewCosts(actor, workspaceId));
+      await client.query(`UPDATE catalog_items SET recipe_verified_at = CASE WHEN $3 THEN now() END, recipe_verified_by = CASE WHEN $3 THEN $4::uuid END, version = version + 1, updated_by = $4, updated_at = now()
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, itemId, input.verified, user.userId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: input.verified ? "catalog.recipe_verified" : "catalog.recipe_unverified", entityType: "catalog_item", entityId: itemId,
+        before: { verifiedAt: current.verifiedAt }, after: { verified: input.verified, components: current.components } });
       return this.itemDetail(client, workspaceId, catalogId, itemId, await this.canViewCosts(actor, workspaceId));
     });
   }
@@ -742,18 +778,23 @@ export class CatalogV2Service {
 
   // ---------- helpers ----------
   private async itemDetail(client: PoolClient, workspaceId: string, catalogId: string, itemId: string, canViewCosts: boolean) {
-    const item = await client.query<{ id: string; code: string; name: string; itemType: string; unitCode: string; categoryId: string | null; description: string | null; wastePercent: string | null; purchaseRoundTo: string | null; productionDays: number | null; technicalDrawingUrl: string | null; status: string; version: number }>(
-      `SELECT id, code, name, item_type AS "itemType", unit_code AS "unitCode", category_id AS "categoryId", description,
-              waste_percent::text AS "wastePercent", purchase_round_to::text AS "purchaseRoundTo", production_days AS "productionDays",
-              technical_drawing_url AS "technicalDrawingUrl", status, version
-       FROM catalog_items WHERE workspace_id = $1 AND catalog_id = $2 AND id = $3`, [workspaceId, catalogId, itemId]);
+    const item = await client.query<{ id: string; code: string; name: string; itemType: string; unitCode: string; categoryId: string | null; description: string | null; wastePercent: string | null; purchaseRoundTo: string | null; productionDays: number | null; technicalDrawingUrl: string | null; status: string; version: number;
+      recipeVerifiedAt: Date | null; recipeVerifiedBy: string | null }>(
+      `SELECT item.id, item.code, item.name, item.item_type AS "itemType", item.unit_code AS "unitCode", item.category_id AS "categoryId", item.description,
+              item.waste_percent::text AS "wastePercent", item.purchase_round_to::text AS "purchaseRoundTo", item.production_days AS "productionDays",
+              item.technical_drawing_url AS "technicalDrawingUrl", item.status, item.version,
+              item.recipe_verified_at AS "recipeVerifiedAt", verifier.display_name AS "recipeVerifiedBy"
+       FROM catalog_items item LEFT JOIN users verifier ON verifier.id = item.recipe_verified_by
+       WHERE item.workspace_id = $1 AND item.catalog_id = $2 AND item.id = $3`, [workspaceId, catalogId, itemId]);
     if (!item.rowCount) throw new NotFoundException("Item not found");
-    const row = item.rows[0];
+    const { recipeVerifiedAt, recipeVerifiedBy, ...row } = item.rows[0];
     const values = await client.query<{ code: string; value: string }>(
       `SELECT attribute.code, value.value FROM catalog_item_values value JOIN catalog_attributes attribute ON attribute.id = value.attribute_id WHERE value.workspace_id = $1 AND value.item_id = $2`, [workspaceId, itemId]);
-    const components = await client.query<{ componentItemId: string; name: string; quantityFormula: string; unitCode: string; wastePercent: string | null; purchaseRoundTo: string | null }>(
+    const components = await client.query<{ componentItemId: string; name: string; quantityFormula: string; unitCode: string; wastePercent: string | null; purchaseRoundTo: string | null;
+      componentType: BomComponent["componentType"]; quantityBasis: BomComponent["quantityBasis"]; batchSize: string | null; labourHours: string | null }>(
       `SELECT component.component_item_id AS "componentItemId", child.name, component.quantity_formula AS "quantityFormula", component.unit_code AS "unitCode",
-              child.waste_percent::text AS "wastePercent", child.purchase_round_to::text AS "purchaseRoundTo"
+              child.waste_percent::text AS "wastePercent", child.purchase_round_to::text AS "purchaseRoundTo",
+              component.component_type AS "componentType", component.quantity_basis AS "quantityBasis", component.batch_size::text AS "batchSize", component.labour_hours::text AS "labourHours"
        FROM catalog_components component JOIN catalog_items child ON child.id = component.component_item_id
        WHERE component.workspace_id = $1 AND component.parent_item_id = $2 ORDER BY component.sort_order`, [workspaceId, itemId]);
     const conversions = await client.query<{ from: string; to: string; factor: string }>(
@@ -773,6 +814,8 @@ export class CatalogV2Service {
       ...row,
       values: Object.fromEntries(values.rows.map((value) => [value.code, value.value])),
       components: components.rows,
+      // PLM-166: who verified the recipe and when (null: its quantities aren't used on projects yet).
+      recipeVerified: recipeVerifiedAt ? { at: recipeVerifiedAt.toISOString(), byName: recipeVerifiedBy } : null,
       conversions: conversions.rows,
       prices: prices.rows.map((entry) => canViewCosts ? entry : { ...entry, cost: null, markupPercent: null, labour: null, marginPercent: null }),
       suppliers,

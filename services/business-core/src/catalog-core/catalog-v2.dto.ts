@@ -53,10 +53,20 @@ export class ComponentDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() componentVariantId?: string;
   @ApiProperty() @IsString() @MaxLength(500) quantityFormula!: string;
   @ApiProperty() @IsString() @MaxLength(16) unitCode!: string;
+  /** PLM-162: the line's kind, its quantity basis (with the batch size per batch) and, for labour, the hours. */
+  @ApiPropertyOptional() @IsOptional() @IsIn(["board", "fabric", "foam", "hardware", "labour", "other"]) componentType?: "board" | "fabric" | "foam" | "hardware" | "labour" | "other";
+  @ApiPropertyOptional() @IsOptional() @IsIn(["per_unit", "per_batch"]) quantityBasis?: "per_unit" | "per_batch";
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) batchSize?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) labourHours?: string | null;
 }
 export class SetComponentsDto {
   @ApiProperty() @IsInt() @Min(1) version!: number;
   @ApiProperty({ type: [ComponentDto] }) @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => ComponentDto) components!: ComponentDto[];
+}
+/** PLM-166: the factory or technical team marks a recipe verified (or takes that back), against the item's version. */
+export class VerifyRecipeDto {
+  @ApiProperty() @IsInt() @Min(1) version!: number;
+  @ApiProperty() @IsBoolean() verified!: boolean;
 }
 export class CreatePriceBookDto {
   @ApiProperty() @IsString() @MaxLength(160) name!: string;
