@@ -7,6 +7,7 @@ import { readBrandFile, runBrand } from "./ops-brand";
 import { runConfigure } from "./ops-configure";
 import { openContext, OpsError, Report } from "./ops-context";
 import { runImport } from "./ops-import";
+import { runMembers } from "./ops-members";
 import { runSandbox, runSandboxLifecycle } from "./ops-sandbox";
 import { packagesAgainstProfile, ProfileError, validatePackagesFile, validateProfile } from "./ops-profile";
 import { parseTeamsFile, SandboxFileError, type TeamSpec } from "./ops-sandbox-plan";
@@ -44,6 +45,7 @@ export async function runOps(app: INestApplicationContext, args: Exclude<OpsArgs
       report.note(`${args.command} in ${ctx.workspace.slug} as ${args.as}: ${args.apply ? "APPLY" : "dry run"}`);
       if (args.command === "import") await runImport(ctx, args, report);
       else if (args.command === "brand") await runBrand(ctx, brand!, report);
+      else if (args.command === "members") await runMembers(ctx, args, report);
       else await runConfigure(ctx, files!.profile, report, files!);
       report.finish({ command: args.command, workspace: ctx.workspace.slug, mode: args.apply ? "apply" : "dry-run" });
       return report.failed ? 1 : 0;

@@ -21,6 +21,8 @@ export type ImportArgs = Common & {
 export type ConfigureArgs = Common & { command: "configure"; profile: string | null; teams: string | null; packages: string | null };
 /** `brand`: a brand.json (display name, colours, fonts, logo, sign-in background) applied through Settings' commands. */
 export type BrandArgs = Common & { command: "brand"; file: string };
+/** `members --deactivate`: members switched off by email (lower case, without repeats). */
+export type MembersArgs = Common & { command: "members"; deactivate: string[] };
 /** A test workspace with one member per role (ops-sandbox.ts); no --workspace or --as: the workspace may not exist yet. */
 export type SandboxArgs = {
   command: "sandbox"; slug: string; name: string; region: string; profile: string | null; teams: string | null;
@@ -50,7 +52,7 @@ export type SandboxArgs = {
  * its customer account, archived (kept, out of use and billing) or made active again.
  */
 export type SandboxLifecycleArgs = { command: "sandbox"; lifecycle: "retire" | "restore"; slug: string; apply: boolean; json: boolean };
-export type OpsArgs = ImportArgs | ConfigureArgs | BrandArgs | SandboxArgs | SandboxLifecycleArgs | { command: "help" };
+export type OpsArgs = ImportArgs | ConfigureArgs | BrandArgs | MembersArgs | SandboxArgs | SandboxLifecycleArgs | { command: "help" };
 
 export const USAGE = `Wodana operator CLI: a workspace's go-live import and configuration, run on the server through the app's own
 services as a named workspace member, and test sandboxes. Every command is a dry run unless --apply is given.
@@ -63,6 +65,7 @@ Usage:
   node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> [--profile <profile.json>] [--teams <teams-access.json>]
       [--packages <design-packages.json>] [--apply] [--json]
   node dist/ops/ops-cli.js brand --workspace <slug> --as <member email> --file <brand.json> [--apply] [--json]
+  node dist/ops/ops-cli.js members --workspace <slug> --as <member email> --deactivate <email,email,...> [--apply] [--json]
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> [--profile <profile.json>]
       [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--password-env <ENV VAR>] [--kit <firm kit code>]
       [--email-pattern "<local>+{role}@<domain>"] [--seed] [--scenarios] [--apply] [--json]
@@ -127,6 +130,12 @@ brand
   loginBackground the sign-in background: PNG, JPG or WebP up to 10 MB, at least 1200 by 600 pixels
   Files go to the app's brand storage (local or object storage, as configured). An image is unchanged when the active
   one has the same content (or, for an older upload with no recorded hash, the same size and file name).
+
+members
+  --deactivate    members to switch off, by email (comma-separated): their membership becomes inactive (suspended, as
+                  People does it), so they can no longer sign in to this workspace; nothing they did is removed. Never
+                  the member the CLI acts as, and never the last active owner. A member already inactive is unchanged.
+                  Note: sandbox makes its test members active again when it is run again.
 
 sandbox
   A test workspace for end-to-end testing, created (or found) through the same provisioning as Wodana Control: the
@@ -194,7 +203,7 @@ Output is counts and messages only. Exit code 0 when everything succeeded, 1 whe
 const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--scenarios", "--retire",
   "--restore", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
-  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern",
+  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern", "--deactivate",
   "--packages"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -206,7 +215,9 @@ export const listOf = (value: string) => [...new Set(value.split(",").map((part)
 export function parseArgs(argv: string[]): OpsArgs {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h" || command === "help") return { command: "help" };
-  if (command !== "import" && command !== "configure" && command !== "brand" && command !== "sandbox") throw new UsageError(`Unknown command ${command}. Use import, configure, brand or sandbox.`);
+  if (command !== "import" && command !== "configure" && command !== "brand" && command !== "members" && command !== "sandbox") {
+    throw new UsageError(`Unknown command ${command}. Use import, configure, brand, members or sandbox.`);
+  }
   const flags = new Set<string>();
   const values = new Map<string, string>();
   for (let index = 0; index < rest.length; index++) {
@@ -252,6 +263,14 @@ export function parseArgs(argv: string[]): OpsArgs {
     const file = required("--file");
     if (!/\.json$/i.test(file)) throw new UsageError("--file is a brand.json file.");
     return { command, ...common, file };
+  }
+
+  if (command === "members") {
+    only(["--deactivate"], "members");
+    const deactivate = listOf(required("--deactivate").toLowerCase());
+    const invalid = deactivate.filter((email) => !EMAIL.test(email));
+    if (!deactivate.length || invalid.length) throw new UsageError(`--deactivate is a comma-separated list of member emails${invalid.length ? `; not an email: ${invalid.join(", ")}` : ""}.`);
+    return { command, ...common, deactivate };
   }
 
   const target = required("--target");
