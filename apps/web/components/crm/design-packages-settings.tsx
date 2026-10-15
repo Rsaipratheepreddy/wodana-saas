@@ -4,10 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Badge, Button, DataGrid, FormDialog, IconButton, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TagsField, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { loadDesignSettings, MAX_SITE_QUESTIONS, questionKey, saveDesignFlow, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type ChecklistScope, type DesignFlow, type DesignPackage, type DesignSettings, type DesignSteps, type DesignTeamRoles, type PricingMethod, type SiteQuestion } from "@/lib/design/packages";
+import { loadDesignSettings, MAX_SITE_QUESTIONS, questionKey, saveDesignFlow, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type ChecklistScope, type DesignFlow, type DesignPackage, type DesignSettings, type DesignSteps, type DesignTeamRoles, type MinimumDeposit, type PricingMethod, type SiteQuestion } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
 
 const amount = (value: string) => value.replace(/[^\d.]/g, "");
+type DepositKind = "amount" | "percent";
+/** The saved minimum as the field shows it: its kind and its number ("" for none). */
+const depositField = (minimum: MinimumDeposit | null | undefined): { kind: DepositKind; value: string } =>
+  !minimum ? { kind: "amount", value: "" } : "percent" in minimum ? { kind: "percent", value: String(Number(minimum.percent)) } : { kind: "amount", value: String(Number(minimum.amount)) };
 const scopeKey = (scope: string) => scope.replace(/\s+/g, " ").trim().toLowerCase();
 /** The checklists the questions name, in list order, each with its match words (kept from before) and whether it's for every job. */
 function checklistScopes(questions: SiteQuestion[], scopes: ChecklistScope[]): ChecklistScope[] {
@@ -26,12 +30,13 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   const [failure, setFailure] = useState("");
   const [notice, setNotice] = useState("");
   const [minimum, setMinimum] = useState("");
+  const [minimumKind, setMinimumKind] = useState<DepositKind>("amount");
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [editing, setEditing] = useState<Partial<DesignPackage> | null>(null);
   const [timings, setTimings] = useState({ inspirationDays: "", siteVisitHours: "" });
   const [flow, setFlow] = useState<DesignFlow | null>(null);
-  const load = useCallback(() => loadDesignSettings(workspaceId).then((next) => { setSettings(next); setMinimum(next.minimumDeposit?.amount ? String(Number(next.minimumDeposit.amount)) : ""); setTimings({ inspirationDays: String(next.timings?.inspirationDays ?? 7), siteVisitHours: String(next.timings?.siteVisitHours ?? 72) }); setFlow(next.flow ?? null); }).catch((error: Error) => setFailure(error.message)), [workspaceId]);
+  const load = useCallback(() => loadDesignSettings(workspaceId).then((next) => { setSettings(next); const deposit = depositField(next.minimumDeposit); setMinimum(deposit.value); setMinimumKind(deposit.kind); setTimings({ inspirationDays: String(next.timings?.inspirationDays ?? 7), siteVisitHours: String(next.timings?.siteVisitHours ?? 72) }); setFlow(next.flow ?? null); }).catch((error: Error) => setFailure(error.message)), [workspaceId]);
   useEffect(() => { void load(); }, [load]);
 
   const money = (value: string, code: string) => { try { return new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 2 }).format(Number(value)); } catch { return `${code} ${value}`; } };
@@ -45,9 +50,12 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
 
   if (!settings && !failure) return <Skeleton lines={4} shape="form" />;
   // The deposit and the timings are saved together from the one save bar.
-  const savedMinimum = settings?.minimumDeposit?.amount ? String(Number(settings.minimumDeposit.amount)) : "";
+  const savedMinimum = depositField(settings?.minimumDeposit);
   const savedTimings = { inspirationDays: String(settings?.timings?.inspirationDays ?? 7), siteVisitHours: String(settings?.timings?.siteVisitHours ?? 72) };
-  const minimumChanged = minimum !== savedMinimum;
+  const minimumChanged = minimum !== savedMinimum.value || (Boolean(minimum) && minimumKind !== savedMinimum.kind);
+  // A percentage of the design fee is more than 0 and at most 100.
+  const minimumValid = minimumKind === "amount" || !minimum || (Number(minimum) > 0 && Number(minimum) <= 100);
+  const depositCurrency = settings?.minimumDeposit && "currency" in settings.minimumDeposit ? settings.minimumDeposit.currency : currency;
   const timingsChanged = timings.inspirationDays !== savedTimings.inspirationDays || timings.siteVisitHours !== savedTimings.siteVisitHours;
   const flowChanged = Boolean(flow && settings?.flow && JSON.stringify(flow) !== JSON.stringify(settings.flow));
   const steps = flow?.steps;
@@ -78,7 +86,8 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     setSaving(true); setFailure(""); setNotice("");
     try {
       let version = settings?.version ?? 0;
-      if (minimumChanged) version = (await saveMinimumDeposit(workspaceId, minimum ? { amount: Number(minimum).toFixed(2), currency: settings?.minimumDeposit?.currency ?? currency } : null, version)).version;
+      if (minimumChanged) version = (await saveMinimumDeposit(workspaceId, !minimum ? null : minimumKind === "percent" ? { percent: Number(Number(minimum).toFixed(2)) }
+        : { amount: Number(minimum).toFixed(2), currency: depositCurrency }, version)).version;
       if (timingsChanged) version = (await saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, version)).version;
       if (flowChanged && flow) {
         const questions = flow.siteVisitQuestions.map((item) => {
@@ -111,8 +120,12 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     <SettingsSection id="design-deposit" title={t("Design deposit")}>
       <SettingsRow hint={t("Design work starts only after this much is received and verified.")} label={t("Minimum deposit")}>
         <span className={styles.minimum}>
-          <TextInput aria-label={t("Minimum deposit")} isDisabled={!canManage} label={null} onChange={(value) => { setJustSaved(false); setMinimum(amount(value)); }} placeholder={t("No minimum")} suffix={settings?.minimumDeposit?.currency ?? currency} value={minimum} />
-
+          {/* An amount, or a share of the job's design fee (100% for the whole fee). */}
+          <SelectField aria-label={t("Minimum deposit as")} isDisabled={!canManage} label={null} accent="neutral" selectedKey={minimumKind}
+            onSelectionChange={(key) => { setJustSaved(false); setMinimumKind(key === "percent" ? "percent" : "amount"); }}
+            items={[{ id: "amount", label: t("Amount") }, { id: "percent", label: t("% of the design fee") }]} />
+          <TextInput aria-label={t("Minimum deposit")} isDisabled={!canManage} label={null} onChange={(value) => { setJustSaved(false); setMinimum(amount(value)); }} placeholder={t("No minimum")}
+            suffix={minimumKind === "percent" ? "%" : depositCurrency} value={minimum} errorMessage={minimumValid ? undefined : t("Between 0 and 100%")} isInvalid={!minimumValid} />
         </span>
       </SettingsRow>
     </SettingsSection>
@@ -201,8 +214,8 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
         </SettingsRow>;
       })}
     </SettingsSection> : null}
-    {canManage ? <SaveBar isDirty={minimumChanged || timingsChanged || flowChanged} isSaving={saving} saved={justSaved} isDisabled={!timings.inspirationDays || !timings.siteVisitHours || !flowValid}
-      onDiscard={() => { setMinimum(savedMinimum); setTimings(savedTimings); setFlow(settings?.flow ?? null); setFailure(""); }} onSave={() => void saveChanges()} /> : null}
+    {canManage ? <SaveBar isDirty={minimumChanged || timingsChanged || flowChanged} isSaving={saving} saved={justSaved} isDisabled={!timings.inspirationDays || !timings.siteVisitHours || !flowValid || !minimumValid}
+      onDiscard={() => { setMinimum(savedMinimum.value); setMinimumKind(savedMinimum.kind); setTimings(savedTimings); setFlow(settings?.flow ?? null); setFailure(""); }} onSave={() => void saveChanges()} /> : null}
     <SettingsSection actions={canManage ? <Button size="compact" variant="primary" onPress={() => setEditing({ pricingMethod: "per_area", areaUnit: "sqft", currency, includedRevisions: 2 })}><Plus aria-hidden="true" size={14} />{t("Add package")}</Button> : null} id="design-packages" title={t("Packages")}>
       <div data-sales-grid><DataGrid ariaLabel={t("Design packages")} columns={columns} data={settings?.packages ?? []} emptyDescription={t("Add the design packages you offer and how each is priced.")} emptyTitle={t("No design packages yet")} getRowId={(pkg) => pkg.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
     </SettingsSection>

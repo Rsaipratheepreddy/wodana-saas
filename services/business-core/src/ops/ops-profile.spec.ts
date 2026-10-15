@@ -178,7 +178,8 @@ describe("route changes", () => {
 
   it("reads Palm's design packages file (PLM-139, PLM-145): Concept per space, the Creative Director package priced from its rate and reviewed", () => {
     const file = validatePackagesFile(json("../../../../docs/fixtures/palm-design-packages.json"));
-    expect(file.minimumDeposit).toEqual({ amount: "15000.00", currency: "AED" });
+    // Palm takes the whole design fee before the design starts.
+    expect(file.minimumDeposit).toEqual({ percent: 100 });
     expect(file.packages.map((entry) => entry.code)).toEqual(["concept", "bespoke", "creative_director"]);
     expect(file.packages[0]).toMatchObject({ pricingMethod: "per_space", rate: "10000.00", unitDefinition: "1 space = 1 room with a door" });
     expect(file.packages[2]).toMatchObject({ pricingMethod: "per_area", areaUnit: "sqft", rate: "100.00", rateFrom: true, reviewRoleCode: "creative_director" });
@@ -187,6 +188,9 @@ describe("route changes", () => {
     expect("requiredRoleCode" in file.packages[2]).toBe(false);
     expect(validatePackagesFile({ packages: [{ code: "Basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] })).toEqual({ packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] });
     expect(validatePackagesFile({ minimumDeposit: null, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] }).minimumDeposit).toBeNull();
+    expect(validatePackagesFile({ minimumDeposit: { percent: 50 }, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] }).minimumDeposit).toEqual({ percent: 50 });
+    for (const minimumDeposit of [{ percent: 0 }, { percent: 120 }, { percent: "50" }, { percent: 50, amount: "100.00" }])
+      expect(() => validatePackagesFile({ minimumDeposit, packages: [{ code: "basic", name: "Basic", pricingMethod: "fixed", rate: "500" }] })).toThrow();
   });
 
   it("reads Palm's design questions file: the same packages, 31 discovery questions under 6 sections, 14 joinery checklists and the release record", () => {

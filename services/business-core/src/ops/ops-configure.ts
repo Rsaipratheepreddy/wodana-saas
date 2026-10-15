@@ -17,7 +17,7 @@ import { REQUIREMENT_GATES } from "../crm/leads/enquiry-problems";
 import { Dec } from "../catalog-core/decimal";
 import { DesignFlowSettingsDto, DesignPackageDto, DesignSettingsDto } from "../design/design-packages.controller";
 import type { ChecklistScope, SiteQuestion } from "../design/design-journey.domain";
-import { checkDesignPackage, effectiveMinimumDeposit, type DesignPackageInput } from "../design/design-packages.domain";
+import { checkDesignPackage, effectiveMinimumDeposit, isPercentDeposit, type DesignPackageInput, type MinimumDeposit } from "../design/design-packages.domain";
 import { DesignPackagesService } from "../design/design-packages.service";
 import { FinishesService } from "../design/finishes.service";
 import { FactoryService } from "../factory/factory.service";
@@ -627,22 +627,27 @@ const packageText = (entry: DesignPackageInput) => `${entry.name}: ${entry.rateF
  */
 async function designPackages(ctx: OpsContext, file: PackagesFile, step: Step) {
   const service = ctx.get(DesignPackagesService);
-  const current = await service.get(ctx.actor, ctx.workspace.id) as DesignSettings & { minimumDeposit: { amount: string; currency: string } | null };
+  const current = await service.get(ctx.actor, ctx.workspace.id) as DesignSettings & { minimumDeposit: MinimumDeposit | null };
   // A currency the file leaves out is the workspace's (from its region pack).
   const currency = await ctx.read(async (client) => (await client.query<{ currency: string | null }>(
     `SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [ctx.workspace.id])).rows[0]?.currency ?? null);
 
   if (file.minimumDeposit !== undefined) {
     const label = "minimum design deposit";
-    const wantedCurrency = file.minimumDeposit?.currency ?? currency;
-    const deposit = (value: { amount: string; currency: string } | null) => (value ? `${value.amount} ${value.currency}` : "none");
-    if (file.minimumDeposit && !wantedCurrency) step.failed(label, "the file gives no currency and the workspace has none");
+    const asked = file.minimumDeposit;
+    const percentAsked = asked && "percent" in asked ? asked : null;
+    const amountAsked = asked && !("percent" in asked) ? asked : null;
+    const wantedCurrency = amountAsked?.currency ?? currency;
+    const deposit = (value: MinimumDeposit | null) => (!value ? "none" : isPercentDeposit(value) ? `${Number(value.percent)}% of the design fee` : `${value.amount} ${value.currency}`);
+    if (amountAsked && !wantedCurrency) step.failed(label, "the file gives no currency and the workspace has none");
     else {
-      const wanted = effectiveMinimumDeposit(file.minimumDeposit ? { amount: file.minimumDeposit.amount, currency: wantedCurrency } : null);
+      const wanted = effectiveMinimumDeposit(percentAsked ? { percent: percentAsked.percent } : amountAsked ? { amount: amountAsked.amount, currency: wantedCurrency } : null);
+      // The settings command takes a percentage as a number and an amount as text.
+      const command = !wanted ? null : isPercentDeposit(wanted) ? { percent: Number(wanted.percent) } : wanted;
       if (deposit(current.minimumDeposit) === deposit(wanted)) step.same(label, deposit(wanted));
       else await step.change([diff(label, deposit(current.minimumDeposit), deposit(wanted))], async () => {
         const fresh = await service.get(ctx.actor, ctx.workspace.id) as { version: number };
-        const body = await ctx.validated(DesignSettingsDto, { minimumDeposit: wanted, version: fresh.version });
+        const body = await ctx.validated(DesignSettingsDto, { minimumDeposit: command, version: fresh.version });
         return service.saveMinimumDeposit(ctx.actor, ctx.workspace.id, { minimumDeposit: body.minimumDeposit ?? null, version: body.version });
       });
     }

@@ -656,8 +656,8 @@ export type CommercialData = {
     scope: import("../projects/service-path-route").ServicePathScope;
     selectedAt: string;
     selectedBy: string;
-    /** Minimum design deposit from the workspace's design settings, frozen when the path is chosen. */
-    designMinimumDeposit?: { amount: string; currency: string } | null;
+    /** Minimum design deposit from the workspace's design settings, frozen when the path is chosen: an amount, or a share of the design fee. */
+    designMinimumDeposit?: import("../design/design-packages.domain").MinimumDeposit | null;
   };
   /** First paid design round retained when a second, main round starts in the same Deal. */
   designRound?: {

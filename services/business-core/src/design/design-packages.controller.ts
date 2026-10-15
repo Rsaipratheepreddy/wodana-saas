@@ -1,12 +1,17 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { DesignPackagesService } from "./design-packages.service";
 
-class MinimumDepositDto { @Matches(/^\d{1,12}(\.\d{1,2})?$/) amount!: string; @Matches(/^[A-Z]{3}$/) currency!: string; }
+/** An amount and its currency, or a percentage of the design fee (more than 0, at most 100). */
+class MinimumDepositDto {
+  @ValidateIf((dto: MinimumDepositDto) => dto.percent === undefined || dto.percent === null) @Matches(/^\d{1,12}(\.\d{1,2})?$/) amount?: string;
+  @ValidateIf((dto: MinimumDepositDto) => dto.percent === undefined || dto.percent === null) @Matches(/^[A-Z]{3}$/) currency?: string;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(100) percent?: number;
+}
 class DesignTimingsDto { @IsInt() @Min(1) @Max(60) inspirationDays!: number; @IsInt() @Min(1) @Max(720) siteVisitHours!: number; }
 export class DesignSettingsDto {
   @IsOptional() @ValidateNested() @Type(() => MinimumDepositDto) minimumDeposit?: MinimumDepositDto | null;

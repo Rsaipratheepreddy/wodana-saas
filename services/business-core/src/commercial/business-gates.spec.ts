@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { CommercialData, Quote } from "./commercial.types";
+import { acceptedQuoteValue } from "./commercial.domain";
 import {
   financeGatePaymentsReady,
   ownerReviewInputsReady,
+  designDepositMessage,
   designDepositReady,
   variationReleasePaymentsReady,
 } from "./release-integrity";
@@ -172,5 +174,36 @@ describe("four business gates", () => {
     data.servicePath.designMinimumDeposit = null;
     payment.amount = 100; data.receipts[0].amount = 100; data.allocations[0].amount = 100;
     expect(designDepositReady(data, design)).toBe(true);
+  });
+
+  it("requires a share of the design fee when the minimum is a percentage (Palm: the whole fee)", () => {
+    const data = fixture();
+    data.servicePath = { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false }, selectedAt: "2026-10-15T00:00:00.000Z", selectedBy: "owner", designMinimumDeposit: { percent: "100.00" } };
+    const design = data.quotes[0];
+    design.round = "design";
+    design.currency = "AED";
+    data.financeContext = {
+      legalEntityId: "entity", code: "PLM-AE", displayName: "Palm Living UAE",
+      registeredName: "Palm Living Interiors LLC", countryCode: "AE", baseCurrency: "AED",
+      currency: "AED", taxValidation: "unvalidated", boundAt: "2026-10-15T00:00:00.000Z",
+    };
+    const fee = acceptedQuoteValue(design);
+    expect(fee).toBeGreaterThan(0);
+    const payment = data.payments[0];
+    const pay = (amount: number) => {
+      Object.assign(payment, { sourceQuoteId: design.id, legalEntityId: "entity", currency: "AED", amount, status: "verified", proof: "Bank receipt", reference: "RCT-1" });
+      data.receipts = [{ id: "receipt", paymentId: payment.id, legalEntityId: "entity", currency: "AED", amount, source: "manual", status: "finance_verified", reference: "RCT-1", evidence: "Bank receipt", reportedAt: "2026-10-15T00:00:00.000Z", reportedBy: "Finance", verifiedAt: "2026-10-15T00:00:00.000Z", verifiedBy: "Finance" }];
+      data.allocations = [{ id: "allocation", receiptId: "receipt", paymentId: payment.id, legalEntityId: "entity", currency: "AED", amount, createdAt: "2026-10-15T00:00:00.000Z", createdBy: "Finance" }];
+    };
+    pay(fee - 1);
+    expect(designDepositReady(data, design)).toBe(false);
+    expect(designDepositMessage(data.servicePath.designMinimumDeposit, design)).toBe(`Verify at least 100% of the design fee (AED ${fee.toFixed(2)}) for the design proposal before the deal is approved.`);
+    pay(fee);
+    expect(designDepositReady(data, design)).toBe(true);
+    // Half the fee is enough when the firm asks for 50%.
+    data.servicePath.designMinimumDeposit = { percent: "50.00" };
+    pay(fee / 2);
+    expect(designDepositReady(data, design)).toBe(true);
+    expect(designDepositMessage({ amount: "15000.00", currency: "AED" }, design)).toBe("Verify at least AED 15000.00 for the design proposal before the deal is approved.");
   });
 });

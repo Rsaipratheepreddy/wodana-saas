@@ -1,5 +1,5 @@
 import { FURNITURE_PATHS } from "../crm/opportunities/flow-gates";
-import { checkDesignPackage } from "../design/design-packages.domain";
+import { checkDesignPackage, depositPercentProblem } from "../design/design-packages.domain";
 import {
   MAX_CHECKLIST_SCOPES, MAX_SITE_QUESTIONS, normaliseChecklistScopes, normaliseSiteQuestions, scopeKey, type ChecklistScope, type SiteQuestion,
 } from "../design/design-journey.domain";
@@ -672,7 +672,8 @@ export type PackageSpec = {
  * and each checklist's match words. The list is set whole when given, as Settings › Design saves it.
  */
 export type PackagesFile = {
-  minimumDeposit?: { amount: string; currency?: string } | null; packages: PackageSpec[];
+  /** An amount (in the workspace's currency when left out), or a percentage of the design fee, e.g. { "percent": 100 }. */
+  minimumDeposit?: { amount: string; currency?: string } | { percent: number } | null; packages: PackageSpec[];
   siteVisitQuestions?: SiteQuestion[]; siteVisitScopes?: ChecklistScope[];
 };
 
@@ -696,7 +697,12 @@ export function validatePackagesFile(raw: unknown): PackagesFile {
   if (file.minimumDeposit !== undefined) {
     const deposit = file.minimumDeposit;
     if (deposit === null) result.minimumDeposit = null;
-    else if (!isObject(deposit) || Object.keys(deposit).some((key) => key !== "amount" && key !== "currency")) problems.push("minimumDeposit is null or { amount, currency }.");
+    else if (isObject(deposit) && "percent" in deposit) {
+      if (Object.keys(deposit).some((key) => key !== "percent")) problems.push("minimumDeposit is { amount, currency } or { percent }, not both.");
+      else if (typeof deposit.percent !== "number" || depositPercentProblem(deposit.percent)) problems.push("minimumDeposit.percent is a percentage of the design fee, more than 0 and at most 100.");
+      else result.minimumDeposit = { percent: deposit.percent };
+    }
+    else if (!isObject(deposit) || Object.keys(deposit).some((key) => key !== "amount" && key !== "currency")) problems.push("minimumDeposit is null, { amount, currency } or { percent }.");
     else if (typeof deposit.amount !== "string" || !AMOUNT.test(deposit.amount)) problems.push("minimumDeposit.amount is an amount as text, e.g. \"15000.00\".");
     else if (deposit.currency !== undefined && (typeof deposit.currency !== "string" || !CURRENCY.test(deposit.currency))) problems.push("minimumDeposit.currency is a currency code, e.g. EUR.");
     else result.minimumDeposit = { amount: deposit.amount, ...(deposit.currency ? { currency: deposit.currency as string } : {}) };

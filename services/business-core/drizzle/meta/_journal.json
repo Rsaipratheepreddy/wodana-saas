@@ -1513,6 +1513,13 @@
       "when": 1801740020100,
       "tag": "0351_client_update_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1801740020200,
+      "tag": "0352_design_deposit_percent",
+      "breakpoints": true
     }
   ]
 }

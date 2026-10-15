@@ -66,6 +66,7 @@ import {
   materialApprovalsComplete,
   materialListSignedOff,
   ownerReviewInputsReady,
+  designDepositMessage,
   designDepositReady,
   quotationApprovalSources,
   releasePaymentIsOperational,
@@ -2808,9 +2809,7 @@ export class CommercialService {
               throw new ConflictException("Finance must verify this quotation round's payment before the deal is approved.");
             if (data.servicePath?.scope.design && accepted.round === "design" &&
                 !designDepositReady(data, accepted))
-              throw new ConflictException(data.servicePath.designMinimumDeposit
-                ? `Verify at least ${data.servicePath.designMinimumDeposit.currency} ${data.servicePath.designMinimumDeposit.amount} for the design proposal before the deal is approved.`
-                : "Verify the design proposal payment before the deal is approved.");
+              throw new ConflictException(designDepositMessage(data.servicePath.designMinimumDeposit, accepted));
             const snapshot = acceptedQuoteTotals(accepted);
             // E3: the approver's step on the engine. With more approvers after this one (the Owner above an amount),
             // the Deal File waits for them; it is created only when the request is approved.

@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { agreedRate, checkDesignPackage, designFee, effectiveMinimumDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
+import { agreedRate, checkDesignPackage, depositPercentProblem, designFee, effectiveMinimumDeposit, isPercentDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
 import { DEFAULT_SITE_VISIT_QUESTIONS, normaliseChecklistScopes, normaliseSiteQuestions, scopeKey, type ChecklistScope, type SiteQuestion } from "./design-journey.domain";
 import { designTeamConfig } from "./design-journey.store";
 import { teamConfigProblem, type TeamSlot } from "./design-team.domain";
@@ -65,27 +65,39 @@ export class DesignPackagesService {
     return this.access.withAnyPermission(actor, workspaceId, ["crm.opportunities.view", "crm.settings.manage"], (client) => this.load(client, workspaceId));
   }
 
-  saveMinimumDeposit(actor: RequestActor, workspaceId: string, input: { minimumDeposit?: { amount: string; currency: string } | null; timings?: { inspirationDays: number; siteVisitHours: number }; version?: number }) {
+  /**
+   * The minimum design deposit (an amount and currency, or a percentage of the design fee; null: none) and the
+   * inspiration and site-visit timings. Version-checked; audited.
+   */
+  saveMinimumDeposit(actor: RequestActor, workspaceId: string, input: { minimumDeposit?: { amount?: string; currency?: string; percent?: string | number } | null; timings?: { inspirationDays: number; siteVisitHours: number }; version?: number }) {
     const keepMinimum = input.minimumDeposit === undefined;
-    if (input.minimumDeposit && (!/^\d{1,12}(\.\d{1,2})?$/.test(input.minimumDeposit.amount ?? "") || !/^[A-Z]{3}$/.test(input.minimumDeposit.currency ?? "")))
+    const given = input.minimumDeposit;
+    if (given && given.percent !== undefined && given.percent !== null) {
+      if (given.amount !== undefined || given.currency !== undefined) throw new UnprocessableEntityException("Set the minimum deposit as an amount or a percentage, not both");
+      const problem = depositPercentProblem(given.percent);
+      if (problem) throw new UnprocessableEntityException(problem);
+    } else if (given && (!/^\d{1,12}(\.\d{1,2})?$/.test(given.amount ?? "") || !/^[A-Z]{3}$/.test(given.currency ?? "")))
       throw new UnprocessableEntityException("Enter the minimum deposit as an amount and currency");
-    const minimum = effectiveMinimumDeposit(input.minimumDeposit);
+    const minimum = effectiveMinimumDeposit(given ? { amount: given.amount, currency: given.currency, percent: given.percent ?? null } : null);
+    const percent = isPercentDeposit(minimum) ? minimum.percent : null;
+    const fixed = minimum && !isPercentDeposit(minimum) ? minimum : null;
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
-      const current = await client.query<{ amount: string | null; currency: string | null; version: number }>(
-        `SELECT minimum_design_deposit::text AS amount, currency, version FROM workspace_design_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId]);
+      const current = await client.query<{ amount: string | null; currency: string | null; percent: string | null; version: number }>(
+        `SELECT minimum_design_deposit::text AS amount, currency, minimum_design_deposit_percent::text AS percent, version FROM workspace_design_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId]);
       const before = current.rows[0];
       if (input.version !== undefined && before && before.version !== input.version) throw new ConflictException("Design settings changed in another window. Reload and try again.");
       await client.query(
-        `INSERT INTO workspace_design_settings (workspace_id, minimum_design_deposit, currency, inspiration_days, site_visit_hours, updated_by)
-         VALUES ($1, $2, $3, COALESCE($5, 7), COALESCE($6, 72), $4)
+        `INSERT INTO workspace_design_settings (workspace_id, minimum_design_deposit, currency, minimum_design_deposit_percent, inspiration_days, site_visit_hours, updated_by)
+         VALUES ($1, $2, $3, $8, COALESCE($5, 7), COALESCE($6, 72), $4)
          ON CONFLICT (workspace_id) DO UPDATE SET
            minimum_design_deposit = CASE WHEN $7 THEN workspace_design_settings.minimum_design_deposit ELSE excluded.minimum_design_deposit END,
            currency = CASE WHEN $7 THEN workspace_design_settings.currency ELSE excluded.currency END,
+           minimum_design_deposit_percent = CASE WHEN $7 THEN workspace_design_settings.minimum_design_deposit_percent ELSE excluded.minimum_design_deposit_percent END,
            inspiration_days = COALESCE($5, workspace_design_settings.inspiration_days), site_visit_hours = COALESCE($6, workspace_design_settings.site_visit_hours),
            updated_by = excluded.updated_by, updated_at = now(), version = workspace_design_settings.version + 1`,
-        [workspaceId, minimum?.amount ?? null, minimum?.currency ?? null, user.userId, input.timings?.inspirationDays ?? null, input.timings?.siteVisitHours ?? null, keepMinimum]);
+        [workspaceId, fixed?.amount ?? null, fixed?.currency ?? null, user.userId, input.timings?.inspirationDays ?? null, input.timings?.siteVisitHours ?? null, keepMinimum, percent]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.minimum_deposit_changed", entityType: "workspace_design_settings", entityId: workspaceId,
-        before: before ? { amount: before.amount, currency: before.currency } : null, after: { minimumDeposit: keepMinimum ? undefined : minimum, timings: input.timings } });
+        before: before ? effectiveMinimumDeposit(before) : null, after: { minimumDeposit: keepMinimum ? undefined : minimum, timings: input.timings } });
       return this.load(client, workspaceId);
     });
   }
@@ -197,14 +209,15 @@ export class DesignPackagesService {
 
   /** The workspace minimum, frozen into a case when its service path is chosen. */
   static async minimumDeposit(client: Pick<PoolClient, "query">, workspaceId: string) {
-    const row = (await client.query<{ amount: string | null; currency: string | null }>(
-      `SELECT minimum_design_deposit::text AS amount, currency FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+    const row = (await client.query<{ amount: string | null; currency: string | null; percent: string | null }>(
+      `SELECT minimum_design_deposit::text AS amount, currency, minimum_design_deposit_percent::text AS percent FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     return effectiveMinimumDeposit(row);
   }
 
   private async load(client: PoolClient, workspaceId: string) {
-    const settings = (await client.query<{ amount: string | null; currency: string | null; version: number; inspirationDays: number; siteVisitHours: number }>(
-      `SELECT minimum_design_deposit::text AS amount, currency, version, inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours" FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+    const settings = (await client.query<{ amount: string | null; currency: string | null; percent: string | null; version: number; inspirationDays: number; siteVisitHours: number }>(
+      `SELECT minimum_design_deposit::text AS amount, currency, minimum_design_deposit_percent::text AS percent, version, inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours"
+         FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const packages = (await client.query<PackageRow>(`SELECT ${PACKAGE_COLUMNS} FROM design_packages WHERE workspace_id = $1 ORDER BY status, position, name`, [workspaceId])).rows;
     const flow = (await client.query<Omit<DesignFlowSettings, "version" | "siteVisitQuestions" | "siteVisitScopes"> & { questions: unknown; scopes: unknown }>(
       `SELECT design_internal_days AS "designInternalDays", design_client_days AS "designClientDays", material_selection_days AS "materialSelectionDays", estimate_days AS "estimateDays",

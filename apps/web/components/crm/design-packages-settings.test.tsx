@@ -31,6 +31,28 @@ describe("design packages settings (PLM-041)", () => {
     expect(screen.queryByText(/AED\s?0\b/)).not.toBeInTheDocument();
   });
 
+  it("sets the minimum deposit as a share of the design fee (Palm: 100%)", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => settings });
+    vi.stubGlobal("fetch", fetch);
+    render(<DesignSystemProvider><DesignPackagesSettings workspaceId="ws" currency="AED" locale="en-GB" canManage /></DesignSystemProvider>);
+    expect(await screen.findByRole("textbox", { name: "Minimum deposit" })).toHaveValue("15000");
+    fireEvent.click(screen.getByRole("button", { name: /Minimum deposit as/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "% of the design fee" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Minimum deposit" }), { target: { value: "120" } });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Minimum deposit" }), { target: { value: "100" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(fetch.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true));
+    expect(JSON.parse(fetch.mock.calls.find(([, init]) => init?.method === "PUT")![1].body as string)).toEqual({ minimumDeposit: { percent: 100 }, version: 1 });
+  });
+
+  it("shows a saved percentage with its kind", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...settings, minimumDeposit: { percent: "100.00" } }) }));
+    render(<DesignSystemProvider><DesignPackagesSettings workspaceId="ws" currency="AED" locale="en-GB" canManage /></DesignSystemProvider>);
+    expect(await screen.findByRole("textbox", { name: "Minimum deposit" })).toHaveValue("100");
+    expect(screen.getByRole("button", { name: /Minimum deposit as/ })).toHaveTextContent("% of the design fee");
+  });
+
   it("edits a question's section, how it's answered, its scope and the checklist's match words, and saves them with the list", async () => {
     const flow = { designInternalDays: 35, designClientDays: 56, materialSelectionDays: 7, estimateDays: 7, visualiserRoleCode: "visualiser", showroomBookingTypeId: null,
       siteVisitQuestions: [{ key: "core.01", question: "What type of property is this?", section: "Project overview" },
