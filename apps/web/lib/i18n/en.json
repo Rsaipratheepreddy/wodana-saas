@@ -15229,5 +15229,21 @@
   "e.g. wardrobe, walk-in": "e.g. wardrobe, walk-in",
   "The brief didn't load.": "The brief didn't load.",
   "No brief recorded": "No brief recorded",
-  "The answers from the kick-off and the site measure show here.": "The answers from the kick-off and the site measure show here."
+  "The answers from the kick-off and the site measure show here.": "The answers from the kick-off and the site measure show here.",
+  "The sign-in background could not be removed.": "The sign-in background could not be removed.",
+  "Sign-in background uploads are unavailable.": "Sign-in background uploads are unavailable.",
+  "The sign-in background could not be activated.": "The sign-in background could not be activated.",
+  "The sign-in background could not be uploaded.": "The sign-in background could not be uploaded.",
+  "The sign-in background upload could not be started.": "The sign-in background upload could not be started.",
+  "Sign-in background must be 10 MB or smaller.": "Sign-in background must be 10 MB or smaller.",
+  "The sign-in background could not be verified.": "The sign-in background could not be verified.",
+  "Sign-in background updated.": "Sign-in background updated.",
+  "Sign-in background removed.": "Sign-in background removed.",
+  "PNG, JPG or WebP · 10 MB": "PNG, JPG or WebP · 10 MB",
+  "Sign-in background": "Sign-in background",
+  "Choose sign-in background": "Choose sign-in background",
+  "Keep background": "Keep background",
+  "Remove background": "Remove background",
+  "Remove sign-in background?": "Remove sign-in background?",
+  "The sign-in screen will show the default image.": "The sign-in screen will show the default image."
 }

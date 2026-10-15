@@ -68,6 +68,9 @@
 
 .logoThumb { display: inline-grid; inline-size: var(--wd-space-8); block-size: var(--wd-space-8); place-items: center; overflow: hidden; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); }
 .logoThumb img { inline-size: 100%; block-size: 100%; object-fit: contain; }
+.backgroundThumb { display: inline-grid; inline-size: var(--wd-space-16); block-size: var(--wd-space-10); overflow: hidden; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
+.backgroundThumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.backgroundDefault { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 
 .standaloneHeading { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
 .detailSection > header:has(.standaloneHeading) { padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }

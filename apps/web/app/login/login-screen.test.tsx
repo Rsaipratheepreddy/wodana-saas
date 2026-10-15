@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { openAuthenticatedWorkspace } from "@/lib/auth/client";
 import { LoginScreen } from "./login-screen";
 import { securityPageFixture } from "@/lib/workspace/security";
+import styles from "./login.module.css";
 
 const replace = vi.fn(), refresh = vi.fn(), push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, refresh, push }) }));
@@ -338,5 +339,23 @@ describe("email-first sign-in", () => {
 
     expect(push).toHaveBeenCalledWith("/portal/palm-living");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("tenant sign-in background", () => {
+  const panel = (container: HTMLElement) => container.querySelector<HTMLElement>(`.${styles.brandPanel}`);
+
+  it("keeps the default image for a tenant without its own background", () => {
+    const { container } = render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    expect(panel(container)).not.toBeNull();
+    expect(panel(container)!.style.getPropertyValue("--wd-login-background-image")).toBe("");
+    expect(panel(container)).not.toHaveAttribute("data-custom-background");
+  });
+
+  it("shows the tenant's own background behind the sign-in form", () => {
+    const url = "/api/auth/tenant-background/palm-living?v=7c1d0c2e-3b51-4a39-9f6e-0d7c1a2b3c4d";
+    const { container } = render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null, loginBackgroundUrl: url }} />);
+    expect(panel(container)!.style.getPropertyValue("--wd-login-background-image")).toBe(`url("${url}")`);
+    expect(panel(container)).toHaveAttribute("data-custom-background", "true");
   });
 });

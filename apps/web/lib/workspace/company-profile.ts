@@ -102,6 +102,9 @@ export type CompanyProfileData = {
     logoAssetId: string | null;
     logoUrl: string | null;
     logoUpdatedAt: string | null;
+    /** The tenant's own sign-in background; null: the default image. */
+    loginBackgroundAssetId?: string | null;
+    loginBackgroundUrl?: string | null;
     primaryColor: string | null;
     secondaryColor: string | null;
     headingFont: string | null;
@@ -158,6 +161,8 @@ export const companyProfileFixture: CompanyProfileData = {
     logoAssetId: null,
     logoUrl: null,
     logoUpdatedAt: null,
+    loginBackgroundAssetId: null,
+    loginBackgroundUrl: null,
     primaryColor: null,
     secondaryColor: null,
     headingFont: null,

@@ -63,6 +63,7 @@ import {
   COMPANY_LOGO_MAX_BYTES,
   InitiateCompanyLogoUploadDto,
 } from "./dto/company-logo.dto";
+import { InitiateLoginBackgroundUploadDto, LOGIN_BACKGROUND_MAX_BYTES } from "./dto/login-background.dto";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import {
   resolveWorkspaceTerminology,
@@ -141,6 +142,72 @@ interface BrandAssetRow {
   upload_expires_at: Date;
   updated_at: Date;
 }
+
+/** The workspace's own images (not a legal entity's): the logo and the sign-in background. */
+export type WorkspaceImagePurpose = "workspace_logo" | "login_background";
+type ImageVariant = { key: string; file: string; body: Buffer; contentType: string };
+const WORKSPACE_IMAGES: Record<WorkspaceImagePurpose, {
+  /** The tenant_login_branding column that holds the active asset. */
+  column: "logo_asset_id" | "login_background_asset_id";
+  maxBytes: number;
+  name: string;
+  noun: string;
+  publicName: string;
+  route: string;
+  defaultVariant: string;
+  updatedAction: string;
+  removedAction: string;
+  sizeProblem(width: number, height: number): string | null;
+  variants(body: Buffer): Promise<ImageVariant[]>;
+}> = {
+  workspace_logo: {
+    column: "logo_asset_id",
+    maxBytes: COMPANY_LOGO_MAX_BYTES,
+    name: "Logo",
+    noun: "logo",
+    publicName: "Company logo",
+    route: "tenant-logo",
+    defaultVariant: "display",
+    updatedAction: "workspace.logo_updated",
+    removedAction: "workspace.logo_removed",
+    sizeProblem: (width, height) => width < 64 || height < 64
+      ? "Logo dimensions must be at least 64 by 64 pixels"
+      : width > 4096 || height > 4096 ? "Logo dimensions must not exceed 4096 by 4096 pixels" : null,
+    variants: async (body) => {
+      const [display, square, document] = await Promise.all([
+        sharp(body).rotate().resize({ width: 1024, height: 512, fit: "inside", withoutEnlargement: true }).webp({ quality: 90 }).toBuffer(),
+        sharp(body).rotate().resize({ width: 512, height: 512, fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).webp({ quality: 90 }).toBuffer(),
+        sharp(body).rotate().resize({ width: 1024, height: 512, fit: "contain", background: "#ffffff", withoutEnlargement: true }).flatten({ background: "#ffffff" }).png().toBuffer(),
+      ]);
+      return [
+        { key: "display", file: "display.webp", body: display, contentType: "image/webp" },
+        { key: "square", file: "square.webp", body: square, contentType: "image/webp" },
+        { key: "document", file: "document.png", body: document, contentType: "image/png" },
+      ];
+    },
+  },
+  login_background: {
+    column: "login_background_asset_id",
+    maxBytes: LOGIN_BACKGROUND_MAX_BYTES,
+    name: "Sign-in background",
+    noun: "sign-in background",
+    publicName: "Sign-in background",
+    route: "tenant-background",
+    defaultVariant: "cover",
+    updatedAction: "workspace.login_background_updated",
+    removedAction: "workspace.login_background_removed",
+    // A full-screen cover: wide enough on its long side, and not a strip.
+    sizeProblem: (width, height) => Math.max(width, height) < 1200 || Math.min(width, height) < 600
+      ? "Sign-in background must be at least 1200 by 600 pixels"
+      : width > 8000 || height > 8000 ? "Sign-in background must not exceed 8000 by 8000 pixels" : null,
+    variants: async (body) => [{
+      key: "cover",
+      file: "cover.webp",
+      body: await sharp(body).rotate().resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer(),
+      contentType: "image/webp",
+    }],
+  },
+};
 
 const SYSTEM_ROLES = [
   ["owner", "Owner", "Full workspace ownership"],
@@ -1094,6 +1161,7 @@ export class WorkspacesService {
       const branding = await client.query<{
         logoAssetId: string | null;
         logoUpdatedAt: Date | null;
+        loginBackgroundAssetId: string | null;
         primaryColor: string | null;
         secondaryColor: string | null;
         headingFont: string | null;
@@ -1101,6 +1169,7 @@ export class WorkspacesService {
       }>(
         `SELECT branding.logo_asset_id AS "logoAssetId",
                 asset.updated_at AS "logoUpdatedAt",
+                branding.login_background_asset_id AS "loginBackgroundAssetId",
                 branding.primary_color AS "primaryColor",
                 branding.secondary_color AS "secondaryColor",
                 branding.heading_font AS "headingFont",
@@ -1675,6 +1744,90 @@ export class WorkspacesService {
     workspaceId: string,
     input: InitiateCompanyLogoUploadDto,
   ) {
+    return this.initiateWorkspaceImageUpload(actor, workspaceId, "workspace_logo", input);
+  }
+
+  async uploadCompanyLogoContent(
+    actor: RequestActor,
+    workspaceId: string,
+    assetId: string,
+    contentType: string,
+    body: Buffer,
+  ) {
+    return this.uploadWorkspaceImageContent(actor, workspaceId, "workspace_logo", assetId, contentType, body, false);
+  }
+
+  async completeCompanyLogoUpload(
+    actor: RequestActor,
+    workspaceId: string,
+    assetId: string,
+  ) {
+    const completed = await this.completeWorkspaceImageUpload(actor, workspaceId, "workspace_logo", assetId);
+    return { assetId: completed.assetId, logoUrl: completed.url, updatedAt: completed.updatedAt };
+  }
+
+  async removeCompanyLogo(actor: RequestActor, workspaceId: string) {
+    return this.removeWorkspaceImage(actor, workspaceId, "workspace_logo");
+  }
+
+  async readPublicCompanyLogo(loginSlug: string, variant: "display" | "square" = "display") {
+    return this.readPublicWorkspaceImage(loginSlug, "workspace_logo", variant);
+  }
+
+  async initiateLoginBackgroundUpload(
+    actor: RequestActor,
+    workspaceId: string,
+    input: InitiateLoginBackgroundUploadDto,
+  ) {
+    return this.initiateWorkspaceImageUpload(actor, workspaceId, "login_background", input);
+  }
+
+  async uploadLoginBackgroundContent(
+    actor: RequestActor,
+    workspaceId: string,
+    assetId: string,
+    contentType: string,
+    body: Buffer,
+  ) {
+    return this.uploadWorkspaceImageContent(actor, workspaceId, "login_background", assetId, contentType, body, false);
+  }
+
+  async completeLoginBackgroundUpload(actor: RequestActor, workspaceId: string, assetId: string) {
+    const completed = await this.completeWorkspaceImageUpload(actor, workspaceId, "login_background", assetId);
+    return { assetId: completed.assetId, loginBackgroundUrl: completed.url, updatedAt: completed.updatedAt };
+  }
+
+  async removeLoginBackground(actor: RequestActor, workspaceId: string) {
+    return this.removeWorkspaceImage(actor, workspaceId, "login_background");
+  }
+
+  async readPublicLoginBackground(loginSlug: string) {
+    return this.readPublicWorkspaceImage(loginSlug, "login_background", "cover");
+  }
+
+  /**
+   * A server-side upload (the operator CLI): the content goes straight to the brand storage, local or object storage,
+   * with the same permission and pending-upload checks as the browser's upload. Then complete it as the browser does.
+   */
+  async storeWorkspaceImageContent(
+    actor: RequestActor,
+    workspaceId: string,
+    purpose: WorkspaceImagePurpose,
+    assetId: string,
+    contentType: string,
+    body: Buffer,
+  ) {
+    return this.uploadWorkspaceImageContent(actor, workspaceId, purpose, assetId, contentType, body, true);
+  }
+
+  private async initiateWorkspaceImageUpload(
+    actor: RequestActor,
+    workspaceId: string,
+    purpose: WorkspaceImagePurpose,
+    input: { filename: string; mimeType: string; byteSize: number },
+  ) {
+    const rule = WORKSPACE_IMAGES[purpose];
+    if (input.byteSize > rule.maxBytes) throw new BadRequestException(`${rule.name} must be ${rule.maxBytes / 1024 / 1024} MB or smaller`);
     return this.access.withAnyPermission(
       actor,
       workspaceId,
@@ -1686,8 +1839,8 @@ export class WorkspacesService {
         await client.query(
           `INSERT INTO workspace_brand_assets
             (id, workspace_id, object_key, original_filename, mime_type,
-             expected_byte_size, created_by, upload_expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+             expected_byte_size, created_by, upload_expires_at, purpose)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             assetId,
             workspaceId,
@@ -1697,6 +1850,7 @@ export class WorkspacesService {
             input.byteSize,
             actorUser.userId,
             expiresAt,
+            purpose,
           ],
         );
         const uploadUrl = await this.brandStorage.createUploadUrl(objectKey, input.mimeType, input.byteSize);
@@ -1711,14 +1865,17 @@ export class WorkspacesService {
     );
   }
 
-  async uploadCompanyLogoContent(
+  private async uploadWorkspaceImageContent(
     actor: RequestActor,
     workspaceId: string,
+    purpose: WorkspaceImagePurpose,
     assetId: string,
     contentType: string,
     body: Buffer,
+    serverSide: boolean,
   ) {
-    if (this.brandStorage.usesObjectStorage) {
+    const rule = WORKSPACE_IMAGES[purpose];
+    if (this.brandStorage.usesObjectStorage && !serverSide) {
       throw new BadRequestException("Use the signed object-storage URL for this upload");
     }
     return this.access.withAnyPermission(
@@ -1726,35 +1883,38 @@ export class WorkspacesService {
       workspaceId,
       ["module.organization.edit", "workspace.settings.manage"],
       async (client) => {
-        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId);
-        if (contentType !== asset.mime_type) throw new BadRequestException("Logo content type changed");
+        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId, purpose);
+        if (contentType !== asset.mime_type) throw new BadRequestException(`${rule.name} content type changed`);
         if (body.byteLength !== asset.expected_byte_size) {
-          throw new BadRequestException("Logo byte size changed during upload");
+          throw new BadRequestException(`${rule.name} byte size changed during upload`);
         }
-        if (body.byteLength > COMPANY_LOGO_MAX_BYTES) {
-          throw new BadRequestException("Logo must be 5 MB or smaller");
+        if (body.byteLength > rule.maxBytes) {
+          throw new BadRequestException(`${rule.name} must be ${rule.maxBytes / 1024 / 1024} MB or smaller`);
         }
-        await this.brandStorage.writeLocal(asset.object_key, body);
+        if (this.brandStorage.usesObjectStorage) await this.brandStorage.put(asset.object_key, body, asset.mime_type);
+        else await this.brandStorage.writeLocal(asset.object_key, body);
         return { uploaded: true };
       },
     );
   }
 
-  async completeCompanyLogoUpload(
+  private async completeWorkspaceImageUpload(
     actor: RequestActor,
     workspaceId: string,
+    purpose: WorkspaceImagePurpose,
     assetId: string,
   ) {
+    const rule = WORKSPACE_IMAGES[purpose];
     return this.access.withAnyPermission(
       actor,
       workspaceId,
       ["module.organization.edit", "workspace.settings.manage"],
       async (client, actorUser) => {
-        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId);
+        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId, purpose);
         const stored = await this.brandStorage.read(asset.object_key).catch(() => null);
-        if (!stored) throw new BadRequestException("Upload the logo before completing it");
-        if (stored.byteSize !== asset.expected_byte_size || stored.byteSize > COMPANY_LOGO_MAX_BYTES) {
-          throw new BadRequestException("Uploaded logo size does not match the requested file");
+        if (!stored) throw new BadRequestException(`Upload the ${rule.noun} before completing it`);
+        if (stored.byteSize !== asset.expected_byte_size || stored.byteSize > rule.maxBytes) {
+          throw new BadRequestException(`Uploaded ${rule.noun} size does not match the requested file`);
         }
         await this.brandStorage.confirmUpload(asset.object_key, stored.body, asset.mime_type);
 
@@ -1767,35 +1927,21 @@ export class WorkspacesService {
               ? "image/webp"
               : null;
         if (!metadata?.width || !metadata.height || detectedMime !== asset.mime_type) {
-          throw new BadRequestException("The uploaded file is not a valid supported logo image");
+          throw new BadRequestException(`The uploaded file is not a valid supported ${rule.noun} image`);
         }
-        if (metadata.width < 64 || metadata.height < 64) {
-          throw new BadRequestException("Logo dimensions must be at least 64 by 64 pixels");
-        }
-        if (metadata.width > 4096 || metadata.height > 4096) {
-          throw new BadRequestException("Logo dimensions must not exceed 4096 by 4096 pixels");
-        }
+        const sizeProblem = rule.sizeProblem(metadata.width, metadata.height);
+        if (sizeProblem) throw new BadRequestException(sizeProblem);
 
         const variantPrefix = `workspace-branding/${workspaceId}/${assetId}`;
-        const displayKey = `${variantPrefix}/display.webp`;
-        const squareKey = `${variantPrefix}/square.webp`;
-        const documentKey = `${variantPrefix}/document.png`;
-        const [display, square, document] = await Promise.all([
-          sharp(stored.body).rotate().resize({ width: 1024, height: 512, fit: "inside", withoutEnlargement: true }).webp({ quality: 90 }).toBuffer(),
-          sharp(stored.body).rotate().resize({ width: 512, height: 512, fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).webp({ quality: 90 }).toBuffer(),
-          sharp(stored.body).rotate().resize({ width: 1024, height: 512, fit: "contain", background: "#ffffff", withoutEnlargement: true }).flatten({ background: "#ffffff" }).png().toBuffer(),
-        ]);
-        await Promise.all([
-          this.brandStorage.put(displayKey, display, "image/webp"),
-          this.brandStorage.put(squareKey, square, "image/webp"),
-          this.brandStorage.put(documentKey, document, "image/png"),
-        ]);
-        const variants = { display: displayKey, square: squareKey, document: documentKey };
+        const rendered = await rule.variants(stored.body);
+        await Promise.all(rendered.map((variant) =>
+          this.brandStorage.put(`${variantPrefix}/${variant.file}`, variant.body, variant.contentType)));
+        const variants = Object.fromEntries(rendered.map((variant) => [variant.key, `${variantPrefix}/${variant.file}`]));
 
         await client.query(
           `UPDATE workspace_brand_assets SET status = 'replaced'
-           WHERE workspace_id = $1 AND status = 'active' AND id <> $2 AND purpose = 'workspace_logo'`,
-          [workspaceId, assetId],
+           WHERE workspace_id = $1 AND status = 'active' AND id <> $2 AND purpose = $3`,
+          [workspaceId, assetId, purpose],
         );
         const activated = await client.query<BrandAssetRow>(
           `UPDATE workspace_brand_assets
@@ -1805,10 +1951,10 @@ export class WorkspacesService {
            RETURNING *`,
           [stored.byteSize, metadata.width, metadata.height, variants, assetId, workspaceId],
         );
-        if (!activated.rowCount) throw new ConflictException("Logo upload changed; try again");
+        if (!activated.rowCount) throw new ConflictException(`${rule.name} upload changed; try again`);
         const branding = await client.query<{ loginSlug: string }>(
           `UPDATE tenant_login_branding
-           SET logo_asset_id = $1, logo_url = NULL
+           SET ${rule.column} = $1${purpose === "workspace_logo" ? ", logo_url = NULL" : ""}
            WHERE workspace_id = $2
            RETURNING login_slug AS "loginSlug"`,
           [assetId, workspaceId],
@@ -1816,7 +1962,7 @@ export class WorkspacesService {
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
-          action: "workspace.logo_updated",
+          action: rule.updatedAction,
           entityType: "workspace_brand_asset",
           entityId: assetId,
           after: {
@@ -1828,24 +1974,26 @@ export class WorkspacesService {
         });
         return {
           assetId,
-          logoUrl: `/api/auth/tenant-logo/${branding.rows[0]?.loginSlug}?v=${assetId}`,
+          url: `/api/auth/${rule.route}/${branding.rows[0]?.loginSlug}?v=${assetId}`,
           updatedAt: activated.rows[0].updated_at,
         };
       },
     );
   }
 
-  async removeCompanyLogo(actor: RequestActor, workspaceId: string) {
+  private async removeWorkspaceImage(actor: RequestActor, workspaceId: string, purpose: WorkspaceImagePurpose) {
+    const rule = WORKSPACE_IMAGES[purpose];
+    const field = purpose === "workspace_logo" ? "logoAssetId" : "loginBackgroundAssetId";
     return this.access.withAnyPermission(
       actor,
       workspaceId,
       ["module.organization.delete", "workspace.settings.manage"],
       async (client, actorUser) => {
-        const current = await client.query<{ logoAssetId: string | null }>(
-          `SELECT logo_asset_id AS "logoAssetId" FROM tenant_login_branding WHERE workspace_id = $1`,
+        const current = await client.query<{ assetId: string | null }>(
+          `SELECT ${rule.column} AS "assetId" FROM tenant_login_branding WHERE workspace_id = $1`,
           [workspaceId],
         );
-        const assetId = current.rows[0]?.logoAssetId;
+        const assetId = current.rows[0]?.assetId;
         if (assetId) {
           await client.query(
             `UPDATE workspace_brand_assets SET status = 'replaced'
@@ -1854,42 +2002,45 @@ export class WorkspacesService {
           );
         }
         await client.query(
-          `UPDATE tenant_login_branding SET logo_asset_id = NULL, logo_url = NULL
+          `UPDATE tenant_login_branding SET ${rule.column} = NULL${purpose === "workspace_logo" ? ", logo_url = NULL" : ""}
            WHERE workspace_id = $1`,
           [workspaceId],
         );
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
-          action: "workspace.logo_removed",
+          action: rule.removedAction,
           entityType: "workspace",
           entityId: workspaceId,
-          before: { logoAssetId: assetId ?? null },
-          after: { logoAssetId: null },
+          before: { [field]: assetId ?? null },
+          after: { [field]: null },
         });
         return { removed: true };
       },
     );
   }
 
-  async readPublicCompanyLogo(loginSlug: string, variant: "display" | "square" = "display") {
+  private async readPublicWorkspaceImage(loginSlug: string, purpose: WorkspaceImagePurpose, variant: string) {
+    const rule = WORKSPACE_IMAGES[purpose];
     const branding = await this.database.query<{ workspaceId: string; assetId: string | null }>(
-      `SELECT workspace_id AS "workspaceId", logo_asset_id AS "assetId"
+      `SELECT workspace_id AS "workspaceId", ${rule.column} AS "assetId"
        FROM tenant_login_branding WHERE login_slug = $1`,
       [loginSlug.toLowerCase()],
     );
     const row = branding.rows[0];
-    if (!row?.assetId) throw new NotFoundException("Company logo was not found");
+    const missing = () => new NotFoundException(`${rule.publicName} was not found`);
+    if (!row?.assetId) throw missing();
     return this.database.tenantTransaction(row.workspaceId, row.workspaceId, async (client) => {
       const asset = await client.query<BrandAssetRow>(
         `SELECT * FROM workspace_brand_assets
          WHERE id = $1 AND workspace_id = $2 AND status = 'active'`,
         [row.assetId, row.workspaceId],
       );
-      if (!asset.rowCount) throw new NotFoundException("Company logo was not found");
-      const objectKey = asset.rows[0].variants[variant] ?? asset.rows[0].variants.display ?? asset.rows[0].object_key;
+      if (!asset.rowCount) throw missing();
+      const variants = asset.rows[0].variants;
+      const objectKey = variants[variant] ?? variants[rule.defaultVariant] ?? asset.rows[0].object_key;
       const stored = await this.brandStorage.read(objectKey).catch(() => null);
-      if (!stored) throw new NotFoundException("Company logo was not found");
+      if (!stored) throw missing();
       return {
         body: stored.body,
         contentType: objectKey.endsWith(".webp") ? "image/webp" : asset.rows[0].mime_type,
@@ -3781,20 +3932,22 @@ export class WorkspacesService {
     client: PoolClient,
     workspaceId: string,
     assetId: string,
+    purpose: WorkspaceImagePurpose,
   ): Promise<BrandAssetRow> {
+    const rule = WORKSPACE_IMAGES[purpose];
     const result = await client.query<BrandAssetRow>(
       `SELECT * FROM workspace_brand_assets
-       WHERE id = $1 AND workspace_id = $2 AND status = 'pending' AND purpose = 'workspace_logo'`,
-      [assetId, workspaceId],
+       WHERE id = $1 AND workspace_id = $2 AND status = 'pending' AND purpose = $3`,
+      [assetId, workspaceId, purpose],
     );
-    if (!result.rowCount) throw new NotFoundException("Pending logo upload was not found");
+    if (!result.rowCount) throw new NotFoundException(`Pending ${rule.noun} upload was not found`);
     if (result.rows[0].upload_expires_at.getTime() <= Date.now()) {
       await client.query(
         `UPDATE workspace_brand_assets SET status = 'failed'
          WHERE id = $1 AND workspace_id = $2`,
         [assetId, workspaceId],
       );
-      throw new GoneException("Logo upload expired; choose the file again");
+      throw new GoneException(`${rule.name} upload expired; choose the file again`);
     }
     return result.rows[0];
   }
@@ -4704,8 +4857,8 @@ export class WorkspacesService {
   private mapBranding(
     loginSlug: string,
     row?: {
-      logoAssetId: string | null; logoUpdatedAt: Date | null; primaryColor: string | null;
-      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
+      logoAssetId: string | null; logoUpdatedAt: Date | null; loginBackgroundAssetId?: string | null;
+      primaryColor: string | null; secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
     },
   ) {
     return {
@@ -4714,6 +4867,10 @@ export class WorkspacesService {
         ? `/api/auth/tenant-logo/${loginSlug}?v=${row.logoAssetId}`
         : null,
       logoUpdatedAt: row?.logoUpdatedAt ?? null,
+      loginBackgroundAssetId: row?.loginBackgroundAssetId ?? null,
+      loginBackgroundUrl: row?.loginBackgroundAssetId
+        ? `/api/auth/tenant-background/${loginSlug}?v=${row.loginBackgroundAssetId}`
+        : null,
       primaryColor: row?.primaryColor ?? null,
       secondaryColor: row?.secondaryColor ?? null,
       headingFont: row?.headingFont ?? null,

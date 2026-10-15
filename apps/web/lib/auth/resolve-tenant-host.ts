@@ -7,6 +7,8 @@ import { getServerT } from "@/lib/i18n/server";
 export type TenantBranding = {
   displayName: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null;
   secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
+  /** The tenant's own sign-in background; null or missing: the default image. */
+  loginBackgroundUrl?: string | null;
 };
 
 export async function resolveTenantHost(host: string | null): Promise<{ kind: "generic" } | { kind: "tenant"; branding: TenantBranding } | null> {
