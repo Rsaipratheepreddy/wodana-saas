@@ -1,8 +1,10 @@
 {
   "description": "Palm Living go-live configuration (plan §0.5 items 12-13; deploy checklist 6 Oct). Apply with: node dist/ops/ops-cli.js configure --workspace <slug> --as <member> --profile palm-golive-config.json [--apply]. Values marked TBC by Palm are left out or null.",
+  "_enquiryTypes": "PLM-173 (15 Oct 2026): Renovation is on hold until Palm confirms, so it takes no new enquiries; existing ones are kept.",
   "enquiryTypes": {
     "archive": [
-      "concepts_early_ideas"
+      "concepts_early_ideas",
+      "renovation_fit_out"
     ]
   },
   "vehicles": [
@@ -164,7 +166,8 @@
     "qsWorkPackages": [
       "Joinery",
       "Bespoke furniture"
-    ]
+    ],
+    "valueEngineeringFreeRounds": 2
   },
   "firstResponse": {
     "minutes": 60,

@@ -13,14 +13,14 @@ const problems = (raw: unknown) => {
 describe("configuration profile", () => {
   it("accepts the Palm go-live profile and the sample profile", () => {
     const palm = validateProfile(json("../../../../docs/fixtures/palm-golive-config.json"));
-    expect(palm.enquiryTypes).toEqual({ archive: ["concepts_early_ideas"] });
+    expect(palm.enquiryTypes).toEqual({ archive: ["concepts_early_ideas", "renovation_fit_out"] });
     expect(palm.vehicles).toHaveLength(9);
     expect(palm.factory?.productionSteps).toEqual([{ kind: "scheduled", label: "" }, { kind: "in_production", label: "" }, { kind: "quality_check", label: "" }, { kind: "ready", label: "" }]);
     expect(palm.factory?.permits).toEqual({ requiredForDeliveriesAndInstallations: true, furnitureDeliveriesNeedOne: true, missingAlertWorkingDays: 3, expiryReminderDays: 7 });
     // PLM-150: two design inspections on joinery and bespoke furniture; the Creative Director inspects on its own package's projects.
     expect(palm.factory?.inspections).toEqual({ enabled: true, stages: [{ kind: "raw", label: "Inspection 1 (raw material)" }, { kind: "final", label: "Inspection 2 (finished)" }],
       trades: ["Joinery", "Bespoke furniture"], inspectorRole: "designer", directorRole: "creative_director", directorPackages: ["creative_director"], workingDays: undefined });
-    expect(palm.quotations).toMatchObject({ validityDays: 7, qsReview: true, qsPrices: "rules", qsWorkPackages: ["Joinery", "Bespoke furniture"] });
+    expect(palm.quotations).toMatchObject({ validityDays: 7, qsReview: true, qsPrices: "rules", qsWorkPackages: ["Joinery", "Bespoke furniture"], valueEngineeringFreeRounds: 2 });
     expect(palm.firstResponse).toEqual({ minutes: 60, workingCalendar: { days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "18:00" } });
     expect(palm.financeRequests?.inbox).toBe("accounts@palmlivingae.com");
     expect(palm.financeRequests?.paymentMethods?.map((method) => [method.name, method.refundDays])).toEqual([["Bank transfer / card", null], ["Stripe", null], ["Tabby", null]]);

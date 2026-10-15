@@ -288,6 +288,21 @@
         "catalog.view",
         "crm.reports.view"
       ]
+    },
+    {
+      "code": "PROJECT_DIRECTOR",
+      "name": "Project Director / Factory Manager",
+      "scope": "all",
+      "permissions": [
+        "projects.view",
+        "projects.manage",
+        "projects.review",
+        "projects.schedule.view",
+        "factory.view",
+        "factory.approve",
+        "catalog.view",
+        "commercial.deal.approve"
+      ]
     }
   ],
   "designTeam": {
