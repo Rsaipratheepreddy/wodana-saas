@@ -1,5 +1,6 @@
 import type { ProjectReadiness } from "@/lib/readiness/types";
 import type { ChecklistGroupRead } from "@/lib/pre-project/design-workspace";
+import type { TechnicalHandover } from "./technical";
 import type { DrawingsState, CloseOut, LabourRates, LineHistoryEntry, Milestones, Profitability, ProjectCashFlow, ProjectMoney, ProjectOverview, ProjectPnl, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
@@ -36,6 +37,8 @@ export function projectApi(workspaceId: string) {
     materials: (projectId: string) => request<MaterialsState>(path(`projects/${projectId}/materials`)),
     /** Each scope line with what it still needs, worked out from the records. */
     readiness: (projectId: string) => request<ProjectReadiness>(path(`projects/${projectId}/readiness`)),
+    /** PLM-165 / PLM-166: the technical handover pack with each line's requirements and missing-information checklist. */
+    technicalHandover: (projectId: string) => request<TechnicalHandover>(path(`projects/${projectId}/technical-handover`)),
     /** The brief from design: the discovery answers by section and the checklists that apply, with their pending lines. */
     brief: (projectId: string) => request<{ groups: ChecklistGroupRead[]; pending: number; caseId: string | null }>(path(`projects/${projectId}/brief`)),
     /** The technical drawings: revisions, files, the site check and the client's decision. */

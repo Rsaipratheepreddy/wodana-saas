@@ -16,6 +16,8 @@ export type FactorySettings = {
    */
   inspectionsEnabled?: boolean; inspectionStages?: InspectionStage[]; inspectionWorkPackages?: string[]; inspectorRole?: string; directorRole?: string | null;
   directorPackages?: string[]; inspectionDays?: number;
+  /** PLM-174: the path E checks before a work order on a bespoke job is released. */
+  requireTechnicalHandover?: boolean; requireFactoryRequirements?: boolean; requireQs?: boolean;
 };
 
 /** PLM-150: a design inspection stage: in raw material before the final finish, or after finishing (before dispatch). */
@@ -108,7 +110,7 @@ export type ScheduleState = {
   conflicts: Array<{ workcenterId: string; workcenterName: string; date: string; hours: number; capacity: number; orders: string[] }>;
 };
 
-export type ReleaseCheck = { key: "running" | "scope" | "client_drawings" | "technical_measure" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
+export type ReleaseCheck = { key: "running" | "scope" | "client_drawings" | "technical_measure" | "drawing" | "payment" | "materials" | "schedule" | "technical_handover" | "factory_requirements" | "qs"; passed: boolean; missing: string; detail?: string[] };
 export type OutputReport = {
   id: string; good: string; scrap: string; scrapReason: string; note: string; status: "pending" | "approved" | "refused"; reportedBy: string; reportedByName: string; reportedAt: string;
   decidedByName: string | null; decisionNote: string;
@@ -151,6 +153,8 @@ export type WorkOrderState = FactoryRights & {
     /** Refused at site, why, and the trip that brings it back. */
     rejected?: string | null; rejectReason?: string; returnId?: string | null; returnNumber?: number | null; returnStatus?: "in_transit" | "received" | "cancelled" | null }>;
   atFactory: string;
+  /** PLM-166: where its line's material and labour requirements stand (a verified recipe, or the factory's record). */
+  requirements?: { settled: boolean; state: "verified" | "confirmed" | "pending" | "needs_requirements" | "not_needed" };
   next?: WorkOrderNext; reworks?: WorkOrderRework[];
   /** PLM-150: where its design inspections stand, and every round so far. */
   inspection?: OrderInspection | null; inspections?: InspectionRound[];

@@ -75,6 +75,7 @@ describe("Catalog form dialogs", () => {
       "^\\.facts$", // read-only item facts
       "^\\.sheets li$", // one line per spreadsheet sheet: its category and the columns found
       "^\\.tierRow$", // one line per price tier: the quantity it starts at and its price
+      "^\\.recipeRow$", // one line per recipe component (PLM-162): its kind, whether per unit or per batch, the batch size or hours
     ].join("|"));
     for (const sheet of readdirSync(__dirname).filter((file) => file.endsWith(".module.css"))) {
       const css = readFileSync(join(__dirname, sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "");

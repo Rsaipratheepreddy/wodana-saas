@@ -18,14 +18,15 @@ import { ProjectMaterials } from "./project-materials";
 import { ProjectDrawings } from "./project-drawings";
 import { FinishesSchedule } from "../finishes/finishes-schedule";
 import { ProjectReadiness } from "./project-readiness";
+import { ProjectTechnicalHandover } from "./project-technical-handover";
 import { ProjectBrief } from "./project-brief";
 import { SealedDocument } from "./sealed-document";
 import { ProjectChanges } from "../change-requests/project-changes";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
-type View = "items" | "brief" | "readiness" | "materials" | "finishes" | "drawings" | "changes" | "sealed";
-const VIEWS: View[] = ["items", "brief", "readiness", "materials", "finishes", "drawings", "changes", "sealed"];
+type View = "items" | "brief" | "readiness" | "technical" | "materials" | "finishes" | "drawings" | "changes" | "sealed";
+const VIEWS: View[] = ["items", "brief", "readiness", "technical", "materials", "finishes", "drawings", "changes", "sealed"];
 type Group = "package" | "area";
 const SUPPLIES: Supply[] = ["make", "buy", "ready_made", "subcontract", "client", "site_work"];
 const NONE = "__none";
@@ -114,7 +115,7 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
 
   return <div className={styles.scopeView}>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => { setView(key as View); setSeal(null); }}
-      items={[{ id: "items", label: t("Items") }, { id: "brief", label: t("Brief") }, { id: "readiness", label: t("Readiness") }, { id: "materials", label: t("Materials") }, { id: "finishes", label: t("Finishes") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, ...(priced ? [{ id: "sealed", label: t("Sealed") }] : [])]} />
+      items={[{ id: "items", label: t("Items") }, { id: "brief", label: t("Brief") }, { id: "readiness", label: t("Readiness") }, { id: "technical", label: t("Technical handover") }, { id: "materials", label: t("Materials") }, { id: "finishes", label: t("Finishes") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, ...(priced ? [{ id: "sealed", label: t("Sealed") }] : [])]} />
 
     {view === "items" ? <>
       <div className={styles.scopeToolbar}>
@@ -138,6 +139,8 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
       {priced ? <p className={styles.agreedLine}><span>{t("Agreed value")}</span><strong>{agreed}</strong></p> : null}
     </> : view === "brief" ? <ProjectBrief workspaceId={workspaceId} projectId={projectId} version={version} />
     : view === "readiness" ? <ProjectReadiness workspaceId={workspaceId} projectId={projectId} version={version} onView={(next) => { setView(next); setSeal(null); }} />
+    // PLM-165 / PLM-166: the technical handover pack, with each line's requirements.
+    : view === "technical" ? <ProjectTechnicalHandover workspaceId={workspaceId} projectId={projectId} version={version} run={run} />
     : view === "materials" ? <>
       <ProjectMaterials workspaceId={workspaceId} projectId={projectId} version={version} run={run} lines={scope.lines} />
       {/* PLM-061: the samples the design team asked the factory for. */}
