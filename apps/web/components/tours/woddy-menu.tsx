@@ -27,7 +27,7 @@ export function WoddyMenu({ onChat, className, avatarClassName, labelClassName }
   const portalTheme = usePortalThemeAttributes();
   const button = useRef<HTMLButtonElement>(null);
   const face = <><Woddy className={avatarClassName} decorative motion="idle" pose="idle" size={34} /><span className={labelClassName}>{t("Ask Woddy")}</span></>;
-  if (!tours?.available) return <AriaButton aria-haspopup="dialog" aria-label={t("Ask Woddy")} className={className} onPress={onChat}>{face}</AriaButton>;
+  if (!tours?.available) return onChat ? <AriaButton aria-haspopup="dialog" aria-label={t("Ask Woddy")} className={className} onPress={onChat}>{face}</AriaButton> : null;
   const onAction = (key: Key) => {
     const id = String(key);
     if (id === "chat") onChat?.();

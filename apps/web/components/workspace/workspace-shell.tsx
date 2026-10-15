@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { WoddyProvider, useWoddy } from "@/components/crm/woddy-chat";
+import { useAiReady } from "@/lib/workspace/ai-settings";
 import { TourProvider } from "@/components/tours/tour-provider";
 import { WoddyMenu } from "@/components/tours/woddy-menu";
 import { TourPersonaBadge } from "@/components/tours/tour-persona-badge";
@@ -111,6 +112,8 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
   }, [pageTitle, workspaceName]);
   const [mobileNavigationPath, setMobileNavigationPath] = useState<string | null>(null);
   const woddy = useWoddy();
+  // Woddy's chat answers with AI: offered only where AI is switched on and set up.
+  const aiReady = useAiReady(workspaces[0]?.id);
   const { theme, toggleTheme } = useWorkspaceTheme();
   const mobileOpen = mobileNavigationPath === pathname;
   // Products sit in the top bar; company and account settings open from the utilities.
@@ -199,7 +202,7 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
             {workspaceId ? <CommandPalette workspaceId={workspaceId} modules={modules} access={access ?? {}} /> : null}
             <TourPersonaBadge />
             <div className={styles.woddyControl}>
-              <WoddyMenu avatarClassName={styles.woddyAvatar} className={styles.woddyButton} labelClassName={styles.woddyLabel} onChat={woddy?.open} />
+              <WoddyMenu avatarClassName={styles.woddyAvatar} className={styles.woddyButton} labelClassName={styles.woddyLabel} onChat={aiReady ? woddy?.open : undefined} />
             </div>
             <WorkspaceNotifications workspaceId={workspaceId} />
             {settingsModule ? <Link

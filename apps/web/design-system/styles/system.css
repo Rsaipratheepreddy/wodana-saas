@@ -317,6 +317,8 @@
 
 /* Menus and overlays */
 .wd-popover, .wd-tooltip { z-index: var(--wd-z-popover); border: 1px solid var(--wd-line); border-radius: var(--wd-radius-md); background: var(--wd-surface); color: var(--wd-ink); box-shadow: var(--wd-shadow-2); }
+/* A popover takes focus to hand it to its first item; it never draws a focus frame of its own. */
+.wd-popover:focus, .wd-popover:focus-visible { outline: none; }
 .wd-popover[data-entering], .wd-tooltip[data-entering] { animation: wd-pop-in var(--wd-duration-fast) var(--wd-ease-out); }
 @keyframes wd-pop-in { from { opacity: 0; transform: translateY(-2px) scale(0.99); } }
 .wd-tooltip { max-inline-size: 18rem; padding: var(--wd-space-1-5) var(--wd-space-2); font-size: var(--wd-text-xs); }

@@ -10,6 +10,10 @@ import { PageShell, SettingsPage } from "@/design-system";
 
 const route = vi.hoisted(() => ({ pathname: "/workspace/members", search: "" }));
 
+// Woddy's chat answers with AI: on unless a test switches it off.
+const ai = vi.hoisted(() => ({ ready: true }));
+vi.mock("@/lib/workspace/ai-settings", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/workspace/ai-settings")>()), useAiReady: () => ai.ready }));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => route.pathname,
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
@@ -303,6 +307,22 @@ describe("WorkspaceShell theme", () => {
     await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
     expect(screen.queryByRole("menuitem", { name: "Explain this screen" })).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Woddy chat" })).toBeInTheDocument();
+  });
+
+  it("leaves Ask a question out while AI is off, and on a phone shows no Woddy button that would do nothing", async () => {
+    ai.ready = false;
+    try {
+      const interaction = userEvent.setup();
+      route.pathname = "/workspace";
+      const { unmount } = render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
+      await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
+      expect(screen.queryByRole("menuitem", { name: "Ask a question" })).not.toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: /Home at a glance/ })).toBeInTheDocument();
+      unmount();
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width: 40rem"), addEventListener() {}, removeEventListener() {} }));
+      render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
+      expect(screen.queryByRole("button", { name: "Ask Woddy" })).not.toBeInTheDocument();
+    } finally { ai.ready = true; }
   });
 });
 
