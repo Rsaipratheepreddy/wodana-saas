@@ -11,7 +11,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { Check, Circle, Plus, X } from "lucide-react";
 import {
+  AmountList,
+  Avatar,
   Badge,
+  CheckList,
   Button,
   Checkbox,
   DataGrid,
@@ -27,19 +30,22 @@ import {
   FormSection,
   IconButton,
   InlineNotice,
+  KpiStrip,
+  KpiTile,
   MoneyField,
   MoreDetails,
   NumericInput,
   PercentageInput,
   PillTabs,
   SelectField,
+  StateChip,
   TextAreaField,
   TextInput,
   useDesignSystem,
   formatDate,
 } from "@/design-system";
 import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/lib/commercial/client";
-import { smallestAmount } from "@/lib/money-exact";
+import { smallestAmount, sumExact } from "@/lib/money-exact";
 import {
   activeDeliveryQuote,
   agreementHasSignedEvidence,
@@ -62,7 +68,10 @@ import { ClientReportCell, ClientReportDialog, useClientPaymentReports } from ".
 import { ClientFiles } from "@/components/client-activity/client-files";
 import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
 import { SeenByClient, useClientThreads } from "@/components/client-activity/client-threads";
-import { DealApprovalSteps, DealFileInsight } from "./deal-file-insight";
+import { DealApprovalSteps, DealClosing, DealMoney, DealRequirements, DealTeam, dealPaidShare, dealRequirementCount, dealRiskText } from "./deal-file-insight";
+import { NextStepCard, SideSection } from "@/components/record/record-layout";
+import { FactList, PersonChip } from "@/components/record/record-parts";
+import ds from "./deal-file-insight.module.css";
 import s from "./commercial.module.css";
 import tableStyles from "../workspace/workspace.module.css";
 type Props = {
@@ -690,6 +699,88 @@ export function ApprovalRelease({
     reader.onload = () => setMaterialDraft(current => current ? { ...current, photo: String(reader.result) } : current);
     reader.readAsDataURL(file);
   };
+  // The Deal File at a glance (KPI tiles), then its sections: the step that is next, the requirements, the approvals,
+  // the money, the commission, the closing and the team.
+  const insight = state.dealInsight ?? null;
+  const review = d.ownerReview;
+  const requirements = insight ? dealRequirementCount(insight) : null;
+  const paidShare = insight ? dealPaidShare(insight) : null;
+  const totals = accepted ? acceptedQuoteTotals(accepted) : null;
+  const paymentChecked = Boolean(accepted && (receiptVerified
+    || (review && review.quoteId === accepted.id && ["pending_approval", "approved"].includes(review.status) && review.financeReviewedById)));
+  const reviewText = review ? translateKnown(t, statusLabel[review.status] ?? review.status) : t("Not submitted");
+  const reviewTone = !review ? undefined : review.status === "approved" ? "success" : review.status === "rejected" ? "danger" : "warning";
+  const showApprovalSteps = Boolean(state.dealApproval && (state.dealApproval.status === "pending" || review?.status === "approved"));
+  // The commission as decided: Finance's final lines while the owner decides, the Deal File's once approved.
+  const commission = !accepted ? [] : review?.status === "pending_approval" ? review.finalCommissionLines ?? []
+    : d.dealFile?.quoteId === accepted.id ? d.dealFile.commissionLines ?? [] : [];
+  const commissionTotal = sumExact(commission.map((line) => line.amount), accepted?.currency);
+  const costRows = accepted && totals && state.canViewCosts ? [{ id: "cost", label: t("Internal cost"), amount: money(totals.cost, accepted.currency, locale) }] : [];
+  const riskText = insight ? dealRiskText(t, insight) : null;
+  const riskLine = riskText ? <span className={ds.risks}>{riskText}</span> : null;
+  const stepOf = (current: number) => <Badge tone="neutral">{t("Step {current} of {total}", { current, total: 3 })}</Badge>;
+  const waitingFor = (names: string[]) => names.length ? <span className={ds.waiting}>
+    <span className={ds.avatars} aria-hidden="true">{names.slice(0, 3).map((name) => <Avatar key={name} name={name} seed={`holder-${name}`} size="sm" />)}</span>
+    <span>{t("Waiting for {names}", { names: names.join(", ") })}</span>
+  </span> : null;
+  // Only an approver who didn't submit or verify this deal decides it; everyone else sees who does.
+  const canDecide = Boolean(review && state.canApproveDeal && (state.dealApproval?.status === "pending" ? state.dealApproval.canDecide : ![review.submittedById, review.financeReviewedById].includes(state.viewerId)));
+  const stepCard = !accepted ? null : review?.status === "pending_finance" ? <NextStepCard id="deal-next" title={t("Finance verification")} why={t("Submitted by {name}", { name: review.submittedBy })}
+    meta={<>{waitingFor(state.stepHolders?.verifyPayment ?? [])}{stepOf(2)}</>}>
+    <Form className={ds.stepForm} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void run("review_deal_finance", { decision: "confirm", note: decisionNote, paymentVerified, commissionLines: editableFinanceLines.map(sent) }); }}>
+      {review.paymentProofUrl ? <a href={review.paymentProofUrl} target="_blank" rel="noopener noreferrer">{t("Open payment proof ↗")}</a> : null}
+      {editableFinanceLines.map((line, index) => <CommissionFields key={`${line.type}-${index}`} fixedRecipient={!financeAddsLines} currency={accepted.currency} index={index} line={line} onChange={(update) => updateCommission(index, update, true)}
+        onRemove={financeAddsLines ? () => setFinanceDraft({ key: reviewKey, lines: editableFinanceLines.filter((_, i) => i !== index) }) : undefined} />)}
+      {financeAddsLines && editableFinanceLines.length < 3 ? <div><Button size="compact" variant="quiet" onPress={() => setFinanceDraft({ key: reviewKey, lines: [...editableFinanceLines, newCommissionLine()] })}><Plus size={14} />{t("Add recipient")}</Button></div> : null}
+      <Checkbox isSelected={paymentVerified} onChange={(value) => setPaymentVerification({ key: reviewKey, value })}>{review.paymentProofUrl ? t("I verified the linked proof of payment") : t("I verified the payment receipt")}</Checkbox>
+      <TextAreaField label={t("Finance note")} value={decisionNote} onChange={setDecisionNote} placeholder={t("Explain any correction or reason for return.")} />
+      {state.canVerifyFinance && <div className={ds.stepActions}>
+        <Button isDisabled={busy || !decisionNote.trim()} onPress={() => void run("review_deal_finance", { decision: "return", note: decisionNote })}>{t("Return to Sales")}</Button>
+        <Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || !paymentVerified || !editableFinanceLines.every(commissionReady)}>{t("Confirm Finance review")}</Button>
+      </div>}
+    </Form>
+  </NextStepCard> : review?.status === "pending_approval" ? <NextStepCard id="deal-next" title={t("Owner approval")} why={riskLine}
+    meta={<>{waitingFor(state.dealApproval?.status === "pending" ? state.dealApproval.waitingFor : state.stepHolders?.approveDeal ?? [])}{stepOf(3)}</>}>
+    <div className={ds.stepForm}>
+      <div className={ds.checklist}>
+        <h4 className={ds.subhead}>{t("Owner checklist")}</h4>
+        <CheckList label={t("Owner checklist")} items={Object.entries(review.checklist).filter(([key]) => !d.servicePath || key !== "materials")
+          .map(([key, done]) => ({ id: key, label: translateKnown(t, checklistLabel[key] ?? key), done }))} />
+      </div>
+      {!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals) && <p className={ds.stepNote}>{t("Complete every client material decision before creating the Deal File.")}</p>}
+      {canDecide ? <>
+        <TextAreaField label={t("Decision remarks")} value={ownerNote} onChange={setOwnerNote} placeholder={t("Required when returning or rejecting.")} />
+        <div className={ds.stepActions}>
+          <Button variant="danger" isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "reject", note: ownerNote })}>{t("Reject")}</Button>
+          <Button isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: ownerNote })}>{t("Return for correction")}</Button>
+          <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(review.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: ownerNote })}>{t("Approve Deal File")}</Button>
+        </div>
+      </> : null}
+    </div>
+  </NextStepCard> : d.dealFile?.quoteId !== accepted.id ? <NextStepCard id="deal-next" title={t("Submit Deal File")} why={riskLine} meta={stepOf(1)}>
+    <Form className={ds.stepForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.filter((line) => !commissionBlank(line)).map(sent), paymentProofUrl, checklist, note }); }}>
+      {/* The remark of whoever returned it (the owner, or Finance): that is what Sales has to fix. */}
+      {review && <p className={ds.stepNote}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[review.status] ?? review.status)}. {review.decisionNote ?? review.financeNote}</p>}
+      {state.opportunityStatus !== "won" && <p className={ds.stepNote}>{t("Attach the payment proof on the opportunity first: that wins it and opens this Deal File.")}</p>}
+      {attachedProof ? <a href={attachedProof} target="_blank" rel="noopener noreferrer">{t("Payment proof attached on the opportunity ↗")}</a> : null}
+      {/* A payment Finance verified (with its uploaded receipt) is the proof: no link is asked for then. */}
+      {!attachedProof && receiptVerified ? <p className={s.muted}>{t("Payment verified by Finance")}</p> : null}
+      {attachedProof || receiptVerified ? null : <TextInput isRequired inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} onBlur={() => setProofTouched(true)} placeholder={t("https://…")}
+        isInvalid={proofTouched && proofProblem === "insecure"} errorMessage={proofProblem === "insecure" ? insecureProof : undefined} />}
+      {commissionLines.map((line, index) => <CommissionFields key={index} currency={accepted.currency} index={index} line={line}
+        onChange={(update) => updateCommission(index, update)}
+        onRemove={() => setCommissionLines(commissionLines.filter((_, i) => i !== index))} />)}
+      {commissionLines.length < 3 && <div><Button size="compact" variant="quiet" onPress={() => setCommissionLines([...commissionLines, newCommissionLine()])}><Plus size={14} />{t("Add recipient")}</Button></div>}
+      <FormSection title={t("Checklist")}>
+        <div className={s.checkGrid}>{checklistKeys.map(key => <Checkbox key={key} isSelected={checklist[key as keyof typeof checklist]} onChange={(done) => setChecklist({ ...checklist, [key]: done })}>{translateKnown(t, checklistLabel[key] ?? key)}</Checkbox>)}</div>
+      </FormSection>
+      <TextAreaField isRequired label={t("Submission note")} value={note} onChange={setNote} placeholder={t("Summarize payment evidence, pricing decision and any conditions.")} />
+      {state.canEdit && <div className={ds.stepActions}>
+        {sendBlocker ? <span role="status">{sendBlocker}</span> : null}
+        <Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || state.opportunityStatus !== "won" || Boolean(sendBlocker)}>{t("Send to Finance")}</Button>
+      </div>}
+    </Form>
+  </NextStepCard> : <NextStepCard id="deal-next" status="done" title={t("Deal File approved")} why={riskLine} />;
   return (
     <>
       <PillTabs ariaLabel={t("Approval views")} tour="deal-approvals" selectedKey={tab} onSelectionChange={setTab} items={[
@@ -698,78 +789,58 @@ export function ApprovalRelease({
         { id: "history", label: t("History") },
       ]} />
       {tab === "owner" ? (
-        <>
-          {!accepted ? (
-            <EmptyState illustration="locked" title={t("Client acceptance comes first")} description={t("Issue the reviewed quotation and wait for the client approver.")}
-              action={<Link className="wd-button" data-size="compact" data-variant="primary" href={sectionHref?.("quotations") ?? `${root}/quotations`}>{t("Open quotations")}</Link>} />
-          ) : <>
-            <div className={s.controlSummary} data-tour="deal-approvals">
-              <div><small>{t("Accepted quotation")}</small><strong>V{accepted.number} · {money(acceptedQuoteValue(accepted), accepted.currency)}</strong></div>
-              {/* Costs are stripped for people who can't see them; showing 0 and 100% would mislead. */}
-              {state.canViewCosts ? <>
-                <div><small>{t("Internal cost")}</small><strong>{money(acceptedQuoteTotals(accepted).cost, accepted.currency)}</strong></div>
-                <div><small>{t("Gross margin")}</small><strong>{marginText(acceptedQuoteTotals(accepted).margin)}</strong></div>
-              </> : null}
-              <div><small>{t("Internal approval")}</small><strong>{d.ownerReview ? translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status) : t("Not submitted")}</strong></div>
+        !accepted ? (
+          <EmptyState illustration="locked" title={t("Client acceptance comes first")} description={t("Issue the reviewed quotation and wait for the client approver.")}
+            action={<Link className="wd-button" data-size="compact" data-variant="primary" href={sectionHref?.("quotations") ?? `${root}/quotations`}>{t("Open quotations")}</Link>} />
+        ) : <div className={ds.overview} data-tour="deal-approvals">
+          {/* The few numbers and states that decide the deal; each tile opens its section. */}
+          <KpiStrip label={t("Deal File summary")}>
+            <KpiTile label={t("Deal value")} value={money(d.dealFile?.quoteId === accepted.id ? d.dealFile.value : acceptedQuoteValue(accepted), accepted.currency, locale)}
+              detail={t("Quotation V{number}", { number: accepted.number })} href={sectionHref?.("quotations") ?? `${root}/quotations`} />
+            {/* Costs are stripped for people who can't see them; showing 0 and 100% would mislead. */}
+            {state.canViewCosts && totals ? <KpiTile label={t("Gross margin")} value={marginText(totals.margin)}
+              tone={totals.margin === null ? "warning" : insight?.risks.includes("margin_below_floor") ? "danger" : undefined} /> : null}
+            {requirements ? <KpiTile label={t("Requirements")} value={t("{done} of {total}", { done: requirements.done, total: requirements.total })}
+              detail={requirements.missing ? t("{count} missing", { count: requirements.missing }) : null} tone={requirements.missing ? "warning" : "success"} href="#deal-requirements" /> : null}
+            <KpiTile label={t("Payment")} value={paymentChecked ? t("Verified") : t("Not verified")} tone={paymentChecked ? "success" : "warning"}
+              detail={paidShare !== null ? t("{percent}% paid", { percent: paidShare }) : null} href={sectionHref?.("payment-plan") ?? `${root}/payment-plan`} />
+            <KpiTile label={t("Internal approval")} value={reviewText} tone={reviewTone}
+              detail={d.dealFile?.quoteId === accepted.id ? formatDate(d.dealFile.approvedAt, { locale, timeZone }) : null}
+              href={showApprovalSteps ? "#deal-approvals" : "#deal-next"} />
+            {commission.length ? <KpiTile label={t("Commission")} value={money(commissionTotal, accepted.currency, locale)}
+              detail={commission.length === 1 ? commission[0].recipientName : t("{count} people", { count: commission.length })} href="#deal-commission" /> : null}
+          </KpiStrip>
+          <div className={ds.columns}>
+            <div className={ds.column}>
+              {stepCard}
+              {/* PLM-066 / PLM-102 / PLM-123: what the Deal File holds, each a link to its live record. */}
+              {insight ? <DealRequirements id="deal-requirements" insight={insight} /> : null}
+              {/* E3: the approval's steps and who holds the current one. */}
+              {showApprovalSteps && state.dealApproval ? <SideSection id="deal-approvals" title={t("Approvals")}><DealApprovalSteps approval={state.dealApproval} /></SideSection> : null}
             </div>
-            {d.dealFile && <div className={s.dealBanner}><div><small>{t("DEAL FILE")}</small><strong>{d.dealFile.reference}</strong><span>{t("Approved")}{" "}{day(d.dealFile.approvedAt)} {t("by")}{" "}{d.dealFile.approvedBy}</span></div><div><small>{t("Current round")}</small><strong>{d.dealFile.quoteId === accepted.id ? accepted.round === "design" ? t("Design") : t("Main quotation") : t("Design approved · main pending")}</strong></div><div><small>{t("Frozen evidence")}</small><strong>{d.dealFile.designEvidence?.links?.length ?? 0} {t("files ·")}{" "}{d.dealFile.materialEvidence?.length ?? 0} {t("materials")}</strong></div><div><small>{t("Deal value")}</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div></div>}
-            {/* PLM-066 / PLM-102 / PLM-123: money, closing and contents; E3: the approval's steps and who holds the current one. */}
-            {state.dealInsight ? <DealFileInsight insight={state.dealInsight} /> : null}
-            {state.dealApproval && (state.dealApproval.status === "pending" || d.ownerReview?.status === "approved") ? <DealApprovalSteps approval={state.dealApproval} /> : null}
-            {d.dealFile ? <MoreDetails label={t("History")}><RecordHistory workspaceId={state.workspaceId} recordType="deal_file" recordId={d.dealFile.id} /></MoreDetails> : null}
-            {d.ownerReview?.status === "pending_finance" ? <Form className={s.ownerForm} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void run("review_deal_finance", { decision: "confirm", note: decisionNote, paymentVerified, commissionLines: editableFinanceLines.map(sent) }); }}>
-              <h2>{t("2 · Finance verification")}</h2>
-              <p className={s.muted}>{t("Submitted by {name}", { name: d.ownerReview.submittedBy })}</p>
-              {d.ownerReview.paymentProofUrl ? <a href={d.ownerReview.paymentProofUrl} target="_blank" rel="noopener noreferrer">{t("Open payment proof ↗")}</a> : null}
-              {editableFinanceLines.map((line, index) => <CommissionFields key={`${line.type}-${index}`} fixedRecipient={!financeAddsLines} currency={accepted.currency} index={index} line={line} onChange={(update) => updateCommission(index, update, true)}
-                onRemove={financeAddsLines ? () => setFinanceDraft({ key: reviewKey, lines: editableFinanceLines.filter((_, i) => i !== index) }) : undefined} />)}
-              {financeAddsLines && editableFinanceLines.length < 3 ? <div><Button size="compact" variant="quiet" onPress={() => setFinanceDraft({ key: reviewKey, lines: [...editableFinanceLines, newCommissionLine()] })}><Plus size={14} />{t("Add recipient")}</Button></div> : null}
-              <Checkbox isSelected={paymentVerified} onChange={(value) => setPaymentVerification({ key: reviewKey, value })}>{d.ownerReview.paymentProofUrl ? t("I verified the linked proof of payment") : t("I verified the payment receipt")}</Checkbox>
-              <TextAreaField label={t("Finance note")} value={decisionNote} onChange={setDecisionNote} placeholder={t("Explain any correction or reason for return.")} />
-              {state.canVerifyFinance && <div className={s.formActions}>
-                <Button isDisabled={busy || !decisionNote.trim()} onPress={() => void run("review_deal_finance", { decision: "return", note: decisionNote })}>{t("Return to Sales")}</Button>
-                <Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || !paymentVerified || !editableFinanceLines.every(commissionReady)}>{t("Confirm Finance review")}</Button>
-              </div>}
-            </Form> : d.ownerReview?.status === "pending_approval" ? <section className={s.ownerForm}>
-              <h2>{t("3 · Owner approval")}</h2>
-              <ul className={s.checkList}>{Object.entries(d.ownerReview.checklist).filter(([key]) => !d.servicePath || key !== "materials").map(([key, done]) => <li key={key} data-done={done}>{done ? <Check aria-hidden="true" size={14} /> : <Circle aria-hidden="true" size={14} />}{translateKnown(t, checklistLabel[key] ?? key)}</li>)}</ul>
-              <ul className={s.checkList}>{(d.ownerReview.finalCommissionLines ?? []).map((line, index) => <li key={`${line.type}-${index}`}>{line.recipientName} · {translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type)} · {money(line.amount, accepted.currency)}</li>)}</ul>
-              {!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals) && <p className={s.notice}>{t("Complete every client material decision before creating the Deal File.")}</p>}
-              {/* Only an approver who didn't submit or verify this deal decides it; everyone else sees who does. */}
-              {state.canApproveDeal && (state.dealApproval?.status === "pending" ? state.dealApproval.canDecide : ![d.ownerReview.submittedById, d.ownerReview.financeReviewedById].includes(state.viewerId)) ? <>
-                <TextAreaField label={t("Decision remarks")} value={ownerNote} onChange={setOwnerNote} placeholder={t("Required when returning or rejecting.")} />
-                <div className={s.formActions}>
-                  <Button variant="danger" isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "reject", note: ownerNote })}>{t("Reject")}</Button>
-                  <Button isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: ownerNote })}>{t("Return for correction")}</Button>
-                  <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(d.ownerReview.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: ownerNote })}>{t("Approve Deal File")}</Button>
-                </div>
-              </> : state.dealApproval?.status === "pending" && state.dealApproval.waitingFor.length ? <p className={s.muted}>{t("Waiting for {names}", { names: state.dealApproval.waitingFor.join(", ") })}</p>
-                : state.stepHolders?.approveDeal.length ? <p className={s.muted}>{t("Waiting for {names}", { names: state.stepHolders.approveDeal.join(", ") })}</p> : null}
-            </section> : d.dealFile?.quoteId !== accepted.id && <Form className={s.ownerForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.filter((line) => !commissionBlank(line)).map(sent), paymentProofUrl, checklist, note }); }}>
-              <h2>{t("1 · Submit Deal File")}</h2>
-              {/* The remark of whoever returned it (the owner, or Finance): that is what Sales has to fix. */}
-              {d.ownerReview && <p className={s.notice}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status)}. {d.ownerReview.decisionNote ?? d.ownerReview.financeNote}</p>}
-              {state.opportunityStatus !== "won" && <p className={s.notice}>{t("Attach the payment proof on the opportunity first: that wins it and opens this Deal File.")}</p>}
-              {attachedProof ? <a href={attachedProof} target="_blank" rel="noopener noreferrer">{t("Payment proof attached on the opportunity ↗")}</a> : null}
-              {/* A payment Finance verified (with its uploaded receipt) is the proof: no link is asked for then. */}
-              {!attachedProof && receiptVerified ? <p className={s.muted}>{t("Payment verified by Finance")}</p> : null}
-              {attachedProof || receiptVerified ? null : <TextInput isRequired inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} onBlur={() => setProofTouched(true)} placeholder={t("https://…")}
-                isInvalid={proofTouched && proofProblem === "insecure"} errorMessage={proofProblem === "insecure" ? insecureProof : undefined} />}
-              {commissionLines.map((line, index) => <CommissionFields key={index} currency={accepted.currency} index={index} line={line}
-                onChange={(update) => updateCommission(index, update)}
-                onRemove={() => setCommissionLines(commissionLines.filter((_, i) => i !== index))} />)}
-              {commissionLines.length < 3 && <div><Button size="compact" variant="quiet" onPress={() => setCommissionLines([...commissionLines, newCommissionLine()])}><Plus size={14} />{t("Add recipient")}</Button></div>}
-              <FormSection title={t("Checklist")}>
-                <div className={s.checkGrid}>{checklistKeys.map(key => <Checkbox key={key} isSelected={checklist[key as keyof typeof checklist]} onChange={(done) => setChecklist({ ...checklist, [key]: done })}>{translateKnown(t, checklistLabel[key] ?? key)}</Checkbox>)}</div>
-              </FormSection>
-              <TextAreaField isRequired label={t("Submission note")} value={note} onChange={setNote} placeholder={t("Summarize payment evidence, pricing decision and any conditions.")} />
-              {state.canEdit && <div className={s.formActions}>
-                {sendBlocker ? <span className={s.muted} role="status">{sendBlocker}</span> : null}
-                <Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || state.opportunityStatus !== "won" || Boolean(sendBlocker)}>{t("Send to Finance")}</Button>
-              </div>}
-            </Form>}
-          </>}
-        </>
+            <div className={ds.column}>
+              {d.dealFile ? <SideSection title={t("Deal File")} chip={<StateChip state="done" label={t("Approved")} />}>
+                <FactList facts={[
+                  { label: t("Reference"), value: d.dealFile.reference },
+                  { label: t("Approved"), value: <>{day(d.dealFile.approvedAt)}<small>{d.dealFile.approvedBy}</small></> },
+                  { label: t("Current round"), value: d.dealFile.quoteId === accepted.id ? accepted.round === "design" ? t("Design") : t("Main quotation") : t("Design approved · main pending") },
+                  { label: t("Frozen evidence"), value: `${d.dealFile.designEvidence?.links?.length ?? 0} ${t("files ·")} ${d.dealFile.materialEvidence?.length ?? 0} ${t("materials")}` },
+                ]} />
+              </SideSection> : null}
+              {insight ? <DealMoney insight={insight} withAgreed={false} extra={costRows} />
+                : costRows.length ? <SideSection title={t("Money")}><AmountList label={t("Money")} rows={costRows} /></SideSection> : null}
+              {commission.length ? <SideSection id="deal-commission" title={t("Commission")}>
+                <AmountList label={t("Commission")} rows={commission.map((line, index) => ({ id: `${line.type}-${index}`,
+                  label: <PersonChip id={`commission-${line.recipientName}`} name={line.recipientName} />,
+                  detail: translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type), amount: money(line.amount, accepted.currency, locale) }))}
+                  total={commission.length > 1 ? { label: t("Total"), amount: money(commissionTotal, accepted.currency, locale) } : undefined} />
+              </SideSection> : null}
+              {insight ? <DealClosing insight={insight} /> : null}
+              {insight ? <DealTeam insight={insight} /> : null}
+            </div>
+          </div>
+          {d.dealFile ? <SideSection title={t("History")}><RecordHistory workspaceId={state.workspaceId} recordType="deal_file" recordId={d.dealFile.id} /></SideSection> : null}
+        </div>
       ) : tab === "materials" ? (
         <>
           <div className={s.header}><h2>{t("Client material selections")}</h2>{state.canEdit && <Button size="compact" isDisabled={busy || !accepted || (Boolean(d.servicePath) && d.dealFile?.quoteId !== accepted.id)} onPress={() => void run("sync_material_approvals")}>{t("Prepare from quotation")}</Button>}</div>
