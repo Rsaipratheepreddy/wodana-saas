@@ -161,7 +161,7 @@ integration("operator CLI: import and configure through the app's services (real
     expect(apply.code).toBe(0);
     expect(applied.counts.failed ?? 0).toBe(0);
     const sections = new Set(applied.lines.filter((line) => line.status === "changed").map((line) => line.section));
-    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "clientUpdates", "design", "enquiryRequirements", "enquiryTypes", "factory", "financeRequests", "finishes", "firstResponse", "inbox", "orderPaths", "quotations", "rolePermissions", "routes", "sales", "vehicles"]);
+    expect([...sections].sort()).toEqual(["approvals", "catalogCategories", "clientUpdates", "design", "enquiryRequirements", "enquiryTypes", "factory", "financeRequests", "finishes", "firstResponse", "inbox", "orderPaths", "projects", "quotations", "rolePermissions", "routes", "sales", "vehicles"]);
     // PLM-146/148/156/157: the finish categories, the gates and the sample price bands, in the workspace's currency.
     const finishes = (await pool.query<{ categories: Array<{ key: string; clientSignature: boolean }>; gate: boolean; days: number; slots: string[]; since: Date | null }>(
       `SELECT categories, specification_gate AS gate, finishes_to_qs_days AS days, material_editor_slots AS slots, signature_required_since AS since FROM workspace_finish_settings WHERE workspace_id = $1`,
@@ -177,6 +177,9 @@ integration("operator CLI: import and configure through the app's services (real
       // PLM-179: the workspace default for client updates, through Settings › Projects (weekly stays as it was).
       expect.objectContaining({ section: "clientUpdates", status: "changed", label: "client updates by" }),
       expect.objectContaining({ section: "clientUpdates", status: "unchanged", label: "client updates how often" }),
+      // The project start rules through Settings › Projects: the deal approval turned on, the payment already on.
+      expect.objectContaining({ section: "projects", status: "changed", label: "a project starts after the deal is approved" }),
+      expect.objectContaining({ section: "projects", status: "unchanged", label: "a project starts after the first payment is verified" }),
       expect.objectContaining({ section: "rolePermissions", status: "unchanged", label: "role administrator" }),
       expect.objectContaining({ section: "catalogCategories", status: "not found", label: "catalogue No such catalogue" }),
       expect.objectContaining({ section: "catalogCategories", status: "unchanged", label: "Main catalogue › delete Never there" }),
@@ -189,6 +192,8 @@ integration("operator CLI: import and configure through the app's services (real
       `SELECT closing_form_text AS form, closing_form_url AS url, closing_after_hours AS hours FROM crm_inbox_settings WHERE workspace_id = $1`, [workspaceId])).rows;
     expect(closing).toEqual([{ form: "Hi {{name}}, please fill in {{form_link}} and we will call you.", url: "https://forms.example.test/enquiry", hours: 4 }]);
     expect((await pool.query(`SELECT timeline_check_roles AS roles FROM workspace_sales_settings WHERE workspace_id = $1`, [workspaceId])).rows).toEqual([{ roles: ["production"] }]);
+    expect((await pool.query(`SELECT require_approval AS approval, require_payment AS payment, client_update_mode AS mode, client_update_frequency AS frequency FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows)
+      .toEqual([{ approval: true, payment: true, mode: "portal", frequency: "weekly" }]);
     // The dry run played the steps in order: the renamed category is found by its new name for its parent.
     const dryLines = dry.output.split("\n").filter((line) => line.includes("[catalogCategories]")).map((line) => line.replace(/\s+/g, " ").trim());
     expect(dryLines).toEqual([

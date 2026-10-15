@@ -45,6 +45,7 @@
     { "enquiryType": "furniture", "path": "bespoke", "boqRequired": true }
   ],
   "clientUpdates": { "mode": "portal", "frequency": "weekly" },
+  "projects": { "requireApproval": true, "requirePayment": true },
   "catalogCategories": [
     {
       "catalog": "Main catalogue",

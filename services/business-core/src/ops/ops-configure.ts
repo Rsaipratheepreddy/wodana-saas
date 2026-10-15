@@ -30,7 +30,7 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { UpdateRoleDto } from "../workspaces/dto/update-role.dto";
 import { WorkspacesService } from "../workspaces/workspaces.service";
 import type { OpsContext, Report } from "./ops-context";
-import { WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type PackagesFile, type Profile, type ProfileSection, type RouteChange } from "./ops-profile";
+import { PROJECT_START_RULES, WEEK_DAYS, type CheckSpec, type DesignStepKey, type DesignTeamKey, type PackagesFile, type Profile, type ProfileSection, type ProjectStartRule, type RouteChange } from "./ops-profile";
 import type { TeamSpec } from "./ops-sandbox-plan";
 import { applyTeams } from "./ops-teams";
 
@@ -784,15 +784,29 @@ const orderPaths: Section = async (ctx, profile, step) => {
 
 // ---------- project settings ----------
 
-type ProjectSettingsView = { settings: { version: number; roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null; technicalMeasureDays: number | null } };
+type ProjectSettingsView = { settings: { version: number; roles: Array<{ key: string; label: string }>; drawingsClientRole: string | null; technicalMeasureDays: number | null } & Record<ProjectStartRule, boolean> };
 
-/** PLM-149: who talks to the client about drawings, and when the technical measure is due, through Settings › Projects. */
+const START_RULE_LABEL: Record<ProjectStartRule, string> = {
+  requireApproval: "a project starts after the deal is approved", requireAgreement: "a project starts after the agreement is signed",
+  requirePayment: "a project starts after the first payment is verified",
+};
+
+/**
+ * Through Settings › Projects: what must be true before a project starts (the deal approved, the agreement signed, the
+ * first payment verified), who talks to the client about drawings, and when the technical measure is due (PLM-149).
+ */
 const projects: Section = async (ctx, profile, step) => {
   const wanted = profile.projects!;
   const service = ctx.get(ProjectCoreService);
   const current = (await service.settings(ctx.actor, ctx.workspace.id) as ProjectSettingsView).settings;
   const patch: Record<string, unknown> = {};
   const changes: Change[] = [];
+  for (const rule of PROJECT_START_RULES) {
+    const want = wanted[rule];
+    if (want === undefined) continue;
+    if (current[rule] === want) step.same(START_RULE_LABEL[rule], want ? "on" : "off");
+    else { patch[rule] = want; changes.push(diff(START_RULE_LABEL[rule], current[rule] ? "on" : "off", want ? "on" : "off")); }
+  }
   if (wanted.drawingsClientRole !== undefined) {
     const label = "drawings go to the client through";
     if (wanted.drawingsClientRole !== null && !current.roles.some((role) => role.key === wanted.drawingsClientRole))

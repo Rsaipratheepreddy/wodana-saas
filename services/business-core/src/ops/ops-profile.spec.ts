@@ -140,9 +140,10 @@ describe("route changes", () => {
       .toEqual(["technical_measure_done", "drawings_uploaded", "drawings_design_checked", "drawings_client_approved", "factory_slot_booked"]);
     expect(plan.changes.map((entry) => entry.detail)).toEqual(["check removed", "check removed", "check added", "check added"]);
     expect(planRoute({ ...palm, stages: plan.stages }, swap, roles).changes).toEqual([]);
-    expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5 });
-    expect(problems({ projects: { drawingsClientRole: "Lead Designer", technicalMeasureDays: 0 } })).toEqual([
-      "projects.drawingsClientRole is a project role key like designer, or null.", "projects.technicalMeasureDays is a whole number from 1 to 60."]);
+    // Palm: a project starts only after the deal is approved.
+    expect(validateProfile(json("../../../../docs/fixtures/palm-golive-config.json")).projects).toEqual({ drawingsClientRole: "designer", technicalMeasureDays: 5, requireApproval: true });
+    expect(problems({ projects: { drawingsClientRole: "Lead Designer", technicalMeasureDays: 0, requirePayment: "yes" } })).toEqual([
+      "projects.drawingsClientRole is a project role key like designer, or null.", "projects.technicalMeasureDays is a whole number from 1 to 60.", "projects.requirePayment is true or false."]);
   });
 
   it("refuses finishes it can't apply, in words (PLM-146/148/156/157)", () => {

@@ -81,8 +81,10 @@ export type Profile = {
   /**
    * Project settings (PLM-149): the project role that checks the drawings match the design, sends them to the client and
    * records the client's approval (null: the project manager), and the working days the technical measure is due in.
+   * What must be true before a project starts (Settings › Projects › Starting a project): the deal approved, the
+   * agreement signed, the first payment verified.
    */
-  projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null };
+  projects?: { drawingsClientRole?: string | null; technicalMeasureDays?: number | null } & Partial<Record<ProjectStartRule, boolean>>;
   /**
    * The finishes schedule (PLM-146/148/156/157): the finish categories in order (which the client signs before
    * procurement), whether the final quotation waits for the final specification, the days to send the finishes to QS,
@@ -111,6 +113,9 @@ export type Profile = {
 export const DESIGN_STEP_KEYS = ["allocationDays", "kickoffDays", "conceptDays", "siteMeasureDays", "developmentMinDays", "developmentMaxDays", "developmentDaysPerRoom",
   "sampleCollectionDays", "sampleMeetingDays"] as const;
 export type DesignStepKey = (typeof DESIGN_STEP_KEYS)[number];
+/** What must be true before a project starts (Settings › Projects): the deal approved, the agreement signed, the first payment verified. */
+export const PROJECT_START_RULES = ["requireApproval", "requireAgreement", "requirePayment"] as const;
+export type ProjectStartRule = (typeof PROJECT_START_RULES)[number];
 export const DESIGN_TEAM_KEYS = ["lead_designer", "junior_designer", "sales_admin", "visualiser", "draftsman", "material_coordinator", "technicalLeadRoleCode"] as const;
 export type DesignTeamKey = (typeof DESIGN_TEAM_KEYS)[number];
 
@@ -505,7 +510,7 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.projects !== undefined) {
-    const section = at("projects").object(raw.projects, ["drawingsClientRole", "technicalMeasureDays"]);
+    const section = at("projects").object(raw.projects, ["drawingsClientRole", "technicalMeasureDays", ...PROJECT_START_RULES]);
     if (section) {
       const projects: NonNullable<Profile["projects"]> = {
         drawingsClientRole: nullable(section, "drawingsClientRole", (value) => {
@@ -513,6 +518,7 @@ export function validateProfile(raw: unknown): Profile {
           return value;
         }),
         technicalMeasureDays: nullable(section, "technicalMeasureDays", (value) => at("projects.technicalMeasureDays").int(value, 1, 60) ?? null),
+        ...Object.fromEntries(PROJECT_START_RULES.map((rule) => [rule, optional(section, rule, (value) => at(`projects.${rule}`).bool(value))])),
       };
       profile.projects = Object.fromEntries(Object.entries(projects).filter(([, value]) => value !== undefined));
     }
