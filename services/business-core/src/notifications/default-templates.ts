@@ -474,7 +474,6 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.boq_approved", channel: "in_app", subject: "BOQ approved {{revision}} · {{title}}", body: "{{actor}} approved the BOQ as {{revision}}. Ordering can go ahead. {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   { code: "project.boq_returned", channel: "in_app", subject: "BOQ returned to draft · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   { code: "project.boq_locked", channel: "in_app", subject: "BOQ locked {{revision}} · {{title}}", body: "{{actor}} locked the BOQ. A change is a variation from here.", variables: ["title", "clientName", "actor", "revision", "note"] },
-  { code: "project.ready_to_start", channel: "in_app", subject: "Ready to start · {{title}}", body: "The upfront payment for {{clientName}} is verified. Start the project: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   // Delivery reminders (the daily run): the week in numbers, a stage whose checks all pass, a material list
   // left with the client, a milestone to invoice and the drafted client update.
   { code: "project.weekly_summary", channel: "in_app", subject: "This week on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },

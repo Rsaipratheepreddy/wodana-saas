@@ -106,7 +106,8 @@ const RULES: Array<[RegExp, HistoryVerb]> = [
   [/(^|[._])(dispatch(ed)?)$/, "dispatched"],
   [/(^|[._])(inspected|check(ed)?|confirm_check|check_drawings|review(ed)?)$/, "checked"],
   [/(^|[._])(confirmed|confirm)$/, "confirmed"],
-  [/(^|[._])(escalated|[a-z_]+_escalated|sla\.breached|sla\.warning)$/, "escalated"],
+  // PLM-180: nobody picked the enquiry up within a working day, so it went to Unassigned and the owners were told.
+  [/(^|[._])(escalated|[a-z_]+_escalated|sla\.breached|sla\.warning|unassigned_after_working_day)$/, "escalated"],
   [/(^|[._])expired$/, "expired"],
   [/(^|[._])(created|create|added|entered|new|planned|ready|entry_added|room_saved|[a-z_]+_created)$/, "created"],
   [/(^|[._])(deleted|removed|archived|discarded|erased|[a-z_]+_removed|[a-z_]+_archived)$/, "removed"],
