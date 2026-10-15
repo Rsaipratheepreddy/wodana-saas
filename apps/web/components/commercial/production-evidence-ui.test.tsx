@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import type { CommercialState } from "@/lib/commercial/types";
 import { ApprovalRelease } from "./commercial-workflows";
@@ -58,6 +59,26 @@ it("submits a Won opportunity Deal File with separate commission and payment evi
   fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Verified customer deposit"}});
   fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
   await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({paymentProofUrl:"https://example.com/proof",commissionLines:[{recipientName:"Sales A",type:"sales",basis:"amount",value:10}]})));
+});
+
+it("labels the designer commission \"Designer fee\" and still sends the designer type", async () => {
+  const user = userEvent.setup();
+  const run = vi.fn().mockResolvedValue(true);
+  const state = {
+    opportunityStatus: "won", canEdit: true, contacts: [],
+    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [] },
+  } as unknown as CommercialState;
+  render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
+  const commission = screen.getByRole("group", {name:"Commission 1"});
+  fireEvent.change(within(commission).getByRole("textbox", {name:"Recipient"}), {target:{value:"Dana"}});
+  fireEvent.change(within(commission).getByRole("textbox", {name:"Amount"}), {target:{value:"25"}});
+  await user.click(within(commission).getByRole("button", {name:/Type/}));
+  expect(screen.queryByRole("option", {name:"Designer"})).not.toBeInTheDocument();
+  await user.click(await screen.findByRole("option", {name:"Designer fee"}));
+  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Designer fee agreed"}});
+  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
+  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({commissionLines:[{recipientName:"Dana",type:"designer",basis:"amount",value:25}]})));
 });
 
 it("sends a Deal File with no commission, and says why Send to Finance waits (M5)", async () => {
