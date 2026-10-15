@@ -3,6 +3,7 @@ import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { DesignJourneyService } from "./design-journey.service";
+import { isDesignOnlyJob } from "./design-only";
 import { runReminderSweep } from "../reminders/testing";
 import { processDesignDeadlines, startInspirationTimer, startJourney } from "./design-journey.store";
 import { syncDesignStages } from "./design-stage-sync";
@@ -237,6 +238,59 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ estimates: 1 });
       expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ estimates: 0 });
       expect((await client.query(`SELECT recipient_id FROM notifications WHERE workspace_id=$1 AND event_type='design.estimate_overdue' AND channel='in_app' ORDER BY recipient_id`, [ids.workspaceId])).rows.map((row) => row.recipient_id)).toEqual([ids.amUser, ids.qsUser].sort());
+    });
+  });
+
+  it("ends a design-only job (Full ID) at the approval: Design complete, with no estimate hand-off and no client update calls", async () => {
+    await withCase({ spacePlanning: false, renders: false }, async (client, ids, service) => {
+      await startJourney(client, ids.workspaceId, ids.caseId, ids.amUser, { flow: 1 });
+      await client.query(`UPDATE design_journey_stages SET status = CASE WHEN stage = 'approval' THEN 'active' ELSE 'done' END, completed_at = CASE WHEN stage = 'approval' THEN NULL ELSE now() END
+        WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]);
+      const asset = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO pre_project_brief_assets(id,workspace_id,case_id,original_name,mime_type,byte_size,object_key,sha256,created_by) VALUES($1,$2,$3,'signed.pdf','application/pdf',1,'k',repeat('a',64),$4)",
+        [asset, ids.workspaceId, ids.caseId, ids.amUser]);
+      // The deal's service path: design only, no main quotation.
+      const scope = { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false };
+      await client.query("INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,1,$3)",
+        [ids.workspaceId, ids.caseId, JSON.stringify({ servicePath: { scope, selectedAt: "2026-09-20T00:00:00.000Z", selectedBy: ids.amUser } })]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const version = (await client.query(`SELECT version FROM design_journey_stages WHERE workspace_id=$1 AND case_id=$2 AND stage='approval'`, [ids.workspaceId, ids.caseId])).rows[0].version;
+      const signed = await service.signOff(actor, ids.workspaceId, ids.caseId, { version, approvedOn: "2026-10-01", assetId: asset, signer: "Maya Client" });
+      // The approval closes the job: no hand-off to an estimate (and no problem to report), no estimate due.
+      expect(signed.handoff).toEqual({ quoteId: null, problem: null });
+      expect(signed.journey).toMatchObject({ approvedOn: "2026-10-01", designComplete: true, estimateDueAt: null });
+      expect(signed.stages.every((row) => row.status === "done")).toBe(true);
+      const told = (await client.query(`SELECT recipient_id, subject, deep_link FROM notifications WHERE workspace_id=$1 AND event_type='design.signed_off' AND channel='in_app' ORDER BY recipient_id`, [ids.workspaceId])).rows;
+      expect(told).toEqual([ids.amUser, ids.qsUser].sort().map((recipient_id) => ({ recipient_id, subject: "Design complete · Maya Client", deep_link: `/workspace/pre-projects/cases/${ids.caseId}/overview` })));
+      expect((await client.query(`SELECT 1 FROM client_update_calls WHERE workspace_id=$1 AND case_id=$2`, [ids.workspaceId, ids.caseId])).rowCount).toBe(0);
+      expect((await client.query(`SELECT after->'designComplete' AS done FROM audit_events WHERE workspace_id=$1 AND action='design.signed_off.v1'`, [ids.workspaceId])).rows).toEqual([{ done: true }]);
+      // Nothing to hand off later either, and no estimate alert.
+      await expect(service.handOff(actor, ids.workspaceId, ids.caseId)).rejects.toThrow(/design-only job ended with the design approval/);
+      expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ estimates: 0 });
+    });
+  });
+
+  it("reads a design-only job from its enquiry type's closing rule when the deal has no service path, and a design-and-build path as not design-only", async () => {
+    await withCase({ spacePlanning: false, renders: false }, async (client, ids) => {
+      const opportunityId = (await client.query<{ id: string }>(`SELECT opportunity_id AS id FROM pre_project_cases WHERE workspace_id=$1 AND id=$2`, [ids.workspaceId, ids.caseId])).rows[0].id;
+      const flowId = randomUUID(), versionId = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO crm_flows(id,workspace_id,code,name) VALUES($1,$2,'full_id','Full ID')", [flowId, ids.workspaceId]);
+      await client.query("INSERT INTO crm_flow_versions(id,workspace_id,flow_id,version,definition,checksum) VALUES($1,$2,$3,1,'{}',repeat('a',64))", [versionId, ids.workspaceId, flowId]);
+      await client.query("UPDATE crm_opportunities SET flow_version_id = $3 WHERE workspace_id = $1 AND id = $2", [ids.workspaceId, opportunityId, versionId]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      // No closing rule read yet and an unknown template: not design-only.
+      expect(await isDesignOnlyJob(client, ids.workspaceId, ids.caseId)).toBe(false);
+      await client.query("INSERT INTO crm_flow_closing_rules(workspace_id,flow_id,furniture_path,closing_event) VALUES($1,$2,NULL,'design_handover')", [ids.workspaceId, flowId]);
+      expect(await isDesignOnlyJob(client, ids.workspaceId, ids.caseId)).toBe(true);
+      // A chosen service path wins: design followed by a main quotation goes on to the estimate.
+      const scope = { design: true, mainQuotation: true, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false };
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,1,$3)",
+        [ids.workspaceId, ids.caseId, JSON.stringify({ servicePath: { scope, selectedAt: "2026-09-20T00:00:00.000Z", selectedBy: ids.amUser } })]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      expect(await isDesignOnlyJob(client, ids.workspaceId, ids.caseId)).toBe(false);
     });
   });
 

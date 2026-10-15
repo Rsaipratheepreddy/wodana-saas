@@ -229,7 +229,7 @@ function SignOff({ data, designs, journey, canReview, busy, onSignOff }: { data:
   if (stage?.status === "done") {
     const facts = journey.journey;
     return <div className={styles.signOff}>
-      <EmptyState illustration="done" title={t("Design approved")} description={facts?.approvedOn ? [t("Approved {date}", { date: day(facts.approvedOn) }), facts.approvalSigner, facts.approvalMethod ? t(METHOD_LABEL[facts.approvalMethod] ?? facts.approvalMethod as never) : "", facts.approvalAssetName].filter(Boolean).join(" · ") : undefined} />
+      <EmptyState illustration="done" title={facts?.designComplete ? t("Design complete") : t("Design approved")} description={facts?.approvedOn ? [t("Approved {date}", { date: day(facts.approvedOn) }), facts.approvalSigner, facts.approvalMethod ? t(METHOD_LABEL[facts.approvalMethod] ?? facts.approvalMethod as never) : "", facts.approvalAssetName].filter(Boolean).join(" · ") : undefined} />
       {facts?.estimateDueAt ? <p className={styles.muted}>{t("Estimate due {date}", { date: when(facts.estimateDueAt) })}</p> : null}
       {journey.handoff?.problem ? <InlineNotice tone="info" message={journey.handoff.problem} /> : null}
     </div>;

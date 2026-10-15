@@ -28,6 +28,8 @@ export type PreProjectCase = {
   plan?: CasePlan;
   /** The day the client signed off the design (PLM-053), once they have: the case is priced next. */
   designApprovedOn?: string | null;
+  /** A design-only job (Full ID) ended with that approval: "Design complete", nothing is priced next. */
+  designComplete?: boolean;
 };
 /**
  * What a case goes through, from its job's configuration (never its enquiry type's name). `default` is the full
@@ -58,7 +60,7 @@ export type CaseProjectFacts = {
   id: string; caseId: string; name: string; reference: string; status: string; onHold: boolean; managerName: string | null; nextAction: string;
   staged: boolean; stageName: string | null; phase: string; workflow: { templateCode: string; currentStageKey: string; currentStageName: string } | null;
 };
-export type PreProjectListItem =Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt" | "designApprovedOn"> & {
+export type PreProjectListItem =Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt" | "designApprovedOn" | "designComplete"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
   projectId?: string | null;

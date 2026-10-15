@@ -68,6 +68,8 @@ export type JourneyView = {
     kind?: "design" | "site_and_materials"; version?: number;
     approvedOn?: string | null; approvalAssetName?: string | null; approvalSigner?: string | null; approvalMethod?: string | null;
     estimateDueAt?: string | null; estimateQuoteId?: string | null;
+    /** A design-only job (Full ID) ended with the design approval: no estimate follows. */
+    designComplete?: boolean;
     /** 2: the order of 13 Oct 2026 (kick-off, concept with the site measure, renders, samples); 1: the order before. */
     flowVersion?: number; reviewerRoleCode?: string | null; conceptOptionsMax?: number | null;
     /** PLM-140/143: the render sign-off date agreed at the kick-off, and the client's sign-off once recorded. */

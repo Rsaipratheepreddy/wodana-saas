@@ -124,7 +124,7 @@ export function activeJourneyStage(journey?: JourneyView | null): JourneyStageVi
 }
 
 /** What a case's phase is read from: its recorded phase, its path and the day its design was signed off. */
-type PhaseRecord = Pick<PreProjectCase, "phase" | "plan" | "designApprovedOn">;
+type PhaseRecord = Pick<PreProjectCase, "phase" | "plan" | "designApprovedOn" | "designComplete">;
 
 /**
  * Where the case really is: the furthest of its recorded phase and what its records already show (a quotation in
@@ -141,7 +141,8 @@ export function effectivePhase(record: PhaseRecord, commercial?: CaseCommercialF
   const shown: Array<PreProjectCase["phase"] | null> = [
     record.phase,
     commercial?.data.quotes.some((item) => item.round === "design" && item.status === "accepted") ? "design" : null,
-    record.designApprovedOn ? "price" : null,
+    // A design-only job (Full ID) ends with the approval: nothing is priced after it.
+    record.designApprovedOn && !record.designComplete ? "price" : null,
     main && main.status !== "draft" ? "price" : null,
     main?.status === "accepted" ? "agree" : null,
     agreement?.status === "executed" && !designFee(agreement.quoteId) ? "release" : null,
@@ -189,6 +190,10 @@ export function caseNextStep({ record, commercial, journey, project, today, valu
     why: stage.progress?.total ? { key: tKey("{approved} of {total} approved"), values: { approved: stage.progress.approved, total: stage.progress.total } } : { key: tKey("Design stage {position} of {count}"), values: { position: journey!.stages.indexOf(stage) + 1, count: journey!.stages.length } },
     owner: stage.ownerName ?? owner, due: stage.dueAt, overdue: stage.overdue, status: stage.overdue ? "attention" : undefined,
     action: DELIVERABLE.includes(stage.stage) ? { label: { key: tKey("Open design") }, href: href(record, "designs", { stage: stage.stage }) } : null,
+  };
+  // A design-only job (Full ID) ends with the client's design approval.
+  if (record.designComplete || journey?.journey?.designComplete) return {
+    title: { key: tKey("Design complete") }, status: "done", action: null,
   };
   if (journey && !journey.journey && journey.canStart && (!record.plan || record.plan.siteVisit || record.plan.design)) {
     const site = journey.startsAs === "site_and_materials";
@@ -290,6 +295,7 @@ export type CaseStep = {
  */
 export function caseListStep(record: PhaseRecord, commercial?: CaseCommercialFacts | null): { stage: MessageKey; next: Message } {
   const phase = casePhaseText(effectivePhase(record, commercial), record.plan);
+  if (record.designComplete) return { stage: phase.stage, next: { key: tKey("Design complete") } };
   const quote = currentQuote(commercial);
   const step = quote ? quoteStep(quote, commercial) : null;
   return { stage: phase.stage, next: step?.title ?? { key: phase.next } };

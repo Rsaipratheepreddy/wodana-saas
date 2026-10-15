@@ -15254,5 +15254,6 @@
   "How every job's client updates start. Each job can change its own.": "How every job's client updates start. Each job can change its own.",
   "Minimum deposit as": "Minimum deposit as",
   "% of the design fee": "% of the design fee",
-  "Between 0 and 100%": "Between 0 and 100%"
+  "Between 0 and 100%": "Between 0 and 100%",
+  "Design complete": "Design complete"
 }

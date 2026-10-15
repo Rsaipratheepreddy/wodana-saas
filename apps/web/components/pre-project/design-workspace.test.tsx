@@ -63,6 +63,15 @@ describe("design workspace", () => {
     expect(screen.queryByRole("button", { name: "Sign off design" })).not.toBeInTheDocument();
   });
 
+  it("ends a design-only job at the approval: Design complete, with no estimate due", async () => {
+    serve({ ...journey([stage("concepts", "Concepts", "done", { total: 1, approved: 1, pending: 0 }), stage("approval", "Design approval", "done")]),
+      journey: { packageName: "Bespoke", includedRevisions: 2, approvedOn: "2026-10-14", approvalSigner: "Maya Client", designComplete: true, estimateDueAt: null } });
+    mount([design("Kitchen A", "concepts", "r1", "approved")]);
+    fireEvent.click(await screen.findByRole("tab", { name: "Design approval" }));
+    expect(await screen.findByText("Design complete")).toBeInTheDocument();
+    expect(screen.queryByText(/Estimate due/)).not.toBeInTheDocument();
+  });
+
   it("says design hasn't started and offers Start to those allowed", async () => {
     serve({ journey: null, stages: [], canStart: true, timezone: "UTC" });
     mount([]);

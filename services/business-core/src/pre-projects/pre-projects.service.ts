@@ -35,7 +35,10 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
       AND workflow.is_default AND workflow.code = 'design_build_deal_first') AS "servicePathEnabled",
   -- The day the client signed off the design (PLM-053): the case is priced next, whatever quotation came last.
   (SELECT to_char(journey.approved_on, 'YYYY-MM-DD') FROM design_journeys journey
-    WHERE journey.workspace_id = c.workspace_id AND journey.case_id = c.id) AS "designApprovedOn"
+    WHERE journey.workspace_id = c.workspace_id AND journey.case_id = c.id) AS "designApprovedOn",
+  -- A design-only job (Full ID) ended with that approval: nothing is priced next.
+  coalesce((SELECT journey.design_complete FROM design_journeys journey
+    WHERE journey.workspace_id = c.workspace_id AND journey.case_id = c.id), false) AS "designComplete"
   FROM pre_project_cases c
   JOIN crm_opportunities o ON o.id = c.opportunity_id AND o.workspace_id = c.workspace_id
   JOIN crm_parties p ON p.id = o.party_id AND p.workspace_id = c.workspace_id
@@ -80,7 +83,7 @@ export class PreProjectsService {
           EXISTS (SELECT 1 FROM project_workflow_templates workflow
             WHERE workflow.workspace_id = lead.workspace_id AND workflow.status = 'active'
               AND workflow.is_default AND workflow.code = 'design_build_deal_first'),
-          NULL::text
+          NULL::text, false
         FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
         JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
