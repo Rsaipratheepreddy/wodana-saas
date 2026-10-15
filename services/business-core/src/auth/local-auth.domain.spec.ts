@@ -7,11 +7,23 @@ describe("public custom-host sign-in binding", () => {
     const branding = {
       displayName: "Example", loginSlug: "example", logoUrl: null, primaryColor: "#E4E3DE",
       secondaryColor: "#000000", headingFont: "alta", bodyFont: "montserrat",
+      loginBackgroundUrl: "/api/auth/tenant-background/example?v=7c1d0c2e-3b51-4a39-9f6e-0d7c1a2b3c4d",
     };
     const query = vi.fn().mockResolvedValue({ rowCount: 1, rows: [branding] });
     const service = new LocalAuthService({ query } as never, {} as never, {} as never, {} as never, {} as never);
     await expect(service.getTenantBrandingForHost("portal.example.com")).resolves.toEqual(branding);
-    expect(query).toHaveBeenCalledWith("SELECT * FROM wodana_public_tenant_host($1::varchar)", ["portal.example.com"]);
+    const [sql, values] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("FROM wodana_public_tenant_host($1::varchar) host");
+    // The sign-in background comes from the same public branding row as the slug's own lookup.
+    expect(sql).toContain("'/api/auth/tenant-background/' || login_slug");
+    expect(values).toEqual(["portal.example.com"]);
+  });
+
+  it("gives a tenant's own sign-in background by slug, and none when it has not set one", async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 1, rows: [{ displayName: "Example", loginSlug: "example", loginBackgroundUrl: null }] });
+    const service = new LocalAuthService({ query } as never, {} as never, {} as never, {} as never, {} as never);
+    await expect(service.getTenantBranding("example")).resolves.toMatchObject({ loginBackgroundUrl: null });
+    expect(query.mock.calls[0][0]).toContain("WHEN login_background_asset_id IS NOT NULL");
   });
 
   it("fails closed for an unknown, removed or incomplete host", async () => {

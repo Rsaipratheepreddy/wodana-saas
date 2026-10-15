@@ -721,6 +721,9 @@ export const tenantLoginBranding = pgTable(
     logoAssetId: uuid("logo_asset_id").references(() => workspaceBrandAssets.id, {
       onDelete: "set null",
     }),
+    loginBackgroundAssetId: uuid("login_background_asset_id").references(() => workspaceBrandAssets.id, {
+      onDelete: "set null",
+    }),
     ...auditColumns,
   },
   (table) => [
@@ -806,7 +809,7 @@ export const workspaceBrandAssets = pgTable(
     index("workspace_brand_assets_workspace_status_idx").on(table.workspaceId, table.status),
     check(
       "workspace_brand_assets_expected_size_check",
-      sql`${table.expectedByteSize} > 0 AND ${table.expectedByteSize} <= 5242880`,
+      sql`${table.expectedByteSize} > 0 AND ${table.expectedByteSize} <= 10485760`,
     ),
   ],
 );

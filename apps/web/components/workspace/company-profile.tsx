@@ -130,6 +130,7 @@ export function CompanyProfile({
   const { locale } = useDesignSystem();
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
+  const backgroundInput = useRef<HTMLInputElement>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [data, setData] = useState(initialData);
   const entity = data.legalEntities[0];
@@ -141,6 +142,9 @@ export function CompanyProfile({
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isRemovingLogo, setIsRemovingLogo] = useState(false);
+  const [removeBackgroundOpen, setRemoveBackgroundOpen] = useState(false);
+  const [isUploadingBackground, setIsUploadingBackground] = useState(false);
+  const [isRemovingBackground, setIsRemovingBackground] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [logoError, setLogoError] = useState("");
   const [status, setStatus] = useState("");
@@ -292,6 +296,44 @@ export function CompanyProfile({
     finally { setIsRemovingLogo(false); }
   };
 
+  // The sign-in background: the same short-lived upload as the logo, then verified and activated by the server.
+  const uploadBackground = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; event.target.value = "";
+    if (!file || isUploadingBackground) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) { setLogoError(t("Choose a PNG, JPEG, or WebP image.")); return; }
+    if (file.size > 10 * 1024 * 1024) { setLogoError(t("Sign-in background must be 10 MB or smaller.")); return; }
+    setIsUploadingBackground(true); setLogoError(""); setStatus("");
+    try {
+      const started = await fetch("/api/workspace/company-profile/login-background-uploads", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: data.workspace.id, filename: file.name, mimeType: file.type, byteSize: file.size }),
+      });
+      if (!started.ok) throw new Error(await responseMessage(started, t("The sign-in background upload could not be started.")));
+      const session = await started.json() as UploadSession;
+      const uploadUrl = session.uploadMode === "signed" && session.uploadUrl ? session.uploadUrl : `/api/workspace/company-profile/login-background-uploads/${session.assetId}/content?workspaceId=${data.workspace.id}`;
+      const uploaded = await fetch(uploadUrl, { method: "PUT", headers: session.uploadHeaders, body: file });
+      if (!uploaded.ok) throw new Error(await responseMessage(uploaded, t("The sign-in background could not be uploaded.")));
+      const completed = await fetch(`/api/workspace/company-profile/login-background-uploads/${session.assetId}/complete?workspaceId=${data.workspace.id}`, { method: "POST" });
+      if (!completed.ok) throw new Error(await responseMessage(completed, t("The sign-in background could not be verified.")));
+      const branding = await completed.json() as { assetId: string; loginBackgroundUrl: string };
+      setData((current) => ({ ...current, branding: { ...current.branding, loginBackgroundAssetId: branding.assetId, loginBackgroundUrl: branding.loginBackgroundUrl } }));
+      setStatus(t("Sign-in background updated."));
+    } catch (error) { setLogoError(error instanceof Error ? error.message : t("The sign-in background could not be uploaded.")); }
+    finally { setIsUploadingBackground(false); }
+  };
+
+  const removeBackground = async () => {
+    if (isRemovingBackground) return;
+    setIsRemovingBackground(true); setLogoError("");
+    try {
+      const response = await fetch(`/api/workspace/company-profile/login-background?workspaceId=${data.workspace.id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await responseMessage(response, t("The sign-in background could not be removed.")));
+      setData((current) => ({ ...current, branding: { ...current.branding, loginBackgroundAssetId: null, loginBackgroundUrl: null } }));
+      setRemoveBackgroundOpen(false); setStatus(t("Sign-in background removed."));
+    } catch (error) { setLogoError(error instanceof Error ? error.message : t("The sign-in background could not be removed.")); setRemoveBackgroundOpen(false); }
+    finally { setIsRemovingBackground(false); }
+  };
+
   return (
     <DesignSystemProvider className={styles.provider} currency={data.workspace.defaultCurrency} locale={data.workspace.defaultLocale} portalContainer={portalContainer} ref={setPortalContainer} timeZone={data.workspace.defaultTimezone}>
       <SettingsPage aria-label={t("Company profile")} actions={canManage && entity ? <Button onPress={openEditor} size="compact">{t("Edit profile")}</Button> : null} title={t("Company profile")}>
@@ -307,6 +349,13 @@ export function CompanyProfile({
               {canManage ? <Button isLoading={isUploadingLogo} onPress={() => fileInput.current?.click()} size="compact" variant="quiet">{data.branding.logoUrl ? t("Replace") : t("Upload logo")}</Button> : null}
               {canManage && data.branding.logoUrl ? <Button isDisabled={isUploadingLogo} onPress={() => setRemoveLogoOpen(true)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
             </SettingsRow>
+            <SettingsRow hint={t("PNG, JPG or WebP · 10 MB")} label={t("Sign-in background")}>
+              {data.branding.loginBackgroundUrl
+                ? <span className={styles.backgroundThumb}><Image alt={t("Sign-in background")} height={40} src={data.branding.loginBackgroundUrl} unoptimized width={64} /></span>
+                : <span className={styles.backgroundDefault}>{t("Default")}</span>}
+              {canManage ? <Button isLoading={isUploadingBackground} onPress={() => backgroundInput.current?.click()} size="compact" variant="quiet">{data.branding.loginBackgroundUrl ? t("Replace") : t("Upload background")}</Button> : null}
+              {canManage && data.branding.loginBackgroundUrl ? <Button isDisabled={isUploadingBackground} onPress={() => setRemoveBackgroundOpen(true)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
+            </SettingsRow>
             <SettingsRow label={t("Company name")}>{data.workspace.name}</SettingsRow>
             <SettingsRow hint={t("Buttons, links and highlights follow this colour.")} label={t("Brand colour")}>
               <BrandColour
@@ -321,6 +370,7 @@ export function CompanyProfile({
             </SettingsRow>
             <SettingsRow hint={t("AI suggests; nothing changes until someone accepts.")} label={t("AI assistance")}><AiAssistanceSetting bare canManage={canManage} workspaceId={data.workspace.id} /></SettingsRow>
             <input accept="image/png,image/jpeg,image/webp" aria-label={t("Choose company logo")} className={styles.fileInput} onChange={uploadLogo} ref={fileInput} type="file" />
+            <input accept="image/png,image/jpeg,image/webp" aria-label={t("Choose sign-in background")} className={styles.fileInput} onChange={uploadBackground} ref={backgroundInput} type="file" />
           </SettingsSection>
 
           <SettingsSection id="legal-details" title={t("Legal & tax")}>
@@ -381,6 +431,7 @@ export function CompanyProfile({
 </FormDialog> : null}
       <ConfirmationDialog body={t("Your edits have not been saved. Discard them and close the editor?")} confirmLabel={t("Discard changes")} cancelLabel={t("Keep editing")} isOpen={discardOpen} onConfirm={discardChanges} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} />
       <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isRemovingLogo} onPress={() => setRemoveLogoOpen(false)}>{t("Keep logo")}</Button><Button isLoading={isRemovingLogo} onPress={removeLogo} variant="danger">{t("Remove logo")}</Button></div>} isOpen={removeLogoOpen} onOpenChange={setRemoveLogoOpen} title={t("Remove company logo?")}>{t("The initials fallback will replace the logo on the workspace and tenant sign-in screen.")}</ControlledModalDialog>
+      <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isRemovingBackground} onPress={() => setRemoveBackgroundOpen(false)}>{t("Keep background")}</Button><Button isLoading={isRemovingBackground} onPress={removeBackground} variant="danger">{t("Remove background")}</Button></div>} isOpen={removeBackgroundOpen} onOpenChange={setRemoveBackgroundOpen} title={t("Remove sign-in background?")}>{t("The sign-in screen will show the default image.")}</ControlledModalDialog>
     </DesignSystemProvider>
   );
 }

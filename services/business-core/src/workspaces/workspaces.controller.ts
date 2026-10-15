@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
+  PayloadTooLargeException,
   Patch,
   Post,
   Put,
@@ -71,6 +72,7 @@ import {
 } from "./dto/workspace-response.dto";
 import { WorkspacesService } from "./workspaces.service";
 import { InitiateCompanyLogoUploadDto } from "./dto/company-logo.dto";
+import { InitiateLoginBackgroundUploadDto, LOGIN_BACKGROUND_MAX_BYTES } from "./dto/login-background.dto";
 import type { Request } from "express";
 
 @ApiTags("workspaces")
@@ -226,6 +228,64 @@ export class WorkspacesController {
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
   ) {
     return this.workspaces.removeCompanyLogo(actor, workspaceId);
+  }
+
+  @Post(":workspaceId/company-profile/login-background-uploads")
+  @ApiOperation({ summary: "Create a short-lived sign-in background upload" })
+  @ApiCreatedResponse()
+  initiateLoginBackgroundUpload(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Body() input: InitiateLoginBackgroundUploadDto,
+  ) {
+    return this.workspaces.initiateLoginBackgroundUpload(actor, workspaceId, input);
+  }
+
+  @Post(":workspaceId/company-profile/login-background-uploads/:assetId/complete")
+  @ApiOperation({ summary: "Verify and activate an uploaded sign-in background" })
+  @ApiCreatedResponse()
+  completeLoginBackgroundUpload(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("assetId", ParseUUIDPipe) assetId: string,
+  ) {
+    return this.workspaces.completeLoginBackgroundUpload(actor, workspaceId, assetId);
+  }
+
+  @Post(":workspaceId/company-profile/login-background-uploads/:assetId/content")
+  @ApiOperation({ summary: "Upload sign-in background content when local application storage is enabled" })
+  @ApiCreatedResponse()
+  async uploadLoginBackgroundContent(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("assetId", ParseUUIDPipe) assetId: string,
+    @Req() request: Request,
+  ) {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.byteLength;
+      if (size > LOGIN_BACKGROUND_MAX_BYTES) throw new PayloadTooLargeException("Sign-in background must be 10 MB or smaller");
+      chunks.push(buffer);
+    }
+    return this.workspaces.uploadLoginBackgroundContent(
+      actor,
+      workspaceId,
+      assetId,
+      String(request.headers["content-type"] ?? "").split(";")[0],
+      Buffer.concat(chunks),
+    );
+  }
+
+  @Delete(":workspaceId/company-profile/login-background")
+  @ApiOperation({ summary: "Remove the active sign-in background" })
+  @ApiOkResponse()
+  removeLoginBackground(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+  ) {
+    return this.workspaces.removeLoginBackground(actor, workspaceId);
   }
 
   @Get(":workspaceId/onboarding")

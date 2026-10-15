@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { businessApiUrl } from "@/lib/auth/server";
 import { safeNextPath } from "@/lib/auth/next-path";
 import { resolveTenantHost, type TenantBranding } from "@/lib/auth/resolve-tenant-host";
+import { tenantBackgroundUrl } from "@/lib/auth/tenant-background";
 import { LoginScreen } from "./login-screen";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -18,6 +19,7 @@ async function getTenantBranding(requestedSlug?: string): Promise<TenantBranding
   if (resolved.kind === "tenant") return {
     ...resolved.branding,
     logoUrl: resolved.branding.logoUrl ? `/api/auth/tenant-logo/${resolved.branding.loginSlug}` : null,
+    loginBackgroundUrl: tenantBackgroundUrl(resolved.branding.loginSlug, resolved.branding.loginBackgroundUrl),
   };
   const loginSlug = requestedSlug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requestedSlug)
     ? requestedSlug
@@ -30,11 +32,12 @@ async function getTenantBranding(requestedSlug?: string): Promise<TenantBranding
     return {
       ...branding,
       logoUrl: branding.logoUrl ? `/api/auth/tenant-logo/${branding.loginSlug}` : null,
+      loginBackgroundUrl: tenantBackgroundUrl(branding.loginSlug, branding.loginBackgroundUrl),
     };
   }
   return {
     displayName: "Wodana", loginSlug, logoUrl: null, primaryColor: null,
-    secondaryColor: null, headingFont: null, bodyFont: null,
+    secondaryColor: null, headingFont: null, bodyFont: null, loginBackgroundUrl: null,
   };
 }
 

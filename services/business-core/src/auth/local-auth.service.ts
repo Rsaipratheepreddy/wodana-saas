@@ -73,6 +73,10 @@ const REFRESH_TOKEN_DAYS = 30;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 const RESET_EMAILS_PER_HOUR = 3;
+/** The tenant's own sign-in background (tenant_login_branding columns), versioned by its asset; null: the default. */
+const LOGIN_BACKGROUND_URL = `CASE WHEN login_background_asset_id IS NOT NULL
+                   THEN '/api/auth/tenant-background/' || login_slug || '?v=' || login_background_asset_id::text
+                   END AS "loginBackgroundUrl"`;
 
 /** Raised inside the activation transaction; the failed attempt is recorded after its rollback. */
 class ExistingAccountPasswordError extends Error {
@@ -100,13 +104,15 @@ export class LocalAuthService {
       secondaryColor: string | null;
       headingFont: string | null;
       bodyFont: string | null;
+      loginBackgroundUrl: string | null;
     }>(
       `SELECT display_name AS "displayName", login_slug AS "loginSlug",
               CASE WHEN logo_asset_id IS NOT NULL
                    THEN '/api/auth/tenant-logo/' || login_slug || '?v=' || logo_asset_id::text
                    ELSE logo_url END AS "logoUrl",
               primary_color AS "primaryColor", secondary_color AS "secondaryColor",
-              heading_font AS "headingFont", body_font AS "bodyFont"
+              heading_font AS "headingFont", body_font AS "bodyFont",
+              ${LOGIN_BACKGROUND_URL}
        FROM tenant_login_branding WHERE login_slug = $1 AND tenant_login_open(workspace_id)`,
       [loginSlug.toLowerCase()],
     );
@@ -149,11 +155,14 @@ export class LocalAuthService {
     if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(hostname) || hostname.length > 253) {
       throw new NotFoundException("Tenant login was not found");
     }
+    // The custom domain's tenant, with its sign-in background (public branding, as the slug's own lookup reads it).
     const result = await this.database.query<{
       displayName: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null;
-      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
+      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null; loginBackgroundUrl: string | null;
     }>(
-      "SELECT * FROM wodana_public_tenant_host($1::varchar)",
+      `SELECT host.*, ${LOGIN_BACKGROUND_URL}
+       FROM wodana_public_tenant_host($1::varchar) host
+       LEFT JOIN tenant_login_branding ON tenant_login_branding.login_slug = host."loginSlug"`,
       [hostname.toLowerCase()],
     );
     if (!result.rowCount) throw new NotFoundException("Tenant login was not found");

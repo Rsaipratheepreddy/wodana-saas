@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Copy, Eye, EyeOff, Monitor, ShieldCheck } from "lucide-react";
@@ -31,6 +31,8 @@ type TenantBranding = {
   secondaryColor?: string | null;
   headingFont?: string | null;
   bodyFont?: string | null;
+  /** The tenant's own sign-in background (a same-origin address); left out: the default image. */
+  loginBackgroundUrl?: string | null;
 };
 type MfaStage = "credentials" | "challenge" | "enrollment" | "recovery";
 type MfaSetup = { secret: string; otpauthUri: string; setupExpiresInSeconds: number };
@@ -524,7 +526,8 @@ export function LoginScreen({
   return (
     <DesignSystemProvider className={styles.loginRoot} theme="light" data-tenant-slug={tenant.loginSlug} locale={language} portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
       <main className={styles.loginLayout}>
-        <div aria-hidden="true" className={styles.brandPanel} />
+        <div aria-hidden="true" className={styles.brandPanel} data-custom-background={tenant.loginBackgroundUrl ? true : undefined}
+          style={tenant.loginBackgroundUrl ? { "--wd-login-background-image": `url("${tenant.loginBackgroundUrl}")` } as CSSProperties : undefined} />
 
         <section aria-labelledby="login-heading" className={styles.loginPanel}>
           <div className={styles.loginCard}>

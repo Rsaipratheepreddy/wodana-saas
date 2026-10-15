@@ -21,4 +21,16 @@ export class PublicBrandingController {
     });
     response.send(logo.body);
   }
+
+  @Get(":loginSlug/login-background")
+  @Header("Cross-Origin-Resource-Policy", "cross-origin")
+  async loginBackground(@Param("loginSlug") loginSlug: string, @Res() response: Response) {
+    const image = await this.workspaces.readPublicLoginBackground(loginSlug);
+    response.set({
+      "cache-control": "public, max-age=3600, stale-while-revalidate=86400",
+      "content-type": image.contentType,
+      etag: `\"${image.etag}\"`,
+    });
+    response.send(image.body);
+  }
 }
