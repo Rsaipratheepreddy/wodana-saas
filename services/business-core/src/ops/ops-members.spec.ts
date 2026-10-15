@@ -24,11 +24,13 @@ function run(apply: boolean, deactivate: string[], members = [
 describe("operator CLI members --deactivate", () => {
   it("parses the members to switch off, a dry run unless --apply", () => {
     expect(parseArgs(["members", ...base, "--deactivate", "Sales@Example.test, design@example.test,sales@example.test", "--apply"])).toEqual({
-      command: "members", workspace: "laespace", as: "owner@example.test", apply: true, json: false, deactivate: ["sales@example.test", "design@example.test"] });
-    expect(() => parseArgs(["members", ...base])).toThrow("--deactivate is required.");
+      command: "members", workspace: "laespace", as: "owner@example.test", apply: true, json: false, deactivate: ["sales@example.test", "design@example.test"], invite: null });
+    expect(() => parseArgs(["members", ...base])).toThrow("members needs --deactivate or --invite (or both).");
+    expect(parseArgs(["members", ...base, "--invite", "people.json"])).toMatchObject({ deactivate: [], invite: "people.json" });
+    expect(() => parseArgs(["members", ...base, "--invite", "people.csv"])).toThrow("--invite is a JSON file");
     expect(() => parseArgs(["members", ...base, "--deactivate", "sales"])).toThrow("not an email: sales");
     expect(() => parseArgs(["members", ...base, "--deactivate", "a@b.co", "--file", "x.json"])).toThrow("--file does not apply to members.");
-    expect(USAGE).toContain("members --workspace <slug> --as <member email> --deactivate <email,email,...> [--apply] [--json]");
+    expect(USAGE).toContain("members --workspace <slug> --as <member email> [--deactivate <email,email,...>] [--invite <people.json>] [--apply] [--json]");
   });
 
   it("previews: would change for an active member, unchanged when inactive, not found for a stranger", async () => {
@@ -57,5 +59,20 @@ describe("operator CLI members --deactivate", () => {
     expect(alone.lines).toEqual([{ section: "members", status: "failed", label: "partner@example.test", detail: "the last active owner is never deactivated" }]);
     expect(alone.updateMember).not.toHaveBeenCalled();
     expect(updateMember).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the people file for --invite", () => {
+  it("reads email, name, roles and teams, lower-casing the email", async () => {
+    const { parseInvitees } = await import("./ops-members");
+    expect(parseInvitees(JSON.stringify([{ email: " Leela@Studio.example ", name: "Leela", roles: [], teams: ["INTERIOR_DESIGN", "PROCUREMENT"] }, { email: "prudhvi@studio.example", roles: ["site_supervisor"] }])))
+      .toEqual([{ email: "leela@studio.example", name: "Leela", roles: [], teams: ["INTERIOR_DESIGN", "PROCUREMENT"] }, { email: "prudhvi@studio.example", name: null, roles: ["site_supervisor"], teams: [] }]);
+  });
+  it("refuses a bad address, a repeat, or a person with no access", async () => {
+    const { parseInvitees } = await import("./ops-members");
+    expect(() => parseInvitees(JSON.stringify([{ email: "operations@studio.example.", roles: ["owner"] }]))).toThrow("not an email address");
+    expect(() => parseInvitees(JSON.stringify([{ email: "a@studio.example", roles: ["owner"] }, { email: "A@studio.example", roles: ["owner"] }]))).toThrow("listed twice");
+    expect(() => parseInvitees(JSON.stringify([{ email: "a@studio.example" }]))).toThrow("at least one role or team");
+    expect(() => parseInvitees("{")).toThrow("not valid JSON");
   });
 });

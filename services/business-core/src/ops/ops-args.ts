@@ -21,8 +21,8 @@ export type ImportArgs = Common & {
 export type ConfigureArgs = Common & { command: "configure"; profile: string | null; teams: string | null; packages: string | null };
 /** `brand`: a brand.json (display name, colours, fonts, logo, sign-in background) applied through Settings' commands. */
 export type BrandArgs = Common & { command: "brand"; file: string };
-/** `members --deactivate`: members switched off by email (lower case, without repeats). */
-export type MembersArgs = Common & { command: "members"; deactivate: string[] };
+/** `members`: members switched off by email (lower case, without repeats), and/or people invited from a JSON file. */
+export type MembersArgs = Common & { command: "members"; deactivate: string[]; invite?: string | null };
 /** A test workspace with one member per role (ops-sandbox.ts); no --workspace or --as: the workspace may not exist yet. */
 export type SandboxArgs = {
   command: "sandbox"; slug: string; name: string; region: string; profile: string | null; teams: string | null;
@@ -65,7 +65,7 @@ Usage:
   node dist/ops/ops-cli.js configure --workspace <slug> --as <member email> [--profile <profile.json>] [--teams <teams-access.json>]
       [--packages <design-packages.json>] [--apply] [--json]
   node dist/ops/ops-cli.js brand --workspace <slug> --as <member email> --file <brand.json> [--apply] [--json]
-  node dist/ops/ops-cli.js members --workspace <slug> --as <member email> --deactivate <email,email,...> [--apply] [--json]
+  node dist/ops/ops-cli.js members --workspace <slug> --as <member email> [--deactivate <email,email,...>] [--invite <people.json>] [--apply] [--json]
   node dist/ops/ops-cli.js sandbox --slug <slug> --name "<name>" --region <country code> [--profile <profile.json>]
       [--teams <teams-access.json>] [--crm <crm-intake-profile.json>] [--password-env <ENV VAR>] [--kit <firm kit code>]
       [--email-pattern "<local>+{role}@<domain>"] [--seed] [--scenarios] [--apply] [--json]
@@ -136,6 +136,10 @@ members
                   People does it), so they can no longer sign in to this workspace; nothing they did is removed. Never
                   the member the CLI acts as, and never the last active owner. A member already inactive is unchanged.
                   Note: sandbox makes its test members active again when it is run again.
+  --invite        people to invite, as a JSON list of { "email", "name", "roles": [role codes], "teams": [team codes] },
+                  through People's own invite (its checks, audit and invitation email). Each new invitation's sign-in
+                  link is printed once (the app never stores it). A member already in the workspace, or someone with a
+                  pending invitation, is unchanged; an unknown role or team is refused before anything is sent.
 
 sandbox
   A test workspace for end-to-end testing, created (or found) through the same provisioning as Wodana Control: the
@@ -203,7 +207,7 @@ Output is counts and messages only. Exit code 0 when everything succeeded, 1 whe
 const FLAGS = new Set(["--apply", "--dry-run", "--json", "--fill-only", "--no-sets-stock", "--pictures", "--approved-prices", "--seed", "--scenarios", "--retire",
   "--restore", "--help", "-h"]);
 const OPTIONS = new Set(["--workspace", "--as", "--target", "--file", "--tabs", "--exclude-tabs", "--mapping", "--legal-entity", "--catalog", "--location", "--name",
-  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern", "--deactivate",
+  "--item-type", "--profile", "--slug", "--region", "--teams", "--crm", "--password-env", "--kit", "--organization-of", "--email-pattern", "--deactivate", "--invite",
   "--packages"]);
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -266,11 +270,14 @@ export function parseArgs(argv: string[]): OpsArgs {
   }
 
   if (command === "members") {
-    only(["--deactivate"], "members");
-    const deactivate = listOf(required("--deactivate").toLowerCase());
+    only(["--deactivate", "--invite"], "members");
+    if (!values.has("--deactivate") && !values.has("--invite")) throw new UsageError("members needs --deactivate or --invite (or both).");
+    const deactivate = values.has("--deactivate") ? listOf(required("--deactivate").toLowerCase()) : [];
     const invalid = deactivate.filter((email) => !EMAIL.test(email));
-    if (!deactivate.length || invalid.length) throw new UsageError(`--deactivate is a comma-separated list of member emails${invalid.length ? `; not an email: ${invalid.join(", ")}` : ""}.`);
-    return { command, ...common, deactivate };
+    if ((values.has("--deactivate") && !deactivate.length) || invalid.length) throw new UsageError(`--deactivate is a comma-separated list of member emails${invalid.length ? `; not an email: ${invalid.join(", ")}` : ""}.`);
+    const invite = values.has("--invite") ? required("--invite") : null;
+    if (invite && !/\.json$/i.test(invite)) throw new UsageError("--invite is a JSON file of people to invite.");
+    return { command, ...common, deactivate, invite };
   }
 
   const target = required("--target");
