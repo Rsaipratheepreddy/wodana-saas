@@ -32,6 +32,8 @@ export type ShowcaseCast = {
   formalRoom: string;
   /** The season that enquiry wants it ready for. */
   season: string;
+  /** What the showcase's amounts (written in the emirates' money) are multiplied by: the region fixture's priceScale. */
+  priceScale: number;
 };
 
 const member = (displayName: string, firstName: string, email: string, mobile: string, area: string, extra: Partial<ShowcaseCastMember> = {}): ShowcaseCastMember =>
@@ -56,6 +58,7 @@ const AE: ShowcaseCast = {
   },
   formalRoom: "majlis",
   season: "Ramadan",
+  priceScale: regionFixture("AE").priceScale,
 };
 
 const WRITTEN: Record<string, ShowcaseCast> = { AE };
@@ -82,5 +85,5 @@ export function showcaseCast(country: string | null | undefined): ShowcaseCast {
     if (key === "demo") return [key, { ...AE.people.demo, ...place, mobile: person.mobile }];
     return [key, { displayName: person.displayName, firstName: person.firstName, called: person.firstName, email: person.email, mobile: person.mobile, ...place }];
   })) as Record<ShowcaseCastKey, ShowcaseCastMember>;
-  return { country: code, people, formalRoom: "formal living room", season: "the festive season" };
+  return { country: code, people, formalRoom: "formal living room", season: "the festive season", priceScale: fixture.priceScale };
 }

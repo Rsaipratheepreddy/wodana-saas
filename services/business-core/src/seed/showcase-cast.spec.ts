@@ -1,7 +1,7 @@
 import { parsePhoneNumberFromString } from "libphonenumber-js/max";
 import { describe, expect, it } from "vitest";
 import { regionFixture, regionPerson } from "../ops/scenarios/scenario-regions";
-import { regionOption, showcaseScript } from "./showcase";
+import { regionOption, showcaseMoney, showcaseScript } from "./showcase";
 import { showcaseCast, type ShowcaseCast } from "./showcase-cast";
 import { showcaseChats } from "./showcase-inbox";
 
@@ -100,6 +100,31 @@ describe("the showcase's clients, in the workspace's country", () => {
     expect(chats[0]).toMatchObject({ subject: "Majlis and dining room", lines: [
       { text: "Hello! I saw your majlis project on Instagram. We want to redo the majlis and the dining room before Ramadan. Can you help?" }, {},
       { text: "The majlis is about 6 by 8 metres. Do you also do the curtains and the lighting?" }] });
+  });
+
+  it("keeps the showcase's money as written in the emirates and scales it exactly for India, a full fit-out in lakhs", () => {
+    const uae = showcaseScript(showcaseCast("AE")), india = showcaseScript(showcaseCast("IN"));
+    expect(uae.scenarios.map((story) => story.amount)).toEqual([118_000, 86_000, 74_000, 92_000, 240_000]);
+    expect(uae.enquiries.map((enquiry) => enquiry.amount)).toEqual([150_000, 28_000, 45_000, 110_000, 95_000, 210_000, 32_000]);
+    expect(uae.scenarios[0].lines[0]).toMatchObject({ unitCost: "9800", rate: "17100" });
+    expect(uae.scenarios[1].execution.orders.find((order) => order.key === "brass-handles")?.pick).toEqual([{ description: "Brushed brass handle 160 mm", quantity: "18", unit: "nos", unitPrice: "42" }]);
+    expect(showcaseMoney(showcaseCast("AE"))("60")).toBe("60");
+
+    // India: every amount is the emirates' amount times the IN fixture's scale, exactly (as the scenarios' are).
+    const scale = regionFixture("IN").priceScale;
+    expect(scale).toBe(20);
+    expect(india.scenarios.map((story) => story.amount)).toEqual(uae.scenarios.map((story) => story.amount * scale));
+    expect(india.enquiries.map((enquiry) => enquiry.amount)).toEqual(uae.enquiries.map((enquiry) => enquiry.amount * scale));
+    // The full fit-out enquiry is 42 lakh rupees, not 2.1 lakh; every story's deal is over 10 lakh.
+    expect(india.enquiries.find((enquiry) => enquiry.key === "enq-6")?.amount).toBe(42_00_000);
+    for (const story of india.scenarios) expect(story.amount).toBeGreaterThanOrEqual(10_00_000);
+    expect(india.scenarios[0].lines[0]).toMatchObject({ unitCost: "196000.00", rate: "342000.00" });
+    india.scenarios.forEach((story, index) => story.lines.forEach((line, at) => {
+      expect(Number(line.rate)).toBe(Number(uae.scenarios[index].lines[at].rate) * scale);
+      expect(Number(line.unitCost)).toBe(Number(uae.scenarios[index].lines[at].unitCost) * scale);
+    }));
+    expect(india.scenarios[1].execution.orders.find((order) => order.key === "brass-handles")?.pick).toEqual([{ description: "Brushed brass handle 160 mm", quantity: "18", unit: "nos", unitPrice: "840.00" }]);
+    expect(showcaseMoney(showcaseCast("IN"))("60")).toBe("1200.00");
   });
 
   it("matches a place's region to the workspace's option by id or by name", () => {

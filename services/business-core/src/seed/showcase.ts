@@ -47,7 +47,7 @@ import { HandoverService } from "../site/handover.service";
 import { SiteService } from "../site/site.service";
 import { seedShowcaseInbox } from "./showcase-inbox";
 import { showcaseCast, type ShowcaseCast, type ShowcaseCastMember } from "./showcase-cast";
-import { workspaceRegionCode } from "../ops/scenarios/scenario-regions";
+import { scaleAmount, workspaceRegionCode } from "../ops/scenarios/scenario-regions";
 import { WarrantyService } from "../site/warranty.service";
 import { CatalogV2Service } from "../catalog-core/catalog-v2.service";
 import { priceShowcaseItems, type ShowcasePriceLine } from "./showcase-prices";
@@ -573,9 +573,34 @@ const followUpsFor = ({ people: { faris, yusuf, sofia, hessa, aisha }, formalRoo
   { role: "sales", on: { scenario: "jlt-office" }, key: "sales-jlt-walkthrough", type: "meeting", title: `Walk the ${faris.short} office with ${faris.called}`, due: 0, hour: 16, minutes: 60 },
 ];
 
-/** The showcase's stories, enquiries and everyone's week, told with a workspace's cast. */
+/**
+ * The showcase's money is written in the emirates' amounts (its base list). A region whose fixture scales prices gets
+ * every amount multiplied by its priceScale, exactly, as the demo scenarios' are (regionAmount); at scale 1 the
+ * amounts stay as written.
+ */
+export function showcaseMoney(cast: Pick<ShowcaseCast, "priceScale">) {
+  return (base: string | number) => cast.priceScale === 1 ? String(base) : scaleAmount(base, cast.priceScale);
+}
+
+/** A story with its money in the region's amounts: the deal, every quotation line and the lines written on its orders. */
+function storyInMoney(story: Scenario, money: (base: string | number) => string): Scenario {
+  return {
+    ...story, amount: Number(money(story.amount)),
+    lines: story.lines.map((line) => ({ ...line, unitCost: money(line.unitCost), rate: money(line.rate) })),
+    execution: { ...story.execution, orders: story.execution.orders.map((order) => Array.isArray(order.pick)
+      ? { ...order, pick: order.pick.map((line) => ({ ...line, unitPrice: money(line.unitPrice) })) } : order) },
+  };
+}
+
+/** The showcase's stories, enquiries and everyone's week, told with a workspace's cast in its money. */
 export function showcaseScript(cast: ShowcaseCast) {
-  return { scenarios: showcaseScenarios(cast), enquiries: showcaseEnquiries(cast), homeTasks: homeTasks(cast), followUps: followUpsFor(cast) };
+  const money = showcaseMoney(cast);
+  const scale = cast.priceScale !== 1;
+  return {
+    scenarios: showcaseScenarios(cast).map((story) => scale ? storyInMoney(story, money) : story),
+    enquiries: showcaseEnquiries(cast).map((enquiry) => scale ? { ...enquiry, amount: Number(money(enquiry.amount)) } : enquiry),
+    homeTasks: homeTasks(cast), followUps: followUpsFor(cast),
+  };
 }
 
 /** Client replies waiting in the inbox: WhatsApp messages from clients, as the provider delivers them. */
@@ -665,6 +690,8 @@ export class ShowcaseSeed {
   /** A moment `days` from the workspace's today at `hour` on its clock. */
   protected moment(days: number, hour: number) { return dateAt(days, hour, this.timezone); }
   protected get db() { return this.get(DatabaseService); }
+  /** An amount from the showcase's base list in the workspace's money (see showcaseMoney). */
+  protected money(base: string | number) { return showcaseMoney(this.cast)(base); }
 
   protected log(line: string) { (this.input.log ?? ((text: string) => process.stdout.write(`${text}\n`)))(line); }
   protected made(label: string) { this.result.created.push(label); this.input.report?.record?.("showcase", "created", label); this.log(`  created  ${label}`); }
@@ -1031,7 +1058,7 @@ export class ShowcaseSeed {
         const fresh = (await detail())!;
         const version = (fresh.request ?? fresh).version;
         await service.command(buyer, this.w, requestId, { action: "record_reply", version, vendorId: supplier.vendorId, leadTimeDays: 7 + index * 5, validUntil: this.day(21), note: index ? "Ex stock, delivery included." : "Two weeks; drivers on order.",
-          prices: lines.map((line, at) => ({ lineId: line.id, unitPrice: String((at ? 95 : 48) + index * 6) })) });
+          prices: lines.map((line, at) => ({ lineId: line.id, unitPrice: this.money((at ? 95 : 48) + index * 6) })) });
       });
       current = (await detail())!;
     }
@@ -1092,7 +1119,7 @@ export class ShowcaseSeed {
     for (const item of free) {
       const id = this.id("operations:", `stock:add:${item.key}`);
       const have = current.rows.find((row) => row.name === item.name && row.locationId === warehouse!.id && !row.projectId);
-      await this.advance(`free stock · ${item.name} ×${item.quantity}`, Boolean(have), () => inventory.command(actor, this.w, { id, action: "add", locationId: warehouse!.id, name: item.name, unit: item.unit, quantity: item.quantity, unitCost: item.unitCost, reason: item.reason, movedOn: this.day(-6) }));
+      await this.advance(`free stock · ${item.name} ×${item.quantity}`, Boolean(have), () => inventory.command(actor, this.w, { id, action: "add", locationId: warehouse!.id, name: item.name, unit: item.unit, quantity: item.quantity, unitCost: this.money(item.unitCost), reason: item.reason, movedOn: this.day(-6) }));
     }
     current = await state();
     const veneer = current.rows.find((row) => row.name === free[0].name && row.locationId === warehouse.id && !row.projectId);
@@ -1205,9 +1232,9 @@ export class ShowcaseSeed {
     const claimant = await this.as("site"), finance = await this.as("finance");
     const decider = await this.other(claimant, ["projectManager", "owner", "manager"]);
     const claims: Array<{ key: string; description: string; category: string; amount: string; daysAgo: number; to: "reimbursed" | "approved" | "submitted" }> = [
-      { key: "taxi", description: "Taxi to the stone supplier and back", category: "transport", amount: "60", daysAgo: 6, to: "reimbursed" },
-      { key: "fixings", description: "Screws, wall plugs and silicone from the hardware shop", category: "materials", amount: "85", daysAgo: 3, to: "approved" },
-      { key: "lunch", description: "Lunch for the crew on the long tiling day", category: "food", amount: "120", daysAgo: 1, to: "submitted" },
+      { key: "taxi", description: "Taxi to the stone supplier and back", category: "transport", amount: this.money("60"), daysAgo: 6, to: "reimbursed" },
+      { key: "fixings", description: "Screws, wall plugs and silicone from the hardware shop", category: "materials", amount: this.money("85"), daysAgo: 3, to: "approved" },
+      { key: "lunch", description: "Lunch for the crew on the long tiling day", category: "food", amount: this.money("120"), daysAgo: 1, to: "submitted" },
     ];
     for (const claim of claims) {
       const id = this.id("finance:", `petty:${claim.key}`);
@@ -2383,9 +2410,9 @@ export class ShowcaseSeed {
     if (!usable.length) throw new Skip("the supplier register has no approved supplier");
     type Need = { title: string; source: string; sourceId: string; projectId: string; remaining: string | null; blocked: string | null; unit: string };
     const needs = async () => ((await orders.needs(buyer, this.w)) as unknown as { needs: Need[] }).needs.filter((need) => need.projectId === projectId);
-    const price = (need: { title: string; source: string }) => need.source === "material"
+    const price = (need: { title: string; source: string }) => this.money(need.source === "material"
       ? (/veneer/i.test(need.title) ? "180" : /led/i.test(need.title) ? "95" : "12")
-      : (/floor|tile/i.test(need.title) ? "190" : /pendant/i.test(need.title) ? "950" : /sofa|bed|console/i.test(need.title) ? "8000" : /chair|worktop|sink/i.test(need.title) ? "400" : "45");
+      : (/floor|tile/i.test(need.title) ? "190" : /pendant/i.test(need.title) ? "950" : /sofa|bed|console/i.test(need.title) ? "8000" : /chair|worktop|sink/i.test(need.title) ? "400" : "45"));
     const tag = ctx.s.key.toUpperCase().replace(/[^A-Z0-9]+/g, "");
     let firstId = "";
     for (const [index, plan] of ctx.s.execution.orders.entries()) {

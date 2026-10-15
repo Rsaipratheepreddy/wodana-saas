@@ -170,5 +170,10 @@ export function fictitiousMobile(country: string | null | undefined, n: number):
 
 /** An amount from the base list in the region's money (exact: decimal strings, never floats). */
 export function regionAmount(fixture: RegionFixture, base: string | number): string {
-  return Dec.of(String(base)).mul(fixture.priceScale).toFixed(2);
+  return scaleAmount(base, fixture.priceScale);
+}
+
+/** An amount multiplied by a region's price scale, exactly (decimal strings, never floats). */
+export function scaleAmount(base: string | number, priceScale: number): string {
+  return Dec.of(String(base)).mul(priceScale).toFixed(2);
 }

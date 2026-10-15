@@ -207,6 +207,26 @@ integration("operator CLI sandbox --organization-of: a second organization in th
     expect(said.filter((row) => emirates.test(row.text ?? ""))).toEqual([]);
   });
 
+  it("seeds the showcase's money in B's amounts: the emirates' list times the IN scale, deals in lakhs of rupees", async () => {
+    const idB = (await workspaceOf(b))!;
+    const scale = regionFixture("IN").priceScale;
+    const deals = (await pool.query<{ reference: string; amount: string }>(
+      `SELECT intake.external_event_id AS reference, opportunity.amount::text AS amount
+         FROM crm_intake_events intake
+         JOIN crm_enquiries enquiry ON enquiry.workspace_id = intake.workspace_id AND enquiry.intake_event_id = intake.id
+         JOIN crm_opportunities opportunity ON opportunity.workspace_id = enquiry.workspace_id AND opportunity.party_id = enquiry.party_id
+        WHERE intake.workspace_id = $1 AND intake.external_event_id LIKE 'SHOWCASE-%' ORDER BY 1`, [idB])).rows;
+    const amounts = Object.fromEntries(deals.map((row) => [row.reference, Number(row.amount)]));
+    // Deals not yet won keep the estimate; a won one takes its accepted quotation's total (its lines scaled the same way).
+    expect(amounts).toMatchObject({ "SHOWCASE-EH-PENTHOUSE": 240_000 * scale, "SHOWCASE-ENQ-4": 110_000 * scale });
+    expect(deals).toHaveLength(6);
+    // Every deal in lakhs: at least 5 lakh, above any unscaled amount (the largest is 2.4 lakh).
+    for (const row of deals) expect(Number(row.amount), row.reference).toBeGreaterThanOrEqual(5_00_000);
+    const claims = (await pool.query<{ amount: string }>(`SELECT amount::text AS amount FROM petty_cash_claims WHERE workspace_id = $1`, [idB])).rows.map((row) => Number(row.amount));
+    expect(claims.length).toBeGreaterThan(0);
+    for (const amount of claims) expect([60, 85, 120].map((base) => base * scale)).toContain(amount);
+  });
+
   it("changes nothing on a second run, and its dry run has nothing left to do", () => {
     const applied = json(second);
     expect(second.code, second.output).toBe(0);
