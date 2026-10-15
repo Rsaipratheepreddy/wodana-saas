@@ -67,6 +67,8 @@
   background: var(--wd-color-surface);
   box-shadow: 0 0 0 1px var(--wd-color-structural-divider), var(--wd-shadow-xs);
 }
+.wd-card[data-tone="next"] { background: var(--wd-color-surface-subtle); }
+.wd-card[id] { scroll-margin-block: var(--wd-space-4); }
 .wd-card-header { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-sm); min-inline-size: 0; }
 .wd-card > .wd-card-header .wd-card-title {
   margin: 0;
@@ -89,6 +91,60 @@
 .wd-card-grid[data-min="24rem"] { --wd-card-min: 24rem; }
 .wd-card-grid > * { min-inline-size: 0; }
 .wd-card-grid > * > .wd-card, .wd-card-grid > .wd-card { block-size: 100%; }
+
+/* ── Record summary (§2): KPI tiles, state chips, checklists and amounts; the same on every overview ──── */
+/* KPI tiles: label, value, one detail line; a row on a wide screen, two per row on a phone. Tone colours the value only. */
+.wd-kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: var(--wd-space-3); margin: 0; }
+.wd-kpi-tile { position: relative; display: grid; align-content: start; gap: var(--wd-space-1); min-inline-size: 0; padding: var(--wd-space-3) var(--wd-space-4);
+  border-radius: var(--wd-radius-md); background: var(--wd-color-surface); box-shadow: 0 0 0 1px var(--wd-color-structural-divider); }
+.wd-kpi-tile > dt { display: flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.wd-kpi-tile-icon { display: inline-flex; flex: none; color: var(--wd-color-text-tertiary); }
+.wd-kpi-tile > dd { display: grid; justify-items: start; gap: var(--wd-space-0-5); margin: 0; min-inline-size: 0; }
+.wd-kpi-tile-value { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1); color: var(--wd-color-text); font-size: var(--wd-text-lg);
+  font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.wd-kpi-tile-value small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-regular); }
+.wd-kpi-tile[data-tone="success"] .wd-kpi-tile-value { color: var(--wd-color-success); }
+.wd-kpi-tile[data-tone="warning"] .wd-kpi-tile-value { color: var(--wd-color-warning); }
+.wd-kpi-tile[data-tone="danger"] .wd-kpi-tile-value { color: var(--wd-color-danger); }
+.wd-kpi-tile[data-tone="info"] .wd-kpi-tile-value { color: var(--wd-color-info); }
+.wd-kpi-tile-detail { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: var(--wd-leading-ui); overflow-wrap: anywhere; }
+/* A tile that opens its section: the whole tile is the target. */
+.wd-kpi-tile-target { margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
+.wd-kpi-tile-target::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.wd-kpi-tile-target:focus-visible { outline: none; }
+.wd-kpi-tile:has(.wd-kpi-tile-target:focus-visible) { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+@media (hover: hover) { .wd-kpi-tile[data-link]:hover { background: var(--wd-color-surface-hover); } }
+@media (max-width: 40rem) {
+  .wd-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-2); }
+  .wd-kpi-tile { padding: var(--wd-space-2-5) var(--wd-space-3); }
+  .wd-kpi-tile-value { font-size: var(--wd-text-md); }
+}
+
+/* A state chip carries its own icon instead of the dot. */
+.wd-badge[data-icon]::before { content: none; }
+.wd-badge[data-icon] > svg { flex: none; }
+
+/* Checklist rows: a tick in a filled ring when done, an empty ring when not; the label, a detail, the action at the end. */
+.wd-check-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.wd-check-list > li { display: flex; align-items: center; gap: var(--wd-space-2-5); min-block-size: var(--wd-control-md); padding-block: var(--wd-space-1); }
+.wd-check-list > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.wd-check-list-mark { display: grid; flex: none; place-items: center; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-round);
+  box-shadow: inset 0 0 0 1px var(--wd-color-border-strong); color: var(--wd-color-success); }
+.wd-check-list > li[data-done] > .wd-check-list-mark { background: var(--wd-color-success-subtle); box-shadow: none; }
+.wd-check-list-text { display: grid; flex: 1 1 auto; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.wd-check-list-label { color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.wd-check-list > li[data-done] .wd-check-list-label { color: var(--wd-color-text-secondary); }
+.wd-check-list-detail { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.wd-check-list-action { display: flex; flex: none; align-items: center; gap: var(--wd-space-1); }
+
+/* Amounts: the label at the start, the amount at the end (tabular), a hairline between rows, the total in bold. */
+.wd-amount-list { display: grid; margin: 0; }
+.wd-amount-list > div { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); min-block-size: var(--wd-control-md); padding-block: var(--wd-space-1); }
+.wd-amount-list > div + div { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.wd-amount-list dt { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.wd-amount-list dt small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.wd-amount-list dd { flex: none; margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; text-align: end; }
+.wd-amount-list > [data-total] :is(dt, dd) { font-weight: var(--wd-weight-semibold); }
 
 /* ── Toolbar: search is an icon until used; filters in use are chips; nothing else shows (§5c D1) ─────── */
 .wd-record-search[data-collapsible]:not([data-open]):not(:focus-within) { flex: 0 0 var(--wd-button-height-compact); min-inline-size: var(--wd-button-height-compact); border-color: transparent; background: transparent; }

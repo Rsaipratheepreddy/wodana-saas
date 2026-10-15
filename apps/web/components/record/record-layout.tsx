@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Tabs, type TabItem } from "@/design-system";
+import { Card, Tabs, type TabItem } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import styles from "./record.module.css";
 
 /**
@@ -59,24 +60,27 @@ export function RecordPanel({ children }: { children: ReactNode }) {
   return <div className={styles.panel}>{children}</div>;
 }
 
-/** A group in the sidebar or the main column: a small heading, an optional action, and its content. */
-export function SideSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
-  const id = useId();
-  return <section className={styles.sideSection} aria-labelledby={id}>
-    <header><h4 id={id}>{title}</h4>{action}</header>
-    {children}
-  </section>;
+/** A section of the record, in the sidebar or the main column: a titled card (a chip and one action in its header), then its content. */
+export function SideSection({ title, action, chip, id, children }: { title: string; action?: ReactNode; chip?: ReactNode; id?: string; children: ReactNode }) {
+  return <Card level={3} id={id} title={title} chip={chip} action={action}>{children}</Card>;
 }
 
 /**
  * The next step: what to do now, one line on why, who does it or the one action, then what belongs to it
  * (the pending follow-up, a checklist, the linked records).
  */
-export function NextStepCard({ title, why, meta, status, tour, children }: { title: string; why?: ReactNode; meta?: ReactNode; status?: string; tour?: string; children?: ReactNode }) {
+export function NextStepCard({ title, why, meta, status, tour, children, label, id }: { title: string; why?: ReactNode; meta?: ReactNode; status?: string; tour?: string; children?: ReactNode;
+  /** The card's own heading ("Next step" by default); none once the record is done. */
+  label?: string | null;
+  /** An anchor a KPI tile opens. */
+  id?: string }) {
+  const t = useT();
   const titleId = useId();
-  return <section className={styles.now} aria-labelledby={titleId} data-status={status} data-tour={tour}>
+  const heading = label === undefined ? (status === "done" ? null : t("Next step")) : label;
+  return <section className={styles.now} id={id} aria-labelledby={titleId} data-status={status} data-tour={tour}>
     <div className={styles.nowHead}>
       <div className={styles.nowMain}>
+        {heading ? <span className={styles.nowLabel}>{heading}</span> : null}
         <h3 id={titleId}>{title}</h3>
         {why ? <p className={styles.why}>{why}</p> : null}
       </div>

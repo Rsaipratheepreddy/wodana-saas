@@ -1,33 +1,41 @@
-.insight { display: grid; gap: var(--wd-space-4); padding-block: var(--wd-space-2); }
-.money { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--wd-space-4); margin: 0; }
-.money dt { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
-.money dd { display: grid; gap: var(--wd-space-0-5); margin: var(--wd-space-1) 0 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
-.money dd small { font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-regular); color: var(--wd-color-text-secondary); }
-.money [data-attention] dd { color: var(--wd-color-warning); }
-.rounds { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
-.closing { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3) var(--wd-space-4); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
-.closing[data-closed] { background: var(--wd-color-success-subtle); }
-.closing strong { font-size: var(--wd-text-sm); color: var(--wd-color-text); }
-.closing ul { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
-.closing li { display: inline-flex; align-items: center; gap: var(--wd-space-1); }
-.closing li[data-done] { color: var(--wd-color-text); }
-.risks { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
-.risks[data-tone="attention"] { color: var(--wd-color-text); }
+/* The Deal File (PLM-066 / PLM-102 / PLM-123): KPI tiles, then titled section cards. */
 .muted { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
-.group { display: grid; gap: var(--wd-space-2); }
-.group h3 { margin: 0; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
-.sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--wd-space-1) var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
-.sections li { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); font-size: var(--wd-text-xs); }
-.sections li > :first-child { flex: 1 1 auto; min-inline-size: 0; }
-.sections li a { color: var(--wd-color-text); text-decoration: none; }
-.sections li a:hover { color: var(--wd-color-action-primary); text-decoration: underline; }
-.sections li small { color: var(--wd-color-text-tertiary); }
-.approval { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
-.approval li { display: grid; grid-template-columns: auto minmax(0, 12rem) minmax(0, 1fr); align-items: center; gap: var(--wd-space-2); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
-.approval li[data-state="done"] { color: var(--wd-color-success); }
-.approval li[data-state="current"] { color: var(--wd-color-action-primary); }
-.approval li[data-state="returned"], .approval li[data-state="rejected"] { color: var(--wd-color-danger); }
-.approval li[data-state="escalated"] { grid-template-columns: 1fr; color: var(--wd-color-warning); }
-.stepName { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
-.approval small { color: var(--wd-color-text-secondary); }
-@media (max-width: 720px) { .money { grid-template-columns: 1fr 1fr; } .approval li { grid-template-columns: auto minmax(0, 1fr); } .approval li small { grid-column: 2; } }
+.risks { color: var(--wd-color-warning); }
+.good { color: var(--wd-color-success); }
+.attention { color: var(--wd-color-warning); }
+.count { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+
+/* Requirements: a small group heading, then one row each (name and count at the start, its state at the end). */
+.group { display: grid; gap: var(--wd-space-1); }
+.group + .group { padding-block-start: var(--wd-space-3); }
+.group h4 { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); column-gap: var(--wd-space-6); margin: 0; padding: 0; list-style: none; }
+.sections li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-control-md);
+  border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+.sectionName { display: inline-flex; align-items: baseline; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text); overflow-wrap: anywhere; }
+.sectionName a { color: var(--wd-color-text); text-decoration: none; }
+.sectionName a:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.sectionName small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+
+/* Closing. */
+.closingText { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.escalated { margin: 0; color: var(--wd-color-warning); font-size: var(--wd-text-xs); }
+
+/* The Deal File's page: the tiles, then the work (next step, requirements, approvals) beside the facts (money,
+   commission, closing, team); one column on a narrow screen, the next step first. */
+.overview { container-type: inline-size; display: grid; gap: var(--wd-phi-3); min-inline-size: 0; padding-block: var(--wd-space-2); }
+.columns { display: grid; gap: var(--wd-phi-3); align-items: start; }
+.column { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
+@container (min-width: 56rem) {
+  .columns { grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); }
+}
+.stepForm { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.stepNote { margin: 0; padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-warning-subtle); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.stepActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.stepActions > [role="status"] { margin-inline-end: auto; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.checklist { display: grid; gap: var(--wd-space-1); }
+/* Who the step waits for: their avatars, then their names. */
+.waiting { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.avatars { display: inline-flex; flex: none; }
+.avatars > * + * { margin-inline-start: calc(var(--wd-space-1-5) * -1); }
+.subhead { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }

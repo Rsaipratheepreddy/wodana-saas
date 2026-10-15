@@ -105,12 +105,20 @@ export function PageShell({ action, "aria-label": ariaLabel, children, kind = "l
 }
 
 /** A card (§5c D5): one radius, padding and shadow; header (title · chip · action), body, footer. */
-export function Card({ action, chip, children, footer, title, as: Tag = "section" }: {
+export function Card({ action, chip, children, footer, title, as: Tag = "section", id, level = 2, tone }: {
   action?: ReactNode; chip?: ReactNode; children?: ReactNode; footer?: ReactNode; title?: ReactNode; as?: "section" | "article" | "div" | "li";
+  /** An anchor a KPI tile opens. */
+  id?: string;
+  /** The title's heading level inside its page (a section of a record is a level 3). */
+  level?: 2 | 3 | 4;
+  /** "next": the record's next step, on the subtle surface. */
+  tone?: "next";
 }) {
-  return <Tag className="wd-card">
+  const Heading = `h${level}` as "h2" | "h3" | "h4";
+  const titleId = useId();
+  return <Tag className="wd-card" id={id} data-tone={tone} aria-labelledby={title && Tag === "section" ? titleId : undefined}>
     {title || chip || action ? <header className="wd-card-header">
-      {title ? <h2 className="wd-card-title">{title}</h2> : null}{chip ? <span className="wd-card-chip">{chip}</span> : null}
+      {title ? <Heading className="wd-card-title" id={titleId}>{title}</Heading> : null}{chip ? <span className="wd-card-chip">{chip}</span> : null}
       {action ? <div className="wd-card-action">{action}</div> : null}
     </header> : null}
     {children ? <div className="wd-card-body">{children}</div> : null}

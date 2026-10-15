@@ -219,3 +219,56 @@ it("shows the deal's cost and margin only to people who can see costs", () => {
   render(<ApprovalRelease initialView="owner" state={state(true)} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
   expect(screen.getByText("Internal cost")).toBeInTheDocument();
 });
+
+it("lays the Deal File out as KPI tiles, the next step and titled sections: requirements, approvals, money and commission", () => {
+  const quote = { id: "quote", number: 1, kind: "quotation", status: "accepted", title: "Villa", currency: "AED", validUntil: "2099-01-01",
+    discount: 0, taxRate: 0, terms: "", exclusions: "", requestIds: [], paymentTerms: [], createdAt: "2026-09-18", total: 100, lines: [] };
+  const state = {
+    opportunityStatus: "won", canVerifyFinance: false, canApproveDeal: true, canViewCosts: true, viewerId: "olivia", contacts: [], workspaceId: "w",
+    releaseReadiness: { designsRequired: 0, designsApproved: 0 },
+    dealInsight: {
+      currency: "AED", agreed: "100.00", received: "50.00", outstanding: "50.00", rounds: [], nextDue: null, risks: ["qs_estimate_missing"], closing: null, proposals: [],
+      sections: [
+        { key: "quotation", group: "common", state: "present", href: "/q" },
+        { key: "boq", group: "production", state: "missing", href: null },
+      ],
+    },
+    dealApproval: { id: "r", kind: "deal_file", subjectId: "s", title: "Villa", href: null, status: "pending", amount: "100", currency: "AED", previousAmount: null,
+      policy: { id: "p", versionId: "v", version: 1, name: "Deals" }, requestedBy: { userId: "sara", name: "Sara" }, requestedAt: "2026-10-01T00:00:00.000Z",
+      currentStep: 2, stepSince: "2026-10-02T00:00:00.000Z", escalated: false, expiresAt: null, canDecide: true, waitingFor: ["Olivia"],
+      steps: [
+        { position: 1, label: "Finance verifies", approverKind: "permission", state: "done", decidedBy: "Layla", onBehalfOf: null, via: "direct", decidedAt: "2026-10-01T10:00:00.000Z", note: null },
+        { position: 2, label: "Deal File approver", approverKind: "permission", state: "current", decidedBy: null, onBehalfOf: null, via: null, decidedAt: null, note: null },
+      ] },
+    data: { revision: 1, quotes: [quote], requests: [], agreement: null, payments: [], audit: [], release: null, materialApprovals: [], dealFile: null, ownerReview: {
+      id: "review", quoteId: "quote", status: "pending_approval", submittedById: "sara", financeReviewedById: "layla", checklist: { agreement: true, boq: false },
+      finalCommissionLines: [{ recipientName: "Sam Carter", type: "sales", basis: "amount", value: 10, amount: 10 }, { recipientName: "Dana Haddad", type: "designer", basis: "amount", value: 5.5, amount: 5.5 }],
+    } },
+  } as unknown as CommercialState;
+  render(<ApprovalRelease initialView="owner" state={state} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
+  const tiles = screen.getByLabelText("Deal File summary");
+  expect(within(tiles).getAllByRole("term").map((term) => term.textContent)).toEqual(["Deal value", "Gross margin", "Requirements", "Payment", "Internal approval", "Commission"]);
+  const tile = (label: string) => within(tiles).getByText(label, { selector: "dt" }).closest(".wd-kpi-tile")!;
+  expect(tile("Requirements")).toHaveTextContent("1 of 2");
+  expect(tile("Requirements")).toHaveTextContent("1 missing");
+  expect(tile("Requirements")).toHaveAttribute("data-tone", "warning");
+  expect(tile("Payment")).toHaveTextContent("Verified");
+  expect(tile("Payment")).toHaveTextContent("50% paid");
+  expect(tile("Commission")).toHaveTextContent("15.50");
+  // The next step is its own card: the step, who it waits for, what to check, the owner's checklist and the decision.
+  const next = screen.getByRole("heading", { level: 3, name: "Owner approval" }).closest("section")!;
+  expect(within(next).getByText("Next step")).toBeInTheDocument();
+  expect(within(next).getByText("Waiting for Olivia")).toBeInTheDocument();
+  expect(within(next).getByText("Check: QS price check")).toBeInTheDocument();
+  const checklist = within(next).getByRole("list", { name: "Owner checklist" });
+  expect(within(checklist).getByText("Agreement").closest("li")).toHaveAttribute("data-done");
+  expect(within(checklist).getByText("BOQ").closest("li")).not.toHaveAttribute("data-done");
+  expect(within(next).getByRole("button", { name: "Approve Deal File" })).toBeDisabled();
+  // Each section is a titled card.
+  for (const name of ["Requirements", "Approvals", "Money", "Commission"]) expect(screen.getByRole("region", { name })).toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Requirements" })).getByText("Missing")).toBeInTheDocument();
+  const commission = screen.getByRole("region", { name: "Commission" });
+  expect(within(commission).getByText("Sam Carter")).toBeInTheDocument();
+  expect(within(commission).getByText("Total").closest("div")).toHaveTextContent("15.50");
+  expect(within(screen.getByRole("region", { name: "Money" })).getByText("Internal cost")).toBeInTheDocument();
+});

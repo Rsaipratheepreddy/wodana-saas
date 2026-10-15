@@ -292,7 +292,7 @@ describe("projects", () => {
     expect(heading.closest("header")!).toHaveTextContent("PRJ-0007");
     // The strip: the stage and the handover; the health from the records (a task is late) is the header's badge, once.
     const strip = await screen.findByLabelText("Where the project stands");
-    expect(strip).toHaveTextContent("Kickoff · 1 of 2");
+    expect(strip).toHaveTextContent("KickoffStage 1 of 2");
     await waitFor(() => expect(heading.closest("header")!).toHaveTextContent("At risk"));
     expect(strip).not.toHaveTextContent("At risk");
     expect(screen.getAllByText("At risk")).toHaveLength(1);
@@ -315,9 +315,8 @@ describe("projects", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Kickoff meeting held" })).toBeInTheDocument();
     // Who did what is the project's History (the shared component).
     expect(screen.getByRole("region", { name: "History" })).toBeInTheDocument();
-    // Kickoff's planned work ended on the 25th and is still open: on the next step, and in the full list of stages.
+    // Kickoff's planned work ended on the 25th and is still open: on the next step, and in the Stages section.
     expect(screen.getByText("3 days past its plan")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "All stages" }));
     expect(within(screen.getByRole("list", { name: "Stages" })).getByText("3 days late")).toBeVisible();
   });
 

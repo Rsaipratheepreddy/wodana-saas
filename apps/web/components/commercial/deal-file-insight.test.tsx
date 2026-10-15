@@ -1,7 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import { DealApprovalSteps, DealFileInsight } from "./deal-file-insight";
+import { translatorFor } from "@/lib/i18n/keys";
+import { DealApprovalSteps, DealClosing, DealMoney, DealRequirements, DealTeam, dealPaidShare, dealRequirementCount, dealRiskText } from "./deal-file-insight";
 
 const insight = {
   currency: "AED", agreed: "120000.30", received: "67500.15", outstanding: "52500.15",
@@ -16,19 +17,50 @@ const insight = {
   closing: { event: "delivered" as const, furniturePath: "in_stock_delivery" as const, closed: false, closedAt: null, checks: [{ key: "delivered" as const, done: false, at: null }] },
   proposals: [],
 };
+const wrap = (node: React.ReactNode) => render(<DesignSystemProvider locale="en-US">{node}</DesignSystemProvider>);
 
-describe("Deal File insight (PLM-066 / PLM-102 / PLM-123)", () => {
-  it("shows paid, outstanding and next due, the closing event, what to check, and contents linking to live records", () => {
-    render(<DesignSystemProvider locale="en-US"><DealFileInsight insight={insight} /></DesignSystemProvider>);
-    const money = screen.getByText("Outstanding").closest("div")!;
-    expect(money).toHaveTextContent("52,500.15");
-    expect(screen.getByText("Next due").closest("div")).toHaveTextContent("Balance before installation");
-    expect(screen.getByText("Proposal 1: AED 15,000.00 of AED 15,000.00 paid · Proposal 2: AED 52,500.15 of AED 105,000.30 paid")).toBeInTheDocument();
-    expect(screen.getByText("Closes on delivery")).toBeInTheDocument();
-    expect(screen.getByText("Check: commission")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Quotation" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c/quotations");
+describe("Deal File sections (PLM-066 / PLM-102 / PLM-123)", () => {
+  it("counts the requirements and the paid share, and names only the real risks", () => {
+    expect(dealRequirementCount(insight)).toEqual({ done: 1, missing: 1, total: 3 });
+    expect(dealPaidShare(insight)).toBe(56);
+    const t = translatorFor({});
+    expect(dealRiskText(t, insight)).toBe("Check: commission");
+    // An outstanding balance is the Money section's, not a risk: nothing to check then.
+    expect(dealRiskText(t, { ...insight, risks: ["balance_outstanding"] })).toBeNull();
+  });
+
+  it("lists the requirements by group, each a link to its live record with its state as a chip", () => {
+    wrap(<DealRequirements id="deal-requirements" insight={insight} />);
+    const card = screen.getByRole("region", { name: "Requirements" });
+    expect(card).toHaveAttribute("id", "deal-requirements");
+    expect(within(card).getByText("1 of 3 done")).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: "Quotation" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c/quotations");
     expect(within(screen.getByRole("link", { name: "Proof of delivery" }).closest("li")!).getByText("In progress")).toBeInTheDocument();
     expect(within(screen.getByText("Commission").closest("li")!).getByText("Missing")).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: "Quotation" }).closest("li")!).getByText("Done")).toBeInTheDocument();
+    expect(within(card).getByRole("list", { name: "Furniture" })).toBeInTheDocument();
+  });
+
+  it("shows paid, outstanding, next due and each proposal's own money, amounts at the end", () => {
+    wrap(<DealMoney insight={insight} withAgreed={false} extra={[{ id: "cost", label: "Internal cost", amount: "AED 50.00" }]} />);
+    const money = screen.getByRole("region", { name: "Money" });
+    expect(within(money).queryByText("Agreed value")).not.toBeInTheDocument();
+    expect(screen.getByText("Outstanding").closest("div")).toHaveTextContent("52,500.15");
+    expect(screen.getByText("Next due").closest("div")).toHaveTextContent("Balance before installation");
+    expect(screen.getByText("Proposal 1 · Design fee").closest("div")).toHaveTextContent("AED 15,000.00 of AED 15,000.00 paid");
+    expect(screen.getByText("Proposal 2 · Main quotation").closest("div")).toHaveTextContent("AED 52,500.15 of AED 105,000.30 paid");
+    expect(screen.getByText("Internal cost").closest("div")).toHaveTextContent("AED 50.00");
+  });
+
+  it("shows the closing event as a checklist, and says the deal is closed once the records show it", () => {
+    const { unmount } = wrap(<DealClosing insight={insight} />);
+    expect(screen.getByText("Closes on delivery")).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Closing" })).getByText("Delivered").closest("li")).not.toHaveAttribute("data-done");
+    unmount();
+    wrap(<DealClosing insight={{ ...insight, closing: { ...insight.closing, closed: true, closedAt: "2026-11-02T10:00:00.000Z", checks: [{ key: "delivered", done: true, at: "2026-11-02T10:00:00.000Z" }] } }} />);
+    expect(screen.getByText(/^Deal closed · /)).toBeInTheDocument();
+    expect(screen.getByText("Closed")).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Closing" })).getByText("Delivered").closest("li")).toHaveAttribute("data-done");
   });
 
   it("PLM-100: lists each person on the deal once, with every role they hold, and the roles nobody fills as not applicable", () => {
@@ -45,7 +77,7 @@ describe("Deal File insight (PLM-066 / PLM-102 / PLM-123)", () => {
       { role: "factory_lead", label: "Factory lead", member: noor, notApplicable: false },
       { role: "buyer", label: "Buyer", member: otherSara, notApplicable: false },
     ];
-    render(<DesignSystemProvider locale="en-US"><DealFileInsight insight={{ ...insight, team }} /></DesignSystemProvider>);
+    wrap(<DealTeam insight={{ ...insight, team }} />);
     const rows = within(screen.getByRole("list", { name: "Team" })).getAllByRole("listitem");
     expect(rows).toHaveLength(3);
     expect(within(rows[0]).getByText("Sara")).toBeInTheDocument();
@@ -55,12 +87,6 @@ describe("Deal File insight (PLM-066 / PLM-102 / PLM-123)", () => {
     expect(within(rows[2]).getByText("Sara")).toBeInTheDocument();
     expect(within(rows[2]).getByText("Buyer")).toBeInTheDocument();
     expect(screen.getByText("Not applicable: QS")).toBeInTheDocument();
-  });
-
-  it("says the deal is closed once the records show it", () => {
-    render(<DesignSystemProvider locale="en-US"><DealFileInsight insight={{ ...insight, risks: [], closing: { ...insight.closing, closed: true, closedAt: "2026-11-02T10:00:00.000Z", checks: [{ key: "delivered", done: true, at: "2026-11-02T10:00:00.000Z" }] } }} /></DesignSystemProvider>);
-    expect(screen.getByText(/^Deal closed · /)).toBeInTheDocument();
-    expect(screen.getByText("Nothing missing on this Deal File.")).toBeInTheDocument();
   });
 
   it("lists the approval steps: who decided, for whom, and who holds the current one (E3)", () => {
@@ -74,9 +100,11 @@ describe("Deal File insight (PLM-066 / PLM-102 / PLM-123)", () => {
         { position: 3, label: "Owner", approverKind: "role" as const, state: "current" as const, decidedBy: null, onBehalfOf: null, via: null, decidedAt: null, note: null },
       ],
     };
-    render(<DesignSystemProvider locale="en-US"><DealApprovalSteps approval={approval} /></DesignSystemProvider>);
-    const steps = screen.getByRole("list", { name: "Approval steps" });
-    expect(within(steps).getByText(/Cover · for Fatima · as cover/)).toBeInTheDocument();
-    expect(within(steps).getByText("Waiting for Omar")).toBeInTheDocument();
+    wrap(<DealApprovalSteps approval={approval} />);
+    const steps = within(screen.getByRole("list", { name: "Approval steps" })).getAllByRole("listitem");
+    expect(steps[0]).toHaveAttribute("data-state", "done");
+    expect(within(steps[0]).getByText(/Cover · for Fatima · as cover/)).toBeInTheDocument();
+    expect(steps[2]).toHaveAttribute("aria-current", "step");
+    expect(within(steps[2]).getByText("Waiting for Omar")).toBeInTheDocument();
   });
 });

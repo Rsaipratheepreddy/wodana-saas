@@ -15273,5 +15273,14 @@
   "Minimum deposit as": "Minimum deposit as",
   "% of the design fee": "% of the design fee",
   "Between 0 and 100%": "Between 0 and 100%",
-  "Design complete": "Design complete"
+  "Design complete": "Design complete",
+  "{done} of {total} tasks": "{done} of {total} tasks",
+  "Owner checklist": "Owner checklist",
+  "Submit Deal File": "Submit Deal File",
+  "Deal File approved": "Deal File approved",
+  "Deal File summary": "Deal File summary",
+  "{count} missing": "{count} missing",
+  "Not verified": "Not verified",
+  "{count} people": "{count} people",
+  "{paid} of {agreed} paid": "{paid} of {agreed} paid"
 }

@@ -1,4 +1,4 @@
-/* Project Overview on the record anatomy (§5c D.7): the strip, the stages bar, the next step, what needs attention, site updates and activity. */
+/* Project Overview on the record anatomy (§5c D.7): the KPI tiles, the next step, what needs attention, the stages, site updates and activity. */
 .overview { min-inline-size: 0; }
 .muted { color: var(--wd-color-text-tertiary); }
 .late { color: var(--wd-color-danger); }
@@ -17,16 +17,6 @@
 /* The roles nobody holds, once, with the way to name someone. */
 .unnamed { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-1) var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
-/* The stages bar: one segment per stage (done, now, on hold, late, skipped, to come); the full list folds out under it. */
-.stages { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
-.stageBar { display: flex; align-items: center; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
-.stageBar > li { flex: 1 1 0; min-inline-size: 0; padding-block: var(--wd-space-1); }
-.stageBar > li > span { display: block; block-size: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); background: var(--wd-color-border); }
-.stageBar > li[data-state="done"] > span { background: var(--wd-color-success); }
-.stageBar > li[data-state="current"] > span { block-size: var(--wd-space-2); background: var(--wd-color-action-primary); }
-.stageBar > li[data-state="blocked"] > span { block-size: var(--wd-space-2); background: var(--wd-color-warning); }
-.stageBar > li[data-state="skipped"] > span { background: transparent; box-shadow: inset 0 0 0 1px var(--wd-color-border); }
-.stageBar > li[data-late] > span { background: var(--wd-color-danger); }
 
 /* Needs attention: one compact row each, most severe first; the count (or a dot) in the row's tone, the first records, the way to fix it. */
 .attention { container-type: inline-size; display: grid; margin: 0; padding: 0; list-style: none; }
