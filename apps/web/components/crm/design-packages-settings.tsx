@@ -207,8 +207,8 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
           checklistScopes(flow.siteVisitQuestions, flow.siteVisitScopes ?? []).map((current) => scopeKey(current.scope) === scopeKey(entry.scope) ? { ...current, ...patch } : current));
         return <SettingsRow key={scopeKey(entry.scope)} align="start" label={entry.scope} hint={t("{count} questions", { count })}>
           <div className={styles.checklist}>
-            <TagsField label={t("Applies to rooms or items named")} values={entry.match} isReadOnly={!canManage || Boolean(entry.everyJob)} placeholder={t("e.g. wardrobe, walk-in")}
-              onChange={(match) => set({ match: match.slice(0, 20).map((word) => word.slice(0, 40)) })} />
+            {entry.everyJob ? null : <TagsField label={t("Applies to rooms or items named")} values={entry.match} isReadOnly={!canManage} placeholder={t("e.g. wardrobe, walk-in")}
+              onChange={(match) => set({ match: match.slice(0, 20).map((word) => word.slice(0, 40)) })} />}
             <Switch isSelected={Boolean(entry.everyJob)} isDisabled={!canManage} onChange={(everyJob) => set({ everyJob })}>{t("Every job")}</Switch>
           </div>
         </SettingsRow>;

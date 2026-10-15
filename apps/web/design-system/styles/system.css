@@ -1330,10 +1330,12 @@ th:last-child .wd-resizer { inset-inline-end: 0; }
 .wd-settings-page-header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); min-block-size: var(--wd-space-8); }
 .wd-root .wd-settings-page-header h1, .wd-settings-page-header h1 { margin: 0; font-family: var(--wd-font-sans); font-size: var(--wd-text-lg); line-height: 1.3; font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-transform: none; }
 .wd-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
-.wd-settings-section { display: grid; gap: var(--wd-space-1); }
+.wd-settings-section { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
 .wd-settings-section > header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .wd-root .wd-settings-section h2, .wd-settings-section h2 { margin: 0; color: var(--wd-color-text); font-family: var(--wd-font-sans); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); letter-spacing: 0; text-transform: none; }
-.wd-settings-rows { display: grid; }
+.wd-settings-rows { display: grid; min-inline-size: 0; }
+/* A wide table in a section scrolls inside its own viewport instead of pushing the section (and its header action) past the page. */
+.wd-settings-rows > * { min-inline-size: 0; max-inline-size: 100%; }
 .wd-settings-row { display: grid; grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr); align-items: center; gap: var(--wd-space-2) var(--wd-space-6); min-block-size: var(--wd-space-12); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .wd-settings-row:last-child { border-block-end: 0; }
 .wd-settings-row[data-align="start"] { align-items: start; }
