@@ -339,8 +339,9 @@
     "closingAfterHours": 3
   },
   "sales": {
-    "_note": "PLM-155: timeline questions go to the design team and Production.",
-    "timelineCheckTeams": ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"]
+    "_note": "PLM-155: timeline questions go to the design team and Production. New enquiries and chats go round-robin, not to the lightest load.",
+    "timelineCheckTeams": ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"],
+    "assignmentMode": "round_robin"
   },
   "enquiryRequirements": [
     { "_note": "PLM-096 / PLM-155: location and the client's target completion before the Intro (plot size and floor plan are already required to book it).", "field": "area", "requiredAt": "book_intro" },

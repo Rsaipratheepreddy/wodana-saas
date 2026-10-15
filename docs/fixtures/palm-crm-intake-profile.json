@@ -254,6 +254,7 @@
     "queue": {
       "code": "sales",
       "name": "Sales and account managers",
+      "assignmentMode": "round_robin",
       "takeoverAfterMinutes": 60,
       "takeoverSchedule": {
         "version": 1,

@@ -136,6 +136,8 @@ export type CrmQueue = {
   businessUnitId: string | null;
   isFallback: boolean;
   takeoverAfterMinutes?: number | null;
+  /** How the queue shares new enquiries: the lightest workload first (balanced) or each person in turn (round_robin). */
+  assignmentMode?: "balanced" | "round_robin";
   roundRobinCursor: string | null;
   version: number;
   members: CrmQueueMember[];

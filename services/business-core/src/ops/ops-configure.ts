@@ -8,7 +8,8 @@ import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
 import { CrmEnquiryTypesService } from "../crm/flows/crm-enquiry-types.service";
 import { UpdateEnquiryTypeDto } from "../crm/flows/dto/enquiry-type.dto";
 import { CrmLeadsService } from "../crm/leads/crm-leads.service";
-import { CreateSlaPolicyDto, UpdateSlaPolicyDto } from "../crm/leads/dto/leads.dto";
+import { CreateSlaPolicyDto, UpdateQueueDto, UpdateSlaPolicyDto } from "../crm/leads/dto/leads.dto";
+import type { QueueAssignmentMode } from "../crm/leads/round-robin";
 import { normalizeSlaSchedule, SLA_DAY_KEYS } from "../crm/leads/sla-schedule";
 import { CrmSettingsService } from "../crm/settings/crm-settings.service";
 import { EnquiryFieldsService } from "../crm/settings/enquiry-fields.service";
@@ -843,6 +844,7 @@ const inbox: Section = async (ctx, profile, step) => {
 
 const sales: Section = async (ctx, profile, step) => {
   const wanted = profile.sales!;
+  if (wanted.assignmentMode) await queueAssignment(ctx, wanted.assignmentMode, step);
   if (!wanted.timelineCheckTeams) return;
   const teams = await ctx.get(WorkspacesService).listTeams(ctx.actor, ctx.workspace.id) as Array<{ code: string; status: string }>;
   const key = (code: string) => lower(code).replace(/^team_/, "");
@@ -858,6 +860,22 @@ const sales: Section = async (ctx, profile, step) => {
     return leads.updateSalesSettings(ctx.actor, ctx.workspace.id, { version: fresh.version, timelineCheckRoles: next });
   });
 };
+
+/** How every active Sales queue shares new enquiries and chats; each queue is saved through its own command. */
+async function queueAssignment(ctx: OpsContext, mode: QueueAssignmentMode, step: Step) {
+  const leads = ctx.get(CrmLeadsService);
+  type Queue = { id: string; code: string; status: string; assignmentMode?: string; version: number };
+  const queues = (await leads.listQueues(ctx.actor, ctx.workspace.id) as Queue[]).filter((queue) => queue.status === "active");
+  if (!queues.length) { step.missing("sales queue", "no active queue to set how enquiries are shared"); return; }
+  for (const queue of queues) {
+    const now = queue.assignmentMode ?? "balanced";
+    if (now === mode) { step.same(`queue ${queue.code} shares enquiries`, mode); continue; }
+    await step.change([diff(`queue ${queue.code} shares enquiries`, now, mode)], async () => {
+      const fresh = (await leads.listQueues(ctx.actor, ctx.workspace.id) as Queue[]).find((row) => row.id === queue.id)!;
+      return leads.updateQueue(ctx.actor, ctx.workspace.id, queue.id, await ctx.validated(UpdateQueueDto, { version: fresh.version, assignmentMode: mode }));
+    });
+  }
+}
 
 // ---------- enquiry requirements (PLM-096, PLM-155) ----------
 

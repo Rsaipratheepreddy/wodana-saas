@@ -1,4 +1,5 @@
 import { FURNITURE_PATHS } from "../crm/opportunities/flow-gates";
+import { QUEUE_ASSIGNMENT_MODES, type QueueAssignmentMode } from "../crm/leads/round-robin";
 import { checkDesignPackage } from "../design/design-packages.domain";
 import {
   MAX_CHECKLIST_SCOPES, MAX_SITE_QUESTIONS, normaliseChecklistScopes, normaliseSiteQuestions, scopeKey, type ChecklistScope, type SiteQuestion,
@@ -98,8 +99,11 @@ export type Profile = {
    * reply before "Closing the chat" is offered.
    */
   inbox?: { closingMessages?: { received?: string | null; form?: string | null; closing?: string | null }; closingFormUrl?: string | null; closingAfterHours?: number };
-  /** Sales (PLM-155): the teams (by code) whose people answer timeline questions on an opportunity. */
-  sales?: { timelineCheckTeams?: string[] };
+  /**
+   * Sales: the teams (by code) whose people answer timeline questions on an opportunity (PLM-155), and how every active
+   * Sales queue shares new enquiries and chats (balanced: the lightest load first; round_robin: strict turns).
+   */
+  sales?: { timelineCheckTeams?: string[]; assignmentMode?: QueueAssignmentMode };
   /**
    * Enquiry fields required from a gate (PLM-096, PLM-155), for every enquiry type unless some are named. A field already
    * required from an earlier gate stays so (the profile never loosens a rule).
@@ -588,11 +592,15 @@ export function validateProfile(raw: unknown): Profile {
   }
 
   if (raw.sales !== undefined) {
-    const section = at("sales").object(raw.sales, ["timelineCheckTeams"]);
+    const section = at("sales").object(raw.sales, ["timelineCheckTeams", "assignmentMode"]);
     if (section) {
       const teams = optional(section, "timelineCheckTeams", (value) => at("sales.timelineCheckTeams").texts(value, 64));
       if (teams?.some((code) => !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(code))) problems.push("sales.timelineCheckTeams are team codes like INTERIOR_DESIGN.");
-      profile.sales = teams === undefined ? {} : { timelineCheckTeams: teams };
+      const assignmentMode = optional(section, "assignmentMode", (value) => at("sales.assignmentMode").oneOf(value, QUEUE_ASSIGNMENT_MODES));
+      profile.sales = {
+        ...(teams === undefined ? {} : { timelineCheckTeams: teams }),
+        ...(assignmentMode === undefined ? {} : { assignmentMode }),
+      };
     }
   }
 

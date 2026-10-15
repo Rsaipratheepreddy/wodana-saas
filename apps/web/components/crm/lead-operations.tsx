@@ -126,12 +126,15 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
           {queues.length ? <div className={assignmentStyles.queue}><SelectField label={t("Queue")} selectedKey={queue?.id ?? null} onSelectionChange={(key) => setQueueId(String(key))} items={queueOptions} /></div> : null}
           <Button size="compact" isDisabled={!queue || addingDefaults} isLoading={addingDefaults} onPress={async () => { if (!queue || addingDefaults) return; setAddingDefaults(true); setFailure(''); setNotice(''); try { const result = await crmRequest<{added:number}>(workspaceId, `queues/${queue.id}/default-managers`, 'POST', {}); await refresh(); setNotice(result.added ? t("{count} default sales owners added.", { count: result.added }) : t("Default sales owners are already included.")); } catch(error) { setFailure((error as Error).message); } finally { setAddingDefaults(false); } }}>{t("Add default sales owners")}</Button>
           <Button size="compact" isDisabled={!queue} onPress={() => queue && setAction({
-            title: t("Unanswered lead handoff"), path: `queues/${queue.id}`, method: "PATCH",
-            initial: { version: queue.version, takeoverAfterMinutes: queue.takeoverAfterMinutes },
-            fields: [{ key: "takeoverAfterMinutes", label: t("Working minutes before another sales owner takes over"), type: "number", min: 1, max: 10080 }],
-            transform: (values) => ({ version: values.version, takeoverAfterMinutes: values.takeoverAfterMinutes ?? null }),
-            submit: t("Save handoff"),
-          })}>{t("Lead handoff")}</Button>
+            title: t("Queue settings"), path: `queues/${queue.id}`, method: "PATCH",
+            initial: { version: queue.version, assignmentMode: queue.assignmentMode ?? "balanced", takeoverAfterMinutes: queue.takeoverAfterMinutes },
+            fields: [
+              { key: "assignmentMode", label: t("New enquiries go to"), required: true,
+                options: [{ id: "balanced", label: t("The lightest workload") }, { id: "round_robin", label: t("Each sales owner in turn") }] },
+              { key: "takeoverAfterMinutes", label: t("Working minutes before another sales owner takes over"), type: "number", min: 1, max: 10080 },
+            ],
+            transform: (values) => ({ version: values.version, assignmentMode: values.assignmentMode, takeoverAfterMinutes: values.takeoverAfterMinutes ?? null }),
+          })}>{t("Queue settings")}</Button>
           {initialData.canManageSales && salesSettings ? <Button size="compact" onPress={() => setAction({
             // S-1, S-2, S-3, S-10: when a manager is told, and who the Sales admin is.
             title: t("Escalation"), path: "sales-settings", method: "PATCH", submit: t("Save escalation"),
