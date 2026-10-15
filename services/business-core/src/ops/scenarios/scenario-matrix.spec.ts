@@ -90,6 +90,8 @@ describe("demo scenario regions", () => {
     expect(fictitiousMobile("AE", 3)).not.toBe(fictitiousMobile("AE", 4));
     const people = new Set(Array.from({ length: 60 }, (_, n) => regionPerson(regionFixture("IN"), n, "IN").email));
     expect(people.size).toBe(60);
+    // Every region's people are distinct by name too, the international ones included (each last name is used).
+    for (const code of ["AE", "IN", "SG"]) expect(new Set(Array.from({ length: 100 }, (_, n) => regionPerson(regionFixture(code), n, code).displayName)).size).toBe(100);
   });
 
   it("scales money exactly into the region's currency", () => {

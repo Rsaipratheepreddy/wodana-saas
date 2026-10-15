@@ -46,6 +46,8 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { HandoverService } from "../site/handover.service";
 import { SiteService } from "../site/site.service";
 import { seedShowcaseInbox } from "./showcase-inbox";
+import { showcaseCast, type ShowcaseCast, type ShowcaseCastMember } from "./showcase-cast";
+import { scaleAmount, workspaceRegionCode } from "../ops/scenarios/scenario-regions";
 import { WarrantyService } from "../site/warranty.service";
 import { CatalogV2Service } from "../catalog-core/catalog-v2.service";
 import { priceShowcaseItems, type ShowcasePriceLine } from "./showcase-prices";
@@ -219,18 +221,22 @@ const TERMS_50_40_10: Term[] = [
 ];
 
 const DEMO_CODE = "123456";
-// A fictional client at a reserved test domain: no firm's name, whichever workspace the showcase is made in.
-const DEMO_CLIENT = { displayName: "Dana Demo", email: "demo.client@example.test", mobile: "+971501234567", demoCode: DEMO_CODE };
+/** A cast member as a story's client (every client signs in to the portal with the demo code). */
+const storyClient = (person: ShowcaseCastMember) => ({ displayName: person.displayName, email: person.email, mobile: person.mobile, demoCode: DEMO_CODE });
 
 const joineryMaterials = [
   { name: "Oak veneer, natural", code: "OAK-NAT", specification: "Crown cut, matt lacquer, 0.6 mm on 18 mm MDF", quantity: "14", unit: "sheet" },
   { name: "Soft-close hinges and drawer runners", code: "HW-SC", specification: "Concealed 110° hinges; full-extension runners", quantity: "24", unit: "nos" },
 ];
 
-const SCENARIOS: Scenario[] = [
+/**
+ * The showcase's stories, told with the workspace's cast (showcase-cast.ts). The first client is fictional at a
+ * reserved test domain: no firm's name, whichever workspace the showcase is made in.
+ */
+const showcaseScenarios = ({ people: { demo, reem, haddad, faris, sofia } }: ShowcaseCast): Scenario[] => [
   {
-    key: "villa-12", ns: "", reference: "SHOWCASE-VILLA-12", client: DEMO_CLIENT, owner: "sales",
-    title: "Demo Client (Villa 12)", area: "Dubai Hills", emirate: "dubai", daysAgo: 56, amount: 118_000,
+    key: "villa-12", ns: "", reference: "SHOWCASE-VILLA-12", client: storyClient(demo), owner: "sales",
+    title: "Demo Client (Villa 12)", area: demo.area, emirate: demo.region, daysAgo: 56, amount: 118_000,
     summary: "Demonstration enquiry: a four-bedroom villa; living room, dining room and master bedroom with a fitted media wall made in the factory. All records are a demonstration, not a real client.",
     pick: { source: 0, channel: 0, type: /interior|fit.?out|full/i },
     rooms: ["Living room", "Dining room", "Master bedroom"],
@@ -283,8 +289,8 @@ const SCENARIOS: Scenario[] = [
   },
   {
     key: "marina-1804", ns: "marina-1804:", reference: "SHOWCASE-MARINA-1804", owner: "sales",
-    client: { displayName: "Reem Al Marzouqi", email: "reem.marzouqi@example.test", mobile: "+971502000002", demoCode: DEMO_CODE },
-    title: "Marina Apartment 1804", area: "Dubai Marina", emirate: "dubai", daysAgo: 42, amount: 86_000,
+    client: storyClient(reem),
+    title: `${reem.short} Apartment 1804`, area: reem.area, emirate: reem.region, daysAgo: 42, amount: 86_000,
     summary: "Two-bedroom apartment on the 18th floor: open-plan living and dining with a fitted TV wall, a walk-in wardrobe and new lighting throughout. Fictional client for the showcase.",
     pick: { source: 1, channel: 0, type: /interior|fit.?out|full/i },
     rooms: ["Living and dining", "Master bedroom", "Guest bedroom"],
@@ -350,8 +356,8 @@ const SCENARIOS: Scenario[] = [
   },
   {
     key: "ranches-7", ns: "ranches-7:", reference: "SHOWCASE-RANCHES-7", owner: "salesAdmin",
-    client: { displayName: "Omar and Layla Haddad", email: "haddad.family@example.test", mobile: "+971553000003", demoCode: DEMO_CODE },
-    title: "Arabian Ranches Townhouse 7", area: "Arabian Ranches", emirate: "dubai", daysAgo: 35, amount: 74_000,
+    client: storyClient(haddad),
+    title: `${haddad.area} Townhouse 7`, area: haddad.area, emirate: haddad.region, daysAgo: 35, amount: 74_000,
     summary: "Townhouse refresh: new kitchen base cabinets, a study with fitted shelving, flooring and paint on the ground floor. Fictional client for the showcase.",
     pick: { source: 2, channel: 1, type: /interior|fit.?out|full/i },
     rooms: ["Kitchen", "Study", "Family room"],
@@ -423,9 +429,9 @@ const SCENARIOS: Scenario[] = [
   },
   {
     key: "jlt-office", ns: "jlt-office:", reference: "SHOWCASE-JLT-OFFICE", owner: "salesAdmin",
-    client: { displayName: "Faris Khoury", email: "faris.khoury@example.test", mobile: "+971524000004", demoCode: DEMO_CODE },
-    approvers: [{ ...DEMO_CLIENT, decides: true }],
-    title: "JLT Office Fit-out", area: "Jumeirah Lake Towers", emirate: "dubai", daysAgo: 14, amount: 92_000,
+    client: storyClient(faris),
+    approvers: [{ ...storyClient(demo), decides: true }],
+    title: `${faris.short} Office Fit-out`, area: faris.area, emirate: faris.region, daysAgo: 14, amount: 92_000,
     summary: "A 180 sqm office on the 21st floor: reception desk, meeting room joinery, open-plan workstations and acoustic ceiling. Fictional client for the showcase.",
     pick: { source: 3, channel: 0, type: /commercial|office|fit.?out|interior/i },
     rooms: ["Reception", "Meeting room", "Open plan"],
@@ -458,8 +464,8 @@ const SCENARIOS: Scenario[] = [
   },
   {
     key: "penthouse", ns: "penthouse:", reference: "SHOWCASE-EH-PENTHOUSE", owner: "sales",
-    client: { displayName: "Sofia Bennett", email: "sofia.bennett@example.test", mobile: "+971565000005", demoCode: DEMO_CODE },
-    title: "Emirates Hills Penthouse", area: "Emirates Hills", emirate: "dubai", daysAgo: 9, amount: 240_000,
+    client: storyClient(sofia),
+    title: `${sofia.area} Penthouse`, area: sofia.area, emirate: sofia.region, daysAgo: 9, amount: 240_000,
     summary: "Penthouse living floor: a formal lounge, a dining room for twelve and a bar; marble, brass and bespoke joinery throughout. Fictional client for the showcase.",
     pick: { source: 4, channel: 1, type: /interior|fit.?out|full/i },
     rooms: ["Formal lounge", "Dining room", "Bar"],
@@ -488,24 +494,25 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
+type Enquiry = { key: string; displayName: string; email: string; mobile: string; title: string; summary: string; area: string; emirate: string; owner: "sales" | "salesAdmin"; daysAgo: number;
+  pick: { source: number; channel: number }; amount: number; outcome: null | "new" | { channel: "call" | "whatsapp" | "email"; outcome: "no_answer" | "willing_to_talk" | "message_sent_no_reply" | "not_interested"; note: string; reason?: string; followUp?: { days: number; hour: number } } | "qualified" };
+/** A cast member as an enquiry's client and place. */
+const enquirer = (person: ShowcaseCastMember) => ({ displayName: person.displayName, email: person.email, mobile: person.mobile, area: person.area, emirate: person.region });
+
 /** Six raw enquiries across the pipeline: new, contacted (follow-ups due today and overdue), qualified, lost. */
-const ENQUIRIES: Array<{ key: string; displayName: string; email: string; mobile: string; title: string; summary: string; area: string; owner: "sales" | "salesAdmin"; daysAgo: number;
-  pick: { source: number; channel: number }; amount: number; outcome: null | "new" | { channel: "call" | "whatsapp" | "email"; outcome: "no_answer" | "willing_to_talk" | "message_sent_no_reply" | "not_interested"; note: string; reason?: string; followUp?: { days: number; hour: number } } | "qualified" }> = [
-  { key: "enq-1", displayName: "Hessa Al Suwaidi", email: "hessa.suwaidi@example.test", mobile: "+971506000011", title: "Al Barari villa · majlis and dining", summary: "Wants a new majlis and dining room before Ramadan.", area: "Al Barari", owner: "sales", daysAgo: 0, pick: { source: 0, channel: 1 }, amount: 150_000, outcome: "new" },
-  { key: "enq-2", displayName: "Daniel Okafor", email: "daniel.okafor@example.test", mobile: "+971506000012", title: "Downtown apartment · living room refresh", summary: "Sofa, rug, lighting and curtains for a one-bedroom apartment.", area: "Downtown Dubai", owner: "salesAdmin", daysAgo: 1, pick: { source: 1, channel: 0 }, amount: 28_000, outcome: "new" },
-  { key: "enq-3", displayName: "Mariam Haddad", email: "mariam.haddad@example.test", mobile: "+971506000013", title: "Mirdif townhouse · kitchen", summary: "Replace the kitchen cabinets and worktop.", area: "Mirdif", owner: "sales", daysAgo: 3, pick: { source: 2, channel: 0 }, amount: 45_000,
+const showcaseEnquiries = ({ people: { hessa, daniel, mariam, yusuf, aisha, nikolai, noura }, formalRoom, season }: ShowcaseCast): Enquiry[] => [
+  { key: "enq-1", ...enquirer(hessa), title: `${hessa.short} villa · ${formalRoom} and dining`, summary: `Wants a new ${formalRoom} and dining room before ${season}.`, owner: "sales", daysAgo: 0, pick: { source: 0, channel: 1 }, amount: 150_000, outcome: "new" },
+  { key: "enq-2", ...enquirer(daniel), title: `${daniel.short} apartment · living room refresh`, summary: "Sofa, rug, lighting and curtains for a one-bedroom apartment.", owner: "salesAdmin", daysAgo: 1, pick: { source: 1, channel: 0 }, amount: 28_000, outcome: "new" },
+  { key: "enq-3", ...enquirer(mariam), title: `${mariam.short} townhouse · kitchen`, summary: "Replace the kitchen cabinets and worktop.", owner: "sales", daysAgo: 3, pick: { source: 2, channel: 0 }, amount: 45_000,
     outcome: { channel: "call", outcome: "no_answer", note: "Called twice; left a voicemail and a WhatsApp message.", followUp: { days: 0, hour: 16 } } },
-  { key: "enq-4", displayName: "Yusuf Rahman", email: "yusuf.rahman@example.test", mobile: "+971506000014", title: "Business Bay office · reception and boardroom", summary: "Reception desk, boardroom table and acoustic panels.", area: "Business Bay", owner: "salesAdmin", daysAgo: 6, pick: { source: 3, channel: 1 }, amount: 110_000, outcome: "qualified" },
-  { key: "enq-5", displayName: "Aisha Karim", email: "aisha.karim@example.test", mobile: "+971506000015", title: "Jumeirah villa · master suite", summary: "Bedroom joinery, dressing room and bathroom vanity.", area: "Jumeirah", owner: "sales", daysAgo: 8, pick: { source: 4, channel: 0 }, amount: 95_000,
+  { key: "enq-4", ...enquirer(yusuf), title: `${yusuf.short} office · reception and boardroom`, summary: "Reception desk, boardroom table and acoustic panels.", owner: "salesAdmin", daysAgo: 6, pick: { source: 3, channel: 1 }, amount: 110_000, outcome: "qualified" },
+  { key: "enq-5", ...enquirer(aisha), title: `${aisha.short} villa · master suite`, summary: "Bedroom joinery, dressing room and bathroom vanity.", owner: "sales", daysAgo: 8, pick: { source: 4, channel: 0 }, amount: 95_000,
     outcome: { channel: "whatsapp", outcome: "willing_to_talk", note: "Interested; asked for a showroom visit next week.", followUp: { days: 0, hour: 11 } } },
-  { key: "enq-6", displayName: "Nikolai Petrov", email: "nikolai.petrov@example.test", mobile: "+971506000016", title: "Palm Jumeirah apartment · full fit-out", summary: "Full fit-out of a three-bedroom apartment.", area: "Palm Jumeirah", owner: "salesAdmin", daysAgo: 12, pick: { source: 0, channel: 0 }, amount: 210_000,
+  { key: "enq-6", ...enquirer(nikolai), title: `${nikolai.short} apartment · full fit-out`, summary: "Full fit-out of a three-bedroom apartment.", owner: "salesAdmin", daysAgo: 12, pick: { source: 0, channel: 0 }, amount: 210_000,
     outcome: { channel: "call", outcome: "not_interested", note: "Chose another studio after comparing proposals.", reason: "Went with another studio (price)." } },
-  { key: "enq-8", displayName: "Noura Sabbagh", email: "noura.sabbagh@example.test", mobile: "+971506000017", title: "Motor City townhouse · study and guest room", summary: "Study desk, shelving and a guest bed.", area: "Motor City", owner: "sales", daysAgo: 7, pick: { source: 1, channel: 1 }, amount: 32_000,
+  { key: "enq-8", ...enquirer(noura), title: `${noura.short} townhouse · study and guest room`, summary: "Study desk, shelving and a guest bed.", owner: "sales", daysAgo: 7, pick: { source: 1, channel: 1 }, amount: 32_000,
     outcome: { channel: "email", outcome: "message_sent_no_reply", note: "Sent the brochure and price guide; no reply yet.", followUp: { days: -3, hour: 10 } } },
 ];
-
-/** The first scenario's constants, kept for callers that read them. */
-export const SHOWCASE = { reference: SCENARIOS[0].reference, client: DEMO_CLIENT, title: SCENARIOS[0].title, summary: SCENARIOS[0].summary, area: SCENARIOS[0].area, rooms: SCENARIOS[0].rooms };
 
 const TEAM_ROLES: Record<string, ShowcaseRole> = {
   SALES: "sales", SALES_ADMIN: "salesAdmin", SHOWROOM: "sales", INTERIOR_DESIGN: "designer", QS: "estimator", FINANCE: "finance", PROCUREMENT: "buyer",
@@ -516,14 +523,14 @@ const STOPS: Stop[] = ["enquiry", "qualified", "planning", "quotation_draft", "q
   "deal_finance", "deal_approval", "accepted", "project", "site", "handover"];
 
 /** What each role is doing this week on the running projects: one task due today, one overdue, one coming up. */
-const HOME_TASKS: Array<{ role: ShowcaseRole; project: string; key: string; title: string; due: number; location: "site" | "factory" | "office" }> = [
-  { role: "owner", project: "marina-1804", key: "owner-1", title: "Sign off the Marina delivery plan", due: 0, location: "office" },
+const homeTasks = ({ people: { reem, haddad } }: ShowcaseCast): Array<{ role: ShowcaseRole; project: string; key: string; title: string; due: number; location: "site" | "factory" | "office" }> => [
+  { role: "owner", project: "marina-1804", key: "owner-1", title: `Sign off the ${reem.short} delivery plan`, due: 0, location: "office" },
   { role: "owner", project: "ranches-7", key: "owner-2", title: "Approve the worktop replacement cost", due: -2, location: "office" },
-  { role: "owner", project: "ranches-7", key: "owner-3", title: "Handover walk-through with the Haddads", due: 4, location: "site" },
+  { role: "owner", project: "ranches-7", key: "owner-3", title: `Handover walk-through with ${haddad.called}`, due: 4, location: "site" },
   { role: "manager", project: "marina-1804", key: "manager-1", title: "Confirm the sofa delivery slot with the supplier", due: 0, location: "office" },
   { role: "manager", project: "ranches-7", key: "manager-2", title: "Chase the tiling crew's revised dates", due: -1, location: "office" },
-  { role: "manager", project: "marina-1804", key: "manager-3", title: "Weekly progress call with Reem", due: 3, location: "office" },
-  { role: "sales", project: "marina-1804", key: "sales-1", title: "Send the reading-light option to Reem", due: 0, location: "office" },
+  { role: "manager", project: "marina-1804", key: "manager-3", title: `Weekly progress call with ${reem.called}`, due: 3, location: "office" },
+  { role: "sales", project: "marina-1804", key: "sales-1", title: `Send the reading-light option to ${reem.called}`, due: 0, location: "office" },
   { role: "sales", project: "ranches-7", key: "sales-2", title: "Collect the signed variation for the study lighting", due: -3, location: "office" },
   { role: "sales", project: "marina-1804", key: "sales-3", title: "Book the styling visit", due: 5, location: "site" },
   { role: "salesAdmin", project: "marina-1804", key: "salesadmin-1", title: "Issue the delivery milestone invoice", due: 0, location: "office" },
@@ -553,17 +560,48 @@ const HOME_TASKS: Array<{ role: ShowcaseRole; project: string; key: string; titl
 ];
 
 /** Follow-ups that need the owner's and the manager's attention: due today, overdue, and coming up. */
-const FOLLOW_UPS: Array<{ role: "owner" | "manager" | "sales"; on: { scenario?: string; enquiry?: string }; key: string; type: "task" | "call" | "meeting"; title: string; due: number; hour: number; minutes?: number }> = [
+const followUpsFor = ({ people: { faris, yusuf, sofia, hessa, aisha }, formalRoom }: ShowcaseCast): Array<{ role: "owner" | "manager" | "sales"; on: { scenario?: string; enquiry?: string }; key: string;
+  type: "task" | "call" | "meeting"; title: string; due: number; hour: number; minutes?: number }> => [
   { role: "owner", on: { scenario: "penthouse" }, key: "owner-penthouse-margin", type: "task", title: "Review the Penthouse quotation margin before it goes out", due: 0, hour: 15 },
-  { role: "owner", on: { scenario: "jlt-office" }, key: "owner-jlt-call", type: "call", title: "Call Faris about the JLT decision", due: -2, hour: 11 },
-  { role: "owner", on: { enquiry: "enq-4" }, key: "owner-enq4-meeting", type: "meeting", title: "Meet Yusuf Rahman at the Business Bay office", due: 2, hour: 10, minutes: 60 },
-  { role: "manager", on: { scenario: "jlt-office" }, key: "manager-jlt-ceiling", type: "task", title: "Get the acoustic ceiling contractor's dates for JLT", due: 0, hour: 12 },
-  { role: "manager", on: { scenario: "penthouse" }, key: "manager-penthouse-visit", type: "call", title: "Book the Penthouse site visit with Sofia", due: -1, hour: 16 },
-  { role: "manager", on: { enquiry: "enq-1" }, key: "manager-enq1-brochure", type: "task", title: "Send Hessa the majlis brochure", due: 1, hour: 9 },
-  { role: "manager", on: { scenario: "penthouse" }, key: "manager-penthouse-site", type: "meeting", title: "Site visit at Emirates Hills with Sofia", due: 3, hour: 10, minutes: 90 },
-  { role: "sales", on: { enquiry: "enq-5" }, key: "sales-enq5-showroom", type: "meeting", title: "Showroom visit with Aisha Karim", due: 1, hour: 11, minutes: 60 },
-  { role: "sales", on: { scenario: "jlt-office" }, key: "sales-jlt-walkthrough", type: "meeting", title: "Walk the JLT office with Faris", due: 0, hour: 16, minutes: 60 },
+  { role: "owner", on: { scenario: "jlt-office" }, key: "owner-jlt-call", type: "call", title: `Call ${faris.called} about the ${faris.short} decision`, due: -2, hour: 11 },
+  { role: "owner", on: { enquiry: "enq-4" }, key: "owner-enq4-meeting", type: "meeting", title: `Meet ${yusuf.displayName} at the ${yusuf.short} office`, due: 2, hour: 10, minutes: 60 },
+  { role: "manager", on: { scenario: "jlt-office" }, key: "manager-jlt-ceiling", type: "task", title: `Get the acoustic ceiling contractor's dates for ${faris.short}`, due: 0, hour: 12 },
+  { role: "manager", on: { scenario: "penthouse" }, key: "manager-penthouse-visit", type: "call", title: `Book the Penthouse site visit with ${sofia.called}`, due: -1, hour: 16 },
+  { role: "manager", on: { enquiry: "enq-1" }, key: "manager-enq1-brochure", type: "task", title: `Send ${hessa.called} the ${formalRoom} brochure`, due: 1, hour: 9 },
+  { role: "manager", on: { scenario: "penthouse" }, key: "manager-penthouse-site", type: "meeting", title: `Site visit at ${sofia.area} with ${sofia.called}`, due: 3, hour: 10, minutes: 90 },
+  { role: "sales", on: { enquiry: "enq-5" }, key: "sales-enq5-showroom", type: "meeting", title: `Showroom visit with ${aisha.displayName}`, due: 1, hour: 11, minutes: 60 },
+  { role: "sales", on: { scenario: "jlt-office" }, key: "sales-jlt-walkthrough", type: "meeting", title: `Walk the ${faris.short} office with ${faris.called}`, due: 0, hour: 16, minutes: 60 },
 ];
+
+/**
+ * The showcase's money is written in the emirates' amounts (its base list). A region whose fixture scales prices gets
+ * every amount multiplied by its priceScale, exactly, as the demo scenarios' are (regionAmount); at scale 1 the
+ * amounts stay as written.
+ */
+export function showcaseMoney(cast: Pick<ShowcaseCast, "priceScale">) {
+  return (base: string | number) => cast.priceScale === 1 ? String(base) : scaleAmount(base, cast.priceScale);
+}
+
+/** A story with its money in the region's amounts: the deal, every quotation line and the lines written on its orders. */
+function storyInMoney(story: Scenario, money: (base: string | number) => string): Scenario {
+  return {
+    ...story, amount: Number(money(story.amount)),
+    lines: story.lines.map((line) => ({ ...line, unitCost: money(line.unitCost), rate: money(line.rate) })),
+    execution: { ...story.execution, orders: story.execution.orders.map((order) => Array.isArray(order.pick)
+      ? { ...order, pick: order.pick.map((line) => ({ ...line, unitPrice: money(line.unitPrice) })) } : order) },
+  };
+}
+
+/** The showcase's stories, enquiries and everyone's week, told with a workspace's cast in its money. */
+export function showcaseScript(cast: ShowcaseCast) {
+  const money = showcaseMoney(cast);
+  const scale = cast.priceScale !== 1;
+  return {
+    scenarios: showcaseScenarios(cast).map((story) => scale ? storyInMoney(story, money) : story),
+    enquiries: showcaseEnquiries(cast).map((enquiry) => scale ? { ...enquiry, amount: Number(money(enquiry.amount)) } : enquiry),
+    homeTasks: homeTasks(cast), followUps: followUpsFor(cast),
+  };
+}
 
 /** Client replies waiting in the inbox: WhatsApp messages from clients, as the provider delivers them. */
 const CLIENT_REPLIES: Array<{ scenario: string; key: string; text: string }> = [
@@ -639,6 +677,9 @@ export class ShowcaseSeed {
   protected slug = "";
   protected timezone = "UTC";
   protected currency = "";
+  /** The showcase's clients in the workspace's country, and the stories, enquiries and week told with them. */
+  protected cast!: ShowcaseCast;
+  protected script!: ReturnType<typeof showcaseScript>;
 
   constructor(protected readonly input: ShowcaseInput) {}
 
@@ -649,6 +690,8 @@ export class ShowcaseSeed {
   /** A moment `days` from the workspace's today at `hour` on its clock. */
   protected moment(days: number, hour: number) { return dateAt(days, hour, this.timezone); }
   protected get db() { return this.get(DatabaseService); }
+  /** An amount from the showcase's base list in the workspace's money (see showcaseMoney). */
+  protected money(base: string | number) { return showcaseMoney(this.cast)(base); }
 
   protected log(line: string) { (this.input.log ?? ((text: string) => process.stdout.write(`${text}\n`)))(line); }
   protected made(label: string) { this.result.created.push(label); this.input.report?.record?.("showcase", "created", label); this.log(`  created  ${label}`); }
@@ -682,6 +725,8 @@ export class ShowcaseSeed {
     if (!workspace) throw new Error("Workspace not found.");
     this.timezone = workspace.timezone;
     this.currency = workspace.currency;
+    this.cast = showcaseCast(await this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => workspaceRegionCode(client, this.w)));
+    this.script = showcaseScript(this.cast);
     // The client portal's own address (Settings → Client portal), which the client's side of the seed uses.
     const portal = (await this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => client.query<{ slug: string | null }>(
       `SELECT slug FROM client_portal_settings WHERE workspace_id = $1`, [this.w]))).rows[0];
@@ -821,7 +866,7 @@ export class ShowcaseSeed {
       }
       return this.result;
     }
-    for (const s of SCENARIOS) {
+    for (const s of this.script.scenarios) {
       if (only && !only.has(s.key)) continue;
       const ctx: Ctx = { s, rooms: new Map(), ids: {} };
       this.result.scenarios[s.key] = ctx.ids;
@@ -993,12 +1038,12 @@ export class ShowcaseSeed {
     const service = this.get(PriceRequestsService);
     const buyer = await this.as("buyer");
     const projectId = this.projectOf("marina-1804");
-    if (!projectId) throw new Skip("the Marina project isn't there");
+    if (!projectId) throw new Skip(`the ${this.cast.people.reem.short} project isn't there`);
     const usable = await this.suppliers();
     if (usable.length < 2) throw new Skip("two approved suppliers are needed");
     const requestId = this.id("operations:", "price-request:marina-lighting");
     const detail = async () => { try { return (await service.get(buyer, this.w, requestId)) as unknown as Any; } catch { return null; } };
-    let current = await this.step("price request · Marina niche lighting (2 suppliers)", detail, async () => {
+    let current = await this.step(`price request · ${this.cast.people.reem.short} niche lighting (2 suppliers)`, detail, async () => {
       await service.create(buyer, this.w, { id: requestId, vendorIds: [usable[1].id, usable[2 % usable.length].id].filter((id, index, all) => all.indexOf(id) === index), neededBy: this.day(10),
         notes: "Back-lit niches for the TV wall: LED profiles and drivers.",
         lines: [{ source: "free", projectId, description: "Aluminium LED profile with diffuser, 2 m", quantity: "8", unit: "nos" }, { source: "free", projectId, description: "24 V dimmable LED driver, 60 W", quantity: "4", unit: "nos" }] });
@@ -1013,7 +1058,7 @@ export class ShowcaseSeed {
         const fresh = (await detail())!;
         const version = (fresh.request ?? fresh).version;
         await service.command(buyer, this.w, requestId, { action: "record_reply", version, vendorId: supplier.vendorId, leadTimeDays: 7 + index * 5, validUntil: this.day(21), note: index ? "Ex stock, delivery included." : "Two weeks; drivers on order.",
-          prices: lines.map((line, at) => ({ lineId: line.id, unitPrice: String((at ? 95 : 48) + index * 6) })) });
+          prices: lines.map((line, at) => ({ lineId: line.id, unitPrice: this.money((at ? 95 : 48) + index * 6) })) });
       });
       current = (await detail())!;
     }
@@ -1039,7 +1084,7 @@ export class ShowcaseSeed {
     const list = async () => ((await returns.list(buyer, this.w)) as unknown as { returns?: Array<{ id: string }>; items?: Array<{ id: string }> });
     await this.step("return to the supplier · scratched tiles for credit", async () => { const all = await list(); return [...(all.returns ?? []), ...(all.items ?? [])].find((row) => row.id === returnId) ?? null; }, async () => {
       const receipt = (await receiving.receipt(buyer, this.w, receiptId).catch(() => null)) as unknown as { receipt: { orderId: string }; lines: Array<{ id: string; accepted: string; description?: string }> } | null;
-      if (!receipt) throw new Skip("the Ranches fit-out delivery isn't there");
+      if (!receipt) throw new Skip(`the ${this.cast.people.haddad.short} fit-out delivery isn't there`);
       const line = receipt.lines.find((row) => Number(row.accepted) >= 2) ?? receipt.lines.find((row) => Number(row.accepted) > 0);
       if (!line) throw new Skip("nothing accepted on the delivery to send back");
       await returns.create(buyer, this.w, { id: returnId, receiptId, outcome: "credit", note: "Two boxes scratched in transit.", lines: [{ receiptLineId: line.id, source: "accepted", quantity: "1", reasonKind: "damaged", reason: "Scratched in transit" }] });
@@ -1074,7 +1119,7 @@ export class ShowcaseSeed {
     for (const item of free) {
       const id = this.id("operations:", `stock:add:${item.key}`);
       const have = current.rows.find((row) => row.name === item.name && row.locationId === warehouse!.id && !row.projectId);
-      await this.advance(`free stock · ${item.name} ×${item.quantity}`, Boolean(have), () => inventory.command(actor, this.w, { id, action: "add", locationId: warehouse!.id, name: item.name, unit: item.unit, quantity: item.quantity, unitCost: item.unitCost, reason: item.reason, movedOn: this.day(-6) }));
+      await this.advance(`free stock · ${item.name} ×${item.quantity}`, Boolean(have), () => inventory.command(actor, this.w, { id, action: "add", locationId: warehouse!.id, name: item.name, unit: item.unit, quantity: item.quantity, unitCost: this.money(item.unitCost), reason: item.reason, movedOn: this.day(-6) }));
     }
     current = await state();
     const veneer = current.rows.find((row) => row.name === free[0].name && row.locationId === warehouse.id && !row.projectId);
@@ -1082,12 +1127,12 @@ export class ShowcaseSeed {
     const marina = this.projectOf("marina-1804"), ranches = this.projectOf("ranches-7");
     if (veneer && marina) {
       const reserved = current.rows.some((row) => row.itemId === veneer.itemId && row.locationId === warehouse!.id && row.projectId === marina);
-      await this.advance("stock reserved for Marina · 4 sheets of oak veneer", reserved, () => inventory.command(actor, this.w, { id: this.id("operations:", "stock:allocate:marina-veneer"), action: "allocate", locationId: warehouse!.id, itemId: veneer.itemId, projectId: null, forProjectId: marina, quantity: "4", reason: "Reserved for the TV wall shelves" }));
+      await this.advance(`stock reserved for ${this.cast.people.reem.short} · 4 sheets of oak veneer`, reserved, () => inventory.command(actor, this.w, { id: this.id("operations:", "stock:allocate:marina-veneer"), action: "allocate", locationId: warehouse!.id, itemId: veneer.itemId, projectId: null, forProjectId: marina, quantity: "4", reason: "Reserved for the TV wall shelves" }));
     }
     if (hinges && ranches) {
       const issued = this.id("operations:", "stock:issue:ranches-hinges");
       const known = (await this.db.tenantTransaction(this.w, actor.userId, (client) => client.query(`SELECT 1 FROM stock_commands WHERE workspace_id = $1 AND id = $2`, [this.w, issued]))).rowCount;
-      await this.advance("stock issued to the Ranches site · 24 hinges", Boolean(known), () => inventory.command(actor, this.w, { id: issued, action: "issue", locationId: warehouse!.id, itemId: hinges.itemId, projectId: null, forProjectId: ranches, quantity: "24", reason: "Kitchen cabinet doors", movedOn: this.day(-3) }));
+      await this.advance(`stock issued to the ${this.cast.people.haddad.short} site · 24 hinges`, Boolean(known), () => inventory.command(actor, this.w, { id: issued, action: "issue", locationId: warehouse!.id, itemId: hinges.itemId, projectId: null, forProjectId: ranches, quantity: "24", reason: "Kitchen cabinet doors", movedOn: this.day(-3) }));
     }
     const factory = current.locations.find((row) => row.kind === "factory");
     const mdf = current.rows.find((row) => row.name === free[2].name && row.locationId === warehouse.id && !row.projectId);
@@ -1095,7 +1140,7 @@ export class ShowcaseSeed {
       const transferId = this.id("operations:", "transfer:mdf-to-factory");
       const transfers = (await inventory.transfers(actor, this.w)) as unknown as { transfers?: Array<{ id: string }>; items?: Array<{ id: string }> };
       const known = [...(transfers.transfers ?? []), ...(transfers.items ?? [])].some((row) => row.id === transferId);
-      await this.advance("transfer on its way · 10 MDF sheets to the factory", known, () => inventory.send(actor, this.w, { id: transferId, fromLocationId: warehouse!.id, toLocationId: factory.id, note: "For the Marina wardrobe carcasses", sentOn: this.day(-1), lines: [{ itemId: mdf.itemId, projectId: null, quantity: "10" }] }));
+      await this.advance("transfer on its way · 10 MDF sheets to the factory", known, () => inventory.send(actor, this.w, { id: transferId, fromLocationId: warehouse!.id, toLocationId: factory.id, note: `For the ${this.cast.people.reem.short} wardrobe carcasses`, sentOn: this.day(-1), lines: [{ itemId: mdf.itemId, projectId: null, quantity: "10" }] }));
     } else this.skip("stock transfer", "no factory location or no MDF in the warehouse");
   }
 
@@ -1183,13 +1228,13 @@ export class ShowcaseSeed {
     const { PettyCashService } = await import("../petty-cash/petty-cash.service");
     const petty = this.get(PettyCashService);
     const projectId = this.projectOf("ranches-7");
-    if (!projectId) throw new Skip("the Ranches project isn't there");
+    if (!projectId) throw new Skip(`the ${this.cast.people.haddad.short} project isn't there`);
     const claimant = await this.as("site"), finance = await this.as("finance");
     const decider = await this.other(claimant, ["projectManager", "owner", "manager"]);
     const claims: Array<{ key: string; description: string; category: string; amount: string; daysAgo: number; to: "reimbursed" | "approved" | "submitted" }> = [
-      { key: "taxi", description: "Taxi to the stone supplier and back", category: "transport", amount: "60", daysAgo: 6, to: "reimbursed" },
-      { key: "fixings", description: "Screws, wall plugs and silicone from the hardware shop", category: "materials", amount: "85", daysAgo: 3, to: "approved" },
-      { key: "lunch", description: "Lunch for the crew on the long tiling day", category: "food", amount: "120", daysAgo: 1, to: "submitted" },
+      { key: "taxi", description: "Taxi to the stone supplier and back", category: "transport", amount: this.money("60"), daysAgo: 6, to: "reimbursed" },
+      { key: "fixings", description: "Screws, wall plugs and silicone from the hardware shop", category: "materials", amount: this.money("85"), daysAgo: 3, to: "approved" },
+      { key: "lunch", description: "Lunch for the crew on the long tiling day", category: "food", amount: this.money("120"), daysAgo: 1, to: "submitted" },
     ];
     for (const claim of claims) {
       const id = this.id("finance:", `petty:${claim.key}`);
@@ -1274,7 +1319,7 @@ export class ShowcaseSeed {
   /** The intake choices in the workspace's own words: sources, channels, enquiry types, areas. */
   protected async intakeOptions(actor: Actor) {
     const intake = this.get(CrmIntakeService);
-    return (await intake.options(actor, this.w)) as { sources: Array<{ id: string }>; channels: Record<string, Array<{ id: string }>>; enquiryTypes: Array<{ id: string }>; emirates: Array<{ id: string }>; customerTypes: Array<{ id: string }>; budgetRanges: Array<{ id: string }>; referralBrokers?: Array<{ id: string }>; referralPartners?: Array<{ id: string }> };
+    return (await intake.options(actor, this.w)) as { sources: Array<{ id: string }>; channels: Record<string, Array<{ id: string }>>; enquiryTypes: Array<{ id: string }>; emirates: Array<{ id: string; label?: string }>; customerTypes: Array<{ id: string }>; budgetRanges: Array<{ id: string }>; referralBrokers?: Array<{ id: string }>; referralPartners?: Array<{ id: string }> };
   }
 
   /**
@@ -1319,7 +1364,7 @@ export class ShowcaseSeed {
     const enquiryType = (facts.pick.type ? options.enquiryTypes.find((row) => facts.pick.type!.test(row.id)) : undefined)
       ?? options.enquiryTypes.find((row) => hasResolvedEnquiryType(row.id));
     if (!enquiryType) { this.skip(`enquiry type for ${facts.title}`, "the workspace has no specific enquiry type to choose"); return; }
-    const emirate = options.emirates.find((row) => row.id === (facts.emirate ?? "dubai")) ?? options.emirates[0];
+    const emirate = regionOption(options.emirates, facts.emirate);
     // The same picks as at creation: an enquiry from before the taxonomies may lack the client type and budget too.
     const customerType = options.customerTypes.find((row) => /end_user|homeowner|individual/i.test(row.id)) ?? options.customerTypes[0];
     const budgetRange = options.budgetRanges.at(-1) ?? options.budgetRanges[0];
@@ -1328,7 +1373,7 @@ export class ShowcaseSeed {
       await intake.updateDetails(actor, this.w, lead.id, await this.validated(UpdateLeadDetailsDto, {
         version: current.version, title: facts.title, summary: facts.summary, serviceType: enquiryType.id,
         party: { displayName: party.displayName, email: party.email, mobile: party.mobile },
-        details: { emirate: emirate?.id ?? "dubai", area: facts.area, targetCompletion: daysAgo(-120).toISOString().slice(0, 10),
+        details: { emirate: emirate?.id ?? (facts.emirate || undefined), area: facts.area, targetCompletion: daysAgo(-120).toISOString().slice(0, 10),
           ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
       }));
     });
@@ -1344,7 +1389,7 @@ export class ShowcaseSeed {
       if (!options.sources.length) throw new Skip("the workspace has no enquiry sources configured");
       const enquiryType = (facts.pick.type ? options.enquiryTypes.find((row) => facts.pick.type!.test(row.id)) : undefined)
         ?? options.enquiryTypes.find((row) => row.id !== "not_sure") ?? options.enquiryTypes[0];
-      const emirate = options.emirates.find((row) => row.id === (facts.emirate ?? "dubai")) ?? options.emirates[0];
+      const emirate = regionOption(options.emirates, facts.emirate);
       const customerType = options.customerTypes.find((row) => /end_user|homeowner|individual/i.test(row.id)) ?? options.customerTypes[0];
       const budgetRange = options.budgetRanges.at(-1) ?? options.budgetRanges[0];
       // The chosen source and channel; a source this person may not use (or a referral list that's empty) hands over to the next one.
@@ -1360,7 +1405,7 @@ export class ShowcaseSeed {
           party: { displayName: party.displayName, email: party.email, mobile: party.mobile },
           title: facts.title, summary: facts.summary, serviceType: enquiryType?.id ?? "not_sure",
           // PLM-155: the client's target completion (a firm can require it before the Intro), four months out.
-          details: { emirate: emirate?.id ?? "dubai", area: facts.area, targetCompletion: daysAgo(-120).toISOString().slice(0, 10),
+          details: { emirate: emirate?.id ?? (facts.emirate || undefined), area: facts.area, targetCompletion: daysAgo(-120).toISOString().slice(0, 10),
             ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
           assignment: owner.membershipId ? { mode: "manual", ownerMembershipId: owner.membershipId } : { mode: "unassigned" },
           ...(referral ? { referral } : {}),
@@ -2365,9 +2410,9 @@ export class ShowcaseSeed {
     if (!usable.length) throw new Skip("the supplier register has no approved supplier");
     type Need = { title: string; source: string; sourceId: string; projectId: string; remaining: string | null; blocked: string | null; unit: string };
     const needs = async () => ((await orders.needs(buyer, this.w)) as unknown as { needs: Need[] }).needs.filter((need) => need.projectId === projectId);
-    const price = (need: { title: string; source: string }) => need.source === "material"
+    const price = (need: { title: string; source: string }) => this.money(need.source === "material"
       ? (/veneer/i.test(need.title) ? "180" : /led/i.test(need.title) ? "95" : "12")
-      : (/floor|tile/i.test(need.title) ? "190" : /pendant/i.test(need.title) ? "950" : /sofa|bed|console/i.test(need.title) ? "8000" : /chair|worktop|sink/i.test(need.title) ? "400" : "45");
+      : (/floor|tile/i.test(need.title) ? "190" : /pendant/i.test(need.title) ? "950" : /sofa|bed|console/i.test(need.title) ? "8000" : /chair|worktop|sink/i.test(need.title) ? "400" : "45"));
     const tag = ctx.s.key.toUpperCase().replace(/[^A-Z0-9]+/g, "");
     let firstId = "";
     for (const [index, plan] of ctx.s.execution.orders.entries()) {
@@ -2796,7 +2841,7 @@ export class ShowcaseSeed {
     const actor = await this.actor(this.input.actorUserId);
     const projects = new Map<string, string>();
     for (const [key, ids] of Object.entries(this.result.scenarios)) if (ids.projectId) projects.set(key, ids.projectId);
-    for (const task of HOME_TASKS) {
+    for (const task of this.script.homeTasks) {
       const projectId = projects.get(task.project);
       if (!projectId) continue;
       const person = await this.as(task.role);
@@ -2818,7 +2863,7 @@ export class ShowcaseSeed {
   /** Follow-ups owned by the owner and the manager, so their Home shows what waits on them. */
   protected async followUps() {
     const activities = this.get(CrmActivitiesService), leads = this.get(CrmLeadsService);
-    for (const item of FOLLOW_UPS) {
+    for (const item of this.script.followUps) {
       const person = await this.as(item.role);
       if (!person.membershipId) continue;
       let target: { opportunityId?: string; leadId?: string; partyId?: string } | null = null;
@@ -2826,7 +2871,7 @@ export class ShowcaseSeed {
         const ids = this.result.scenarios[item.on.scenario];
         if (ids?.opportunityId) target = { opportunityId: ids.opportunityId, partyId: ids.partyId };
       } else if (item.on.enquiry) {
-        const enquiry = ENQUIRIES.find((row) => row.key === item.on.enquiry);
+        const enquiry = this.script.enquiries.find((row) => row.key === item.on.enquiry);
         const lead = enquiry ? await this.findLead(await this.actor(this.input.actorUserId), enquiry) : null;
         if (lead && !["qualified", "disqualified", "paused"].includes(lead.status)) target = { leadId: lead.id, partyId: lead.partyId };
         else if (lead?.status === "qualified") {
@@ -2865,7 +2910,7 @@ export class ShowcaseSeed {
   protected async clientReplies() {
     const conversations = this.get(CrmConversationsService);
     for (const reply of CLIENT_REPLIES) {
-      const scenario = SCENARIOS.find((row) => row.key === reply.scenario);
+      const scenario = this.script.scenarios.find((row) => row.key === reply.scenario);
       if (!scenario) continue;
       const providerMessageId = `showcase:whatsapp:${reply.key}`;
       const known = (await this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => client.query(
@@ -2881,7 +2926,7 @@ export class ShowcaseSeed {
   /** The team inbox: chats with the showcase's clients (records only; nothing is delivered), templates, quick replies and auto replies. */
   protected async inbox() {
     await seedShowcaseInbox({
-      workspaceId: this.w, owner: await this.actor(this.input.actorUserId), inbox: this.get(CrmInboxService),
+      workspaceId: this.w, owner: await this.actor(this.input.actorUserId), inbox: this.get(CrmInboxService), cast: this.cast,
       transaction: (work) => this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => work(client)),
       staff: (role) => this.as(role), id: (key) => this.id("inbox:", key),
       made: (label) => this.made(label), kept: (label) => this.kept(label), skip: (stage, reason) => this.skip(stage, reason),
@@ -3054,11 +3099,11 @@ export class ShowcaseSeed {
 
   protected async enquiries() {
     const leads = this.get(CrmLeadsService);
-    for (const enquiry of ENQUIRIES) {
+    for (const enquiry of this.script.enquiries) {
       const reference = `SHOWCASE-${enquiry.key.toUpperCase()}`;
       await this.stage(`enquiries · ${reference}`, async () => {
         const owner = await this.as(enquiry.owner);
-        const lead = await this.intake(enquiry.key, reference, enquiry, { title: enquiry.title, summary: enquiry.summary, area: enquiry.area, daysAgo: enquiry.daysAgo, owner: enquiry.owner, pick: enquiry.pick });
+        const lead = await this.intake(enquiry.key, reference, enquiry, { title: enquiry.title, summary: enquiry.summary, area: enquiry.area, emirate: enquiry.emirate, daysAgo: enquiry.daysAgo, owner: enquiry.owner, pick: enquiry.pick });
         const current = (await leads.get(owner, this.w, lead.id)) as unknown as { status: string; version: number };
         if (enquiry.outcome === "new" || enquiry.outcome === null) { this.kept(`${reference} · new`); return; }
         if (enquiry.outcome === "qualified") {
@@ -3097,6 +3142,13 @@ export class ShowcaseSeed {
 }
 
 // ---------------------------------------------------------------- helpers
+
+/** The workspace's region option (emirate, state…) a place's region names, by id or by name; its first option when none does. */
+export function regionOption<T extends { id: string; label?: string }>(options: readonly T[], region: string | undefined): T | undefined {
+  const norm = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const wanted = norm(region ?? "");
+  return options.find((row) => row.id === region) ?? (wanted ? options.find((row) => norm(row.id) === wanted || norm(row.label ?? "") === wanted) : undefined) ?? options[0];
+}
 
 /** An error as a person reads it: the API message, not a stack. */
 export function describe(error: unknown): string {

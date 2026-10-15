@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { Dec } from "../../catalog-core/decimal";
 
 /**
@@ -19,7 +20,12 @@ export type RegionPlace = {
 
 export type RegionFixture = {
   code: string;
+  /**
+   * A man's and a woman's name in turn, an even count: person n is a man for an even n and a woman for an odd one, so a
+   * story whose wording says "she" picks an odd n.
+   */
   firstNames: readonly string[];
+  /** A count with no factor in common with 7 (see regionPerson), so every last name is used. */
   lastNames: readonly string[];
   places: readonly RegionPlace[];
   /**
@@ -82,7 +88,8 @@ const IN: RegionFixture = {
 const INTERNATIONAL: RegionFixture = {
   code: "*",
   firstNames: ["Alex", "Maya", "Daniel", "Chloe", "Samuel", "Grace", "Leo", "Isla", "Noah", "Zara", "Ethan", "Lina", "Oscar", "Nina", "Adam", "Sofia"],
-  lastNames: ["Morgan", "Bennett", "Carter", "Hughes", "Foster", "Reyes", "Novak", "Larsen", "Okafor", "Tanaka", "Silva", "Kowalski", "Byrne", "Sato"],
+  lastNames: ["Morgan", "Bennett", "Carter", "Hughes", "Foster", "Reyes", "Novak", "Larsen", "Okafor", "Tanaka", "Silva", "Kowalski", "Byrne", "Sato",
+    "Moreau"],
   places: [
     { area: "Old Town", city: "City Centre", region: "" },
     { area: "Riverside", city: "City Centre", region: "" },
@@ -90,6 +97,12 @@ const INTERNATIONAL: RegionFixture = {
     { area: "Garden Quarter", city: "City Centre", region: "" },
     { area: "Hillside", city: "City Centre", region: "" },
     { area: "Park View", city: "City Centre", region: "" },
+    { area: "Lakeside", city: "City Centre", region: "" },
+    { area: "Market Square", city: "City Centre", region: "" },
+    { area: "University Quarter", city: "City Centre", region: "" },
+    { area: "West End", city: "City Centre", region: "" },
+    { area: "Canal Side", city: "City Centre", region: "" },
+    { area: "Northgate", city: "City Centre", region: "" },
   ],
   priceScale: 1,
   homes: ["House", "Apartment", "Townhouse", "Penthouse", "Office"],
@@ -102,7 +115,7 @@ export function regionFixture(code: string | null | undefined): RegionFixture {
   return FIXTURES[(code ?? "").toUpperCase()] ?? INTERNATIONAL;
 }
 
-export type RegionPerson = { displayName: string; email: string; mobile: string; place: RegionPlace };
+export type RegionPerson = { displayName: string; firstName: string; email: string; mobile: string; place: RegionPlace };
 
 /**
  * The n-th fictional client of a region: a name from the region's lists (spread so neighbours differ), an example.com
@@ -113,7 +126,19 @@ export function regionPerson(fixture: RegionFixture, n: number, country: string 
   const last = fixture.lastNames[(n * 7 + 3) % fixture.lastNames.length];
   const displayName = `${first} ${last}`;
   const local = `${first}.${last}`.toLowerCase().normalize("NFKD").replace(/[^a-z0-9.]+/g, "");
-  return { displayName, email: `${local}.${100 + n}@example.com`, mobile: fictitiousMobile(country, n), place: fixture.places[n % fixture.places.length] };
+  return { displayName, firstName: first, email: `${local}.${100 + n}@example.com`, mobile: fictitiousMobile(country, n), place: fixture.places[n % fixture.places.length] };
+}
+
+/**
+ * The workspace's country for its examples: the region pack it was set up with, else its first company's country;
+ * empty when it has neither (the international set then applies).
+ */
+export async function workspaceRegionCode(db: Pick<PoolClient, "query">, workspaceId: string): Promise<string> {
+  const row = (await db.query<{ country: string | null }>(
+    `SELECT coalesce((SELECT setup.region_code FROM workspace_setup_versions setup WHERE setup.workspace_id = workspace.id),
+            (SELECT entity.country_code FROM legal_entities entity WHERE entity.workspace_id = workspace.id ORDER BY entity.created_at LIMIT 1)) AS country
+       FROM workspaces workspace WHERE workspace.id = $1`, [workspaceId])).rows[0];
+  return (row?.country ?? "").toUpperCase();
 }
 
 /**
@@ -145,5 +170,10 @@ export function fictitiousMobile(country: string | null | undefined, n: number):
 
 /** An amount from the base list in the region's money (exact: decimal strings, never floats). */
 export function regionAmount(fixture: RegionFixture, base: string | number): string {
-  return Dec.of(String(base)).mul(fixture.priceScale).toFixed(2);
+  return scaleAmount(base, fixture.priceScale);
+}
+
+/** An amount multiplied by a region's price scale, exactly (decimal strings, never floats). */
+export function scaleAmount(base: string | number, priceScale: number): string {
+  return Dec.of(String(base)).mul(priceScale).toFixed(2);
 }

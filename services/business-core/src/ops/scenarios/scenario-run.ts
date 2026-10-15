@@ -6,7 +6,7 @@ import type { ShowcaseRole } from "../../seed/showcase";
 import type { Report } from "../ops-context";
 import { APPROVAL_KINDS, expandMatrix, moduleCounts, outcomes, planScenarios, type MatrixContext, type RecipeKey, type ScenarioOutcome } from "./scenario-matrix";
 import { probeScenarios } from "./scenario-probes";
-import { regionFixture } from "./scenario-regions";
+import { regionFixture, workspaceRegionCode } from "./scenario-regions";
 import { RECIPE_STORIES } from "./scenario-seed";
 import { ScenarioSeedTwo } from "./scenario-seed-two";
 import { storyCatalog, type StoryKey } from "./scenario-stories";
@@ -40,17 +40,15 @@ export type ScenarioRunResult = { rows: ScenarioOutcome[]; recipes: RecipeKey[];
 async function readContext(app: INestApplicationContext, workspaceId: string, owner: RequestActor & { userId: string }) {
   const db = app.get(DatabaseService, { strict: false });
   const facts = (await db.tenantTransaction(workspaceId, owner.userId, async (client) => {
-    const workspace = (await client.query<{ currency: string; country: string | null }>(
-      `SELECT workspace.default_currency AS currency, coalesce((SELECT setup.region_code FROM workspace_setup_versions setup WHERE setup.workspace_id = workspace.id),
-              (SELECT entity.country_code FROM legal_entities entity WHERE entity.workspace_id = workspace.id ORDER BY entity.created_at LIMIT 1)) AS country
-         FROM workspaces workspace WHERE workspace.id = $1`, [workspaceId])).rows[0];
+    const workspace = (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
+    const country = await workspaceRegionCode(client, workspaceId);
     const route = (await client.query<{ key: string; name: string }>(
       `SELECT stage.key, stage.name FROM project_templates template JOIN project_template_stages stage ON stage.workspace_id = template.workspace_id AND stage.template_id = template.id
         WHERE template.workspace_id = $1 AND template.is_default AND template.status = 'active' ORDER BY stage.position`, [workspaceId])).rows;
     const pipeline = (await client.query<{ id: string; code: string; label: string }>(
       `SELECT stage.id, stage.code, stage.name AS label FROM crm_pipelines pipeline JOIN crm_pipeline_stages stage ON stage.workspace_id = pipeline.workspace_id AND stage.pipeline_id = pipeline.id
         WHERE pipeline.workspace_id = $1 AND pipeline.is_default AND stage.status = 'active' ORDER BY stage.position`, [workspaceId]).catch(() => ({ rows: [] as Array<{ id: string; code: string; label: string }> }))).rows;
-    return { currency: workspace?.currency ?? "", country: (workspace?.country ?? "").toUpperCase(), route, pipeline };
+    return { currency: workspace?.currency ?? "", country, route, pipeline };
   }));
   const options = (await app.get(CrmIntakeService, { strict: false }).options(owner, workspaceId)) as unknown as {
     enquiryTypes: Array<{ id: string; label: string }>; emirates: Array<{ id: string; label: string }> };

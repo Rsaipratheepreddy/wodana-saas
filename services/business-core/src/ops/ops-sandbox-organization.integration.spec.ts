@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { regionFixture } from "./scenarios/scenario-regions";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Sandbox A is made in one region, then
 // --organization-of A adds organization B in another region to A's customer account, for A's own test members. The CLI
@@ -174,6 +175,56 @@ integration("operator CLI sandbox --organization-of: a second organization in th
     expect(await count(`SELECT count(*) FROM crm_leads WHERE workspace_id = $1`, [idB])).toBeGreaterThan(0);
     expect(await count(`SELECT count(*) FROM commercial_quotes WHERE workspace_id = $1`, [idB])).toBeGreaterThan(0);
     expect(await count(`SELECT count(*) FROM commercial_quotes WHERE workspace_id = $1 AND currency IS DISTINCT FROM 'INR'`, [idB])).toBe(0);
+  });
+
+  it("seeds the showcase with B's own country's clients: Indian mobiles and places, nothing from the emirates", async () => {
+    const idB = (await workspaceOf(b))!;
+    const enquiries = (await pool.query<{ reference: string; name: string; phone: string; country: string | null; area: string; region: string | null; title: string }>(
+      `SELECT intake.external_event_id AS reference, party.display_name AS name, phone.raw_value AS phone, phone.country_code AS country,
+              enquiry.details->>'area' AS area, enquiry.details->>'emirate' AS region, enquiry.title
+         FROM crm_intake_events intake
+         JOIN crm_enquiries enquiry ON enquiry.workspace_id = intake.workspace_id AND enquiry.intake_event_id = intake.id
+         JOIN crm_parties party ON party.workspace_id = enquiry.workspace_id AND party.id = enquiry.party_id
+         JOIN crm_contact_points phone ON phone.workspace_id = party.workspace_id AND phone.party_id = party.id AND phone.type = 'phone'
+        WHERE intake.workspace_id = $1 AND intake.external_event_id LIKE 'SHOWCASE-%'`, [idB])).rows;
+    // The five stories' clients and the seven enquiries.
+    expect(enquiries.length).toBe(12);
+    const india = regionFixture("IN");
+    const states = india.places.map((place) => place.region.toLowerCase().replace(/[^a-z0-9]+/g, "_"));
+    for (const row of enquiries) {
+      expect(row.phone, row.reference).toMatch(/^\+91\d{10}$/);
+      expect(row.country, row.reference).toBe("IN");
+      expect(india.places.map((place) => place.area), row.reference).toContain(row.area);
+      expect(states, row.reference).toContain(row.region);
+    }
+    const emirates = /Dubai|Abu Dhabi|Jumeirah|Marina|Emirat|Sharjah|Ranches|JLT|Barari|Mirdif|Business Bay|Motor City|majlis|Ramadan|\+971/i;
+    expect(enquiries.filter((row) => emirates.test(`${row.name} ${row.phone} ${row.area} ${row.title}`))).toEqual([]);
+    // Nor in what the team reads around them: the chats, the follow-ups and the project tasks' titles.
+    const said = (await pool.query<{ text: string }>(
+      `SELECT body_text AS text FROM crm_messages WHERE workspace_id = $1 UNION ALL SELECT subject FROM crm_conversations WHERE workspace_id = $1 AND subject IS NOT NULL
+       UNION ALL SELECT title FROM crm_activities WHERE workspace_id = $1 UNION ALL SELECT title FROM crm_opportunities WHERE workspace_id = $1`, [idB])).rows;
+    expect(said.length).toBeGreaterThan(20);
+    expect(said.filter((row) => emirates.test(row.text ?? ""))).toEqual([]);
+  });
+
+  it("seeds the showcase's money in B's amounts: the emirates' list times the IN scale, deals in lakhs of rupees", async () => {
+    const idB = (await workspaceOf(b))!;
+    const scale = regionFixture("IN").priceScale;
+    const deals = (await pool.query<{ reference: string; amount: string }>(
+      `SELECT intake.external_event_id AS reference, opportunity.amount::text AS amount
+         FROM crm_intake_events intake
+         JOIN crm_enquiries enquiry ON enquiry.workspace_id = intake.workspace_id AND enquiry.intake_event_id = intake.id
+         JOIN crm_opportunities opportunity ON opportunity.workspace_id = enquiry.workspace_id AND opportunity.party_id = enquiry.party_id
+        WHERE intake.workspace_id = $1 AND intake.external_event_id LIKE 'SHOWCASE-%' ORDER BY 1`, [idB])).rows;
+    const amounts = Object.fromEntries(deals.map((row) => [row.reference, Number(row.amount)]));
+    // Deals not yet won keep the estimate; a won one takes its accepted quotation's total (its lines scaled the same way).
+    expect(amounts).toMatchObject({ "SHOWCASE-EH-PENTHOUSE": 240_000 * scale, "SHOWCASE-ENQ-4": 110_000 * scale });
+    expect(deals).toHaveLength(6);
+    // Every deal in lakhs: at least 5 lakh, above any unscaled amount (the largest is 2.4 lakh).
+    for (const row of deals) expect(Number(row.amount), row.reference).toBeGreaterThanOrEqual(5_00_000);
+    const claims = (await pool.query<{ amount: string }>(`SELECT amount::text AS amount FROM petty_cash_claims WHERE workspace_id = $1`, [idB])).rows.map((row) => Number(row.amount));
+    expect(claims.length).toBeGreaterThan(0);
+    for (const amount of claims) expect([60, 85, 120].map((base) => base * scale)).toContain(amount);
   });
 
   it("changes nothing on a second run, and its dry run has nothing left to do", () => {
