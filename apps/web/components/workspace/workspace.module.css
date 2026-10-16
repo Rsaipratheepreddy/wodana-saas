@@ -904,7 +904,8 @@
 
 .topbar {
   position: sticky;
-  z-index: var(--wd-z-sticky);
+  /* One above the page header, which is sticky at the same level: the notification panel opens over it. */
+  z-index: calc(var(--wd-z-sticky) + 1);
   inset-block-start: 0;
   display: flex;
   align-items: center;
