@@ -61,3 +61,11 @@ export function parseMapLink(input: string): Coordinates | null {
 export function mapsUrl({ latitude, longitude }: Coordinates) {
   return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
 }
+
+/** The Google Maps app's Share links (maps.app.goo.gl, goo.gl, g.co): they hold no coordinates until followed on the server. */
+export function isShortMapLink(input: string): boolean {
+  try {
+    const url = new URL(input.trim());
+    return (url.protocol === "https:" || url.protocol === "http:") && ["maps.app.goo.gl", "goo.gl", "g.co"].includes(url.hostname.toLowerCase());
+  } catch { return false; }
+}

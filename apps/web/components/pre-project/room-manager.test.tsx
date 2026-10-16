@@ -26,10 +26,11 @@ describe("project rooms", () => {
     expect(await screen.findByText("Every catalog room is already in this project.")).toBeInTheDocument();
   });
 
-  it("adds a custom room when the catalog has none, and says where to add room types", async () => {
+  it("adds a custom room when the catalog has none, and suggests the common rooms", async () => {
     catalogs([]);
     const onSave = open();
-    expect(await screen.findByText(/Your catalog has no room types yet/)).toBeInTheDocument();
+    expect(await screen.findByText("Suggested rooms")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Living room" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("searchbox", { name: "Find or type a room" }), { target: { value: "  Prayer   room " } });
     fireEvent.click(screen.getByRole("button", { name: /as a custom room/ }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: "Prayer room", catalogRecordId: null })));
@@ -38,7 +39,7 @@ describe("project rooms", () => {
   it("does not offer a custom room that already exists", async () => {
     catalogs([]);
     open();
-    await screen.findByText(/Your catalog has no room types yet/);
+    await screen.findByText("Suggested rooms");
     fireEvent.change(screen.getByRole("searchbox", { name: "Find or type a room" }), { target: { value: "kitchen" } });
     expect(screen.queryByRole("button", { name: /as a custom room/ })).not.toBeInTheDocument();
   });

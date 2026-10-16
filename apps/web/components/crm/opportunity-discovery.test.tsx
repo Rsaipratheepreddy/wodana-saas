@@ -26,6 +26,8 @@ function stub(discovery: DiscoveryView) {
     if (url.includes("/assets/")) return { ok: true, json: async () => ({ id: "asset-1", name: "plan.pdf", mimeType: "application/pdf", byteSize: 4, hasPreview: false }) };
     if (url.includes("requirement-notes") && method === "PUT") return { ok: true, json: async () => ({ items: [{ ...JSON.parse(String(init!.body)), version: 1 }], canEdit: true }) };
     if (url.includes("/design/settings")) return { ok: true, json: async () => packages };
+    // The server follows one known short link; any other resolves to nothing.
+    if (url.includes("/map-link")) return { ok: true, json: async () => ({ url: decodeURIComponent(url).includes("AbCdEf12345") ? "https://www.google.com/maps/place/Villa/@25.11,55.13,17z/data=!3m1!4b1!8m2!3d25.1124317!4d55.1390165" : null }) };
     if (url.includes("/quote")) return { ok: true, json: async () => ({ fee: "4000.00", currency: "AED" }) };
     return { ok: true, json: async () => discovery };
   }));
@@ -113,6 +115,19 @@ describe("opportunity discovery sheets (PLM-040)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(calls.find((call) => call.method === "PUT")!.body).toMatchObject({ version: 0, propertyLocation: "Villa 12, Palm Way", latitude: 25.1124317, longitude: 55.1390165 });
+  });
+
+  it("follows a short Share link from the Maps app through the server, then reads its coordinates", async () => {
+    const calls = stub(view());
+    renderSheet({ group: "property", onClose: vi.fn() });
+    await screen.findByRole("dialog", { name: "Property details" });
+    const link = screen.getByRole("textbox", { name: "Paste a Google Maps link" });
+    fireEvent.paste(link);
+    fireEvent.change(link, { target: { value: "https://maps.app.goo.gl/AbCdEf12345" } });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Latitude" })).toHaveValue("25.1124317"));
+    expect(calls.some((call) => call.url.includes("/map-link?") && decodeURIComponent(call.url).includes("maps.app.goo.gl/AbCdEf12345"))).toBe(true);
+    expect(link).toHaveValue("");
+    expect(screen.queryByText("No coordinates in this link")).not.toBeInTheDocument();
   });
 
   it("reads a map link typed key by key only once it is complete, never a half-typed longitude", async () => {

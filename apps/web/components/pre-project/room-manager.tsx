@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { Check, DoorOpen, Pencil, Plus } from "lucide-react";
 import { Badge, Button, InlineNotice, SearchInput, SelectField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import type { Translate } from "@/lib/i18n/keys";
 import { caseRequest, saveCaseRoom, type CaseContent, type CaseRoom } from "@/lib/pre-project/content";
 import { CaseModal } from "./case-controls";
 import styles from "./room-manager.module.css";
@@ -37,6 +37,13 @@ export function useCatalogRooms(workspaceId: string, caseId: string) {
   }, [catalog]);
 }
 
+/** The rooms most homes have, offered when the workspace's catalog has no room types yet; each is added as a custom room. */
+export const commonRooms = (t: Translate) => ([
+  "Living room", "Dining room", "Kitchen", "Master bedroom", "Bedroom", "Guest bedroom", "Children’s bedroom", "Bathroom", "Guest bathroom", "Powder room",
+  "Study", "Home office", "Family room", "Majlis", "Entrance", "Corridor", "Dressing room", "Walk-in closet", "Maid’s room", "Laundry", "Storage", "Balcony",
+  "Terrace", "Garden", "Garage",
+] as const).map((name) => t(name));
+
 /**
  * Rooms for a project, picked from the workspace's catalog rooms (every catalog, one list, the
  * same room name shown once) with a custom room for anything the catalog doesn't have.
@@ -55,7 +62,8 @@ export function RoomManager({ data, onClose, onSave }: { data: CaseContent; onCl
   const linked = new Set(rooms.map((room) => room.catalogRecordId).filter(Boolean));
   const query = key(search);
   const suggestions = catalogRooms.filter((room) => !inProject.has(key(room.name)) && !linked.has(room.id) && (!query || key(room.name).includes(query)));
-  const exact = query && (catalogRooms.some((room) => key(room.name) === query) || inProject.has(query));
+  const common = catalog !== null && !catalogRooms.length ? commonRooms(t).filter((name) => !inProject.has(key(name)) && (!query || key(name).includes(query))) : [];
+  const exact = query && (catalogRooms.some((room) => key(room.name) === query) || common.some((name) => key(name) === query) || inProject.has(query));
 
   const add = async (room: CaseRoom, label: string) => {
     setBusy(label); setError("");
@@ -67,7 +75,7 @@ export function RoomManager({ data, onClose, onSave }: { data: CaseContent; onCl
     finally { setBusy(null); }
   };
   const addCatalog = (room: CatalogRoom) => add({ id: crypto.randomUUID(), version: 0, name: room.name, catalogRecordId: room.id }, room.id);
-  const addCustom = () => { const name = search.trim().replace(/\s+/g, " ").slice(0, 120); if (name) void add({ id: crypto.randomUUID(), version: 0, name, catalogRecordId: null }, "custom"); };
+  const addCustom = (typed = search) => { const name = typed.trim().replace(/\s+/g, " ").slice(0, 120); if (name) void add({ id: crypto.randomUUID(), version: 0, name, catalogRecordId: null }, typed === search ? "custom" : name); };
   const rename = async () => {
     if (!renaming) return;
     const name = renaming.name.trim();
@@ -107,8 +115,15 @@ export function RoomManager({ data, onClose, onSave }: { data: CaseContent; onCl
               </button></li>)}
             </ul> : <p className={styles.muted}>{query ? t("No catalog room matches.") : t("Every catalog room is already in this project.")}</p>}
           </>
-          : <p className={styles.muted}>{t("Your catalog has no room types yet.")} <Link href="/workspace/catalogs">{t("Add them in Catalog")}</Link></p>}
-        {query && !exact ? <Button size="compact" isLoading={busy === "custom"} onPress={addCustom}><Plus aria-hidden="true" size={14} />{t("Add “{name}” as a custom room", { name: search.trim() })}</Button> : null}
+          : <>
+            <p className={styles.muted}>{t("Suggested rooms")}</p>
+            {common.length ? <ul className={styles.chips} aria-label={t("Suggested rooms")}>
+              {common.map((name) => <li key={name}><button type="button" className={styles.chip} disabled={Boolean(busy)} onClick={() => addCustom(name)}>
+                {busy === name ? <Check aria-hidden="true" size={13} /> : <Plus aria-hidden="true" size={13} />}{name}
+              </button></li>)}
+            </ul> : <p className={styles.muted}>{query ? t("No suggested room matches; add what you typed.") : t("Every suggested room is already in this project.")}</p>}
+          </>}
+        {query && !exact ? <Button size="compact" isLoading={busy === "custom"} onPress={() => addCustom()}><Plus aria-hidden="true" size={14} />{t("Add “{name}” as a custom room", { name: search.trim() })}</Button> : null}
       </section> : null}
     </div>
   </CaseModal>;
@@ -130,7 +145,8 @@ export function RoomPicker({ data, exclude = [], onClose, onPick, title }: { dat
   const inProject = new Set(data.rooms.map((room) => key(room.name)));
   const linked = new Set(data.rooms.map((room) => room.catalogRecordId).filter(Boolean));
   const fromCatalog = (catalog ?? []).filter((room) => !inProject.has(key(room.name)) && !linked.has(room.id) && (!query || key(room.name).includes(query)));
-  const exact = query && ((catalog ?? []).some((room) => key(room.name) === query) || inProject.has(query));
+  const common = catalog !== null && !catalog.length ? commonRooms(t).filter((name) => !inProject.has(key(name)) && (!query || key(name).includes(query))) : [];
+  const exact = query && ((catalog ?? []).some((room) => key(room.name) === query) || common.some((name) => key(name) === query) || inProject.has(query));
 
   const create = async (room: CaseRoom, label: string) => {
     setBusy(label); setError("");
@@ -154,7 +170,11 @@ export function RoomPicker({ data, exclude = [], onClose, onPick, title }: { dat
         {catalog === null ? <p className={styles.muted}>{t("Loading your catalog rooms…")}</p>
           : fromCatalog.length ? <ul className={styles.chips}>{fromCatalog.map((room) => chip(room.id, room.name, () => void create({ id: crypto.randomUUID(), version: 0, name: room.name, catalogRecordId: room.id }, room.id), room.catalogs.join(", ")))}</ul>
           : catalog.length ? <p className={styles.muted}>{query ? t("No catalog room matches.") : t("Every catalog room is already in this project.")}</p>
-          : <p className={styles.muted}>{t("Your catalog has no room types yet.")} <Link href="/workspace/catalogs">{t("Add them in Catalog")}</Link></p>}
+          : <>
+            <p className={styles.muted}>{t("Suggested rooms")}</p>
+            {common.length ? <ul className={styles.chips} aria-label={t("Suggested rooms")}>{common.map((name) => chip(name, name, () => void create({ id: crypto.randomUUID(), version: 0, name, catalogRecordId: null }, name)))}</ul>
+              : <p className={styles.muted}>{query ? t("No suggested room matches; add what you typed.") : t("Every suggested room is already in this project.")}</p>}
+          </>}
         {query && !exact ? <Button size="compact" isLoading={busy === "custom"} onPress={() => void create({ id: crypto.randomUUID(), version: 0, name: search.trim().replace(/\s+/g, " ").slice(0, 120), catalogRecordId: null }, "custom")}><Plus aria-hidden="true" size={14} />{t("Add “{name}” as a custom room", { name: search.trim() })}</Button> : null}
       </section> : null}
     </div>

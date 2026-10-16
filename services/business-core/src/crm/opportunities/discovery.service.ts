@@ -9,6 +9,7 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { REQUIREMENT_ASSET_PREFIX } from "../leads/requirement-notes.service";
 import { areaIn, coordinatesProblem, discoveryMissing, roundCoordinate, type DiscoveryFacts, type DiscoveryQuestion } from "./discovery.domain";
 import { ensureSiteLocation } from "./site-location";
+import { resolveMapLink } from "./map-link";
 
 export type SaveDiscoveryInput = Partial<DiscoveryFacts> & { version?: number; answers?: Record<string, unknown> };
 /** `partyEmail`: the client's email on record, the client's own or else the one given on the enquiry. */
@@ -33,6 +34,11 @@ export class OpportunityDiscoveryService {
 
   get(actor: RequestActor, workspaceId: string, opportunityId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.opportunities.view", (client) => this.view(client, workspaceId, opportunityId));
+  }
+  /** The long link behind a short map link (the Maps app's Share), so the property's coordinates can be read from it. */
+  resolveMapLink(actor: RequestActor, workspaceId: string, url: string) {
+    if (typeof url !== "string" || url.length > 2048) throw new UnprocessableEntityException("Paste one map link.");
+    return this.access.withPermission(actor, workspaceId, "crm.opportunities.view", async () => ({ url: await resolveMapLink(url) }));
   }
 
   save(actor: RequestActor, workspaceId: string, opportunityId: string, input: SaveDiscoveryInput) {

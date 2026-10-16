@@ -5,7 +5,7 @@ import { parseDate } from "@internationalized/date";
 import { LocateFixed } from "lucide-react";
 import { Button, DateField, FileUploader, InlineNotice, InspectorSheet, MoneyField, NumericInput, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
 import { OpenInMaps } from "@/components/ui/site-location";
-import { parseMapLink, validCoordinates } from "@/lib/geo/map-link";
+import { isShortMapLink, parseMapLink, validCoordinates } from "@/lib/geo/map-link";
 import { useCurrentPosition } from "@/lib/geo/use-current-position";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
@@ -120,16 +120,25 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
   // A map link is read once it is complete: pasted, or when the field is left or Enter pressed. Never while it is being
   // typed: a link typed key by key passes through "…/@25.2,5" on its way to "…/@25.2,55.27" (a wrong longitude).
   // A link with coordinates fills them and clears itself; one without stays, marked.
+  // A short link from the Maps app's Share (maps.app.goo.gl) holds no coordinates: the server follows it to the long one.
   const [linkUnread, setLinkUnread] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const pasted = useRef(false);
-  const readLink = (value: string) => {
-    const found = value.trim() ? parseMapLink(value) : null;
+  const readLink = async (value: string) => {
+    const text = value.trim();
+    let found = text ? parseMapLink(text) : null;
+    if (!found && text && isShortMapLink(text)) {
+      setResolving(true);
+      try { const long = await crmRequest<{ url: string | null }>(workspaceId, `map-link?url=${encodeURIComponent(text)}`); found = long.url ? parseMapLink(long.url) : null; }
+      catch { found = null; }
+      finally { setResolving(false); }
+    }
     if (found) { setDraft((current) => current ? { ...current, ...found } : current); setMapLink(""); }
-    setLinkUnread(Boolean(value.trim()) && !found);
+    setLinkUnread(Boolean(text) && !found);
   };
   const typeLink = (value: string) => {
     setMapLink(value); setLinkUnread(false);
-    if (pasted.current) { pasted.current = false; readLink(value); }
+    if (pasted.current) { pasted.current = false; void readLink(value); }
   };
   const locate = () => position.locate((fix) => setDraft((current) => current ? { ...current, ...fix } : current));
   const answer = (key: string) => (value: unknown) => setDraft((current) => current ? { ...current, answers: { ...current.answers, [key]: value } } : current);
@@ -204,8 +213,8 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
               isInvalid={hasLatitude && !hasLongitude} errorMessage={t("Enter both latitude and longitude")} />
           </div>
           <TextInput label={t("Paste a Google Maps link")} inputType="url" value={mapLink} onChange={typeLink} onPaste={() => { pasted.current = true; }}
-            onBlur={() => readLink(mapLink)} onKeyDown={(event) => { if (event.key === "Enter") readLink(mapLink); }}
-            isInvalid={linkUnread} errorMessage={t("No coordinates in this link")} />
+            onBlur={() => void readLink(mapLink)} onKeyDown={(event) => { if (event.key === "Enter") void readLink(mapLink); }}
+            description={resolving ? t("Reading the link…") : undefined} isInvalid={linkUnread} errorMessage={t("No coordinates in this link")} />
           <div className={styles.locate}>
             <Button size="compact" isLoading={position.locating} onPress={locate}><LocateFixed aria-hidden="true" size={14} />{t("Use my current location")}</Button>
             {located ? <OpenInMaps latitude={draft.latitude} longitude={draft.longitude} /> : null}

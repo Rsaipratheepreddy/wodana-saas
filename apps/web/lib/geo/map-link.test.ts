@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapsUrl, parseMapLink, validCoordinates } from "./map-link";
+import { isShortMapLink, mapsUrl, parseMapLink, validCoordinates } from "./map-link";
 
 describe("map links", () => {
   it.each([
@@ -34,5 +34,13 @@ describe("map links", () => {
     expect(validCoordinates(0, Number.NaN)).toBe(false);
     expect(validCoordinates(null, 1)).toBe(false);
     expect(mapsUrl({ latitude: 25.2, longitude: -0.12 })).toBe("https://www.google.com/maps/search/?api=1&query=25.2,-0.12");
+  });
+});
+
+describe("isShortMapLink", () => {
+  it("knows the Maps app's Share hosts", () => {
+    expect(isShortMapLink("https://maps.app.goo.gl/AbCdEf12345")).toBe(true);
+    expect(isShortMapLink("https://www.google.com/maps/@25.2,55.27,15z")).toBe(false);
+    expect(isShortMapLink("Jumeirah Village Circle, Dubai")).toBe(false);
   });
 });
