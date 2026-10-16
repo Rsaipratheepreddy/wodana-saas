@@ -177,9 +177,10 @@ describe("the design order of 13 Oct 2026 (PLM-140–144, PLM-154)", () => {
       [null, true, true, ["access"]], ["Kitchen", true, true, ["family", "back"]], ["Bedrooms", false, false, ["bed-size"]],
     ]);
     expect(requiredSiteQuestions(questions, ["Main kitchen"]).map((question) => question.key)).toEqual(["access", "family", "back"]);
-    // The job's scope unknown (no rooms yet, or none matching): every group is asked.
-    expect(requiredSiteQuestions(questions, []).map((question) => question.key)).toEqual(["access", "bed-size", "family", "back"]);
-    expect(requiredSiteQuestions(questions, ["Garage"]).length).toBe(4);
+    // No rooms yet, or none matching: only the general questions are asked until the designer switches a checklist on.
+    expect(requiredSiteQuestions(questions, []).map((question) => question.key)).toEqual(["access"]);
+    expect(requiredSiteQuestions(questions, ["Garage"]).map((question) => question.key)).toEqual(["access"]);
+    expect(requiredSiteQuestions(questions, [], { chosen: new Map([["bedrooms", true]]) }).map((question) => question.key)).toEqual(["access", "bed-size"]);
     // An old list without scopes is one group, asked in full.
     expect(groupSiteQuestions(DEFAULT_SITE_VISIT_QUESTIONS, ["Kitchen"]).map((group) => [group.scope, group.questions.length])).toEqual([[null, 7]]);
     expect(normaliseSiteQuestions([{ key: "k", question: "Q?", scope: "  Kitchen  " }, { key: "g", question: "G?", scope: "" }])).toEqual([{ key: "k", question: "Q?", scope: "Kitchen" }, { key: "g", question: "G?" }]);
@@ -239,8 +240,8 @@ describe("question sections and joinery checklists (Palm discovery, 12 Oct 2026)
     expect(chosen.filter((group) => group.scope && group.applies).map((group) => [group.scope, group.chosen])).toEqual([["Kitchens and islands", null], ["TV and media walls", true]]);
     expect(requiredSiteQuestions(list, ["Kitchen"], { scopes, chosen: new Map([["kitchens and islands", false]]) }).map((question) => question.key))
       .toEqual(["core.01", "core.02", "core.06", "release.01"]);
-    // Nothing on the job matches a checklist yet (no rooms): every checklist applies until the designer switches it off.
-    expect(requiredSiteQuestions(list, [], { scopes }).length).toBe(7);
+    // Nothing on the job matches a checklist yet (no rooms): the general questions and the every-job checklist only.
+    expect(requiredSiteQuestions(list, [], { scopes }).length).toBe(4);
   });
 
   it("needs every line marked to complete the visit; a pending line counts and is an open item", () => {

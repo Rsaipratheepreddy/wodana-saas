@@ -9,6 +9,7 @@ export function allowedCasePath(path:string[],method:string) {
   if(path[1]==='design-journey')return (path.length===2&&method==='GET')
     ||(method==='GET'&&path.length===4&&path[2]==='material-selection'&&path[3]==='slots')
     ||(method==='PUT'&&path.length===4&&path[2]==='site-visit'&&path[3]==='answers')
+    ||(method==='PUT'&&path.length===4&&path[2]==='checklists'&&path[3]==='applies')
     ||(method==='POST'&&((path.length===3&&['start','sign-off','estimate'].includes(path[2]))
       ||(path.length===5&&path[2]==='stages'&&['space_planning','concepts','material_selection','renders'].includes(path[3])&&['skip','assign'].includes(path[4]))
       ||(path.length===4&&((path[2]==='inspiration'&&path[3]==='close')||(path[2]==='site-visit'&&['schedule','complete'].includes(path[3]))||(path[2]==='material-selection'&&['schedule','confirm','not-required'].includes(path[3]))))));

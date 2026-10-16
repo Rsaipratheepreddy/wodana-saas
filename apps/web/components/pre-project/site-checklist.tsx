@@ -41,15 +41,14 @@ export function ChecklistFields({ checklist, groups, drafts, onDraft, onApplies,
 }) {
   const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ scope: string | null; message: string } | null>(null);
   const choose = async (group: SiteChecklistGroup, applies: boolean) => {
     if (!onApplies) return;
-    setBusy(group.scope); setError("");
-    try { await onApplies(group, applies); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setBusy(null); }
+    setBusy(group.scope); setError(null);
+    try { await onApplies(group, applies); } catch (cause) { setError({ scope: group.scope, message: cause instanceof Error ? cause.message : t("Could not save.") }); } finally { setBusy(null); }
   };
   const several = groups.length > 1;
   return <div className={styles.list}>
-    {error ? <InlineNotice tone="error" message={error} /> : null}
     {groups.map((group) => {
       const items = group.keys.map((key) => checklist.find((item) => item.key === key)).filter((item): item is SiteChecklistItem => Boolean(item));
       if (!items.length) return null;
@@ -62,6 +61,7 @@ export function ChecklistFields({ checklist, groups, drafts, onDraft, onApplies,
           {group.scope && onApplies ? <Switch isSelected={applies} isDisabled={busy !== null} onChange={(next) => void choose(group, next)}>{t("Applies to this job")}</Switch>
             : group.scope && !applies ? <span className={styles.muted}>{t("Not for this job")}</span> : null}
         </div> : null}
+        {error && error.scope === group.scope ? <InlineNotice tone="error" message={error.message} /> : null}
         {applies ? items.map((item) => {
           const draft = drafts[item.key] ?? { answer: "", status: null };
           const by = item.answeredByName && isAnswered(item) ? t("Answered by {name}", { name: item.answeredByName }) : undefined;

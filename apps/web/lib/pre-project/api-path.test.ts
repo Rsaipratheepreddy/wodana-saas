@@ -13,6 +13,8 @@ describe("pre-execution browser gateway", () => {
   });
   it("passes the design flow of 13 Oct: the team, the kick-off, render sign-off, samples and a stage's due date (PLM-140–144, PLM-151)", () => {
     expect(allowedCasePath([caseId, "design-journey", "team"], "PUT")).toBe(true);
+    expect(allowedCasePath([caseId, "design-journey", "checklists", "applies"], "PUT")).toBe(true);
+    expect(allowedCasePath([caseId, "design-journey", "checklists", "applies"], "POST")).toBe(false);
     for (const [step, action] of [["kickoff", "schedule"], ["kickoff", "complete"], ["renders", "sign-off"], ["samples", "collected"], ["samples", "approve"]])
       expect(allowedCasePath([caseId, "design-journey", step, action], "POST")).toBe(true);
     for (const stage of ["concepts", "renders"]) expect(allowedCasePath([caseId, "design-journey", "stages", stage, "deadline"], "POST")).toBe(true);

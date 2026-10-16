@@ -291,8 +291,8 @@ export const scopeKey = (scope: string) => scope.replace(/\s+/g, " ").trim().toL
  * PLM-154: the list grouped for the kick-off and the site measure. The general questions (no scope) come first, by
  * section in the order the list gives them; then the checklists that apply to the job; then the rest.
  * A scope applies when the designer chose it for the job ("Applies to this job"), else when it matches the job's rooms,
- * areas and quotation lines (its match words, or its name), or is for every job. With nothing on the job matching any
- * scope (no rooms yet), every scope applies, so nothing is missed until the designer switches off what isn't there.
+ * areas and quotation lines (its match words, or its name), or is for every job. Any other checklist is off until the
+ * designer switches it on, so a job with no rooms yet asks only the general questions and the every-job checklists.
  * The general questions and the checklists that apply are required; the rest are shown, not asked.
  */
 export function groupSiteQuestions(questions: SiteQuestion[], areas: readonly string[], options: GroupOptions = {}): SiteQuestionGroup[] {
@@ -313,9 +313,8 @@ export function groupSiteQuestions(questions: SiteQuestion[], areas: readonly st
     group.questions.push(question);
   }
   const list = [...groups.values()];
-  const known = list.some((group) => group.scope !== null && !group.everyJob && group.matches);
   for (const group of list) {
-    group.applies = group.scope === null || (group.chosen ?? (group.everyJob || !known || group.matches));
+    group.applies = group.scope === null || (group.chosen ?? (group.everyJob || group.matches));
     group.required = group.applies;
   }
   const rank = (group: SiteQuestionGroup) => (group.scope === null ? 0 : group.applies ? 1 : 2);
