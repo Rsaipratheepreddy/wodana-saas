@@ -830,7 +830,7 @@ export function validatePackagesFile(raw: unknown): PackagesFile {
   return result;
 }
 
-const QUESTION_KEYS = ["key", "question", "scope", "section", "kind"];
+const QUESTION_KEYS = ["key", "question", "scope", "section", "kind", "required"];
 const QUESTION_KEY = /^[a-z0-9_.-]{1,60}$/;
 
 /** The question list as the file gives it: unique keys, text, and an optional scope, section and kind ("answer" or "check"). */
@@ -852,6 +852,7 @@ function siteQuestionsIn(raw: unknown, problems: string[]): SiteQuestion[] | und
       if (value !== undefined && value !== null && (typeof value !== "string" || !value.trim() || value.trim().length > 60)) problems.push(`${path}.${key} is a name of at most 60 characters (or null).`);
     }
     if (entry.kind !== undefined && entry.kind !== null && entry.kind !== "answer" && entry.kind !== "check") problems.push(`${path}.kind is answer or check.`);
+    if (entry.required !== undefined && typeof entry.required !== "boolean") problems.push(`${path}.required is true or false.`);
     if (problems.length > before) return;
     seen.add(entry.key as string);
     out.push(...normaliseSiteQuestions([entry]));

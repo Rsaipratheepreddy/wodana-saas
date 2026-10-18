@@ -12,6 +12,8 @@ export type PortalSite = {
   welcomeTitle: string;
   welcomeText: string;
   support: { phone: string; email: string; whatsapp: string };
+  /** The firm's online catalogue (its shop), when it has one. */
+  catalogueUrl?: string | null;
   region: { locale: string; currency: string; timeZone: string; country: string | null };
   signIn: { channels: Array<"whatsapp" | "email">; demo: boolean };
   gallerySlug: string | null;
@@ -40,7 +42,9 @@ export type PortalQuote = {
 
 export type PortalDesign = { id: string; title: string; type: string; number: number; status: string; dueAt: string | null; room: string | null; item: string | null; mimeType: string;
   /** A picture can be shown (its file is there). */
-  hasPreview: boolean; canDecide: boolean };
+  hasPreview: boolean; canDecide: boolean;
+  /** PLM-049/051: the step's free revisions are used, so asking for changes is a paid change. */
+  paidChanges?: boolean };
 
 /** A photo or PDF someone on the client's side added. */
 export type PortalFile = { id: string; name: string; mimeType: string; hasPreview: boolean };
@@ -70,6 +74,14 @@ export type PortalDrawings = {
   id: string; number: number; status: "sent" | "approved" | "changes_requested"; sentAt: string; decidedOn: string | null; decidedBy: string | null; note: string;
   files: Array<{ id: string; name: string; mimeType: string }>; canDecide: boolean;
 };
+
+/** One item's shop drawing the lead designer approved for the client: waiting for the signature, signed, or sent back with the client's note. */
+export type PortalItemDrawing = {
+  lineId: string; versionId: string; title: string; area: string | null; number: number; status: "with_client" | "changes_asked" | "signed"; name: string; mimeType: string;
+  hasPreview: boolean; quantity: string; unit: string; width: string | null; height: string | null; depth: string | null; dimensionUnit: string; decidedAt: string | null;
+  note: string; signedBy: string | null; signedAt: string | null; canSign: boolean;
+};
+export type PortalItemDrawings = { items: PortalItemDrawing[]; canSign: boolean };
 
 export type PortalQuestion = {
   id: string; number: number; title: string; detail: string; dueDate: string | null; target: string; choices: Array<{ id: string; label: string }>;
@@ -122,7 +134,9 @@ export type PortalDesignFileStatus = "client_review" | "expired" | "approved" | 
 export type PortalFolderDesign = {
   id: string; title: string; room: string | null; sharedAt: string;
   files: Array<{ id: string; number: number; status: PortalDesignFileStatus; sharedAt: string; mimeType: string; hasPreview: boolean; canComment: boolean;
-    comments: Array<{ id: string; at: string; text: string; fromClient: boolean; mine: boolean; author: string | null }> }>;
+    comments: Array<{ id: string; at: string; text: string; fromClient: boolean; mine: boolean; author: string | null;
+      /** §0.3: the comment's conversation, and its pin on the design (0–1 across and down) when it was pinned. */
+      threadId?: string; anchor?: { x: number; y: number } }> }>;
 };
 
 /** PLM-153: the notes of one meeting the team shared, its files and the conversation on it (the team reads as one team). */
@@ -178,7 +192,7 @@ export type PortalDayCard = {
   stage?: { number: number; total: number; name: string | null } | null; percent?: number | null;
 };
 
-export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "drawings" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
+export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "drawings" | "item_drawings" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
   due: string | null };
 
 export type PortalUpdateFrequency = "weekly" | "fortnightly" | "monthly" | "off";
@@ -187,6 +201,16 @@ export type PortalUpdates = { mode: "call" | "portal" | "either"; frequency: Por
 /** Someone the client deals with: their project manager, designer or sales contact (one person may be two). */
 export type PortalTeamRole = "manager" | "designer" | "sales";
 export type PortalTeamMember = { roles: PortalTeamRole[]; name: string; email: string | null; avatar: string | null };
+
+export type PortalJourneyChapter = "win" | "design" | "price" | "make" | "install" | "care";
+export type PortalJourneyStep = { key: string; chapter: PortalJourneyChapter; label: string; state: "done" | "now" | "next" | "upcoming" | "skipped"; yours: boolean; at: string | null; dueAt: string | null };
+export type PortalJourney = {
+  chapter: PortalJourneyChapter | null;
+  now: { label: string; yours: boolean; dueAt: string | null } | null;
+  next: PortalJourneyStep[];
+  steps: PortalJourneyStep[];
+  progress: { done: number; total: number };
+};
 
 export type PortalProject = {
   id: string; title: string; reference: string | null; role: "approver" | "viewer"; status: "planning" | "active" | "on_hold" | "completed" | "cancelled"; paused: boolean;
@@ -222,7 +246,9 @@ export type PortalProject = {
     siteAccess: PortalSiteAccess[];
   };
   moodboard: PortalMoodboard | null;
-  decisions: null | { quotes: PortalQuote[]; designs: PortalDesign[]; requests: PortalQuestion[]; definition: PortalDefinition | null; materials: PortalMaterials | null; handovers: PortalHandover[]; drawings?: PortalDrawings | null };
+  decisions: null | { quotes: PortalQuote[]; designs: PortalDesign[]; requests: PortalQuestion[]; definition: PortalDefinition | null; materials: PortalMaterials | null; handovers: PortalHandover[]; drawings?: PortalDrawings | null;
+    /** Shop drawings per item, signed one or several at a time. */
+    itemDrawings?: PortalItemDrawings | null };
   payments: null | { currency: string | null; showAmounts: boolean; milestones: PortalMilestone[];
     /** Paid and still to pay across the plan (exact decimals), when the tenant shows amounts. */
     totals?: { paid: string; left: string } | null };
@@ -231,6 +257,8 @@ export type PortalProject = {
     rooms: Array<{ id: string | null; name: string | null; until: string; active: boolean; items: Array<{ id: string; title: string; until: string; active: boolean }> }>;
     claims: Array<{ id: string; number: number; raisedOn: string; description: string; status: "open" | "covered" | "not_covered" | "chargeable"; reason: string; files: PortalFile[] }>;
     areas: Array<{ id: string; name: string }>; lines: Array<{ id: string; title: string; areaId: string | null }>; canClaim: boolean;
+    /** §0.3 P3: the firm's own claim questions. */
+    questions?: import("@/lib/setup/questionnaires").Question[];
   };
   messages: null | { requests: PortalRequest[]; unread: number };
   /** PLM-153: the notes of the meetings the team shared, newest meeting first. */
@@ -251,6 +279,8 @@ export type PortalProject = {
   feed?: PortalFeedCard[];
   /** What changed since this contact last looked (AI2). */
   digest?: PortalDigest | null;
+  /** §0.3 P5: where the job stands and what comes next, in the client's words (absent from older servers). */
+  journey?: PortalJourney | null;
 };
 
 /** PLM-170: the client's bill of quantities: room by room, each line at its selling rate, with totals; labelled with the latest sealed revision. */
@@ -266,6 +296,8 @@ export type PortalInvoiceDocument = {
   credit: { number: string | null; on: string | null } | null;
   /** The issuing business's letterhead (PLM-112). */
   letterhead?: DocumentLetterhead | null;
+  /** §0.3 P3/P4: the firm's invoice layout (Setup); amounts are as issued. */
+  layout?: import("@/lib/setup/documents").InvoiceLayout;
 };
 export type PortalReceiptDocument = { id: string; milestone: string; amount: string; currency: string; receivedOn: string | null; invoiceNumber: string | null; company: string; customer: string | null;
   letterhead?: DocumentLetterhead | null };
@@ -279,6 +311,8 @@ export type PortalSettings = {
   /** PLM-170: the enquiry type codes and order paths whose projects show the bill of quantities (empty: every project). */
   boqEnquiryTypes: string[];
   welcomeTitle: string; welcomeText: string; support: { phone: string; email: string; whatsapp: string };
+  /** The firm's online catalogue (its shop), linked from the portal; blank when it has none. */
+  catalogueUrl: string;
 };
 /** A kind of job a portal section can be limited to: an enquiry type of the workspace, or a furniture order path. */
 export type PortalJobType = { code: string; label: string; kind: "enquiry_type" | "path" };
@@ -352,6 +386,8 @@ export type PortalDesignReview = {
 export type PortalPresentation = {
   id: string; stage: string; label: string; round: number; status: "presented" | "chosen" | "changes_requested"; version: number; presentedAt: string | null;
   chosenOptionId: string | null; decidedAt: string | null; decidedByName: string | null; decisionNote: string | null; canDecide: boolean;
+  /** PLM-049/051: the step's free revisions are used, so asking for changes is a paid change. */
+  paidChanges?: boolean;
   options: Array<{ id: string; title: string; note: string; linkUrl: string | null; versionId: string | null; versionNumber: number | null; mimeType: string | null; hasPreview: boolean }>;
 };
 export type PortalChoice = {
@@ -365,4 +401,8 @@ export type PortalChoice = {
 };
 export type PortalAlternative = { id: string; title: string; unit: string; unitPrice: string | null; currency: string | null; lineTotal: string | null; inStock: boolean; inBudget: boolean;
   fromPastJobs: boolean; canChoose: boolean };
-export type PortalDesignChoices = { presentations: PortalPresentation[]; choices: PortalChoice[]; locked: boolean; currency: string | null };
+export type PortalDesignChoices = {
+  presentations: PortalPresentation[]; choices: PortalChoice[]; locked: boolean; currency: string | null;
+  /** PLM-049/051: the extra revisions' change requests the team sent, per design step. */
+  extraRevisions?: Array<{ stage: string; label: string; changeId: string }>;
+};

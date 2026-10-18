@@ -88,7 +88,7 @@ async function journeyOf(db: Db, workspaceId: string, caseId: string) {
     [workspaceId, caseId])).rows[0];
   if (!row) return { exists: false, designed: false, samplesStep: false };
   const samples = (await db.query(`SELECT 1 FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'samples'`, [workspaceId, caseId])).rowCount;
-  return { exists: true, designed: row.designed, samplesStep: Boolean(samples) && Number(row.flowVersion) === 2 };
+  return { exists: true, designed: row.designed, samplesStep: Boolean(samples) && Number(row.flowVersion) >= 2 };
 }
 
 /** The latest hand-off to QS and exactly which version of each finish it carried. */

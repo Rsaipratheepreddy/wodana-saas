@@ -1,8 +1,8 @@
 "use client";
 
+import { Badge } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ClaimStatus, PettyCashCategory } from "@/lib/petty-cash/types";
-import styles from "./petty-cash.module.css";
 
 export const CATEGORIES: PettyCashCategory[] = ["transport", "food", "materials", "tools", "fees", "other"];
 
@@ -19,5 +19,5 @@ const TONES: Record<ClaimStatus, "neutral" | "warning" | "info" | "danger" | "su
 export function ClaimStatusLabel({ status }: { status: ClaimStatus }) {
   const t = useT();
   const labels: Record<ClaimStatus, string> = { draft: t("Draft"), submitted: t("Submitted"), approved: t("Approved"), rejected: t("Rejected"), reimbursed: t("Reimbursed") };
-  return <span className={styles.status} data-tone={TONES[status]}>{labels[status]}</span>;
+  return <Badge tone={TONES[status]}>{labels[status]}</Badge>;
 }

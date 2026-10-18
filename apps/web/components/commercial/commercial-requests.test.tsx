@@ -114,8 +114,8 @@ describe("a client's conversation", () => {
   it("shows the client's files on the request and on their messages, tells them it was seen, and whether they saw the reply", async () => {
     const fetcher = conversation("2026-09-22T08:00:00.000Z");
     const dialog = screen.getByRole("dialog", { name: "Move the TV wall" });
-    expect(await within(dialog).findByRole("img", { name: "wall.jpg" })).toHaveAttribute("src", "/api/client-portal-admin/cases/case/files/f1?workspaceId=workspace&preview=1");
-    expect(within(dialog).getByRole("link", { name: "plan.pdf" })).toHaveAttribute("href", "/api/client-portal-admin/cases/case/files/f2?workspaceId=workspace");
+    expect((await within(dialog).findByRole("link", { name: "Open wall.jpg" })).querySelector("img")).toHaveAttribute("src", "/api/client-portal-admin/cases/case/files/f1?workspaceId=workspace&preview=1");
+    expect(within(dialog).getByRole("link", { name: "Open plan.pdf" })).toHaveAttribute("href", "/api/client-portal-admin/cases/case/files/f2?workspaceId=workspace");
     // Read after the team's last client-visible reply (internal notes don't count).
     expect(within(dialog).getByText(/^Seen by the client · /)).toBeInTheDocument();
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith("/api/client-portal-admin/cases/case/threads/r1/read?workspaceId=workspace", expect.objectContaining({ method: "POST" })));

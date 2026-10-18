@@ -76,8 +76,10 @@ export function SendQuoteDialog({ workspaceId, caseId, quoteLabel, clientName, b
 
 /** Exactly what went out when a quote was sent: one line for the sender (Q-22). */
 export function deliveryMessage(sent: IssueDelivery, t: ReturnType<typeof useT>): { tone: "success" | "info"; message: string } {
-  if (sent.channel === "whatsapp") return { tone: "success", message: t("Sent · WhatsApp to {name}", { name: sent.decider }) };
-  if (sent.channel === "email" && sent.emailed.length) return { tone: "success", message: t("Sent · email to {names}", { names: sent.emailed.join(", ") }) };
+  // "Queued", not "Sent": delivery happens after this, and its result shows on the job.
+  if (sent.channel === "whatsapp" && sent.emailed.length) return { tone: "success", message: t("Queued · WhatsApp to {name} and email to {names}", { name: sent.decider, names: sent.emailed.join(", ") }) };
+  if (sent.channel === "whatsapp") return { tone: "success", message: t("Queued · WhatsApp to {name}", { name: sent.decider }) };
+  if (sent.channel === "email" && sent.emailed.length) return { tone: "success", message: t("Queued · email to {names}", { names: sent.emailed.join(", ") }) };
   const why = sent.reason === "hidden" ? t("the Decisions section is hidden for this project")
     : sent.reason === "not_sent" ? t("they turned these emails off")
       : sent.reason === "template_missing" ? t("the email template is missing")

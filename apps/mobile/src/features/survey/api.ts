@@ -3,6 +3,7 @@ import type { CaseAsset, ScopeEntry } from '../../../../web/lib/pre-project/cont
 import type { SiteData, SiteRecord } from '../../../../web/lib/pre-project/site';
 import { useApi } from '../../core/api';
 import { useSession } from '../../core/session';
+import type { DesignJourneyView } from './questions-model';
 
 export type { CaseAsset, ScopeEntry, SiteData, SiteRecord };
 export type CaseRow = { id: string; title: string; customerName: string | null; status: string; phase?: string | null; reference?: string | null };
@@ -15,6 +16,7 @@ export const surveyKeys = {
   case: (ws: string, id: string) => ['survey', ws, 'case', id] as const,
   brief: (ws: string, id: string) => ['survey', ws, 'brief', id] as const,
   site: (ws: string, id: string) => ['survey', ws, 'site', id] as const,
+  journey: (ws: string, id: string) => ['survey', ws, 'design-journey', id] as const,
 };
 const useOn = () => { const session = useSession(); return session.has('pre-project') && session.can('pre_projects.view'); };
 
@@ -37,5 +39,10 @@ export function useBrief(id: string) {
 export function useSurvey(id: string) {
   const api = useApi();
   return useQuery({ queryKey: surveyKeys.site(api.workspaceId, id), queryFn: () => api.get<SiteData>(`pre-projects/${id}/site`), enabled: useOn() && !!id });
+}
+/** The case's design journey as the site visit reads it: the firm's questions the job carries, its answers and the visit's version. */
+export function useDesignJourney(id: string) {
+  const api = useApi();
+  return useQuery({ queryKey: surveyKeys.journey(api.workspaceId, id), queryFn: () => api.get<DesignJourneyView>(`pre-projects/${id}/design-journey`), enabled: useOn() && !!id });
 }
 export const assetPath = (caseId: string, assetId: string, preview = true) => `pre-projects/${caseId}/assets/${assetId}${preview ? '?preview=1' : ''}`;

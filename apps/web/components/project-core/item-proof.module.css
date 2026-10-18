@@ -1,0 +1,8 @@
+/* Shop drawings and delivery proof per item: photo thumbnails in a row, and the drawing under review. */
+.thumbs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.thumbs a { display: block; inline-size: var(--wd-space-10); block-size: var(--wd-space-10); overflow: hidden; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
+.thumbs img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.more { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.evidence { display: grid; gap: var(--wd-space-2); justify-items: start; }
+.evidence img { display: block; max-inline-size: 100%; max-block-size: 50vh; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); object-fit: contain; }
+.actions { display: inline-flex; flex-wrap: wrap; gap: var(--wd-space-2); justify-content: flex-end; }

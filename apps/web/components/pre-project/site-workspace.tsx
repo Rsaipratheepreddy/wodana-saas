@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Camera, DoorOpen, ExternalLink, Eye, FileText, Pencil, PenLine, Plus } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Camera, Check, Circle, DoorOpen, ExternalLink, Eye, FileText, Pencil, PenLine, Plus, Ruler, TriangleAlert } from "lucide-react";
 import { Badge, Button, Card, EmptyState, IconButton, InlineNotice, InspectorSheet, SelectField, Tabs, useDesignSystem, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ItemDimension, type ScopeEntry } from "@/lib/pre-project/content";
@@ -185,9 +185,14 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
     {visitStage && journey ? (() => {
       const progress = siteVisitProgress({ ...journey, stages: [visitStage] });
       const steps = [progress.visit, progress.measurements, progress.photos, progress.questions].filter(Boolean).length;
-      return <Card title={t("Site visit")} chip={<Badge tone={visitStage.overdue ? "danger" : "info"}>{visitStage.overdue ? t("Overdue") : t("{done} of {total} steps", { done: steps, total: 4 })}</Badge>}
-        action={canEdit ? <Button size="compact" variant="primary" onPress={() => setVisitOpen(true)}>{steps ? t("Continue the visit") : t("Start the visit")}</Button> : undefined}>
-        <p className={styles.none}>{journey.siteEvidenceProblem ?? journey.siteChecklistProblem ?? t("Everything is in. Complete the visit.")}</p>
+      // The visit's four steps as chips (done ticked), one action: complete it once everything is in.
+      const ready = steps === 4 && !journey.siteEvidenceProblem && !journey.siteChecklistProblem;
+      const parts = [[progress.visit, t("Visit")], [progress.measurements, t("Measurements")], [progress.photos, t("Photos")], [progress.questions, t("Questions")]] as const;
+      return <Card title={t("Site visit")} chip={<Badge tone={visitStage.overdue ? "danger" : ready ? "success" : "info"}>{visitStage.overdue ? t("Overdue") : t("{done} of {total} steps", { done: steps, total: 4 })}</Badge>}
+        action={canEdit ? <Button size="compact" variant="primary" onPress={() => setVisitOpen(true)}>{ready ? t("Complete the visit") : steps ? t("Continue the visit") : t("Start the visit")}</Button> : undefined}>
+        <ul className={styles.stepChips} aria-label={t("Site visit")}>{parts.map(([done, label]) => <li key={label} data-done={done || undefined}>
+          {done ? <Check aria-hidden="true" size={12} /> : <Circle aria-hidden="true" size={12} />}{label}</li>)}</ul>
+        {ready ? null : <p className={styles.none}>{journey.siteEvidenceProblem ?? journey.siteChecklistProblem}</p>}
       </Card>;
     })() : null}
     {visits.length ? <section className={styles.visits} aria-label={t("Visits")}>
@@ -213,20 +218,20 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
           </span>
         </header>
         {chip ? <span className={styles.roomState}><Badge tone={chip.tone}>{chip.label}</Badge></span> : null}
-        <dl className={styles.facts}>
-          {area.roomId ? <div><dt>{t("Dimensions")}</dt><dd>{dims.length ? <>{dims.slice(0, 3).join(" · ")}{dims.length > 3 ? ` · ${t("+{count} more", { count: dims.length - 3 })}` : ""}</> : <span className={styles.none}>{t("None yet")}</span>}</dd></div> : null}
-          <div><dt>{t("Photos")}</dt><dd>{photoCount(area)}</dd></div>
-          <div><dt>{t("Issues")}</dt><dd>{issues.length ? <span data-warn={open > 0 || undefined}>{open ? t("{count} open", { count: open }) : t("All resolved")}</span> : 0}</dd></div>
-          {measurement?.note ? <div><dt>{t("Notes")}</dt><dd className={styles.clamp}>{measurement.note}</dd></div> : null}
-        </dl>
+        {/* The room's facts as chips: what's measured, its photos, its open issues. */}
+        <ul className={styles.factChips} aria-label={t("Details")}>
+          {area.roomId ? <li data-empty={!dims.length || undefined} data-hue={dims.length ? 1 : undefined}><Ruler aria-hidden="true" size={12} />{dims.length ? <>{dims.slice(0, 3).join(" · ")}{dims.length > 3 ? ` · ${t("+{count} more", { count: dims.length - 3 })}` : ""}</> : t("Not measured")}</li> : null}
+          <li data-empty={!photoCount(area) || undefined} data-hue={photoCount(area) ? 2 : undefined}><Camera aria-hidden="true" size={12} />{t("Photos")} <strong>{photoCount(area)}</strong></li>
+          <li data-warn={open > 0 || undefined} data-done={(issues.length > 0 && !open) || undefined}><TriangleAlert aria-hidden="true" size={12} />{issues.length ? (open ? t("{count} open", { count: open }) : t("All resolved")) : <>{t("Issues")} <strong>0</strong></>}</li>
+        </ul>
+        {measurement?.note ? <p className={styles.roomNote}>{measurement.note}</p> : null}
         {photos.length ? <ul className={styles.thumbs} aria-label={t("Photos")}>{photos.slice(0, 4).map((photo, index) => <li key={photo.entry.id}>
           <button type="button" className={styles.thumb} aria-label={t("Open {name}", { name: photo.entry.title })} onClick={() => setDetail({ areaId: area.id, tab: "photos" })}>
             {photo.asset.mimeType.startsWith("image/") ? <Image alt="" height={120} src={assetUrl(photo.asset)} unoptimized width={160} /> : <FileText aria-hidden="true" size={20} />}
             {index === 3 && photos.length > 4 ? <span className={styles.more}>+{photos.length - 4}</span> : null}
           </button>
-        </li>)}</ul> : canEdit ? <button type="button" className={styles.drop} onClick={() => pickFiles(area)}>
-          <Camera aria-hidden="true" size={16} /><span>{t("Add photos of every wall, and any plan")}</span>
-        </button> : null}
+        </li>)}</ul> : canEdit ? <div><Button size="compact" variant="secondary" onPress={() => pickFiles(area)} isDisabled={busy === `upload:${area.id}`}>
+          <Camera aria-hidden="true" size={14} />{t("Add photos")}</Button></div> : null}
       </article></li>;
     })}</ul> : null}
 

@@ -4,7 +4,7 @@ import type { WorkspaceSearchKind, WorkspaceSearchResponse } from "@wodana/contr
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowRight, CalendarPlus, FileText, ListTodo, Plus, Search, Sparkles, type LucideIcon } from "lucide-react";
-import { ControlledModalDialog, SearchInput } from "@/design-system";
+import { ControlledModalDialog, SearchInput, Spinner } from "@/design-system";
 import { useWoddy } from "@/components/crm/woddy-chat";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
@@ -157,7 +157,7 @@ function Palette({ workspaceId, modules, access, onClose }: { workspaceId: strin
           </li>;
         })}
       </ul>
-      {searching ? <p className={styles.status} role="status">{t("Searching…")}</p>
+      {searching ? <div className={styles.status}><Spinner label={t("Searching…")} /></div>
         : !items.length ? <p className={styles.status} role="status">{records?.failed ? t("Workspace search could not be loaded.") : t("No matches")}</p> : null}
       <p className={styles.hint} aria-hidden="true">{t("↑ ↓ to move · Enter to open · Esc to close")}</p>
     </div>

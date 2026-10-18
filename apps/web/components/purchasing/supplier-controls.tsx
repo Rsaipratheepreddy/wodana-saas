@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Badge,
-  Button, DateField, EmptyState, FileUploader, FormDialog, FormRow, InlineNotice, MoneyField, SelectField, Skeleton, Switch, Tabs, TextAreaField, TextInput, VisuallyHidden,
+  Button, ButtonGroup, DataGrid, DateField, EditableFieldList, EmptyState, FactRow, FileUploader, FormDialog, FormNotSaved, FormRow, InlineNotice, MoneyField, QuantityInput, ReasonDialog, ReviewDialog, SelectField,
+  Skeleton, Switch, Tabs, TextInput, TextLink, VisuallyHidden, type DataGridColumn,
 } from "@/design-system";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import { evidenceFiles, type EvidenceFile } from "@/lib/evidence/evidence";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { BankAccount, BankSource, DocumentKind, SupplierControlsState } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
-import { quantityText, useOrderLabels } from "./order-labels";
+import { fieldNumber, fieldText, quantityText, useOrderLabels } from "./order-labels";
 import styles from "./purchasing.module.css";
 
 const KINDS: DocumentKind[] = ["trade_licence", "tax_certificate", "insurance", "bank_letter", "other"];
@@ -62,7 +65,7 @@ function Documents({ api, state, onState }: { api: PurchasingApi; state: Supplie
         <span className={styles.nameCell}><span>{document.kind === "other" ? document.label : labels.kind[document.kind]}</span>
           <small>{[document.number, document.required ? t("Required") : ""].filter(Boolean).join(" · ")}</small></span>
         <span className={expired ? styles.lateText : styles.muted}>{document.expiresOn ? (expired ? t("Expired {date}", { date: format.day(document.expiresOn) }) : t("Until {date}", { date: format.day(document.expiresOn) })) : "—"}</span>
-        {document.hasFile ? <a href={api.documentUrl(document.id)} target="_blank" rel="noreferrer">{t("Open")}</a> : null}
+        {document.hasFile ? <TextLink href={api.documentUrl(document.id)} target="_blank" rel="noreferrer">{t("Open")}</TextLink> : null}
       </li>;
     })}</ul>}
     {state.canManage ? <div><Button size="compact" onPress={() => setAdding(true)}>{t("Add document")}</Button></div> : null}
@@ -101,6 +104,7 @@ function Bank({ api, state, onState }: { api: PurchasingApi; state: SupplierCont
   const labels = useControlLabels();
   const [requesting, setRequesting] = useState(false);
   const [dialog, setDialog] = useState<{ account: BankAccount; action: "callback" | "reject" } | null>(null);
+  const [reviewing, setReviewing] = useState<BankAccount | null>(null);
   const [notice, setNotice] = useState("");
   const run = async (account: BankAccount, input: Record<string, unknown>, inDialog = false) => {
     setNotice("");
@@ -117,16 +121,27 @@ function Bank({ api, state, onState }: { api: PurchasingApi; state: SupplierCont
           {account.callbackByName ? <small>{t("Called back by {name}: {note}", { name: account.callbackByName, note: account.callbackNote })}</small> : null}
           {account.rejectReason ? <small>{t("Refused: {reason}", { reason: account.rejectReason })}</small> : null}</span>
         <Badge tone={account.status === "approved" ? "success" : account.status === "pending" ? "warning" : "neutral"}>{labels.bank[account.status]}</Badge>
-        {account.status === "pending" && state.canApprove && !mine ? <span className={styles.filters}>
+        {account.status === "pending" && state.canApprove && !mine ? <ButtonGroup>
           {!account.callbackByName ? <Button size="compact" onPress={() => setDialog({ account, action: "callback" })}>{t("Record the call-back")}</Button>
-            : <Button size="compact" variant="primary" onPress={() => void run(account, { action: "approve" })}>{t("Approve")}</Button>}
+            : <Button size="compact" variant="primary" onPress={() => setReviewing(account)}>{t("Review")}</Button>}
           <Button size="compact" variant="quiet" onPress={() => setDialog({ account, action: "reject" })}>{t("Refuse")}</Button>
-        </span> : account.status === "pending" && mine ? <small className={styles.muted}>{t("Someone else checks details you recorded.")}</small> : null}
+        </ButtonGroup> : account.status === "pending" && mine ? <small className={styles.muted}>{t("Someone else checks details you recorded.")}</small> : null}
         {account.decidedAt ? <small className={styles.muted}>{format.when(account.decidedAt)}</small> : null}
       </li>;
     })}</ul>}
     {state.canManage && !state.bankAccounts.some((account) => account.status === "pending") ? <div><Button size="compact" onPress={() => setRequesting(true)}>{t("New bank details")}</Button></div> : null}
-    {requesting ? <BankDialog onClose={() => setRequesting(false)} onSave={async (input) => {
+    {/* §0.3 P0: new bank details are approved in a review of the details, the call-back and the supplier's letter, never one click. */}
+    {reviewing ? <ReviewDialog title={t("Approve bank details")} description={state.supplier.name} confirmLabel={t("Approve")} onClose={() => setReviewing(null)}
+      facts={[
+        { label: t("Account name"), value: reviewing.accountName },
+        { label: t("Bank"), value: [reviewing.bankName, reviewing.swift].filter(Boolean).join(" · ") },
+        { label: t("Account number or IBAN"), value: reviewing.accountNumber },
+        { label: t("How the details came"), value: `${labels.source[reviewing.source]} · ${reviewing.requestedByName}` },
+        ...(reviewing.callbackByName ? [{ label: t("Call-back"), value: `${reviewing.callbackByName}: ${reviewing.callbackNote}` }] : []),
+      ]}
+      files={evidenceFiles(api.workspaceId, reviewing.files)}
+      onConfirm={async () => { if (!(await run(reviewing, { action: "approve" }))) throw new FormNotSaved(); setReviewing(null); }} /> : null}
+    {requesting ? <BankDialog workspaceId={api.workspaceId} onClose={() => setRequesting(false)} onSave={async (input) => {
       onState(await api.requestBankAccount(state.supplier.id, { id: crypto.randomUUID(), ...input })); setRequesting(false);
     }} /> : null}
     {dialog ? <NoteDialog title={dialog.action === "callback" ? t("Record the call-back") : t("Refuse the bank details")}
@@ -135,27 +150,29 @@ function Bank({ api, state, onState }: { api: PurchasingApi; state: SupplierCont
   </div>;
 }
 
-function BankDialog({ onClose, onSave }: { onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
+function BankDialog({ workspaceId, onClose, onSave }: { workspaceId: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
   const t = useT();
   const labels = useControlLabels();
   const [form, setForm] = useState({ accountName: "", bankName: "", accountNumber: "", swift: "", source: "supplier_letter" as BankSource });
+  // The supplier's bank letter or a cancelled cheque, which whoever verifies the details reads.
+  const [files, setFiles] = useState<EvidenceFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const set = (key: keyof typeof form) => (value: string) => setForm({ ...form, [key]: value });
-  return <FormDialog size="md" title={t("New bank details")} onClose={onClose} isDirty={Boolean(form.accountName.trim() || form.bankName.trim() || form.accountNumber.trim())}
-    isSubmitDisabled={!form.accountName.trim() || !form.bankName.trim() || !form.accountNumber.trim()} submitLabel={t("Save")} onSubmit={() => onSave(form)}>
+  return <FormDialog size="md" title={t("New bank details")} onClose={onClose} isDirty={Boolean(form.accountName.trim() || form.bankName.trim() || form.accountNumber.trim() || files.length)}
+    isSubmitDisabled={!form.accountName.trim() || !form.bankName.trim() || !form.accountNumber.trim() || uploading || !files.length} submitLabel={t("Save")}
+    onSubmit={() => onSave({ ...form, evidenceFileIds: files.map((file) => file.id) })}>
     <TextInput label={t("Account name")} isRequired maxLength={160} value={form.accountName} onChange={set("accountName")} />
     <TextInput label={t("Bank")} isRequired maxLength={160} value={form.bankName} onChange={set("bankName")} />
     <TextInput label={t("SWIFT")} maxLength={11} value={form.swift} onChange={set("swift")} />
     <TextInput label={t("Account number or IBAN")} isRequired maxLength={34} value={form.accountNumber} onChange={set("accountNumber")} />
     <SelectField label={t("How the details came")} isRequired selectedKey={form.source} onSelectionChange={(key) => set("source")(String(key))} items={SOURCES.map((item) => ({ id: item, label: labels.source[item] }))} />
+    <EvidenceField workspaceId={workspaceId} kind="supplier_bank" isRequired label={t("Bank letter or cancelled cheque")} value={files} onChange={setFiles} onBusy={setUploading} />
   </FormDialog>;
 }
 
 function NoteDialog({ title, label, onClose, onSave }: { title: string; label: string; onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={title} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()} submitLabel={t("Save")} onSubmit={() => onSave(note.trim())}>
-    <TextAreaField label={label} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
+  return <ReasonDialog title={title} label={label} confirmLabel={t("Save")} onConfirm={onSave} onClose={onClose} />;
 }
 
 function Contracts({ api, state, onState }: { api: PurchasingApi; state: SupplierControlsState; onState: (next: SupplierControlsState) => void }) {
@@ -184,7 +201,8 @@ function Contracts({ api, state, onState }: { api: PurchasingApi; state: Supplie
   </div>;
 }
 
-type ContractLine = { catalogItemId: string | null; unitPrice: string; packSize: string; minimum: string };
+type ContractLine = { key: string; catalogItemId: string | null; unitPrice: string; packSize: string; minimum: string };
+const blankLine = (): ContractLine => ({ key: crypto.randomUUID(), catalogItemId: null, unitPrice: "", packSize: "", minimum: "" });
 
 function ContractDialog({ state, onClose, onSave }: { state: SupplierControlsState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
   const t = useT();
@@ -192,11 +210,26 @@ function ContractDialog({ state, onClose, onSave }: { state: SupplierControlsSta
   const [currency, setCurrency] = useState(state.supplier.currency ?? "");
   const [validFrom, setValidFrom] = useState<string | null>(null);
   const [validTo, setValidTo] = useState<string | null>(null);
-  const [lines, setLines] = useState<ContractLine[]>([{ catalogItemId: null, unitPrice: "", packSize: "", minimum: "" }]);
-  const setLine = (index: number, patch: Partial<ContractLine>) => setLines(lines.map((line, item) => (item === index ? { ...line, ...patch } : line)));
+  const [lines, setLines] = useState<ContractLine[]>(() => [blankLine()]);
+  const setLine = (key: string, patch: Partial<ContractLine>) => setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  const number = (line: ContractLine) => lines.findIndex((item) => item.key === line.key) + 1;
+  const unitOf = (line: ContractLine) => state.catalogItems.find((item) => item.id === line.catalogItemId)?.unit ?? "";
+  const hidden = (text: string) => <VisuallyHidden>{text}</VisuallyHidden>;
+  const columns: DataGridColumn<ContractLine>[] = [
+    { id: "item", header: t("Item"), size: 240, accessorFn: (line) => line.catalogItemId ?? "", meta: { renderCell: (line) =>
+      <SelectField label={hidden(t("Item, line {number}", { number: number(line) }))} placeholder={t("Choose an item")} selectedKey={line.catalogItemId}
+        onSelectionChange={(key) => setLine(line.key, { catalogItemId: key === null ? null : String(key) })} items={state.catalogItems.map((item) => ({ id: item.id, label: `${item.name} (${item.unit})` }))} /> } },
+    { id: "price", header: t("Price"), size: 150, accessorFn: (line) => line.unitPrice, meta: { align: "end", renderCell: (line) =>
+      <MoneyField label={hidden(t("Price, line {number}", { number: number(line) }))} currency={/^[A-Z]{3}$/.test(currency) ? currency : undefined} value={line.unitPrice} onChange={(unitPrice) => setLine(line.key, { unitPrice })} /> } },
+    { id: "pack", header: t("Pack size"), size: 130, accessorFn: (line) => line.packSize, meta: { align: "end", renderCell: (line) =>
+      <QuantityInput label={hidden(t("Pack size, line {number}", { number: number(line) }))} unit={unitOf(line)} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(line.packSize)} onChange={(value) => setLine(line.key, { packSize: fieldText(value) })} /> } },
+    { id: "minimum", header: t("Minimum"), size: 130, accessorFn: (line) => line.minimum, meta: { align: "end", renderCell: (line) =>
+      <QuantityInput label={hidden(t("Minimum, line {number}", { number: number(line) }))} unit={unitOf(line)} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(line.minimum)} onChange={(value) => setLine(line.key, { minimum: fieldText(value) })} /> } },
+  ];
   const filled = lines.filter((line) => line.catalogItemId && line.unitPrice !== "");
   const ready = reference.trim() && /^[A-Za-z]{3}$/.test(currency.trim()) && validFrom && validTo && validTo >= validFrom && filled.length > 0;
-  const numeric = (value: string) => value.replace(/[^\d.]/g, "");
   return <FormDialog size="lg" title={t("Add rate contract")} onClose={onClose} isDirty={Boolean(reference.trim() || filled.length)} isSubmitDisabled={!ready} submitLabel={t("Save")}
     onSubmit={() => onSave({ reference: reference.trim(), currency: currency.trim().toUpperCase(), validFrom, validTo,
       lines: filled.map((line) => ({ catalogItemId: line.catalogItemId, unitPrice: line.unitPrice, packSize: line.packSize || null, minimum: line.minimum || null })) })}>
@@ -206,15 +239,9 @@ function ContractDialog({ state, onClose, onSave }: { state: SupplierControlsSta
         <DateField label={t("Valid from")} isRequired value={validFrom ? parseDate(validFrom) : null} onChange={(value) => setValidFrom(value ? value.toString() : null)} />
         <DateField label={t("Valid to")} isRequired minValue={validFrom ? parseDate(validFrom) : undefined} value={validTo ? parseDate(validTo) : null} onChange={(value) => setValidTo(value ? value.toString() : null)} />
       </FormRow>
-      <ul className={styles.draftLines} aria-label={t("Prices")}>{lines.map((line, index) => <li key={index}>
-        <SelectField label={<VisuallyHidden>{t("Item, line {number}", { number: index + 1 })}</VisuallyHidden>} placeholder={t("Choose an item")} selectedKey={line.catalogItemId}
-          onSelectionChange={(key) => setLine(index, { catalogItemId: key === null ? null : String(key) })} items={state.catalogItems.map((item) => ({ id: item.id, label: `${item.name} (${item.unit})` }))} />
-        <MoneyField label={<VisuallyHidden>{t("Price, line {number}", { number: index + 1 })}</VisuallyHidden>} currency={/^[A-Z]{3}$/.test(currency) ? currency : undefined} value={line.unitPrice} onChange={(unitPrice) => setLine(index, { unitPrice })} />
-        <TextInput aria-label={t("Pack size, line {number}", { number: index + 1 })} label={null} placeholder={t("Pack size")} inputMode="decimal" value={line.packSize} onChange={(value) => setLine(index, { packSize: numeric(value) })} />
-        <TextInput aria-label={t("Minimum, line {number}", { number: index + 1 })} label={null} placeholder={t("Minimum")} inputMode="decimal" value={line.minimum} onChange={(value) => setLine(index, { minimum: numeric(value) })} />
-        <span />
-      </li>)}</ul>
-      <div><Button size="compact" variant="quiet" onPress={() => setLines([...lines, { catalogItemId: null, unitPrice: "", packSize: "", minimum: "" }])}>{t("Add line")}</Button></div>
+      <DataGrid ariaLabel={t("Prices")} data={lines} getRowId={(line) => line.key} columns={columns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
+      <div><Button size="compact" variant="quiet" onPress={() => setLines([...lines, blankLine()])}>{t("Add line")}</Button></div>
   </FormDialog>;
 }
 
@@ -224,13 +251,13 @@ function Performance({ state }: { state: SupplierControlsState }) {
   const labels = useOrderLabels();
   const card = state.scorecard;
   return <div className={styles.stack}>
-    <dl className={styles.facts}>
-      <div><dt>{t("Orders")}</dt><dd>{card.orders.length ? card.orders.map((row) => `${row.orders} · ${format.money(row.value, row.currency)}`).join(", ") : "—"}</dd></div>
-      <div><dt>{t("On time")}</dt><dd>{card.onTimePercent === null ? "—" : t("{percent}% of {count} lines", { percent: card.onTimePercent, count: card.deliveredLines })}</dd></div>
-      <div><dt>{t("Rejected")}</dt><dd>{card.rejectPercent === null ? "—" : t("{percent}% ({quantity} of {received})", { percent: card.rejectPercent, quantity: quantityText(card.rejected), received: quantityText(card.received) })}</dd></div>
-      <div><dt>{t("Returns")}</dt><dd>{card.returns}</dd></div>
-      <div><dt>{t("Price requests")}</dt><dd>{card.priceRequests ? t("Answers {percent}%, in {days} days on average", { percent: card.replyPercent ?? "0", days: card.replyDays ?? "—" }) : "—"}</dd></div>
-    </dl>
+    <EditableFieldList>
+      <FactRow label={t("Orders")}>{card.orders.length ? card.orders.map((row) => `${row.orders} · ${format.money(row.value, row.currency)}`).join(", ") : "—"}</FactRow>
+      <FactRow label={t("On time")}>{card.onTimePercent === null ? "—" : t("{percent}% of {count} lines", { percent: card.onTimePercent, count: card.deliveredLines })}</FactRow>
+      <FactRow label={t("Rejected")}>{card.rejectPercent === null ? "—" : t("{percent}% ({quantity} of {received})", { percent: card.rejectPercent, quantity: quantityText(card.rejected), received: quantityText(card.received) })}</FactRow>
+      <FactRow label={t("Returns")}>{card.returns}</FactRow>
+      <FactRow label={t("Price requests")}>{card.priceRequests ? t("Answers {percent}%, in {days} days on average", { percent: card.replyPercent ?? "0", days: card.replyDays ?? "—" }) : "—"}</FactRow>
+    </EditableFieldList>
     {state.openOrders.length ? <ul className={styles.receipts} aria-label={t("Open orders")}>{state.openOrders.map((order) => <li key={order.id}>
       <span className={styles.nameCell}><span>{order.number}</span></span><span className={styles.muted}>{labels.status[order.status]}</span>
       <span className={styles.money}>{format.money(order.total, order.currency)}</span>

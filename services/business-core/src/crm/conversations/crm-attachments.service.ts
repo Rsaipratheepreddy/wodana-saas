@@ -8,6 +8,7 @@ import { prepareReferenceUpload, type ReferenceUpload } from "../../workspaces/r
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { ATTACHMENT_MAX_BYTES, fetchRetryDelayMinutes, safeFileName, sendableProblem, servedAs, sniffSendable } from "./inbox/attachment-rules";
+import { conversationVisible, INBOX_READ, loadInboxViewer } from "./inbox/inbox-visibility";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
@@ -67,9 +68,18 @@ export class CrmAttachmentsService {
     });
   }
 
+  /** Whether this person may read the chat: the inbox's reach, or the chat is filed into one of their jobs (an account manager's). */
+  private async canReadChat(client: PoolClient, workspaceId: string, conversationId: string, userId: string) {
+    const viewer = await loadInboxViewer((permission) => this.access.hasPermission(client, workspaceId, userId, permission));
+    const membershipId = (await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`,
+      [workspaceId, userId])).rows[0]?.id ?? null;
+    return conversationVisible(client, workspaceId, conversationId, viewer, membershipId);
+  }
+
   /** A chat file's bytes for someone who can read the chat. Only reads: nothing is fetched or written here. */
   content(actor: RequestActor, workspaceId: string, conversationId: string, attachmentId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
+    return this.access.withAnyPermission(actor, workspaceId, INBOX_READ, async (client, user) => {
+      if (!(await this.canReadChat(client, workspaceId, conversationId, user.userId))) throw new NotFoundException("This file isn't available.");
       const row = (await client.query<Row>(
         `SELECT attachment.* FROM crm_message_attachments attachment
            LEFT JOIN crm_messages message ON message.workspace_id = attachment.workspace_id AND message.id = attachment.message_id
@@ -101,7 +111,7 @@ export class CrmAttachmentsService {
    */
   saveToCase(actor: RequestActor, workspaceId: string, conversationId: string, attachmentId: string, input: { caseId: string; fileId: string }) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.edit", async (client, user) => {
-      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "crm.communications.view"))) throw new NotFoundException("This file isn't available.");
+      if (!(await this.canReadChat(client, workspaceId, conversationId, user.userId))) throw new NotFoundException("This file isn't available.");
       const row = (await client.query<Row>(
         `SELECT attachment.* FROM crm_message_attachments attachment
            LEFT JOIN crm_messages message ON message.workspace_id = attachment.workspace_id AND message.id = attachment.message_id

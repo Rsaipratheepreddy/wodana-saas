@@ -584,6 +584,7 @@ export function parsePaymentTerms(
       trigger: text(r.trigger, 300, true),
       requiredForRelease: r.requiredForRelease === true,
       requiredForProduction: r.requiredForProduction === true,
+      ...(r.dueAtHandover === true ? { dueAtHandover: true } : {}),
     };
   });
   if (new Set(rows.map((r) => r.id)).size !== rows.length)

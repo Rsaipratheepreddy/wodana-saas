@@ -1,6 +1,7 @@
 import { UnprocessableEntityException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { FlowDefinition, FlowStepDefinition } from "../flows/flow-definition";
+import { notifyUserInApp, queueUserEmail } from "../../notifications/default-templates";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -122,6 +123,33 @@ export async function writeLeadTeam(db: Db, workspaceId: string, leadId: string,
     if (saved.rowCount) changed.push(entry.role);
   }
   return changed;
+}
+
+const ROLE_WORDS: Record<string, string> = { designer: "Designer", project_manager: "Project manager", quantity_surveyor: "Quantity surveyor", factory_lead: "Factory lead" };
+
+/**
+ * §0.3 P0: whoever was just tagged on an enquiry's team (the designer, for one) is told in the app and by email, once
+ * per tagging; someone who tags themselves is not.
+ */
+export async function tellTaggedTeam(db: Db, workspaceId: string, leadId: string, roles: string[], actorUserId: string | null) {
+  if (!roles.length) return;
+  const tagged = (await db.query<{ role: string; userId: string; version: number; clientName: string; reference: string; actor: string | null }>(
+    `SELECT team.role_code AS role, membership.user_id AS "userId", team.version, party.display_name AS "clientName", enquiry.reference,
+            (SELECT account.display_name FROM users account WHERE account.id = $4) AS actor
+       FROM crm_lead_team team
+       JOIN workspace_memberships membership ON membership.workspace_id = team.workspace_id AND membership.id = team.membership_id AND membership.status = 'active'
+       JOIN crm_leads lead ON lead.workspace_id = team.workspace_id AND lead.id = team.lead_id
+       JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id
+       JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+      WHERE team.workspace_id = $1 AND team.lead_id = $2 AND team.role_code = ANY($3::text[])`, [workspaceId, leadId, roles, actorUserId])).rows;
+  for (const entry of tagged) {
+    if (entry.userId === actorUserId) continue;
+    const variables = { role: ROLE_WORDS[entry.role] ?? entry.role.replace(/_/g, " "), reference: entry.reference, clientName: entry.clientName, actor: entry.actor ?? "Someone" };
+    const key = `crm:team:${leadId}:${entry.role}:${entry.version}:${entry.userId}`;
+    const deepLink = `/workspace/crm/leads?lead=${leadId}`;
+    await notifyUserInApp(db, { workspaceId, recipientUserId: entry.userId, code: "crm.enquiry_team_tagged", eventType: "crm.team.tagged", variables, deepLink, idempotencyKey: key });
+    await queueUserEmail(db, { workspaceId, recipientUserId: entry.userId, code: "crm.enquiry_team_tagged", eventType: "crm.team.tagged", variables, deepLink, idempotencyKey: `${key}:email` });
+  }
 }
 
 export async function readLeadTeam(db: Db, workspaceId: string, leadId: string): Promise<LeadTeamEntry[]> {

@@ -12,5 +12,4 @@
 .preview { height:calc(100dvh - 65px); min-height:400px; overflow:auto; padding:var(--wd-space-3) var(--wd-space-5) var(--wd-space-6); gap:var(--wd-space-3); box-sizing:border-box; }
 .preview>div { flex-shrink:0; }
 .navigation { display:flex; align-items:center; justify-content:center; gap:var(--wd-space-3); flex-wrap:wrap; font-size:var(--wd-text-xs); width:100%; }
-.navigation button,.navigation select { border:1px solid var(--wd-color-border); background:white; color:var(--wd-color-text); border-radius:var(--wd-radius-xs); padding:var(--wd-space-1-5) var(--wd-space-2); font:inherit; }
-.navigation button:disabled { opacity:.4; }.navigation label{display:flex;align-items:center;gap:var(--wd-space-2);}.label{text-align:center;}.paper{box-shadow:0 3px 20px #21352715;}
+.label{text-align:center;}.paper{box-shadow:0 3px 20px #21352715;}

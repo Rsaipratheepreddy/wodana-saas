@@ -11,13 +11,19 @@ import { QuotationMaterialsEditor, QuotationMaterialsSummary } from "./quotation
 import { customUnit, selectUnit } from "@/lib/commercial/materials";
 import q from "./quotation-line-fields.module.css";
 import { PaymentScheduleEditor } from "./payment-schedule-editor";
-import { Checkbox, DataGrid, ControlledModalDialog, EmptyState, useDesignSystem } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { Button, Checkbox, ComboboxField, DataGrid, ControlledModalDialog, DateField, EmptyState, IconButton, InlineNotice, MoneyField, PercentageInput, SegmentedControl, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import type { Quote, QuoteLine, ChangeRequest } from "@/lib/commercial/types";
 import { money, newLine, quoteCurrencyChoices, quoteTotals } from "@/lib/commercial/client";
 import { catalogPriceInput, usesCatalogPricing } from "@/lib/commercial/catalog-price";
 import { QuotationCatalogPrice } from "./quotation-catalog-price";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
+/** The quotation's validity date as a calendar day, or nothing when it is blank or not a date. */
+function calendarDay(value: string) {
+  try { return value ? parseDate(value) : null; } catch { return null; }
+}
+
 export function QuotationEditor({
   quote,
   onChange,
@@ -80,12 +86,13 @@ export function QuotationEditor({
       {usesCatalogPricing(l) ? <QuotationCatalogPrice line={l} currency={quote.currency} taxRate={quote.taxRate} workspaceId={workspaceId} caseId={caseId} readOnly={readOnly} canOverride={canOverridePrice} onApply={applyCatalogPrice} /> : readOnly ? (
         money(l.rate, quote.currency, locale)
       ) : (
-        <div className={q.moneyControl}><span>{quote.currency}</span><QuotationNumberInput
+        <QuotationNumberInput
           label={t("Rate for {title}", { title: l.title })}
           value={l.rate}
           money
+          prefix={quote.currency}
           onChange={(rate) => line(l.id, { rate })}
-        /></div>
+        />
       )}
     </div>
   );
@@ -93,43 +100,42 @@ export function QuotationEditor({
     <>
       <div className={`${s.toolbar} ${q.itemToolbar}`}>
         <div className={s.actions}>
-          <select
+          <SelectField
             aria-label={t("Filter quotation by room")}
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-          >
-            <option value="All rooms">{t("All rooms")}</option>
-            {rooms.map((r) => (
-              <option key={r}>{r}</option>
-            ))}
-          </select>
+            label={<span className="wd-visually-hidden">{t("Filter quotation by room")}</span>}
+            items={[{ id: "All rooms", label: t("All rooms") }, ...rooms.map((r) => ({ id: r, label: r }))]}
+            selectedKey={room}
+            onSelectionChange={(key) => key !== null && setRoom(String(key))}
+          />
           <span className={s.muted}>
             {t(costing ? "{count} items · Internal costing" : "{count} items", { count: quote.lines.length })}
           </span>
         </div>
         {!readOnly && (
           <div className={s.actions}>
-            <button
-              className={s.button}
-              onClick={() => {
+            <Button
+              size="compact"
+              intent="write"
+              onPress={() => {
                 setNewRoom("");
                 setRoomSource(null);
                 setEditingRoom(null);
               }}
             >
-              <Plus size={15} />
-              {t("Add room")}</button>
-            <button
-              className={s.button}
-              onClick={() => {
+              <Plus aria-hidden="true" size={14} />
+              {t("Add room")}</Button>
+            <Button
+              size="compact"
+              intent="write"
+              onPress={() => {
                 const next = newLine(
                   room === "All rooms" ? (rooms.at(-1) ?? t("General")) : room,
                 );
                 openItem(next);
               }}
             >
-              <Plus size={15} />
-              {t("Add item")}</button>
+              <Plus aria-hidden="true" size={14} />
+              {t("Add item")}</Button>
           </div>
         )}
       </div>
@@ -140,10 +146,11 @@ export function QuotationEditor({
                           <span>
                             <strong>{r}</strong>
                             {!readOnly && (
-                              <button
-                                className={s.icon}
+                              <IconButton
+                                size="compact"
+                                intent="write"
                                 aria-label={t("Edit room {room}", { room: r })}
-                                onClick={() => {
+                                onPress={() => {
                                   setEditingRoom(r);
                                   setNewRoom(r);
                                   setRoomSource(
@@ -152,8 +159,8 @@ export function QuotationEditor({
                                   );
                                 }}
                               >
-                                <Pencil size={12} />
-                              </button>
+                                <Pencil aria-hidden="true" size={12} />
+                              </IconButton>
                             )}
                             <small>
                               {t(quote.lines.filter((l) => l.room === r)
@@ -164,12 +171,13 @@ export function QuotationEditor({
                           </span>
                           <div>
                             {!readOnly && (
-                              <button
-                                className={s.button}
+                              <Button
+                                size="compact"
+                                intent="write"
                                 aria-label={t("Add item to {room}", { room: r })}
-                                onClick={() => openItem(newLine(r))}
+                                onPress={() => openItem(newLine(r))}
                               >
-                                <Plus size={13} /> {t("Add item")}</button>
+                                <Plus aria-hidden="true" size={14} />{t("Add item")}</Button>
                             )}
                             <strong>
                               {money(
@@ -182,7 +190,7 @@ export function QuotationEditor({
                             </strong>
                           </div>
                         </div><DataGrid ariaLabel={t("Quotation items · {room}", { room: r })} data={quote.lines.filter(l=>l.room===r)} getRowId={l=>l.id} selectable={false} searchLabel={t("Search items in {room}", { room: r })} exportFileName="quotation-items.csv" columns={[{id:"title",header:t("Item"),size:290,accessorFn:(l:QuoteLine)=>l.title,meta:{renderCell:(l:QuoteLine)=><>
-                            {readOnly ? <strong>{l.title}</strong> : <button className={q.itemTitle} aria-label={t("Edit details for {title}", { title: l.title })} onClick={() => openItem(l)}><strong>{l.title}</strong><Pencil size={12} /></button>}
+                            {readOnly ? <strong>{l.title}</strong> : <Button className={q.itemTitle} size="compact" variant="quiet" aria-label={t("Edit details for {title}", { title: l.title })} onPress={() => openItem(l)}><strong>{l.title}</strong><Pencil aria-hidden="true" size={12} /></Button>}
                             {l.specification && (
                               <small
                                 className={s.detail}
@@ -198,11 +206,11 @@ export function QuotationEditor({
                             <div className={q.quantityControl}>
                               {readOnly ? <span>{l.quantity} {!costing && l.unit}</span> : <>
                                 <QuotationNumberInput label={t("Quantity for {title}", { title: l.title })} value={l.quantity} min={0.0001} max={1e6} onChange={(quantity) => line(l.id, { quantity })} />
-                                {!costing && <button className={q.unitButton} aria-label={t("Change unit for {title}", { title: l.title })} title={t("Change unit in item details")} onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}
+                                {!costing && <Button size="compact" variant="quiet" aria-label={t("Change unit for {title}", { title: l.title })} onPress={() => openItem(l)}>{l.unit}<Pencil aria-hidden="true" size={12} /></Button>}
                               </>}
                             </div>
                           </>}},
-...(costing?[{id:"unit",header:t("Unit"),size:110,accessorFn:(l:QuoteLine)=>l.unit,meta:{renderCell:(l:QuoteLine)=><>{readOnly ? l.unit : <button className={q.unitButton} aria-label={t("Change unit for {title}", { title: l.title })} onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}</>}}]:[]),
+...(costing?[{id:"unit",header:t("Unit"),size:110,accessorFn:(l:QuoteLine)=>l.unit,meta:{renderCell:(l:QuoteLine)=><>{readOnly ? l.unit : <Button size="compact" variant="quiet" aria-label={t("Change unit for {title}", { title: l.title })} onPress={() => openItem(l)}>{l.unit}<Pencil aria-hidden="true" size={12} /></Button>}</>}}]:[]),
 ...(costing?[{id:"cost",header:t("Unit cost"),size:150,accessorFn:(l:QuoteLine)=>l.unitCost,meta:{renderCell:(l:QuoteLine)=><>
                               {readOnly || !canEditCosts ? (
                                 money(l.unitCost ?? 0, quote.currency, locale)
@@ -215,10 +223,11 @@ export function QuotationEditor({
                           </>}},
 ...(!readOnly && costing?[{id:"action",header:t("Action"),size:110,enableSorting:false,enableColumnFilter:false,meta:{renderCell:(l:QuoteLine)=><>
                               <div className={s.rowAction}>
-                                <button
-                                  className={s.icon}
+                                <IconButton
+                                  size="compact"
+                                  intent="write"
                                   aria-label={t("Duplicate {title}", { title: l.title })}
-                                  onClick={() =>
+                                  onPress={() =>
                                     patch({
                                       lines: [
                                         ...quote.lines,
@@ -233,12 +242,13 @@ export function QuotationEditor({
                                     })
                                   }
                                 >
-                                  <Copy size={14} />
-                                </button>
-                                <button
-                                  className={s.icon}
+                                  <Copy aria-hidden="true" size={14} />
+                                </IconButton>
+                                <IconButton
+                                  size="compact"
+                                  intent="write"
                                   aria-label={t("Remove {title}", { title: l.title })}
-                                  onClick={() =>
+                                  onPress={() =>
                                     patch({
                                       lines: quote.lines.filter(
                                         (x) => x.id !== l.id,
@@ -246,8 +256,8 @@ export function QuotationEditor({
                                     })
                                   }
                                 >
-                                  <Trash2 size={14} />
-                                </button>
+                                  <Trash2 aria-hidden="true" size={14} />
+                                </IconButton>
                               </div>
                             </>}}]:[])]}/></section>)}</div>
       )}
@@ -255,54 +265,42 @@ export function QuotationEditor({
         <>
           <div className={s.bottom}>
             <div className={`${colors.theme} ${s.form}`}>
-              <label>
-                {t("Quotation title")}<input
-                  value={quote.title}
-                  disabled={readOnly}
-                  onChange={(e) => patch({ title: e.target.value })}
-                />
-              </label>
+              <TextInput
+                label={t("Quotation title")}
+                value={quote.title}
+                isDisabled={readOnly}
+                onChange={(title) => patch({ title })}
+              />
               <div className={s.grid}>
-                <label>
-                  {t("Valid until")}<input
-                    type="date"
-                    value={quote.validUntil}
-                    disabled={readOnly}
-                    onChange={(e) => patch({ validUntil: e.target.value })}
-                  />
-                </label>
-                <label>
-                  {t("Currency")}<select
-                    value={quote.currency}
-                    disabled={readOnly}
-                    onChange={(e) => patch({ currency: e.target.value })}
-                  >
-                    {quoteCurrencyChoices(workspaceCurrency).map(
-                      (c) => (
-                        <option key={c}>{c}</option>
-                      ),
-                    )}
-                  </select>
-                </label>
+                <DateField
+                  label={t("Valid until")}
+                  value={calendarDay(quote.validUntil)}
+                  isDisabled={readOnly}
+                  onChange={(day) => patch({ validUntil: day ? day.toString() : "" })}
+                />
+                <SelectField
+                  label={t("Currency")}
+                  items={quoteCurrencyChoices(workspaceCurrency).map((c) => ({ id: c, label: c }))}
+                  selectedKey={quote.currency}
+                  isDisabled={readOnly}
+                  onSelectionChange={(key) => key !== null && patch({ currency: String(key) })}
+                />
               </div>
               <section>
                 <h3>{t("Terms, exclusions & linked requests")}</h3>
                 <div className={`${colors.theme} ${s.form}`}>
-                  <label>
-                    {t("Terms & payment expectations")}
-                    <textarea
-                      value={quote.terms}
-                      disabled={readOnly}
-                      onChange={(e) => patch({ terms: e.target.value })}
-                    />
-                  </label>
-                  <label>
-                    {t("Exclusions")}<textarea
-                      value={quote.exclusions}
-                      disabled={readOnly}
-                      onChange={(e) => patch({ exclusions: e.target.value })}
-                    />
-                  </label>
+                  <TextAreaField
+                    label={t("Terms & payment expectations")}
+                    value={quote.terms}
+                    isDisabled={readOnly}
+                    onChange={(terms) => patch({ terms })}
+                  />
+                  <TextAreaField
+                    label={t("Exclusions")}
+                    value={quote.exclusions}
+                    isDisabled={readOnly}
+                    onChange={(exclusions) => patch({ exclusions })}
+                  />
                   {requests
                     .filter(
                       (r) =>
@@ -339,15 +337,13 @@ export function QuotationEditor({
                   {readOnly ? (
                     money(quote.discount, quote.currency, locale)
                   ) : (
-                    <input
+                    <MoneyField
                       aria-label={t("Quotation discount")}
-                      type="number"
-                      min={0}
-                      step=".01"
-                      value={quote.discount}
-                      onChange={(e) =>
-                        patch({ discount: Number(e.target.value) })
-                      }
+                      label={<span className="wd-visually-hidden">{t("Quotation discount")}</span>}
+                      currency={quote.currency}
+                      min="0"
+                      value={String(quote.discount)}
+                      onChange={(amount) => patch({ discount: Number(amount) })}
                     />
                   )}
                 </dd>
@@ -358,16 +354,12 @@ export function QuotationEditor({
                   {readOnly ? (
                     money(totals.tax, quote.currency, locale)
                   ) : (
-                    <input
+                    <PercentageInput
                       aria-label={t("Tax percentage")}
-                      type="number"
-                      min={0}
-                      max={100}
-                      step=".01"
+                      label={<span className="wd-visually-hidden">{t("Tax percentage")}</span>}
+                      formatOptions={{ maximumFractionDigits: 2 }}
                       value={quote.taxRate}
-                      onChange={(e) =>
-                        patch({ taxRate: Number(e.target.value) })
-                      }
+                      onChange={(taxRate) => patch({ taxRate: Number.isFinite(taxRate) ? taxRate : 0 })}
                     />
                   )}
                 </dd>
@@ -458,16 +450,15 @@ export function QuotationEditor({
               if (value) setNewRoom(value.name);
             }}
           />
-          <label>
-            {t("Room name")}<input
-              autoFocus
-              required
-              maxLength={120}
-              placeholder={t("e.g. Master bedroom")}
-              value={newRoom ?? ""}
-              onChange={(e) => setNewRoom(e.target.value)}
-            />
-          </label>
+          <TextInput
+            label={t("Room name")}
+            autoFocus
+            isRequired
+            maxLength={120}
+            placeholder={t("e.g. Master bedroom")}
+            value={newRoom ?? ""}
+            onChange={setNewRoom}
+          />
           <p className={s.muted}>
             {t("Choose your room catalog, then name this space. For repeat rooms, use names like Bedroom 1 and Bedroom 2.")}</p>
           {rooms.some(
@@ -475,12 +466,12 @@ export function QuotationEditor({
               r !== editingRoom &&
               r.toLowerCase() === newRoom?.trim().toLowerCase(),
           ) && (
-            <p role="alert" className={s.error}>
-              {t("A room with this name already exists.")}</p>
+            <InlineNotice tone="error" message={t("A room with this name already exists.")} />
           )}
-          <button
-            className={s.primary}
-            disabled={
+          <Button
+            type="submit"
+            variant="primary"
+            isDisabled={
               !newRoom?.trim() ||
               rooms.some(
                 (r) =>
@@ -490,12 +481,11 @@ export function QuotationEditor({
             }
           >
             {t(editingRoom ? "Save room" : "Add room")}
-          </button>
+          </Button>
           {editingRoom && !quote.lines.some((l) => l.room === editingRoom) && (
-            <button
-              type="button"
-              className={s.button}
-              onClick={() => {
+            <Button
+              intent="write"
+              onPress={() => {
                 patch({
                   rooms: quote.rooms?.filter((r) => r.name !== editingRoom),
                 });
@@ -503,7 +493,7 @@ export function QuotationEditor({
                 setNewRoom(null);
               }}
             >
-              {t("Remove empty room")}</button>
+              {t("Remove empty room")}</Button>
           )}
         </form>
       </ControlledModalDialog>
@@ -516,20 +506,20 @@ export function QuotationEditor({
           <div className={s.actions}>
             {itemMode === "details" && item && quote.lines.some((l) => l.id === item.id) && (
               <>
-                <button
-                  className={s.button}
-                  onClick={() => {
+                <Button
+                  intent="write"
+                  onPress={() => {
                     patch({
                       lines: quote.lines.filter((l) => l.id !== item.id),
                     });
                     setItem(null);
                   }}
                 >
-                  <Trash2 size={14} />
-                  {t("Remove item")}</button>
-                <button
-                  className={s.button}
-                  onClick={() => {
+                  <Trash2 aria-hidden="true" size={14} />
+                  {t("Remove item")}</Button>
+                <Button
+                  intent="write"
+                  onPress={() => {
                     patch({
                       lines: [
                         ...quote.lines,
@@ -545,20 +535,20 @@ export function QuotationEditor({
                     setItem(null);
                   }}
                 >
-                  <Copy size={14} />
-                  {t("Duplicate")}</button>
+                  <Copy aria-hidden="true" size={14} />
+                  {t("Duplicate")}</Button>
               </>
             )}
-            <button className={s.button} onClick={() => setItem(null)}>{t("Cancel")}</button>
-            <button
-              className={s.primary}
-              disabled={
+            <Button onPress={() => setItem(null)}>{t("Cancel")}</Button>
+            <Button
+              variant="primary"
+              isDisabled={
                 !item?.title.trim() ||
                 !item.room.trim() ||
                 !item.unit.trim() ||
                 item.quantity <= 0 || !Number.isFinite(item.quantity) || item.quantity > 1e6 || item.rate < 0 || (item.unitCost ?? 0) < 0 || !Number.isFinite(item.rate) || !Number.isFinite(item.unitCost) || item.rate > 1e8 || (item.unitCost ?? 0) > 1e8 || (item.catalogLinks?.length ?? 0) > 12
               }
-              onClick={() => {
+              onPress={() => {
                 if (item) {
                   if (quote.lines.some((l) => l.id === item.id))
                     line(item.id, item);
@@ -567,17 +557,19 @@ export function QuotationEditor({
                 }
               }}
             >
-              {t("Apply to quotation")}</button>
+              {t("Apply to quotation")}</Button>
           </div>
         }
       >
         {item && (
           <div className={`${colors.theme} ${s.form} ${q.itemDialog}`}>
             <p className={s.itemContext}><strong>{item.title}</strong><span>{item.room}</span></p>
-            <div className={s.editorTabs} role="group" aria-label={t("Item editor")}>
-              <button aria-pressed={itemMode === "materials"} onClick={() => setItemMode("materials")}>{t("Materials & finishes")}</button>
-              <button aria-pressed={itemMode === "details"} onClick={() => setItemMode("details")}>{t("Item & pricing")}</button>
-            </div>
+            <SegmentedControl
+              label={t("Item editor")}
+              value={itemMode}
+              onChange={(mode) => setItemMode(mode as "details" | "materials")}
+              options={[{ id: "materials", label: t("Materials & finishes") }, { id: "details", label: t("Item & pricing") }]}
+            />
             {itemMode === "materials" ? <QuotationMaterialsEditor item={item} onChange={setItem} workspaceId={workspaceId} caseId={caseId} /> : <>
             <div className={s.grid}>
               {(["work", "variant", "unit"] as const).map(
@@ -638,51 +630,37 @@ export function QuotationEditor({
             <p className={s.muted}>
               {t("Catalog selections keep their source links. Quantities and selling rates are set for this quotation.")}</p>
             {itemMode === "details" && <><div className={s.grid}>
-              <label>
-                {t("Room")}<input
-                  list="quote-rooms"
-                  value={item.room}
-                  onChange={(e) => setItem({ ...item, room: e.target.value })}
-                />
-                <datalist id="quote-rooms">
-                  {rooms.map((r) => (
-                    <option key={r} value={r} />
-                  ))}
-                </datalist>
-              </label>
-              <label>
-                {t("Item")}<input
-                  value={item.title}
-                  onChange={(e) => setItem({ ...item, title: e.target.value })}
-                />
-              </label>
-            </div>
-            <label>
-              {t("Specification")}<textarea
-                placeholder={t("Dimensions, construction and what is included…")}
-                value={item.specification}
-                onChange={(e) =>
-                  setItem({ ...item, specification: e.target.value })
-                }
+              <ComboboxField
+                label={t("Room")}
+                allowsCustomValue
+                items={rooms.map((r) => ({ id: r, label: r }))}
+                inputValue={item.room}
+                onInputChange={(room) => setItem({ ...item, room })}
+                placeholder=""
               />
-            </label>
+              <TextInput
+                label={t("Item")}
+                value={item.title}
+                onChange={(title) => setItem({ ...item, title })}
+              />
+            </div>
+            <TextAreaField
+              label={t("Specification")}
+              placeholder={t("Dimensions, construction and what is included…")}
+              value={item.specification}
+              onChange={(specification) => setItem({ ...item, specification })}
+            />
             </>}
             {itemMode === "details" && <div className={s.grid}>
-              <label>
-                {t("Quantity")}<QuotationNumberInput label={t("Quantity")} value={item.quantity} min={0.0001} max={1e6}  onChange={(quantity) => setItem({ ...item, quantity })} />
-              </label>
-              <label>
-                {t("Unit")}<input
-                  value={item.unit}
-                  onChange={(e) => setItem(customUnit(item, e.target.value))}
-                />
-              </label>
-              {costing ? <label>
-                {t("Internal unit cost")}{readOnly || !canEditCosts ? <span>{money(item.unitCost ?? 0, quote.currency, locale)}</span> : <QuotationNumberInput label={t("Internal unit cost")} value={item.unitCost ?? 0} min={0} max={1e8} money onChange={(unitCost) => setItem({ ...item, unitCost })} />}
-              </label> : null}
-              <label>
-                {t("Selling rate")}<QuotationNumberInput label={t("Selling rate")} value={item.rate} min={0} max={1e8} money onChange={(rate) => setItem({ ...item, rate })} />
-              </label>
+              <QuotationNumberInput showLabel label={t("Quantity")} value={item.quantity} min={0.0001} max={1e6} onChange={(quantity) => setItem({ ...item, quantity })} />
+              <TextInput
+                label={t("Unit")}
+                value={item.unit}
+                onChange={(unit) => setItem(customUnit(item, unit))}
+              />
+              {costing ? readOnly || !canEditCosts ? <div className="wd-field"><span className="wd-field-label">{t("Internal unit cost")}</span><span>{money(item.unitCost ?? 0, quote.currency, locale)}</span></div>
+                : <QuotationNumberInput showLabel label={t("Internal unit cost")} value={item.unitCost ?? 0} min={0} max={1e8} money prefix={quote.currency} onChange={(unitCost) => setItem({ ...item, unitCost })} /> : null}
+              <QuotationNumberInput showLabel label={t("Selling rate")} value={item.rate} min={0} max={1e8} money prefix={quote.currency} onChange={(rate) => setItem({ ...item, rate })} />
             </div>
             }
             </>}

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { parseDateTime, today } from '@internationalized/date';
-import { Button, ComboboxField, DateField, FormRow, NumericInput, SelectField, TextAreaField, TextInput } from '@/design-system';
+import { Button, ComboboxField, DateField, FormRow, InlineNotice, NumericInput, SelectField, TextAreaField, TextInput } from '@/design-system';
 import { type CaseContent, type CaseRoom, type ItemDimension } from '@/lib/pre-project/content';
 import { type SiteData, type SiteRecord, siteLabel, visitInstant, visitWallTime } from '@/lib/pre-project/site';
 import { AssetFiles, AssetUpload, CaseModal } from './case-controls';
@@ -54,7 +54,7 @@ export function SiteRecordEditor({initial,data:initialData,site,onClose,onSave,o
  </>;
  return <CaseModal size={measurement?'lg':'md'} title={initial.version?t(visit?'Edit site visit':measurement?'Edit measurements':'Edit observation'):t(visit?'Add site visit':measurement?'Add measurements':'Add observation')} onClose={onClose} dirty={dirty} busy={saving||uploading} footer={<div className={styles.stepFooter}>{step>0&&<Button size="compact" isDisabled={saving||uploading} onPress={()=>navigate(step-1)}>{t('Back')}</Button>}{step<steps.length-1&&<Button size="compact" isDisabled={saving||uploading} onPress={()=>navigate(step+1)}>{t('Continue')}</Button>}{data.canEdit&&!initial.entryArchivedAt&&<Button size="compact" variant="primary" isLoading={saving} isDisabled={uploading} onPress={save}>{t(measurement?'Save measurements':visit?'Save visit':'Save observation')}</Button>}</div>}>
   <nav className={styles.stepper} aria-label={t('Site form steps')}><ol>{steps.map((label,index)=><li key={label}><button type="button" aria-current={step===index?'step':undefined} disabled={saving||uploading} onClick={()=>navigate(index)}><span className={styles.stepNumber}>{index+1}</span>{label}</button></li>)}</ol></nav>
-  {error&&<p role="alert" className={styles.error}>{error}</p>}
+  {error&&<InlineNotice tone="error" message={error}/>}
   <div className={styles.captureFields}>
    {step===0&&<>
     {text(t(visit?'Visit title':measurement?'What are you measuring?':'Observation'), 'title',false,240)}

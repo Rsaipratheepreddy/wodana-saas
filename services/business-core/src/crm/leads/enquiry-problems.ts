@@ -43,7 +43,19 @@ export const REQUIRED_AT: readonly RequiredAt[] = [...REQUIREMENT_GATES, "never"
  * key of the region; labels come from the region pack in the web. `team:<role>` is a team role tagged on the enquiry
  * (a member, or Not applicable); `cf:<id>` is one of the workspace's own enquiry fields.
  */
-export const REQUIRABLE_FIELDS = ["email", "area", "address", "budgetRange", "customerType", "summary", "targetCompletion"] as const;
+export const REQUIRABLE_FIELDS = ["email", "area", "address", "budgetRange", "customerType", "projectType", "floorPlan", "summary", "targetCompletion"] as const;
+
+/**
+ * §0.3 P0: the floor plan before converting is one of: uploaded (one of the enquiry's files), not available yet with a
+ * size estimate (converting then adds a task to get the real plan before the site visit), or not needed for this job.
+ */
+export const FLOOR_PLAN_STATUSES = ["uploaded", "not_available", "not_required"] as const;
+export type FloorPlan = { status: (typeof FLOOR_PLAN_STATUSES)[number]; assetId?: string | null; builtUpArea?: string | null; /** Guide D: optional, for villas. */ plotSize?: string | null };
+export function floorPlanReady(plan: FloorPlan | null | undefined) {
+  if (plan?.status === "uploaded") return Boolean(plan.assetId);
+  if (plan?.status === "not_available") return Boolean(plan.builtUpArea?.trim());
+  return plan?.status === "not_required";
+}
 export type RequirementRules = Record<string, RequiredAt>;
 
 /**
@@ -58,6 +70,8 @@ const LABELS: Record<string, string> = {
   address: "Enter the address",
   budgetRange: "Choose the budget range",
   customerType: "Choose the client type",
+  projectType: "Choose the project type",
+  floorPlan: "Add the floor plan, give a size estimate, or mark it not required",
   summary: "Describe the project",
   targetCompletion: "Enter the client's target completion date",
 };
@@ -77,6 +91,8 @@ export function requiredBy(at: RequiredAt | undefined, gate: RequirementGate) {
 export type EnquiryFacts = {
   serviceType: string | null;
   email: string | null; area: string | null; address: string | null; budgetRange: string | null; customerType: string | null; summary: string | null;
+  projectType?: string | null;
+  floorPlan?: FloorPlan | null;
   /** PLM-155: the date the client wants it finished (Sales collect it; the design team and Production say what is possible). */
   targetCompletion?: string | null;
   /** Team roles answered on the enquiry (a member or Not applicable). */
@@ -90,7 +106,9 @@ export type RequirementContext = {
   rules: RequirementRules;
   /** Fixed fields the workspace hides: never required. */
   hidden: ReadonlySet<string>;
-  hasBudgetRanges: boolean; hasCustomerTypes: boolean;
+  hasBudgetRanges: boolean; hasCustomerTypes: boolean; hasProjectTypes?: boolean;
+  /** Guide D: the enquiry type runs a furniture-only flow, the one kind of job whose floor plan may be "not required". */
+  furnitureType?: boolean;
   /** Team roles the enquiry type asks for; another role is never required. */
   teamRoles: readonly string[];
 };
@@ -106,6 +124,14 @@ export function requirementProblems(facts: EnquiryFacts, context: RequirementCon
     if (!needs(key)) continue;
     if (key === "budgetRange" && !context.hasBudgetRanges) continue;
     if (key === "customerType" && !context.hasCustomerTypes) continue;
+    if (key === "projectType" && !context.hasProjectTypes) continue;
+    if (key === "floorPlan") {
+      if (facts.floorPlan?.status === "not_required" && context.furnitureType === false) problems.add(key, "A floor plan is only not required on a furniture-only enquiry; add it or give a size estimate");
+      else problems.when(!floorPlanReady(facts.floorPlan), key, LABELS[key]);
+      continue;
+    }
+    // Guide D: "Not sure yet" is an intake answer; the budget range must be known to convert.
+    if (key === "budgetRange" && gate !== "create" && facts.budgetRange === "not_sure") { problems.add(key, "Choose the budget range; Not sure yet can't be converted"); continue; }
     problems.when(blank(facts[key] ?? null), key, LABELS[key]);
   }
   for (const role of context.teamRoles) {
@@ -172,10 +198,18 @@ export async function loadEnquiryFacts(db: Db, workspaceId: string, leadId: stri
     email: row.email || text(details.contact?.email)?.trim() || extraEmail || null,
     area: text(details.area) || text(details.location), address: text(details.contact?.address),
     budgetRange: text(details.budgetRange), customerType: text(details.customerType), targetCompletion: text(details.targetCompletion),
+    projectType: text(details.projectType), floorPlan: storedFloorPlan(details.floorPlan),
     team: new Set(team.map((entry) => entry.role)),
     custom: new Set(custom.filter((field) => field.filled).map((field) => `cf:${field.id}`)),
     customLabels: new Map(custom.map((field) => [`cf:${field.id}`, field.label])),
   };
+}
+
+/** A floor plan as stored on the enquiry's details; anything else is no answer. */
+export function storedFloorPlan(value: unknown): FloorPlan | null {
+  const plan = value && typeof value === "object" ? value as Record<string, unknown> : null;
+  if (!plan || !(FLOOR_PLAN_STATUSES as readonly unknown[]).includes(plan.status)) return null;
+  return { status: plan.status as FloorPlan["status"], plotSize: typeof plan.plotSize === "string" ? plan.plotSize : null, assetId: typeof plan.assetId === "string" ? plan.assetId : null, builtUpArea: typeof plan.builtUpArea === "string" ? plan.builtUpArea : null };
 }
 
 /** The workspace's requirement context for one enquiry type. */
@@ -183,5 +217,6 @@ export async function requirementContext(db: Db, workspaceId: string, serviceTyp
   const options = await loadLeadOptions(db as PoolClient, workspaceId);
   const type = serviceType ?? UNRESOLVED_ENQUIRY_TYPE;
   const rules = rulesByType(await loadRequirementRows(db, workspaceId), [type])[type] ?? {};
-  return { rules, hidden: await hiddenEnquiryFields(db, workspaceId), hasBudgetRanges: options.budgetRanges.length > 0, hasCustomerTypes: options.customerTypes.length > 0, teamRoles };
+  return { rules, hidden: await hiddenEnquiryFields(db, workspaceId), hasBudgetRanges: options.budgetRanges.some((option) => option.id !== "not_sure"), hasCustomerTypes: options.customerTypes.length > 0,
+    hasProjectTypes: options.projectTypes.length > 0, teamRoles, furnitureType: Boolean(options.enquiryTypes.find((option) => option.id === type)?.furniture) };
 }

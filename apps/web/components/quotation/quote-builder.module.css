@@ -4,8 +4,14 @@
 .spacer { flex: 1 1 auto; }
 .srOnly { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-.top { position: sticky; z-index: 20; inset-block-start: 0; display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--top); padding-inline: var(--wd-phi-3); border-block-end: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
-.top h1 { min-inline-size: 0; margin: 0; overflow: hidden; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+.top { position: sticky; z-index: 20; inset-block-start: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-block-size: var(--top); padding-inline: var(--wd-phi-3); border-block-end: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
+.top h1 { flex: 1 1 8rem; min-inline-size: 8rem; margin: 0; overflow: hidden; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+/* When the header can't hold everything on one line, the tabs take their own line under it and the title shortens,
+   so the actions (total, review, send) stay together at the end of the first line. */
+@media (max-width: 100rem) {
+  .top { padding-block: var(--wd-space-1-5) 0; row-gap: 0; }
+  .top > .tabs { order: 99; flex-basis: 100%; }
+}
 .back { display: grid; flex: none; place-items: center; inline-size: var(--wd-control-sm); block-size: var(--wd-control-sm); border-radius: var(--wd-radius-sm); color: var(--wd-color-text-secondary); }
 .back:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
 .back:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
@@ -59,24 +65,11 @@
 .columns, .row { display: grid; grid-template-columns: var(--cols); align-items: stretch; }
 .columns > span, .row > [role="gridcell"] { position: relative; display: flex; align-items: center; min-inline-size: 0; border-block-end: 1px solid var(--wd-color-table-border); border-inline-end: 1px solid var(--wd-color-table-border); }
 .columns > span:nth-child(2), .row > [role="gridcell"]:nth-child(2) { border-inline-start: 1px solid var(--wd-color-table-border); }
-/* Frozen on the left while the sheet scrolls sideways: #, picture and item. */
-.columns > [data-stick], .row > [data-stick] { position: sticky; z-index: 2; }
-.columns > [data-stick="gutter"], .row > [data-stick="gutter"] { inset-inline-start: 0; background: var(--wd-color-surface); }
-.columns > [data-stick="serial"], .row > [data-stick="serial"] { inset-inline-start: var(--stick-serial); }
-.columns > [data-stick="picture"], .row > [data-stick="picture"] { inset-inline-start: var(--stick-picture); }
-.columns > [data-stick="item"], .row > [data-stick="item"] { inset-inline-start: var(--stick-item); }
-/* …and the money stays in view on the other side. */
-.columns > [data-stick="menu"], .row > [data-stick="menu"] { inset-inline-end: 0; background: var(--wd-color-surface); }
-.columns > [data-stick="amount"], .row > [data-stick="amount"] { inset-inline-end: var(--stick-menu); }
-.columns > [data-stick="rate"], .row > [data-stick="rate"] { inset-inline-end: var(--stick-rate); }
-.columns > [data-stick="unit"], .row > [data-stick="unit"] { inset-inline-end: var(--stick-unit); }
-.columns > [data-stick="qty"], .row > [data-stick="qty"] { inset-inline-end: var(--stick-qty); border-inline-start: 1px solid var(--wd-color-table-border); }
-/* With the side panel open there isn't room to freeze both sides: the item scrolls, Qty to Amount stay in view. */
-.builder:not([data-panel="closed"]) :is(.columns, .row) > :is([data-stick="picture"], [data-stick="item"]) { position: relative; inset-inline-start: auto; }
-/* On a narrow screen only # stays frozen, so there's room for the numbers. */
-@media (max-width: 64rem) {
-  .columns > [data-stick="picture"], .row > [data-stick="picture"], .columns > [data-stick="item"], .row > [data-stick="item"] { position: relative; inset-inline-start: auto; }
-}
+/* The whole sheet scrolls sideways as one (no frozen middle window): the edge columns move with it. */
+.columns > [data-stick], .row > [data-stick] { position: relative; z-index: auto; inset: auto; }
+.columns > [data-stick="gutter"], .row > [data-stick="gutter"] { background: var(--wd-color-surface); }
+.columns > [data-stick="menu"], .row > [data-stick="menu"] { background: var(--wd-color-surface); }
+.columns > [data-stick="qty"], .row > [data-stick="qty"] { border-inline-start: 1px solid var(--wd-color-table-border); }
 .columns > .gutter, .row > .gutter { border-block-end: 0; border-inline-end: 0; }
 .columns { margin-block-start: var(--wd-space-2); color: var(--wd-color-table-header-ink); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 .columns > span:not(.gutter) { gap: var(--wd-space-1-5); min-block-size: var(--wd-space-10); padding-inline: var(--wd-space-2-5); border-block-start: 1px solid var(--wd-color-table-border); background: var(--wd-color-table-header); white-space: nowrap; }
@@ -99,15 +92,15 @@
 .materialFinish { display: flex; padding: 0 var(--wd-space-2) var(--wd-space-1); }
 /* Materials as tags inside the cell; the row grows when there are several. */
 .materials { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); inline-size: 100%; min-block-size: var(--wd-space-10); padding: var(--wd-space-1) var(--wd-space-2); }
-.tag { --tag: var(--wd-color-surface-muted); display: inline-flex; align-items: center; gap: var(--wd-space-0-5); max-inline-size: 100%; min-block-size: var(--wd-space-6); padding-inline: var(--wd-space-2) var(--wd-space-1); border-radius: var(--wd-radius-sm); background: var(--tag); color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
-.tag[data-tone="info"] { --tag: var(--wd-color-info-subtle); }
-.tag[data-tone="success"] { --tag: var(--wd-color-success-subtle); }
-.tag[data-tone="warning"] { --tag: var(--wd-color-warning-subtle); }
-.tag[data-tone="brand"] { --tag: var(--wd-color-action-primary-subtle); }
-.tag button { display: grid; flex: none; place-items: center; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); padding: 0; border: 0; border-radius: var(--wd-radius-xs); background: none; color: var(--wd-color-text-secondary); cursor: pointer; }
-.tag button:hover { background: var(--wd-color-surface); color: var(--wd-color-text); }
+
+
+
+
+
+
+
 .tagPicker { flex: 1 1 var(--wd-space-16); min-inline-size: var(--wd-space-12); }
-.suggestions .tag { pointer-events: none; }
+
 .tagInput { inline-size: 100%; min-block-size: var(--wd-space-6); padding: 0 var(--wd-space-1); border: 0; background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); outline: none; }
 .tagInput::placeholder { color: var(--wd-color-text-tertiary); }
 
@@ -195,9 +188,9 @@
 .customHit { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); }
 
 .addRow { position: sticky; inset-inline-start: 0; display: flex; inline-size: fit-content; padding: var(--wd-space-1) 0 var(--wd-space-1) var(--wd-space-5); }
-.addRow button, .tableFoot button { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-2); border: 0; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-tertiary); font: inherit; font-size: var(--wd-text-sm); cursor: pointer; }
-.addRow button:hover, .tableFoot button:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
-.addRow button:focus-visible, .tableFoot button:focus-visible { outline: 2px solid var(--wd-color-focus); }
+
+
+
 .tableFoot { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-block-start: calc(-1 * var(--wd-space-2)); }
 
 /* Terms and payments, in their own tabs. */
@@ -245,7 +238,7 @@
 .waiting { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 /* The file the client decided in (Q-24): its caption, then the file or the upload. */
 .evidence { display: flex; flex-direction: column; gap: var(--wd-space-2); }
-.evidenceFile { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+
 /* Share a sent quote (Q-9): the portal link, the client's WhatsApp contacts, and Send again. */
 .sharePanel { display: flex; flex-direction: column; gap: var(--wd-space-3); inline-size: min(26rem, calc(100vw - var(--wd-space-8))); padding: var(--wd-space-4); outline: none; }
 .shareLink { display: flex; gap: var(--wd-space-2); align-items: center; }
@@ -280,9 +273,9 @@
 .checks li { display: flex; flex-direction: column; align-items: flex-start; gap: var(--wd-space-1); padding-inline-start: var(--wd-space-3); border-inline-start: 2px solid var(--wd-color-warning); }
 .checkLink { padding: 0; border: 0; background: none; color: var(--wd-color-text); font: inherit; text-align: start; text-decoration: underline; text-decoration-color: var(--wd-color-border-strong); text-underline-offset: 2px; cursor: pointer; }
 .checkLink:hover { text-decoration-color: currentColor; }
-.fixLink { display: inline-flex; align-items: center; gap: var(--wd-space-1); padding: 0; border: 0; background: none; color: var(--wd-color-action-primary); font: inherit; font-weight: var(--wd-weight-medium); cursor: pointer; }
-.fixLink:hover { text-decoration: underline; }
-.checkLink:focus-visible, .fixLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+
+
+.checkLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .checks li[data-tone="danger"] { border-inline-start-color: var(--wd-color-danger); }
 
 /* Working together: people here, comments. */
@@ -300,8 +293,8 @@
 .commentPanel { display: flex; flex-direction: column; gap: var(--wd-space-3); }
 .commentPanel > header { display: flex; align-items: center; gap: var(--wd-space-2); }
 .commentPanel > header strong { flex: 1 1 auto; overflow: hidden; font-size: var(--wd-text-sm); text-overflow: ellipsis; white-space: nowrap; }
-.linkButton { padding: 0; border: 0; background: none; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
-.linkButton:hover { color: var(--wd-color-text); }
+
+
 .thread { display: flex; flex-direction: column; gap: var(--wd-space-2); padding-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-border); }
 .thread[data-resolved] { opacity: 0.7; }
 .threadHead { display: flex; align-items: center; justify-content: space-between; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }

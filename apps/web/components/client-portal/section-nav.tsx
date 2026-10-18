@@ -5,6 +5,7 @@ import type { KeyboardEvent } from "react";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalSection } from "@/lib/client-portal/types";
 import styles from "./portal.module.css";
+import { Badge } from "@/design-system";
 
 export type PortalPage = "overview" | PortalSection;
 export type NavItem = { id: PortalPage; label: string; badge?: { text: string; tone: "warning" | "danger" | "info" } };
@@ -41,7 +42,7 @@ export function SectionNav({ items, current, onSelect, layout }: { items: NavIte
           onClick={(event) => { onSelect(item.id); event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }}>
           <Icon aria-hidden="true" size={18} />
           <span className={styles.navLabel}>{item.label}</span>
-          {item.badge ? <span className={styles.navBadge} data-tone={item.badge.tone}>{item.badge.text}</span> : null}
+          {item.badge ? <Badge tone={item.badge.tone}>{item.badge.text}</Badge> : null}
         </button>
       </li>;
     })}</ul>

@@ -59,6 +59,7 @@ export function LogisticsBookingDialog({ workspaceId, initial, fixedProject = fa
   const [crewId, setCrewId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [driverId, setDriverId] = useState("");
+  const [siteMemberId, setSiteMemberId] = useState("");
   const [note, setNote] = useState("");
   const [warnings, setWarnings] = useState<Clash[]>([]);
   const [adding, setAdding] = useState<null | "people" | "driver">(null);
@@ -92,6 +93,7 @@ export function LogisticsBookingDialog({ workspaceId, initial, fixedProject = fa
       setPeople(booking.people.map((person) => person.id));
       setLead(booking.people.find((person) => person.lead)?.id ?? "");
       setCrewId(booking.crew?.id ?? ""); setVehicleId(booking.vehicle?.id ?? ""); setDriverId(booking.driver?.id ?? ""); setNote(booking.note);
+      setSiteMemberId(booking.siteMemberId ?? "");
     }).catch((cause: Error) => { if (!controller.signal.aborted) { setFailure(cause.message); setLoadingCurrent(false); } });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,7 +141,8 @@ export function LogisticsBookingDialog({ workspaceId, initial, fixedProject = fa
       onSubmit={async () => {
         const result = await api.save({ ...subject!, day, ...(effectiveKind === "production" ? { endDay } : {}), was: { start: current?.start ?? null, end: current?.end ?? null },
           version: current?.version ?? 0, people: people.map((id) => ({ workerId: id, lead: id === lead })), crewId: crewId || null, note,
-          ...(effectiveKind === "delivery" ? { vehicleId: vehicleId || null, driverWorkerId: driverId || null } : {}) });
+          ...(effectiveKind === "delivery" ? { vehicleId: vehicleId || null, driverWorkerId: driverId || null } : {}),
+          ...((effectiveKind === "delivery" || effectiveKind === "installation") && siteMemberId ? { siteMemberId } : {}) });
         onSaved(result);
       }}>
       {options ? <>
@@ -179,6 +182,9 @@ export function LogisticsBookingDialog({ workspaceId, initial, fixedProject = fa
           </FormRow>
           {options.canAddPeople ? <div><Button size="compact" variant="quiet" onPress={() => setAdding("driver")}><UserPlus aria-hidden="true" size={14} />{t("Add driver")}</Button></div> : null}
         </> : null}
+        {(effectiveKind === "delivery" || effectiveKind === "installation") && projectId && options.members?.length
+          ? <SelectField label={t("On site with a login")} selectedKey={siteMemberId || "manager"} onSelectionChange={(key) => setSiteMemberId(key === "manager" ? "" : String(key ?? ""))}
+            items={[{ id: "manager", label: t("The project manager") }, ...options.members.map((member) => ({ id: member.id, label: member.name }))]} /> : null}
         {warnings.length ? <div className={styles.warnings} role="status" aria-live="polite">
           <strong>{t("Already booked that day")}</strong>
           <ul>{warnings.map((clash) => <li key={`${clash.kind}:${clash.id}:${clash.key}`}>{clashText(clash, t)}</li>)}</ul>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MoneyField, NoResultsState, TextAreaField, VisuallyHidden, RecordName, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, EditableFieldList, EmptyState, ErrorState, FactRow, FormDialog, InlineNotice, InspectorSheet, MoneyField, NoResultsState, ReasonDialog, VisuallyHidden, RecordName, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { PayablesState, SupplierPayment } from "@/lib/payables/types";
@@ -31,8 +31,7 @@ export function Payments({ api, state, error, openId, onReload, onOpen, onOpenBi
     { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 190, meta: { align: "end", renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.money}>{format.money(row.amount, row.currency)}</span>
       {row.status === "recorded" && Number(row.unallocated) > 0 ? <small>{t("{amount} to allocate", { amount: format.money(row.unallocated, row.currency) })}</small> : null}</span> } },
-    { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 150, meta: { renderCell: (row) => <span className={styles.status}
-      data-tone={row.status === "reversed" ? "danger" : "success"}>{row.status === "reversed" ? t("Reversed") : t("Paid")}</span> } },
+    { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 150, meta: { renderCell: (row) => <Badge tone={row.status === "reversed" ? "danger" : "success"}>{row.status === "reversed" ? t("Reversed") : t("Paid")}</Badge> } },
   ], [t, format, methods]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   const payment = state?.payments.find((row) => row.id === openId) ?? null;
@@ -52,63 +51,51 @@ function PaymentSheet({ api, payment, canManage, bills, onChanged, onClose, onOp
   const format = useProjectFormat();
   const methods = useMethodLabels();
   const [dialog, setDialog] = useState<"allocate" | "reverse" | null>(null);
-  const [reason, setReason] = useState("");
   const [parts, setParts] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);
   const money = (value: string) => format.money(value, payment.currency);
   const recorded = payment.status === "recorded";
   const open = bills.filter((bill) => bill.status === "approved" && Number(bill.payable) > 0 && bill.vendorId === payment.vendorId && bill.legalEntityId === payment.legalEntityId
     && bill.currency === payment.currency && (!payment.orderNumber || bill.orders.includes(payment.orderNumber)));
   const allocating = addExact(...Object.values(parts));
   const over = subtractExact(allocating, payment.unallocated) !== "0";
+  /** Runs one change; a refusal keeps the dialog open with why. */
   const run = async (action: "allocate" | "reverse", input: Record<string, unknown>) => {
-    setBusy(true); setNotice("");
-    try { await api.paymentCommand(action, { paymentId: payment.id, ...input }); onChanged(); setDialog(null); return true; }
-    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; } finally { setBusy(false); }
+    await api.paymentCommand(action, { paymentId: payment.id, ...input }); onChanged(); setDialog(null);
   };
   return <InspectorSheet isOpen size="md" title={`${payment.supplierName} · ${money(payment.amount)}`} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={canManage && recorded ? <div className="wd-dialog-actions">
-      <Button variant="quiet" onPress={() => { setReason(""); setNotice(""); setDialog("reverse"); }}>{t("Reverse")}</Button><span className={styles.spacer} />
-      {Number(payment.unallocated) > 0 && open.length ? <Button variant="primary" onPress={() => { setParts({}); setNotice(""); setDialog("allocate"); }}>{t("Allocate")}</Button> : null}
+      <Button variant="quiet" onPress={() => setDialog("reverse")}>{t("Reverse")}</Button><span className={styles.spacer} />
+      {Number(payment.unallocated) > 0 && open.length ? <Button variant="primary" onPress={() => { setParts({}); setDialog("allocate"); }}>{t("Allocate")}</Button> : null}
     </div> : null}>
     <div className={styles.sheet}>
       {payment.status === "reversed" ? <InlineNotice tone="info" message={t("Reversed: {reason}", { reason: payment.reverseReason ?? "" })} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Paid on")}</dt><dd>{format.day(payment.paidOn)}</dd></div>
-        <div><dt>{t("How")}</dt><dd>{[methods[payment.method], payment.reference].filter(Boolean).join(" · ")}</dd></div>
-        <div><dt>{t("Paid by")}</dt><dd>{payment.companyName}</dd></div>
-        {payment.orderNumber ? <div><dt>{t("Advance on")}</dt><dd>{payment.orderNumber}</dd></div> : null}
-        {payment.runNumber ? <div><dt>{t("Paid in")}</dt><dd>{t("Run {number}", { number: payment.runNumber })}</dd></div> : null}
-        <div><dt>{t("To allocate")}</dt><dd className={styles.money}>{money(payment.unallocated)}</dd></div>
-        <div><dt>{t("Recorded by")}</dt><dd>{payment.createdByName}</dd></div>
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("Paid on")}>{format.day(payment.paidOn)}</FactRow>
+        <FactRow label={t("How")}>{[methods[payment.method], payment.reference].filter(Boolean).join(" · ")}</FactRow>
+        <FactRow label={t("Paid by")}>{payment.companyName}</FactRow>
+        {payment.orderNumber ? <FactRow label={t("Advance on")}>{payment.orderNumber}</FactRow> : null}
+        {payment.runNumber ? <FactRow label={t("Paid in")}>{t("Run {number}", { number: payment.runNumber })}</FactRow> : null}
+        <FactRow label={t("To allocate")}><span className={styles.money}>{money(payment.unallocated)}</span></FactRow>
+        <FactRow label={t("Recorded by")}>{payment.createdByName}</FactRow>
+      </EditableFieldList>
       {payment.allocations.length ? <section className={styles.part} aria-label={t("Invoices it pays")}>
         <h3 className={styles.subhead}>{t("Invoices it pays")}</h3>
         <ul className={styles.list}>{payment.allocations.map((item, index) => <li key={`${item.invoiceId}-${index}`}>
-          <button type="button" className={styles.linkButton} onClick={() => onOpenBill(item.invoiceId)}>{item.number}</button>
+          <Button variant="quiet" size="compact" onPress={() => onOpenBill(item.invoiceId)}>{item.number}</Button>
           <span className={styles.money}>{money(item.amount)}</span></li>)}</ul>
       </section> : null}
     </div>
-    {dialog ? <FormDialog size="md" title={dialog === "allocate" ? t("Allocate payment") : t("Reverse payment")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
-      error={notice || undefined} isSubmitting={busy} isDirty={dialog === "allocate" ? allocating !== "0" : Boolean(reason.trim())}
-      isSubmitDisabled={dialog === "allocate" ? allocating === "0" || Boolean(over) : !reason.trim()}
-      submitLabel={dialog === "allocate" ? t("Allocate") : t("Reverse payment")} submitVariant={dialog === "allocate" ? "primary" : "danger"}
-      onSubmit={async () => {
-        const done = dialog === "allocate"
-          ? await run("allocate", { allocations: Object.entries(parts).filter(([, value]) => Number(value) > 0).map(([invoiceId, amount]) => ({ invoiceId, amount })) })
-          : await run("reverse", { reason: reason.trim() });
-        if (!done) throw new FormNotSaved();
-      }}>
-        {dialog === "allocate" ? <>
-          <p className={styles.muted}>{t("{amount} to allocate", { amount: money(payment.unallocated) })}</p>
+    {dialog === "allocate" ? <FormDialog size="md" title={t("Allocate payment")} description={t("{amount} to allocate", { amount: money(payment.unallocated) })}
+      onClose={() => setDialog(null)} cancelLabel={t("Back")} isDirty={allocating !== "0"} isSubmitDisabled={allocating === "0" || Boolean(over)} submitLabel={t("Allocate")}
+      onSubmit={() => run("allocate", { allocations: Object.entries(parts).filter(([, value]) => Number(value) > 0).map(([invoiceId, amount]) => ({ invoiceId, amount })) })}>
           <div className={styles.allocations}>{open.map((bill) => <div key={bill.id} className={styles.allocation}>
             <span className={styles.nameCell}><span>{bill.number}</span><small>{t("{amount} to pay", { amount: money(bill.payable) })}</small></span>
             <MoneyField label={<VisuallyHidden>{t("Amount for {invoice}", { invoice: bill.number })}</VisuallyHidden>} currency={payment.currency} value={parts[bill.id] ?? ""}
               onChange={(value) => setParts({ ...parts, [bill.id]: value })} />
           </div>)}</div>
           {over ? <InlineNotice tone="error" message={t("That's more than is left of the payment.")} /> : null}
-        </> : <TextAreaField label={t("Why it's reversed")} isRequired value={reason} onChange={setReason} />}
     </FormDialog> : null}
+    {dialog === "reverse" ? <ReasonDialog title={t("Reverse payment")} label={t("Why it's reversed")} confirmLabel={t("Reverse payment")} confirmVariant="danger"
+      onClose={() => setDialog(null)} onConfirm={(reason) => run("reverse", { reason })} /> : null}
   </InspectorSheet>;
 }

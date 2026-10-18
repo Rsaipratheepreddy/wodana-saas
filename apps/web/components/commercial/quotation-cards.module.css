@@ -17,7 +17,4 @@
 .card dt { font-size:var(--wd-text-2xs); color:var(--wd-color-text-secondary); }
 .card dd { margin:var(--wd-space-1) 0 0; font-size:var(--wd-text-xs); }
 .open { display:flex; align-items:center; gap:var(--wd-space-1-5); margin-block-start:auto; padding-block-start:var(--wd-space-3); font-size:var(--wd-text-xs); color:var(--wd-color-action-primary); text-underline-offset:3px; }
-.empty { padding:var(--wd-space-8) var(--wd-space-4); text-align:center; color:var(--wd-color-text-secondary); }
-.empty h3 { font-size:var(--wd-text-md); }
-.empty p { font-size:var(--wd-text-xs); }
 @media(max-width:600px) { .toolbar { flex-wrap:wrap; } }

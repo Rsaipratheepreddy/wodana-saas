@@ -1,7 +1,7 @@
 "use client";
 import { RecordHistory } from "../history/record-history";
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Route } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
@@ -13,8 +13,10 @@ import { RecordColumns, RecordFrame, RecordHeader, RecordPanel, SideSection } fr
 import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
 import { FurniturePathDialog, PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
 import { SiteVisitDialog } from "./site-visit-dialog";
+import { OpportunityOutcomeDialog } from "./opportunity-outcome-dialog";
 import { StepNotNeededDialog } from "./step-not-needed-dialog";
 import { FollowUpRow, NextActions, ProgressLine, type StageMove } from "./opportunity-now";
+import { JobNowBar } from "../jobs/job-now-bar";
 import type { MissingRequirement } from "@/lib/crm/client";
 import { flowCapabilities, FURNITURE_PATHS, missingFrom, proofHref, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import { firstName, groupForRequirement, isGenericFollowUp, nextChecklist, nowPlan, pendingFollowUp, type ChecklistRow, type FactGroup, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
@@ -63,7 +65,7 @@ export function CrmRecordWorkbench({ id, row, workspaceId, onChanged }: { id: Cr
 
 function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: string; row: RecordData; onChanged: () => Promise<void> }) {
   const t = useT();
-  const { locale, currency: regionCurrency, timeZone } = useDesignSystem();
+  const { locale, timeZone } = useDesignSystem();
   useWoddyRecord("opportunity", row.id, String(row.title ?? t("Opportunity")));
   const router = useRouter();
   const [openingCase, setOpeningCase] = useState(false);
@@ -99,7 +101,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const amount = Number(live.amount);
   const currency = String(live.currencyCode ?? live.currency_code ?? "");
   const hasValue = live.amount !== null && live.amount !== undefined && Number.isFinite(amount) && /^[A-Z]{3}$/.test(currency);
-  const value = hasValue ? new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount) : t("Not set");
+  // The stored decimal string is formatted as is (exact to the minor unit), never through a float.
+  const value = hasValue ? new Intl.NumberFormat(locale, { style: "currency", currency }).format(String(live.amount) as unknown as number) : t("Not set");
   // Moves forward follow the flow; the menu only goes back (or reopens a closed one).
   const currentIndex = activeWorkingStages.findIndex(stage => stage.id === (live.stageId ?? live.stage_id));
   const earlierStages = currentIndex > 0 ? activeWorkingStages.slice(0, currentIndex) : [];
@@ -180,13 +183,13 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const ownerName = personDisplayName(live.ownerName as string | null);
   const owner = ownerId && ownerName ? { id: ownerId, label: ownerName } : null;
   const closeDate = localDate(live.expectedCloseAt ?? live.expected_close_at);
-  const valueCurrency = /^[A-Z]{3}$/.test(currency) ? currency : regionCurrency;
   const [tab, setTab] = useState("overview");
   const [editing, setEditing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [askingFinance, setAskingFinance] = useState(false);
   const canAskFinance = useCanRaiseFinanceRequest(workspaceId);
   const [bookIntro, setBookIntro] = useState(false);
+  const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [sheet, setSheet] = useState<{ group: DiscoveryGroup; focus?: string } | null>(null);
   const [folded, setFolded] = useState<Partial<Record<FactGroup, boolean>>>({});
   const funnel = (Array.isArray(live.funnel) ? live.funnel : []) as FunnelStep[];
@@ -227,6 +230,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     else if (step.target === "siteVisit") setSiteVisitOpen(true);
     else if (step.target === "materials") setMaterialsOpen(true);
     else if (step.target === "intro") { unfold("intro"); setBookIntro(true); }
+    else if (step.target === "outcome") setOutcomeOpen(true);
     else if (step.target === "discovery") openSheet(groupForRequirement(step.keys[0] ?? ""), step.keys[0]);
     else if (step.target === "quote" || step.target === "planning") { if (caseId) router.push(caseLink(step.target === "quote" ? "quotations" : step.section ?? "overview")); else void openCase(); }
     else if (step.target === "project" && project) router.push(`/workspace/projects/${encodeURIComponent(project.id)}`);
@@ -252,7 +256,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     return null;
   };
   const stageChip = status === "won" ? <Badge tone="success">{t("Won")}</Badge> : status === "lost" ? <Badge tone="danger">{t("Lost")}</Badge>
-    : closed ? <Badge>{label(status)}</Badge> : <Badge>{String(live.stageName ?? t("Not set"))}</Badge>;
+    : closed ? <Badge>{label(status)}</Badge> : <Badge hue="auto">{String(live.stageName ?? t("Not set"))}</Badge>;
   const menu = [
     ...(!closed ? [{ id: "lost", label: t("Mark as lost"), tone: "danger" as const }] : [{ id: "reopen", label: t("Reopen") }]),
     ...(!closed && earlierStages.length ? [{ id: "stage", label: t("Change stage") }] : []),
@@ -274,6 +278,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       actions={<>
         {owner ? <span className={screen.owner} title={owner.label}><Avatar name={owner.label} seed={owner.id} size="sm" /></span> : null}
         {stageChip}
+        {/* §0.3 P2: the whole job, enquiry to warranty, on its map. */}
+        <Link className="wd-button" data-size="compact" href={`/workspace/jobs/for/opportunity/${row.id}`}><Route aria-hidden="true" size={14} />{t("Journey")}</Link>
         <Button size="compact" isDisabled={!resource.data} onPress={() => setEditing(true)}><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
         <IconMenuButton ariaLabel={t("More actions")} items={resource.data ? menu : []} onAction={onMenu} />
       </>} />
@@ -283,6 +289,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     <RecordColumns sideLabel={t("Key facts")} tab={tab} onTabChange={setTab}
       next={<>
         {flow ? <ProgressLine flow={flow} status={status} history={stageHistory} /> : null}
+        {/* §0.3 P10: once the job has moved past Win, its journey's step now leads (Win's own steps are the checklist below). */}
+        <JobNowBar workspaceId={workspaceId} record={{ type: "opportunity", id: row.id }} except={["win"]} />
         {resource.data ? <NextActions plan={plan} checklist={checklist} owner={owner} people={owners} followUp={followUpRow} busy={advancing || openingCase} onAct={act} onRow={actOnRow} detail={rowDetail}
           onReassign={(membershipId) => patch({ ownerMembershipId: membershipId })} /> : null}
       </>}
@@ -290,10 +298,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
           { id: "overview", label: t("Overview"), panel: <RecordPanel>
             <SideSection title={t("Key facts")}>
               <EditableFieldList>
-                {live.valueHidden ? null : live.amount === undefined || !resource.data ? <FactRow label={t("Value")}>{hasValue ? value : <span className="wd-editable-empty">{value}</span>}</FactRow>
-                  : <EditableField currency={valueCurrency} display={hasValue ? value : undefined} kind="money" label={t("Value")} onReload={resource.refresh}
-                    onSave={(next) => patch(next ? { amount: Number(next), currencyCode: valueCurrency } : { amount: null, currencyCode: null })} placeholder={t("Not set")}
-                    value={live.amount === null || live.amount === undefined ? "" : String(live.amount)} />}
+                {/* Guide J: the value is the linked quotations' (Proposals below), never typed here. */}
+                {live.valueHidden ? null : <FactRow label={t("Value")}>{hasValue ? value : <span className="wd-editable-empty">{t("From the quotation")}</span>}</FactRow>}
                 <EditableField canEdit={Boolean(resource.data)} display={closeDate ? dateText(live.expectedCloseAt ?? live.expected_close_at, { locale, timeZone }) : undefined} kind="date" label={t("Expected close")} onReload={resource.refresh}
                   onSave={(date) => patch({ expectedCloseAt: date ? new Date(`${date}T12:00:00`).toISOString() : null })} placeholder={t("Not set")} value={closeDate} />
                 {flow?.enquiryType ? <FactRow label={t("Enquiry type")}>{flow.enquiryType}</FactRow> : null}
@@ -335,6 +341,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       proposal={proofOpen === "main" ? "main" : undefined}
       onBlocked={(items) => setBlocked({ stage: String(wonStage?.name ?? t("Won")), items })} /> : null}
     {furnitureOpen && flow?.furniture ? <FurniturePathDialog flow={flow.furniture} onClose={() => setFurnitureOpen(false)} onSave={saveFlow} /> : null}
+    {outcomeOpen ? <OpportunityOutcomeDialog workspaceId={workspaceId} opportunityId={row.id} enquiryType={flow?.enquiryType ?? null} freshVersion={freshVersion}
+      onClose={() => setOutcomeOpen(false)} onSaved={async () => { setOutcomeOpen(false); await saved(); }} /> : null}
     {siteVisitOpen ? <SiteVisitDialog workspaceId={workspaceId} opportunityId={row.id} onClose={() => setSiteVisitOpen(false)} onBooked={() => { setSiteVisitOpen(false); void saved(); }} /> : null}
     {materialsOpen ? (() => {
       const materialStep = (Array.isArray(flow?.line) ? flow.line : []).find((step) => step.missing?.some((item) => item.key === "designStage:material_selection"));

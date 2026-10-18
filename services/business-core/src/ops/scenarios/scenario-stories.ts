@@ -37,7 +37,7 @@ export type StoryOptions = {
 const TERMS = [
   { title: "Advance on signing", percent: 50, trigger: "Signed agreement", requiredForRelease: true, requiredForProduction: false },
   { title: "Before production", percent: 40, trigger: "Before factory production starts", requiredForRelease: false, requiredForProduction: true },
-  { title: "On handover", percent: 10, trigger: "At client handover", requiredForRelease: false, requiredForProduction: false },
+  { title: "On handover", percent: 10, trigger: "At client handover", requiredForRelease: false, requiredForProduction: false, dueAtHandover: true },
 ];
 
 /** One story: the client, the job and how far it goes. */

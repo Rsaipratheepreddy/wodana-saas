@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { bindEvidence, evidenceFor, evidenceIds, type EvidenceFile } from "../evidence/decision-evidence";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
@@ -26,6 +27,8 @@ export type BankAccount = {
   id: string; accountName: string; bankName: string; accountNumber: string; swift: string; currency: string | null; source: (typeof SOURCES)[number];
   status: "pending" | "approved" | "rejected" | "retired"; requestedBy: string; requestedByName: string; requestedAt: string; callbackByName: string | null; callbackAt: string | null;
   callbackNote: string; decidedByName: string | null; decidedAt: string | null; rejectReason: string | null;
+  /** The supplier's bank letter or cancelled cheque (for those who verify bank details). */
+  files?: EvidenceFile[];
 };
 
 async function readDocuments(db: Db, workspaceId: string, vendorId: string): Promise<VendorDocument[]> {
@@ -46,8 +49,9 @@ async function readBankAccounts(db: Db, workspaceId: string, vendorId: string, f
        LEFT JOIN users caller ON caller.id = account.callback_by LEFT JOIN users decider ON decider.id = account.decided_by
       WHERE account.workspace_id = $1 AND account.vendor_id = $2
       ORDER BY array_position(ARRAY['pending', 'approved', 'rejected', 'retired'], account.status::text), account.requested_at DESC`, [workspaceId, vendorId])).rows;
-  // Only people who verify bank details see the whole number; everyone else sees its last four digits.
-  return full ? rows : rows.map((row) => ({ ...row, accountNumber: maskAccountNumber(row.accountNumber) }));
+  // Only people who verify bank details see the whole number (and the bank letter); everyone else sees its last four digits.
+  const files = full ? await evidenceFor(db, workspaceId, "supplier_bank", rows.map((row) => row.id)) : new Map();
+  return full ? rows.map((row) => ({ ...row, files: files.get(row.id) ?? [] })) : rows.map((row) => ({ ...row, accountNumber: maskAccountNumber(row.accountNumber) }));
 }
 
 export type RateContract = {
@@ -202,6 +206,8 @@ export class SupplierControlsService {
       await client.query(
         `INSERT INTO vendor_bank_accounts (id, workspace_id, vendor_id, account_name, bank_name, account_number, swift, currency, source, requested_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [id, workspaceId, vendorId, account.accountName, account.bankName, account.accountNumber, account.swift, account.currency, account.source, user.userId]);
+      // §0.3 P0: the supplier's bank letter (or a cancelled cheque), read by whoever verifies the details.
+      await bindEvidence(client, workspaceId, user.userId, "supplier_bank", id, evidenceIds(body.evidenceFileIds));
       await this.tell(client, workspaceId, "supplier.bank_change", await this.holders(client, workspaceId, ["vendors.approve"]), user.userId, supplier.name,
         `${account.bankName}, ending ${account.accountNumber.replace(/\s+/g, "").slice(-4)}, ${account.source.replace("_", " ")}`, `bank:${id}`, vendorId);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "supplier.bank_requested", entityType: "supplier", entityId: vendorId,

@@ -17,7 +17,7 @@ describe("areas after Won (PLM-098)", () => {
   });
 
   it("save no rule when every path shows every area, else the type's and only the paths that differ", () => {
-    const all = ["planning", "production", "supply", "delivery"] as const;
+    const all = ["planning", "production", "supply", "delivery", "selection"] as const;
     expect(wonAreasRules({ "": [...all], bespoke: [...all] }, ["bespoke"])).toEqual([]);
     expect(wonAreasRules({ "": ["delivery"], bespoke: ["delivery"], take_home_now: [] }, ["bespoke", "take_home_now"]))
       .toEqual([{ furniturePath: null, areas: ["delivery"] }, { furniturePath: "take_home_now", areas: [] }]);
@@ -27,7 +27,7 @@ describe("areas after Won (PLM-098)", () => {
     const sent: unknown[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit = {}) => {
       if (init.method === "PUT") sent.push(JSON.parse(String(init.body)));
-      return { ok: true, status: 200, json: async () => ({ flowId: "f1", areas: ["planning", "production", "supply", "delivery"], furniturePaths: ["take_home_now"], rules: [] }) };
+      return { ok: true, status: 200, json: async () => ({ flowId: "f1", areas: ["planning", "production", "supply", "delivery", "selection"], furniturePaths: ["take_home_now"], rules: [] }) };
     }));
     const onClose = vi.fn();
     const user = userEvent.setup();
@@ -39,9 +39,9 @@ describe("areas after Won (PLM-098)", () => {
     await user.click(boxes[0]);
     expect(screen.getAllByRole("checkbox", { name: "Planning" })[1]).not.toBeChecked();
     // Take home now (A) uses nothing after Won.
-    for (const name of ["Production", "Supply", "Delivery"]) await user.click(screen.getAllByRole("checkbox", { name })[1]);
+    for (const name of ["Production", "Supply", "Delivery", "Material selection"]) await user.click(screen.getAllByRole("checkbox", { name })[1]);
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(sent).toEqual([{ rules: [{ furniturePath: null, areas: ["production", "supply", "delivery"] }, { furniturePath: "take_home_now", areas: [] }], versions: "" }]));
+    await waitFor(() => expect(sent).toEqual([{ rules: [{ furniturePath: null, areas: ["production", "supply", "delivery", "selection"] }, { furniturePath: "take_home_now", areas: [] }], versions: "" }]));
     expect(onClose).toHaveBeenCalled();
   });
 });

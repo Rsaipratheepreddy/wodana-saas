@@ -13,7 +13,7 @@ import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
 /** Where each start rule is satisfied, in the planning record. */
-const FIX: Record<string, string> = { accepted: "quotations", agreement: "contracts", payment: "payment-plan", approval: "execution-release" };
+const FIX: Record<string, string> = { accepted: "quotations", agreement: "contracts", payment: "payment-plan", approval: "deal-file" };
 
 /**
  * Start the project from the accepted quotation: what the firm's start rules still need, then the

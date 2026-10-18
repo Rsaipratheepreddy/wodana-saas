@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { Check, Download, Maximize2, MessageSquarePlus, Minimize2, Minus, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Send, X } from "lucide-react";
-import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, PillTabs, SegmentedControl, useDesignSystem, useModalPortal, usePortalThemeAttributes } from "@/design-system";
+import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, InlineNotice, PillTabs, ReviewFiles, SegmentedControl, useDesignSystem, useModalPortal, usePortalThemeAttributes } from "@/design-system";
+import { evidenceFiles } from "@/lib/evidence/evidence";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isTypingTarget } from "@/lib/keyboard/typing-target";
 import { caseApi, caseRequest, type CaseContent, type CaseDesign, type DesignOptions, type DesignThread } from "@/lib/pre-project/content";
@@ -52,6 +53,7 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
   const listed = threads.filter((thread) => filter === "resolved" ? thread.status === "resolved" : thread.status !== "resolved");
   const resolvedCount = threads.filter((thread) => thread.status === "resolved").length;
   const legacy = design.activity.filter((item) => item.action === "comment" && item.versionId === revision?.id && item.note.trim());
+  const decision = [...design.activity].reverse().find((item) => item.versionId === revision?.id && item.decisionSource && (item.action === "approved" || item.action === "changes_requested"));
   const status = latest?.status ?? "draft";
 
   const fit = useCallback(() => {
@@ -166,6 +168,13 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
             {panel ? <aside className={styles.panel} aria-label={t("Review")}>
               {actions ? <div className={styles.panelActions}>{actions}</div> : null}
               {revision ? <BoardFeedback data={data} versionId={revision.id} /> : null}
+              {/* §0.3 P0: the client's decision staff took down for this revision, with what it came in. */}
+              {decision ? <div className={styles.decision}>
+                <span className={styles.decisionHead}><Badge tone={decision.action === "approved" ? "success" : "warning"}>{decision.action === "approved" ? t("Approved by the client") : t("Changes asked by the client")}</Badge>
+                  <small>{[decision.decisionBy, decision.decisionAt ? date(decision.decisionAt) : null].filter(Boolean).join(" · ")}</small></span>
+                {decision.note ? <p dir="auto">{decision.note}</p> : null}
+                <ReviewFiles files={evidenceFiles(data.workspaceId, decision.files)} />
+              </div> : null}
               <div className={styles.panelHead}>
                 <h3>{t("Comments")}</h3>
                 {resolvedCount ? <PillTabs ariaLabel={t("Comments")} selectedKey={filter} onSelectionChange={(key) => { setFilter(key as "open" | "resolved"); setOpenThread(null); }}
@@ -310,8 +319,8 @@ function NewComment({ data, design, versionId, point, members, allowBlocking, lo
   const [error, setError] = useState("");
   return <div className={styles.card}>
     <div className={styles.cardHead}><strong>{t("New comment")}</strong><IconButton aria-label={t("Cancel")} size="compact" variant="quiet" onPress={onCancel}><X aria-hidden="true" size={14} /></IconButton></div>
-    {error ? <p className={styles.error} role="alert">{error}</p> : null}
-    {locked ? <p className={styles.error} role="status">{t("A newer revision was uploaded. Copy your comment and add it there.")}</p> : null}
+    {error ? <InlineNotice tone="error" message={error} /> : null}
+    {locked ? <InlineNotice tone="info" message={t("A newer revision was uploaded. Copy your comment and add it there.")} /> : null}
     <Composer autoFocus members={members} busy={busy} locked={locked} placeholder={t("Add a comment · @ to mention")} onDirty={onDirty}
       onSend={async (body, mentions) => {
         setBusy(true); setError("");
@@ -363,7 +372,7 @@ function ThreadCard({ data, design, thread, options, reviewerId, writable, date,
         <div><span className={styles.listMeta}><strong>{message.createdByName}</strong><time dateTime={message.createdAt}>{date(message.createdAt)}</time></span><p>{message.body}</p></div>
       </li>)}
     </ol>
-    {error ? <p className={styles.error} role="alert">{error}</p> : null}
+    {error ? <InlineNotice tone="error" message={error} /> : null}
     {writable && !resolved ? <Composer autoFocus key={replyId} members={members} busy={busy} placeholder={t("Reply")} onDirty={onDirty}
       onSend={async (body) => {
         setBusy(true); setError("");

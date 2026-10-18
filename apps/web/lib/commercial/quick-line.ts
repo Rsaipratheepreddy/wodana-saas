@@ -113,7 +113,7 @@ export function describeQuickLine(
   if (draft.dimensions) parts.push([draft.dimensions.length, draft.dimensions.height, draft.dimensions.depth].filter((value) => value !== undefined).join("×") + ` ${draft.dimensions.unit}`);
   if (draft.material) parts.push(draft.material);
   if (draft.finish) parts.push(draft.finish);
-  parts.push(draft.rate !== null ? new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(draft.rate) : t("Unpriced"));
+  parts.push(draft.rate !== null ? new Intl.NumberFormat(locale, { style: "currency", currency }).format(draft.rate) : t("Unpriced"));
   if (draft.optional) parts.push(t("Optional"));
   return parts;
 }

@@ -33,12 +33,6 @@ export function nextStepText(t: Translate, next: Pick<NextStep, "kind" | "text" 
   return action ? t(action, { stage: next.stage }) : t(next.text as MessageKey);
 }
 
-/** The same as a translatable phrase (for cards that take a key and its values). */
-export function nextStepPhrase(next: Pick<NextStep, "kind" | "text" | "stage">): { key: MessageKey; values?: Record<string, string> } {
-  const action = NEXT_STEP_ACTION[next.kind];
-  return action ? { key: action, values: { stage: next.stage } } : { key: next.text as MessageKey };
-}
-
 /** A running project with late work is at risk even when nobody has flagged it: the status follows the late count. */
 export function effectiveHealth(row: Pick<ProjectRow, "status" | "health" | "attention">): Health {
   return row.status === "active" && row.health === "on_track" && (row.attention?.late ?? 0) > 0 ? "at_risk" : row.health;

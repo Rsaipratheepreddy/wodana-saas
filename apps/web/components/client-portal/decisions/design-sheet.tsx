@@ -1,8 +1,7 @@
 "use client";
 
-import { FileText } from "lucide-react";
 import { useState } from "react";
-import { Button, TextAreaField } from "@/design-system";
+import { Button, ReviewFiles, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalDesign, PortalDesignReview } from "@/lib/client-portal/types";
@@ -41,11 +40,12 @@ export function DesignSheet({ design, caseId, api, format, channels, onDecided, 
     {image
       // eslint-disable-next-line @next/next/no-img-element -- a private file streamed through the portal's signed-in route
       ? <img alt={`${design.title} · V${design.number}`} className={styles.preview} src={api.file("design", design.id)} />
-      : <a className={styles.fileName} href={api.file("design", design.id)} rel="noreferrer" target="_blank"><FileText aria-hidden="true" size={16} /> {t("Open the file")}</a>}
+      : <ReviewFiles label={t("Open the file")} files={[{ id: design.id, name: design.title, href: api.file("design", design.id) }]} />}
     {review ? <DesignComments caseId={caseId} versionId={design.id} image={image ? api.file("design", design.id) : null} threads={review.threads} canComment={review.canComment}
       api={api} format={format} onChanged={onComment ?? (() => undefined)} /> : null}
     {design.canDecide ? <>
       {design.dueAt ? <p className={styles.muted}>{t("Please decide by {date}", { date: format.date(design.dueAt) })}</p> : null}
+      {design.paidChanges ? <p className={styles.muted}>{t("Further changes are a paid change.")}</p> : null}
       {decision && decision !== "accept" ? <><TextAreaField label={decision === "changes" ? t("What would you like changed?") : t("Why are you declining?")} value={note}
         onChange={setNote} maxLength={5000} isRequired autoFocus /><AttachFiles caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} /></> : null}
       <div className={styles.choices}>

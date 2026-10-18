@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const tellClients = vi.fn(async () => ({ queued: 1, reason: null, names: ["Aisha"] }));
 vi.mock("../client-portal/portal-notices", () => ({ tellClients }));
 
-const { amountText, noticeReceiptStep } = await import("./commercial-notices");
+const { amountText, noticeReceiptReturned, noticeReceiptStep } = await import("./commercial-notices");
 
 /** A database that answers the notice's reads and records every notice it was asked to write. */
 function fakeDb(holders: Record<string, string[]>) {
@@ -45,6 +45,16 @@ describe("client payment hand-offs", () => {
     expect(told(db)).toEqual(["olivia:commercial.receipt_verified:app", "omar:commercial.receipt_verified:app", "sara:commercial.receipt_verified:app"]);
     expect(tellClients).toHaveBeenCalledWith(db, expect.objectContaining({ event: "payment_checked", caseId: "case", recordId: "verified:pay-1", title: "Advance",
       note: "We received your payment of AED 1234.50 for Advance. Thank you." }));
+  });
+
+  it("tells the person who recorded a returned receipt why, in the app and by email; never the client", async () => {
+    const db = fakeDb({});
+    await noticeReceiptReturned(db, { workspaceId: "ws", caseId: "case", payment, reason: "The bank shows 900", actorUserId: "layla", reporterUserId: "omar", revision: 6 });
+    expect(told(db)).toEqual(["omar:commercial.receipt_returned:app", "omar:commercial.receipt_returned:email"]);
+    expect(tellClients).not.toHaveBeenCalled();
+    const quiet = fakeDb({});
+    await noticeReceiptReturned(quiet, { workspaceId: "ws", caseId: "case", payment, reason: "x", actorUserId: "layla", reporterUserId: "layla", revision: 6 });
+    expect(told(quiet)).toEqual([]);
   });
 
   it("doesn't tell the client twice when Finance already answered their own payment report", async () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { bindEvidence, evidenceFor, evidenceIds } from "../evidence/decision-evidence";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
@@ -147,6 +148,8 @@ export class InventoryService {
           await need("stock.adjust", "You can't correct stock.");
           const counted = amount(body.counted, "Counted");
           const result = await this.countWith(client, workspaceId, user.userId, { batchId, itemId, location, owner, counted, reason, movedOn });
+          // §0.3 P0: the count sheet or a photo of the shelf, read when the correction is approved.
+          await bindEvidence(client, workspaceId, user.userId, "stock_correction", batchId, evidenceIds(body.evidenceFileIds));
           audit = { counted, was: result.was, difference: result.difference, owner, reason, pending: result.pending };
         } else {
           await need("stock.manage", "You can't move stock.");
@@ -557,6 +560,8 @@ export class InventoryService {
            LEFT JOIN delivery_projects project ON project.workspace_id = request.workspace_id AND project.id = request.project_id
            JOIN users person ON person.id = request.requested_by
           WHERE request.workspace_id = $1 AND request.status = 'pending' ORDER BY request.requested_at`, [workspaceId])).rows,
+      adjustmentFiles: Object.fromEntries(await evidenceFor(client, workspaceId, "stock_correction",
+        (await client.query<{ id: string }>(`SELECT id::text FROM stock_adjustment_requests WHERE workspace_id = $1 AND status = 'pending'`, [workspaceId])).rows.map((row) => row.id))),
       me: userId,
       currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
       reorderPoints: await readReorderPoints(client, workspaceId),

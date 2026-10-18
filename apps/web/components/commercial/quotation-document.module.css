@@ -56,3 +56,6 @@
   .document .itemPhoto { max-inline-size:220px; block-size:145px; max-block-size:145px; }
 }
 @media print { .document { border:0; } .document .coverActions { display:none; } }
+
+/* A price never breaks inside its number ("AED 2,400." / "00"): it may only wrap after the currency. */
+.document td.money { overflow-wrap: normal; word-break: keep-all; hyphens: none; }

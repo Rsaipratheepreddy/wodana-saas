@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { FileImage, FileText, FileSpreadsheet, File, FileArchive } from "lucide-react";
+import { Spinner } from "@/design-system";
 import {
   caseApi,
   type CaseContent,
@@ -36,7 +37,7 @@ export function FileCover({
     <span className={view.cover}>
       {asset && (image || asset.hasPreview) && !failed ? (
         <>
-          {!loaded && <small role="status">{t("Loading preview…")}</small>}
+          {!loaded && <Spinner label={t("Loading preview…")} />}
           {/* Authenticated same-origin files retain the case access checks. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

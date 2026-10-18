@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { translatorFor } from "@/lib/i18n/keys";
-import { effectiveHealth, nextStepPhrase, nextStepText } from "./next-step";
+import { effectiveHealth, nextStepText } from "./next-step";
 
 const t = translatorFor({});
 
@@ -11,7 +11,6 @@ describe("a project's next step", () => {
     expect(nextStepText(t, { kind: "finish", text: "Finish Production", stage: "Production" })).toBe("Finish Production");
     // A firm's own check keeps its words.
     expect(nextStepText(t, { kind: "confirm", text: "Site measured", stage: "Kickoff" })).toBe("Site measured");
-    expect(nextStepPhrase({ kind: "finish", text: "", stage: "Production" })).toEqual({ key: "Finish {stage}", values: { stage: "Production" } });
   });
 
   it("puts a running project with late work at risk", () => {

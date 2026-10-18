@@ -13,6 +13,7 @@ import { noticeProject } from "../project-core/project-notices";
 import { recordMaterialDecision } from "../project-core/project-materials";
 import { decideDrawings } from "../project-core/project-drawing-decisions";
 import { readLatestRevision } from "../project-core/project-drawings";
+import { itemDrawingsWaiting } from "../project-core/project-item-decisions";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { stageOwners } from "../change-requests/change-request-notices";
 import { decideHandoverPack } from "../site/handover";
@@ -22,6 +23,8 @@ import type { Grant, PortalContact } from "./portal-auth";
 import { attach, ownUploads } from "./portal-files";
 import { readCase } from "./portal-read";
 import { effectiveSections, readProjectAccess, type PortalSettings, type Section } from "./portal-settings";
+import { writeAnswers } from "../setup/questionnaires.store";
+import type { AnswerValue } from "../setup/questionnaires.domain";
 
 type Db = PoolClient;
 const NIL = "00000000-0000-4000-8000-000000000000";
@@ -89,7 +92,7 @@ async function code(ctx: DecisionContext, purpose: string, body: Record<string, 
 export async function assertDecisionOpen(ctx: DecisionContext, purpose: string) {
   const [kind, caseId, recordId, decision, ...rest] = purpose.split(":");
   const allowed: Record<string, string[]> = { quote: ["accept", "changes", "decline"], design: ["accept", "changes", "decline"], definition: ["accept", "changes"],
-    materials: ["submit"], drawings: ["accept", "changes"], handover: ["accept", "refuse"], change: ["accept"] };
+    materials: ["submit"], drawings: ["accept", "changes"], handover: ["accept", "refuse"], change: ["accept"], item_drawings: ["sign"], item_drawing: ["changes"] };
   if (rest.length || !allowed[kind]?.includes(decision)) throw new BadRequestException("This decision isn't valid.");
   const { grant, row } = await grantFor(ctx, caseId, "decisions");
   decider(grant);
@@ -109,6 +112,10 @@ export async function assertDecisionOpen(ctx: DecisionContext, purpose: string) 
     const revision = row.projectId ? (await ctx.db.query<{ id: string; status: string }>(
       `SELECT id, status FROM project_material_revisions WHERE workspace_id = $1 AND project_id = $2 ORDER BY number DESC LIMIT 1`, [ctx.workspaceId, row.projectId])).rows[0] : undefined;
     if (!revision || revision.id !== recordId || revision.status !== "sent") throw new ConflictException("This material list isn't waiting for your decision any more. Reload to see the latest.");
+  } else if (kind === "item_drawings" || kind === "item_drawing") {
+    // Shop drawings per item: some wait for the signature (the record is the batch of versions chosen), or this version does.
+    if (!row.projectId || !(await itemDrawingsWaiting(ctx.db, ctx.workspaceId, row.projectId, kind === "item_drawing" ? recordId : undefined)))
+      throw new ConflictException("These drawings aren't waiting for your signature any more. Reload to see the latest.");
   } else if (kind === "drawings") {
     const revision = row.projectId ? await readLatestRevision(ctx.db, ctx.workspaceId, row.projectId) : null;
     if (!revision || revision.id !== recordId || revision.status !== "sent") throw new ConflictException("These drawings aren't waiting for your decision any more. Reload to see the latest.");
@@ -400,6 +407,9 @@ export async function claimWarranty(ctx: DecisionContext, body: Record<string, u
     `INSERT INTO warranty_claims (id, workspace_id, project_id, number, raised_on, raised_by_name, channel, description, area_id, boq_line_id, created_by, client_grant_id)
      VALUES ($1, $2, $3, $4, $5, $6, 'portal', $7, $8, $9, NULL, $10)`,
     [id, ctx.workspaceId, row.projectId, number, ctx.today, grant.name.slice(0, 200), description, areaId, lineId, grant.id]);
+  // §0.3 P3: the firm's claim questions, answered with the claim; the ones it marked required must be.
+  await writeAnswers(ctx.db, ctx.workspaceId, "warranty_claim", { type: "warranty_claim", id }, body.answers && typeof body.answers === "object" ? body.answers as Record<string, AnswerValue> : undefined,
+    { userId: null, name: grant.name }, row.enquiryType, { complete: true });
   await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "warranty_claim", targetId: id, files });
   await tellTeam(ctx.db, ctx.workspaceId, row.projectId, "warranty.claim", grant.name, `${grant.name}: ${description}${files.length ? ` (${files.length} photo${files.length === 1 ? "" : "s"})` : ""}`,
     `claim:${id}`, "/handover?view=warranty", true);

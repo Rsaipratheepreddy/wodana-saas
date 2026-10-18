@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 import { caseTeam, caseTitle, tellClients, tellStaff } from "../client-portal/portal-notices";
 import { DECISION_SOURCES, optionProblem, roundChargeable, STAGE_LABELS, stageRevisions, type DecisionSource, type JourneyStage } from "./design-journey.domain";
 import { completeStage, salesAdminMembership } from "./design-journey.store";
+import { askedForChanges, assertRevisionCanStart, extraRevisionLinked, type AskOutcome } from "./design-revisions.store";
 import { isDeliverableStage, siteMeasureDone, syncDesignStages } from "./design-stage-sync";
 
 type Db = Pick<PoolClient, "query">;
@@ -91,6 +92,8 @@ export async function createPresentation(db: Db, workspaceId: string, caseId: st
   const open = (await db.query<{ round: number; status: string }>(
     `SELECT round, status FROM design_presentations WHERE workspace_id = $1 AND case_id = $2 AND stage = $3 ORDER BY round DESC LIMIT 1 FOR UPDATE`, [workspaceId, caseId, input.stage])).rows[0];
   if (open && ["draft", "presented"].includes(open.status)) throw new ConflictException(open.status === "draft" ? "Finish or discard the draft presentation first." : "The client hasn't decided on the last presentation yet.");
+  // PLM-049/051: beyond the free revisions, the next round waits for the extra revision's change to be agreed.
+  if (open) await assertRevisionCanStart(db, workspaceId, caseId, input.stage);
   await db.query(`INSERT INTO design_presentations (id, workspace_id, case_id, stage, round, created_by) VALUES ($1, $2, $3, $4, $5, $6)`,
     [input.id, workspaceId, caseId, input.stage, (open?.round ?? 0) + 1, userId]);
   for (const [position, option] of input.options.entries())
@@ -124,7 +127,8 @@ export async function presentRound(db: Db, workspaceId: string, caseId: string, 
     [workspaceId, id, userId, chargeable, options.reviewedBy ?? null]);
   const label = STAGE_LABELS[row.stage];
   await tellClients(db, { workspaceId, caseId, event: "decision_waiting", recordId: `presentation:${id}`, title: row.round > 1 ? `${label} · revision ${row.round - 1}` : label });
-  if (chargeable) {
+  // A revision agreed through its extra-revision change request already reached Sales when it was drafted.
+  if (chargeable && !(await extraRevisionLinked(db, workspaceId, caseId, row.stage, row.round - 1))) {
     const facts = await caseTitle(db, workspaceId, caseId);
     const members = [(await db.query<{ owner: string | null }>(
       `SELECT opportunity.owner_membership_id AS owner FROM pre_project_cases pre_case JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
@@ -163,6 +167,8 @@ export async function decideRound(db: Db, workspaceId: string, caseId: string, i
   if (row.version !== input.version) throw new ConflictException("This presentation changed. Reload to see the latest.");
   if (row.status !== "presented") throw new ConflictException(row.status === "draft" ? "Show the presentation to the client first." : "The client already decided on this presentation.");
   if (!DECISION_SOURCES.includes(input.source as DecisionSource)) throw new BadRequestException("Say where the client decided.");
+  // Guide step 2: during design every decision comes through the portal (or a meeting, an email or a call), never WhatsApp.
+  if (input.source === "whatsapp") throw new BadRequestException("During design, decisions come through the portal, not WhatsApp.");
   const name = input.decidedBy.trim();
   if (!name || name.length > 200) throw new BadRequestException("Say who decided.");
   const note = input.note?.trim() || null;
@@ -188,13 +194,24 @@ export async function decideRound(db: Db, workspaceId: string, caseId: string, i
     variables: input.decision === "chosen" ? { clientName: facts.clientName, title: chosen, stage: STAGE_LABELS[row.stage], note: note ?? "Chosen." }
       : { clientName: facts.clientName, title: STAGE_LABELS[row.stage], actor: name, note: note ?? "" },
     deepLink: `/workspace/pre-projects/cases/${caseId}/designs?stage=${row.stage}`, key: `${id}:${input.decision}` });
+  // PLM-049/051: the ask counts against the step's free revisions; beyond them it drafts the extra revision's change request.
+  let extra: AskOutcome = { kind: "none" };
+  if (input.decision === "changes_requested") {
+    const asker = input.grantId ? { grantId: input.grantId, name } : input.userId ? { userId: input.userId, name } : null;
+    if (asker) extra = await askedForChanges(db, workspaceId, caseId, row.stage, asker, { note, source: `presentation:${id}` });
+  }
   let completed = false;
+  if (input.decision === "chosen" && row.stage === "moodboards") {
+    // Guide step 5: the client's choice between the two mood boards completes the step.
+    const active = (await db.query(`SELECT 1 FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'moodboards' AND status = 'active' FOR UPDATE`, [workspaceId, caseId])).rowCount;
+    if (active) { await completeStage(db, workspaceId, caseId, "moodboards", input.userId ?? null, `Client's choice: ${chosen}`, "chosen"); completed = true; }
+  }
   if (input.decision === "chosen" && row.stage === "concepts") {
     // PLM-141: the choice is recorded; the concept step itself waits for the design site measure.
     const active = (await db.query(`SELECT 1 FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'concepts' AND status = 'active' FOR UPDATE`, [workspaceId, caseId])).rowCount;
     if (active && await siteMeasureDone(db, workspaceId, caseId)) { await completeStage(db, workspaceId, caseId, "concepts", input.userId ?? null, `Client's choice: ${chosen}`, "chosen"); completed = true; }
   }
-  return { replayed: false, stage: row.stage, completed };
+  return { replayed: false, stage: row.stage, completed, extra };
 }
 
 /**
@@ -240,7 +257,7 @@ async function settleOptionDesigns(db: Db, workspaceId: string, caseId: string, 
     await db.query(`UPDATE pre_project_designs SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, option.designId]);
   }
   // Concepts complete through the choice itself (decideRound, with the site measure); another stage completes as any approved file would.
-  if (approved && input.stage !== "concepts") await syncDesignStages(db, workspaceId, caseId, input.userId);
+  if (approved && input.stage !== "concepts" && input.stage !== "moodboards") await syncDesignStages(db, workspaceId, caseId, input.userId);
 }
 
 /** The role that reviews this journey's rounds before the client sees them (PLM-145), when its package has one. */

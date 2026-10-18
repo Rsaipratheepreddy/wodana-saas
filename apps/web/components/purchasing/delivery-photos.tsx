@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { X } from "lucide-react";
-import { FileUploader, IconButton } from "@/design-system";
+import { FileUploader, ReviewFiles } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ReceiptPhoto } from "@/lib/purchasing/types";
 import styles from "./purchasing.module.css";
@@ -22,15 +21,11 @@ export function SavedPhotos({ photos, url }: { photos: ReceiptPhoto[]; url: (pho
 /** Photos chosen on this device and not saved yet, with a way to add more (the camera on a phone) or drop one. */
 export function PhotoPicker({ files, onChange, label }: { files: File[]; onChange: (files: File[]) => void; label?: string }) {
   const t = useT();
-  const previews = useMemo(() => files.map((file) => ({ file, src: URL.createObjectURL(file) })), [files]);
-  useEffect(() => () => previews.forEach((preview) => URL.revokeObjectURL(preview.src)), [previews]);
-  return <div className={styles.photoPicker}>
-    {previews.length ? <ul className={styles.photos} aria-label={t("Photos to add")}>{previews.map((preview, index) => <li key={`${preview.file.name}-${index}`}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- a local preview before upload */}
-      <img src={preview.src} alt={preview.file.name} />
-      <IconButton aria-label={t("Remove {name}", { name: preview.file.name })} size="compact" variant="quiet" onPress={() => onChange(files.filter((_, item) => item !== index))}>
-        <X aria-hidden="true" size={13} /></IconButton>
-    </li>)}</ul> : null}
+  const previews = useMemo(() => files.map((file, index) => ({ id: String(index), name: file.name, href: URL.createObjectURL(file) })), [files]);
+  useEffect(() => () => previews.forEach((preview) => URL.revokeObjectURL(preview.href)), [previews]);
+  return <div className={styles.stack}>
+    {previews.length ? <ReviewFiles label={t("Photos to add")} files={previews.map((preview) => ({ ...preview, previewHref: preview.href }))}
+      onRemove={(id) => onChange(files.filter((_, item) => String(item) !== id))} /> : null}
     <FileUploader appearance="button" accept="image/*" label={label ?? t("Add photos")} onFiles={(added) => onChange([...files, ...added.filter((file) => file.type.startsWith("image/"))].slice(0, 10))} />
   </div>;
 }

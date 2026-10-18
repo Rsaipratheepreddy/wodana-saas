@@ -45,102 +45,45 @@ it("shows the exact production evidence frozen in the Deal File", () => {
   expect(document.querySelector('time[datetime="2026-09-18T10:00:00.000Z"]')?.textContent).toBe("Sep 18, 2026");
 });
 
-it("submits a Won opportunity Deal File with separate commission and payment evidence", async () => {
+// Guide J: the Deal File opens by itself once the payment proof is attached; by hand only when it didn't. Finance adds the commissions.
+const wonState = (extra: Record<string, unknown> = {}, data: Record<string, unknown> = {}) => ({
+  opportunityStatus: "won", canEdit: true, contacts: [], workspaceId: "w", caseId: "case", ...extra,
+  data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [], ...data },
+}) as unknown as CommercialState;
+
+it("opens the Deal File by hand from the attached payment proof, leaving the commissions to Finance", async () => {
   const run = vi.fn().mockResolvedValue(true);
-  const state = {
-    opportunityStatus: "won", canEdit: true, contacts: [],
-    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [] },
-  } as unknown as CommercialState;
-  render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
-  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
-  const commission = screen.getByRole("group", {name:"Commission 1"});
-  fireEvent.change(within(commission).getByRole("textbox", {name:"Recipient"}), {target:{value:"Sales A"}});
-  fireEvent.change(within(commission).getByRole("textbox", {name:"Amount"}), {target:{value:"10"}});
-  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Verified customer deposit"}});
-  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
-  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({paymentProofUrl:"https://example.com/proof",commissionLines:[{recipientName:"Sales A",type:"sales",basis:"amount",value:10}]})));
+  render(<ApprovalRelease initialView="owner" state={wonState({ opportunityId: "o1", paymentProofId: "p1" })} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  // The proof is a chip that opens it; nothing is typed here.
+  expect(screen.getByRole("link", { name: "Payment proof attached" })).toHaveAttribute("href", expect.stringContaining("/opportunity-proofs/o1/p1"));
+  expect(screen.queryByRole("textbox", { name: "Proof-of-payment link" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Commission 1" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Open Deal File" }));
+  await waitFor(() => expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({ commissionLines: [] })));
 });
 
-it("labels the designer commission \"Designer fee\" and still sends the designer type", async () => {
-  const user = userEvent.setup();
-  const run = vi.fn().mockResolvedValue(true);
-  const state = {
-    opportunityStatus: "won", canEdit: true, contacts: [],
-    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [] },
-  } as unknown as CommercialState;
-  render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
-  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
-  const commission = screen.getByRole("group", {name:"Commission 1"});
-  fireEvent.change(within(commission).getByRole("textbox", {name:"Recipient"}), {target:{value:"Dana"}});
-  fireEvent.change(within(commission).getByRole("textbox", {name:"Amount"}), {target:{value:"25"}});
-  await user.click(within(commission).getByRole("button", {name:/Type/}));
-  expect(screen.queryByRole("option", {name:"Designer"})).not.toBeInTheDocument();
-  await user.click(await screen.findByRole("option", {name:"Designer fee"}));
-  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Designer fee agreed"}});
-  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
-  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({commissionLines:[{recipientName:"Dana",type:"designer",basis:"amount",value:25}]})));
+it("says why the Deal File waits while there is no payment proof", () => {
+  render(<ApprovalRelease initialView="owner" state={wonState()} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
+  expect(screen.getByText("No payment proof yet")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Open Deal File" })).toBeDisabled();
+  expect(screen.getByText("Attach the payment proof first.")).toBeVisible();
 });
 
-it("sends a Deal File with no commission, and says why Send to Finance waits (M5)", async () => {
-  const run = vi.fn().mockResolvedValue(true);
-  const state = {
-    opportunityStatus: "won", canEdit: true, contacts: [],
-    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [] },
-  } as unknown as CommercialState;
-  render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
-  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
-  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeDisabled();
-  expect(screen.getByText("Write the submission note.")).toBeVisible();
-  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"No commission on this one"}});
-  // A half-filled commission says what's missing; removing it sends the deal without one.
-  const commission = screen.getByRole("group", {name:"Commission 1"});
-  fireEvent.change(within(commission).getByRole("textbox", {name:"Recipient"}), {target:{value:"Sales A"}});
-  expect(screen.getByText("Finish commission 1 or remove it.")).toBeVisible();
-  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", {name:"Remove commission 1"}));
-  expect(screen.queryByRole("group", {name:"Commission 1"})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
-  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({commissionLines:[]})));
+it("attaches the payment proof right here while the opportunity isn't won yet", () => {
+  render(<ApprovalRelease initialView="owner" state={wonState({ opportunityStatus: "open", opportunityId: "o1" })} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
+  expect(screen.getByRole("button", { name: "Attach payment proof" })).toBeEnabled();
 });
 
-it("ignores the empty commission row when nothing is typed in it (M5)", async () => {
+it("shows the owner's return remark, and needs no proof link once Finance verified the receipt", async () => {
   const run = vi.fn().mockResolvedValue(true);
-  const state = {
-    opportunityStatus: "won", canEdit: true, contacts: [],
-    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [] },
-  } as unknown as CommercialState;
-  render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
-  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
-  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"No commission"}});
-  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeEnabled();
-  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
-  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({commissionLines:[]})));
-});
-
-it("shows the owner's return remark, checks the proof link before sending, and needs no link once Finance verified the receipt", async () => {
-  const run = vi.fn().mockResolvedValue(true);
-  const state = (payments: unknown[]) => ({
-    opportunityStatus: "won", canEdit: true, contacts: [],
-    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], dealFile: null, requests: [], payments, materialApprovals: [], ownerReview: {
-      id: "review", quoteId: "quote", status: "returned", financeNote: "Transfer matched", decisionNote: "Attach the signed BOQ", checklist: {}, commissionLines: [],
-    } },
-  }) as unknown as CommercialState;
-  const { unmount } = render(<ApprovalRelease initialView="owner" state={state([])} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  const returned = { id: "review", quoteId: "quote", status: "returned", financeNote: "Transfer matched", decisionNote: "Attach the signed BOQ", checklist: {}, commissionLines: [] };
+  render(<ApprovalRelease initialView="owner" state={wonState({}, { ownerReview: returned, payments: [{ id: "p1", sourceQuoteId: "quote", status: "verified" }] })} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
   expect(screen.getByText(/Attach the signed BOQ/)).toBeInTheDocument();
   expect(screen.queryByText(/Transfer matched/)).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Fixed"}});
-  expect(screen.getByText("Add a proof-of-payment link.")).toBeInTheDocument();
-  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"http://example.com/proof"}});
-  expect(screen.getAllByText("Use a secure HTTPS proof-of-payment link.").length).toBeGreaterThan(0);
-  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeDisabled();
-  unmount();
-  render(<ApprovalRelease initialView="owner" state={state([{ id: "p1", sourceQuoteId: "quote", status: "verified" }])} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
   // The verified payment is the proof: no link is asked for.
   expect(screen.getByText("Payment verified by Finance")).toBeVisible();
-  expect(screen.queryByRole("textbox", {name:"Proof-of-payment link"})).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Receipt verified"}});
-  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
-  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({paymentProofUrl:""})));
+  fireEvent.click(screen.getByRole("button", { name: "Send again" }));
+  await waitFor(() => expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({ commissionLines: [] })));
 });
 
 it("requires Finance to acknowledge payment proof before confirming a submitted deal", async () => {
@@ -167,13 +110,16 @@ it("keeps Finance's note out of the approver's remarks, and shows the decision o
     } },
   }) as unknown as CommercialState;
   const { unmount } = render(<ApprovalRelease initialView="owner" state={pending("layla")} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
-  expect(screen.queryByRole("textbox", { name: "Decision remarks" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Approve Deal File" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Review Deal File" })).not.toBeInTheDocument();
   expect(screen.getByText("Waiting for Olivia")).toBeInTheDocument();
   unmount();
   render(<ApprovalRelease initialView="owner" state={pending("olivia")} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
-  expect(screen.getByRole("textbox", { name: "Decision remarks" })).toHaveValue("");
-  expect(screen.getByRole("button", { name: "Approve Deal File" })).toBeInTheDocument();
+  // §0.3 P0: the owner decides in a review: Finance's note is shown there, never pre-filled into the owner's remarks.
+  fireEvent.click(screen.getByRole("button", { name: "Review Deal File" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Checked the transfer")).toBeInTheDocument();
+  expect(within(dialog).getByRole("textbox", { name: "Note" })).toHaveValue("");
+  expect(within(dialog).getByRole("button", { name: "Approve Deal File" })).toBeInTheDocument();
 });
 
 function readyMadeServicePathState(): CommercialState {
@@ -260,12 +206,18 @@ it("lays the Deal File out as KPI tiles, the next step and titled sections: requ
   expect(within(next).getByText("Next step")).toBeInTheDocument();
   expect(within(next).getByText("Waiting for Olivia")).toBeInTheDocument();
   expect(within(next).getByText("Check: QS price check")).toBeInTheDocument();
-  const checklist = within(next).getByRole("list", { name: "Owner checklist" });
-  expect(within(checklist).getByText("Agreement").closest("li")).toHaveAttribute("data-done");
-  expect(within(checklist).getByText("BOQ").closest("li")).not.toHaveAttribute("data-done");
-  expect(within(next).getByRole("button", { name: "Approve Deal File" })).toBeDisabled();
+  // The checklist is read from the records (§0.3 P0), never ticked; approval waits until every line is done.
+  const checklist = within(next).getByRole("list", { name: "Read from the records" });
+  for (const label of ["Signed agreement verified", "Signed agreement on file", "Payment proof", "Priced quotation lines"]) expect(within(checklist).getByText(label)).toBeInTheDocument();
+  expect(within(checklist).queryByRole("checkbox")).toBeNull();
+  const lines = within(checklist).getAllByRole("listitem");
+  // The decision is a review of the same checks: approving waits until every line is done.
+  fireEvent.click(within(next).getByRole("button", { name: "Review Deal File" }));
+  const review = screen.getByRole("dialog");
+  expect(within(review).getByRole("button", { name: "Approve Deal File" })).toHaveProperty("disabled", !lines.every((line) => line.hasAttribute("data-done")));
+  fireEvent.click(within(review).getByRole("button", { name: "Cancel" }));
   // The long lists are sub-tabs under the next step (requirements first); the small facts are titled cards beside them.
-  expect(within(screen.getByRole("tablist", { name: "Lists" })).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Requirements", "Approvals"]);
+  expect(within(screen.getByRole("tablist", { name: "Lists" })).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(expect.arrayContaining(["Requirements", "Approvals"]));
   expect(within(screen.getByRole("tabpanel", { name: "Requirements" })).getByText("Missing")).toBeInTheDocument();
   fireEvent.click(within(tile("Internal approval") as HTMLElement).getByRole("button"));
   expect(within(screen.getByRole("tabpanel", { name: "Approvals" })).getByText("Finance verifies")).toBeInTheDocument();

@@ -8,10 +8,6 @@ import { Button, IconButton } from "./actions";
 
 export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
 
-export function Badge({ children, className, tone = "neutral", ...props }: HTMLAttributes<HTMLSpanElement> & { tone?: StatusTone }) {
-  return <span {...props} className={["wd-badge", className].filter(Boolean).join(" ")} data-tone={tone}>{children}</span>;
-}
-
 /** A colour for a key the firm can recolour (an enquiry type's dot): the same key always gets the same hue. */
 export type TypeHue = 1 | 2 | 3 | 4 | 5 | 6;
 export function typeHue(key: string): TypeHue {
@@ -20,17 +16,32 @@ export function typeHue(key: string): TypeHue {
   return ((hash % 6) + 1) as TypeHue;
 }
 /**
- * A record's type or category ("Warranty claim", "Plywood") as a neutral chip (UX-008): colour is for states (late,
- * at risk, done), so a category never looks like an alert.
+ * The hue a chip wears: one of the calm ones (1 blue, 2 purple, 6 teal), or "auto" for the same calm hue every time
+ * the same words show. Green, amber and red stay for states (done, warning, error), so a category never looks like one.
  */
-export function TypeChip({ children }: { children: ReactNode }) {
-  if (children === null || children === undefined || children === "") return null;
-  return <span className="wd-badge wd-type-chip" data-tone="neutral">{children}</span>;
+export type ChipHue = 1 | 2 | 6 | "auto";
+const CALM: ReadonlyArray<1 | 2 | 6> = [1, 2, 6];
+export function chipHue(key: string): 1 | 2 | 6 { return CALM[(typeHue(key) - 1) % CALM.length]; }
+const hueOf = (hue: ChipHue | undefined, children: ReactNode) =>
+  hue === "auto" ? (typeof children === "string" || typeof children === "number" ? chipHue(String(children)) : undefined) : hue;
+
+/**
+ * A chip. `tone` is for states (done, late, at risk) and carries a dot; `hue` is for categories (a chapter, a type,
+ * a channel, a role) in one of six soft colours with no dot, so a category never reads as an alert.
+ */
+export function Badge({ children, className, tone = "neutral", hue, ...props }: HTMLAttributes<HTMLSpanElement> & { tone?: StatusTone; hue?: ChipHue }) {
+  return <span {...props} className={["wd-badge", className].filter(Boolean).join(" ")} data-tone={tone} data-hue={hueOf(hue, children)}>{children}</span>;
 }
 
-export function Tag({ children, onRemove, tone = "neutral" }: { children: ReactNode; onRemove?: () => void; tone?: StatusTone }) {
+/** A record's type or category ("Warranty claim", "Plywood") as a soft coloured chip: the same words, the same colour. */
+export function TypeChip({ children, hue = "auto" }: { children: ReactNode; hue?: ChipHue }) {
+  if (children === null || children === undefined || children === "") return null;
+  return <span className="wd-badge wd-type-chip" data-tone="neutral" data-hue={hueOf(hue, children)}>{children}</span>;
+}
+
+export function Tag({ children, onRemove, tone = "neutral", hue }: { children: ReactNode; onRemove?: () => void; tone?: StatusTone; hue?: ChipHue }) {
   const t = useT();
-  return <span className="wd-tag" data-tone={tone}>{children}{onRemove ? <IconButton aria-label={t("Remove {name}", { name: String(children) })} onPress={onRemove}><X size={13} /></IconButton> : null}</span>;
+  return <span className="wd-tag" data-tone={tone} data-hue={hueOf(hue, children)}>{children}{onRemove ? <IconButton aria-label={t("Remove {name}", { name: String(children) })} onPress={onRemove}><X size={13} /></IconButton> : null}</span>;
 }
 
 const icons = { neutral: Info, info: Info, success: CheckCircle2, warning: TriangleAlert, danger: AlertCircle };

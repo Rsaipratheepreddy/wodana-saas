@@ -134,9 +134,11 @@ integration("change requests, the client's budget and alternatives on real Postg
   const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "T" } as never;
   const config = new ConfigService({ WEB_ORIGIN: "https://app.example.com", NODE_ENV: "test" });
   const sentLinks: Array<{ to: string; link: string }> = [];
+  const sentCodes: Array<{ to: string; code: string }> = [];
   const mailer = {
     sendSignatureRequest: async (input: { to: string; signUrl: string }) => { sentLinks.push({ to: input.to, link: input.signUrl }); return { status: "sent" }; },
     sendSignedCopy: async () => ({ status: "sent" }),
+    sendPortalCode: async (input: { to: string; code: string }) => { sentCodes.push({ to: input.to, code: input.code }); return { status: "sent" }; },
   };
   const database = {
     query: (text: string, values?: unknown[]) => pool.query(text, values),
@@ -164,7 +166,7 @@ integration("change requests, the client's budget and alternatives on real Postg
       const oak = ledger.entries[0];
       const versionId = randomUUID();
       await addVersion(client, ids.workspaceId, ids.caseId, oak.id, { versionId, entryVersion: oak.version, title: "Smoked oak veneer", quantity: "12.5", unit: "sqm", unitPrice: "100",
-        timeImpactDays: 4, source: "whatsapp", saidAt: new Date(Date.now() - 30_000).toISOString(), catalogItemId: ids.oakItem }, { userId: ids.ops });
+        timeImpactDays: 4, source: "meeting", saidAt: new Date(Date.now() - 30_000).toISOString(), catalogItemId: ids.oakItem }, { userId: ids.ops });
       // As the design service does: a change after sign-off opens the case's ledger-change approval (E3).
       await requestLedgerChangeApproval(client, ids.workspaceId, ids.caseId, ids.ops);
       return { entryId: oak.id, versionId };
@@ -282,6 +284,11 @@ integration("change requests, the client's budget and alternatives on real Postg
     const page = await esign.view(token);
     expect(page).toMatchObject({ state: "open", document: { reference: "CR-001", amount: "450.5000", currency: "AED" }, signer: { name: "Maya Client" } });
     await expect(esign.sign(token, { documentSha256: "0".repeat(64), name: "Maya Client", consent: true, signature: { kind: "typed", text: "Maya Client" } }, { ip: "203.0.113.9" })).rejects.toThrow(/changed/);
+    // §0.3 P4: the signer confirms a one-time code before signing.
+    await expect(esign.sign(token, { documentSha256: page.document.sha256, name: "Maya Client", consent: true, signature: { kind: "typed", text: "Maya Client" } }, { ip: "203.0.113.9" }))
+      .rejects.toThrow(/Confirm the code/);
+    expect(await esign.sendCode(token, { channel: "email" })).toMatchObject({ channel: "email", sentTo: expect.stringContaining("@example.com") });
+    expect(await esign.verifyCode(token, { code: sentCodes.at(-1)!.code })).toEqual({ verified: true, message: null });
     const signed = await esign.sign(token, { documentSha256: page.document.sha256, name: "Maya Client", consent: true, signature: { kind: "typed", text: "Maya Client" } }, { ip: "203.0.113.9", userAgent: "test" });
     expect(signed).toMatchObject({ state: "signed", replayed: false });
     expect((await esign.sign(token, { documentSha256: page.document.sha256 }, {})).replayed).toBe(true);

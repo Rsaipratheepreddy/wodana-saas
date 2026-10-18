@@ -66,10 +66,12 @@ describe("factory", () => {
     expect(quantity).toHaveValue("1.5");
     await userEvent.clear(quantity);
     await userEvent.type(quantity, "2");
+    await userEvent.tab();
     expect(within(dialog).getByText("Only 1.5 m left.")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Plan work order" })).toBeDisabled();
     await userEvent.clear(quantity);
     await userEvent.type(quantity, "1");
+    await userEvent.tab();
     await userEvent.click(within(dialog).getByRole("button", { name: "Plan work order" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ lineId: "l1", quantity: "1", workcenterId: "c1", plannedStart: "2099-10-05", plannedEnd: "2099-10-16" }));
     expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/factory/orders?order=new");
@@ -98,7 +100,8 @@ describe("factory", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Approved drawing/ }), "K-01 rev B");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "approve_drawing", reference: "K-01 rev B", version: 2 }));
-    expect(await within(sheet).findByText(/K-01 rev B, approved by Omar/)).toBeInTheDocument();
+    expect(await within(sheet).findByText("K-01 rev B")).toBeInTheDocument();
+    expect(within(sheet).getByText(/^Omar · /)).toBeInTheDocument();
   });
 
   it("shows the project's client-approved drawings as the work order's drawing, and sends drawings waiting for the client to Scope › Drawings", async () => {
@@ -107,7 +110,8 @@ describe("factory", () => {
     mount((url) => url.includes("/orders/w1") ? order({}, { drawing: { source: "project", approved: true, project }, releaseChecks: [{ key: "drawing", passed: true, missing: "" }] }) : factory());
     page("orders");
     const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
-    expect(await within(sheet).findByText(/Drawings R1, approved by Maya Client on/)).toBeInTheDocument();
+    expect(await within(sheet).findByText("R1")).toBeInTheDocument();
+    expect(within(sheet).getByText(/^Maya Client · /)).toBeInTheDocument();
     expect(within(sheet).queryByText("Not approved yet")).toBeNull();
   });
 
@@ -161,35 +165,48 @@ describe("factory", () => {
         hours: "6.50" },
       { id: "r2", good: "0.5000", scrap: "0", scrapReason: "", note: "", status: "pending", reportedBy: "u1", reportedByName: "Me", reportedAt: "2026-09-27T12:00:00Z", decidedByName: null, decisionNote: "",
         hours: null }];
-    const fetcher = mount((url) => (url.includes("/orders/w1") ? order({ ...producing, pending: "2.5000", left: "0.5000" }, { reports }) : factory()));
+    const photo = { id: "11111111-1111-4111-8111-111111111111", name: "made.jpg", mimeType: "image/jpeg", hasPreview: true, uploadedAt: "2026-09-27T12:30:00Z" };
+    const fetcher = mount((url) => (url.startsWith("/api/workspace/evidence") ? photo : url.includes("/orders/w1") ? order({ ...producing, pending: "2.5000", left: "0.5000" }, { reports }) : factory()));
     page("orders");
     const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
     await userEvent.click(await within(sheet).findByRole("tab", { name: /Output/ }));
     const output = await within(sheet).findByRole("region", { name: "Reports" });
     expect(within(output).getByText("2 m made · 0.5 m scrapped: Chipped edge · 6.5 hours")).toBeInTheDocument();
-    // My own report waits for someone else; theirs I can approve.
-    expect(within(output).getAllByRole("button", { name: "Approve" })).toHaveLength(1);
+    // My own report waits for someone else; theirs I review (what was made, its photo) and approve.
+    expect(within(output).getAllByRole("button", { name: "Review" })).toHaveLength(1);
     expect(within(output).getByText("Waiting for approval")).toBeInTheDocument();
-    await userEvent.click(within(output).getByRole("button", { name: "Approve" }));
+    await userEvent.click(within(output).getByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("dialog", { name: "Approve output" });
+    expect(within(review).getByText("No file attached")).toBeInTheDocument();
+    await userEvent.click(within(review).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "decide_report", reportId: "r1", decision: "approve", version: 2 }));
 
     await userEvent.click(within(sheet).getByRole("button", { name: "Report output" }));
     const dialog = await screen.findByRole("dialog", { name: "Report output" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Made" }), "1");
+    await userEvent.tab();
     expect(within(dialog).getByText("Only 0.5 m is still to make.")).toBeInTheDocument();
     await userEvent.clear(within(dialog).getByRole("textbox", { name: "Made" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Made" }), "0.5");
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Scrapped" }), "0.25");
+    await userEvent.tab();
     expect(within(dialog).getByRole("button", { name: "Report output" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it was scrapped/ }), "Split");
     // The hours it took are optional; more than 1,000 on one report isn't taken.
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Hours worked" }), "1000.5");
+    await userEvent.tab();
     expect(within(dialog).getByText("More than 0 and at most 1000, with up to 2 decimals.")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Report output" })).toBeDisabled();
     await userEvent.clear(within(dialog).getByRole("textbox", { name: "Hours worked" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Hours worked" }), "4.5");
+    await userEvent.tab();
+    // What was made goes with its photo.
+    expect(within(dialog).getByRole("button", { name: "Report output" })).toBeDisabled();
+    await userEvent.upload(within(dialog).getByLabelText("Add a photo or PDF"), new File(["x"], "made.jpg", { type: "image/jpeg" }));
+    await within(dialog).findByRole("link", { name: "Open made.jpg" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Report output" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "report", good: "0.5", scrap: "0.25", scrapReason: "Split", hours: "4.5", id: expect.any(String) }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "report", good: "0.5", scrap: "0.25", scrapReason: "Split", hours: "4.5", id: expect.any(String),
+      evidenceFileIds: [photo.id] }));
   });
 
   it("checks quality: what failed needs why", async () => {
@@ -204,6 +221,7 @@ describe("factory", () => {
     await userEvent.clear(passed);
     await userEvent.type(passed, "1.5");
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Failed" }), "0.5");
+    await userEvent.tab();
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it failed/ }), "Veneer lifting");
     // A note and one photo go with the check; the photo follows the saved check, by its id.
@@ -272,7 +290,10 @@ describe("factory", () => {
     expect(within(materials).getByText("11 of 13.3334 sheets issued · 9 sheets free")).toBeInTheDocument();
     expect(within(materials).getByText(/Issued worth .*550/)).toBeInTheDocument();
     expect(within(materials).getByText("Instead of Oak veneer: Client changed the finish (Faisal)")).toBeInTheDocument();
-    await userEvent.click(within(materials).getByRole("button", { name: "Approve" }));
+    // The swap is decided in a review of it, never one click.
+    await userEvent.click(within(materials).getByRole("button", { name: "Review" }));
+    const swapReview = await screen.findByRole("dialog", { name: "Swap Oak veneer" });
+    await userEvent.click(within(swapReview).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "decide_substitution", materialId: "m2", decision: "approve", version: 2 }));
 
     await userEvent.click(within(materials).getByRole("button", { name: "Actions" }));
@@ -283,6 +304,7 @@ describe("factory", () => {
     await userEvent.click(within(dialog).getByRole("radio", { name: "Free stock" }));
     await userEvent.clear(quantity);
     await userEvent.type(quantity, "3");
+    await userEvent.tab();
     expect(within(dialog).getByRole("button", { name: "Issue" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why more/ }), "Offcuts too short");
     await userEvent.click(within(dialog).getByRole("button", { name: "Issue" }));
@@ -310,6 +332,7 @@ describe("factory", () => {
     await userEvent.click(within(dialog).getByRole("checkbox", { name: "Calacatta marble slab (slab)" }));
     expect(within(dialog).getByRole("button", { name: "Add materials" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Quantity of Calacatta marble slab" }), "1");
+    await userEvent.tab();
     await userEvent.click(within(dialog).getByRole("button", { name: "Add materials" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "suggest_materials", version: 2,
       items: [{ materialItemId: "pm1", quantity: "13.3334" }, { materialItemId: "pm2", quantity: "1" }] }));

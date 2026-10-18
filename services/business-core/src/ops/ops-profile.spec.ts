@@ -183,7 +183,9 @@ describe("route changes", () => {
     expect(Object.keys(palm.inbox?.closingMessages ?? {})).toEqual(["received", "form", "closing"]);
     expect(palm.inbox?.closingMessages?.form).toContain("{{form_link}}");
     expect(palm.sales).toEqual({ timelineCheckTeams: ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"], assignmentMode: "round_robin", unassignAfterWorkingDay: true });
-    expect(palm.enquiryRequirements).toEqual([{ field: "area", requiredAt: "book_intro" }, { field: "targetCompletion", requiredAt: "book_intro" }]);
+    // Guide D: what converting needs; the target completion before the Intro.
+    expect(palm.enquiryRequirements).toEqual(["email", "area", "address", "floorPlan", "projectType", "budgetRange"].map((field) => ({ field, requiredAt: "convert" }))
+      .concat([{ field: "targetCompletion", requiredAt: "book_intro" }]));
     expect(palm.rolePermissions).toContainEqual({ roles: ["team_sales_admin"], permissions: ["crm.inbox.team", "crm.inbox.close_chats"] });
     expect(validateProfile({ inbox: { closingMessages: { received: null } } })).toEqual({ inbox: { closingMessages: { received: null } } });
     expect(problems({ inbox: { closingMessages: { closing: "Hi {{client}}" }, closingFormUrl: "palm.example/form", closingAfterHours: 0 },

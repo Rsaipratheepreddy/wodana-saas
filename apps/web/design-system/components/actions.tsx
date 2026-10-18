@@ -17,7 +17,13 @@ import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provid
 import { useReadOnlyReason } from "../foundations/read-only";
 
 type ButtonVariant = "primary" | "secondary" | "quiet" | "danger" | "gradient";
-type ButtonSize = "compact" | "standard" | "large";
+/**
+ * The one control scale (tokens.css): compact 28px, standard 32px, large 40px. Buttons are standard by default and
+ * fields large; a button and a field of the same size are the same height. Height, padding and gaps come from the
+ * size, never from a screen.
+ */
+export type ControlSize = "compact" | "standard" | "large";
+type ButtonSize = ControlSize;
 
 export type ButtonProps = AriaButtonProps & {
   variant?: ButtonVariant;
@@ -145,15 +151,15 @@ export function IconMenuButton({
   );
 }
 
-export function SplitButton({ items, label, onAction, onPress }: { items: ActionItem[]; label: ReactNode; onAction?: (id: string) => void; onPress?: () => void }) {
+export function SplitButton({ items, label, onAction, onPress, size = "standard", isDisabled = false }: { items: ActionItem[]; label: ReactNode; onAction?: (id: string) => void; onPress?: () => void; size?: ButtonSize; isDisabled?: boolean }) {
   const t = useT();
   const { direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   return (
     <ButtonGroup attached>
-      <Button onPress={onPress} variant="primary">{label}</Button>
+      <Button isDisabled={isDisabled} onPress={onPress} size={size} variant="primary">{label}</Button>
       <MenuTrigger>
-        <IconButton aria-label={t("{name} options", { name: String(label) })} variant="primary"><ChevronDown aria-hidden="true" size={15} /></IconButton>
+        <IconButton aria-label={t("{name} options", { name: String(label) })} isDisabled={isDisabled} size={size} variant="primary"><ChevronDown aria-hidden="true" size={15} /></IconButton>
         <Popover {...portalTheme} className="wd-popover" dir={direction} placement="bottom end"><Menu className="wd-menu" items={items}>{(item) => <ActionMenuItem item={item} onAction={onAction} />}</Menu></Popover>
       </MenuTrigger>
     </ButtonGroup>

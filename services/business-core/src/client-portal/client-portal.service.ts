@@ -27,6 +27,7 @@ import { reportIssue } from "./portal-issues";
 import { comment, raiseRequest, readThread } from "./portal-messages";
 import { minutesComment } from "./portal-meetings";
 import { designFileComment } from "./portal-designs";
+import { askItemDrawingChangesInPortal, signItemDrawingsInPortal } from "./portal-item-drawings";
 import { readMeeting } from "../meetings/meeting-minutes";
 import { addInspiration, boardComment, react, removeInspiration } from "./portal-moodboard";
 import { tellStaffClientSignedIn } from "./portal-notices";
@@ -56,6 +57,7 @@ const COMMANDS: Record<string, [Handler, Section]> = {
   presentation_choice: [presentationChoice, "decisions"], ledger_decision: [ledgerDecision, "decisions"],
   change_raise: [raiseChange, "decisions"], change_decision: [decidePortalChange, "decisions"], ledger_alternative: [chooseAlternative, "decisions"],
   minutes_comment: [minutesComment, "meetings"], design_file_comment: [designFileComment, "designs"],
+  item_drawings_sign: [signItemDrawingsInPortal, "decisions"], item_drawing_changes: [askItemDrawingChangesInPortal, "decisions"],
 };
 
 /**
@@ -330,6 +332,15 @@ export class ClientPortalService {
            JOIN project_drawing_revisions revision ON revision.workspace_id = file.workspace_id AND revision.id = file.revision_id AND revision.sent_at IS NOT NULL
            JOIN delivery_projects project ON project.workspace_id = file.workspace_id AND project.id = file.project_id
           WHERE file.workspace_id = $1 AND file.id = $2 AND file.kind = 'drawing'`, [workspaceId, id])).rows[0];
+      return row ? { ...row, sections: ["decisions" as const] } : null;
+    }
+    if (kind === "item_drawing") {
+      // An item's shop drawing version the lead designer approved for the client, never one still with the team.
+      const row = (await client.query<Omit<Found, "sections">>(
+        `SELECT project.case_id AS "caseId", version.object_key AS "objectKey", version.preview_key AS "previewKey", version.mime_type AS "mimeType", version.original_name AS name
+           FROM project_item_drawing_versions version
+           JOIN delivery_projects project ON project.workspace_id = version.workspace_id AND project.id = version.project_id
+          WHERE version.workspace_id = $1 AND version.id = $2 AND version.status IN ('with_client', 'changes_asked', 'signed')`, [workspaceId, id])).rows[0];
       return row ? { ...row, sections: ["decisions" as const] } : null;
     }
     if (kind === "minutes") {

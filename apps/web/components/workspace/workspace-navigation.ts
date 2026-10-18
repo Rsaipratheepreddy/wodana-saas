@@ -25,6 +25,8 @@ export type WorkspaceIconName =
   | "members"
   | "opportunities"
   | "preProjects"
+  | "jobs"
+  | "teamChat"
   | "procurement"
   | "production"
   | "projects"
@@ -142,7 +144,15 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         label: tKey("Modules"),
         items: [
           { href: "/workspace/enquiry-types", icon: "automations", id: "enquiry-types-settings", label: tKey("Enquiry types") },
+          // §0.3 P3: every question the firm asks (kick-off, handover, warranty claim; consultation and site visit listed).
+          { href: "/workspace/settings/questionnaires", icon: "settings", id: "questionnaire-settings", label: tKey("Questionnaires") },
           { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: tKey("Quotations") },
+          // §0.3 P3/P4: the firm's own invoice layout.
+          { href: "/workspace/settings/invoice-layout", icon: "billing", id: "invoice-layout-settings", label: tKey("Invoice layout") },
+          // §0.3 P3: the commission types a deal file offers, the firm's own list.
+          { href: "/workspace/settings/commissions", icon: "billing", id: "commission-settings", label: tKey("Commissions") },
+          // §0.3: each moment's push, worded by the firm, with a phone preview.
+          { href: "/workspace/settings/push-notifications", icon: "conversations", id: "push-settings", label: tKey("Push notifications") },
           { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: tKey("Design packages") },
           { href: "/workspace/settings/finishes", icon: "designs", id: "finish-settings", label: tKey("Finishes & samples") },
           { href: "/workspace/settings/projects", icon: "projects", id: "project-settings", label: tKey("Projects") },
@@ -387,10 +397,14 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
     { id: "main", label: "", items: [
       { id: "home", label: tKey("Home"), href: "/workspace", icon: "home" },
       ...(allowed.has("conversations") ? [{ id: "inbox", label: tKey("Inbox"), href: "/workspace/crm/conversations", icon: "conversations" as const }] : []),
+      // §0.3: the team's own talk, one thread per job (the inbox is the client's conversations).
+      ...(salesEntry || allowed.has("pre-projects") || allowed.has("projects-overview") ? [{ id: "team-chat", label: tKey("Team chat"), href: "/workspace/team-chat", icon: "teamChat" as const }] : []),
       ...(allowed.has("follow-ups") || allowed.has("calendar") ? [{ id: "daily-follow-ups", label: tKey("Calendar"), href: "/workspace/crm/follow-ups?view=schedule", icon: "calendar" as const }] : []),
     ] },
     // The job from first contact to handover. Enquiry types live in Settings (they configure this flow).
     { id: "work", label: tKey("Work"), items: [
+      // §0.3: every job from enquiry to warranty, where each one is now.
+      ...(salesEntry || allowed.has("pre-projects") || allowed.has("projects-overview") ? [{ id: "jobs", label: tKey("Jobs"), href: "/workspace/jobs", icon: "jobs" as const }] : []),
       ...(salesEntry ? [{ id: "sales", label: tKey("Sales"), href: salesEntry.href, icon: "opportunities" as const }] : []),
       ...(allowed.has("customers") || allowed.has("projects-overview") ? [{ id: "clients", label: tKey("Clients"), href: allowed.has("customers") ? "/workspace/crm/customers" : "/workspace/projects/clients", icon: "customers" as const }] : []),
       ...(allowed.has("pre-projects") ? [{ id: "planning", label: tKey("Planning"), href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { HandoverRow, TechnicalHandover } from "@/lib/project-core/technical";
 import { ProjectTechnicalHandover } from "./project-technical-handover";
@@ -22,7 +22,7 @@ it("PLM-165: the pack can't be accepted while items are missing; a missing item 
   render(<ProjectTechnicalHandover workspaceId="w" projectId="p" version={7} run={run} />);
   expect(await screen.findByText("3 missing")).toBeInTheDocument();
   expect(screen.getByText(/Handed over by Sara on/)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Accept handover" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Review handover" })).toBeDisabled();
   expect(screen.getAllByText("Waiting for the factory lead").length).toBeGreaterThan(0);
   // A Missing chip opens the "not applicable" dialog; the reason is required and travels with the command.
   fireEvent.click(screen.getAllByRole("button", { name: "Fill Picture" })[0]);
@@ -39,6 +39,10 @@ it("PLM-165: once nothing is missing the technical team accepts the pack, versio
   render(<ProjectTechnicalHandover workspaceId="w" projectId="p" version={7} run={run} />);
   expect(await screen.findByText("Nothing missing")).toBeInTheDocument();
   expect(screen.getByText("Not applicable")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Accept handover" }));
+  // Accepted in a review of every line and what it has (never one click).
+  fireEvent.click(screen.getByRole("button", { name: "Review handover" }));
+  const review = await screen.findByRole("dialog", { name: "Accept handover" });
+  expect(within(review).getByText("Wardrobe")).toBeInTheDocument();
+  fireEvent.click(within(review).getByRole("button", { name: "Accept handover" }));
   await waitFor(() => expect(run).toHaveBeenCalledWith("accept_technical_handover", { handoverVersion: 2 }));
 });

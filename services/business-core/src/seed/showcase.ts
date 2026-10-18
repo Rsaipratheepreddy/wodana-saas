@@ -6,7 +6,7 @@ import { zonedInstant } from "../booking/booking.domain";
 import { ClientPortalAdminService } from "../client-portal/client-portal-admin.service";
 import { ClientPortalService } from "../client-portal/client-portal.service";
 import { CommercialService } from "../commercial/commercial.service";
-import { isOperationalEvidence } from "../commercial/release-integrity";
+import { isOperationalEvidence, agreementEvidenceOperational } from "../commercial/release-integrity";
 import { CrmActivitiesService } from "../crm/activities/crm-activities.service";
 import { CompleteActivityDto, CreateActivityDto } from "../crm/activities/dto/activities.dto";
 import { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
@@ -21,7 +21,7 @@ import { RequirementNotesService, SaveRequirementNoteDto } from "../crm/leads/re
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import { OpportunityDiscoveryService } from "../crm/opportunities/discovery.service";
 import { BookIntroDto, SaveDiscoveryDto } from "../crm/opportunities/dto/discovery.dto";
-import { QualifyLeadDto, TransitionOpportunityDto } from "../crm/opportunities/dto/opportunities.dto";
+import { QualificationOutcomeDto, QualifyLeadDto, TransitionOpportunityDto } from "../crm/opportunities/dto/opportunities.dto";
 import { IntroMeetingService } from "../crm/opportunities/intro-meeting.service";
 import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
@@ -117,7 +117,7 @@ type Message = { from: "client" | "team"; title?: string; text: string };
 
 type Requirement = { key: string; room: string; title: string; note: string; category: string; priority: string; quantity: number; unit: string; catalog?: string[] };
 type QuoteLine = { key: string; room: string; catalog: string[]; title?: string; quantity: string; unit: string; unitCost: string; rate: string };
-type Term = { title: string; percent: number; trigger: string; requiredForRelease: boolean; requiredForProduction: boolean };
+type Term = { title: string; percent: number; trigger: string; requiredForRelease: boolean; requiredForProduction: boolean; dueAtHandover?: boolean };
 type Task = { key: string; title: string; role: ShowcaseRole; start: number; due: number; made: boolean; needsMaterials?: boolean; status?: "done" | "in_progress" };
 type Snag = { key: string; title: string; severity: string; source: string; room: string; close: boolean };
 type OrderState = "draft" | "pending_approval" | "approved" | "sent" | "confirmed" | "partly_received" | "received" | "closed" | "cancelled";
@@ -217,7 +217,7 @@ const VILLA_LINES: QuoteLine[] = [
 const TERMS_50_40_10: Term[] = [
   { title: "Advance on signing", percent: 50, trigger: "Signed agreement", requiredForRelease: true, requiredForProduction: false },
   { title: "Before production", percent: 40, trigger: "Before factory production starts", requiredForRelease: false, requiredForProduction: true },
-  { title: "On handover", percent: 10, trigger: "At client handover", requiredForRelease: false, requiredForProduction: false },
+  { title: "On handover", percent: 10, trigger: "At client handover", requiredForRelease: false, requiredForProduction: false, dueAtHandover: true },
 ];
 
 const DEMO_CODE = "123456";
@@ -322,7 +322,7 @@ const showcaseScenarios = ({ people: { demo, reem, haddad, faris, sofia } }: Sho
       { title: "Advance on signing", percent: 40, trigger: "Signed agreement", requiredForRelease: true, requiredForProduction: false },
       { title: "Before production", percent: 30, trigger: "Before factory production starts", requiredForRelease: false, requiredForProduction: true },
       { title: "On delivery to site", percent: 20, trigger: "Furniture delivered to site", requiredForRelease: false, requiredForProduction: false },
-      { title: "On handover", percent: 10, trigger: "At client handover", requiredForRelease: false, requiredForProduction: false },
+      { title: "On handover", percent: 10, trigger: "At client handover", requiredForRelease: false, requiredForProduction: false, dueAtHandover: true },
     ],
     stop: "project", made: /tv wall|wardrobe/i,
     materials: [
@@ -453,7 +453,7 @@ const showcaseScenarios = ({ people: { demo, reem, haddad, faris, sofia } }: Sho
     ],
     terms: [
       { title: "Advance on signing", percent: 50, trigger: "Signed agreement", requiredForRelease: true, requiredForProduction: true },
-      { title: "On completion", percent: 50, trigger: "At handover", requiredForRelease: false, requiredForProduction: false },
+      { title: "On completion", percent: 50, trigger: "At handover", requiredForRelease: false, requiredForProduction: false, dueAtHandover: true },
     ],
     stop: "quotation_issued", made: /reception desk|credenza/i, materials: joineryMaterials,
     messages: [
@@ -1394,6 +1394,7 @@ export class ShowcaseSeed {
       const emirate = regionOption(options.emirates, facts.emirate);
       const customerType = options.customerTypes.find((row) => /end_user|homeowner|individual/i.test(row.id)) ?? options.customerTypes[0];
       const budgetRange = options.budgetRanges.at(-1) ?? options.budgetRanges[0];
+      const projectType = (options as { projectTypes?: Array<{ id: string }> }).projectTypes?.[0];
       // The chosen source and channel; a source this person may not use (or a referral list that's empty) hands over to the next one.
       let lastError: unknown = null;
       for (let attempt = 0; attempt < options.sources.length; attempt += 1) {
@@ -1404,11 +1405,13 @@ export class ShowcaseSeed {
         if (source.id === "referral" && !referral) continue;
         const body = await this.validated(CreateIntakeEventDto, {
           source: source.id, channel: channel?.id ?? source.id, intakeMethod: "manual", externalEventId: reference,
-          party: { displayName: party.displayName, email: party.email, mobile: party.mobile },
+          party: { displayName: party.displayName, email: party.email, mobile: party.mobile, address: `Villa ${(facts.pick.source % 40) + 3}, ${facts.area}` },
           title: facts.title, summary: facts.summary, serviceType: enquiryType?.id ?? "not_sure",
           // PLM-155: the client's target completion (a firm can require it before the Intro), four months out.
           details: { emirate: emirate?.id ?? (facts.emirate || undefined), area: facts.area, targetCompletion: daysAgo(-120).toISOString().slice(0, 10),
-            ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
+            ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}),
+            // §0.3 P0: a firm can require these before converting; the plan comes later, so the client gave a size.
+            ...(projectType ? { projectType: projectType.id } : {}), floorPlan: { status: "not_available", builtUpArea: "3 bedrooms" } },
           assignment: owner.membershipId ? { mode: "manual", ownerMembershipId: owner.membershipId } : { mode: "unassigned" },
           ...(referral ? { referral } : {}),
           originalPayload: { seed: "showcase", reference, fictional: true },
@@ -1505,6 +1508,19 @@ export class ShowcaseSeed {
     // The intro can only be booked once the floor plan, the area and the client's email are in.
     if (keys.has("introMeeting") || needs.some((item) => DISCOVERY_NEEDS.has(item.key) || item.key.startsWith("discovery:"))) await this.discoveryForm(job);
     if (keys.has("introMeeting")) await this.introMeeting(job);
+    if (keys.has("qualificationOutcome") || keys.has("targetCompletion")) await this.introOutcome(job);
+  }
+
+  /** §0.3 P0 (guide G): after the intro, its outcome: the client goes ahead with the enquiry's own type, by the date they gave. */
+  protected async introOutcome(job: FlowJob) {
+    const lead = (await this.get(CrmLeadsService).get(job.owner, this.w, job.leadId)) as unknown as { enquiry?: { serviceType?: string | null; details?: { targetCompletion?: string } | null } };
+    const scope = lead.enquiry?.serviceType;
+    if (!scope || scope === "not_sure") throw new Skip("the enquiry has no type to go ahead with");
+    const targetCompletion = lead.enquiry?.details?.targetCompletion || daysAgo(-120).toISOString().slice(0, 10);
+    const view = await this.opportunityView(job);
+    const recorded = !view.flow.missing.some((item) => item.key === "qualificationOutcome" || item.key === "targetCompletion");
+    await this.advance("intro outcome recorded", recorded, () => this.tryAs(job.owner, async (who) => this.get(CrmOpportunitiesService).recordOutcome(who, this.w, job.opportunityId,
+      await this.validated(QualificationOutcomeDto, { version: view.version, outcome: "proceed", scope, targetCompletion }))));
   }
 
   /**
@@ -2111,7 +2127,7 @@ export class ShowcaseSeed {
     let data = await this.commercialData(caseId);
     const reference = `AGR-${ctx.s.key.toUpperCase().replace(/[^A-Z0-9]+/g, "")}-2026`;
     // Evidence reads as it would on a real file: the product refuses to execute or verify anything marked as a demonstration.
-    await this.advance("agreement recorded", Boolean(data.agreement) && isOperationalEvidence(data.agreement), () => this.commercialCommand(caseId, salesAdmin, "agreement", { quoteId, reference,
+    await this.advance("agreement recorded", Boolean(data.agreement) && agreementEvidenceOperational(data.agreement), () => this.commercialCommand(caseId, salesAdmin, "agreement", { quoteId, reference,
       terms: "Accepted quotation terms; the firm's standard terms and conditions apply.", evidence: `Signed agreement ${reference} on file (showcase).`, evidenceKind: "operational" }));
     data = await this.commercialData(caseId);
     // The signed agreement itself, a document the client finds in the portal once the agreement is executed.
@@ -2176,7 +2192,7 @@ export class ShowcaseSeed {
     const data = await this.commercialData(caseId);
     const receipts = (data.receipts ?? []) as Any[];
     await this.advance(`${label} payment reported`, receipts.some((receipt) => receipt.paymentId === payment.id), () =>
-      this.commercialCommand(caseId, salesAdmin, "report_payment_receipt", { paymentId: payment.id, reference, evidence: "Bank transfer confirmation on file (showcase).", evidenceKind: "operational" }));
+      this.commercialCommand(caseId, salesAdmin, "report_payment_receipt", { paymentId: payment.id, reference, evidence: "Bank transfer confirmation on file (showcase).", evidenceKind: "operational", method: "bank", receivedOn: new Date().toISOString().slice(0, 10) }));
     await this.advance(`${label} payment verified by Finance`, false, () => this.tryAs(finance, (actor) => this.commercialCommand(caseId, actor, "verify_payment", { paymentId: payment.id })));
     void ctx;
   }
@@ -2302,7 +2318,7 @@ export class ShowcaseSeed {
         const receipts = ((await this.commercialData(caseId)).receipts ?? []) as Any[];
         const salesAdmin = await this.as("salesAdmin");
         await this.advance("final payment reported, waiting for Finance", final.status === "verified" || receipts.some((receipt) => receipt.paymentId === final.id), () =>
-          this.commercialCommand(caseId, salesAdmin, "report_payment_receipt", { paymentId: final.id, reference, evidence: "Bank transfer confirmation on file (showcase).", evidenceKind: "operational" }));
+          this.commercialCommand(caseId, salesAdmin, "report_payment_receipt", { paymentId: final.id, reference, evidence: "Bank transfer confirmation on file (showcase).", evidenceKind: "operational", method: "bank", receivedOn: new Date().toISOString().slice(0, 10) }));
       }
     }
     if (s.execution.overdue) {

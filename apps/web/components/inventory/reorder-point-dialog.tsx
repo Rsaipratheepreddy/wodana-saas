@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Button, FormDialog, SelectField, TextInput } from "@/design-system";
+import { Button, FormDialog, QuantityInput, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { ReorderPoint, StockState } from "@/lib/inventory/types";
 import { quantityText } from "../purchasing/order-labels";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
+/** Quantities stay exact decimal text for the payload; the number field shows and commits them. */
+const asNumber = (value: string) => (value === "" ? Number.NaN : Number(value));
+const asText = (next: number) => (Number.isFinite(next) ? String(next) : "");
 const EVERYWHERE = "everywhere";
 const NOBODY = "none";
 
@@ -40,8 +42,8 @@ export function ReorderPointDialog({ api, state, item, point, suppliers, onClose
     secondaryAction={point ? <Button variant="quiet" isLoading={removing} onPress={() => void remove()}>{t("Remove")}</Button> : undefined}>
       <SelectField label={t("Where")} isRequired isDisabled={Boolean(point)} selectedKey={place} onSelectionChange={(key) => setPlace(String(key ?? EVERYWHERE))}
         items={[{ id: EVERYWHERE, label: t("Every place together") }, ...state.locations.filter((location) => location.kind !== "site").map((location) => ({ id: location.id, label: location.name }))]} />
-      <TextInput label={t("Low at")} isRequired inputMode="decimal" suffix={item.unit || undefined} value={reorderAt} onChange={(value) => setReorderAt(numeric(value))} />
-      <TextInput label={t("Order")} inputMode="decimal" suffix={item.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
+      <QuantityInput label={t("Low at")} isRequired unit={item.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }} value={asNumber(reorderAt)} onChange={(next) => setReorderAt(asText(next))} />
+      <QuantityInput label={t("Order")} unit={item.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }} value={asNumber(quantity)} onChange={(next) => setQuantity(asText(next))} />
       {suppliers ? <SelectField label={t("From")} selectedKey={vendorId} onSelectionChange={(key) => setVendorId(String(key ?? NOBODY))}
         items={[{ id: NOBODY, label: t("Any supplier") }, ...suppliers.map((supplier) => ({ id: supplier.id, label: supplier.name }))]} /> : null}
   </FormDialog>;

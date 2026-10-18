@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Checkbox, MenuButton, SegmentedControl, SelectField, TextAreaField, TextInput, FormDialog } from "@/design-system";
+import { Badge, Button, Checkbox, FormNotSaved, MenuButton, QuantityInput, ReviewDialog, SegmentedControl, SelectField, TextAreaField, TextInput, VisuallyHidden, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkOrderMaterial, WorkOrderState } from "@/lib/factory/types";
 import { useProjectFormat } from "../project-core/format";
@@ -9,13 +9,16 @@ import { subtractExact } from "@/lib/purchasing/amounts";
 import { quantityText } from "../purchasing/order-labels";
 import styles from "./factory.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
+/** Quantities stay exact decimal text for the payload; the number field shows and commits them. */
+const asNumber = (value: string) => (value === "" ? Number.NaN : Number(value));
+const asText = (next: number) => (Number.isFinite(next) ? String(next) : "");
+const QUANTITY = { maximumFractionDigits: 4 };
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
-type Dialog = { kind: "add" | "list" } | { kind: "issue" | "return" | "quantity" | "swap"; material: WorkOrderMaterial } | { kind: "refuse"; material: WorkOrderMaterial } | null;
+type Dialog = { kind: "add" | "list" } | { kind: "issue" | "return" | "quantity" | "swap"; material: WorkOrderMaterial } | { kind: "review"; material: WorkOrderMaterial } | null;
 
 /**
  * What the work order uses: each material with how much is issued and on hand, what it's worth, and the
- * next thing to do with it (issue, return, change, swap). A swap waits for someone else's decision.
+ * next thing to do with it (issue, return, change, swap). A swap waits for someone else's decision, made in a review of it.
  */
 export function WorkOrderMaterials({ state, run, busy }: { state: WorkOrderState; run: Run; busy: boolean }) {
   const t = useT();
@@ -50,10 +53,9 @@ export function WorkOrderMaterials({ state, run, busy }: { state: WorkOrderState
             Number(row.projectOnHand) ? t("{quantity} in the project's stock", { quantity: amount(row, row.projectOnHand) }) : "",
             Number(row.freeOnHand) ? t("{quantity} free", { quantity: amount(row, row.freeOnHand) }) : ""].filter(Boolean).join(" · ")}</small>
       </span>
-      {row.status === "pending" ? state.canApprove && row.requestedBy !== state.me ? <span className={styles.filters}>
-        <Button size="compact" variant="primary" isLoading={busy} onPress={() => void run("decide_substitution", { materialId: row.id, decision: "approve" })}>{t("Approve")}</Button>
-        <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "refuse", material: row })}>{t("Refuse")}</Button>
-      </span> : <small className={styles.muted}>{t("Waiting for a decision")}</small>
+      {row.status === "pending" ? state.canApprove && row.requestedBy !== state.me
+        ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => setDialog({ kind: "review", material: row })}>{t("Review")}</Button>
+        : <Badge tone="warning">{t("Waiting for a decision")}</Badge>
         : actions(row).length ? <MenuButton size="compact" label={t("Actions")} items={actions(row)} onAction={(id) => {
           if (id === "remove") void run("remove_material", { materialId: row.id });
           else setDialog({ kind: id as "issue" | "return" | "quantity" | "swap", material: row });
@@ -70,8 +72,17 @@ export function WorkOrderMaterials({ state, run, busy }: { state: WorkOrderState
       onSave={async (input) => { if (await run(dialog.kind === "issue" ? "issue_material" : "return_material", { id: crypto.randomUUID(), materialId: dialog.material.id, ...input })) setDialog(null); }} /> : null}
     {dialog?.kind === "quantity" ? <QuantityDialog material={dialog.material} onClose={() => setDialog(null)}
       onSave={async (quantity) => { if (await run("set_material", { materialId: dialog.material.id, quantity })) setDialog(null); }} /> : null}
-    {dialog?.kind === "refuse" ? <RefuseDialog onClose={() => setDialog(null)}
-      onSave={async (note) => { if (await run("decide_substitution", { materialId: dialog.material.id, decision: "refuse", note })) setDialog(null); }} /> : null}
+    {/* §0.3 P0: a swap is approved or refused in a review of what it changes, never one click. */}
+    {dialog?.kind === "review" ? <ReviewDialog title={t("Swap {item}", { item: dialog.material.replacesName ?? "" })} description={dialog.material.itemName}
+      confirmLabel={t("Approve")} rejectLabel={t("Refuse")} onClose={() => setDialog(null)}
+      facts={[
+        { label: t("Material"), value: dialog.material.itemName },
+        { label: t("Quantity"), value: amount(dialog.material, dialog.material.quantity) },
+        { label: t("Why it's swapped"), value: dialog.material.reason },
+        { label: t("Requested by"), value: dialog.material.requestedByName },
+      ]}
+      onConfirm={async () => { if (!(await run("decide_substitution", { materialId: dialog.material.id, decision: "approve" }))) throw new FormNotSaved(); setDialog(null); }}
+      onReject={async (note) => { if (!(await run("decide_substitution", { materialId: dialog.material.id, decision: "refuse", note }))) throw new FormNotSaved(); setDialog(null); }} /> : null}
   </section>;
 }
 
@@ -95,8 +106,8 @@ function ListDialog({ state, onClose, onSave }: {
       }}>
       <ul className={styles.picks}>{offered.map((item) => <li key={item.id}>
         <Checkbox isSelected={pick(item.id).on} onChange={(on) => set(item.id, { on })}>{item.unit ? `${item.name} (${item.unit})` : item.name}</Checkbox>
-        {pick(item.id).on ? <TextInput label={null} aria-label={t("Quantity of {item}", { item: item.name })} isRequired inputMode="decimal" suffix={item.unit || undefined}
-          value={pick(item.id).quantity} onChange={(value) => set(item.id, { quantity: numeric(value) })} /> : null}
+        {pick(item.id).on ? <QuantityInput label={<VisuallyHidden>{t("Quantity of {item}", { item: item.name })}</VisuallyHidden>} isRequired unit={item.unit} minValue={0}
+          formatOptions={QUANTITY} value={asNumber(pick(item.id).quantity)} onChange={(next) => set(item.id, { quantity: asText(next) })} /> : null}
       </li>)}</ul>
   </FormDialog>;
 }
@@ -123,7 +134,7 @@ function MaterialDialog({ title, state, action, withReason = false, onClose, onS
         <TextInput label={t("Name")} isRequired value={name} onChange={setName} />
         <TextInput label={t("Unit")} value={unit} onChange={setUnit} />
       </> : null}
-      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={(listed?.unit ?? unit) || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
+      <QuantityInput label={t("Quantity")} isRequired unit={listed?.unit ?? unit} minValue={0} formatOptions={QUANTITY} value={asNumber(quantity)} onChange={(next) => setQuantity(asText(next))} />
       {withReason ? <TextAreaField label={t("Why it's swapped")} isRequired value={reason} onChange={setReason} /> : null}
   </FormDialog>;
 }
@@ -150,7 +161,7 @@ function StockDialog({ state, material, mode, onClose, onSave }: {
         items={places.map((place) => ({ id: place.id, label: place.name }))} />
       {mode === "issue" ? <SegmentedControl label={t("Whose stock")} value={from} onChange={(value) => setFrom(value as "project" | "free")}
         options={[{ id: "project", label: t("The project's") }, { id: "free", label: t("Free stock") }]} /> : null}
-      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
+      <QuantityInput label={t("Quantity")} isRequired unit={unit} minValue={0} formatOptions={QUANTITY} value={asNumber(quantity)} onChange={(next) => setQuantity(asText(next))}
         isInvalid={mode === "return" && over} errorMessage={mode === "return" && over ? t("Only {quantity} was issued.", { quantity: `${quantityText(material.issued)} ${unit}`.trim() }) : undefined}
         description={mode === "issue" && over ? t("More than it still needs ({quantity}).", { quantity: `${quantityText(left) || "0"} ${unit}`.trim() }) : undefined} />
       {needsReason ? <TextInput label={mode === "issue" ? t("Why more") : t("Why it's coming back")} isRequired value={reason} onChange={setReason} /> : null}
@@ -162,15 +173,8 @@ function QuantityDialog({ material, onClose, onSave }: { material: WorkOrderMate
   const [quantity, setQuantity] = useState(quantityText(material.quantity));
   const under = Number(quantity) < Number(material.issued);
   return <FormDialog size="md" title={material.itemName} onClose={onClose} isSubmitDisabled={!(Number(quantity) > 0) || under} submitLabel={t("Save")} onSubmit={async () => { await onSave(quantity); }}>
-    <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={material.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
+    <QuantityInput label={t("Quantity")} isRequired unit={material.unit} minValue={0} formatOptions={QUANTITY} value={asNumber(quantity)} onChange={(next) => setQuantity(asText(next))}
       isInvalid={under} errorMessage={under ? t("{quantity} is already issued.", { quantity: `${quantityText(material.issued)} ${material.unit}`.trim() }) : undefined} />
   </FormDialog>;
 }
 
-function RefuseDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={t("Refuse the swap")} onClose={onClose} cancelLabel={t("Back")} isSubmitDisabled={!note.trim()} submitLabel={t("Refuse")} onSubmit={async () => { await onSave(note.trim()); }}>
-    <TextAreaField label={t("Why it's refused")} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
-}

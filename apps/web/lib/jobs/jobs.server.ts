@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { authenticatedBackendFetch } from "@/lib/auth/backend-session";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import type { JobDetailProjection, JobIdentityList, JobIdentityProjection } from "./jobs";
+import type { JobCosts, JobDocuments, JobMoney, JobRow, JobThread, JourneyView } from "./journey";
 import { tKey } from "@/lib/i18n/keys";
 
 const fixtureId = "91000000-0000-4000-8000-000000000001";
@@ -130,4 +131,66 @@ export async function jobRead(jobId: string): Promise<{ workspaceId: string; dat
   if (result.upstream?.status === 404) redirect("/workspace/crm/jobs");
   if (!result.upstream?.ok) throw new Error("This Job could not be loaded. Check your access or refresh.");
   return { workspaceId, data: await result.upstream.json() as JobDetailProjection };
+}
+
+/** §0.3 P2: the job's journey (chapters, steps, the step now) for the job page. */
+export async function journeyRead(jobId: string): Promise<{ workspaceId: string; data: JourneyView }> {
+  const profile = await getAuthenticatedProfile();
+  const workspaceId = profile.memberships[0]?.workspaceId;
+  if (!workspaceId) redirect("/login");
+  const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/jobs/${jobId}/journey`);
+  if (result.unauthenticated) redirect("/login");
+  if (result.upstream?.status === 404) redirect("/workspace");
+  if (!result.upstream?.ok) throw new Error("This job's journey could not be loaded. Refresh to try again.");
+  return { workspaceId, data: await result.upstream.json() as JourneyView };
+}
+
+/** §0.3 P4: the job's sends and signatures; a job without a planning case has none. Never blocks the page. */
+export async function documentsRead(jobId: string): Promise<JobDocuments> {
+  const profile = await getAuthenticatedProfile();
+  const workspaceId = profile.memberships[0]?.workspaceId;
+  if (!workspaceId) redirect("/login");
+  const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/jobs/${jobId}/documents`);
+  if (!result.upstream?.ok) return { sends: [], signatures: [] };
+  return await result.upstream.json() as JobDocuments;
+}
+
+/** §0.3 P8: the job's money statement; null when the job has no deal yet. Never blocks the page. */
+export async function moneyRead(jobId: string): Promise<JobMoney | null> {
+  const profile = await getAuthenticatedProfile();
+  const workspaceId = profile.memberships[0]?.workspaceId;
+  if (!workspaceId) redirect("/login");
+  const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/jobs/${jobId}/money`);
+  if (!result.upstream?.ok) return null;
+  return await result.upstream.json().catch(() => null) as JobMoney | null;
+}
+
+/** §0.3 P8/P9: the job's supplier costs; null without a project or for someone who can't see purchasing. */
+export async function costsRead(jobId: string): Promise<JobCosts | null> {
+  const profile = await getAuthenticatedProfile();
+  const workspaceId = profile.memberships[0]?.workspaceId;
+  if (!workspaceId) redirect("/login");
+  const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/jobs/${jobId}/costs`);
+  if (!result.upstream?.ok) return null;
+  return await result.upstream.json().catch(() => null) as JobCosts | null;
+}
+
+/** §0.3: the job's team thread as the page opens; null if it can't be read (the page still opens). */
+export async function threadRead(jobId: string): Promise<{ workspaceId: string; thread: JobThread | null }> {
+  const profile = await getAuthenticatedProfile();
+  const workspaceId = profile.memberships[0]?.workspaceId;
+  if (!workspaceId) redirect("/login");
+  const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/jobs/${jobId}/thread`);
+  return { workspaceId, thread: result.upstream?.ok ? await result.upstream.json().catch(() => null) as JobThread | null : null };
+}
+
+/** §0.3: the Jobs list (newest first, up to 100), each job summarised from its journey. */
+export async function jobsOverviewRead(): Promise<{ items: JobRow[]; total: number }> {
+  const profile = await getAuthenticatedProfile();
+  const workspaceId = profile.memberships[0]?.workspaceId;
+  if (!workspaceId) redirect("/login");
+  const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/jobs/overview?limit=100`);
+  if (result.unauthenticated) redirect("/login");
+  if (!result.upstream?.ok) throw new Error("Jobs could not be loaded. Refresh to try again.");
+  return await result.upstream.json() as { items: JobRow[]; total: number };
 }

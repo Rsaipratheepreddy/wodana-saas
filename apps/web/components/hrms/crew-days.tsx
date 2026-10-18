@@ -6,8 +6,8 @@ import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
 import type { CrewDay, CrewPresence, HrmsBootstrap, HrmsCrewState } from "@wodana/contracts";
 import {
-  Button, ComboboxField, DataGrid, DateField, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoAccessState, NoResultsState,
-  NumericInput, SegmentedControl, SelectField, TextAreaField, useDesignSystem, type DataGridColumn, FormDialog, FormSection } from "@/design-system";
+  ApprovalStamp, Button, ComboboxField, DataGrid, DateField, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoAccessState, NoResultsState,
+  NumericInput, ReviewDialog, SegmentedControl, SelectField, TextAreaField, useDesignSystem, type DataGridColumn, FormDialog, FormSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { hrmsApi, type CrewDayList, type HrmsApi } from "@/lib/hrms/api";
 import { hrmsHref } from "@/lib/hrms/sections";
@@ -230,13 +230,13 @@ function CrewDayForm({ api, day, crews, markable, projectId, viewer, onClose, on
               onPress={() => setDraft((current) => ({ ...current, rows: current.rows.filter((item) => item.workerId !== row.workerId) }))}><X aria-hidden="true" size={14} /></IconButton>
               : <span />}
           </li>)}</ul>
-        </> : <p className={styles.muted}>{t("No workers in this crew")}</p>}
+        </> : <EmptyState illustration={null} title={t("No workers in this crew")} />}
         {others.length ? <ComboboxField key={adding} label={t("Add a worker")} items={others} placeholder={t("Someone from another crew")}
           onSelectionChange={(key) => {
             const row = key ? workerRow(String(key), draft.crewId) : null;
             if (row) { setDraft((current) => ({ ...current, rows: [...current.rows, { ...row, extra: true }] })); setAdding((value) => value + 1); }
           }} /> : null}
-        {draft.rows.length && !someone ? <p className={styles.muted} role="status">{t("Mark who was there.")}</p> : null}
+        {draft.rows.length && !someone ? <InlineNotice tone="info" message={t("Mark who was there.")} /> : null}
       </FormSection> : null}
     </div>
     {submitting ? <SubmitCrewDayDialog api={api} day={submitting} today={today} onClose={() => setSubmitting(null)} onSubmitted={onSubmitted} /> : null}
@@ -307,17 +307,17 @@ function CrewDayView({ api, day, viewer, canSeeCosts, showPlace, onClose, onChan
   const labels = useHrmsLabels();
   const presence = usePresenceLabels();
   const { locale } = useDesignSystem();
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [returning, setReturning] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const money = (value: string | null, currency: string | null) => {
     if (value === null || !currency) return "";
     try { return new Intl.NumberFormat(locale, { style: "currency", currency }).format(Number(value)); } catch { return `${currency} ${value}`; }
   };
-  const decide = async (decision: "approve" | "return", note = "") => {
-    setBusy(true); setError("");
-    try { onChanged(await api.decideCrewDay(day.id, { version: day.version, decision, note })); setBusy(false); return true; }
-    catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); return false; }
+  // The review shows why it failed and stays open; once decided, the day reads as approved or sent back.
+  const decide = async (decision: "approve" | "return", note: string) => {
+    if (decision === "return" && note.length < MIN_REASON) throw new Error(t("At least {count} characters", { count: MIN_REASON }));
+    try { onChanged(await api.decideCrewDay(day.id, { version: day.version, decision, note })); }
+    catch (cause) { throw new Error(format.failure(cause, t("Could not save."))); }
+    setReviewing(false);
   };
   const evidence = day.evidence ?? {};
   // The location shows on its own line; the other issues after it.
@@ -327,10 +327,8 @@ function CrewDayView({ api, day, viewer, canSeeCosts, showPlace, onClose, onChan
   const photo = day.captureId && evidence.photoCaptured && (viewer.evidence || day.markedBy === viewer.userId);
   return <InspectorSheet isOpen size="md" title={`${day.crewName} · ${format.date(day.workDate)}`} description={day.trade} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={day.canDecide ? <div className="wd-dialog-actions"><span className={styles.spacer} />
-      <Button isDisabled={busy} onPress={() => setReturning(true)}>{t("Send back")}</Button>
-      <Button variant="primary" isLoading={busy} onPress={() => void decide("approve")}>{t("Approve")}</Button></div> : null}>
+      <Button variant="primary" onPress={() => setReviewing(true)}>{t("Review")}</Button></div> : null}>
     <div className={styles.sheet}>
-      {error && !returning ? <InlineNotice tone="error" message={error} /> : null}
       <Facts items={[
         [t("Status"), <SheetStatus key="status" status={day.status} />],
         showPlace ? [t("Place"), day.projectName ?? t("Workshop")] : null,
@@ -340,9 +338,10 @@ function CrewDayView({ api, day, viewer, canSeeCosts, showPlace, onClose, onChan
         issues.length ? [t("Issues"), issues.map(labels.issue).join(", ")] : null,
         day.exceptionReason ? [t("Reason"), day.exceptionReason] : null,
         day.note ? [t("Note"), day.note] : null,
-        day.decidedByName ? [day.status === "approved" ? t("Approved by") : t("Sent back by"), [day.decidedByName, format.moment(day.decidedAt)].filter(Boolean).join(" · ")] : null,
-        day.decisionNote && day.status !== "submitted" ? [t("What to change"), day.decisionNote] : null,
+        day.decidedByName && day.status !== "approved" ? [t("Sent back by"), [day.decidedByName, format.moment(day.decidedAt)].filter(Boolean).join(" · ")] : null,
+        day.decisionNote && day.status !== "submitted" ? [day.status === "approved" ? t("Note") : t("What to change"), day.decisionNote] : null,
       ]} />
+      {day.status === "approved" && day.decidedByName ? <ApprovalStamp approvedBy={day.decidedByName} date={format.moment(day.decidedAt)} /> : null}
       {photo ? <EvidencePhoto size="large" src={api.photoUrl(day.captureId!)} alt={t("Group photo of {crew}", { crew: day.crewName })} /> : null}
       <section className={styles.part} aria-label={t("Who was there")}>
         <h3 className={styles.subhead}>{t("Who was there")}</h3>
@@ -359,16 +358,17 @@ function CrewDayView({ api, day, viewer, canSeeCosts, showPlace, onClose, onChan
           <span className={styles.number}>{totals.length ? totals.map((total) => money(total.amount, total.currency)).join(" + ") : t("No rate")}</span></p> : null}
       </section>
     </div>
-    {returning ? <ReturnCrewDayDialog error={error} busy={busy} onClose={() => { setReturning(false); setError(""); }}
-      onSend={async (note) => { if (await decide("return", note)) setReturning(false); }} /> : null}
+    {reviewing ? <ReviewDialog title={t("Approve this crew day?")} onClose={() => setReviewing(false)}
+      facts={[
+        { label: t("Crew"), value: day.crewName, detail: day.trade },
+        { label: t("Day"), value: format.date(day.workDate) },
+        { label: t("People"), value: format.number(day.present) },
+        { label: t("Marked by"), value: day.markedByName },
+        ...(evidence.arrival ? [{ label: t("Location"), value: labels.location(evidence.arrival.status) }] : []),
+        ...(day.exceptionReason ? [{ label: t("Reason"), value: day.exceptionReason }] : []),
+      ]}
+      files={photo ? [{ id: day.captureId!, name: t("Group photo"), href: api.photoUrl(day.captureId!), previewHref: api.photoUrl(day.captureId!) }] : undefined}
+      confirmLabel={t("Approve")} onConfirm={(note) => decide("approve", note)}
+      returnLabel={t("Send back")} onReturn={(note) => decide("return", note)} /> : null}
   </InspectorSheet>;
-}
-
-/** Sending a day back to whoever marked it, saying what to change. */
-function ReturnCrewDayDialog({ error, busy, onClose, onSend }: { error: string; busy: boolean; onClose: () => void; onSend: (note: string) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={t("Send the crew day back")} onClose={onClose} cancelLabel={t("Back")} error={error || undefined} isSubmitting={busy} isSubmitDisabled={note.trim().length < MIN_REASON} submitLabel={t("Send back")} onSubmit={() => onSend(note.trim())}>
-      <TextAreaField label={t("What to change")} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
 }

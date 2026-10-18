@@ -7,7 +7,8 @@ import { tKey, type MessageKey } from "@/lib/i18n/keys";
  */
 
 export const FLOW_CHECKS = [
-  "contact_logged", "details_complete", "intro_meeting_completed", "client_type_set", "sub_path_chosen", "feasibility_confirmed",
+  "contact_logged", "details_complete", "intro_meeting_completed", "client_type_set", "qualification_outcome_recorded", "target_completion_set",
+  "sub_path_chosen", "feasibility_confirmed",
   "package_chosen", "discovery_complete", "site_visit_recorded",
   "quote_exists", "qs_approved", "quote_sent", "client_accepted", "client_approved_on_spot", "payment_proof_attached", "payment_verified", "deal_approved",
   "design_stage_done", "material_list_signed_off",
@@ -93,6 +94,8 @@ export const CHECK_CATALOGUE: CheckMeta[] = [
   { check: "details_complete", group: "contact", label: tKey("Details complete"), step: tKey("Complete the client details"), hint: tKey("The fields you choose are filled in"), role: "sales", needs: ["clientEmail", "propertyLocation"] },
   { check: "client_type_set", group: "contact", label: tKey("Client type set"), step: tKey("Set the client type"), hint: tKey("The client type is chosen"), role: "sales" },
   { check: "intro_meeting_completed", group: "meetings", label: tKey("Intro meeting completed"), step: tKey("Hold the intro meeting"), hint: tKey("The first meeting is marked done"), role: "sales" },
+  { check: "qualification_outcome_recorded", group: "meetings", label: tKey("Intro outcome recorded"), step: tKey("Record the intro outcome"), hint: tKey("The client is going ahead, and with what"), role: "sales" },
+  { check: "target_completion_set", group: "contact", label: tKey("Target completion date"), step: tKey("Set the target completion date"), hint: tKey("The date the client wants it finished"), role: "sales" },
   { check: "site_visit_recorded", group: "meetings", label: tKey("Site visit recorded"), step: tKey("Record the site visit"), hint: tKey("A site visit is on record"), role: "sales" },
   { check: "discovery_complete", group: "meetings", label: tKey("Discovery complete"), step: tKey("Complete discovery"), hint: tKey("Rooms, style and budget are captured"), role: "sales" },
   { check: "sub_path_chosen", group: "sell", label: tKey("Sub-path chosen"), step: tKey("Choose the sub-path"), hint: tKey("How the furniture is supplied"), role: "sales" },

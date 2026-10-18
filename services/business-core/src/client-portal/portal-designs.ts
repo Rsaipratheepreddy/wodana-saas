@@ -87,10 +87,12 @@ export async function readDesignFolder(db: Db, workspaceId: string, grant: Grant
       hasPreview: (await files.has(file.previewKey)) || (file.mimeType.startsWith("image/") && (await files.has(file.objectKey))),
       canComment: open,
       // The conversation on the file, oldest first: the client's side by name, the team as one team.
-      comments: messages.filter((message) => versionThreads.has(message.threadId)).map((message) => ({
-        id: message.id, at: new Date(message.createdAt).toISOString(), text: message.body, fromClient: Boolean(message.grantId), mine: message.grantId === grant.id,
-        author: message.grantId ? message.author : null,
-      })),
+      // A comment pinned on the picture carries its point (0–1 across and down), the same pins the team places.
+      comments: messages.filter((message) => versionThreads.has(message.threadId)).map((message) => {
+        const anchor = pinOf(threads.find((thread) => thread.id === message.threadId)?.anchor);
+        return { id: message.id, threadId: message.threadId, at: new Date(message.createdAt).toISOString(), text: message.body, fromClient: Boolean(message.grantId),
+          mine: message.grantId === grant.id, author: message.grantId ? message.author : null, ...(anchor && message.id === message.threadId ? { anchor } : {}) };
+      }),
     });
     if (file.sharedAt > design.sharedAt) design.sharedAt = file.sharedAt;
     designs.set(file.designId, design);
@@ -117,14 +119,25 @@ export async function designFileComment(ctx: DecisionContext, body: Record<strin
   if (text.length > 5000) throw new BadRequestException("Keep it under 5000 characters.");
   const threadId = typeof body.commentId === "string" && UUID.test(body.commentId) ? body.commentId : null;
   if (!threadId) throw new BadRequestException("Try that again.");
+  // §0.3: a comment may be pinned on the design (a point 0–1 across and down the picture or page preview).
+  const anchor = body.anchor === undefined || body.anchor === null ? null : pinOf(body.anchor);
+  if (body.anchor !== undefined && body.anchor !== null && !anchor) throw new BadRequestException("Place the pin on the design.");
   // A comment on the whole file: a design thread the team sees in the case's Design tab, with the client's words as its first message.
   await ctx.db.query(
     `INSERT INTO pre_project_design_threads (id, workspace_id, case_id, design_id, version_id, title, blocking, created_by, client_grant_id, client_visible, anchor)
-     VALUES ($1, $2, $3, $4, $5, $6, false, NULL, $7, true, NULL)`,
-    [threadId, ctx.workspaceId, row.caseId, file.designId, file.versionId, text.slice(0, 240), grant.id]);
+     VALUES ($1, $2, $3, $4, $5, $6, false, NULL, $7, true, $8::jsonb)`,
+    [threadId, ctx.workspaceId, row.caseId, file.designId, file.versionId, text.slice(0, 240), grant.id, anchor ? JSON.stringify(anchor) : null]);
   await ctx.db.query(`INSERT INTO pre_project_design_messages (id, workspace_id, case_id, design_id, thread_id, body, created_by, client_grant_id) VALUES ($1, $2, $3, $4, $1, $5, NULL, $6)`,
     [threadId, ctx.workspaceId, row.caseId, file.designId, text, grant.id]);
   await ctx.db.query(`UPDATE pre_project_designs SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [ctx.workspaceId, row.caseId, file.designId]);
   await tellDesignTeam(ctx, grant, row.caseId, { id: file.versionId, designId: file.designId, title: file.title, number: file.number }, threadId, threadId, text, true);
-  return { ok: true, threadId, entity: { type: "pre_project_design", id: file.designId }, audit: { versionId: file.versionId, threadId } };
+  return { ok: true, threadId, entity: { type: "pre_project_design", id: file.designId }, audit: { versionId: file.versionId, threadId, pinned: Boolean(anchor) } };
+}
+
+/** A pin's point as stored: x and y each between 0 and 1 (rounded to 4 places), or null for anything else. */
+function pinOf(value: unknown): { x: number; y: number } | null {
+  const point = value && typeof value === "object" ? value as { x?: unknown; y?: unknown } : null;
+  const x = Number(point?.x), y = Number(point?.y);
+  if (!point || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null;
+  return { x: Math.round(x * 10_000) / 10_000, y: Math.round(y * 10_000) / 10_000 };
 }

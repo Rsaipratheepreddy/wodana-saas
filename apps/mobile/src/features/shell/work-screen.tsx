@@ -5,6 +5,7 @@ import { key, useT } from '../../core/i18n';
 import { useSession } from '../../core/session';
 import { Empty, ListRow, Screen, Section } from '../../ui/layout';
 import { useBootstrap } from '../hrms/api';
+import { useJobsOn } from '../jobs/api';
 
 type Context = { can: (...codes: string[]) => boolean; team: boolean };
 type Entry = { label: string; icon: LucideIcon; href: Href; when?: (context: Context) => boolean };
@@ -29,21 +30,23 @@ const AREAS: Record<WorkArea, { title: string; entries: Entry[] }> = {
   ] },
 };
 
-/** Work: every area this person can use, nothing else. */
+/** Work: the jobs first (every job from enquiry to warranty), then every area this person can use, nothing else. */
 export function WorkScreen() {
   const t = useT();
   const router = useRouter();
   const session = useSession();
   const bootstrap = useBootstrap();
   const areas = workAreas(session);
+  const jobs = useJobsOn();
   const context: Context = { can: session.can, team: !!bootstrap.data?.permissions.team };
   return <Screen large title={t('Work')}>
+    {jobs ? <Section><ListRow first icon={Briefcase} title={t('Jobs')} onPress={() => router.push('/jobs')} /></Section> : null}
     {areas.length ? areas.map((area) => {
       const entries = AREAS[area].entries.filter((entry) => !entry.when || entry.when(context));
       if (!entries.length) return null;
       return <Section key={area} title={t(AREAS[area].title)}>
         {entries.map((entry, index) => <ListRow key={entry.label} first={index === 0} icon={entry.icon} title={t(entry.label)} onPress={() => router.push(entry.href)} />)}
       </Section>;
-    }) : <Empty icon={Briefcase} title={t('No work areas yet')} detail={t('Ask your administrator for access.')} />}
+    }) : jobs ? null : <Empty icon={Briefcase} title={t('No work areas yet')} detail={t('Ask your administrator for access.')} />}
   </Screen>;
 }

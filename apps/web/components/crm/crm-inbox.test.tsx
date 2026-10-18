@@ -48,7 +48,9 @@ describe("CRM inbox", () => {
   it("shows the views with counts, the wait, labels, the chat's history and team notes", async () => {
     const { data, record, fetcher } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     expect(await screen.findByText("Hello there")).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /Mine\s*1/ })).toBeInTheDocument();
+    // The inbox opens on Open (every chat still to work on), each view with its count.
+    expect(await screen.findByRole("button", { name: /Open\s*9/, pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Mine\s*1/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Unassigned\s*4/ })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Team note" })).toHaveTextContent("Call her after 5");
     expect(screen.getByText("Thank you for contacting us.").closest("article")).toHaveTextContent(/Automatic.*Welcome on a new enquiry/);
@@ -58,7 +60,7 @@ describe("CRM inbox", () => {
     expect(screen.getAllByText("Waiting 0 m").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Quote request").length).toBeGreaterThan(0);
     expect(screen.getByText(/Window closes in 4 h/)).toBeInTheDocument();
-    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("view=mine") && String(url).includes("status=open"))).toBe(true));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && !String(url).includes("view=") && String(url).includes("status=open%2Cunresolved"))).toBe(true));
   });
   it("sends one reply with a retry identity, then clears the draft", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
@@ -174,7 +176,7 @@ describe("CRM inbox", () => {
   it("assigns, snoozes and resolves with the version the person saw", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await screen.findByText("Hello there");
-    await user.click(await screen.findByRole("button", { name: /Sara Khan/ }));
+    await user.click(await within(await screen.findByRole("region", { name: "Chat messages" })).findByRole("button", { name: /Sara Khan/ }));
     await user.click(await screen.findByRole("menuitem", { name: /Ali Noor/ }));
     await waitFor(() => expect(posted(`conversations/${record.id}?`, "PATCH")).toEqual([{ version: 3, ownerMembershipId: ALI }]));
     await user.click(screen.getByRole("button", { name: "Snooze" }));
@@ -203,7 +205,7 @@ describe("CRM inbox", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Refresh inbox" }));
     expect(await within(screen.getByRole("log", { name: "Message history" })).findByText("Third message")).toBeInTheDocument();
     await waitFor(() => expect(within(screen.getByRole("heading", { level: 2, name: /Everyday contact/ })).queryByText("Unresolved")).not.toBeInTheDocument());
-    await user.click(await screen.findByRole("button", { name: /Sara Khan/ }));
+    await user.click(await within(await screen.findByRole("region", { name: "Chat messages" })).findByRole("button", { name: /Sara Khan/ }));
     await user.click(await screen.findByRole("menuitem", { name: /Ali Noor/ }));
     await waitFor(() => expect(posted(`conversations/${record.id}?`, "PATCH")).toEqual([{ version: 5, ownerMembershipId: ALI }]));
   });
@@ -219,7 +221,7 @@ describe("CRM inbox", () => {
       if (refused && (!init?.method || init.method === "GET") && path === `conversations/${record.id}`) return { ok: true, status: 200, json: async () => later };
       return base(url, init);
     });
-    await user.click(await screen.findByRole("button", { name: /Sara Khan/ }));
+    await user.click(await within(await screen.findByRole("region", { name: "Chat messages" })).findByRole("button", { name: /Sara Khan/ }));
     await user.click(await screen.findByRole("menuitem", { name: /Ali Noor/ }));
     expect(await screen.findByText("This chat had changed. It shows the latest now; try again.")).toBeInTheDocument();
     expect(await within(screen.getByRole("log", { name: "Message history" })).findByText("Third message")).toBeInTheDocument();
@@ -240,7 +242,7 @@ describe("CRM inbox", () => {
     // The status filter: Unresolved narrows the view; Closing due lists the chats whose closing message is due.
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(await screen.findByRole("menuitem", { name: "Status: Unresolved" }));
-    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=unresolved") && String(url).includes("view=mine"))).toBe(true));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=unresolved") && !String(url).includes("view="))).toBe(true));
     // The Filter button counts the filters in use.
     expect(screen.getByRole("button", { name: "Filter (1)" })).toHaveTextContent("1");
     await user.click(screen.getByRole("button", { name: "Remove filter Status: Unresolved" }));
@@ -278,11 +280,15 @@ describe("CRM inbox", () => {
   it("blocks a number and hides a message only after saying what it does", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup({ partyId: "party-1", canManage: true }); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await screen.findByText("Hello there");
+    // Spam is offered beside Resolve while the chat is still work (not again in ⋯).
     await user.click(screen.getByRole("button", { name: "More chat actions" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Mark as spam" }));
+    expect(screen.queryByRole("menuitem", { name: "Mark as spam" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Resolve options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Resolve as spam" }));
     const confirm = await screen.findByRole("dialog");
     expect(confirm).toHaveTextContent("nobody is told");
-    await user.click(within(confirm).getByRole("button", { name: "Mark as spam" }));
+    await user.click(within(confirm).getByRole("button", { name: "Resolve as spam" }));
     // PLM-138: spam is its own command (the contact and its enquiry are marked too), version-checked.
     await waitFor(() => expect(posted(`conversations/${record.id}/spam`, "PUT")).toEqual([{ version: record.version, spam: true }]));
     // The chat reloads after the command; its messages come back with their actions.
@@ -439,7 +445,9 @@ describe("CRM inbox", () => {
     const { data, record, fetcher } = setup({}, { payloads: { "inbox/summary": { mine: 2, unassigned: 0, team: 3, all: 3, snoozed: 0, closed: 5, unreadForMe: 1, membershipId: ME, scope: "own" } } });
     render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     const chips = await screen.findByRole("group", { name: "Inbox views" });
-    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Mine2", "Team3", "Resolved"]));
+    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Open3", "Unread", "Mine2", "Resolved", "All"]));
+    // The team's own talk is in Team chat, not the inbox.
+    expect(within(chips).queryByRole("button", { name: /^Team/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Unassigned/ })).not.toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search inbox" }), "Noura");
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("search=Noura"))).toBe(true));
@@ -447,12 +455,12 @@ describe("CRM inbox", () => {
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=closed") && !String(url).includes("view="))).toBe(true));
   });
 
-  it("gives someone with no inbox only their jobs' chats: Team and Resolved, nothing to start", async () => {
+  it("gives someone with no inbox only their jobs' chats: Open, Unread and Resolved, nothing to start", async () => {
     const { data, record, fetcher } = setup({ canSend: false }, { payloads: { "inbox/summary": { mine: 0, unassigned: 0, team: 1, all: 1, snoozed: 0, unreadForMe: 0, membershipId: ME, scope: "job" } } });
     render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     const chips = await screen.findByRole("group", { name: "Inbox views" });
-    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Team1", "Resolved"]));
-    // Team, for the job's team, is every open chat of their jobs (owned or not).
+    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Open1", "Unread", "Resolved", "All"]));
+    // Open, for the job's team, is every open chat of their jobs (owned or not).
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=open") && !String(url).includes("view="))).toBe(true));
     expect(screen.queryByRole("button", { name: "New conversation" })).not.toBeInTheDocument();
   });
@@ -551,5 +559,49 @@ describe("CRM inbox", () => {
     expect(await screen.findByText(/Set up the inbox email address in Settings → Inbox to reply by email/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Set up email" })).toHaveAttribute("href", "/workspace/settings/inbox#inbox-email");
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+  });
+
+  it("lists the person's own unread chats under Unread, and opening one reads it for them", async () => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const user = userEvent.setup();
+    // Unread for this person although a colleague already cleared the chat's counter.
+    const { data, record, fetcher, posted } = setup({ unread: true, unreadCount: 0 }, { payloads: { "inbox/summary": { mine: 1, unassigned: 4, team: 6, all: 9, unread: 2, snoozed: 2, unreadForMe: 1, membershipId: ME } } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    await waitFor(() => expect(posted(`conversations/${record.id}/read`)).toEqual([{}]));
+    const chips = screen.getByRole("group", { name: "Inbox views" });
+    expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Open9", "Unread2", "Unassigned4", "Mine1", "Resolved", "All"]);
+    await user.click(within(chips).getByRole("button", { name: /Unread/ }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("view=unread") && String(url).includes("status=open%2Cunresolved"))).toBe(true));
+    expect(screen.getByRole("button", { name: /Unread\s*2/, pressed: true })).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: "Unread" }).length).toBeGreaterThan(0);
+    // Snoozed chats are a status filter while there are some.
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Status: Snoozed" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=snoozed") && String(url).includes("view=unread"))).toBe(true));
+  });
+
+  it.each([{ canReopen: true }, { canReopen: false }])("shows Reopen on a resolved chat only to whoever resolved it or manages the inbox: %j", async ({ canReopen }) => {
+    const user = userEvent.setup(), { data, record, posted } = setup({ status: "closed", canReopen });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    expect(screen.queryByRole("button", { name: "Resolve" })).not.toBeInTheDocument();
+    if (!canReopen) { expect(screen.queryByRole("button", { name: "Reopen" })).not.toBeInTheDocument(); return; }
+    await user.click(screen.getByRole("button", { name: "Reopen" }));
+    await waitFor(() => expect(posted(`conversations/${record.id}?`, "PATCH")).toEqual([{ version: 3, status: "open" }]));
+  });
+
+  it.each([{ canReopen: true }, { canReopen: false }])("offers to reopen picked resolved chats only when the person may reopen every one: %j", async ({ canReopen }) => {
+    const user = userEvent.setup(), { data, record, posted } = setup({ status: "closed", canReopen });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    await user.click(within(screen.getByRole("group", { name: "Inbox views" })).getByRole("button", { name: /Resolved/ }));
+    await user.click(screen.getByRole("button", { name: "Inbox options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Select chats" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Select Everyday contact" }));
+    const bar = screen.getByRole("toolbar", { name: "Bulk actions" });
+    if (!canReopen) { expect(within(bar).queryByRole("button", { name: "Reopen" })).not.toBeInTheDocument(); return; }
+    await user.click(within(bar).getByRole("button", { name: "Reopen" }));
+    await waitFor(() => expect(posted("inbox/bulk")).toEqual([{ conversationIds: [record.id], action: "reopen" }]));
   });
 });

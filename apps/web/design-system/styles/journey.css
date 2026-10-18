@@ -1,0 +1,280 @@
+/* §0.3 P2: the job's map, the step now, studio price tags and fact chips. Tokens only; logical properties only. */
+
+.wd-job-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-3); min-inline-size: 0; }
+.wd-job-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+/* The job's facts: one compact row of chips (icon, small label, the value set clearly), no tiles. */
+.wd-job-facts { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; }
+.wd-job-facts li { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); padding: var(--wd-space-1) var(--wd-space-2-5); border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface-subtle); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-job-facts li strong { font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.wd-job-facts li svg { flex: none; color: var(--wd-color-icon); }
+.wd-job-facts li[data-hue] svg { color: var(--wd-hue); }
+.wd-job-facts li[data-tone="success"] { background: var(--wd-color-success-subtle); }
+/* The step now, highlighted by a soft brand tint (no border, no edge line): the step, when it's done, its chips, one action. */
+.wd-job-now { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "kicker kicker" "main meta"; align-items: center; gap: var(--wd-space-0-5) var(--wd-space-3);
+  padding: var(--wd-space-3) var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-action-primary-subtle); }
+.wd-job-now-kicker { grid-area: kicker; font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--wd-color-text-secondary); }
+.wd-job-now-main { grid-area: main; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-0-5) var(--wd-space-2-5); min-inline-size: 0; }
+.wd-job-now-title { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.wd-job-now-why { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-job-now-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-1-5); }
+@media (max-width: 40rem) { .wd-job-now { grid-template-columns: minmax(0, 1fr); grid-template-areas: "kicker" "main" "meta"; } .wd-job-now-meta { justify-content: flex-start; } }
+
+.wd-journey {
+  --wd-journey-lane: 6.5rem;
+  --wd-journey-step: 9.5rem;
+  display: grid; gap: var(--wd-space-2); min-inline-size: 0;
+}
+.wd-journey-tools { display: flex; justify-content: flex-end; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-journey-frame { border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); overflow: hidden; }
+.wd-journey-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.wd-journey-grid { display: grid; min-inline-size: max-content; }
+.wd-journey-row { display: contents; }
+.wd-journey-corner, .wd-journey-lane {
+  position: sticky; inset-inline-start: 0; z-index: 1;
+  background: var(--wd-color-surface-subtle);
+}
+.wd-journey-lane {
+  display: flex; align-items: flex-start;
+  padding: var(--wd-space-3);
+  font-size: var(--wd-text-xs);
+  font-weight: var(--wd-weight-medium);
+  color: var(--wd-color-text-secondary);
+  border-block-start: 1px solid var(--wd-color-structural-divider);
+}
+.wd-journey-band {
+  display: grid; grid-template-columns: 1fr auto; gap: var(--wd-space-1) var(--wd-space-2); align-items: center;
+  padding: var(--wd-space-3) var(--wd-space-2) var(--wd-space-2);
+}
+.wd-journey-band-label { justify-self: start; padding: var(--wd-space-0-5) var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-hue-soft, var(--wd-color-surface-muted));
+  font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); color: var(--wd-hue, var(--wd-color-text)); text-transform: uppercase; letter-spacing: 0.04em; }
+.wd-journey-band-count { display: inline-flex; align-items: center; gap: var(--wd-space-1); font-size: var(--wd-text-2xs); color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.wd-journey-band[data-state="done"] .wd-journey-band-count { color: var(--wd-color-success); }
+.wd-journey-band[data-state="now"] .wd-journey-band-count { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
+.wd-journey-band[data-state="skipped"] { opacity: 0.6; }
+
+.wd-journey-cell { padding: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); min-inline-size: 0; }
+.wd-journey-cell[data-band-state="now"] { background: var(--wd-color-surface); }
+.wd-journey-cell ol { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.wd-journey-step {
+  display: flex; align-items: flex-start; gap: var(--wd-space-1-5);
+  inline-size: 100%;
+  padding: var(--wd-space-1) var(--wd-space-1-5);
+  border-radius: var(--wd-radius-xs);
+  color: var(--wd-color-text);
+  text-decoration: none;
+  font-size: var(--wd-text-xs);
+  line-height: 1.3;
+}
+a.wd-journey-step:hover { background: var(--wd-color-surface-hover); }
+a.wd-journey-step:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.wd-journey-mark {
+  display: inline-grid; place-items: center; flex: none;
+  inline-size: var(--wd-space-4); block-size: var(--wd-space-4);
+  margin-block-start: var(--wd-space-0-5);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface-muted);
+  color: var(--wd-color-icon-subtle);
+}
+.wd-journey-text { display: grid; gap: 0; min-inline-size: 0; }
+.wd-journey-label { font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+.wd-journey-detail { font-size: var(--wd-text-2xs); color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.wd-journey-step[data-state="done"] .wd-journey-mark { background: var(--wd-color-success); color: var(--wd-color-text-inverse); }
+.wd-journey-step[data-state="done"] .wd-journey-label { color: var(--wd-color-text-secondary); }
+.wd-journey-step[data-state="now"] { background: var(--wd-color-action-primary-subtle); }
+.wd-journey-step[data-state="now"] .wd-journey-mark { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
+.wd-journey-step[data-state="now"] .wd-journey-label { font-weight: var(--wd-weight-semibold); }
+.wd-journey-step[data-state="next"] .wd-journey-mark { box-shadow: inset 0 0 0 1px var(--wd-color-action-primary); background: transparent; color: var(--wd-color-action-primary); }
+.wd-journey-step[data-state="upcoming"] { color: var(--wd-color-text-secondary); }
+.wd-journey-step[data-state="skipped"] { color: var(--wd-color-text-tertiary); }
+.wd-journey-step[data-state="skipped"] .wd-journey-label { text-decoration: line-through; font-weight: var(--wd-weight-regular); }
+.wd-journey-step[data-late] .wd-journey-detail { color: var(--wd-color-danger); }
+.wd-journey-step[data-late] .wd-journey-mark { box-shadow: inset 0 0 0 1px var(--wd-color-danger); color: var(--wd-color-danger); }
+
+/* Narrow: the chapters stacked instead of a sideways grid. */
+.wd-journey-chapter { display: grid; gap: var(--wd-space-1); padding: var(--wd-space-2) var(--wd-space-2) var(--wd-space-3); }
+.wd-journey-chapter + .wd-journey-chapter { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.wd-journey-chapter > .wd-journey-band { padding: var(--wd-space-1) var(--wd-space-1-5); }
+.wd-journey-chapter ol { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.wd-journey-chapter[data-state="now"] { background: var(--wd-color-surface); }
+.wd-journey-fold { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); inline-size: 100%; padding: var(--wd-space-1) var(--wd-space-1-5);
+  border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.wd-journey-fold:hover { background: var(--wd-color-surface-hover); }
+.wd-journey-fold:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.wd-journey-fold > .wd-journey-band { flex: 1; padding: 0; }
+.wd-journey-fold > svg { flex: none; color: var(--wd-color-icon); transition: transform var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-journey-fold[aria-expanded="true"] > svg { transform: rotate(180deg); }
+
+
+/* The steps after the one now, in one quiet line under the Next step card. */
+.wd-job-next { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+
+/* A studio price tag: a punched tag with its label, for the amount that matters on a record. */
+.wd-price-tag {
+  position: relative;
+  display: inline-flex; align-items: stretch;
+  padding-inline-start: var(--wd-space-5);
+  border: 1px solid var(--wd-color-border-strong);
+  border-radius: var(--wd-radius-xs) var(--wd-radius-md) var(--wd-radius-md) var(--wd-radius-xs);
+  background: var(--wd-color-brand-surface);
+  color: var(--wd-color-text);
+  clip-path: polygon(var(--wd-space-3) 0, 100% 0, 100% 100%, var(--wd-space-3) 100%, 0 50%);
+}
+.wd-price-tag:dir(rtl) { clip-path: polygon(0 0, calc(100% - var(--wd-space-3)) 0, 100% 50%, calc(100% - var(--wd-space-3)) 100%, 0 100%); padding-inline-start: var(--wd-space-3); padding-inline-end: var(--wd-space-5); }
+.wd-price-tag-hole {
+  position: absolute; inset-block-start: 50%; inset-inline-start: var(--wd-space-2);
+  inline-size: var(--wd-space-1-5); block-size: var(--wd-space-1-5);
+  margin-block-start: calc(var(--wd-space-1-5) / -2);
+  border: 1px solid var(--wd-color-border-strong);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface);
+}
+.wd-price-tag:dir(rtl) .wd-price-tag-hole { inset-inline-start: auto; inset-inline-end: var(--wd-space-2); }
+.wd-price-tag-body { display: grid; gap: 0; padding: var(--wd-space-1-5) var(--wd-space-3) var(--wd-space-1-5) var(--wd-space-1); }
+.wd-price-tag-label { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.wd-price-tag-amount { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+.wd-price-tag-detail { font-size: var(--wd-text-2xs); color: var(--wd-color-text-tertiary); }
+.wd-price-tag[data-tone="success"] { background: var(--wd-color-success-subtle); }
+.wd-price-tag[data-tone="attention"] { background: var(--wd-color-warning-subtle); }
+
+/* A record's key facts as chips: label above value, wrapping in rows. */
+.wd-fact-chips { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.wd-fact-chips li {
+  display: grid; gap: 0;
+  padding: var(--wd-space-1) var(--wd-space-2-5);
+  border-radius: var(--wd-radius-sm);
+  background: var(--wd-color-surface-subtle);
+}
+.wd-fact-chip-label { font-size: var(--wd-text-2xs); color: var(--wd-color-text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
+.wd-fact-chip-value { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); font-variant-numeric: tabular-nums; }
+.wd-fact-chips li[data-tone="success"] { background: var(--wd-color-success-subtle); }
+.wd-fact-chips li[data-tone="attention"] { background: var(--wd-color-warning-subtle); }
+.wd-fact-chips li[data-tone="danger"] { background: var(--wd-color-danger-subtle); }
+
+/* Fact tiles: even tiles on a quiet tone (no borders), an icon chip, a small label and the value set clearly. */
+.wd-fact-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--wd-space-2); margin: 0; }
+.wd-fact-tile {
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--wd-space-0-5);
+  min-inline-size: 0; padding: var(--wd-space-2-5) var(--wd-space-3);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-subtle);
+}
+.wd-fact-tile[data-icon] { grid-template-columns: auto minmax(0, 1fr); column-gap: var(--wd-space-2-5); }
+.wd-fact-tile-icon {
+  grid-row: span 2; align-self: center;
+  display: inline-grid; place-items: center;
+  inline-size: var(--wd-space-8); block-size: var(--wd-space-8);
+  border-radius: var(--wd-radius-sm);
+  background: var(--wd-color-surface);
+  color: var(--wd-color-icon);
+}
+.wd-fact-tile-icon svg { inline-size: var(--wd-space-4); block-size: var(--wd-space-4); }
+.wd-fact-tile-label { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-fact-tile-value { display: grid; gap: 0; margin: 0; min-inline-size: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.wd-fact-tile-detail { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-regular); color: var(--wd-color-text-secondary); }
+.wd-fact-tile[data-tone="success"] .wd-fact-tile-icon { background: var(--wd-color-success-subtle); color: var(--wd-color-success); }
+.wd-fact-tile[data-tone="attention"] .wd-fact-tile-icon { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+.wd-fact-tile[data-tone="danger"] .wd-fact-tile-icon { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.wd-fact-tile[data-tone="info"] .wd-fact-tile-icon { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); }
+
+@media (max-width: 40rem) {
+  .wd-journey { --wd-journey-lane: 5.25rem; --wd-journey-step: 8.5rem; }
+}
+
+/* §0.3 P4: the job's documents: a section title with its icon, the shared tables, chips for state and channel. */
+.wd-job-documents { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-3); min-inline-size: 0; }
+.wd-job-section-title, .wd-job-subtitle { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; color: var(--wd-color-text); }
+.wd-job-section-title { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.wd-job-subtitle { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.wd-job-section-title svg, .wd-job-subtitle svg { color: var(--wd-color-icon); }
+.wd-job-doc { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.wd-job-doc strong { font-weight: var(--wd-weight-medium); }
+.wd-job-doc small { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-job-doc .wd-badge { justify-self: start; }
+.wd-job-doc-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; }
+.wd-job-doc-chips svg { flex: none; color: var(--wd-color-icon); }
+.wd-job-doc-chips svg[data-hue] { color: var(--wd-hue); }
+/* A channel icon stays on the line of its address; the address itself may wrap. */
+.wd-job-doc-chips[data-inline] { flex-wrap: nowrap; align-items: center; }
+.wd-job-doc-chips[data-inline] > span { min-inline-size: 0; overflow-wrap: anywhere; }
+.wd-job-doc-chips small, .wd-job-doc-muted { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+
+/* §0.3 P8: the job's money: the agreed price tag beside the payment tiles; figures in tabular numbers. */
+.wd-job-money-head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--wd-space-4); }
+.wd-job-money-figure { font-variant-numeric: tabular-nums; }
+@media (max-width: 40rem) { .wd-job-money-head { grid-template-columns: minmax(0, 1fr); } }
+
+/* §0.3: the job's team thread, like a channel: messages with an avatar, event lines quieter, the composer at the foot. */
+.wd-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-3); min-inline-size: 0; }
+.wd-thread-list { display: grid; gap: var(--wd-space-1); max-block-size: min(60vh, 40rem); overflow-y: auto; margin: 0; padding: 0; list-style: none; overscroll-behavior: contain; }
+.wd-thread-message { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--wd-space-2-5); padding: var(--wd-space-2) var(--wd-space-2-5); border-radius: var(--wd-radius-md);
+  transition: background var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-thread-message:hover { background: var(--wd-color-surface-hover); }
+.wd-thread-body { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.wd-thread-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-2); }
+.wd-thread-head strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.wd-thread-time { font-size: var(--wd-text-2xs); color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.wd-thread-text { margin: 0; font-size: var(--wd-text-sm); color: var(--wd-color-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.wd-thread-mention { padding: 0 var(--wd-space-1); border-radius: var(--wd-radius-xs); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-weight: var(--wd-weight-medium); }
+.wd-thread-event { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-1) var(--wd-space-2-5); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-thread-event-icon { display: inline-grid; place-items: center; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface-subtle); color: var(--wd-color-icon); }
+.wd-thread-event-text { flex: 1 1 12rem; min-inline-size: 0; }
+.wd-thread-composer { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.wd-thread-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+
+/* In the side panel the thread fills its height: messages scroll above, the composer stays at the foot (a channel). */
+.wd-sheet-body:has(> .wd-thread) { display: flex; flex-direction: column; }
+.wd-sheet-body > .wd-thread { flex: 1 1 auto; grid-template-rows: minmax(0, 1fr) auto auto; min-block-size: 0; }
+.wd-sheet-body > .wd-thread > .wd-thread-list { max-block-size: none; align-content: end; }
+.wd-sheet-body > .wd-thread > .wd-empty-state { align-self: center; }
+
+/* §0.3: the Jobs list's progress: a slim bar and its count. */
+.wd-job-progress { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.wd-job-progress-bar { display: block; block-size: var(--wd-space-1); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); overflow: hidden; }
+.wd-job-progress-bar > span { display: block; block-size: 100%; border-radius: inherit; background: var(--wd-hue, var(--wd-color-action-primary)); }
+.wd-job-page > .wd-badge { justify-self: start; }
+
+/* §0.3 P10: the job's step now on a record's own page: one slim tinted row, no border. */
+.wd-job-now-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5) var(--wd-space-2-5); padding: var(--wd-space-2) var(--wd-space-3);
+  border-radius: var(--wd-radius-md); background: var(--wd-color-action-primary-subtle); }
+.wd-job-now-bar-kicker { font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--wd-color-text-secondary); }
+.wd-job-now-bar-step { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.wd-job-now-bar-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); flex: 1; }
+.wd-job-now-bar > .wd-button { margin-inline-start: auto; }
+
+/* §0.3 P11: the step now's suggestions, one quiet line each inside the Now block (no frame). */
+.wd-job-suggestions { grid-column: 1 / -1; display: grid; gap: var(--wd-space-1); margin: var(--wd-space-1) 0 0; padding: 0; list-style: none; }
+.wd-job-suggestions > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5) var(--wd-space-2); }
+.wd-job-suggestion-icon { flex: none; color: var(--wd-color-viz-2); }
+.wd-job-suggestion-text { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-0-5) var(--wd-space-2); flex: 1 1 14rem; min-inline-size: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-job-suggestion-text strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+.wd-job-suggestion-chips { display: inline-flex; gap: var(--wd-space-1); }
+.wd-job-suggestion-done { font-size: var(--wd-text-xs); color: var(--wd-color-success); }
+
+/* §0.3 Team chat: threads beside the open thread (no frames); on a phone one at a time. */
+.wd-team-chat { display: grid; grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr); gap: var(--wd-space-4); min-block-size: 60dvh; }
+.wd-team-chat-side { min-inline-size: 0; border-inline-end: 1px solid var(--wd-color-structural-divider); padding-inline-end: var(--wd-space-2); }
+.wd-team-chat-list { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
+.wd-team-chat-row { display: flex; align-items: flex-start; gap: var(--wd-space-2); inline-size: 100%; padding: var(--wd-space-2) var(--wd-space-2-5); border: 0; border-radius: var(--wd-radius-sm);
+  background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.wd-team-chat-row:hover { background: var(--wd-color-surface-hover); }
+.wd-team-chat-row[aria-current] { background: var(--wd-color-action-primary-subtle); }
+.wd-team-chat-row:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.wd-team-chat-hash { flex: none; margin-block-start: var(--wd-space-0-5); color: var(--wd-color-viz-2); }
+.wd-team-chat-text { display: grid; gap: var(--wd-space-0-5); flex: 1; min-inline-size: 0; }
+.wd-team-chat-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wd-space-2); }
+.wd-team-chat-head strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+.wd-team-chat-head time { flex: none; font-size: var(--wd-text-2xs); color: var(--wd-color-text-tertiary); }
+.wd-team-chat-last { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.wd-team-chat-main { display: grid; align-content: start; gap: var(--wd-space-3); min-inline-size: 0; }
+.wd-team-chat-title { display: flex; align-items: center; gap: var(--wd-space-2); }
+.wd-team-chat-title strong { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.wd-team-chat-job { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-team-chat-title > .wd-icon-button { display: none; }
+@media (max-width: 48rem) {
+  .wd-team-chat { grid-template-columns: minmax(0, 1fr); }
+  .wd-team-chat-side { border: 0; padding: 0; }
+  .wd-team-chat[data-open] .wd-team-chat-side, .wd-team-chat:not([data-open]) .wd-team-chat-main { display: none; }
+  .wd-team-chat-title > .wd-icon-button { display: inline-grid; }
+}

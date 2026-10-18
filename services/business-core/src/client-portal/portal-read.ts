@@ -14,6 +14,8 @@ import { readDesignFolder } from "./portal-designs";
 import { readPortalBoq } from "./portal-boq";
 import { readMoodboard, takesIdeas } from "./portal-moodboard";
 import { readDesignChoices } from "./portal-design-decisions";
+import { readStepRevisions } from "../design/design-revisions.store";
+import { readPortalItemDrawings } from "./portal-item-drawings-read";
 import { readPayments } from "./portal-payments";
 import { portalQuote } from "./portal-quote";
 import { portalQuoteExtras } from "../proposals/proposal-data";
@@ -23,6 +25,8 @@ import { readBudget } from "./portal-budget";
 import { readPortalChanges } from "./portal-changes";
 import { feedCards, whatChanged } from "./portal-feed";
 import { readUpdatePreference } from "./portal-updates";
+import { readClientJourney } from "../jobs/job-journey-client";
+import { publishedQuestions } from "../setup/questionnaires.store";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -89,7 +93,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   };
   if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, address: null, startDate: null,
     team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, updates: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
-    messages: null, meetings: null, designs: null, boq: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null };
+    messages: null, meetings: null, designs: null, boq: null, design: null, choices: null, changes: null, budget: null, feed: [], digest: null, journey: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
   const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, grant.id, today) : null;
@@ -136,6 +140,8 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     unread: messages?.unread ?? 0,
     latestUpdate, updates, progress, moodboard, decisions, payments, documents, warranty, messages, meetings, designs, boq, design, choices, changes, budget,
     feed: feedCards(source), digest: since === undefined ? null : whatChanged(source, since),
+    // §0.3 P5: where the job stands and what comes next, in the client's words (the same steps as the team's map).
+    journey: await readClientJourney(db, workspaceId, row.caseId),
   };
 }
 
@@ -329,8 +335,8 @@ async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: Cas
   const extras = await portalQuoteExtras(db, workspaceId, row.caseId, issuedQuotes);
   const quotes = issuedQuotes.map((quote) => ({ ...portalQuote(quote, grant.id, grant.role), reference: extras.get(quote.id)?.reference ?? null, disclosure: extras.get(quote.id)?.disclosure ?? null }));
   const found = (await db.query<{ id: string; title: string; type: string; number: number; status: string; dueAt: string | null; room: string | null; item: string | null;
-    mimeType: string; objectKey: string; previewKey: string | null }>(
-    `SELECT version.id, design.title, design.document_type AS type, version.number,
+    mimeType: string; objectKey: string; previewKey: string | null; stage: string | null }>(
+    `SELECT version.id, design.title, design.document_type AS type, version.number, design.stage,
             CASE WHEN version.status = 'client_review' AND version.client_review_expires_at <= now() THEN 'expired' ELSE version.status END AS status,
             version.client_review_expires_at AS "dueAt", room.name AS room, entry.title AS item, asset.mime_type AS "mimeType",
             asset.object_key AS "objectKey", asset.preview_key AS "previewKey"
@@ -344,12 +350,15 @@ async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: Cas
         AND version.number = (SELECT max(number) FROM pre_project_design_versions latest WHERE latest.workspace_id = design.workspace_id AND latest.design_id = design.id)
       ORDER BY coalesce(room.name, ''), design.title`, [workspaceId, row.caseId])).rows;
   const designs = [];
+  // PLM-049/051: once a step's free revisions are used, asking for changes on its file is a paid change.
+  const revisions = found.some((design) => design.status === "client_review") ? await readStepRevisions(db, workspaceId, row.caseId) : null;
   for (const design of found) designs.push({
     id: design.id, title: design.title, type: design.type, number: design.number, status: design.status, dueAt: design.dueAt ? new Date(design.dueAt).toISOString() : null,
     room: design.room, item: design.item, mimeType: design.mimeType,
     // A picture only when its file is there; otherwise the client opens the file.
     hasPreview: design.mimeType.startsWith("image/") && ((await files.has(design.previewKey)) || (await files.has(design.objectKey))),
     canDecide: approver && design.status === "client_review" && row.caseStatus === "active",
+    paidChanges: (() => { const state = design.stage ? revisions?.[design.stage as keyof typeof revisions] : null; return Boolean(state && state.used >= state.included); })(),
   });
   const requests = commercial.requests.filter((request) => request.decisionRequest).map((request) => {
     const asked = request.decisionRequest!;
@@ -366,6 +375,8 @@ async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: Cas
     materials: row.projectId ? await readMaterials(db, workspaceId, row.projectId, approver, row.projectStatus!) : null,
     handovers: row.projectId ? await readHandovers(db, workspaceId, row.projectId, approver, row.projectStatus!) : [],
     drawings: row.projectId ? await readDrawings(db, workspaceId, row.projectId, approver, row.projectStatus!) : null,
+    // Shop drawings per item the lead designer approved for the client (signed one or several at a time).
+    itemDrawings: row.projectId ? await readPortalItemDrawings(db, workspaceId, row.projectId, approver, row.projectStatus!) : null,
   };
 }
 
@@ -555,6 +566,9 @@ async function readWarranty(db: Db, workspaceId: string, row: CaseRow, today: st
     areas: [...areas].map(([id, name]) => ({ id, name })),
     lines: active.map((item) => ({ id: item.lineId, title: item.title, areaId: item.areaId })),
     canClaim: active.length > 0 && ["active", "on_hold", "completed"].includes(row.projectStatus ?? ""),
+    // §0.3 P3: the firm's warranty claim questions (Setup → Questionnaires), as the client sees them (never which job types they're for).
+    questions: (await publishedQuestions(db, workspaceId, "warranty_claim")).questions.filter((question) => !question.jobTypes?.length || question.jobTypes.includes(row.enquiryType ?? ""))
+      .map(({ jobTypes: _jobTypes, ...question }) => question),
   };
 }
 
@@ -573,7 +587,7 @@ type Changes = Awaited<ReturnType<typeof readPortalChanges>>;
  * pay, then deliveries to confirm site access for — each with its due date when it has one.
  */
 function nextSteps(decisions: Decisions | null, payments: Payments | null, progress: Progress | null, choices: Choices | null = null, changes: Changes | null = null) {
-  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "drawings" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
+  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "drawings" | "item_drawings" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
     due: string | null }> = [];
   if (decisions) {
     for (const quote of decisions.quotes.filter((item) => item.canDecide))
@@ -582,6 +596,8 @@ function nextSteps(decisions: Decisions | null, payments: Payments | null, progr
     for (const design of decisions.designs.filter((item) => item.canDecide)) steps.push({ kind: "design", id: design.id, title: `${design.title} · V${design.number}`, due: design.dueAt });
     if (decisions.materials?.canDecide) steps.push({ kind: "materials", id: decisions.materials.id, title: `R${decisions.materials.number}`, due: null });
     if (decisions.drawings?.canDecide) steps.push({ kind: "drawings", id: decisions.drawings.id, title: `R${decisions.drawings.number}`, due: null });
+    const toSign = decisions.itemDrawings?.items.filter((item) => item.canSign) ?? [];
+    if (toSign.length) steps.push({ kind: "item_drawings", id: toSign[0].versionId, title: toSign.length === 1 ? toSign[0].title : `${toSign.length}`, due: null });
     for (const pack of decisions.handovers.filter((item) => item.canDecide)) steps.push({ kind: "handover", id: pack.id, title: `${pack.title} · R${pack.revision}`, due: null });
     for (const request of decisions.requests.filter((item) => item.canDecide)) steps.push({ kind: "request", id: request.id, title: request.title, due: request.dueDate });
   }

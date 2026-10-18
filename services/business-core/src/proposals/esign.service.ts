@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, GoneException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -19,6 +19,10 @@ import { clientNetwork, linkState, newSigningToken, SIGNING_TOKEN, signatureInpu
 import { addDocumentVersion, issueProposalVersion } from "./proposal-documents.service";
 import { readBytes, type ObjectStore } from "./proposal-files";
 import { appendCertificate, sha256 } from "./proposal-pdf";
+import { maskEmail, portalCodes, type PortalCodes } from "../client-portal/portal-auth";
+import { deliverPortalOtp } from "../commercial/portal-otp-delivery";
+import { deviceLabel, recordSend } from "../documents/document-sends";
+import { postJobEvent } from "../jobs/job-thread";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -30,11 +34,16 @@ type RequestRow = {
   id: string; workspaceId: string; subjectKind: "quote_proposal" | "change_request"; caseId: string; quoteId: string | null; quoteHash: string | null; grantId: string | null;
   documentId: string; documentVersion: number; documentSha256: string; signerName: string; signerEmail: string | null; signerPhone: string | null;
   status: "pending" | "signed" | "revoked"; expiresAt: Date; signedAt: Date | null; signedName: string | null; signedDocumentVersion: number | null; signedSha256: string | null; version: number;
+  /** §0.3 P4: the signing code (sent, tries, confirmed) and when the link was first opened. */
+  openedAt: Date | null; codeHash: string | null; codeExpiresAt: Date | null; codeSentAt: Date | null; codeChannel: "whatsapp" | "email" | "demo" | null; codeAttempts: number; codeVerifiedAt: Date | null;
 };
 const REQUEST_SELECT = `SELECT id, workspace_id AS "workspaceId", subject_kind AS "subjectKind", case_id AS "caseId", quote_id AS "quoteId", quote_hash AS "quoteHash",
   grant_id AS "grantId", document_id AS "documentId", document_version AS "documentVersion", document_sha256 AS "documentSha256", signer_name AS "signerName",
   signer_email AS "signerEmail", signer_phone AS "signerPhone", status, expires_at AS "expiresAt", signed_at AS "signedAt", signed_name AS "signedName",
-  signed_document_version AS "signedDocumentVersion", signed_sha256 AS "signedSha256", version FROM esign_requests`;
+  signed_document_version AS "signedDocumentVersion", signed_sha256 AS "signedSha256", version, opened_at AS "openedAt", code_hash AS "codeHash", code_expires_at AS "codeExpiresAt",
+  code_sent_at AS "codeSentAt", code_channel AS "codeChannel", code_attempts AS "codeAttempts", code_verified_at AS "codeVerifiedAt" FROM esign_requests`;
+/** A signing code lasts 10 minutes, allows 5 tries, can be asked for again after 30 seconds; a confirmed code holds for 30 minutes. */
+const CODE_SECONDS = 600, CODE_TRIES = 5, CODE_RESEND_SECONDS = 30, CODE_VALID_MINUTES = 30;
 
 /** What the signer did, as handlers of each subject kind need it. */
 export type SignedEvent = { request: RequestRow; signedName: string; signedAt: string };
@@ -68,6 +77,9 @@ export class EsignService {
   }
 
   private get store(): ObjectStore { return this.storage; }
+  /** One code secret for the service's life (without a configured one it's random, so it must not change between calls). */
+  private codeSecret: PortalCodes | null = null;
+  private get codes(): PortalCodes { return (this.codeSecret ??= portalCodes(this.config)); }
 
   // ---------- staff ----------
 
@@ -111,7 +123,7 @@ export class EsignService {
         after: { requestId: id, quoteId, documentId: document.documentId, documentVersion: document.number, sha256: document.sha256, signer: grant.name, expiresAt, revoked } });
       const created = (await client.query<RequestRow>(`${REQUEST_SELECT} WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0];
       const link = new URL(`/sign/${token.token}`, webOrigin(this.config)).toString();
-      return { request: this.summary(created), link, email: { to: grant.email, signerName: grant.name, title: document.title, reference: document.reference, expiresAt } };
+      return { request: this.summary(created), link, userId: user.userId, email: { to: grant.email, signerName: grant.name, title: document.title, reference: document.reference, expiresAt } };
     });
     // The email leaves after the link exists; a failed delivery leaves the link for the team to share.
     let delivered = false;
@@ -122,6 +134,10 @@ export class EsignService {
         return { status: "failed" as const };
       });
       delivered = result.status === "sent";
+      // §0.3 P4: the signing link is a tracked send on the job; a failed email is shown there, with the link to share instead.
+      await this.db.tenantTransaction(workspaceId, outcome.userId ?? SIGNER_ACTOR, (client) => recordSend(client, { workspaceId, caseId, kind: "signature_request", ref: outcome.request.id,
+        title: outcome.email!.title, channel: "email", recipient: outcome.email!.to, status: delivered ? "sent" : "failed", reason: delivered ? null : "The signing email couldn't be sent",
+        esignRequestId: outcome.request.id, sentBy: outcome.userId ?? null }));
     }
     return { request: outcome.request, link: outcome.link, emailed: delivered ? outcome.email?.to ?? null : null };
   }
@@ -178,6 +194,8 @@ export class EsignService {
 
   async view(token: string) {
     return this.withToken(token, async (client, row) => {
+      // §0.3 P4: the first open of a live link is when the client opened the document.
+      if (!row.openedAt && row.status === "pending") await client.query(`UPDATE esign_requests SET opened_at = now() WHERE workspace_id = $1 AND id = $2`, [row.workspaceId, row.id]);
       const document = (await client.query<{ title: string; reference: string | null; amount: string | null; currency: string | null }>(
         `SELECT title, reference, amount::text AS amount, currency FROM quote_documents WHERE workspace_id = $1 AND id = $2`, [row.workspaceId, row.documentId])).rows[0];
       const brand = await effectivePortalBrand(client, row.workspaceId);
@@ -188,6 +206,8 @@ export class EsignService {
         signer: { name: row.signerName, email: row.signerEmail, phone: row.signerPhone },
         expiresAt: row.expiresAt,
         signed: row.status === "signed" ? { at: row.signedAt, name: row.signedName, sha256: row.signedSha256 } : null,
+        // §0.3 P4: signing needs a one-time code; where it can be sent, and whether one is confirmed.
+        code: { verified: codeConfirmed(row), canEmail: Boolean(row.signerEmail), canWhatsapp: Boolean(row.signerPhone), demo: this.codes.demo },
       };
     });
   }
@@ -219,6 +239,7 @@ export class EsignService {
       if (state === "revoked") throw new GoneException("This signing link was withdrawn. Ask for a new one.");
       if (state === "expired") throw new GoneException("This signing link has expired. Ask for a new one.");
       if (body.documentSha256 !== row.documentSha256) throw new ConflictException("The document changed since you opened it. Reload to read the latest.");
+      if (!codeConfirmed(row)) throw new ForbiddenException("Confirm the code we sent you first.");
       const identity = signerIdentity(body, { name: row.signerName, email: row.signerEmail, phone: row.signerPhone });
       const signature = signatureInput(body.signature);
       const where = clientNetwork(network.ip, network.userAgent);
@@ -236,7 +257,8 @@ export class EsignService {
       const brand = await effectivePortalBrand(client, row.workspaceId);
       const signedBytes = Buffer.from(await appendCertificate(original, {
         requestId: row.id, documentTitle: document?.title ?? "", reference: document?.reference ?? "", documentSha256: row.documentSha256,
-        signer: identity, signedAt, ip: where.ip, userAgent: where.userAgent, signature: signature.kind === "typed" ? signature : { kind: "drawn", png: signature.png }, brandName: brand.name, brandAccent: brand.primaryColor ?? null,
+        signer: identity, signedAt, ip: where.ip, userAgent: where.userAgent, device: deviceLabel(where.userAgent),
+        verification: row.codeChannel ? { channel: row.codeChannel, at: new Date(row.codeVerifiedAt!).toISOString() } : null, signature: signature.kind === "typed" ? signature : { kind: "drawn", png: signature.png }, brandName: brand.name, brandAccent: brand.primaryColor ?? null,
       }));
       // The signature's effect first: if the quote can't be accepted any more, nothing is signed.
       await this.effects[row.subjectKind](client, { request: row, signedName: identity.name, signedAt });
@@ -244,14 +266,17 @@ export class EsignService {
         fileName: version.fileName.replace(/\.pdf$/i, "") + " (signed).pdf", mimeType: "application/pdf", quoteHash: row.quoteHash, note: `Signed by ${identity.name}`, actorUserId: null });
       await client.query(
         `UPDATE esign_requests SET status = 'signed', signed_at = $3, signed_name = $4, signed_email = $5, signed_phone = $6, signature_kind = $7, signature_text = $8,
-                signature_sha256 = $9, signer_ip = $10, signer_user_agent = $11, signed_document_version = $12, signed_sha256 = $13, version = version + 1
+                signature_sha256 = $9, signer_ip = $10, signer_user_agent = $11, signed_document_version = $12, signed_sha256 = $13, signer_device = $14, version = version + 1
           WHERE workspace_id = $1 AND id = $2`,
         [row.workspaceId, row.id, signedAt, identity.name, identity.email, identity.phone, signature.kind, signature.kind === "typed" ? signature.text : null,
-          signature.kind === "drawn" ? sha256(signature.png) : sha256(Buffer.from(signature.text, "utf8")), where.ip, where.userAgent, stored.number, stored.sha256]);
+          signature.kind === "drawn" ? sha256(signature.png) : sha256(Buffer.from(signature.text, "utf8")), where.ip, where.userAgent, stored.number, stored.sha256,
+          deviceLabel(where.userAgent)?.slice(0, 120) ?? null]);
       await recordAudit(client, { workspaceId: row.workspaceId, actorUserId: null, source: "client_portal", action: row.subjectKind === "change_request" ? "change_request.signed.v1" : "quotation.signed.v1",
         entityType: "pre_project_case", entityId: row.caseId,
         after: { requestId: row.id, quoteId: row.quoteId, documentId: row.documentId, signedVersion: stored.number, documentSha256: row.documentSha256, signedSha256: stored.sha256,
-          signer: identity, ip: where.ip, userAgent: where.userAgent, method: signature.kind } });
+          signer: identity, ip: where.ip, userAgent: where.userAgent, method: signature.kind, codeChannel: row.codeChannel } });
+      await postJobEvent(client, row.workspaceId, { record: { type: "case", id: row.caseId }, code: "document_signed", ref: row.id,
+        body: `${identity.name} signed ${document?.title ?? "the document"}${row.codeChannel ? ` (code by ${row.codeChannel === "whatsapp" ? "WhatsApp" : row.codeChannel})` : ""}` });
       const after = (await client.query<RequestRow>(`${REQUEST_SELECT} WHERE workspace_id = $1 AND id = $2`, [row.workspaceId, row.id])).rows[0];
       return { replayed: false, row: after, copy: { to: identity.email, name: identity.name, title: document?.title ?? "", reference: document?.reference ?? "" } };
     });
@@ -261,6 +286,50 @@ export class EsignService {
         this.logger.warn(`Signed-copy email failed: ${error instanceof Error ? error.message : String(error)}`));
     }
     return { state: "signed" as const, replayed: result.replayed, signedAt: result.row.signedAt, signedSha256: result.row.signedSha256 };
+  }
+
+  /**
+   * §0.3 P4: sends the signer a one-time code (WhatsApp first, then email), or says the one sent seconds ago is still on
+   * its way. In a demonstration environment the code is 123456 and nothing is sent.
+   */
+  async sendCode(token: string, body: Record<string, unknown>) {
+    return this.withToken(token, async (client, row) => {
+      if (linkState(row) !== "open") throw new GoneException("This signing link can't be signed any more.");
+      if (row.codeSentAt && Date.now() - new Date(row.codeSentAt).getTime() < CODE_RESEND_SECONDS * 1000 && row.codeChannel)
+        return { channel: row.codeChannel, resendAfter: CODE_RESEND_SECONDS, expiresIn: CODE_SECONDS, sentTo: row.codeChannel === "email" && row.signerEmail ? maskEmail(row.signerEmail) : null };
+      const codes = this.codes;
+      const code = codes.next();
+      const wanted = body.channel === "email" ? "email" : "whatsapp";
+      let channel: "whatsapp" | "email" | "demo" | null = codes.demo ? "demo" : null;
+      if (!channel && wanted === "whatsapp" && row.signerPhone) {
+        try { await deliverPortalOtp(this.config, row.workspaceId, row.id, row.signerPhone, code); channel = "whatsapp"; }
+        catch (error) { this.logger.warn(`Signing code by WhatsApp failed (${error instanceof Error ? error.name : "unknown"}); trying email.`); }
+      }
+      if (!channel && row.signerEmail) {
+        const sent = await this.mailer.sendPortalCode({ workspaceId: row.workspaceId, to: row.signerEmail, code, purpose: "decision" }).catch(() => ({ status: "failed" as const }));
+        if (sent.status === "sent") channel = "email";
+      }
+      if (!channel) throw new ConflictException("We couldn't send your code. Ask the team to check your number and email.");
+      await client.query(
+        `UPDATE esign_requests SET code_hash = $3, code_expires_at = now() + make_interval(secs => $4), code_sent_at = now(), code_channel = $5, code_attempts = 0, code_verified_at = NULL
+          WHERE workspace_id = $1 AND id = $2`, [row.workspaceId, row.id, codes.hash(row.id, code), CODE_SECONDS, channel]);
+      return { channel, resendAfter: CODE_RESEND_SECONDS, expiresIn: CODE_SECONDS, sentTo: channel === "email" && row.signerEmail ? maskEmail(row.signerEmail) : null };
+    });
+  }
+
+  /** Checks the signing code; a wrong one uses a try (kept even when it's wrong), a right one is confirmed for 30 minutes. */
+  async verifyCode(token: string, body: Record<string, unknown>) {
+    const code = typeof body.code === "string" ? body.code.replace(/\s/g, "") : "";
+    return this.withToken(token, async (client, row) => {
+      if (linkState(row) !== "open") throw new GoneException("This signing link can't be signed any more.");
+      if (!row.codeHash || !row.codeExpiresAt || new Date(row.codeExpiresAt).getTime() <= Date.now()) return { verified: false, message: "This code has expired. Send a new one." };
+      if (row.codeAttempts >= CODE_TRIES) return { verified: false, message: "Too many tries. Send a new code." };
+      await client.query(`UPDATE esign_requests SET code_attempts = code_attempts + 1 WHERE workspace_id = $1 AND id = $2`, [row.workspaceId, row.id]);
+      const right = /^\d{6}$/.test(code) && timingSafeEqual(Buffer.from(row.codeHash, "hex"), Buffer.from(this.codes.hash(row.id, code), "hex"));
+      if (!right) return { verified: false, message: "That code isn't right. Check it and try again." };
+      await client.query(`UPDATE esign_requests SET code_verified_at = now() WHERE workspace_id = $1 AND id = $2`, [row.workspaceId, row.id]);
+      return { verified: true, message: null };
+    });
   }
 
   // ---------- internals ----------
@@ -310,4 +379,9 @@ export class EsignService {
     return { id: row.id, status: row.status, state: linkState(row), signerName: row.signerName, signerEmail: row.signerEmail, documentId: row.documentId,
       documentVersion: row.documentVersion, documentSha256: row.documentSha256, expiresAt: row.expiresAt, signedAt: row.signedAt, signedDocumentVersion: row.signedDocumentVersion, version: row.version };
   }
+}
+
+/** A signing code confirmed in the last 30 minutes. */
+function codeConfirmed(row: Pick<RequestRow, "codeVerifiedAt">) {
+  return Boolean(row.codeVerifiedAt && Date.now() - new Date(row.codeVerifiedAt).getTime() < CODE_VALID_MINUTES * 60_000);
 }

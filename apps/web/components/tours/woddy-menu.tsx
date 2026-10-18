@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleHelp } from "lucide-react";
 import { useRef, type Key } from "react";
 import { Button as AriaButton, Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react-aria-components";
 import { Woddy, useDesignSystem, usePortalThemeAttributes } from "@/design-system";
@@ -13,6 +14,8 @@ type WoddyMenuProps = {
   className?: string;
   avatarClassName?: string;
   labelClassName?: string;
+  /** §0.3 P11: a plain Help button (no assistant face, no first-visit pop-up): AI lives inside each step, as one-click suggestions. */
+  plain?: boolean;
 };
 
 /**
@@ -20,14 +23,16 @@ type WoddyMenuProps = {
  * length, and the chat; the first time someone arrives it also highlights the full walkthrough. On a phone
  * there are no tours, so it opens the chat directly.
  */
-export function WoddyMenu({ onChat, className, avatarClassName, labelClassName }: WoddyMenuProps) {
+export function WoddyMenu({ onChat, className, avatarClassName, labelClassName, plain = false }: WoddyMenuProps) {
   const t = useT();
   const tours = useTours();
   const { direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   const button = useRef<HTMLButtonElement>(null);
-  const face = <><Woddy className={avatarClassName} decorative motion="idle" pose="idle" size={34} /><span className={labelClassName}>{t("Ask Woddy")}</span></>;
-  if (!tours?.available) return onChat ? <AriaButton aria-haspopup="dialog" aria-label={t("Ask Woddy")} className={className} onPress={onChat}>{face}</AriaButton> : null;
+  const face = plain ? <CircleHelp aria-hidden="true" size={18} />
+    : <><Woddy className={avatarClassName} decorative motion="idle" pose="idle" size={34} /><span className={labelClassName}>{t("Ask Woddy")}</span></>;
+  const name = plain ? t("Help") : t("Ask Woddy");
+  if (!tours?.available) return onChat ? <AriaButton aria-haspopup="dialog" aria-label={name} className={className} onPress={onChat}>{face}</AriaButton> : null;
   const onAction = (key: Key) => {
     const id = String(key);
     if (id === "chat") onChat?.();
@@ -36,9 +41,9 @@ export function WoddyMenu({ onChat, className, avatarClassName, labelClassName }
   };
   return <>
     <MenuTrigger>
-      <AriaButton aria-label={t("Ask Woddy")} className={className} data-tour="woddy-menu" ref={button}>{face}</AriaButton>
+      <AriaButton aria-label={name} className={className} data-tour="woddy-menu" ref={button}>{face}</AriaButton>
       <Popover {...portalTheme} className="wd-popover" dir={direction} placement="bottom end">
-        <Menu aria-label={t("Ask Woddy")} className="wd-menu wd-tour-menu" onAction={onAction}>
+        <Menu aria-label={name} className="wd-menu wd-tour-menu" onAction={onAction}>
           {/* Only on a screen that has its own tour: a greyed-out choice is noise. */}
           {tours.current ? <MenuItem className="wd-menu-item" id="explain">{t("Explain this screen")}</MenuItem> : null}
           {onChat ? <MenuItem className="wd-menu-item" id="chat">{t("Ask a question")}</MenuItem> : null}
@@ -52,6 +57,6 @@ export function WoddyMenu({ onChat, className, avatarClassName, labelClassName }
         </Menu>
       </Popover>
     </MenuTrigger>
-    <WalkthroughCallout triggerRef={button} />
+    {plain ? null : <WalkthroughCallout triggerRef={button} />}
   </>;
 }

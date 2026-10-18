@@ -65,40 +65,35 @@ This section supersedes every earlier schedule in this file. §5a, §5b and §5c
 | Reminders per item | One deadline engine for every step, task, approval, quote and payment: due-soon → overdue → escalation after N (default 3). Delivery runs with retries, fallback, consent and a health page. |
 | Enquiry types and paths | Each enquiry type owns its steps (built), extended past Won into planning and production stages per type. |
 
-### 0.3 Phases (strictly one after another; each ends verified on production)
+### 0.3 Build order (approved 17 Oct): one job journey, the firm's guide end to end
 
-| # | Phase | Scope | Exit check |
-| --- | --- | --- | --- |
-| P0 | **Stabilise** | Baseline r39 clean; fix failing tests (project-core date); e2e smokes (palm-flow, funnel) green; Palm demo data reset; triage the WIP stash 5 Oct (reuse only reviewed parts) | All suites green on HEAD |
-| P1 | **Design foundation** | §5c D components and guard tests; apply to every list, tab, form and card; sentence-case titles; settings sheets inside modules (locations in Sales) | Before/after screenshots of every list and form; guard tests fail on violations |
-| P2 | **Lead → enquiry** | PLM-025, 026, 029, 092, 096, 116, 024, 127, 100 · inbox front door, role visibility, File into job · consent captured on forms and portal | Live: form → lead with the right source/channel; duplicate → linked; inbox visibility per role |
-| P3 | **Opportunity → Won → Deal File** | PLM-009, 066, 099, 101, 103, 106, 123, 082, 084, 085, 044, 080, 081 · proof → automatic Deal File · approval-policy engine · quotation numbering (13) · document audit trail (1) | Live: each enquiry type path end to end to an approved Deal File |
-| P4 | **Design delivery + client portal** | PLM-049, 050, 051, 053, 128, 054 · materials ledger · design comments shared with the client · Canva · change requests (14) · portal revamp (feed, document cards, Q&A, warranty) | **Milestone A: CeCe onboarding up to the design close.** Tracker rows verified and updated. |
-| P5 | **Daily operations and communication** | My day · deadline/escalation/auto-assign engine (10, 11) · notification robustness and health · daily progress rebuild · one PDF template · Woddy agent panel | Live: reminders fire and escalate; daily report → client feed |
-| P6 | **Money: Wodana Books** | own double-entry books (E7) · second client's points 2–9 · PLM-067, 102, 107–113 · collections · P&L · cash · corporate card import | Live: P&L of a demo project reconciles to its records |
-| P7 | **Production and procurement** | PLM-045, 046, 055–065, 068–074, 083, 086, 089–091, 098, 124–126 · BOQ → purchase · vendor portal (onboarding, KYC, bidding, PO acknowledgement) · Shopify core collection | Live: Furniture A–E and fit-out through delivery |
-| P8 | **Reports, warranty, mobile** | PLM-104, 105 · warranty reminders (12) · mobile app parity (site, daily progress, approvals, My day) | **Milestone B: full handover.** |
+This replaces the phase table and gap list of 5 Oct. Inputs: the firm's process guide (lead to won and the 28 design-to-warranty steps, 16 Oct) and the 16 Oct walkthrough. Root cause of the failed sign-off: 14 stage systems describe one job and next action is worked out in 7 places. The design is §5a; the client portal is §5b.
 
-Each phase also takes its research items from §0.7 (features R1–R14, AI ideas AI1–AI10, safeguards C1–C7).
+**Rules for every phase**
+1. Every path runs end to end first, with tests: three job types (Full ID; Full ID, Fit-Out & Furniture; furniture only) × three packages, Q2 withdrawn, cancelled after payment, duplicate, returning, spam, lost, needs time to think.
+2. No one-click verification. Every verify, approve or sign-off opens a review dialog with the evidence (proof or document preview, amounts, method, submitter, checklist read from records, history); the person confirms there or returns it with a reason.
+3. AI is optional and never a gate. The manual path always works; AI only pre-fills or drafts, shows its source and confidence, and needs a person to confirm.
+4. The portal always says what is happening now, what is needed from the client and by when, and what comes next. Every notification deep-links to its card.
+5. Minimal UI: one title, one primary action, the rest under "More"; one status chip per row; no dashboard tiles.
+6. Firm differences are configuration the firm edits itself in Setup (versioned, kit · firm · reset). Nothing branches on a tenant.
 
-### 0.3a Gaps found in the coverage check (5 Oct), now assigned
+| # | Phase | Done when |
+| --- | --- | --- |
+| P0 | **Unblock the demo on today's screens:** proposal 1 sending (design round exempt from the requirement gate, real delivery status, email fallback), site questions optional, agreement and deal refs automatic, deal checklist read from records, Finance net/VAT/total/method, convert gate (floor plan, BUA, project type), qualified outcomes and target date, "Intro booked" stage and enquiry ref on cards, seat templates (account manager, sales admin, lead/junior designer, creative director, visualiser, material coordinator, technical lead, marketing), account managers see their own enquiries, designer told when assigned, Q2 withdrawn, client thank-you on Full ID completion | Guide A–J shown on today's screens for a Full ID and a Full ID + fit-out job; proposal 1 delivered and signed |
+| P1 | **Journey engine:** `crm/flows` runs past Won (chapters, gates, per-item steps, deals per proposal, completion per job type, Q2 withdrawn and cancelled), facts keyed by the job, deadlines/alerts/client-visible acted on, project-core checks absorbed; one JourneyView API | Every path in rule 1 completes in an integration suite with RLS on |
+| P2 | **Job page** (map + now-block), ReviewDialog, My day, all on JourneyView | Each job type worked end to end from the job page in English and Arabic, light and dark, 390px |
+| P5 | **Client portal revamp** (built right after P2): Now · Needed from you · What happens next · progress stories · team; rich cards per block; Design · Money · Documents · Chat; from proposal 1; same in the client app | A client follows a job to warranty on a phone without staff explaining what's next |
+| P3 | **Setup module:** questionnaires, journey, packages, forms, templates, seats, rules, numbering; versioned publish; same screens in the internal portal; kits authored there, not in migrations | The firm changes a question, a price, a template and a deadline itself; running jobs keep their version |
+| P4 | **One document engine** (portal = PDF = signed copy): proposal 1 and estimate proposal (table M) editable page by page, numbering, tracked sending with fallback, one-time-code signing with a certificate | Proposal 1 and an estimate are edited, sent, opened and signed |
+| P6 | **Win chapter complete** (inbox → deal 1) | Guide A–K ticked live |
+| P7 | **Design chapter complete** (steps 1–11, L) | Guide L ticked live |
+| P8 | **Price chapter and money rail** (steps 12–16, J, M; invoices for every milestone, receipts with method and part payments, commission, refunds, client statement) | Guide M and the money items ticked live |
+| P9 | **Make, Install, Care per item** (steps 17–28, N) | Guide N ticked live |
+| P10 | **Reports and retirement:** delete the replaced stage systems and next-action calculators | One next-action source; a guard test fails on a second |
+| P11 | **AI per step** on `ai_suggestions` (accepting applies the change through the step's command); remove the assistant panel | With AI switched off every path still completes |
+| P12 | **Staff mobile parity** | Field steps are done on the phone, offline first |
 
-| Gap | Phase |
-| --- | --- |
-| **Re-verify the 60 items the audit marked "built"** (the failed retests of duplicates, form source/channel, returning customer, etc.). Every phase verifies the existing items in its area before adding new ones. | P2–P7 |
-| **Enquiry-type steps editor matched to CeCe's Enquiry Types Flow tab** (her words, her paths; Interior Design mapped once she sends it) | P3 |
-| **Project record revamp:** project overview, plan, money, site and handover tabs on the §5c D.7 anatomy | P5 |
-| **Planning case revamp:** overview, requirements, site, moodboard and design tabs | P4 |
-| **Site flow as one guided path:** visit → measurements → photos → checklist, on web and app | P4 |
-| **Client portal moodboard:** Pinterest-style, Love/Avoid, comments | P4 |
-| **Mobile app early, not last:** site check-in, daily progress, approvals, My day and the location settings everyone looks for move with P4–P5; full parity in P8 | P4–P8 |
-| **Calendar and tasks robustness:** one calendar for meetings, visits, steps and deadlines; Google sync for every user | P5 |
-| **Plan / work board:** sprints, stories, tasks and issues for projects | P7 |
-| **Palm configuration data:** enquiry types, areas per Emirate, budget ranges, client types, design package prices, form branding, quote validity, roles per person. A checklist run with CeCe. | P2–P4 |
-| **Catalogue:** real images replacing the placeholders; import the Core Collection with all fields | P3 / P7 |
-| **External dependencies:** WhatsApp Business connection once Meta approves the app; Canva and Shopify credentials; Mailgun and push in production | tracked in every phase |
-| **Arabic translation pass** for staff app and portal (strings via en.json; translated once, at the end) | P8 |
-| **Operations:** monitoring and alerts, backup and restore drill, performance on large lists, security review of new tables (RLS) and permissions | P0 + P8 |
+The firm's open points are settled as configuration from its own guide: a Full ID job closes when the client signs the design approval (then the thank-you); furniture paths A–E start from kit areas (A ends at handover, B delivery, C supply + delivery, D factory + supply + delivery, E everything) and the job journey follows them, editable per enquiry type; cancelled deals leave Won and show in Cancellations and refunds; commission types live in Setup; a spam chat always gets a spam enquiry; the online catalogue link is a Client portal setting shown in the portal and the client app.
 
 ### 0.3b One system: eight shared engines every module uses
 Each engine is built and tested once; modules only configure it. No module keeps its own status, reminders, approvals, files or chat.
@@ -434,115 +429,46 @@ Rules:
 
 Integrity rules (quantities, money, evidence, tenant isolation) are also never overridable. Everything else is a **guided warning** that an authorized role can override with a reason; the override is recorded and reported.
 
-### 5a. Flows: one job, one line, configured by the firm
+### 5a. The job journey: one map from enquiry to warranty (approved 17 Oct)
 
-**Promise to the user:** every screen answers three questions: *what is happening now*, *who does it*, *what comes next*. One step at a time, plain words, and a real face on every step.
+**Promise to the user:** every screen answers *what is happening now*, *who does it* and *what comes next*, one step at a time, from one source.
 
-**Concepts.** Keep these four and no others.
-
-| Concept | What it is |
-| --- | --- |
-| **Flow** | A versioned, published template, chosen by the enquiry type (its own top-level navigation item **Flows**, placed above Sales; shown to people who can manage flows, everyone else sees only the result). Firms edit flows from enquiry until production starts. Production and delivery flows are read-only in R1. |
-| **Step** | One card on the flow. It has: a plain name, **who** (a role), **done when** (one check from the catalogue), **needs** (required fields), **deadline**, **tell** (notifications), **client sees it** (yes/no), **optional** (yes/no), and **column** (the pipeline column the job enters when this step completes). |
-| **Branch** | Splits the line on one question: sub-path, package, budget band or client type. Each answer leads to its own steps, and the paths rejoin. |
-| **Job** | An opportunity running a pinned flow version. Its current step is computed from the records. The column is computed from completed steps and is never set by hand. |
-
-**Check catalogue.** Product-defined, read from real records, never typed in. The flow only chooses among these:
-- contact logged · details complete (fields chosen per step) · intro meeting completed · client type set · sub-path chosen · feasibility confirmed · package chosen · discovery complete · site visit recorded;
-- quote exists · QS approved · quote sent · client accepted · client approved on the spot · payment proof attached · payment verified · deal approved;
-- design stage done (by name) · material list signed off.
-
-New checks are added in code, once, for every firm.
+**Engine.** The enquiry-type flow engine (`services/business-core/src/crm/flows/`) runs a pinned, versioned flow for the whole job, not only to Won. A job is the `J-######` identity that links enquiry → opportunity → planning case → project (`jobs/job-identity.store.ts`).
+- **Chapters:** Win · Design · Price · Make · Install · Care.
+- **Step:** block type, owner seat, "done when" check read from records (never ticked), deadline, alerts, client-visible card, optional / automatic flags.
+- **Gate:** a field checklist on a step that blocks with one error box listing every missing item.
+- **Per item:** from the material list on (material list → technical drawing → client sign → margin → release → factory → delivery) each item passes its own gate; supplier and Core Collection items skip drawings and the factory.
+- **Deals:** each proposal has its own Won (payment proof → deal file → Finance → Owner lock). Completion per job type: Full ID at design approval with the thank-you message; production at handover; furniture at delivery. Q2 withdrawn and cancelled are outcomes of the job.
+- **Revisions** per design step: 2 free; the 3rd drafts a chargeable change request.
+- **One API** (`GET /workspaces/:id/jobs/:jobId/journey`) returns chapters, steps, the now-step (what · done when · who · blockers · AI suggestion · actions · next), dates and forecast, and the client lens. Every screen reads it: job page, My day, lists, portal, mobile, notifications. The other next-action calculators are deleted (§0.3 P10).
 
 **Engine rules** (never configurable):
-1. A move forward must pass every step in between. Moves backward and to Lost are always allowed and audited.
-2. **Won ⇔ payment proof attached** (PLM-122), in every flow. The publisher rejects a flow without it.
-3. A published flow is immutable. Edits create a new version. Running jobs keep their version unless an admin migrates them, previewing the effect per job first.
-4. The interpreter falls back to the built-in starter flows when a workspace has none, so nothing breaks while firms configure.
-5. Every step completion, skip (with reason) and reassignment is an audited event. Notifications use the module's branded templates.
+1. Moving forward passes every gate in between; moving back and Lost are always allowed and audited.
+2. Won ⇔ payment proof attached for that proposal, in every flow.
+3. A published flow is immutable; running jobs keep their version unless an admin migrates them after a preview.
+4. Every completion, skip (with reason), reassignment and AI acceptance is an audited event.
+5. AI never completes a step and is never a gate.
 
-**Starter flows.** Each one is equivalent to the gates live since r30, with tests proving it.
-- Furniture: a branch on sub-path A–E. A–D auto-qualify; E needs feasibility; Negotiation is optional.
-- Design: details → intro → qualified → package/discovery → design quote → accepted → payment proof.
-- Fit-out: details → intro → site visit → QS-priced quote → accepted → payment proof.
-- Basic: payment proof only.
+**Job page.** Header (title, health, forecast, team) · **map** (lanes = seats, bands = chapters, dates, gate diamonds, stacked nodes for per-item steps; click a node to see its record or preview) · **now-block** (meta line · what · done when · who · one blocker line with "Use" fixes · one AI line · one primary action · More · next) · tabs Map · Chat · Files · Money · History.
 
-**UI. This is our USP.** Calm, one thing at a time, real avatars.
+**Review dialogs.** Every verify, approve or sign-off (Finance check, owner approval, QS approval, manager approval, CD discount, drawing check, inspections, handover, Q2 withdrawal, refund, PO above limit) opens a dialog with the evidence and facts read from records; confirm or return with a reason.
 
-1. **Opportunity screen**
-   - Header: title · client · value · owner avatar · one stage chip · **Edit** · **⋯** (Lost, history).
-   - There is **no Won button**: Won is the result of the payment proof step.
-   - One **Now card**: the step name as a verb ("Book the intro meeting"), one line of why ("Needed to move to Qualified"), the assignee avatar with a **Reassign** popover (people list with avatars), the due date, and **one primary button**.
-   - Under it, "Then" shows the next two steps greyed.
-   - One **progress line** of dots (✓ done with the doer's avatar on hover, ● now, ○ next). Clicking a dot shows that step's needs.
-   - Tabs: Details · Activity · Files.
-   - Removed: stage pills, the Progress tab timeline, the info box, and the Won/Change stage buttons.
-2. **Board**
-   - Card: client · value · now step · assignee avatar · due/overdue chip.
-   - A refused drop shows one small sheet, "To move to *Won*: attach payment proof [Attach]".
-3. **Flow builder** (top-level **Flows**, above Sales; React Flow, `@xyflow/react`, MIT, styled only with our tokens)
-   - **Left:** Components, grouped as Contact · Meetings · Sell · Design · Logic. Each shows an icon and a one-line description.
-   - **Centre:** a top-to-bottom canvas with snap and auto-layout. Steps are cards showing name, role avatar, check and deadline. The pipeline columns are soft background bands. Branches are drawn as labelled forks.
-   - **Right:** properties of the selected card, in plain words with pickers only (no free-text rules).
-   - **Top bar:** flow name · used by (enquiry types) · **Preview** (simulate a job: click "complete" step by step and watch the Now card, the board column and the client portal update side by side) · **Publish** (runs the validator: no dead ends, Won has the proof, every step has a role, every branch answer leads somewhere).
-   - Keyboard accessible, RTL, and a mobile read-only view.
-4. **My steps** (home): steps waiting on me, overdue first, one button each.
+**Setup.** Firms edit their own journey in Setup (§0.3 P3) on the same map: steps, seats, deadlines, alerts, gates, questionnaires, packages, forms, templates, rules and numbering; kit · firm · reset; versioned publish.
 
-**Delivery plan.** Each phase ships alone. Nothing live breaks: the starter flows reproduce today's gates first.
+### 5b. Client portal: the same journey, in the client's words (approved 17 Oct)
 
-| Phase | Build | Owner | Done when |
-| --- | --- | --- | --- |
-| F1 | Opportunity screen and board card on the current gates | Opus | Interior Design shows one Now card; the duplicated progress UI is gone; tests pass |
-| F2 | `crm_flows` and `crm_flow_versions` (definition JSON = configuration; forced RLS); enquiry type → flow; job pins the version; the interpreter replaces the hard-coded gates; starter flows seeded per workspace on first read | Opus | Equivalence tests: starter flows give the same results as r30 gates for every flow × stage |
-| F3 | Flow builder: palette, canvas, properties, validator, versioned publish | Opus (canvas, validator) + Fable (palette metadata, en.json keys, component tests) | A firm changes the Design flow, publishes, and a new job follows it |
-| F4 | Preview simulator; "My steps"; deadlines and notifications per step; portal "Waiting for you" follows client steps | Opus + Fable | Preview matches live behaviour; reminders fire |
+Three places, one job each: **WhatsApp inbox** = the front door for new leads (sales admin team); **job room ⇄ client portal** = everything about one job; **WhatsApp / email** = the doorbell with a deep link. No WhatsApp groups; during design the portal is the only channel.
 
-### 5b. Client communication: three places, one job each
+**Portal home**, mobile first, in the firm's brand, English and Arabic:
+1. **Now:** the stage in client words, the designer's face and name ("Interior designer"), one sentence on this week.
+2. **Needed from you:** one rich card per waiting action with its due date and one button — proposal (preview, fee, validity, accept with a code), payment (amount, card / transfer / upload proof, receipt after), mood board (two options), 2D and renders (full-screen gallery, pin a comment, approve or ask for changes, revision count), material choices (swatches with codes), drawings per item (sign several at once), change request (what, price, days, approve and pay), handover per room, warranty claim.
+3. **What happens next:** the next 2–3 steps with expected dates and who does them; updates when dates move.
+4. **Progress stories:** daily site photos and videos, "Looks good" / "Ask about this".
+5. **Your team:** faces, roles in client words, one "Message" routed to the owner of the current step.
 
-| Place | Job | Who sees it |
-| --- | --- | --- |
-| **WhatsApp Inbox** | The front door: new leads until an enquiry exists | Sales Admin team and the assigned owner only |
-| **Job room (staff) ⇄ client portal** | Everything about one job, sorted by type: questions, decisions, documents, updates, payments | The job team, each person added when their step starts (Sales → Designer → PM); the client sees only client-visible items |
-| **WhatsApp / email** | The doorbell: "1 new update, 1 question → open your portal" | The client |
+**Tabs:** Home · Design · Money (statement across proposal 1, estimate and change requests; budget ring: agreed + approved changes = forecast final) · Documents (cards, signed copies with certificates) · Chat.
 
-There are no WhatsApp groups. A known client's WhatsApp message is filed into their job and the job owner is told.
-
-**Portal home is a feed.**
-- **Top:** a stage line and "Waiting for you" action cards.
-- **Daily status rings:** one per day, holding that day's photos and video.
-- **Card feed, newest first.** Card types:
-  - **Progress:** a carousel, with "Looks good" / "Ask about this".
-  - **Document:** a preview thumbnail, title, type chip, status, and View / Download. Never a bare link.
-  - **Decision:** Approve / Request changes.
-  - **Payment:** amount, due date, Pay / Upload proof.
-  - **Question for you:** answered with options or text.
-  - **Meeting:** with "Add to calendar".
-  - **Milestone.**
-- **"Ask a question":** routed to the owner of the current stage.
-- **Tabs:** Home · Questions & chat · Documents · Payments · Design.
-
-**Inbox.**
-- A compact search icon, and the chips Unassigned · Mine · Team · Closed.
-- Visibility per role: own / team / manage.
-- "File into job" on any chat.
-
-**Order.**
-1. **P1, portal cards.** Fable builds the presentational cards; Opus reviews them.
-2. **P2, portal feed + Q&A + daily status.** Opus.
-3. **P3, job room + stage routing + notifications.** Opus.
-4. **P4, inbox visibility and compact UX.** Opus.
-
-**Brief template for Fable tasks:**
-- Exact files to touch.
-- The data shape.
-- The labels (verbatim, for en.json).
-- The tests to add and the commands to run.
-- An explicit "do not change" list.
-- A one-screenshot acceptance check.
-
-Fable never designs UI or logic: it implements a brief Opus wrote and Opus reviews the diff.
-
----
+**Rules:** visible from proposal 1; a one-time code only where the client commits; every notification deep-links to its card (expired links fall back to mobile + code); real loading, empty and error states; nothing internal ever shows. The client app shows the same, with push by consent.
 
 ### 5c. Unified product revamp (owner + Palm feedback, 5 Oct 2026)
 

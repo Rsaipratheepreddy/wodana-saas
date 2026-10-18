@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { bindEvidence, evidenceFor, evidenceIds } from "../evidence/decision-evidence";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -62,6 +63,8 @@ export class WarrantyService {
         await client.query(
           `INSERT INTO warranty_claims (id, workspace_id, project_id, number, raised_on, raised_by_name, channel, description, area_id, boq_line_id, created_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, [id, workspaceId, projectId, number, raisedOn, raisedByName, channel, description, areaId, lineId, user.userId]);
+        // §0.3 P0: photos of the problem, read when the claim is decided.
+        await bindEvidence(client, workspaceId, user.userId, "warranty_claim", id, evidenceIds(body.evidenceFileIds));
         await this.tell(client, workspaceId, projectId, user.userId, `${raisedByName}: ${description}`, `claim:${id}`);
         audit = { claimId: id, number };
       } else if (action === "decide_claim") {
@@ -173,8 +176,10 @@ export class WarrantyService {
     // What a chargeable claim's variation starts from: the project's planning record and its accepted quotation.
     const origin = (await client.query<{ caseId: string; quoteId: string }>(`SELECT case_id AS "caseId", quote_id AS "quoteId" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, projectId])).rows[0];
+    const claimFiles = await evidenceFor(client, workspaceId, "warranty_claim", claims.map((claim) => claim.id));
     return {
-      items: items.map((item) => ({ ...item, active: item.months > 0 && item.startsOn <= today && today <= item.endsOn })), claims, lines, areas, today,
+      items: items.map((item) => ({ ...item, active: item.months > 0 && item.startsOn <= today && today <= item.endsOn })),
+      claims: claims.map((claim) => ({ ...claim, files: claimFiles.get(claim.id) ?? [] })), lines, areas, today,
       caseId: origin?.caseId ?? null, baselineQuoteId: origin?.quoteId ?? null,
       canRecord: who.onTeam && who.status !== "cancelled", canManage: who.manager && who.status !== "cancelled",
     };

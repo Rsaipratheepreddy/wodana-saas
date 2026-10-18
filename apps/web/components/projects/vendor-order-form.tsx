@@ -11,15 +11,22 @@ import {
   ShieldCheck,
   Factory,
 } from "lucide-react";
-import { Button, DateField, Form, MoneyField, NumericInput, TextAreaField, useDesignSystem } from "@/design-system";
+import { Badge, Button, DateField, Form, InlineNotice, MoneyField, NumericInput, PageHeader, Skeleton, TextAreaField, useDesignSystem, type StatusTone } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { jsonRequest, money } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
 import { label } from "@/lib/projects/execution";
 import theme from "../crm/crm-workspace-colors.module.css";
-import ui from "./project-workspace.module.css";
 import s from "./vendor-order.module.css";
+
+/** An order's state as one chip: waiting for the supplier, under way, done, or stopped. */
+const STATUS_TONE: Record<string, StatusTone> = {
+  enquiry: "warning", submitted: "warning", review: "warning",
+  acknowledged: "info", in_progress: "info", active: "info", dispatched: "info",
+  approved: "success", accepted: "success", received: "success", completed: "success", closed: "success", paid: "success",
+  cancelled: "danger", rejected: "danger", returned: "danger",
+};
 type Update = {
   id: string;
   at: string;
@@ -189,33 +196,14 @@ export function VendorOrderForm() {
           {t("Private supplier workspace")}
         </span>
       </header>
-      {error && (
-        <p role="alert" className={ui.error}>
-          {translateKnown(t, error)}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className={s.success}>
-          <Check size={17} />
-          {notice}
-        </p>
-      )}
-      {!data && !error && <p role="status">{t("Opening your order…")}</p>}
+      {error && <InlineNotice tone="error" message={translateKnown(t, error)} />}
+      {notice && <InlineNotice tone="success" message={notice} />}
+      {!data && !error && <Skeleton lines={4} shape="facts" />}
       {o && (
         <>
-          <section className={s.hero}>
-            <div>
-              <span>
-                {o.number} ·{" "}
-                {o.kind === "factory" ? t("Factory order") : text(o.kind)}
-              </span>
-              <h1>{o.title}</h1>
-              <p>{t("Prepared for {vendor}", { vendor: o.vendor })}</p>
-            </div>
-            <span className={ui.status} data-state={o.status}>
-              {o.status === "enquiry" ? t("Awaiting your offer") : text(o.status)}
-            </span>
-          </section>
+          <PageHeader title={o.title} eyebrow={`${o.number} · ${o.kind === "factory" ? t("Factory order") : text(o.kind)}`}
+            description={t("Prepared for {vendor}", { vendor: o.vendor })}
+            actions={<Badge tone={STATUS_TONE[o.status] ?? "neutral"}>{o.status === "enquiry" ? t("Awaiting your offer") : text(o.status)}</Badge>} />
           <div className={s.layout}>
             <aside className={s.orderSummary}>
               <h2>{t("Order details")}</h2>

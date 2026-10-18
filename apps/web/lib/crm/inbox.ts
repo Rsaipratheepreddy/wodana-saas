@@ -8,37 +8,48 @@ export function channelName(channel: unknown, t: Translate): string {
   return typeof channel === "string" && channel ? translateKnown(t, channel.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase())) : t("Not set");
 }
 
-/** The team inbox's vocabulary, shared with business-core (crm/conversations/inbox/inbox-rules.ts). */
-export type InboxView = "mine" | "unassigned" | "team" | "all";
+/** The team inbox's vocabulary, shared with business-core (crm/conversations/inbox/inbox-rules.ts). Unread is per person. */
+export type InboxView = "mine" | "unassigned" | "team" | "unread" | "all";
 /**
  * Who sees which chats (plan §5b): own chats, the team's and the unassigned intake, every chat, or (with no
  * inbox) only the chats filed into the person's jobs. The server enforces it; the web only picks the chips.
  */
 export type InboxScope = "own" | "team" | "manage" | "job";
-/** The list's chips: each is one view at one state. Unassigned, Mine and Team hold the chats still to work on (PLM-137). */
-export type InboxChip = "unassigned" | "mine" | "team" | "snoozed" | "closed";
+/**
+ * The list's chips: each is one view at one state. Open (every chat still to work on, where the inbox opens), Unread
+ * (those with a client message the person hasn't opened yet), Unassigned, Mine and Team hold the chats still to work
+ * on (PLM-137); Snoozed is a status filter.
+ */
+export type InboxChip = "open" | "unread" | "unassigned" | "mine" | "team" | "closed" | "all";
 /** Open and Unresolved: the chats that are still work. */
 export const ACTIVE_STATES = "open,unresolved";
 const CHIP_QUERIES: Record<InboxChip, { view: InboxView; status: string }> = {
+  open: { view: "all", status: ACTIVE_STATES }, unread: { view: "unread", status: ACTIVE_STATES },
   unassigned: { view: "unassigned", status: ACTIVE_STATES }, mine: { view: "mine", status: ACTIVE_STATES }, team: { view: "team", status: ACTIVE_STATES },
-  snoozed: { view: "all", status: "snoozed" }, closed: { view: "all", status: "closed" },
+  closed: { view: "all", status: "closed" },
+  // Guide A: All is every chat, whatever its label (Open, Unresolved, Snoozed, Resolved or Spam).
+  all: { view: "all", status: "open,unresolved,snoozed,closed,spam" },
 };
-/** The query a chip asks for. With no inbox, Team is every open chat of the person's jobs, owned or not. */
-export function chipQuery(chip: InboxChip, scope: InboxScope | undefined): { view: InboxView; status: string } {
-  return chip === "team" && scope === "job" ? { view: "all", status: ACTIVE_STATES } : CHIP_QUERIES[chip];
+/** The query a chip asks for. */
+export function chipQuery(chip: InboxChip): { view: InboxView; status: string } {
+  return CHIP_QUERIES[chip];
 }
-/** A status filter in the toolbar narrows a view to one state (Open or Unresolved), or lists the Spam chats; "closing" the chats whose closing message is due. */
-export type StatusFilter = "" | "open" | "unresolved" | "spam" | "closing";
+/**
+ * A status filter in the toolbar narrows a view to one state (Open, Unresolved or Snoozed), or lists the Spam chats;
+ * "closing" the chats whose closing message is due.
+ */
+export type StatusFilter = "" | "open" | "unresolved" | "snoozed" | "spam" | "closing";
 /** The list query once a status filter is applied to a chip's own. */
 export function statusQuery(chip: { view: InboxView; status: string }, filter: StatusFilter): { view: InboxView; status: string; closing?: "due" } {
   if (!filter) return chip;
   if (filter === "closing") return { view: chip.view, status: ACTIVE_STATES, closing: "due" };
   return { view: filter === "spam" ? "all" : chip.view, status: filter };
 }
-/** The chips a level offers: own chats have no queue to look at; the job's team has only its jobs' chats. */
+/** The chips a level offers: own chats have no queue to look at; the job's team has only its jobs' chats (Open is all of them). */
 export function chipsFor(scope: InboxScope | undefined): InboxChip[] {
-  if (scope === "job") return ["team", "closed"];
-  return scope === "own" ? ["mine", "team", "snoozed", "closed"] : ["unassigned", "mine", "team", "snoozed", "closed"];
+  if (scope === "job") return ["open", "unread", "closed", "all"];
+  // The team's own talk lives in Team chat (its own place in the sidebar); the inbox is the client's conversations.
+  return scope === "own" ? ["open", "unread", "mine", "closed", "all"] : ["open", "unread", "unassigned", "mine", "closed", "all"];
 }
 export type JobKind = "enquiry" | "opportunity" | "project";
 /** The enquiry, opportunity or project a chat is filed into. */
@@ -61,6 +72,8 @@ export const LABEL_COLORS: LabelColor[] = ["viz-1", "viz-2", "viz-3", "viz-4", "
 export type InboxLabel = { id: string; name: string; color: LabelColor; status?: "active" | "archived"; version?: number; openChats?: number };
 export type InboxOwner = { id: string; displayName: string; openChats: number; away: boolean; isMe: boolean };
 export type InboxSummary = { mine: number; unassigned: number; team: number | null; all: number; snoozed: number; closed?: number; unreadForMe: number; membershipId: string | null; scope?: InboxScope;
+  /** Open chats with a client message this person hasn't opened yet (the Unread view). */
+  unread?: number;
   /** PLM-137/138: chats waiting on the client, marked as spam, and whose closing message is due. */
   unresolved?: number; spam?: number; closingDue?: number;
   /** The connected WhatsApp numbers; with two or more the inbox can show one number's chats. */

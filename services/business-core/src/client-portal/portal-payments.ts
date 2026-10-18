@@ -8,6 +8,7 @@ import { attach, ownUploads, readAttachments, type ClientFile } from "./portal-f
 import { caseTeam, caseTitle, tellClients, tellStaff } from "./portal-notices";
 import type { PortalSettings } from "./portal-settings";
 import { readLetterhead } from "../workspaces/entity-letterhead";
+import { readInvoiceLayout } from "../setup/document-layouts";
 
 type Db = Pick<PoolClient, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,7 +52,8 @@ export async function readPayments(db: Db, workspaceId: string, row: CaseRow, se
   const pending = new Set((await db.query<{ paymentId: string }>(
     `SELECT DISTINCT payment_id AS "paymentId" FROM commercial_receipts WHERE workspace_id = $1 AND case_id = $2 AND status IN ('reported', 'provider_confirmed')`,
     [workspaceId, row.caseId])).rows.map((item) => item.paymentId));
-  const invoices = row.projectId ? await withBalances(db, workspaceId, await readInvoices(db, workspaceId, { projectId: row.projectId }), today) : [];
+  // The case's invoices, with or without a project (the design fee is invoiced before one exists).
+  const invoices = await withBalances(db, workspaceId, await readInvoices(db, workspaceId, { caseId: row.caseId }), today);
   const live = new Map(invoices.filter((invoice) => invoice.status === "issued").map((invoice) => [invoice.paymentId, invoice]));
   const reports = await notices(db, workspaceId, row.caseId);
   const proofs = await readAttachments(db, workspaceId, row.caseId, ["payment"]);
@@ -143,10 +145,13 @@ export async function reportPayment(ctx: DecisionContext, body: Record<string, u
 
 /** A tax invoice as the client may print it: theirs, as issued, with what's paid on it. Nothing internal (who issued it). */
 export async function invoiceDocument(db: Db, workspaceId: string, row: CaseRow, invoiceId: string, today: string) {
-  if (!UUID.test(invoiceId) || !row.projectId) throw new NotFoundException("Invoice not found.");
+  if (!UUID.test(invoiceId)) throw new NotFoundException("Invoice not found.");
   const invoice = (await withBalances(db, workspaceId, await readInvoices(db, workspaceId, { id: invoiceId }), today))[0];
-  if (!invoice || invoice.caseId !== row.caseId || invoice.projectId !== row.projectId) throw new NotFoundException("Invoice not found.");
+  // The client's own case's invoice only (with its project, or before one for the design fee).
+  if (!invoice || invoice.caseId !== row.caseId || (invoice.projectId !== null && invoice.projectId !== row.projectId)) throw new NotFoundException("Invoice not found.");
   return {
+    // §0.3 P3/P4: the firm's invoice layout (title, blocks, its own wording); amounts stay as issued.
+    layout: (await readInvoiceLayout(db, workspaceId)).layout,
     number: invoice.number, issueDate: invoice.issueDate, dueDate: invoice.dueDate, currency: invoice.currency, milestone: invoice.milestoneTitle, reference: invoice.projectReference,
     company: { name: invoice.companyName, address: invoice.companyAddress, taxNumber: invoice.companyTaxNumber },
     // The issuing business's letterhead (PLM-112); the name, address and tax number above stay as issued.
@@ -171,7 +176,7 @@ export async function receiptDocument(db: Db, workspaceId: string, row: CaseRow,
       WHERE receipt.workspace_id = $1 AND receipt.case_id = $2 AND receipt.id = $3 AND receipt.status = 'finance_verified' LIMIT 1`,
     [workspaceId, row.caseId, receiptId.slice(0, 80)])).rows[0];
   if (!receipt) throw new NotFoundException("Receipt not found.");
-  const invoice = row.projectId ? (await readInvoices(db, workspaceId, { projectId: row.projectId })).find((item) => item.paymentId === receipt.paymentId && item.status === "issued") : undefined;
+  const invoice = (await readInvoices(db, workspaceId, { caseId: row.caseId })).find((item) => item.paymentId === receipt.paymentId && item.status === "issued");
   const company = (await db.query<{ name: string }>(
     `SELECT coalesce(branding.display_name, workspace.name) AS name FROM workspaces workspace LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
       WHERE workspace.id = $1`, [workspaceId])).rows[0]?.name ?? "";

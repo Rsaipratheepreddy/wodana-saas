@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Eye, MessageCircle, ThumbsDown, ThumbsUp } from "lucide-react";
-import { Button, InlineNotice, TextAreaField, useDesignSystem } from "@/design-system";
+import { Button, EmptyState, InlineNotice, TextAreaField, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, staffPortalApi } from "@/lib/client-portal/client";
 import type { StaffBoardComment, StaffMoodboard } from "@/lib/client-portal/types";
@@ -91,7 +91,7 @@ export function ClientFeedback({ board, kind, id, canReply, onReply, title }: {
       <li key={comment.id} className={styles.message} data-from={comment.fromClient ? "client" : "team"}>
         <span className={styles.meta}><strong>{comment.author || (comment.fromClient ? t("Client") : t("Team"))}</strong><time dateTime={comment.at}>{when(comment.at)}</time></span>
         <p className={styles.text}>{comment.text}</p>
-      </li>)}</ol> : !likes.length && !dislikes.length ? <p className={styles.muted}>{t("No feedback from the client yet.")}</p> : null}
+      </li>)}</ol> : !likes.length && !dislikes.length ? <EmptyState illustration={null} title={t("No feedback from the client yet.")} /> : null}
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {canReply ? <div className={styles.reply}>
       <TextAreaField label={t("Reply to the client")} maxLength={2000} value={text} onChange={setText} />

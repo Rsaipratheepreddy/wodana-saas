@@ -45,7 +45,7 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
     { id: "package", header: t("Package"), accessorFn: (row) => row.name ?? "", size: 260, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{packageName(row.name)}</span>{row.budgetNote ? <small>{row.budgetNote}</small> : null}</span> } },
     { id: "budget", header: t("Budget"), accessorFn: (row) => Number(row.budget ?? 0), size: 150, meta: { renderCell: (row) => canManage
-      ? <button type="button" className={styles.linkButton} onClick={() => setEditing(row)}>{row.budget === null ? t("Set budget") : money(row.budget)}</button>
+      ? <Button size="compact" variant="quiet" onPress={() => setEditing(row)}>{row.budget === null ? t("Set budget") : money(row.budget)}</Button>
       : <span className={styles.number}>{money(row.budget)}</span> } },
     { id: "spent", header: t("Spent"), accessorFn: (row) => Number(row.spent), size: 140, meta: { renderCell: (row) => <span className={styles.number}>{money(row.spent)}</span> } },
     { id: "committed", header: t("Committed"), accessorFn: (row) => Number(row.committed), size: 140, meta: { mobileHidden: true,

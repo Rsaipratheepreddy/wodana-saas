@@ -23,6 +23,8 @@ export type QuotationSettings = {
   qsVariationThreshold?: string | null;
   /** PLM-147: free value engineering rounds per job; past them a round is chargeable. Null: no limit. */
   valueEngineeringFreeRounds?: number | null;
+  /** §0.3 P8: the job-team roles whose holder on the job gives manager approval; empty: anyone who approves quotes. */
+  approvalTeamRoles?: string[];
   /** How many days a signing link stays open (R8). */
   signingLinkDays?: number;
   /** PLM-106: the firm's intro deck link. */
@@ -84,6 +86,10 @@ export type BuilderState = {
     paymentTerms: PaymentMilestone[]; approvedBy: string | null;
     /** The quotation number (from settings, on first sending); null before. */
     reference?: string | null;
+    /** Guide M: the estimate proposal's reference (the quotation number with EST, "rev n" for a revision); null before sending. */
+    estimateReference?: string | null;
+    /** The QS who priced it, and the job's lead designer. */
+    estimator?: string | null; designer?: string | null;
     clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null; evidence?: { id: string; name: string } | null } | null;
   };
   family: Array<{ id: string; number: number; status: string; total: string; createdAt: string | null }>;

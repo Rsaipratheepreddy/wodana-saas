@@ -30,6 +30,8 @@ export type StockState = {
   /** Every active stock item (a materials list imported without quantities shows at nothing on hand). */
   items?: StockItemSummary[]; locations: StockLocation[]; projects: ProjectOption[]; inTransit: number; canManage: boolean; canAdjust: boolean; canReceive: boolean;
   pendingAdjustments: PendingAdjustment[]; me: string; currency: string; reorderPoints?: ReorderPoint[];
+  /** §0.3 P0: the count sheet or shelf photo behind each correction waiting for approval (by its id). */
+  adjustmentFiles?: Record<string, Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>>;
   /** Whether stock values and costs are shown (QA-006); the server leaves them out otherwise. */
   canSeeCosts?: boolean;
 };

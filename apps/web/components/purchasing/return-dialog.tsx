@@ -1,17 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { EmailInput, FormDialog, InlineNotice, SegmentedControl, Switch, TextAreaField, TextInput } from "@/design-system";
+import { DataGrid, EmailInput, FormDialog, InlineNotice, QuantityInput, SegmentedControl, Switch, TextAreaField, VisuallyHidden, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { ReceiptLine, ReceiptState, RejectKind, SupplierReturnState } from "@/lib/purchasing/types";
-import { quantityText, useOrderLabels } from "./order-labels";
+import { fieldNumber, fieldText, quantityText, useOrderLabels } from "./order-labels";
 import { RejectFields } from "./receive-dialog";
 import styles from "./purchasing.module.css";
 
 type Row = { key: string; line: ReceiptLine; source: "rejected" | "accepted"; left: string; quantity: string; kind: RejectKind | null; reason: string };
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const left = (a: string, b: string) => subtractExact(a, b);
 
 /**
@@ -36,7 +35,15 @@ export function ReturnDialog({ api, receipt, onClose, onCreated }: { api: Purcha
   useEffect(() => { api.order(receipt.receipt.orderId).then((order) => { if (order.supplier?.email) { setTo(order.supplier.email); setSend(true); } }).catch(() => undefined); }, [api, receipt.receipt.orderId]);
   const chosen = rows.filter((row) => Number(row.quantity) > 0);
   const invalid = useMemo(() => chosen.find((row) => Number(row.quantity) > Number(row.left) || !row.kind || !row.reason.trim()), [chosen]);
-  const setRow = (key: string, patch: Partial<Row>) => setRows(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const setRow = (key: string, patch: Partial<Row>) => setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const columns: DataGridColumn<Row>[] = [
+    { id: "item", header: t("Item"), size: 240, accessorFn: (row) => row.line.description, meta: { renderCell: (row) => <span className={styles.nameCell}><span>{row.line.description}</span>
+      <small>{row.source === "rejected" ? t("Rejected at delivery") : t("Accepted, found wrong later")}</small></span> } },
+    { id: "left", header: t("Can go back"), size: 130, accessorFn: (row) => Number(row.left), meta: { align: "end", renderCell: (row) => <span className={styles.money}>{`${quantityText(row.left)} ${row.line.unit}`.trim()}</span> } },
+    { id: "quantity", header: t("Goes back"), size: 150, accessorFn: (row) => row.quantity, meta: { align: "end", renderCell: (row) =>
+      <QuantityInput label={<VisuallyHidden>{t("Goes back of {item}", { item: `${row.line.description} ${row.source === "rejected" ? t("rejected") : t("accepted")}` })}</VisuallyHidden>}
+        unit={row.line.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }} value={fieldNumber(row.quantity)} onChange={(value) => setRow(row.key, { quantity: fieldText(value) })} /> } },
+  ];
   const save = async () => {
     onCreated(await api.createReturn({ id, receiptId: receipt.receipt.id, outcome, note: note.trim(), send, to: send ? to.trim() : null,
       lines: chosen.map((row) => ({ receiptLineId: row.line.id, source: row.source, quantity: row.quantity, reasonKind: row.kind, reason: row.reason.trim() })) }));
@@ -45,16 +52,10 @@ export function ReturnDialog({ api, receipt, onClose, onCreated }: { api: Purcha
     isSubmitDisabled={!chosen.length || Boolean(invalid) || (send && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim()))} onSubmit={save}>
       <SegmentedControl label={t("The supplier")} value={outcome} onChange={(value) => setOutcome(value as "replace" | "credit")}
         options={[{ id: "replace", label: t("Replaces them") }, { id: "credit", label: t("Credits them") }]} />
-      <div className={styles.receiveLines} role="table" aria-label={t("What goes back")} data-columns="3">
-        <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Can go back")}</span><span role="columnheader">{t("Goes back")}</span></div>
-        {rows.map((row) => <div role="row" key={row.key} className={styles.receiveLine}>
-          <span role="cell" className={styles.nameCell}><span>{row.line.description}</span><small>{row.source === "rejected" ? t("Rejected at delivery") : t("Accepted, found wrong later")}</small></span>
-          <span role="cell" className={styles.money}>{`${quantityText(row.left)} ${row.line.unit}`.trim()}</span>
-          <span role="cell"><TextInput aria-label={t("Goes back of {item}", { item: `${row.line.description} ${row.source === "rejected" ? t("rejected") : t("accepted")}` })} label={null}
-            inputMode="decimal" suffix={row.line.unit || undefined} value={row.quantity} onChange={(value) => setRow(row.key, { quantity: numeric(value) })} /></span>
-          {Number(row.quantity) > 0 ? <RejectFields description={row.line.description} kind={row.kind} reason={row.reason} labels={labels.rejectKind} onChange={(patch) => setRow(row.key, patch)} /> : null}
-        </div>)}
-      </div>
+      <DataGrid ariaLabel={t("What goes back")} data={rows} getRowId={(row) => row.key} columns={columns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
+      {/* Why each line goes back, under the table, named by its item. */}
+      {chosen.map((row) => <RejectFields key={row.key} description={row.line.description} kind={row.kind} reason={row.reason} labels={labels.rejectKind} onChange={(patch) => setRow(row.key, patch)} />)}
       {invalid && Number(invalid.quantity) > Number(invalid.left) ? <InlineNotice tone="error" message={t("At most {quantity} of {item} can go back.", { quantity: `${quantityText(invalid.left)} ${invalid.line.unit}`.trim(), item: invalid.line.description })} /> : null}
       <TextAreaField label={t("Note for the supplier")} value={note} onChange={setNote} />
       <Switch isSelected={send} onChange={setSend}>{t("Email the supplier the return note")}</Switch>

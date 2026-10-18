@@ -1,15 +1,16 @@
+import { KIT_COMMISSION_TYPES } from "../setup/commission-types";
 import { Dec } from "../catalog-core/decimal";
 import { currencyDecimals } from "../common/currency";
 
 export type CommissionLine = {
   recipientName: string;
-  type: "sales" | "designer" | "referral";
+  /** One of the firm's commission types (Setup → Commissions); the kit offers sales, designer and referral. */
+  type: string;
   basis: "amount" | "percent";
   value: number;
   amount: number;
 };
 
-const commissionTypes = new Set(["sales", "designer", "referral"]);
 const commissionBases = new Set(["amount", "percent"]);
 
 /** A commission row nobody filled in: no recipient and no value. */
@@ -20,7 +21,8 @@ function isBlankCommission(raw: unknown) {
   return !recipient && (row.value === undefined || row.value === null || row.value === "" || row.value === 0);
 }
 
-export function normalizeCommissionLines(input: unknown, dealValue: number, currencyCode?: string): CommissionLine[] {
+export function normalizeCommissionLines(input: unknown, dealValue: number, currencyCode?: string, allowedTypes: string[] = KIT_COMMISSION_TYPES.map((type) => type.code)): CommissionLine[] {
+  const commissionTypes = new Set(allowedTypes);
   const places = currencyCode ? currencyDecimals(currencyCode) : 2;
   if (input !== undefined && input !== null && !Array.isArray(input)) throw new Error("The commission lines are invalid.");
   // No commission is a valid deal; a row left completely empty is not a commission.
@@ -40,7 +42,7 @@ export function normalizeCommissionLines(input: unknown, dealValue: number, curr
     if (!Number.isFinite(value) || value <= 0 || (basis === "percent" && value > 100)) throw new Error(`Enter a valid value for commission ${index + 1}.`);
     // Exact money in the deal currency's minor units, never float math.
     const amount = (basis === "percent" ? Dec.of(dealValue).mul(value).div(100) : Dec.of(value)).round(places).toNumber();
-    return { recipientName, type: type as CommissionLine["type"], basis: basis as CommissionLine["basis"], value, amount };
+    return { recipientName, type, basis: basis as CommissionLine["basis"], value, amount };
   });
   if (lines.reduce((total, line) => total.add(line.amount), Dec.ZERO).cmp(Dec.of(dealValue)) > 0)
     throw new Error("Total commissions cannot exceed the accepted deal value.");

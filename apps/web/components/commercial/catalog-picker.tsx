@@ -3,6 +3,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { useId, useRef, useState } from "react";
 import { ChevronDown, X } from "lucide-react";
+import { Button, InlineNotice } from "@/design-system";
 import c from "./catalog-picker.module.css";
 import type { CatalogChoice } from "@/lib/pre-project/content";
 import { useCatalogOptions } from "./catalog-options-cache";
@@ -173,8 +174,8 @@ export function CommercialCatalogPicker({
               </button>
             ))}
           </div>
-          <button type="button" className={c.refresh} onClick={refresh}>
-            {t("Refresh catalog choices")}</button>
+          <Button size="compact" variant="quiet" onPress={refresh}>
+            {t("Refresh catalog choices")}</Button>
           {!loading && !error && !options.length && (
             <p>
               {linkedTo
@@ -185,29 +186,21 @@ export function CommercialCatalogPicker({
         </div>
       )}
       {value && (
-        <button
-          type="button"
-          className={s.catalogClear}
-          disabled={disabled}
-          onClick={() => {
+        <Button
+          size="compact"
+          variant="quiet"
+          isDisabled={disabled}
+          onPress={() => {
             onChange(null);
             setQuery({ recordId: null, text: "" });
             setOpen(false);
           }}
         >
-          <X size={11} />
-          {t("Clear selection")}</button>
+          <X aria-hidden="true" size={14} />
+          {t("Clear selection")}</Button>
       )}
       {error && (
-        <div role="alert" className={s.error}>
-          {translateKnown(t, error)}{" "}
-          <button
-            type="button"
-            className={s.catalogClear}
-            onClick={refresh}
-          >
-            {t("Try again")}</button>
-        </div>
+        <InlineNotice tone="error" message={translateKnown(t, error)} action={<Button size="compact" variant="quiet" onPress={refresh}>{t("Try again")}</Button>} />
       )}
     </div>
   );

@@ -13,6 +13,8 @@ function allowed(path: string[], method: string) {
   if (path.length === 2 && path[0] === "orders" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 6 && path[0] === "orders" && UUID.test(path[1]) && path[2] === "checks" && UUID.test(path[3]) && path[4] === "photos" && UUID.test(path[5])) return method === "POST";
   if (path.length === 2 && path[0] === "photos" && UUID.test(path[1])) return method === "GET";
+  // §0.3 P0: an approved drawing of a work order's project, opened where its approval is recorded.
+  if (path.length === 4 && path[0] === "orders" && UUID.test(path[1]) && path[2] === "drawings" && UUID.test(path[3])) return method === "GET";
   // PLM-150: design inspections: the list, one round (read, pass or fail), its photos.
   if (path.length === 1 && path[0] === "inspections") return method === "GET";
   if (path.length === 2 && path[0] === "inspections" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
@@ -34,7 +36,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid factory resource.") }, { status: 400 });
   // A quality check's (or an inspection's, or a shared sample log's) photo streams back as a file.
-  if (path[0] === "photos" || path[0] === "inspection-photos" || (path[0] === "finishes" && path[2] === "assets")) {
+  if (path[0] === "photos" || path[0] === "inspection-photos" || (path[0] === "finishes" && path[2] === "assets") || (path[0] === "orders" && path[2] === "drawings")) {
     const preview = url.searchParams.get("preview") === "1";
     const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/factory/${path.join("/")}${preview ? "?preview=1" : ""}`, { cache: "no-store" });
     if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: t("The photo could not be loaded.") }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });

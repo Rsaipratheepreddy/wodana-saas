@@ -1,8 +1,7 @@
 "use client";
 
-import { FileText } from "lucide-react";
 import { useState } from "react";
-import { Button, TextAreaField } from "@/design-system";
+import { Button, ReviewFiles, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalHandover } from "@/lib/client-portal/types";
@@ -36,13 +35,7 @@ export function HandoverSheet({ pack, caseId, api, format, channels, onDecided }
   return <div className={styles.sheet}>
     <div className={styles.rowHead}><StateLabel state={pack.status} canDecide={pack.canDecide} /><span className={styles.muted}>{format.date(pack.issuedAt)}</span></div>
     {pack.areas.length ? <p className={styles.muted}>{pack.areas.join(" · ")}</p> : null}
-    <ul className={styles.list}>
-      {pack.documents.map((document) => <li className={styles.item} key={document.id}>
-        <a className={styles.itemText} href={api.file("handover", document.id)} rel="noreferrer" target="_blank">
-          <span className={styles.fileName}><FileText aria-hidden="true" size={16} /> {document.title}</span>
-        </a>
-      </li>)}
-    </ul>
+    <ReviewFiles label={t("Documents")} files={pack.documents.map((document) => ({ id: document.id, name: document.title, href: api.file("handover", document.id) }))} />
     {pack.status !== "issued" && pack.decidedOn ? <p className={styles.muted}>{t("{name} decided on {date}.", { name: pack.decidedBy ?? "", date: format.date(pack.decidedOn) })}</p> : null}
     {pack.note && pack.status !== "issued" ? <p className={styles.body}>{pack.note}</p> : null}
     {pack.canDecide && pack.balance ? <p className={styles.body}>{t("Balance due {amount}. Your invoice and how to pay it are under Payments.", { amount: format.money(pack.balance.due, pack.balance.currency) })}</p> : null}

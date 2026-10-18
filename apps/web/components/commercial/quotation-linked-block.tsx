@@ -8,6 +8,17 @@ import {useDesignSystem} from '@/design-system';
 import {Fragment, useContext} from 'react';
 import {ProposalColumnsContext, ProposalFactsContext} from '@/lib/commercial/proposal-columns';
 import {referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
+import {MaterialChips} from '@/components/quotation/material-chips';
+
+/** The printed materials: each material and finish as its own chip with its code, then the rest of the line's description. */
+function materialCell(line:Quote['lines'][number]){
+ // A line priced from material rows prints them as it always has.
+ if(line.materialRows!==undefined)return quotationDescription(line)||'—';
+ const chips=[line.material,line.finish].filter(Boolean).join('\n');
+ const rest=quotationDescription({...line,material:'',finish:''});
+ if(!chips.trim()&&!rest)return '—';
+ return <>{chips.trim()?<MaterialChips className={s.materialChips} value={chips}/>:null}{rest?<small>{rest}</small>:null}</>;
+}
 export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
   const t = useT();
  const {locale}=useDesignSystem();
@@ -21,12 +32,12 @@ export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
  const lineAmount=(line:{id:string;quantity:number;rate:number})=>facts?.lineAmount[line.id]!==undefined?Number(facts.lineAmount[line.id]):line.quantity*line.rate;
  const stored=quote.presentation?.details??{};
  // The reference the app generated before is replaced by the quote's own (Q-1 · R1); anything typed stays.
- const generated=(value?:string)=>!value||/^(QT-[0-9A-F]{8} · Rev \d+|Q-\d+)$/.test(value);
+ const generated=(value?:string)=>!value||/^(QT-[0-9A-F]{8} · Rev \d+|Q-\d+( · R\d+)?)$/.test(value);
  const details={...stored,
   reference:generated(stored.reference)?(facts?.reference??stored.reference):stored.reference,
   date:stored.date||facts?.date||'',
   clientPhone:stored.clientPhone||facts?.phone||'', clientEmail:stored.clientEmail||facts?.email||'',
-  location:stored.location||facts?.address||'', manager:stored.manager||facts?.approvedBy||''};
+  location:stored.location||facts?.address||'', manager:stored.manager||facts?.approvedBy||'', estimator:stored.estimator||facts?.estimator||'', preparedBy:stored.preparedBy||facts?.designer||''};
  // The firm's own logo (or its name, set large, when it has none) — never another firm's artwork.
  if(id==='data:company-logo')return details.companyLogo?<img className={s.companyLogo} src={details.companyLogo} alt={details.companyName||''}/>:<div className={s.companyName}>{details.companyName}</div>;
  if(id==='data:cover-client')return <div className={s.coverClient}>{t("Client: {name}",{name:details.clientName||quote.cover?.preparedFor||''})}<br/>{t("Quote No: {reference}",{reference:details.reference??''})}</div>;
@@ -46,7 +57,7 @@ export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
    [t('DESCRIPTION OF ITEM'),19,line=><>{line.title}{line.description&&<small>{line.description}</small>}{line.optional&&<small>{t("Optional · not included")}</small>}</>],
    [t('INSPO PICTURE'),23,line=>line.photo?<img src={line.photo} alt={line.title}/>:<span className={s.noImage}>{t("Image not supplied")}</span>],
    ...(['length','height','depth'] as const).map((key):[string,number,(line:typeof lines[number])=>React.ReactNode]=>[t(key==='length'?'LENGTH':key==='height'?'HEIGHT':'DEPTH'),6,line=><>{line.dimensions?.[key]??'—'}{line.dimensions?.[key]!==undefined&&<small>{line.dimensions.unit}</small>}</>]),
-   [t('MATERIALS REQUESTED'),16,line=>quotationDescription(line)||'—'],
+   [t('MATERIALS REQUESTED'),16,line=>materialCell(line)],
    ...extra.map((column):[string,number,(line:typeof lines[number])=>React.ReactNode]=>[column.name.toUpperCase(),10,line=>(line as {values?:Record<string,string>}).values?.[column.id]||'—']),
    [t('QTY'),6,line=><>{line.quantity}{line.unit&&<small>{line.unit}</small>}</>],
    [t('UNIT PRICE'),8,line=>money(line.rate,quote.currency,locale)],

@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, Injectable, Logger, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
@@ -6,14 +7,16 @@ import { agreedRate, designFee, type PricingMethod } from "../../design/design-p
 import { approvalStatus, cancelApproval, requestApproval, type ApprovalStatus } from "../../approvals/approval-engine.api";
 import { Dec } from "../../catalog-core/decimal";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
+import { storedFloorPlan } from "../leads/enquiry-problems";
 import { REQUIREMENT_ASSET_PREFIX } from "../leads/requirement-notes.service";
 import { areaIn, coordinatesProblem, discoveryMissing, roundCoordinate, type DiscoveryFacts, type DiscoveryQuestion } from "./discovery.domain";
+import { consultationQuestions } from "./consultation-questions";
 import { ensureSiteLocation } from "./site-location";
 import { resolveMapLink } from "./map-link";
 
 export type SaveDiscoveryInput = Partial<DiscoveryFacts> & { version?: number; answers?: Record<string, unknown> };
 /** `partyEmail`: the client's email on record, the client's own or else the one given on the enquiry. */
-type Context = { leadId: string | null; enquiryType: string | null; clientType: string | null; partyEmail: string | null };
+type Context = { leadId: string | null; enquiryType: string | null; clientType: string | null; partyEmail: string | null; enquiryFloorPlan: unknown };
 type StoredFacts = DiscoveryFacts & { version: number; designFee: string | null; designFeeCurrency: string | null };
 
 const NO_FACTS: DiscoveryFacts = { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: null, floorPlanAssetId: null, designPackageId: null, latitude: null, longitude: null, designRate: null };
@@ -30,7 +33,8 @@ type PackageRow = { id: string; name: string; pricingMethod: PricingMethod; rate
 /** PLM-040: the Account Manager's discovery form on an opportunity, and the design fee it prices (PLM-041). */
 @Injectable()
 export class OpportunityDiscoveryService {
-  constructor(private readonly access: WorkspaceAccessService) {}
+  private readonly logger = new Logger("OpportunityDiscovery");
+  constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly modules?: ModuleRef) {}
 
   get(actor: RequestActor, workspaceId: string, opportunityId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.opportunities.view", (client) => this.view(client, workspaceId, opportunityId));
@@ -41,7 +45,28 @@ export class OpportunityDiscoveryService {
     return this.access.withPermission(actor, workspaceId, "crm.opportunities.view", async () => ({ url: await resolveMapLink(url) }));
   }
 
-  save(actor: RequestActor, workspaceId: string, opportunityId: string, input: SaveDiscoveryInput) {
+  async save(actor: RequestActor, workspaceId: string, opportunityId: string, input: SaveDiscoveryInput) {
+    const saved = await this.saveFacts(actor, workspaceId, opportunityId, input);
+    // Guide F: exact figures logged and nothing missing → the planning case starts and the Design Fee proposal is made.
+    if (saved.designFee && !saved.missing.length) {
+      try { await this.proposeDesignFee(actor, workspaceId, opportunityId); }
+      catch (error) { this.logger.warn(`The Design Fee proposal wasn't made automatically: ${error instanceof Error ? error.message : String(error)}`); }
+    }
+    return saved;
+  }
+
+  /** The planning case for the job (started when it has none) and, when its path allows, Proposal 1 from the figures. */
+  private async proposeDesignFee(actor: RequestActor, workspaceId: string, opportunityId: string) {
+    if (!this.modules) return;
+    const { PreProjectsService } = await import("../../pre-projects/pre-projects.service");
+    const { CommercialService } = await import("../../commercial/commercial.service");
+    const preProjects = this.modules.get(PreProjectsService, { strict: false });
+    const commercial = this.modules.get(CommercialService, { strict: false });
+    const started = await preProjects.start(actor, workspaceId, opportunityId) as { id: string };
+    await commercial.proposeDesignFee(actor, workspaceId, String(started.id));
+  }
+
+  private saveFacts(actor: RequestActor, workspaceId: string, opportunityId: string, input: SaveDiscoveryInput) {
     return this.access.withPermission(actor, workspaceId, "crm.opportunities.manage", async (client, user) => {
       const context = await this.context(client, workspaceId, opportunityId);
       const before = await this.facts(client, workspaceId, opportunityId, true);
@@ -114,7 +139,7 @@ export class OpportunityDiscoveryService {
     const facts = stored ? withClientEmail(stored, context) : withClientEmail(null, context);
     const pkg = facts.designPackageId ? await this.package(client, workspaceId, facts.designPackageId) : null;
     const questions = await this.questions(client, workspaceId, context.enquiryType);
-    return discoveryMissing({ facts, enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers: await this.answers(client, workspaceId, opportunityId) });
+    return discoveryMissing({ facts, enquiryFloorPlan: storedFloorPlan(context.enquiryFloorPlan), enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers: await this.answers(client, workspaceId, opportunityId) });
   }
 
   private async view(client: PoolClient, workspaceId: string, opportunityId: string) {
@@ -136,7 +161,7 @@ export class OpportunityDiscoveryService {
         waitingFor: rate.needsApproval && rate.approval?.status === "pending" ? rate.approval.waitingFor : [] } : null,
       enquiryType: context.enquiryType, clientType: context.clientType,
       questions, answers, files: await this.files(client, workspaceId, context.leadId),
-      missing: discoveryMissing({ facts: shown, enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers }),
+      missing: discoveryMissing({ facts: shown, enquiryFloorPlan: storedFloorPlan(context.enquiryFloorPlan), enquiryType: context.enquiryType, clientType: context.clientType, packagePricing: pkg?.pricingMethod ?? null, questions, answers }),
       version: facts?.version ?? 0,
     };
   }
@@ -187,6 +212,7 @@ export class OpportunityDiscoveryService {
   private async context(client: PoolClient, workspaceId: string, opportunityId: string): Promise<Context> {
     const row = (await client.query<Context & { found: boolean }>(
       `SELECT true AS found, opportunity.lead_id AS "leadId", enquiry.service_type AS "enquiryType", enquiry.details->>'customerType' AS "clientType",
+              enquiry.details->'floorPlan' AS "enquiryFloorPlan",
               coalesce((SELECT point.raw_value FROM crm_contact_points point WHERE point.workspace_id = opportunity.workspace_id AND point.party_id = opportunity.party_id
                  AND point.type = 'email' AND point.status = 'active' ORDER BY point.is_primary DESC LIMIT 1),
                 NULLIF(btrim(enquiry.details->'contact'->>'email'), '')) AS "partyEmail"
@@ -207,16 +233,7 @@ export class OpportunityDiscoveryService {
   }
 
   private async questions(client: PoolClient, workspaceId: string, enquiryType: string | null): Promise<DiscoveryQuestion[]> {
-    return (await client.query<DiscoveryQuestion & { configuration: { options?: unknown } }>(
-      `SELECT question.key, question.label, question.required, question.data_type AS "dataType", question.configuration FROM crm_qualification_forms form
-       JOIN crm_qualification_questions question ON question.workspace_id = form.workspace_id AND question.form_id = form.id
-       WHERE form.workspace_id = $1 AND form.purpose = 'discovery' AND form.status = 'active'
-         AND (form.service_type IS NULL OR form.service_type = $2)
-       ORDER BY (form.service_type IS NULL), question.position`, [workspaceId, enquiryType])).rows
-      .filter((question, index, all) => all.findIndex((other) => other.key === question.key) === index)
-      .map(({ configuration, ...question }) => ({ ...question, options: Array.isArray(configuration?.options)
-        ? (configuration.options as unknown[]).map((option) => typeof option === "string" ? { id: option, label: option } : option as { id: string; label: string }).filter((option) => option?.id)
-        : undefined }));
+    return consultationQuestions(client, workspaceId, enquiryType);
   }
 
   private async answers(client: PoolClient, workspaceId: string, opportunityId: string) {

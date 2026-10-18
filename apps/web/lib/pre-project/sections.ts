@@ -12,7 +12,9 @@ export const planningAreas = [
   { id: "moodboard", label: tKey("Moodboard"), section: "inspiration", sections: [{ id: "inspiration", label: tKey("Moodboard") }] },
   { id: "design", label: tKey("Design"), section: "designs", sections: [{ id: "designs", label: tKey("Design") }] },
   { id: "quotes", label: tKey("Quotes"), section: "quotations", sections: [{ id: "quotations", label: tKey("Quotes") }, { id: "definition", label: tKey("Scope sign-off") }] },
-  { id: "agreement", label: tKey("Agreement"), section: "contracts", sections: [{ id: "contracts", label: tKey("Agreement") }, { id: "payment-plan", label: tKey("Payments") }, { id: "approvals", label: tKey("Approvals") }, { id: "execution-release", label: tKey("Release readiness") }, { id: "variations", label: tKey("Change requests") }] },
+  // Guide J: the deal, from the signed agreement to the release: Agreement, Payments, Deal File, Release, then Changes;
+  // the client's sign-offs (scope, designs, quotes) under Approvals.
+  { id: "agreement", label: tKey("Deal"), section: "contracts", sections: [{ id: "contracts", label: tKey("Agreement") }, { id: "payment-plan", label: tKey("Payments") }, { id: "deal-file", label: tKey("Deal File") }, { id: "execution-release", label: tKey("Release") }, { id: "variations", label: tKey("Changes") }, { id: "approvals", label: tKey("Approvals") }] },
 ] as const;
 export type PlanningArea = (typeof planningAreas)[number];
 export function planningArea(section: string): PlanningArea {

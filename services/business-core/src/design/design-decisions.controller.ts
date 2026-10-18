@@ -24,6 +24,7 @@ class PresentationDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(12) @ValidateNested({ each: true }) @Type(() => OptionDto) options!: OptionDto[];
 }
 class VersionDto { @IsInt() @Min(1) version!: number; }
+class ExtraRevisionDto { @IsIn(["concepts", "space_planning", "material_selection", "renders"]) stage!: string; }
 class RoundDecisionDto {
   @IsInt() @Min(1) version!: number;
   @IsIn(["chosen", "changes_requested"]) decision!: "chosen" | "changes_requested";
@@ -85,6 +86,12 @@ export class DesignDecisionsController {
 
   @Post("design-presentations")
   create(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: PresentationDto) { return this.decisions.createPresentation(actor, workspaceId, caseId, input); }
+
+  /** PLM-049/051: the team drafts a step's extra revision (beyond the free ones) as a change request to price. */
+  @Post("design-presentations/extra-revision")
+  draftExtraRevision(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: ExtraRevisionDto) {
+    return this.decisions.draftExtraRevision(actor, workspaceId, caseId, input);
+  }
 
   @Post("design-presentations/:id/review")
   review(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: VersionDto) { return this.decisions.review(actor, workspaceId, caseId, id, input); }

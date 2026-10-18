@@ -4,6 +4,8 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { repairJobSourceLink } from "./job-identity.store";
+import { loadJobJourney, type JourneyView } from "./job-journey";
+import { decideJobSuggestion, readJobSuggestions } from "./job-suggestions";
 import type { RepairJobLinkDto } from "./dto/repair-job-link.dto";
 import type { SetJobStageDto } from "./dto/set-job-stage.dto";
 import { queryClientTimeline, type ClientTimelineEvent } from "../crm/shared/client-timeline";
@@ -14,6 +16,11 @@ import {
   type JobOperatingState,
   type JobSourcePointer,
 } from "./job-operating-state";
+import { readCaseDocuments, type CaseDocuments } from "../documents/document-sends";
+import { readMoneyStatement, type JobMoneyStatement } from "../commercial/money-statement";
+import { readJobCosts, type JobCosts } from "../purchasing/job-costs";
+import { markRead, postMessage, readThread } from "./job-thread";
+import { recordAudit } from "../audit/record-audit";
 // Mirrors the exported wire contract in packages/contracts/src/jobs.ts; the
 // current CommonJS compiler configuration cannot resolve that ESM package.
 type JobSourceType = "enquiry" | "lead" | "opportunity" | "case" | "quote" | "project";
@@ -605,6 +612,228 @@ export class JobsService {
         clientTimelineAccess: { communications, activities },
       };
     });
+  }
+
+  /** §0.3 P2: the job a record belongs to (an enquiry's lead, an opportunity, a Planning case or a project), for its map link. */
+  bySource(actor: RequestActor, workspaceId: string, type: string, id: string): Promise<{ jobId: string | null }> {
+    if (!["lead", "enquiry", "opportunity", "case", "project"].includes(type)) throw new BadRequestException("Choose a lead, enquiry, opportunity, case or project");
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client) => {
+      const row = (await client.query<{ jobId: string }>(
+        `SELECT job_id::text AS "jobId" FROM job_identity_links WHERE workspace_id = $1 AND record_type = $2 AND record_id = $3 AND status = 'active' LIMIT 1`,
+        [workspaceId, type, id])).rows[0];
+      return { jobId: row?.jobId ?? null };
+    });
+  }
+
+  /** §0.3 P2: the job's journey from enquiry to warranty, read from its records (job-journey.ts). Same visibility as the job. */
+  journey(actor: RequestActor, workspaceId: string, jobId: string): Promise<JourneyView> {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      const scope = await this.scope(client, workspaceId, user.userId);
+      const result = await client.query<IdentityRow>(
+        `SELECT identity.id::text,identity.reference,identity.created_at AS "createdAt"
+         FROM job_identities identity WHERE identity.workspace_id=$1 AND identity.id=$9
+         AND EXISTS (SELECT 1 FROM job_identity_links link WHERE link.workspace_id=identity.workspace_id
+           AND link.job_id=identity.id AND ${visibleStatus} AND ${visibleLink})`,
+        [...this.params(workspaceId, scope), jobId],
+      );
+      const job = result.rows[0];
+      if (!job) throw new NotFoundException("Job not found.");
+      return loadJobJourney(client, workspaceId, { id: job.id, reference: job.reference });
+    });
+  }
+
+  /** §0.3 P4: the job's documents: every send with its state now, and every signature (by e-signature or portal code). */
+  documents(actor: RequestActor, workspaceId: string, jobId: string): Promise<CaseDocuments> {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      const scope = await this.scope(client, workspaceId, user.userId);
+      const visible = (await client.query<{ id: string }>(
+        `SELECT identity.id::text FROM job_identities identity WHERE identity.workspace_id=$1 AND identity.id=$9
+         AND EXISTS (SELECT 1 FROM job_identity_links link WHERE link.workspace_id=identity.workspace_id
+           AND link.job_id=identity.id AND ${visibleStatus} AND ${visibleLink})`,
+        [...this.params(workspaceId, scope), jobId],
+      )).rows[0];
+      if (!visible) throw new NotFoundException("Job not found.");
+      const caseId = (await client.query<{ id: string }>(
+        `SELECT record_id::text AS id FROM job_identity_links WHERE workspace_id = $1 AND job_id = $2 AND record_type = 'case' AND status = 'active' LIMIT 1`, [workspaceId, jobId])).rows[0]?.id;
+      return caseId ? readCaseDocuments(client, workspaceId, caseId) : { sends: [], signatures: [] };
+    });
+  }
+
+  /**
+   * §0.3: the Jobs list: every job this person sees, newest first, each summarised from its journey (the same reading
+   * as the job page): its chapter and the step now (late when past its date), progress, value and target date.
+   */
+  overview(actor: RequestActor, workspaceId: string, limitInput?: string, offsetInput?: string) {
+    const { limit, offset } = queryWindow(limitInput, offsetInput);
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      const scope = await this.scope(client, workspaceId, user.userId);
+      const params = this.params(workspaceId, scope);
+      const matching = `identity.workspace_id=$1 AND EXISTS (
+        SELECT 1 FROM job_identity_links link WHERE link.workspace_id=identity.workspace_id
+          AND link.job_id=identity.id AND ${visibleStatus} AND ${visibleLink}
+      )`;
+      const total = (await client.query<{ total: number }>(`SELECT count(*)::int AS total FROM job_identities identity WHERE ${matching}`, params)).rows[0]?.total ?? 0;
+      const rows = (await client.query<IdentityRow>(
+        `SELECT identity.id::text,identity.reference,identity.created_at AS "createdAt" FROM job_identities identity WHERE ${matching}
+         ORDER BY identity.created_at DESC,identity.id DESC LIMIT $9 OFFSET $10`, [...params, Math.min(limit, 100), offset])).rows;
+      const now = new Date().toISOString();
+      const items = [];
+      for (const row of rows) {
+        const journey = await loadJobJourney(client, workspaceId, { id: row.id, reference: row.reference });
+        const done = journey.chapters.reduce((sum, chapter) => sum + chapter.done, 0);
+        const all = journey.chapters.reduce((sum, chapter) => sum + chapter.total, 0);
+        items.push({
+          id: row.id, reference: row.reference, title: journey.title, client: journey.client,
+          chapter: journey.now?.chapter ?? null,
+          now: journey.now ? { label: journey.now.label, owner: journey.now.owner, ownerId: journey.now.ownerId, dueAt: journey.now.dueAt, late: Boolean(journey.now.dueAt && journey.now.dueAt < now) } : null,
+          progress: { done, total: all }, value: journey.value, targetDate: journey.targetDate,
+        });
+      }
+      return { items, total, limit: Math.min(limit, 100), offset };
+    });
+  }
+
+  /**
+   * §0.3 P10: where each listed record's job is now, from the job's journey (the one place "what's next" is decided).
+   * `records` is "type:id,type:id" (lead, opportunity, case, project; at most 200); records the person can't see, or with
+   * no job, are left out. Lists and record pages read this instead of working the next step out themselves.
+   */
+  nowByRecords(actor: RequestActor, workspaceId: string, recordsInput?: string) {
+    const wanted = [...new Set(String(recordsInput ?? "").split(",").map((value) => value.trim()).filter(Boolean))];
+    if (wanted.length > 200) throw new BadRequestException("Ask for at most 200 records.");
+    const pairs = wanted.map((value) => { const [type, id] = value.split(":"); return { type, id }; });
+    if (pairs.some((pair) => !["lead", "opportunity", "case", "project"].includes(pair.type) || !/^[0-9a-f-]{36}$/i.test(pair.id ?? ""))) throw new BadRequestException("Name each record as type:id.");
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      if (!pairs.length) return { items: [] };
+      const scope = await this.scope(client, workspaceId, user.userId);
+      const links = (await client.query<{ type: string; id: string; jobId: string; reference: string }>(
+        `SELECT link.record_type AS type, link.record_id AS id, link.job_id::text AS "jobId", identity.reference
+           FROM job_identity_links link JOIN job_identities identity ON identity.workspace_id = link.workspace_id AND identity.id = link.job_id
+          WHERE link.workspace_id=$1 AND link.status='active' AND $8::boolean IS NOT NULL AND ${visibleLink}
+            AND (link.record_type || ':' || lower(link.record_id)) = ANY($9::text[])`,
+        [...this.params(workspaceId, scope), pairs.map((pair) => `${pair.type}:${pair.id.toLowerCase()}`)])).rows;
+      const journeys = new Map<string, JourneyView>();
+      const now = new Date().toISOString();
+      const items = [];
+      for (const link of links) {
+        if (!journeys.has(link.jobId)) journeys.set(link.jobId, await loadJobJourney(client, workspaceId, { id: link.jobId, reference: link.reference }));
+        const journey = journeys.get(link.jobId)!;
+        items.push({ type: link.type, id: link.id, jobId: link.jobId, reference: link.reference, chapter: journey.now?.chapter ?? null,
+          now: journey.now ? { label: journey.now.label, owner: journey.now.owner, ownerId: journey.now.ownerId, dueAt: journey.now.dueAt, late: Boolean(journey.now.dueAt && journey.now.dueAt < now), href: journey.now.href } : null });
+      }
+      return { items };
+    });
+  }
+
+  /** §0.3 P8: the job's money statement (agreed, received, due, next, with its exactness checks). */
+  money(actor: RequestActor, workspaceId: string, jobId: string): Promise<JobMoneyStatement | null> {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      const scope = await this.scope(client, workspaceId, user.userId);
+      const visible = (await client.query<{ id: string }>(
+        `SELECT identity.id::text FROM job_identities identity WHERE identity.workspace_id=$1 AND identity.id=$9
+         AND EXISTS (SELECT 1 FROM job_identity_links link WHERE link.workspace_id=identity.workspace_id
+           AND link.job_id=identity.id AND ${visibleStatus} AND ${visibleLink})`,
+        [...this.params(workspaceId, scope), jobId],
+      )).rows[0];
+      if (!visible) throw new NotFoundException("Job not found.");
+      const caseId = (await client.query<{ id: string }>(
+        `SELECT record_id::text AS id FROM job_identity_links WHERE workspace_id = $1 AND job_id = $2 AND record_type = 'case' AND status = 'active' LIMIT 1`, [workspaceId, jobId])).rows[0]?.id;
+      return caseId ? readMoneyStatement(client, workspaceId, caseId) : null;
+    });
+  }
+
+  /** §0.3 P8/P9: the job's supplier side (committed, billed, paid, with checks); internal, for who sees purchasing or supplier bills. */
+  costs(actor: RequestActor, workspaceId: string, jobId: string): Promise<JobCosts | null> {
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "payables.view"], async (client) => {
+      const projectId = (await client.query<{ id: string }>(
+        `SELECT record_id::text AS id FROM job_identity_links WHERE workspace_id = $1 AND job_id = $2 AND record_type = 'project' AND status = 'active' LIMIT 1`, [workspaceId, jobId])).rows[0]?.id;
+      return projectId ? readJobCosts(client, workspaceId, projectId) : null;
+    });
+  }
+
+  /**
+   * §0.3: Team chat, every job's thread the person may see that has anything in it, newest first: the job, its last
+   * line and how many lines this person hasn't read (the same rule as the thread's own count).
+   */
+  threads(actor: RequestActor, workspaceId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      const scope = await this.scope(client, workspaceId, user.userId);
+      const rows = (await client.query<{ jobId: string; reference: string; title: string | null; body: string; at: Date; kind: "message" | "event"; author: string | null; unread: number }>(
+        `SELECT identity.id::text AS "jobId", identity.reference,
+                coalesce(
+                  (SELECT o.title FROM job_identity_links l JOIN crm_opportunities o ON o.workspace_id = l.workspace_id AND o.id::text = l.record_id
+                    WHERE l.workspace_id = identity.workspace_id AND l.job_id = identity.id AND l.record_type = 'opportunity' AND l.status = 'active' LIMIT 1),
+                  (SELECT e.title FROM crm_enquiries e WHERE e.workspace_id = identity.workspace_id AND e.id::text = identity.root_id::text)) AS title,
+                last.body, last.at, last.kind, coalesce(person.display_name, person.primary_email) AS author,
+                (SELECT count(*)::int FROM job_messages m WHERE m.workspace_id = identity.workspace_id AND m.job_id = identity.id AND m.deleted_at IS NULL
+                   AND m.author_user_id IS DISTINCT FROM $9::uuid AND m.created_at > coalesce(seen.last_read_at, '-infinity'::timestamptz)) AS unread
+           FROM job_identities identity
+           JOIN LATERAL (SELECT body, created_at AS at, kind, author_user_id FROM job_messages m WHERE m.workspace_id = identity.workspace_id AND m.job_id = identity.id
+                          AND m.deleted_at IS NULL ORDER BY m.created_at DESC, m.id DESC LIMIT 1) last ON true
+           LEFT JOIN users person ON person.id = last.author_user_id
+           LEFT JOIN job_message_reads seen ON seen.workspace_id = identity.workspace_id AND seen.job_id = identity.id AND seen.user_id = $9::uuid
+          WHERE identity.workspace_id = $1
+            AND EXISTS (SELECT 1 FROM job_identity_links link WHERE link.workspace_id = identity.workspace_id AND link.job_id = identity.id AND ${visibleStatus} AND ${visibleLink})
+          ORDER BY last.at DESC LIMIT 200`, [...this.params(workspaceId, scope), user.userId])).rows;
+      return { items: rows.map((row) => ({ ...row, at: new Date(row.at).toISOString() })), unread: rows.reduce((sum, row) => sum + row.unread, 0) };
+    });
+  }
+
+  /** §0.3: the job's team thread (messages and event lines), for people who see the job. */
+  thread(actor: RequestActor, workspaceId: string, jobId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      await this.visibleJob(client, workspaceId, jobId, user.userId);
+      return readThread(client, workspaceId, jobId, user.userId);
+    });
+  }
+
+  post(actor: RequestActor, workspaceId: string, jobId: string, input: Record<string, unknown>) {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      await this.visibleJob(client, workspaceId, jobId, user.userId);
+      const name = (await client.query<{ name: string }>(`SELECT coalesce(display_name, primary_email) AS name FROM users WHERE id = $1`, [user.userId])).rows[0]?.name ?? "";
+      const result = await postMessage(client, workspaceId, jobId, { userId: user.userId, name }, input);
+      if (!result.replayed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "job.message_posted.v1", entityType: "job", entityId: jobId, after: { messageId: result.id, told: result.told } });
+      return readThread(client, workspaceId, jobId, user.userId);
+    });
+  }
+
+  /** §0.3 P11: the step now's suggestions (none when AI is off for the workspace). */
+  suggestions(actor: RequestActor, workspaceId: string, jobId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      await this.visibleJob(client, workspaceId, jobId, user.userId);
+      const reference = (await client.query<{ reference: string }>(`SELECT reference FROM job_identities WHERE workspace_id = $1 AND id = $2`, [workspaceId, jobId])).rows[0]?.reference ?? "";
+      const journey = await loadJobJourney(client, workspaceId, { id: jobId, reference });
+      return { items: await readJobSuggestions(client, workspaceId, journey, user.userId) };
+    });
+  }
+
+  /** §0.3 P11: a person uses or dismisses one suggestion. */
+  decideSuggestion(actor: RequestActor, workspaceId: string, jobId: string, suggestionId: string, input: Record<string, unknown>) {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      await this.visibleJob(client, workspaceId, jobId, user.userId);
+      const name = (await client.query<{ name: string }>(`SELECT coalesce(display_name, primary_email) AS name FROM users WHERE id = $1`, [user.userId])).rows[0]?.name ?? "";
+      return decideJobSuggestion(client, workspaceId, jobId, { userId: user.userId, name }, suggestionId, input);
+    });
+  }
+
+  markThreadRead(actor: RequestActor, workspaceId: string, jobId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, readablePermissions, async (client, user) => {
+      await this.visibleJob(client, workspaceId, jobId, user.userId);
+      await markRead(client, workspaceId, jobId, user.userId);
+      return { ok: true };
+    });
+  }
+
+  /** The job, if this person may see it; otherwise "not found" (never whether it exists). */
+  private async visibleJob(client: PoolClient, workspaceId: string, jobId: string, userId: string) {
+    const scope = await this.scope(client, workspaceId, userId);
+    const visible = (await client.query<{ id: string }>(
+      `SELECT identity.id::text FROM job_identities identity WHERE identity.workspace_id=$1 AND identity.id=$9
+       AND EXISTS (SELECT 1 FROM job_identity_links link WHERE link.workspace_id=identity.workspace_id
+         AND link.job_id=identity.id AND ${visibleStatus} AND ${visibleLink})`,
+      [...this.params(workspaceId, scope), jobId],
+    )).rows[0];
+    if (!visible) throw new NotFoundException("Job not found.");
   }
 
   setStage(actor: RequestActor, workspaceId: string, jobId: string, input: SetJobStageDto) {

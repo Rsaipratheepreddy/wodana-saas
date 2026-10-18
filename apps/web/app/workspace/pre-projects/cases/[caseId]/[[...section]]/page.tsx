@@ -28,7 +28,7 @@ export default async function CasePage({ params, searchParams }: {
   if (route.section === "documents") redirect(caseHref(caseId, query, "overview"));
   // Every quote (design fee, fit-out, variation) is one list and one editor now.
   if (route.section === "boq") redirect(caseHref(caseId, query, "quotations"));
-  const commercialSection = ['boq','quotations','contracts','payment-plan','variations','approvals','execution-release','client-portal'].includes(route.section);
+  const commercialSection = ['boq','quotations','contracts','payment-plan','variations','approvals','deal-file','execution-release','client-portal'].includes(route.section);
   const needsCommercialState = commercialSection || route.section === "overview";
   const preparation = requirementViews.some(item=>item.section===route.section)||['designs','site','approvals'].includes(route.section);
   const [record, commercialState, content, definition, overview] = await Promise.all([

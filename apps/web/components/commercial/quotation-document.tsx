@@ -1,7 +1,7 @@
 "use client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
-import { EmptyState, useDesignSystem } from "@/design-system";
+import { Button, EmptyState, useDesignSystem } from "@/design-system";
 import { Fragment } from "react";
 import {
   materialAmount,
@@ -77,9 +77,9 @@ export function QuotationDocument({
       <div className={s.cover}>
         {onEditHeader && (
           <div className={s.coverActions}>
-            <button className={s.editHeader} onClick={onEditHeader}>
+            <Button size="compact" className={s.editHeader} onPress={onEditHeader}>
               {t("Edit header & logo")}
-            </button>
+            </Button>
           </div>
         )}
         <QuotationCover
@@ -110,7 +110,7 @@ export function QuotationDocument({
                   </small>
                 </div>
                 {onConfigure && (
-                  <button onClick={() => onConfigure(room)}>{t("Edit room")}</button>
+                  <Button size="compact" onPress={() => onConfigure(room)}>{t("Edit room")}</Button>
                 )}
               </header>
               {lines.length ? (
@@ -120,10 +120,10 @@ export function QuotationDocument({
                       <col style={{ width: "18%" }} />
                       <col style={{ width: "12%" }} />
                       <col style={{ width: "12%" }} />
-                      <col style={{ width: "24%" }} />
+                      <col style={{ width: "20%" }} />
                       <col style={{ width: "8%" }} />
-                      <col style={{ width: "13%" }} />
-                      <col style={{ width: "13%" }} />
+                      <col style={{ width: "15%" }} />
+                      <col style={{ width: "15%" }} />
                     </colgroup>
                     <thead>
                       <tr>
@@ -142,13 +142,13 @@ export function QuotationDocument({
                           <tr>
                             <td data-label={t("Item")}>
                               {onConfigure ? (
-                                <button
+                                <Button size="compact"
                                   className={s.itemLink}
                                   aria-label={t("Edit {title}", { title: quotationItemName(line.title, room) })}
-                                  onClick={() => onConfigure(room, line.id)}
+                                  onPress={() => onConfigure(room, line.id)}
                                 >
                                   {quotationItemName(line.title, room)}
-                                </button>
+                                </Button>
                               ) : (
                                 <strong>
                                   {quotationItemName(line.title, room)}
@@ -168,8 +168,8 @@ export function QuotationDocument({
                               {line.quantity}{" "}
                               <span className={s.muted}>{line.unit}</span>
                             </td>
-                            <td data-label={t("Rate")}>{money(line.rate, quote.currency, locale)}</td>
-                            <td data-label={t("Amount")}>
+                            <td data-label={t("Rate")} className={s.money}>{money(line.rate, quote.currency, locale)}</td>
+                            <td data-label={t("Amount")} className={s.money}>
                               <strong>
                                 {money(
                                   line.quantity * line.rate,
@@ -255,8 +255,8 @@ export function QuotationDocument({
                 <div className={s.emptyRoom}>
                   {t("No items yet.")}{" "}
                   {onConfigure && (
-                    <button onClick={() => onConfigure(room)}>
-                      {t("Add items →")}</button>
+                    <Button size="compact" onPress={() => onConfigure(room)}>
+                      {t("Add items →")}</Button>
                   )}
                 </div>
               )}

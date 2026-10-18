@@ -1,8 +1,8 @@
 "use client";
 
+import { Badge } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FileKind, InvoiceKind, MaterialLocation, RequestKind, RequestStatus } from "@/lib/finance-requests/types";
-import styles from "./finance-requests.module.css";
 
 type Tone = "neutral" | "info" | "warning" | "success" | "danger";
 const TONES: Record<RequestStatus, Tone> = { new: "info", in_progress: "neutral", needs_info: "warning", done: "success", rejected: "danger" };
@@ -35,5 +35,5 @@ export function useFileKindLabels(): Record<FileKind, string> {
 /** Where a request stands: one word, its tone reinforcing it. */
 export function RequestStatusLabel({ status }: { status: RequestStatus }) {
   const labels = useStatusLabels();
-  return <span className={styles.status} data-tone={TONES[status]}>{labels[status]}</span>;
+  return <Badge tone={TONES[status]}>{labels[status]}</Badge>;
 }

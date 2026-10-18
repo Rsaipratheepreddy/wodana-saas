@@ -6,6 +6,7 @@ import type { CloseOut, LiveScope, MaterialsState, ProjectDetail, ProjectOvervie
 import { ProjectPage } from "./project-page";
 import { splitByPercent } from "./sealed-document";
 import { ProjectsPage } from "./projects-page";
+import { clearJobNowCache } from "@/lib/jobs/job-now";
 import { StartProjectDialog } from "./start-project-dialog";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
@@ -48,21 +49,23 @@ const mount = (respond: (url: string, body: Record<string, unknown> | undefined)
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 };
-const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(String(init!.body)));
+const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST" && typeof init.body === "string").map(([, init]) => JSON.parse(String(init!.body)));
 
 describe("projects", () => {
-  afterEach(() => { vi.unstubAllGlobals(); router.push.mockReset(); });
+  afterEach(() => { vi.unstubAllGlobals(); router.push.mockReset(); clearJobNowCache(); });
 
   it("lists running projects with their stage, next step and handover, and filters by status", async () => {
     const rows: ProjectRow[] = [
       { ...detail().project, stage: { name: "Kickoff", position: 1, count: 8 }, lead: "Omar Haddad", next: detail().next },
       { ...detail({ id: "p2", reference: "PRJ-0006", name: "Marina Penthouse", status: "on_hold" }).project, stage: null, lead: null, next: null },
     ];
-    mount(() => ({ projects: rows, canStart: true }));
+    // §0.3 P10: the next step is the job's step now, read from the journey.
+    mount((url) => url.includes("/jobs/now") ? { items: [{ type: "project", id: PID, jobId: "job-1", reference: "J-000001", chapter: "make",
+      now: { label: "Project kick-off", owner: "Omar Haddad", dueAt: null, late: false, href: null } }] } : { projects: rows, canStart: true });
     render(<DesignSystemProvider><ProjectsPage workspaceId="w" /></DesignSystemProvider>);
     const table = await screen.findByRole("grid", { name: "Projects" }).catch(() => screen.findByRole("table", { name: "Projects" }));
     expect(within(table).getByRole("link", { name: "Villa 12" })).toHaveAttribute("href", `/workspace/projects/${PID}`);
-    expect(table).toHaveTextContent("Kickoff meeting held");
+    expect(await within(table).findByText("Project kick-off")).toBeInTheDocument();
     expect(table).not.toHaveTextContent("Marina Penthouse");
     await userEvent.click(screen.getByRole("button", { name: "On hold" }));
     expect(await screen.findByText("Marina Penthouse")).toBeInTheDocument();
@@ -201,7 +204,7 @@ describe("projects", () => {
     let loads = 0;
     // The linked-records read is not a reload of the project.
     mount((url, body) => (body ? new Error("Someone else changed this project. Reload to see their changes.")
-      : url.includes("/api/history/") ? { items: [], next: null, timeZone: "UTC" } : url.includes("/links") ? null : (loads++, detail())));
+      : url.includes("/api/history/") ? { items: [], next: null, timeZone: "UTC" } : url.includes("/links") ? null : url.includes("/jobs/now") ? { items: [] } : (loads++, detail())));
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
     await userEvent.click(await screen.findByRole("checkbox", { name: "Kickoff meeting held" }));
     expect(await screen.findByText(/Someone else changed this project/)).toBeInTheDocument();
@@ -438,7 +441,9 @@ describe("projects", () => {
     const live: LiveScope = { lines: [], packages: [], seals: [], variations: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1" };
     const item = (id: string, name: string) => ({ id, position: 0, catalogItemId: null, name, code: "", specification: "", supplier: "", quantity: null, unit: "", note: "", boqLineIds: [], version: 1, clientChoice: true, usedIn: [], decision: null });
     let materials: MaterialsState = { state: "draft", items: [item("m1", "Quartz, Calacatta"), item("m2", "Oak veneer")], revisions: [], version: 4, canEdit: true };
+    const signed = { id: "11111111-1111-4111-8111-111111111111", name: "signed-list.pdf", mimeType: "application/pdf", hasPreview: false, uploadedAt: "2026-09-27T12:30:00Z" };
     const fetcher = mount((url, body) => {
+      if (url.startsWith("/api/workspace/evidence")) return signed;
       if (body?.action === "send_materials") materials = { ...materials, state: "sent", revisions: [{ id: "r1", number: 1, status: "sent", sentAt: new Date().toISOString(), sentByName: "Dana", decidedAt: null, decidedBy: null, method: null, note: "" }] };
       if (body) return detail({ version: 5 });
       return url.includes("/materials") ? materials : url.includes("/scope") ? live : detail();
@@ -454,8 +459,12 @@ describe("projects", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Decided by/ }), "Maya");
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: "What they want instead of Oak veneer" }), "Smoked oak");
+    // A signed copy comes with its file.
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.upload(within(dialog).getByLabelText("Add a photo or PDF"), new File(["%PDF-"], "signed-list.pdf", { type: "application/pdf" }));
+    await within(dialog).findByRole("link", { name: "Open signed-list.pdf" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "record_materials_decision", decidedBy: "Maya", method: "signed_document",
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "record_materials_decision", decidedBy: "Maya", method: "signed_document", evidenceFileIds: [signed.id],
       decisions: [{ itemId: "m1", decision: "approved", note: "" }, { itemId: "m2", decision: "rejected", note: "Smoked oak" }] }));
   });
 

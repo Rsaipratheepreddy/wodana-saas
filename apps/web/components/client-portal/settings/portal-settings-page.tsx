@@ -54,7 +54,7 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
     try {
       const result = await api.saveSettings({
         version: draft.version, enabled: draft.enabled, sections: draft.sections, progress: draft.progress, invoiceAmounts: draft.invoiceAmounts,
-        boqEnquiryTypes: draft.boqEnquiryTypes ?? [], welcomeTitle: draft.welcomeTitle, welcomeText: draft.welcomeText,
+        boqEnquiryTypes: draft.boqEnquiryTypes ?? [], welcomeTitle: draft.welcomeTitle, welcomeText: draft.welcomeText, catalogueUrl: draft.catalogueUrl ?? "",
         support: { phone: joinPhone(draft.support.phone.country, draft.support.phone.national), email: draft.support.email,
           whatsapp: joinPhone(draft.support.whatsapp.country, draft.support.whatsapp.national) },
       });
@@ -117,6 +117,8 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
           onChange={(national) => change({ support: { ...draft.support, whatsapp: { ...draft.support.whatsapp, national } } })}
           onCountryChange={(country) => change({ support: { ...draft.support, whatsapp: { ...draft.support.whatsapp, country } } })} />
         <EmailInput isDisabled={!editable} label={t("Email")} value={draft.support.email} onChange={(email) => change({ support: { ...draft.support, email } })} maxLength={254} />
+        <TextInput isDisabled={!editable} inputType="url" label={t("Online catalogue")} placeholder="https://" value={draft.catalogueUrl ?? ""}
+          onChange={(catalogueUrl) => change({ catalogueUrl })} maxLength={500} />
       </div>
     </SettingsSection>
     <SettingsSection id="portal-preview" title={t("Preview")}>

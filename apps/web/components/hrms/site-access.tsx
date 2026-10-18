@@ -107,7 +107,7 @@ function SiteListDialog({ api, access, members, onChanged, onClose }: {
         <span className={styles.grow}><span>{entry.name}</span><small>{what(entry)}</small></span>
         <IconButton aria-label={t("Remove {name}", { name: entry.name })} size="compact" variant="quiet" isDisabled={Boolean(busy)}
           onPress={() => void run(entry.id, () => api.removeSiteAccess(entry.id))}><X aria-hidden="true" size={14} /></IconButton>
-      </li>)}</ul> : <p className={styles.muted}>{t("No one on this site's list yet")}</p>}
+      </li>)}</ul> : <EmptyState illustration={null} title={t("No one on this site's list yet")} />}
       <div className={styles.part}>
         <SegmentedControl label={t("Add")} value={kind} onChange={(value) => { setKind(value as AddKind); setChosen(null); }}
           options={[{ id: "crew", label: t("Crew") }, { id: "worker", label: t("Crew worker") }, { id: "member", label: t("Staff") }]} />

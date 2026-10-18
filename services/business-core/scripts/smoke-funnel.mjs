@@ -1404,6 +1404,8 @@ await commercial("report_payment_receipt", {
   paymentId: releasePayment.id,
   reference: "SYNTHETIC-ADVANCE-RECEIPT",
   evidence: "Synthetic local-only bank receipt evidence; no provider or real payment.",
+  method: "bank",
+  receivedOn: new Date().toISOString().slice(0, 10),
 });
 await commercial("verify_payment", { paymentId: releasePayment.id }, reviewer);
 const wonCandidate = await request(`/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}`);

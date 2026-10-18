@@ -18,18 +18,19 @@
 .frame { display: flex; flex-direction: column; block-size: clamp(28rem, calc(100dvh - 13rem), 64rem); min-inline-size: 0; overflow: hidden; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
 .loading { padding: var(--wd-space-4); }
 
-/* ── Events: a soft token tint with an accent edge at the inline start ─────────────────────────────── */
-.event, .chip { --event-accent: var(--wd-color-info); --event-tint: var(--wd-color-info-subtle); }
-:is(.event, .chip)[data-kind="call"] { --event-accent: var(--wd-color-action-primary); --event-tint: var(--wd-color-action-primary-subtle); }
-:is(.event, .chip)[data-provider="project"] { --event-accent: var(--wd-color-warning); --event-tint: var(--wd-color-warning-subtle); }
-:is(.event, .chip)[data-provider="google"] { --event-accent: var(--wd-color-text-tertiary); --event-tint: var(--wd-color-surface-muted); }
+/* ── Events: the design system's event chip (wd-event-chip); each kind of event sets its accent and tint ── */
+.event { composes: wd-event-chip from global; }
+.chip { --wd-event-accent: var(--wd-color-info); --wd-event-tint: var(--wd-color-info-subtle); }
+:is(.event, .chip)[data-kind="call"] { --wd-event-accent: var(--wd-color-action-primary); --wd-event-tint: var(--wd-color-action-primary-subtle); }
+:is(.event, .chip)[data-provider="project"] { --wd-event-accent: var(--wd-color-warning); --wd-event-tint: var(--wd-color-warning-subtle); }
+:is(.event, .chip)[data-provider="google"] { --wd-event-accent: var(--wd-color-text-tertiary); --wd-event-tint: var(--wd-color-surface-muted); }
 /* Team calendars (PLM-090/091): the team's work in success; anything past its day in danger (the label says "Overdue" too). */
-:is(.event, .chip)[data-provider="team"] { --event-accent: var(--wd-color-success); --event-tint: var(--wd-color-success-subtle); }
-:is(.event, .chip)[data-overdue] { --event-accent: var(--wd-color-danger); --event-tint: var(--wd-color-danger-subtle); }
-:is(.event, .chip)[data-completed] { opacity: 0.6; }
-:is(.event, .chip)[data-completed] .eventTitle { text-decoration: line-through; }
+:is(.event, .chip)[data-provider="team"] { --wd-event-accent: var(--wd-color-success); --wd-event-tint: var(--wd-color-success-subtle); }
+:is(.event, .chip)[data-overdue] { --wd-event-accent: var(--wd-color-danger); --wd-event-tint: var(--wd-color-danger-subtle); }
+.chip[data-completed] { opacity: 0.6; }
+.chip[data-completed] .eventTitle { text-decoration: line-through; }
 .eventTitle { min-inline-size: 0; overflow: hidden; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-:is(.event, .chip, .date, .more, .moreLane, .timeSlot, .dayHeading):focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+:is(.chip, .date, .moreLane, .timeSlot, .dayHeading):focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
 
 /* ── Week and day: a time grid ───────────────────────────────────────────────────────────────────── */
 .timeScroll { flex: 1; min-block-size: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
@@ -55,13 +56,10 @@
 .timeSlot:hover { background: var(--wd-color-surface-hover); }
 .now { position: absolute; inset-inline: 0; z-index: 2; block-size: 2px; background: var(--wd-color-danger); pointer-events: none; }
 .now::before { content: ""; position: absolute; inset-inline-start: calc(var(--wd-space-1) * -1); inset-block-start: calc(var(--wd-space-1) * -1 + 1px); inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-danger); }
-.event { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--wd-space-0-5); min-inline-size: 0; margin: 0; padding: var(--wd-space-1) var(--wd-space-1-5); overflow: hidden; border: 0; border-inline-start: 3px solid var(--event-accent); border-radius: var(--wd-radius-xs); background: var(--event-tint); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-xs); line-height: 1.3; text-align: start; cursor: pointer; }
 .timeDay .event { position: absolute; z-index: 1; }
-.event:hover { filter: brightness(0.97); }
-.event small, .chip small, .hours span, .periodTitle { unicode-bidi: plaintext; }
-.event small { max-inline-size: 100%; overflow: hidden; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.chip small, .hours span, .periodTitle { unicode-bidi: plaintext; }
+.event small { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .event .eventTitle { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.event[data-compact] { flex-direction: row; align-items: center; gap: var(--wd-space-1); padding-block: 0; }
 .event[data-compact] .eventTitle { display: block; white-space: nowrap; }
 .event[data-tiny] small { display: none; }
 .moreLane { position: absolute; inset-inline-end: 3px; z-index: 1; inline-size: calc(2.25rem - 6px); padding-block-start: var(--wd-space-1); border: 0; border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); cursor: pointer; }
@@ -80,12 +78,11 @@
 .date { align-self: flex-start; display: inline-grid; place-items: center; min-inline-size: var(--wd-space-6); block-size: var(--wd-space-6); padding-inline: var(--wd-space-1); border: 0; border-radius: var(--wd-radius-pill); background: transparent; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); cursor: pointer; }
 .date:hover { background: var(--wd-color-surface-hover); }
 .date[data-today] { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); font-weight: var(--wd-weight-semibold); }
-.chip { display: flex; align-items: center; gap: var(--wd-space-1); inline-size: 100%; min-inline-size: 0; padding: var(--wd-space-0-5) var(--wd-space-1-5); border: 0; border-radius: var(--wd-radius-xs); background: var(--event-tint); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-2xs); text-align: start; cursor: pointer; }
-.chip::before { content: ""; flex: none; inline-size: var(--wd-space-1-5); block-size: var(--wd-space-1-5); border-radius: var(--wd-radius-pill); background: var(--event-accent); }
+.chip { display: flex; align-items: center; gap: var(--wd-space-1); inline-size: 100%; min-inline-size: 0; padding: var(--wd-space-0-5) var(--wd-space-1-5); border: 0; border-radius: var(--wd-radius-xs); background: var(--wd-event-tint); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-2xs); text-align: start; cursor: pointer; }
+.chip::before { content: ""; flex: none; inline-size: var(--wd-space-1-5); block-size: var(--wd-space-1-5); border-radius: var(--wd-radius-pill); background: var(--wd-event-accent); }
 .chip small { flex: none; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
 .chip:hover { filter: brightness(0.97); }
-.more { align-self: flex-start; padding: 0 var(--wd-space-1-5); border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-2xs); cursor: pointer; }
-.more:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.more { composes: wd-event-more from global; }
 
 /* ── Inspector ──────────────────────────────────────────────────────────────────────────────────── */
 .details { display: grid; align-content: start; gap: var(--wd-space-4); font-size: var(--wd-text-sm); }

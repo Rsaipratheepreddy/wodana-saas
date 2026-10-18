@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, InlineNotice, TextAreaField } from "@/design-system";
+import { Button, InlineNotice, ReviewFiles, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalChange } from "@/lib/client-portal/types";
@@ -68,7 +68,7 @@ export function ChangeSheet({ change, caseId, api, format, channels, onDecided }
       {change.designImpact ? <><dt>{t("Design")}</dt><dd dir="auto">{change.designImpact}</dd></> : null}
     </dl> : null}
     {change.status === "declined" && change.declineNote ? <p className={styles.body} dir="auto">{change.declineNote}</p> : null}
-    {change.signed ? <a className={styles.textButton} href={api.file("change", change.id)} rel="noreferrer" target="_blank">{t("Signed copy")}</a> : null}
+    {change.signed ? <ReviewFiles label={t("Signed copy")} files={[{ id: change.id, name: t("Signed copy"), href: api.file("change", change.id) }]} /> : null}
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {change.canDecide ? mode === "decline" ? <>
       <TextAreaField label={t("Why are you declining it?")} value={note} onChange={setNote} maxLength={2000} isRequired autoFocus />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { Button, FormSection, SelectField, TextInput } from '@/design-system';
+import { Button, FormSection, InlineNotice, SelectField, TextInput } from '@/design-system';
 import { blankEntry, entryPayload, blankSpecification, caseRequest, specificationPayload, type CatalogChoice, type CaseContent, type ItemDimension, type ItemSpecification, type ScopeEntry } from '@/lib/pre-project/content';
 import { CaseModal, CatalogChoiceField } from './case-controls';
 import styles from './case-content.module.css';
@@ -38,7 +38,7 @@ export function MeasurementCreateForm({ data, entries, initialEntryId, initialRo
   const patch = (value: Partial<ItemDimension>) => setDimension(current => ({ ...current, ...value }));
   return <CaseModal size="md" title={t("Add measurement")} dirty={dirty} busy={saving} onClose={onClose}
     footer={data.canEdit && <Button type="submit" form="new-measurement-form" variant="primary" isLoading={saving}>{t("Save measurement")}</Button>}>
-    {error && <p role="alert" className={styles.error}>{error}</p>}
+    {error && <InlineNotice tone="error" message={error} />}
     {<form id="new-measurement-form" onSubmit={async event => {
       event.preventDefault();
       if (disabled) return;

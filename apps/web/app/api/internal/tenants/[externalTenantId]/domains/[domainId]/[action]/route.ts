@@ -5,7 +5,7 @@ import { getServerT } from "@/lib/i18n/server";
 const VALID_TENANT = /^[a-zA-Z0-9_-]{1,160}$/;
 const ACTIONS = new Set(["verify", "recheck", "rotate-challenge", "remove"]);
 
-export async function POST(request: Request, context: { params: Promise<{ externalTenantId: string; domainId: string; action: string }> }) {
+export async function POST(request: Request, context: RouteContext<"/api/internal/tenants/[externalTenantId]/domains/[domainId]/[action]">) {
   const t = await getServerT();
   if (!isSameOrigin(request)) return invalidRequest(t("The request origin is not allowed."));
   const { externalTenantId, domainId, action } = await context.params;

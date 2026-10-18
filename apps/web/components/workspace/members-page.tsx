@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
-import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, FormDialog, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, SettingsRow, SettingsSection, Switch, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, DesignSystemProvider, FileUploader, Form, FormDialog, GroupedTable, IconMenuButton, InlineNotice, MultiSelectField, SelectField, SettingsPage, SettingsRow, SettingsSection, Switch, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import type { ViewAsSettings, ViewAsTarget } from "@/lib/workspace/view-as";
 import { ViewAsDialog } from "./view-as-dialog";
 import { OffboardDialog } from "./offboard-dialog";
@@ -543,7 +543,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         const names = [...roleCodes, ...inherited].map((role) => readableRole(role, initialData.roles)).filter((role, index, all) => all.indexOf(role) === index);
         if (!names.length) return <span className={styles.roleText}>{t("Via team")}</span>;
         const rest = names.slice(2);
-        return <span className={styles.roleChips}>{names.slice(0, 2).map((role) => <Badge key={role} tone="neutral">{role}</Badge>)}{rest.length ? <Badge title={rest.join(", ")} tone="neutral">{`+${rest.length}`}</Badge> : null}</span>;
+        return <span className={styles.roleChips}>{names.slice(0, 2).map((role) => <Badge key={role} hue="auto">{role}</Badge>)}{rest.length ? <Badge title={rest.join(", ")} tone="neutral">{`+${rest.length}`}</Badge> : null}</span>;
       },
     },
     {
@@ -644,7 +644,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           {seatsFull ? <Callout title={t("Every seat is taken")} tone="warning">
             {t("Invitations wait for a free seat.")} <Link href="/workspace/billing">{t("Add seats in Billing")}</Link>
           </Callout> : null}
-          {quickFailure ? <p className={styles.composerError} role="alert">{quickFailure}</p> : null}
+          {quickFailure ? <InlineNotice message={quickFailure} tone="error" /> : null}
         </section> : null}
 
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
@@ -760,15 +760,16 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         title={t("Apply member access changes?")}
       />
 
-      <ControlledModalDialog
-        footer={<div className="wd-dialog-actions"><Button isDisabled={isCancelling} onPress={() => setCancellingInvitation(null)}>{t("Keep invitation")}</Button><Button isLoading={isCancelling} onPress={cancelInvitation} variant="danger">{t("Cancel invitation")}</Button></div>}
-        isDismissable={!isCancelling}
+      <ConfirmationDialog
+        body={cancellingInvitation ? t("The activation link for {email} will stop working immediately.", { email: cancellingInvitation.email }) : null}
+        cancelLabel={t("Keep invitation")}
+        confirmLabel={t("Cancel invitation")}
+        isConfirming={isCancelling}
         isOpen={Boolean(cancellingInvitation)}
+        onConfirm={() => void cancelInvitation()}
         onOpenChange={(open) => { if (!open && !isCancelling) setCancellingInvitation(null); }}
         title={t("Cancel invitation?")}
-      >
-        {cancellingInvitation ? t("The activation link for {email} will stop working immediately.", { email: cancellingInvitation.email }) : null}
-      </ControlledModalDialog>
+      />
       {offboarding ? <OffboardDialog workspaceId={initialData.workspaceId} membershipId={offboarding.id} name={offboarding.displayName} onClose={() => setOffboarding(null)}
         onDone={(message) => { setMembers((current) => current.map((member) => member.id === offboarding.id ? { ...member, status: "suspended" } : member)); setOffboarding(null); setStatus(message); }} /> : null}
     </DesignSystemProvider>

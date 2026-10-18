@@ -1,11 +1,20 @@
-/* Settings → Notifications: one row per module, three channel switches under one header. */
+/* Settings → Notifications: one row per group, a switch per channel the workspace has turned on, under one header. */
 .header,
-.switches { display: grid; grid-template-columns: repeat(3, 4.5rem); justify-items: center; align-items: center; gap: var(--wd-space-2); }
-.header { grid-template-columns: minmax(0, 1fr) repeat(3, 4.5rem); padding-block: var(--wd-space-2); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: 600; }
+.switches { display: grid; grid-template-columns: repeat(var(--notice-columns, 3), var(--wd-space-16)); justify-items: center; align-items: center; gap: var(--wd-space-2); }
+.header { grid-template-columns: minmax(0, 1fr) repeat(var(--notice-columns, 3), var(--wd-space-16)); padding-block: var(--wd-space-2); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); text-align: center; }
+.header[data-columns="2"],
+.switches[data-columns="2"] { --notice-columns: 2; }
+.header[data-columns="4"],
+.switches[data-columns="4"] { --notice-columns: 4; }
 .times { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .conflict { display: flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 
 @media (max-width: 640px) {
-  .header { grid-template-columns: repeat(3, 4.5rem); justify-content: end; }
+  .header { grid-template-columns: repeat(var(--notice-columns, 3), var(--wd-space-16)); justify-content: end; }
   .header > span:first-child { display: none; }
+  /* Each row stacks on a phone: its switches line up under the same columns as the header. */
+  .switches { inline-size: 100%; justify-content: end; }
+  /* A group's name and its switches stay on one line (the row doesn't stack). */
+  :global(.wd-settings-row):has(> :global(.wd-settings-value) > .switches) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  :global(.wd-settings-row):has(> :global(.wd-settings-value) > .switches) > :global(.wd-settings-value) { inline-size: auto; }
 }

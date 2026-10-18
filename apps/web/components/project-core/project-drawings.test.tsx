@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { DrawingRevision, DrawingsState } from "@/lib/project-core/types";
@@ -27,11 +27,13 @@ it("PLM-058: the technical site check needs a note when it finds changes, and is
   expect(await screen.findByText("R1 · Waiting for the site check")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "kitchen.pdf" })).toHaveAttribute("href", expect.stringContaining("projects/p/drawings/files/f1"));
   fireEvent.click(screen.getByRole("button", { name: "Record the site check" }));
-  fireEvent.click(await screen.findByRole("radio", { name: "Changes needed" }));
-  const save = screen.getByRole("button", { name: "Save" });
+  // The check opens the revision's drawings; sending it back needs what to change.
+  expect(within(await screen.findByRole("dialog")).getByRole("link", { name: "Open kitchen.pdf" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("radio", { name: "Changes needed" }));
+  const save = screen.getByRole("button", { name: "Changes needed" });
   expect(save).toBeDisabled();
-  fireEvent.change(screen.getByRole("textbox", { name: /What needs changing/ }), { target: { value: "Sink wall 40 mm shorter" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  fireEvent.change(screen.getByRole("textbox", { name: /What needs to change/ }), { target: { value: "Sink wall 40 mm shorter" } });
+  fireEvent.click(screen.getByRole("button", { name: "Changes needed" }));
   await waitFor(() => expect(calls.some((call) => call.body && (call.body as { action?: string }).action === "check_drawings")).toBe(true));
   expect(calls.find((call) => (call.body as { action?: string } | null)?.action === "check_drawings")!.body)
     .toEqual({ action: "check_drawings", version: 4, revisionId: "r1", result: "changes", note: "Sink wall 40 mm shorter" });
@@ -49,7 +51,7 @@ it("PLM-059: the project manager sends checked drawings and records the client's
     decidedByName: "Maya Client", decisionVia: "portal" })], canUpload: false, canCheck: false }) })));
   render(<ProjectDrawings workspaceId="w" projectId="p" version={4} />);
   expect(await screen.findByText("R1 · Approved by the client")).toBeInTheDocument();
-  expect(screen.getByText(/Maya Client/)).toHaveTextContent("In the client portal");
+  expect(screen.getByText(/Maya Client/).closest("li")).toHaveTextContent("In the client portal");
   expect(screen.queryByRole("button", { name: /Upload|Record|Send/ })).not.toBeInTheDocument();
 });
 
@@ -86,7 +88,7 @@ it("PLM-149: shop drawings wait for the technical site measure, recorded with it
   render(<ProjectDrawings workspaceId="w" projectId="p" version={4} />);
   expect(await screen.findByText("R1 · Waiting for the design check")).toBeInTheDocument();
   expect(screen.getByText("Sink wall width")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "sketch.pdf" })).toHaveAttribute("href", expect.stringContaining("projects/p/technical-measures/files/f9"));
+  expect(screen.getByRole("link", { name: "Open sketch.pdf" })).toHaveAttribute("href", expect.stringContaining("projects/p/technical-measures/files/f9"));
   // The technical team doesn't check against the design nor record the measure.
   expect(screen.queryByRole("button", { name: /Check against the design|Record the technical measure|Send/ })).not.toBeInTheDocument();
 });

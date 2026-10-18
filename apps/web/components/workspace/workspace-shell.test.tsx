@@ -168,7 +168,7 @@ describe("WorkspaceShell theme", () => {
     const navigation = within(screen.getByRole("navigation", { name: "Planning sections" }));
     expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("href", `${casePath}/requirements`);
     expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("aria-current", "page");
-    expect(navigation.getAllByRole("link").map(link => link.textContent)).toEqual(["Overview", "Requirements", "Site", "Moodboard", "Design", "Quotes", "Agreement"]);
+    expect(navigation.getAllByRole("link").map(link => link.textContent)).toEqual(["Overview", "Requirements", "Site", "Moodboard", "Design", "Quotes", "Deal"]);
     expect(navigation.getByRole("link", { name: "Site" })).toHaveAttribute("href", `${casePath}/site`);
     expect(navigation.getByRole("link", { name: "Moodboard" })).toHaveAttribute("href", `${casePath}/inspiration`);
     expect(screen.queryByRole("navigation", { name: "Requirements views" })).not.toBeInTheDocument();
@@ -275,54 +275,27 @@ describe("WorkspaceShell theme", () => {
     expect(within(accountMenu).getByRole("button", { name: "Sign out" })).toBeEnabled();
   });
 
-  it("opens and closes the Woddy chat panel from the header", async () => {
-    const interaction = userEvent.setup();
-    render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
-
-    await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
-    await interaction.click(screen.getByRole("menuitem", { name: "Ask a question" }));
-    expect(screen.getByRole("dialog", { name: "Woddy chat" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Message Woddy" })).toBeInTheDocument();
-    await interaction.click(screen.getByRole("button", { name: "Close Woddy chat" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Woddy chat" })).not.toBeInTheDocument());
-  });
-
-  it("offers Woddy's tours from the header: this screen's tour and every tour with its length", async () => {
+  // §0.3 P11: the header has Help (this screen and the tours); the assistant chat panel is gone (AI suggests inside each step).
+  it("offers Help from the header: this screen's tour and every tour with its length, and no assistant chat", async () => {
     const interaction = userEvent.setup();
     route.pathname = "/workspace";
     render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
-    await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
+    expect(screen.queryByRole("button", { name: "Ask Woddy" })).not.toBeInTheDocument();
+    await interaction.click(screen.getByRole("button", { name: "Help" }));
     expect(screen.getByRole("menuitem", { name: "Explain this screen" })).not.toHaveAttribute("aria-disabled");
     expect(screen.getByRole("menuitem", { name: /Home at a glance\s*\d+ min/ })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /From enquiry to opportunity/ })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Ask a question" })).not.toBeInTheDocument();
   });
 
-  it("has no tours on a phone: the Woddy button opens the chat directly", async () => {
+  it("has no tours on a phone, so no Help button that would do nothing", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width: 40rem"), addEventListener() {}, removeEventListener() {} }));
-    const interaction = userEvent.setup();
     route.pathname = "/workspace";
     route.search = "tour=home";
     render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
     expect(document.querySelector(".wd-tour")).toBeNull();
-    await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
-    expect(screen.queryByRole("menuitem", { name: "Explain this screen" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Woddy chat" })).toBeInTheDocument();
-  });
-
-  it("leaves Ask a question out while AI is off, and on a phone shows no Woddy button that would do nothing", async () => {
-    ai.ready = false;
-    try {
-      const interaction = userEvent.setup();
-      route.pathname = "/workspace";
-      const { unmount } = render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
-      await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
-      expect(screen.queryByRole("menuitem", { name: "Ask a question" })).not.toBeInTheDocument();
-      expect(screen.getByRole("menuitem", { name: /Home at a glance/ })).toBeInTheDocument();
-      unmount();
-      vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width: 40rem"), addEventListener() {}, removeEventListener() {} }));
-      render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
-      expect(screen.queryByRole("button", { name: "Ask Woddy" })).not.toBeInTheDocument();
-    } finally { ai.ready = true; }
+    expect(screen.queryByRole("button", { name: "Help" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ask Woddy" })).not.toBeInTheDocument();
   });
 });
 

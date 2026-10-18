@@ -17,7 +17,7 @@ export async function resolveQuietChats(db: Db, workspaceId: string) {
     ?? DEFAULT_AUTO_RESOLVE_DAYS;
   if (!days) return { resolved: 0 };
   const quiet = (await db.query<{ id: string }>(
-    `UPDATE crm_conversations conversation SET status = 'closed', resolved_at = now(), version = version + 1, updated_at = now()
+    `UPDATE crm_conversations conversation SET status = 'closed', resolved_at = now(), resolved_by = NULL, version = version + 1, updated_at = now()
       WHERE conversation.id IN (
         SELECT candidate.id FROM crm_conversations candidate
          WHERE candidate.workspace_id = $1 AND candidate.status = 'open'

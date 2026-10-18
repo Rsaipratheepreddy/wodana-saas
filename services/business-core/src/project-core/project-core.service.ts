@@ -19,7 +19,7 @@ import { readNeeds } from "../purchasing/orders";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
-import { confirmMaterialList, deleteMaterial, readMaterialListConfirmation, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, setMaterialDetails, suggestMaterials } from "./project-materials";
+import { confirmMaterialList, deleteMaterial, materialListMissing, readMaterialListConfirmation, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, setMaterialDetails, suggestMaterials } from "./project-materials";
 import { applyBoqAction, BOQ_COMMANDS, boqActionsFor, boqTechnicalRoleOf, canActOnBoq, membershipsWithPermission, readBoqState } from "./project-boq-state";
 import { ensurePurchasingSettings } from "../purchasing/orders";
 import { priceHolds } from "../purchasing/price-hold";
@@ -670,6 +670,9 @@ export class ProjectCoreService {
       } else if (action === "hand_over_technical") {
         // PLM-165: sales or design (anyone on the project, or its manager) hands the technical pack over; the technical team hears, also by email.
         open();
+        // Guide step 17: technical work starts only once the Material List is complete.
+        const incomplete = await materialListMissing(client, workspaceId, projectId);
+        if (incomplete.length) throw new ConflictException(`Complete the material list first: ${incomplete.slice(0, 5).join("; ")}${incomplete.length > 5 ? ` and ${incomplete.length - 5} more` : ""}.`);
         const result = await handOverTechnical(client, { workspaceId, projectId, userId: user.userId, note: body.note, version: body.handoverVersion });
         const stages = await readStages(client, workspaceId, [projectId]);
         const technical = technicalRoles(stages);

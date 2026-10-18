@@ -53,13 +53,13 @@ describe("quotation builder", () => {
     expect(within(grid).getByRole("combobox", { name: "Area" })).toHaveValue("Kitchen");
   });
 
-  it("keeps Qty, Unit, Rate and Amount frozen at the end while the sheet scrolls sideways", () => {
+  it("scrolls the whole sheet sideways as one, with no frozen window in the middle", () => {
     mount(state([line({ title: "Wardrobe" })]));
     const grid = screen.getByRole("grid", { name: "Quote lines" });
     for (const [label, key] of [["Qty", "qty"], ["Unit", "unit"], ["Rate", "rate"], ["Amount", "amount"]]) expect(within(grid).getAllByRole("columnheader", { name: label })[0]).toHaveAttribute("data-stick", key);
     expect(grid.querySelectorAll('[role="gridcell"][data-stick="amount"]').length).toBeGreaterThan(0);
-    // Each frozen column sits after the ones to its end: menu, then amount, rate and unit.
-    expect(grid.style.getPropertyValue("--stick-qty")).toBe("392px");
+    // No column is pinned to an edge: the sheet moves together.
+    expect(grid.style.getPropertyValue("--stick-qty")).toBe("");
   });
 
   it("wraps a long item name and description instead of widening the item column, the same width in every area", () => {

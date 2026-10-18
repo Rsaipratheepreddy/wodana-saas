@@ -1,4 +1,5 @@
 import { DesignPackagesService } from "../design/design-packages.service";
+import { bindEvidence, evidenceFor, evidenceIds } from "../evidence/decision-evidence";
 import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { prefillDesignFeeQuote } from "../quotation/design-fee-line";
@@ -9,11 +10,12 @@ import { dealInsightFor } from "./deal-file-insight";
 import { readCaseTeam } from "../project-core/project-team";
 import { autoStartProject } from "../project-core/project-start";
 import { markProposalWon } from "../crm/opportunities/opportunity-proposals";
+import { syncCaseProposals } from "./case-proposal-sync";
 import { decisionEvidenceFile, decisionRecorder } from "./quote-decision-access";
 import { extendQuoteValidity } from "./quote-expiry";
 import { readDefaultPaymentPlan, startingMilestones } from "./default-payment-plan";
 import { recordAudit } from "../audit/record-audit";
-import { noticeReceiptStep, permissionHolderNames } from "./commercial-notices";
+import { noticeReceiptReturned, noticeReceiptStep, permissionHolderNames } from "./commercial-notices";
 import { effectivePortalBrand } from "./effective-brand";
 import { newQuoteDefaults } from "./quote-defaults";
 import { tellClients } from "../client-portal/portal-notices";
@@ -25,6 +27,7 @@ import {
 } from "./commercial-scope";
 import { quotationTemplateContent } from "./quotation-template";
 import { confirmCommissionAmounts, normalizeCommissionLines, opportunityProofPath, paymentProofLink } from "./deal-submission";
+import { readCommissionTypes } from "../setup/commission-types";
 import { sameOffer, validateDeduction } from "./variation-controls";
 import {
   controlledChangeCanRelease,
@@ -52,16 +55,20 @@ import {
   paymentHasFinanceVerifiedReceipt,
   recordCreditNote,
   recordProviderSettlement,
+  manualReceiptTerms,
   reportManualReceipt,
   reverseProviderSettlement,
   upsertProviderInvoiceDocument,
   verifyReceipt,
+  returnManualReceipt,
 } from "./finance-ledger";
 import {
   agreementIsOperational,
   agreementMatchesAcceptedQuote,
   approvedMaterialEvidence,
   financeGatePaymentsReady,
+  dealChecklist,
+  DEAL_CHECK_LABELS,
   agreementHasSignedEvidence,
   isOperationalEvidence,
   materialApprovalsComplete,
@@ -72,8 +79,7 @@ import {
   quotationApprovalSources,
   releasePaymentIsOperational,
   dealPaymentProofReady,
-  quoteHasVerifiedReceipt,
-} from "./release-integrity";
+  quoteHasVerifiedReceipt, agreementEvidenceOperational } from "./release-integrity";
 import {
   BadRequestException,
   ConflictException,
@@ -82,6 +88,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { noticeDecision } from "../notifications/notice-choices";
 import type { PoolClient } from "pg";
 import { caseCurrency as currency, roundAmount, splitByPercent, sumAmounts } from "./case-money";
 import type { RequestActor } from "../auth/actor";
@@ -89,6 +96,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { ConfigService } from "@nestjs/config";
 import { CatalogSellingPriceService } from "./catalog-selling-price.service";
 import { PreProjectReadinessService } from "../pre-projects/pre-project-readiness.service";
+import { managerApprovalProblem } from "./manager-approval";
 import {
   acceptedQuoteTotals,
   acceptedQuoteValue,
@@ -134,8 +142,11 @@ import { beforeQuoteIssued, quotationEntityId, quotingEntity } from "../proposal
 import { budgetRange } from "../design/finishes.store";
 import { quoteReviewAction } from "../proposals/qs-requirement";
 import { checkOverBudget, settleQuietly } from "../value-engineering/value-engineering.store";
-import { quoteReferences } from "./case-quote-facts";
-import { dealFileReference } from "./deal-file-reference";
+import { estimateReferences, quoteReferences } from "./case-quote-facts";
+import { guardQuoteTerms } from "../quotation/locked-terms";
+import { currencyDecimals } from "../purchasing/orders";
+import { postJobEvent } from "../jobs/job-thread";
+import { agreementReference as nextAgreementReference, dealFileReference } from "./deal-file-reference";
 import { readLetterhead } from "../workspaces/entity-letterhead";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
@@ -193,7 +204,7 @@ export function isManualQuotationLine(line: QuoteLine) {
 
 export function commercialCommandPermission(action: string) {
   if (action === "qs_approve") return "commercial.estimate";
-  if (["verify_payment", "verify_credit", "review_deal_finance"].includes(action))
+  if (["verify_payment", "return_payment", "verify_credit", "review_deal_finance"].includes(action))
     return "commercial.finance.verify";
   if (action === "decide_owner_review") return "commercial.deal.approve";
   // Approvers, Sales with commercial.record_decision and the case's owner record it (checked in the command, Q-24).
@@ -401,6 +412,8 @@ export class CommercialService {
     }
     for (const quote of data.quotes)
       await ensureJobForSource(client, workspaceId, { type: "quote", id: quote.id, caseId }, actorUserId);
+    // Guide J: each proposal's value is its round's sent quotation (the accepted one once accepted), linked, never typed.
+    await syncCaseProposals(client, workspaceId, caseId, actorUserId, data.quotes);
     for (const payment of data.payments) {
       if (!payment.invoice) continue;
       const invoice = payment.invoice;
@@ -526,7 +539,10 @@ export class CommercialService {
           ...record,
           servicePathEnabled,
           data: commercialDataForCostAccess(data, canViewCosts),
-          quoteReferences: (await quoteReferences(client, workspaceId, [caseId])).get(caseId) ?? {},
+          ...await (async () => {
+            const references = (await quoteReferences(client, workspaceId, [caseId])).get(caseId) ?? {};
+            return { quoteReferences: references, estimateReferences: estimateReferences(data.quotes, references) };
+          })(),
           // PLM-146: which quotations are a budget range, for the list's badge.
           budgetRangeQuoteIds: (await client.query<{ id: string }>(`SELECT quote_id AS id FROM quote_budget_ranges WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows.map((row) => row.id),
           dealApproval,
@@ -561,6 +577,9 @@ export class CommercialService {
             "commercial.estimate",
           ),
           qsEstimateQuoteIds: await qsEstimateQuoteIds(client, workspaceId, caseId, data),
+          // §0.3 P0: the photo or PDF the team attached to each receipt it recorded, shown when Finance verifies it.
+          receiptFiles: Object.fromEntries(await evidenceFor(client, workspaceId, "receipt", (data.receipts ?? []).map((receipt) => receipt.id))),
+          creditFiles: Object.fromEntries(await evidenceFor(client, workspaceId, "client_credit", (data.credits ?? []).map((credit) => credit.id))),
           viewerId: user.userId,
           // Deal approval is a permission plus separation of duties, never a role name.
           canApproveDeal:
@@ -1482,11 +1501,11 @@ export class CommercialService {
     workspaceId: string,
     caseId: string,
     input: unknown,
-  ) {
+  ): Promise<{ data: CommercialData; sent?: IssueDelivery }> {
     const b = object(input),
       action = text(b.action, 50, true);
     const permission = commercialCommandPermission(action);
-    return this.access.withPermissions(
+    const result = await this.access.withPermissions(
       actor,
       workspaceId,
       ["pre_projects.view", permission],
@@ -2328,6 +2347,7 @@ export class CommercialService {
             throw new ConflictException(
               "A clarification or schedule amendment cannot contain prices or payment terms.",
             );
+          await guardQuoteTerms(client, { workspaceId, caseId, userId: user.userId, quote: q, previous: q.terms ?? "", next: text(v.terms, 10000) });
           Object.assign(q, {
             title: text(v.title, 240, true),
             ...(v.cover ? { cover: parseCover(v.cover) } : {}),
@@ -2491,14 +2511,26 @@ export class CommercialService {
                 "Submit this version for review first.",
               );
             // A discount above the firm's threshold needs someone who approves quotes, not only the QS (plan §6.5).
-            const threshold = (await client.query<{ percent: string | null }>(
-              `SELECT discount_approval_percent::text AS percent FROM workspace_quotation_settings WHERE workspace_id=$1`,
-              [workspaceId])).rows[0]?.percent ?? null;
+            const discountRule = (await client.query<{ percent: string | null; role: string | null }>(
+              `SELECT discount_approval_percent::text AS percent, discount_approver_role AS role FROM workspace_quotation_settings WHERE workspace_id=$1`,
+              [workspaceId])).rows[0];
+            const threshold = discountRule?.percent ?? null;
             const priced = totals(q);
             if (threshold !== null && priced.subtotal > 0
-              && Dec.of(priced.discount).mul(100).cmp(Dec.of(threshold).mul(priced.subtotal)) > 0
-              && !(await this.access.hasPermission(client, workspaceId, user.userId, "commercial.approve")))
-              throw new ForbiddenException(`The discount is above the ${threshold}% your firm allows without approval. Someone who approves quotes must approve this quote.`);
+              && Dec.of(priced.discount).mul(100).cmp(Dec.of(threshold).mul(priced.subtotal)) > 0) {
+              // Guide M: the firm's discount approver (a role it chose, e.g. the Creative Director), else anyone who approves quotes.
+              const allowed = discountRule?.role
+                ? Boolean((await client.query(
+                  `SELECT 1 FROM workspace_memberships member JOIN member_roles assigned ON assigned.workspace_id = member.workspace_id AND assigned.membership_id = member.id
+                     JOIN roles role ON role.workspace_id = assigned.workspace_id AND role.id = assigned.role_id
+                    WHERE member.workspace_id = $1 AND member.user_id = $2 AND member.status = 'active' AND role.code = $3`, [workspaceId, user.userId, discountRule.role])).rowCount)
+                : await this.access.hasPermission(client, workspaceId, user.userId, "commercial.approve");
+              if (!allowed)
+                throw new ForbiddenException(discountRule?.role
+                  ? `The discount is above the ${threshold}% your firm allows without approval. Your firm's discount approver must approve this quote.`
+                  : `The discount is above the ${threshold}% your firm allows without approval. Someone who approves quotes must approve this quote.`);
+              q.discountApproval = { by: user.displayName, byId: user.userId, at: now };
+            }
             if (action === "qs_approve") {
               if (!data.servicePath || q.kind !== "quotation")
                 throw new ConflictException("QS estimate review applies to a quotation round in the deal-first workflow.");
@@ -2513,6 +2545,11 @@ export class CommercialService {
             } else if (await needsQsEstimate(client, workspaceId, caseId, data, q)) {
               // The firm's QS rules decide (standard catalogue items at approved list prices need no QS estimate).
               throw new ConflictException("A Quantity Surveyor must review this quotation before it is issued.");
+            }
+            // §0.3 P8: where the firm names who gives manager approval (job-team roles), it's the job's own holder of one of them.
+            if (action === "approve" && q.kind === "quotation" && q.round !== "design") {
+              const problem = await managerApprovalProblem(client, workspaceId, caseId, user.userId);
+              if (problem) throw new ForbiddenException(problem);
             }
             q.status = "internal_approved";
             q.approvedBy = user.displayName;
@@ -2547,7 +2584,8 @@ export class CommercialService {
                 "Internal approval is required before issue.",
               );
             // Every requirement ends in a decision before a quotation goes out (plan §6.8, requirement trace).
-            if (q.kind === "quotation") {
+            // The design-fee proposal goes out after the intro, before any requirement is decided (§0.3 P0).
+            if (q.kind === "quotation" && q.round !== "design") {
               const open = (await client.query<{ count: number }>(
                 `SELECT count(*)::int AS count FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND kind='requirement' AND archived_at IS NULL AND scope_status='undecided'`,
                 [workspaceId, caseId])).rows[0].count;
@@ -2691,22 +2729,16 @@ export class CommercialService {
             throw new ConflictException(
               "This deal already has owner approval.",
             );
-          const checklistInput = object(b.checklist),
-            checklist = {
-              agreement: checklistInput.agreement === true,
-              boq: checklistInput.boq === true,
-              documents: checklistInput.documents === true,
-              margin: checklistInput.margin === true,
-              materials: checklistInput.materials === true,
-              payment: checklistInput.payment === true,
-            };
-          const commissionLines = dealInput(() => normalizeCommissionLines(b.commissionLines, acceptedQuoteValue(accepted), accepted.currency));
+          const allowedCommissions = (await readCommissionTypes(client, workspaceId)).types.map((type) => type.code);
+          const commissionLines = dealInput(() => normalizeCommissionLines(b.commissionLines, acceptedQuoteValue(accepted), accepted.currency, allowedCommissions));
           // PLM-122: the payment proof attached on the opportunity (which made it Won) is the Deal File's proof;
           // a link is needed only when there is neither that nor a Finance-verified receipt.
           const attachedProof = record.paymentProofId ? opportunityProofPath(workspaceId, String(record.opportunityId), String(record.paymentProofId)) : undefined;
           const paymentProofUrl = attachedProof && !(typeof b.paymentProofUrl === "string" && b.paymentProofUrl.trim())
             ? attachedProof
             : dealInput(() => paymentProofLink(b.paymentProofUrl, quoteHasVerifiedReceipt(data, accepted.id)));
+          // Read from the records, never ticked (§0.3 P0); approval reads it again.
+          const checklist = dealChecklist(data, accepted, paymentProofUrl);
           data.ownerReview = {
             id:
               data.ownerReview?.quoteId === accepted.id
@@ -2745,6 +2777,13 @@ export class CommercialService {
             const accepted = data.quotes.find(quote => quote.id === review.quoteId && quote.status === "accepted");
             if (!accepted || assertQuoteSnapshot(accepted) !== review.quoteHash)
               throw new ConflictException("The accepted quotation changed. Submit the deal again.");
+            // Guide M: Finance confirms the discount with its approver before Received / Approved.
+            const dealDiscount = (await client.query<{ percent: string | null }>(
+              `SELECT discount_approval_percent::text AS percent FROM workspace_quotation_settings WHERE workspace_id=$1`, [workspaceId])).rows[0]?.percent ?? null;
+            const acceptedTotals = totals(accepted);
+            if (dealDiscount !== null && acceptedTotals.subtotal > 0 && !accepted.discountApproval
+              && Dec.of(acceptedTotals.discount).mul(100).cmp(Dec.of(dealDiscount).mul(acceptedTotals.subtotal)) > 0)
+              throw new ConflictException("The discount on the accepted quotation has no approval on record. It must be approved before Finance confirms the deal.");
             const finalCommissionLines = dealInput(() => confirmCommissionAmounts(review.commissionLines ?? [], b.commissionLines, acceptedQuoteValue(accepted), accepted.currency));
             review.finalCommissionLines = finalCommissionLines;
             review.commission = sumAmounts(finalCommissionLines.map((line) => line.amount), accepted.currency);
@@ -2796,11 +2835,12 @@ export class CommercialService {
               throw new ConflictException("Finance must confirm the Deal File before it is approved.");
             if (!dealPaymentProofReady(data, review.paymentProofUrl, accepted.id))
               throw new ConflictException("Add a proof-of-payment link, or have Finance verify the receipt, before approval.");
-            if (Object.entries(review.checklist).some(([key, checked]) =>
-              !checked && !(data.servicePath && key === "materials")))
-              throw new ConflictException(
-                "Complete every owner review check before approval.",
-              );
+            // The checklist is read again from the records now; one message lists everything still missing.
+            review.checklist = dealChecklist(data, accepted, review.paymentProofUrl);
+            const missingChecks = (Object.entries(review.checklist) as Array<[keyof typeof DEAL_CHECK_LABELS, boolean]>)
+              .filter(([, ok]) => !ok).map(([key]) => DEAL_CHECK_LABELS[key]);
+            if (missingChecks.length)
+              throw new ConflictException(`Before approval, add ${missingChecks.join(", ")}.`);
             if (
               !(data.servicePath
                 ? agreementIsOperational(data.agreement) && agreementMatchesAcceptedQuote(data.agreement, accepted)
@@ -2987,16 +3027,21 @@ export class CommercialService {
             throw new ConflictException(
               "This client credit was already verified.",
             );
+          // The credit note or refund slip as a photo or PDF, and/or the words for it; one of them is needed.
+          const creditFileIds = evidenceIds(b.evidenceFileIds);
+          const creditEvidence = text(b.evidence ?? "", 3000) || (creditFileIds.length ? "Proof attached" : "");
+          if (!creditEvidence) throw new BadRequestException("Attach the credit note or refund proof.");
           recordCreditNote(
             data,
             credit,
             {
               reference: text(b.reference, 500, true),
-              evidence: text(b.evidence, 3000, true),
+              evidence: creditEvidence,
             },
             user.displayName,
             now,
           );
+          await bindEvidence(client, workspaceId, user.userId, "client_credit", credit.id, creditFileIds);
         } else if (action === "request") {
           if (b.decisionRequest === true) {
             const targetType = text(b.targetType, 30, true);
@@ -3180,7 +3225,9 @@ export class CommercialService {
             now,
           );
           data.financeContext = financeContext;
-          const agreementReference = text(b.reference, 200, true);
+          // Numbered by the company's agreement sequence, never typed; a re-saved draft keeps its number (§0.3 P0).
+          const agreementReference = data.agreement?.quoteId === quote.id && data.agreement.reference ? data.agreement.reference
+            : await nextAgreementReference(client, workspaceId, financeContext.legalEntityId ? String(financeContext.legalEntityId) : null, caseId, now.slice(0, 4));
           if (!data.payments.some(payment => payment.sourceQuoteId === quote.id)) {
             // Exact shares in the contract currency's minor units; the last takes the rest, so they add up.
             const shares = splitByPercent(acceptedTotal, (quote.paymentTerms ?? []).map((term) => term.percent), financeContext.currency);
@@ -3198,6 +3245,7 @@ export class CommercialService {
                 trigger: term.trigger,
                 requiredForRelease: term.requiredForRelease,
                 requiredForProduction: term.requiredForProduction === true,
+                ...(term.dueAtHandover === true ? { dueAtHandover: true } : {}),
                 status: "pending" as const,
                 proof: "",
                 reference: "",
@@ -3243,7 +3291,7 @@ export class CommercialService {
           if (
             !data.agreement ||
             !agreementHasSignedEvidence(data.agreement) ||
-            !isOperationalEvidence(data.agreement)
+            !agreementEvidenceOperational(data.agreement)
           )
             throw new ConflictException(
               "Attach the signed agreement (or describe it) first. Demonstration evidence cannot execute a live agreement.",
@@ -3337,7 +3385,12 @@ export class CommercialService {
           if (payment.status === "verified")
             throw new ConflictException("Payment already verified.");
           const receiptReference = text(b.reference, 240, true);
-          const receiptEvidence = text(b.evidence, 3000, true);
+          // The proof is a photo or PDF (bound to the receipt below) and/or the words for it; one of them is needed.
+          const receiptFileIds = evidenceIds(b.evidenceFileIds);
+          const receiptEvidence = text(b.evidence ?? "", 3000) || (receiptFileIds.length ? "Proof attached" : "");
+          if (!receiptEvidence) throw new BadRequestException("Attach the proof of payment.");
+          // How and when the client paid: posting uses the method's account; Finance sees both (§0.3 P0).
+          const { method: receiptMethod, receivedOn } = manualReceiptTerms(b, now);
           payment.evidenceKind =
             b.evidenceKind === "demonstration"
               ? "demonstration"
@@ -3352,17 +3405,20 @@ export class CommercialService {
             throw new ConflictException(
               "Demonstration evidence cannot create a live receipt.",
             );
-          reportManualReceipt(
+          const reported = reportManualReceipt(
             data,
             payment,
             {
               reference: receiptReference,
               evidence: receiptEvidence,
+              method: receiptMethod,
+              receivedOn,
             },
             user.displayName,
             now,
             user.userId,
           );
+          await bindEvidence(client, workspaceId, user.userId, "receipt", reported.id, receiptFileIds);
         } else if (action === "verify_payment") {
           const payment = data.payments.find((p) => p.id === b.paymentId);
           if (!payment) throw new NotFoundException("Payment not found.");
@@ -3376,6 +3432,15 @@ export class CommercialService {
             throw new ConflictException(
               "Only operational receipt evidence can verify a live milestone.",
             );
+        } else if (action === "return_payment") {
+          // Finance sends a receipt the team recorded back with a reason (never a bare button: the review dialog).
+          const payment = data.payments.find((p) => p.id === b.paymentId);
+          if (!payment) throw new NotFoundException("Payment not found.");
+          if (payment.status === "verified")
+            throw new ConflictException("Payment already verified.");
+          const reason = text(b.note, 3000, true);
+          if (reason.length < 3) throw new BadRequestException("Say why the receipt goes back.");
+          returnManualReceipt(data, payment, reason, user.displayName, now, user.userId);
         } else if (action === "release") {
           // Projects start from the accepted quotation (Start project), never from this old release step.
           throw new ConflictException("Start the project from the accepted quotation.");
@@ -3433,8 +3498,8 @@ export class CommercialService {
           user.displayName,
           action,
           q?.id,
-          // The reviewer's reason for sending a quote back stays in the case history.
-          action === "return" && typeof b.note === "string" ? b.note.trim().slice(0, 3000) : "",
+          // The reviewer's reason for sending a quote or a receipt back stays in the case history.
+          (action === "return" || action === "return_payment") && typeof b.note === "string" ? b.note.trim().slice(0, 3000) : "",
           user.userId,
         );
         // A new design-fee quote starts with the fee Sales priced on the opportunity (one editable line), in this
@@ -3458,6 +3523,14 @@ export class CommercialService {
         if (q && (action === "issue" || action === "record_decision")) await settleQuietly(client, workspaceId, caseId);
         // The payment hand-offs: Finance hears a receipt was reported; the reporter, the case owner, whoever
         // approves a waiting deal and the client hear it was verified.
+        if (action === "return_payment") {
+          const payment = data.payments.find((item) => item.id === b.paymentId);
+          const returned = payment ? data.receipts?.filter((receipt) => receipt.paymentId === payment.id && receipt.status === "rejected").at(-1) : undefined;
+          if (payment && returned) await noticeReceiptReturned(client, { workspaceId, caseId, payment, reason: returned.rejectionReason ?? "", actorUserId: user.userId,
+            reporterUserId: returned.reportedById ?? null, revision: data.revision });
+          if (payment && returned) await postJobEvent(client, workspaceId, { record: { type: "case", id: caseId }, code: "payment_returned", ref: `${returned.id}:return_payment`,
+            body: `Finance returned the receipt for ${payment.title}: ${returned.rejectionReason ?? ""}` });
+        }
         if (action === "report_payment_receipt" || action === "verify_payment") {
           const payment = data.payments.find((item) => item.id === b.paymentId);
           if (payment) await noticeReceiptStep(client, {
@@ -3465,12 +3538,70 @@ export class CommercialService {
             reporterUserId: data.receipts?.find((receipt) => receipt.paymentId === payment.id && receipt.status !== "rejected")?.reportedById ?? null,
             dealWaiting: data.ownerReview?.status === "pending_approval" || data.ownerReview?.status === "pending_finance", demo: this.testMode,
           });
+          // §0.3: the job's team thread shows the money moving (exact amount, as Finance recorded it).
+          const receipt = payment ? data.receipts?.find((item) => item.paymentId === payment.id && item.status !== "rejected") : undefined;
+          if (payment && receipt) await postJobEvent(client, workspaceId, { record: { type: "case", id: caseId }, code: action === "verify_payment" ? "payment_verified" : "payment_reported",
+            ref: `${receipt.id}:${action}`, body: `${action === "verify_payment" ? "Finance verified" : "Payment reported for"} ${payment.title}: ${receipt.currency} ${Dec.of(receipt.amount).toFixed(currencyDecimals(receipt.currency))}` });
         }
         // The answer shows the filled quote, under the same revision.
         const answer = prefilled ? await this.load(client, workspaceId, caseId) : data;
         return sent ? { data: answer, sent } : { data: answer };
       },
     );
+    // Guide F: once the service path includes the design, the Design Fee proposal (Proposal 1) is made from the
+    // discovery's exact figures, without a manual step. Never blocks: without the figures nothing is created.
+    if (action === "set_service_path" || action === "set_palm_flow") {
+      const proposed: { data: CommercialData; sent?: IssueDelivery } | null = await this.proposeDesignFee(actor, workspaceId, caseId).catch(() => null);
+      if (proposed) return proposed;
+    }
+    // Guide J: the Deal File opens by itself once its last condition is met (here: the agreement verified, or the
+    // client's decision recorded); Finance then adds net, tax, the payment method and commissions.
+    if (action === "execute_agreement" || action === "record_decision") {
+      const opened: { data: CommercialData; sent?: IssueDelivery } | null = await this.openDealFile(actor, workspaceId, caseId).catch(() => null);
+      if (opened) return opened;
+    }
+    return result;
+  }
+
+  /**
+   * Guide J: "payment proof attached → Deal File created". Opens the Deal File (submitted to Finance) when the
+   * opportunity is Won with its proof, the client accepted the quotation and the signed agreement is verified, and
+   * no Deal File was opened for that quotation yet (one Finance returned is fixed and sent again by hand).
+   */
+  async openDealFile(actor: RequestActor, workspaceId: string, caseId: string): Promise<{ data: CommercialData; sent?: IssueDelivery } | null> {
+    const revision = await this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.edit"], async (client) => {
+      const record = await this.caseRecord(client, workspaceId, caseId, false);
+      if (record.opportunityStatus !== "won" || !["active", "released"].includes(record.status)) return null;
+      const data = await this.load(client, workspaceId, caseId);
+      const accepted = activeAcceptedBaseQuote(data);
+      if (!accepted || data.agreement?.status !== "executed" || !agreementMatchesAcceptedQuote(data.agreement, accepted)) return null;
+      if (data.ownerReview?.quoteId === accepted.id) return null;
+      if (!record.paymentProofId && !quoteHasVerifiedReceipt(data, accepted.id)) return null;
+      return data.revision;
+    });
+    if (revision === null) return null;
+    return this.command(actor, workspaceId, caseId, { action: "submit_owner_review", revision, commissionLines: [], note: "Opened automatically: the client accepted, the agreement is verified and the payment proof is attached." });
+  }
+
+  /**
+   * Guide F: the Design Fee proposal from the exact figures. Made when the case has no quotation yet, its discovery
+   * priced a design fee, and (where the firm's workflow asks for a service path first) the path includes the design.
+   * Returns the command's answer when it made one, else null.
+   */
+  async proposeDesignFee(actor: RequestActor, workspaceId: string, caseId: string): Promise<{ data: CommercialData; sent?: IssueDelivery } | null> {
+    const revision = await this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.edit"], async (client) => {
+      const data = await this.load(client, workspaceId, caseId);
+      if (data.quotes.length) return null;
+      const dealFirst = (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === DEAL_FIRST_WORKFLOW_CODE;
+      if (dealFirst && !data.servicePath?.scope.design) return null;
+      const fee = (await client.query<{ fee: string | null }>(
+        `SELECT discovery.design_fee::text AS fee FROM pre_project_cases pre_case
+           JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = pre_case.workspace_id AND discovery.opportunity_id = pre_case.opportunity_id
+          WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0]?.fee;
+      return fee ? data.revision : null;
+    });
+    if (revision === null) return null;
+    return this.command(actor, workspaceId, caseId, { action: "create", revision });
   }
 
   private async notifyDealReview(client: PoolClient, workspaceId: string, caseId: string, data: CommercialData, action: string, actorUserId: string) {
@@ -3498,23 +3629,18 @@ export class CommercialService {
         )
       : { rows: [{ userId: review.submittedById }] };
     for (const recipient of recipients.rows) {
-      const preference = await client.query<{ enabled: boolean }>(
-        `SELECT enabled FROM notification_preferences
-         WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2
-           AND channel='in_app' AND event_type IN ($3,'commercial.deal.*','*')
-         ORDER BY CASE event_type WHEN $3 THEN 0 WHEN 'commercial.deal.*' THEN 1 ELSE 2 END LIMIT 1`,
-        [workspaceId, recipient.userId, eventType],
-      );
-      if (preference.rows[0]?.enabled === false) continue;
+      // The person's choices for this notice in the app (notice-choices.ts).
+      const inApp = await noticeDecision(client, { workspaceId, userId: recipient.userId, eventType, channel: "in_app" });
+      if (!inApp.send) continue;
       await client.query(
         `INSERT INTO notifications
           (workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,
-           deep_link,idempotency_key,correlation_id,delivered_at)
-         VALUES ($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now())
+           deep_link,idempotency_key,correlation_id,delivered_at,silent)
+         VALUES ($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now(),$9)
          ON CONFLICT (workspace_id,idempotency_key) DO NOTHING`,
         [workspaceId, recipient.userId, eventType, subject, body,
           `/workspace/pre-projects/cases/${caseId}/approvals`,
-          `deal:${review.id}:${action}:${data.revision}:${recipient.userId}`, randomUUID()],
+          `deal:${review.id}:${action}:${data.revision}:${recipient.userId}`, randomUUID(), inApp.silent],
       );
     }
   }

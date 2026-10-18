@@ -17,7 +17,7 @@ export type FactorySettings = {
   inspectionsEnabled?: boolean; inspectionStages?: InspectionStage[]; inspectionWorkPackages?: string[]; inspectorRole?: string; directorRole?: string | null;
   directorPackages?: string[]; inspectionDays?: number;
   /** PLM-174: the path E checks before a work order on a bespoke job is released. */
-  requireTechnicalHandover?: boolean; requireFactoryRequirements?: boolean; requireQs?: boolean;
+  requireTechnicalHandover?: boolean; requireFactoryRequirements?: boolean; requireQs?: boolean; requireSuppliesSignoff?: boolean;
 };
 
 /** PLM-150: a design inspection stage: in raw material before the final finish, or after finishing (before dispatch). */
@@ -116,6 +116,8 @@ export type OutputReport = {
   decidedByName: string | null; decisionNote: string;
   /** The hours it took, when reported: costed at the workcenter's hourly rate once approved. */
   hours: string | null;
+  /** §0.3 P0: photos of what was made, read when the output is approved. */
+  files?: Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>;
 };
 /** A quality check: what passed and failed (and why), who checked it, its note and its photo. */
 export type QualityCheck = { id: string; passed: string; failed: string; failReason: string; checkedByName: string; checkedAt: string; note?: string; photoId?: string | null };
@@ -161,7 +163,7 @@ export type WorkOrderState = FactoryRights & {
   /** PLM-150: the snags of its inspections, which the factory marks fixed. */
   snags?: InspectionSnag[];
   /** The project's designs with an approved revision (the latest of each), to make it to. */
-  designs?: Array<{ designId: string; versionId: string; title: string; number: number; documentType: string }>;
+  designs?: Array<{ designId: string; versionId: string; title: string; number: number; documentType: string; fileName?: string | null; hasPreview?: boolean }>;
   /**
    * The drawing it's made to: recorded on it, the project's drawings once the client approved their latest revision
    * (Scope › Drawings), or a standard piece's catalogue drawing; and the project's latest drawings revision.

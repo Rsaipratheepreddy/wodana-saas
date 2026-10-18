@@ -52,12 +52,24 @@ export class IntakeConsentDto {
   @IsOptional() @IsString() @MaxLength(20) jurisdiction?: string;
 }
 
+/** §0.3 P0: the floor plan: uploaded (one of the enquiry's files), not available yet with a size estimate, or not needed. */
+export class FloorPlanDto {
+  @IsIn(["uploaded", "not_available", "not_required"]) status!: "uploaded" | "not_available" | "not_required";
+  @IsOptional() @IsUUID() assetId?: string;
+  /** The built-up area or an estimate the client gives ("2–3 bedroom villa"). */
+  @IsOptional() @IsString() @MaxLength(120) builtUpArea?: string;
+  /** Guide D: the plot size, optional (villas). */
+  @IsOptional() @IsString() @MaxLength(120) plotSize?: string;
+}
+
 export class EnquiryDetailsDto {
   @IsString() @IsNotEmpty() @MaxLength(80) emirate!: string;
   @IsOptional() @IsString() @MaxLength(240) area?: string;
   @IsOptional() @IsString() @MaxLength(240) location?: string;
   @IsOptional() @IsString() @MaxLength(80) customerType?: string;
   @IsOptional() @IsString() @MaxLength(80) budgetRange?: string;
+  @IsOptional() @IsString() @MaxLength(80) projectType?: string;
+  @IsOptional() @ValidateNested() @Type(() => FloorPlanDto) floorPlan?: FloorPlanDto;
   /** PLM-155: the date the client wants the work finished (YYYY-MM-DD); Sales collect it but don't promise it. */
   @IsOptional() @IsString() @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: "Enter the target completion as a date" }) targetCompletion?: string;
   @IsOptional() @IsString() @MaxLength(160) campaign?: string;

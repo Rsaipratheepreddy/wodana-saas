@@ -207,7 +207,6 @@ class ConnectedProviderAdapter:
                     )
                 message: dict[str, Any] = {
                     "to": token,
-                    "title": job.subject or "Wodana",
                     "body": job.body,
                     "data": {
                         "notificationId": str(job.id),
@@ -215,6 +214,9 @@ class ConnectedProviderAdapter:
                         "deepLink": job.deep_link,
                     },
                 }
+                # The title is the firm's own (its template); without one the phone shows the app's name.
+                if job.subject:
+                    message["title"] = job.subject
                 # An approval the phone can decide from the lock screen shows Approve and Open.
                 if job.push_category and job.approval:
                     message["categoryId"] = job.push_category
@@ -223,6 +225,9 @@ class ConnectedProviderAdapter:
                         "id": str(job.approval.id),
                         "version": job.approval.version,
                     }
+                # Any other push shows the one button the firm chose for its moment.
+                elif job.push_category in ("open", "review", "reply", "pay"):
+                    message["categoryId"] = job.push_category
                 response = await self.providers.client.http.post(
                     "https://exp.host/--/api/v2/push/send",
                     json=message,

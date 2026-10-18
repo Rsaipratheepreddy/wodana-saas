@@ -7,6 +7,7 @@
 @import "../design-system/styles/charts.css";
 @import "../design-system/styles/financial-statement.css";
 @import "../design-system/styles/tour.css";
+@import "../design-system/styles/journey.css";
 
 *,
 *::before,
@@ -44,17 +45,6 @@ body[data-app-root] {
   font-family: inherit;
   font-size: var(--wd-text-md);
   line-height: var(--wd-leading-ui);
-  animation: wd-root-enter var(--wd-duration-slow) var(--wd-ease-out) both;
-}
-
-@keyframes wd-root-enter {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
 }
 
 button,

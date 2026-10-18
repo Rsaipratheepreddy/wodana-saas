@@ -23,10 +23,6 @@
 
 /* Record sheets. */
 .sheet { display: grid; gap: var(--wd-space-4); }
-.facts { display: grid; gap: var(--wd-space-1); margin: 0; }
-.facts > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: baseline; min-block-size: var(--wd-control-sm); font-size: var(--wd-text-sm); }
-.facts dt { color: var(--wd-color-text-tertiary); }
-.facts dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-2); margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
 .part { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
 .subhead { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
 .list { display: grid; margin: 0; padding: 0; list-style: none; }
@@ -42,14 +38,13 @@
 .dialogBody { display: grid; gap: var(--wd-space-4); }
 .switches { display: flex; flex-wrap: wrap; gap: var(--wd-space-3) var(--wd-space-6); }
 .weekdays { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); }
-.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
 
 /* The check-in camera. */
 .camera { position: relative; display: grid; place-items: center; overflow: hidden; aspect-ratio: 4 / 3; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); }
 .camera video, .camera img { inline-size: 100%; block-size: 100%; object-fit: cover; }
 .camera video[hidden] { display: none; }
 .cameraEmpty { display: grid; justify-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
-.cameraActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.cameraActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-action-gap); }
 .location { display: inline-flex; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 
 /* A row of a list that opens its record. */
@@ -90,6 +85,5 @@
   .crewWorkers > li { grid-template-columns: minmax(0, 1fr) 7rem var(--wd-control-sm); }
   /* The presence choice takes its own line under the name and overtime. */
   .crewWorkers > li > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-  .facts > div { grid-template-columns: minmax(0, 1fr); }
   .location { margin-inline-start: 0; }
 }

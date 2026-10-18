@@ -3,7 +3,7 @@ import { crmRequest } from "./client";
 import type { LeadFormQuestion } from "./lead-forms";
 
 /** Fixed enquiry fields that can be hidden; the rest are always shown. */
-export const OPTIONAL_ENQUIRY_FIELDS = ["email", "customerType", "area", "budgetRange", "summary"] as const;
+export const OPTIONAL_ENQUIRY_FIELDS = ["email", "customerType", "area", "budgetRange", "summary", "projectType", "floorPlan"] as const;
 export type OptionalEnquiryField = (typeof OPTIONAL_ENQUIRY_FIELDS)[number];
 export type EnquiryFieldType = "text" | "paragraph" | "email" | "phone" | "number" | "date" | "select" | "multi_select";
 
@@ -11,7 +11,8 @@ export type CustomEnquiryField = {
   id: string; key: string; label: string; dataType: "text" | "number" | "date" | "select" | "multi_select";
   configuration: { options?: string[]; multiline?: boolean }; visible: boolean; position: number; version: number; valueCount?: number;
 };
-export type EnquiryFieldsState = { system: Record<OptionalEnquiryField, { visible: boolean; version: number }>; custom: CustomEnquiryField[] };
+/** Fields added later are missing from older settings: they show until someone hides them. */
+export type EnquiryFieldsState = { system: Partial<Record<OptionalEnquiryField, { visible: boolean; version: number }>>; custom: CustomEnquiryField[] };
 
 /** One field an enquiry captures: fixed (built in) or the workspace's own. */
 export type EnquiryField = {
@@ -32,7 +33,9 @@ const FIXED: Fixed[] = [
   { key: "area", label: tKey("Area / city"), type: "select", lists: ["lead_area_"], formField: "area" },
   { key: "serviceType", label: tKey("Enquiry type"), type: "select", locked: true, lists: ["enquiry_type"], formField: "serviceType" },
   { key: "customerType", label: tKey("Customer type"), type: "select", lists: ["customer_type"] },
+  { key: "projectType", label: tKey("Project type"), type: "select", lists: ["project_type"] },
   { key: "budgetRange", label: tKey("Budget"), type: "select", lists: ["budget_range"], formField: "budgetRange" },
+  { key: "floorPlan", label: tKey("Floor plan"), type: "select" },
   { key: "summary", label: tKey("Project details"), type: "paragraph", formField: "summary" },
   // PLM-155: the client's target date, required before the intro when the enquiry type asks for it.
   { key: "targetCompletion", label: tKey("Target completion"), type: "date", locked: true },

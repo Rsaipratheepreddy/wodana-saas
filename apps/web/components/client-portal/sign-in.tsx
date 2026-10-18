@@ -72,9 +72,9 @@ export function SignIn({ site, api, invite = null, onSignedIn }: { site: PortalS
       <PhoneField label={t("Mobile number")} value={national} onChange={setNational} countryCode={country} onCountryChange={setCountry} locale={site.region.locale} isRequired />
       <div className={styles.formActions}>
         <Button type="submit" variant="primary" size="large" isLoading={busy}>{channel === "whatsapp" ? t("Send code by WhatsApp") : t("Send code by email")}</Button>
-        {site.signIn.channels.length > 1 ? <button className={styles.textButton} type="button" disabled={busy}
-          onClick={() => setChannel(channel === "whatsapp" ? "email" : "whatsapp")}>
-          {channel === "whatsapp" ? t("Use email instead") : t("Use WhatsApp instead")}</button> : null}
+        {site.signIn.channels.length > 1 ? <Button variant="quiet" size="compact" isDisabled={busy}
+          onPress={() => setChannel(channel === "whatsapp" ? "email" : "whatsapp")}>
+          {channel === "whatsapp" ? t("Use email instead") : t("Use WhatsApp instead")}</Button> : null}
       </div>
     </Form>
   </section>;
@@ -96,11 +96,11 @@ export function SignIn({ site, api, invite = null, onSignedIn }: { site: PortalS
         <Button type="submit" variant="primary" size="large" isLoading={busy} isDisabled={code.length !== 6}>{t("Sign in")}</Button>
       </div>
       <div className={styles.links}>
-        <button className={styles.textButton} type="button" disabled={busy || wait > 0} onClick={() => void send(channel)}>
-          {wait > 0 ? t("Send a new code in {seconds} s", { seconds: wait }) : t("Send a new code")}</button>
-        {channel === "whatsapp" && site.signIn.channels.includes("email") ? <button className={styles.textButton} type="button" disabled={busy || wait > 0}
-          onClick={() => void send("email")}>{t("Send it by email instead")}</button> : null}
-        <button className={styles.textButton} type="button" disabled={busy} onClick={() => { setChallenge(null); setCode(""); setError(""); }}>{t("Not you? Change number")}</button>
+        <Button variant="quiet" size="compact" isDisabled={busy || wait > 0} onPress={() => void send(channel)}>
+          {wait > 0 ? t("Send a new code in {seconds} s", { seconds: wait }) : t("Send a new code")}</Button>
+        {channel === "whatsapp" && site.signIn.channels.includes("email") ? <Button variant="quiet" size="compact" isDisabled={busy || wait > 0}
+          onPress={() => void send("email")}>{t("Send it by email instead")}</Button> : null}
+        <Button variant="quiet" size="compact" isDisabled={busy} onPress={() => { setChallenge(null); setCode(""); setError(""); }}>{t("Not you? Change number")}</Button>
       </div>
     </Form>
   </section>;

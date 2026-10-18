@@ -21,13 +21,13 @@ export const CLOSING_KINDS = ["received", "form", "closing"] as const;
 export type ClosingKind = (typeof CLOSING_KINDS)[number];
 
 /** The fields a closing text may use, and the record field each fills. */
-export const CLOSING_FIELDS: Record<string, TemplateVariableSource> = { name: "contact.first_name", form_link: "form.link" };
+export const CLOSING_FIELDS: Record<string, TemplateVariableSource> = { name: "contact.first_name", form_link: "form.link", company: "business.name" };
 
-/** The product's wording until the firm writes its own (Settings › Inbox › Closing messages). */
+/** The product's wording until the firm writes its own (Settings › Inbox › Closing messages); {{company}} signs it with the firm's name. */
 export const DEFAULT_CLOSING_TEXTS: Record<ClosingKind, string> = {
-  received: "Thank you, {{name}}! Your enquiry is now with our team, and we will contact you shortly.",
-  form: "Hi {{name}}, to take your enquiry forward, please complete this short form: {{form_link}} Once we receive it, our team will be in touch.",
-  closing: "Hi {{name}}, we haven't heard back from you, so we will close this chat for now. If you would like to continue, simply message us here anytime and we will be happy to help.",
+  received: "Thank you, {{name}}! Your enquiry is now with our team. An Account Manager will contact you shortly. – {{company}}.",
+  form: "Hi {{name}}, to take your enquiry forward, please complete this short form: {{form_link}}. Once we receive it, our team will be in touch.",
+  closing: "Hi {{name}}, we haven't heard back from you, so we'll close this chat for now. If you'd like to continue with your project, simply message us here anytime and we'll be happy to help. – {{company}}.",
 };
 export const DEFAULT_CLOSING_AFTER_HOURS = 3;
 
@@ -47,6 +47,13 @@ export function unknownClosingFields(text: string) {
   return [...new Set([...text.matchAll(FIELD)].map((match) => match[1]).filter((name) => !(name in CLOSING_FIELDS)))];
 }
 
+/** The firm's name as clients know it (its branding record, else the workspace's name), for {{company}}. */
+export async function closingCompany(db: Db, workspaceId: string) {
+  return (await db.query<{ name: string | null }>(
+    `SELECT coalesce(nullif(btrim(branding.display_name), ''), workspace.name) AS name FROM workspaces workspace
+       LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id WHERE workspace.id = $1`, [workspaceId])).rows[0]?.name ?? null;
+}
+
 /** The fields a text uses, in the order they first appear. */
 export function closingFieldsOf(text: string) {
   return [...new Set([...text.matchAll(FIELD)].map((match) => match[1]).filter((name) => name in CLOSING_FIELDS))];
@@ -62,6 +69,8 @@ export function renderClosing(text: string, values: Partial<Record<string, strin
     .replace(/[ \t]+([,.!?;:])/g, "$1")
     .replace(/,([!.?])/g, "$1")
     .replace(/[ \t]{2,}/g, " ")
+    // A signature with no name left ("… shortly. – .") is dropped with its dash.
+    .replace(/[ \t]*[–-][ \t]*\.?$/gm, "")
     .replace(/^[ \t]+|[ \t]+$/gm, "")
     .trim();
 }

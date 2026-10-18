@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { bindEvidence, evidenceFor, evidenceIds, type EvidenceFile } from "../evidence/decision-evidence";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -12,6 +13,9 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { decideHandoverPack, handedOver, openWork, openWorkMessage } from "./handover";
+import { readAnswers, writeAnswers } from "../setup/questionnaires.store";
+import type { AnswerValue } from "../setup/questionnaires.domain";
+import { projectJobType } from "../setup/job-type";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -22,6 +26,8 @@ const METHODS = ["signed_document", "in_person", "email", "portal"] as const;
 type Pack = {
   id: string; revision: number; title: string; areaIds: string[]; status: "draft" | "issued" | "accepted" | "refused"; replacesId: string | null; contentHash: string | null;
   issuedAt: string | null; issuedByName: string | null; decidedOn: string | null; decidedByName: string | null; decisionMethod: string | null; decisionNote: string; version: number;
+  /** The file the client's decision came in, when staff recorded it. */
+  decisionFiles?: EvidenceFile[];
   balanceDue: string | null; balanceCurrency: string | null; balanceReason: string | null;
   documents: Array<{ id: string; kind: string; title: string; name: string; size: number; sha256: string }>;
 };
@@ -92,6 +98,9 @@ export class HandoverService {
           await bump();
         } else if (action === "issue") {
           if (!pack.documents.length) throw new ConflictException("Add the documents the client receives first.");
+          // §0.3 P3: the handover checklist is answered before the pack goes out; the questions the firm marked required must be.
+          await writeAnswers(client, workspaceId, "handover", { type: "handover_pack", id: pack.id }, body.answers && typeof body.answers === "object" ? body.answers as Record<string, AnswerValue> : undefined,
+            { userId: user.userId, name: null }, await projectJobType(client, workspaceId, projectId), { complete: true });
           // The revision as issued: what's in it, fingerprinted; it never changes after.
           const snapshot = { title: pack.title, revision: pack.revision, areas: areas.filter((area) => pack.areaIds.includes(area.id)).map((area) => area.name),
             documents: pack.documents.map(({ kind, title, name, size, sha256 }) => ({ kind, title, name, size, sha256 })) };
@@ -106,6 +115,8 @@ export class HandoverService {
           const decidedByName = text(body.decidedByName, 200);
           if (!decidedByName) throw new BadRequestException("Say who decided for the client.");
           const method = oneOf(body.method, METHODS, "How");
+          // §0.3 P0: the client's decision staff take down comes with what it came in (the signed form, an email).
+          await bindEvidence(client, workspaceId, user.userId, "handover_acceptance", pack.id, evidenceIds(body.evidenceFileIds));
           if (action === "accept") {
             const outstanding = Array.isArray(body.outstanding) ? body.outstanding.map((item) => text(item, 300)).filter(Boolean) : [];
             // Accepting while the client still owes money is real, but on purpose: someone who manages projects, with why.
@@ -192,7 +203,11 @@ export class HandoverService {
     const packs = await this.packs(client, workspaceId, projectId);
     // What the client still owes, and what isn't invoiced yet: shown when the pack is issued and accepted.
     const balance = await projectBalance(client, workspaceId, await this.money(client, workspaceId, projectId));
-    return { packs, areas, covered: handedOver(packs, areas.map((area) => area.id)), canManage: who.manager && ["active", "on_hold"].includes(who.status),
+    // §0.3 P3: the firm's handover checklist (Setup → Questionnaires) for each draft or issued pack, with its answers.
+    const jobType = await projectJobType(client, workspaceId, projectId);
+    const checklists = Object.fromEntries(await Promise.all(packs.map(async (pack) =>
+      [pack.id, await readAnswers(client, workspaceId, "handover", { type: "handover_pack", id: pack.id }, jobType)] as const)));
+    return { packs, areas, checklists, covered: handedOver(packs, areas.map((area) => area.id)), canManage: who.manager && ["active", "on_hold"].includes(who.status),
       canAcceptBalance: await this.access.hasPermission(client, workspaceId, userId, "projects.manage"),
       open: await openWork(client, workspaceId, projectId),
       balance: { currency: balance.currency, due: balance.due, toInvoice: balance.toInvoice.map(({ id, title, amount, dueDate }) => ({ id, title, amount, dueDate })) } };
@@ -208,7 +223,9 @@ export class HandoverService {
     const documents = (await client.query<{ packId: string; id: string; kind: string; title: string; name: string; size: number; sha256: string }>(
       `SELECT pack_id AS "packId", id, kind, title, original_name AS name, byte_size AS size, sha256 FROM handover_documents WHERE workspace_id = $1 AND pack_id = ANY($2::uuid[]) ORDER BY created_at`,
       [workspaceId, rows.map((row) => row.id)])).rows;
-    return rows.map((row) => ({ ...row, documents: documents.filter((document) => document.packId === row.id).map(({ packId: _packId, ...document }) => document) }));
+    const decisionFiles = await evidenceFor(client, workspaceId, "handover_acceptance", rows.map((row) => row.id));
+    return rows.map((row) => ({ ...row, documents: documents.filter((document) => document.packId === row.id).map(({ packId: _packId, ...document }) => document),
+      decisionFiles: decisionFiles.get(row.id) ?? [] }));
   }
 
   private async money(client: Db, workspaceId: string, projectId: string) {

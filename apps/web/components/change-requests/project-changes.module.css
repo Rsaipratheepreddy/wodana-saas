@@ -34,11 +34,6 @@
 .steps li:last-child { border-block-end: 0; }
 .steps li[data-done] > span:first-child { color: var(--wd-color-success); }
 
-.files { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 8rem), 1fr)); gap: var(--wd-space-3); }
-.files a { display: flex; flex-direction: column; gap: var(--wd-space-1); color: var(--wd-color-text); text-decoration: none; font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
-.thumb { aspect-ratio: 4 / 3; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); display: grid; place-items: center; overflow: hidden; color: var(--wd-color-text-secondary); }
-.thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
-.hiddenInput { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .lines { display: flex; flex-direction: column; gap: var(--wd-space-3); }
 .line { display: flex; flex-direction: column; gap: var(--wd-space-2); padding-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }

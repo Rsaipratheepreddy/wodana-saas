@@ -78,7 +78,8 @@ describe("web foundations", () => {
     expect(globals).toContain('[dir="rtl"]');
     expect(globals).toContain("unicode-bidi: isolate");
     expect(globals).toContain("font-variant-numeric: tabular-nums");
-    expect(globals).toContain("@keyframes wd-root-enter");
+    // No page-wide fade: a stalled fade leaves the whole page washed out.
+    expect(globals).not.toContain("wd-root-enter");
     expect(globals).not.toMatch(/(?:^|\n)main\s*\{/);
     expect(globals).not.toMatch(/(?:^|\n)nav\s*\{/);
     expect(globals).not.toMatch(/(?:^|\n)h1\s*\{/);

@@ -51,7 +51,7 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
         await client.query("INSERT INTO crm_opportunity_discovery(workspace_id,opportunity_id,design_package_id) VALUES($1,$2,$3)", [workspaceId, opportunityId, packageId]);
       }
       await client.query("INSERT INTO workspace_design_settings(workspace_id,inspiration_days,site_visit_hours,design_internal_days,design_client_days,material_selection_days,estimate_days,site_visit_questions) VALUES($1,5,48,21,42,7,7,$2)",
-        [workspaceId, JSON.stringify([{ key: "access", question: "How do we get in?" }, { key: "services", question: "Where are the services?" }])]);
+        [workspaceId, JSON.stringify([{ key: "access", question: "How do we get in?", required: true }, { key: "services", question: "Where are the services?", required: true }])]);
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, opportunityId, opsUser]);
       await seedDefaultNotificationTemplates(client, workspaceId);
       await client.query("SET LOCAL session_replication_role = origin");
@@ -127,7 +127,7 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       const concepts = done.stages.find((row) => row.stage === "concepts")!;
       expect(Math.round((new Date(concepts.dueAt as string).getTime() - Date.now()) / 86_400_000)).toBe(21);
       expect(Math.round((new Date(concepts.clientDueAt as string).getTime() - Date.now()) / 86_400_000)).toBe(42);
-      expect(concepts.revisions).toEqual({ used: 0, included: 2, chargeable: false });
+      expect(concepts.revisions).toMatchObject({ used: 0, included: 2, chargeable: false, waiting: false, extra: null });
     });
   });
 
@@ -143,6 +143,9 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ closed: 0, alerted: 1 });
       expect(await processDesignDeadlines(client, ids.workspaceId)).toMatchObject({ closed: 0, alerted: 0 });
       // The designer and the account manager are reminded by the reminder engine (design.stage_due), in the app and by email, once.
+      // (With no digest: after hours a held email would otherwise wait in the next morning's digest.)
+      await client.query(`INSERT INTO notification_person_settings (workspace_id, membership_id, digest_enabled) SELECT workspace_id, id, false FROM workspace_memberships WHERE workspace_id = $1
+        ON CONFLICT (workspace_id, membership_id) DO UPDATE SET digest_enabled = false`, [ids.workspaceId]);
       await runReminderSweep(client, ids.workspaceId, { now: new Date() });
       await runReminderSweep(client, ids.workspaceId, { now: new Date() });
       const overdue = (await client.query(`SELECT recipient_id, channel FROM notifications WHERE workspace_id = $1 AND event_type = 'design.stage_due' AND subject LIKE 'Site visit%' ORDER BY channel`, [ids.workspaceId])).rows;
@@ -173,13 +176,18 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       const statuses = async () => Object.fromEntries((await client.query(`SELECT stage, status FROM design_journey_stages WHERE workspace_id=$1 AND case_id=$2`, [ids.workspaceId, ids.caseId])).rows.map((row) => [row.stage, row.status]));
 
       expect(await syncDesignStages(client, ids.workspaceId, ids.caseId, user)).toEqual([]);
-      // PLM-049/051: a file's client rounds count per stage; the fourth round is the third revision, beyond the two included.
+      // PLM-049/051: the client's asks for changes on a file count per stage; the third is beyond the two included. An internal
+      // reviewer sending a file back is not the client's ask.
       const kitchenVersion = (await client.query(`SELECT id FROM pre_project_design_versions WHERE workspace_id=$1 AND design_id=$2`, [ids.workspaceId, kitchen])).rows[0].id;
       await client.query("SET LOCAL session_replication_role = replica");
-      for (let round = 0; round < 4; round += 1)
-        await client.query("INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by) VALUES($1,$2,$3,$4,$5,'client_review','','',$6)", [randomUUID(), ids.workspaceId, ids.caseId, kitchen, round ? randomUUID() : kitchenVersion, user]);
+      for (let round = 0; round < 4; round += 1) {
+        const versionId = round ? randomUUID() : kitchenVersion;
+        await client.query("INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by) VALUES($1,$2,$3,$4,$5,'client_review','','',$6)", [randomUUID(), ids.workspaceId, ids.caseId, kitchen, versionId, user]);
+        if (round < 3) await client.query("INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by,decision_source,decision_at) VALUES($1,$2,$3,$4,$5,'changes_requested','Warmer','Maya Client',$6,'email',now())", [randomUUID(), ids.workspaceId, ids.caseId, kitchen, versionId, user]);
+      }
+      await client.query("INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by) VALUES($1,$2,$3,$4,$5,'changes_requested','Fix the scale','',$6)", [randomUUID(), ids.workspaceId, ids.caseId, kitchen, kitchenVersion, user]);
       await client.query("SET LOCAL session_replication_role = origin");
-      expect((await service.get(actor, ids.workspaceId, ids.caseId)).stages.find((row) => row.stage === "concepts")!.revisions).toEqual({ used: 3, included: 2, chargeable: true });
+      expect((await service.get(actor, ids.workspaceId, ids.caseId)).stages.find((row) => row.stage === "concepts")!.revisions).toMatchObject({ used: 3, included: 2, chargeable: true, waiting: true });
       await approve(kitchen);
       // Concepts completes, and space planning (approved ahead of time) completes as soon as it opens.
       expect(await syncDesignStages(client, ids.workspaceId, ids.caseId, user)).toEqual(["concepts", "space_planning"]);
@@ -205,13 +213,13 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status) VALUES($1,$2,$3,$4,2,$5,$6,'draft')", [randomUUID(), ids.workspaceId, ids.caseId, layout, asset, user]);
       await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status) VALUES($1,$2,$3,$4,2,$5,$6,'approved')", [randomUUID(), ids.workspaceId, ids.caseId, living, asset, user]);
       const signing = async () => ({ version: await version("approval"), approvedOn: "2026-10-01", assetId: asset, signer: "Maya Client" });
-      await expect(service.signOff(actor, ids.workspaceId, ids.caseId, await signing())).rejects.toThrow(/Waiting for approval: Ground floor layout/);
+      await expect(service.signOff(actor, ids.workspaceId, ids.caseId, await signing())).rejects.toThrow(/Still missing: Ground floor layout \(not approved\)\. The lead designer has been told/);
       await client.query("UPDATE pre_project_design_versions SET status='approved' WHERE workspace_id=$1 AND design_id=$2 AND number=2", [ids.workspaceId, layout]);
       const thread = randomUUID();
       await client.query("SET LOCAL session_replication_role = replica");
       await client.query("INSERT INTO pre_project_design_threads(id,workspace_id,case_id,design_id,version_id,title,blocking,created_by) VALUES($1,$2,$3,$4,(SELECT id FROM pre_project_design_versions WHERE design_id=$4 AND number=2),'Island size',true,$5)", [thread, ids.workspaceId, ids.caseId, living, user]);
       await client.query("SET LOCAL session_replication_role = origin");
-      await expect(service.signOff(actor, ids.workspaceId, ids.caseId, await signing())).rejects.toThrow(/open blocking comment/);
+      await expect(service.signOff(actor, ids.workspaceId, ids.caseId, await signing())).rejects.toThrow(/Still missing: 1 blocking comment/);
       await client.query("UPDATE pre_project_design_threads SET status='resolved' WHERE id=$1", [thread]);
       // PLM-053: the approval needs the day the client signed and the signed file.
       const approval = { version: await version("approval"), note: "Approved in the studio", approvedOn: "2026-10-01", assetId: asset, signer: "Maya Client" };
@@ -254,9 +262,14 @@ integration("design journey (PLM-044, 047–053, 080, 081, 128)", () => {
       const scope = { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false };
       await client.query("INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,1,$3)",
         [ids.workspaceId, ids.caseId, JSON.stringify({ servicePath: { scope, selectedAt: "2026-09-20T00:00:00.000Z", selectedBy: ids.amUser } })]);
+      // §0.3 P0: the client has portal access, so they are thanked when the design completes.
+      await client.query("INSERT INTO client_portal_settings(workspace_id,slug,enabled) VALUES($1,$2,true)", [ids.workspaceId, `studio-${ids.workspaceId.slice(0, 8)}`]);
+      await client.query("INSERT INTO client_portal_grants(id,workspace_id,case_id,name,phone,role,email) VALUES($1,$2,$3,'Maya Client','+15550100','approver','maya@example.com')", [randomUUID(), ids.workspaceId, ids.caseId]);
       await client.query("SET LOCAL session_replication_role = origin");
       const version = (await client.query(`SELECT version FROM design_journey_stages WHERE workspace_id=$1 AND case_id=$2 AND stage='approval'`, [ids.workspaceId, ids.caseId])).rows[0].version;
       const signed = await service.signOff(actor, ids.workspaceId, ids.caseId, { version, approvedOn: "2026-10-01", assetId: asset, signer: "Maya Client" });
+      const thanks = (await client.query(`SELECT recipient_type, channel, subject FROM notifications WHERE workspace_id=$1 AND event_type='portal.design_completed'`, [ids.workspaceId])).rows;
+      expect(thanks).toEqual([{ recipient_type: "portal_contact", channel: "email", subject: expect.stringMatching(/^Your design is complete · /) }]);
       // The approval closes the job: no hand-off to an estimate (and no problem to report), no estimate due.
       expect(signed.handoff).toEqual({ quoteId: null, problem: null });
       expect(signed.journey).toMatchObject({ approvedOn: "2026-10-01", designComplete: true, estimateDueAt: null });

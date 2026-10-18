@@ -4,7 +4,7 @@ import { getServerT } from "@/lib/i18n/server";
 
 const VALID_TENANT = /^[a-zA-Z0-9_-]{1,160}$/;
 
-export async function GET(_request: Request, context: { params: Promise<{ externalTenantId: string }> }) {
+export async function GET(_request: Request, context: RouteContext<"/api/internal/tenants/[externalTenantId]/domains">) {
   const t = await getServerT();
   const { externalTenantId } = await context.params;
   if (!VALID_TENANT.test(externalTenantId)) return invalidRequest(t("Choose a valid client."));
@@ -13,7 +13,7 @@ export async function GET(_request: Request, context: { params: Promise<{ extern
   }, t("Domains could not be loaded."));
 }
 
-export async function POST(request: Request, context: { params: Promise<{ externalTenantId: string }> }) {
+export async function POST(request: Request, context: RouteContext<"/api/internal/tenants/[externalTenantId]/domains">) {
   const t = await getServerT();
   if (!isSameOrigin(request)) return invalidRequest(t("The request origin is not allowed."));
   const { externalTenantId } = await context.params;

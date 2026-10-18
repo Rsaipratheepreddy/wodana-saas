@@ -279,6 +279,8 @@ export type BankAccount = {
   id: string; accountName: string; bankName: string; accountNumber: string; swift: string; currency: string | null; source: BankSource;
   status: "pending" | "approved" | "rejected" | "retired"; requestedBy: string; requestedByName: string; requestedAt: string; callbackByName: string | null; callbackAt: string | null;
   callbackNote: string; decidedByName: string | null; decidedAt: string | null; rejectReason: string | null;
+  /** The supplier's bank letter or cancelled cheque (for those who verify bank details). */
+  files?: Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>;
 };
 export type Scorecard = {
   orders: Array<{ currency: string; orders: number; value: string }>; deliveredLines: number; onTimePercent: string | null; received: string; rejected: string;

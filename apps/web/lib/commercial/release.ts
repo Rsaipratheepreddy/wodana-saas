@@ -31,7 +31,8 @@ export function agreementIsOperational(agreement: Agreement | null | undefined) 
   return Boolean(
     agreement?.status === "executed" &&
       agreementHasSignedEvidence(agreement) &&
-      isOperationalEvidence(agreement),
+      // The reference is numbered by the system from the company's code: only what people wrote is read (§0.3 P0).
+      isOperationalEvidence({ evidenceKind: agreement!.evidenceKind, evidence: agreement!.evidence }),
   );
 }
 

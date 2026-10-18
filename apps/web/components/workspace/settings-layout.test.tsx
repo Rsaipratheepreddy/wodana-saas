@@ -33,7 +33,7 @@ describe("Settings menu", () => {
     expect(within(menu).getAllByRole("link").map((link) => link.textContent)).toEqual(["Purchasing"]);
     await user.clear(search);
     await user.type(search, "modules");
-    expect(within(menu).getAllByRole("link")).toHaveLength(17); // Modules (with Enquiry types, Orders by path, Report targets, Ledger and Finishes & samples), Inbox and Approvals included
+    expect(within(menu).getAllByRole("link")).toHaveLength(21); // Modules (with Enquiry types, Questionnaires, Invoice layout, Orders by path, Report targets, Ledger and Finishes & samples), Inbox and Approvals included
     await user.clear(search);
     await user.type(search, "zzz");
     expect(within(menu).queryAllByRole("link")).toHaveLength(0);

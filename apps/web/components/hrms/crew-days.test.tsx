@@ -243,10 +243,11 @@ describe("crew days", () => {
     expect(within(sheet).getByRole("img", { name: "Group photo of Joinery A" })).toHaveAttribute("src", expect.stringContaining("/api/workspace/hrms/captures/cap1/photo"));
     expect(within(sheet).getByText("Present · 2h 0m overtime")).toBeInTheDocument();
     expect(within(sheet).getByText("Half day")).toBeInTheDocument();
-    await userEvent.click(within(sheet).getByRole("button", { name: "Send back" }));
-    const back = await screen.findByRole("dialog", { name: "Send the crew day back" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Review" }));
+    const back = await screen.findByRole("dialog", { name: "Approve this crew day?" });
+    await userEvent.click(within(back).getByRole("radio", { name: "Send back" }));
     expect(within(back).getByRole("button", { name: "Send back" })).toBeDisabled();
-    await userEvent.type(within(back).getByRole("textbox", { name: /What to change/ }), "Anil left at noon");
+    await userEvent.type(within(back).getByRole("textbox", { name: /What needs to change/ }), "Anil left at noon");
     await userEvent.click(within(back).getByRole("button", { name: "Send back" }));
     await waitFor(() => expect(writes(calls, "crew-days/d1/decision").map((call) => call.body)).toEqual([{ version: 3, decision: "return", note: "Anil left at noon" }]));
   });
@@ -256,7 +257,10 @@ describe("crew days", () => {
     const calls = mount(({ path }) => (path.endsWith("/decision") ? day({ status: "approved", version: 4, canDecide: false }) : path === "crew-days" ? { days: [day()], canSeeCosts: false } : undefined));
     show();
     const sheet = await screen.findByRole("dialog", { name: /Joinery A/ });
-    await userEvent.click(within(sheet).getByRole("button", { name: "Approve" }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("dialog", { name: "Approve this crew day?" });
+    expect(within(review).getByText("Sara Site")).toBeInTheDocument();
+    await userEvent.click(within(review).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(writes(calls, "crew-days/d1/decision").map((call) => call.body)).toEqual([{ version: 3, decision: "approve", note: "" }]));
   });
 

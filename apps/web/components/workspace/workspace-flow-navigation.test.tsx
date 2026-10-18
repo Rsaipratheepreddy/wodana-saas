@@ -15,8 +15,8 @@ it("opens planning sections within the same project with one active destination"
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/contracts`}/>);
   const nav=screen.getByRole("navigation",{name:"Planning sections"});
   expect(within(nav).getAllByRole("link")).toHaveLength(7);
-  expect(within(nav).getByRole("link",{name:"Agreement"})).toHaveAttribute("aria-current","page");
-  expect(screen.getByRole("link",{name:"Change requests"})).toHaveAttribute("href",`${root}/variations`);
+  expect(within(nav).getByRole("link",{name:"Deal"})).toHaveAttribute("aria-current","page");
+  expect(screen.getByRole("link",{name:"Changes"})).toHaveAttribute("href",`${root}/variations`);
   expect(screen.queryByRole("navigation",{name:"Commercial sections"})).not.toBeInTheDocument();
 });
 it("shows old measurement links under Site and clears their query when leaving",()=>{
@@ -60,20 +60,20 @@ it("keeps Reports selected and preserves Sales settings destinations", () => {
   expect(screen.queryByRole("link",{name:"Assignment"})).not.toBeInTheDocument();
 });
 
-it("marks Agreement, not Overview, on the Deal File (M4)",()=>{
+it("marks Deal, not Overview, on the release (M4)",()=>{
   query="";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/execution-release`}/>);
   const areas=screen.getByRole("navigation",{name:"Planning sections"});
-  expect(within(areas).getByRole("link",{name:"Agreement"})).toHaveAttribute("aria-current","page");
+  expect(within(areas).getByRole("link",{name:"Deal"})).toHaveAttribute("aria-current","page");
   expect(within(areas).getByRole("link",{name:"Overview"})).not.toHaveAttribute("aria-current");
-  expect(screen.getByRole("link",{name:"Release readiness"})).toHaveAttribute("aria-current","page");
+  expect(screen.getByRole("link",{name:"Release"})).toHaveAttribute("aria-current","page");
 });
 
 it("follows the client planning order and clears review selection when changing sections",()=>{
   query="review=scope";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/approvals`}/>);
   const links=within(screen.getByRole("navigation",{name:"Planning sections"})).getAllByRole("link");
-  expect(links.map(link=>link.textContent)).toEqual(["Overview","Requirements","Site","Moodboard","Design","Quotes","Agreement"]);
+  expect(links.map(link=>link.textContent)).toEqual(["Overview","Requirements","Site","Moodboard","Design","Quotes","Deal"]);
   expect(screen.getByRole("link",{name:"Approvals"})).toHaveAttribute("aria-current","page");
   expect(screen.getByRole("link",{name:"Requirements"})).toHaveAttribute("href",`${root}/requirements`);
   expect(screen.getByRole("link",{name:"Approvals"})).not.toHaveAttribute("href",expect.stringContaining("review="));

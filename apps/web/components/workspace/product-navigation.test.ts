@@ -31,7 +31,8 @@ describe('product navigation route ownership', () => {
   });
   it('does not expose destinations removed by server permission filtering', () => {
     const limited = workspaceModules.map(module => ({ ...module, navigation: module.navigation.map(group => ({ ...group, items: group.items.filter(item => ['company', 'leads'].includes(item.id)) })) }));
-    expect(productNavigation(limited).flatMap(section => section.items).map(item => item.id)).toEqual(['home', 'sales', 'settings']);
+    // Jobs and Team chat follow the server's own rule: anyone who may view enquiries sees the jobs of the records they can see.
+    expect(productNavigation(limited).flatMap(section => section.items).map(item => item.id)).toEqual(['home', 'team-chat', 'jobs', 'sales', 'settings']);
     expect(productNavigation(limited).flatMap(section => section.items).find(item => item.id === 'sales')?.href).toBe('/workspace/crm/leads');
     expect(productNavigation(limited).flatMap(section => section.items).some(item => item.id === 'clients')).toBe(false);
   });
@@ -45,7 +46,7 @@ describe('product navigation route ownership', () => {
     // Operations lists the rebuilt modules only: Purchasing, Inventory and Factory so far, and the logistics calendar (the booking point).
     expect(sections.find(section => section.id === 'operations')?.items.map(item => [item.label, item.href])).toEqual([
       ['Purchasing', '/workspace/purchasing'], ['Inventory', '/workspace/inventory'], ['Factory', '/workspace/factory'], ['Logistics', '/workspace/factory/calendar']]);
-    expect(sections.find(section => section.id === 'main')?.items.map(item => item.label)).toEqual(['Home', 'Inbox', 'Calendar']);
+    expect(sections.find(section => section.id === 'main')?.items.map(item => item.label)).toEqual(['Home', 'Inbox', 'Team chat', 'Calendar']);
     expect(sections.find(section => section.id === 'money')?.items.map(item => item.id)).toEqual(['finance', 'ledger', 'reports']);
   });
   it('uses an authorized settings destination when company access is absent', () => {

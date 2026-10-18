@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Callout, DateField, FormDialog, FormNotSaved, MoneyField, MoreDetails, SelectField, TextInput, useDesignSystem, useWorkingCalendar, type SaveProblem } from "@/design-system";
+import { Callout, DateField, FormDialog, FormNotSaved, MoreDetails, SelectField, TextInput, useDesignSystem, useWorkingCalendar, type SaveProblem } from "@/design-system";
 import { CrmRequestError, crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { problemText } from "@/lib/crm/enquiry-requirements";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
@@ -41,11 +41,9 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated, initia
   const [nextAction, setNextAction] = useState(() => lead.nextActionAt && Date.parse(lead.nextActionAt) > Date.now()
     ? zonedDateTime(lead.nextActionAt, region.timeZone) : `${calendar.nextWorkingDayFromToday().toString()}T10:00`);
   const [closeDate, setCloseDate] = useState("");
-  const [amount, setAmount] = useState("");
-  const currency = initialData.defaultCurrency ?? region.currency ?? "";
   const [saved, setSaved] = useState(false), [failure, setFailure] = useState("");
-  const [start] = useState(() => JSON.stringify({ owner, title, nextAction, closeDate, amount }));
-  const dirty = !saved && JSON.stringify({ owner, title, nextAction, closeDate, amount }) !== start;
+  const [start] = useState(() => JSON.stringify({ owner, title, nextAction, closeDate }));
+  const dirty = !saved && JSON.stringify({ owner, title, nextAction, closeDate }) !== start;
   // Every workspace is provisioned with a Sales pipeline. Only someone who may manage CRM settings
   // recreates a missing one here; a salesperson is told who to ask instead of hitting a 403.
   const ensurePipeline = async () => {
@@ -69,13 +67,11 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated, initia
     if (!title.trim() || !owner) throw new Error(t("Enter an opportunity name and choose a sales owner."));
     const nextActionAt = nextAction ? zonedDateTimeToIso(nextAction, region.timeZone) : null;
     if (!nextActionAt) throw new Error(t("Choose the next follow-up date and time."));
-    if (amount && !/^[A-Z]{3}$/.test(currency)) throw new Error(t("Set your workspace currency in Company settings before adding a value."));
     const salesPipeline = pipeline ?? await ensurePipeline();
     setProblems([]);
     const result = await crmRequest(initialData.workspaceId, `leads/${lead.id}/qualify`, "POST", {
       partyId: lead.partyId, leadVersion: lead.version, pipelineId: salesPipeline.id, ownerMembershipId: owner, title: title.trim(),
       nextActionAt, ...(closeDate ? { expectedCloseAt: new Date(`${closeDate}T12:00`).toISOString() } : {}),
-      ...(amount ? { amount: Number(amount), currencyCode: currency.trim().toUpperCase() } : {}),
     }).catch((error: unknown) => {
       if (error instanceof CrmRequestError && error.missing.length) { setProblems(error.missing); throw new FormNotSaved(); }
       throw error;
@@ -94,9 +90,8 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated, initia
       <TextInput label={t("Opportunity name")} isRequired value={title} onChange={setTitle} maxLength={240} />
       <SelectField label={t("Sales owner")} isRequired selectedKey={owner || null} items={members.map(m => ({ id: m.id, label: m.displayName }))} onSelectionChange={key => setOwner(String(key ?? ""))} />
       <CrmDateTimeField label={t("Next follow-up")} isRequired value={nextAction} onChange={setNextAction} />
-      <MoreDetails filled={[closeDate, amount].filter(Boolean).length}>
+      <MoreDetails filled={[closeDate].filter(Boolean).length}>
         <DateField label={t("Expected close date")} value={closeDate ? parseDate(closeDate) : null} onChange={value => setCloseDate(value?.toString() ?? "")} />
-        <MoneyField label={t("Estimated value")} currency={currency || undefined} min="0" value={amount} onChange={setAmount} />
       </MoreDetails>
     </fieldset>
   </FormDialog>;

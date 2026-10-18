@@ -14,6 +14,8 @@ export type PortalSite = {
   welcomeTitle: string;
   welcomeText: string;
   support: { phone: string; email: string; whatsapp: string };
+  /** The firm's online catalogue (its shop), when it has one. */
+  catalogueUrl: string | null;
   region: { locale: string; currency: string; timeZone: string; country: string | null };
   signIn: { channels: Array<"whatsapp" | "email">; demo: boolean };
   gallerySlug: string | null;
@@ -43,7 +45,7 @@ export async function readSite(db: Db, workspaceId: string, settings: PortalSett
   return {
     slug: settings.slug,
     brand: { name: row.name, logoUrl, primaryColor: row.primaryColor, secondaryColor: row.secondaryColor, headingFont: row.headingFont, bodyFont: row.bodyFont },
-    welcomeTitle: settings.welcomeTitle, welcomeText: settings.welcomeText, support: settings.support,
+    welcomeTitle: settings.welcomeTitle, welcomeText: settings.welcomeText, support: settings.support, catalogueUrl: settings.catalogueUrl || null,
     region: { locale: row.locale, currency: row.currency, timeZone: row.timeZone, country },
     signIn: { channels, demo }, gallerySlug: gallery?.slug ?? null,
   };

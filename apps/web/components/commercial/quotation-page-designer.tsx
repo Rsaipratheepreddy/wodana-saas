@@ -9,6 +9,7 @@ import type { Editor } from '@tiptap/react';
 import { QuotationRichTextEditor, QuoteRichText } from './quotation-rich-text';
 import { QuotationLinkedBlock } from './quotation-linked-block';
 import { isReferenceLayout, referenceItemPage } from '@/lib/commercial/quotation-reference-template';
+import { Button, IconButton, InlineNotice, NumericInput } from '@/design-system';
 import styles from './quotation-page-designer.module.css';
 const WIDTH = 940, HEIGHT = 1329;
 export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEditPayments, continuous = false, active = true, onActivate, inspectorHost, onEditDetails, onEditScope }: {
@@ -140,35 +141,35 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
         return null;
     const controls = <>
   {!readOnly && <div className={styles.tools} aria-label={t("Page tools")}>
-   <button type="button" onClick={addText} disabled={page.elements.length >= 100}><Type size={16}/>{t("Text")}</button>
-   <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading || page.elements.length >= 100}><ImagePlus size={16}/>{t(uploading ? 'Adding…' : 'Image')}</button>
-   <button type="button" aria-pressed={selected === '__page__'} onClick={() => { setSelected('__page__'); setEditing(''); }}><Palette size={16}/>{t("Page")}</button>
+   <Button size="compact" onPress={addText} isDisabled={page.elements.length >= 100}><Type size={16}/>{t("Text")}</Button>
+   <Button size="compact" onPress={() => fileInput.current?.click()} isDisabled={uploading || page.elements.length >= 100}><ImagePlus size={16}/>{t(uploading ? 'Adding…' : 'Image')}</Button>
+   <Button size="compact" aria-pressed={selected === '__page__'} onPress={() => { setSelected('__page__'); setEditing(''); }}><Palette size={16}/>{t("Page")}</Button>
    <input ref={fileInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label={t("Upload page image")} onChange={event => void upload(event.target.files?.[0])}/>
   </div>}
   {selected === '__page__' && !readOnly && <div className={styles.context} aria-label={t("Page background controls")}>
    <label className={styles.colour}><input aria-label={t("Page colour")} type="color" value={page.background ?? design.pageBackground} onChange={event => patchPage({ background: event.target.value })}/>{t("Background")}</label>
-   <button type="button" disabled={uploading} onClick={() => backgroundInput.current?.click()}><ImagePlus size={15}/>{t(uploading ? 'Adding…' : 'Background image')}</button>
-   {page.backgroundImage && <button type="button" onClick={() => patchPage({ backgroundImage: undefined }, true)}><ImageOff size={15}/>{t("Remove image")}</button>}
+   <Button size="compact" isDisabled={uploading} onPress={() => backgroundInput.current?.click()}><ImagePlus size={15}/>{t(uploading ? 'Adding…' : 'Background image')}</Button>
+   {page.backgroundImage && <Button size="compact" onPress={() => patchPage({ backgroundImage: undefined }, true)}><ImageOff size={15}/>{t("Remove image")}</Button>}
   </div>}
   <input ref={backgroundInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label={t("Upload background image")} onChange={event => { void upload(event.target.files?.[0], true); event.currentTarget.value = ''; }}/>
   {current && !readOnly && <div className={styles.context} aria-label={t("Selection controls")}>
    {current.type === 'text' && !current.id.startsWith('data:') && <>
     {editing && <>
-     <button type="button" aria-label={t("Bold")} aria-pressed={richEditor?.isActive('bold') ?? false} onClick={() => richEditor?.chain().focus().toggleBold().run()}><Bold size={15}/></button>
-     <button type="button" aria-label={t("Italic")} aria-pressed={richEditor?.isActive('italic') ?? false} onClick={() => richEditor?.chain().focus().toggleItalic().run()}><Italic size={15}/></button>
-     <button type="button" aria-label={t("Underline")} aria-pressed={richEditor?.isActive('underline') ?? false} onClick={() => richEditor?.chain().focus().toggleUnderline().run()}><Underline size={15}/></button>
-     <button type="button" aria-label={t("Bullet list")} aria-pressed={richEditor?.isActive('bulletList') ?? false} onClick={() => richEditor?.chain().focus().toggleBulletList().run()}><List size={15}/></button>
-     <button type="button" aria-label={t("Numbered list")} aria-pressed={richEditor?.isActive('orderedList') ?? false} onClick={() => richEditor?.chain().focus().toggleOrderedList().run()}><ListOrdered size={15}/></button>
+     <IconButton size="compact" aria-label={t("Bold")} aria-pressed={richEditor?.isActive('bold') ?? false} onPress={() => richEditor?.chain().focus().toggleBold().run()}><Bold aria-hidden="true" size={15}/></IconButton>
+     <IconButton size="compact" aria-label={t("Italic")} aria-pressed={richEditor?.isActive('italic') ?? false} onPress={() => richEditor?.chain().focus().toggleItalic().run()}><Italic aria-hidden="true" size={15}/></IconButton>
+     <IconButton size="compact" aria-label={t("Underline")} aria-pressed={richEditor?.isActive('underline') ?? false} onPress={() => richEditor?.chain().focus().toggleUnderline().run()}><Underline aria-hidden="true" size={15}/></IconButton>
+     <IconButton size="compact" aria-label={t("Bullet list")} aria-pressed={richEditor?.isActive('bulletList') ?? false} onPress={() => richEditor?.chain().focus().toggleBulletList().run()}><List aria-hidden="true" size={15}/></IconButton>
+     <IconButton size="compact" aria-label={t("Numbered list")} aria-pressed={richEditor?.isActive('orderedList') ?? false} onPress={() => richEditor?.chain().focus().toggleOrderedList().run()}><ListOrdered aria-hidden="true" size={15}/></IconButton>
     </>}
-    <label className={styles.size}><input aria-label={t("Font size")} type="number" min={8} max={96} value={current.fontSize ?? 28} onChange={event => patchElement(current.id, { fontSize: Math.min(96, Math.max(8, Number(event.target.value) || 8)) })}/>px</label>
+    <div className={styles.size}><NumericInput aria-label={t("Font size")} label={<span className="wd-visually-hidden">{t("Font size")}</span>} minValue={8} maxValue={96} suffix="px" value={current.fontSize ?? 28} onChange={value => patchElement(current.id, { fontSize: Math.min(96, Math.max(8, value || 8)) })}/></div>
     <input aria-label={t("Text colour")} type="color" value={current.color ?? '#25382f'} onChange={event => patchElement(current.id, { color: event.target.value })}/>
-    {(['left', 'center', 'right'] as const).map(align => { const Icon = align === 'left' ? AlignLeft : align === 'center' ? AlignCenter : AlignRight; return <button type="button" key={align} aria-label={t(align === 'left' ? 'Align left' : align === 'center' ? 'Align center' : 'Align right')} aria-pressed={(current.align ?? 'left') === align} onClick={() => patchElement(current.id, { align })}><Icon size={15}/></button>; })}
-    <button type="button" onClick={() => setEditing(editing ? '' : current.id)}>{editing ? <Check size={15}/> : <Type size={15}/>} {t(editing ? 'Done' : 'Edit text')}</button>
+    {(['left', 'center', 'right'] as const).map(align => { const Icon = align === 'left' ? AlignLeft : align === 'center' ? AlignCenter : AlignRight; return <IconButton size="compact" key={align} aria-label={t(align === 'left' ? 'Align left' : align === 'center' ? 'Align center' : 'Align right')} aria-pressed={(current.align ?? 'left') === align} onPress={() => patchElement(current.id, { align })}><Icon aria-hidden="true" size={15}/></IconButton>; })}
+    <Button size="compact" onPress={() => setEditing(editing ? '' : current.id)}>{editing ? <Check aria-hidden="true" size={15}/> : <Type aria-hidden="true" size={15}/>}{t(editing ? 'Done' : 'Edit text')}</Button>
    </>}
-   <button type="button" aria-label={t("Duplicate element")} onClick={duplicate} disabled={page.elements.length >= 100}><Copy size={15}/></button><button type="button" aria-label={t("Delete element")} onClick={remove}><Trash2 size={15}/></button>
+   <IconButton size="compact" aria-label={t("Duplicate element")} onPress={duplicate} isDisabled={page.elements.length >= 100}><Copy aria-hidden="true" size={15}/></IconButton><IconButton size="compact" aria-label={t("Delete element")} onPress={remove}><Trash2 aria-hidden="true" size={15}/></IconButton>
   </div>}
-  {error && <p className={styles.error} role="alert">{translateKnown(t, error)}<button type="button" onClick={() => setError('')}>{t("Dismiss")}</button></p>}
-  {current?.id.startsWith('data:') && <button type="button" onClick={() => current.id.includes('items:') ? onEditScope?.() : onEditDetails?.()}>{t(current.id.includes('items:') ? 'Edit scope & items' : 'Edit client & project details')}</button>}
+  {error && <InlineNotice className={styles.error} tone="error" message={translateKnown(t, error)} action={<Button size="compact" variant="quiet" onPress={() => setError('')}>{t("Dismiss")}</Button>} />}
+  {current?.id.startsWith('data:') && <Button size="compact" onPress={() => current.id.includes('items:') ? onEditScope?.() : onEditDetails?.()}>{t(current.id.includes('items:') ? 'Edit scope & items' : 'Edit client & project details')}</Button>}
   </>;
     return <div className={styles.designer} data-continuous={continuous || undefined} ref={stage} aria-label={t('Page editor {id}', { id: pageId })} onFocusCapture={onActivate} onPointerDownCapture={onActivate} onPointerDown={event => { if (event.target === event.currentTarget) {
         setSelected('__page__');
@@ -244,7 +245,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
     </div>
    </div>
   </div>
-  <div className={styles.zoom}><button type="button" aria-label={t("Zoom out")} onClick={() => setZoom(value => Math.max(.2, value - .1))}><Minus size={15}/></button><span>{Math.round(zoom * 100)}%</span><button type="button" aria-label={t("Zoom in")} onClick={() => setZoom(value => Math.min(2, value + .1))}><Plus size={15}/></button><button type="button" onClick={fit}>{t("Fit")}</button></div>
+  <div className={styles.zoom}><IconButton size="compact" aria-label={t("Zoom out")} onPress={() => setZoom(value => Math.max(.2, value - .1))}><Minus aria-hidden="true" size={15}/></IconButton><span>{Math.round(zoom * 100)}%</span><IconButton size="compact" aria-label={t("Zoom in")} onPress={() => setZoom(value => Math.min(2, value + .1))}><Plus aria-hidden="true" size={15}/></IconButton><Button size="compact" onPress={fit}>{t("Fit")}</Button></div>
   {!readOnly && <span className={styles.hint}>{t(editing ? 'Type directly on the page' : selected === '__page__' ? 'Choose a background colour or image' : current ? 'Drag to move · Double-click text to edit' : 'Click an element to edit · Add text or images above')}</span>}
  </div>;
 }

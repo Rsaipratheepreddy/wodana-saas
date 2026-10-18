@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, EmptyState, ErrorState, FormRow, FormSection, GroupedTable, InlineNotice, ListTabs, NoResultsState, SearchInput, SelectField, Skeleton, TextAreaField, TextInput,
-  type GroupedTableColumn, type GroupedTableSection, FormDialog } from "@/design-system";
+import { Button, DateField, EmptyState, ErrorState, FormRow, FormSection, GroupedTable, InlineNotice, ListTabs, NoResultsState, NumericInput, QuantityInput, SearchInput, SelectField, Skeleton,
+  StateChip, TextAreaField, type GroupedTableColumn, type GroupedTableSection, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { FactoryState, MakeLine } from "@/lib/factory/types";
@@ -13,7 +13,9 @@ import { quantityText } from "../purchasing/order-labels";
 import styles from "./factory.module.css";
 
 type View = "left" | "hold" | "all";
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
+/** Quantities and hours stay exact decimal text for the payload; the number field shows and commits them. */
+const asNumber = (value: string) => (value === "" ? Number.NaN : Number(value));
+const asText = (next: number) => (Number.isFinite(next) ? String(next) : "");
 
 /**
  * What running projects make in the factory, one project at a time: each line, when the work needs it, how
@@ -50,7 +52,7 @@ export function ToMake({ api, state, error, onReload, onPlanned, projectId = nul
       ? <span className={styles.nameCell}><strong className={styles.number}>{`${quantityText(line.left)} ${line.unit}`.trim()}</strong>
         {Number(line.planned) ? <small>{t("{quantity} on work orders", { quantity: `${quantityText(line.planned)} ${line.unit}`.trim() })}</small> : null}</span>
       : Number(line.left) < 0 ? <span className={styles.lateText}>{t("{quantity} more on work orders than it needs", { quantity: `${quantityText(line.left.replace("-", ""))} ${line.unit}`.trim() })}</span>
-      : <span className={styles.muted}>{t("Planned")}</span> },
+      : <StateChip state="done" label={t("Planned")} /> },
     // One clear next action per line.
     ...(state.canManage ? [{ id: "action", label: "", width: "9rem", align: "end" as const, render: (line: MakeLine) => plannable(line)
       ? <Button size="compact" variant="quiet" aria-label={t("Plan work order for {name}", { name: line.title })} onPress={() => setPlanning(line)}>{t("Plan work order")}</Button>
@@ -114,7 +116,7 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
       }}>
       {line.projectStatus === "on_hold" ? <InlineNotice tone="info" message={t("{project} is on hold: it can be planned, not released.", { project: line.projectReference })} /> : null}
       <FormSection title={t("Work")}>
-        <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={line.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
+        <QuantityInput label={t("Quantity")} isRequired unit={line.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }} value={asNumber(quantity)} onChange={(next) => setQuantity(asText(next))}
           isInvalid={over} errorMessage={over ? t("Only {quantity} left.", { quantity: `${quantityText(line.left)} ${line.unit}`.trim() }) : undefined} />
         <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
           items={state.workcenters.map((center) => ({ id: center.id, label: center.name }))} />
@@ -126,7 +128,7 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
           <DateField label={t("Finish")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : null)}
             isInvalid={Boolean(start && end && end < start)} errorMessage={start && end && end < start ? t("The finish can't be before the start.") : undefined} />
         </FormRow>
-        <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))} />
+        <NumericInput label={t("Hours it takes")} suffix={t("h")} minValue={0} formatOptions={{ maximumFractionDigits: 2 }} value={asNumber(hours)} onChange={(next) => setHours(asText(next))} />
       </FormSection>
   </FormDialog>;
 }

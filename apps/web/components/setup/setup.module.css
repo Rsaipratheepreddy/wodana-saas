@@ -1,0 +1,66 @@
+/* §0.3 P3, the Setup module: compact rows, chips for facts, no extra frames. */
+.nameCell { display: grid; gap: var(--wd-space-0-5); }
+.nameCell a { color: var(--wd-color-text); text-decoration: none; }
+.nameCell a:hover { text-decoration: underline; }
+.nameCell strong { font-weight: var(--wd-weight-medium); }
+.nameCell small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.muted { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.rowActions { display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-0-5); }
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.form { display: grid; gap: var(--wd-space-3); }
+.row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.versions { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.versions li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.versions li:last-child { border-block-end: 0; }
+.versionText { display: grid; gap: var(--wd-space-0-5); }
+.versionText small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.answers { display: grid; gap: var(--wd-space-3); }
+@media (max-width: 40rem) { .row { grid-template-columns: minmax(0, 1fr); } }
+
+/* Invoice layout: the settings beside the page they shape (stacked on a narrow screen). */
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; gap: var(--wd-space-5); }
+.splitForm { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.preview { position: sticky; inset-block-start: var(--wd-space-4); min-inline-size: 0; max-block-size: calc(100dvh - var(--wd-space-16)); overflow: auto;
+  padding: var(--wd-space-3); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); }
+@media (max-width: 64rem) { .split { grid-template-columns: minmax(0, 1fr); } .preview { position: static; max-block-size: none; } }
+
+/* Commission types: one row each (the name, then remove), no rule lines; Add sits under the list at its own size. */
+.typeList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; max-inline-size: 28rem; }
+.typeList li { display: flex; align-items: center; gap: var(--wd-space-2); }
+.typeList li > :first-child { flex: 1; }
+.typeAdd { display: flex; justify-content: flex-start; margin-block-start: var(--wd-space-2); }
+
+/* Push notifications: each moment a row (its name, chips, a switch); the chosen one opens its editor below it. */
+.pushList { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.pushMoment { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-1) var(--wd-space-1) var(--wd-space-2); border-radius: var(--wd-radius-md); }
+.pushMoment[data-open] { background: var(--wd-color-surface-subtle); }
+.pushHead { display: flex; align-items: center; gap: var(--wd-space-2); }
+.pushPick { display: grid; gap: var(--wd-space-1); flex: 1; min-inline-size: 0; padding: var(--wd-space-2); border: 0; border-radius: var(--wd-radius-sm); background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.pushPick:hover { background: var(--wd-color-surface-hover); }
+.pushPick:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.pushLabel { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.pushEditor { display: grid; gap: var(--wd-space-3); padding-inline: var(--wd-space-2); }
+.pushFacts { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.pushFact { min-block-size: 1.375rem; padding-inline: var(--wd-space-2); border: 0; border-radius: var(--wd-radius-pill); background: var(--wd-color-viz-2-soft); color: var(--wd-color-viz-2);
+  font: inherit; font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); cursor: pointer; }
+.pushFact:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.pushRow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--wd-space-2); }
+
+/* The phone: a lock screen with the moment's push as it will look. */
+.pushPage { display: grid; gap: var(--wd-space-4); max-inline-size: 44rem; }
+.phone { display: grid; justify-items: center; gap: var(--wd-space-3); inline-size: 100%; max-inline-size: 22rem; padding: var(--wd-space-5) var(--wd-space-3) var(--wd-space-6);
+  border-radius: var(--wd-radius-xl); background: var(--wd-color-surface-muted); }
+.phoneTime { font-size: var(--wd-text-2xl); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); font-variant-numeric: tabular-nums; }
+.notice { display: grid; gap: var(--wd-space-1); inline-size: 100%; padding: var(--wd-space-3); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); }
+.notice[data-off] { opacity: 0.55; }
+.noticeHead { display: flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); }
+.appIcon { display: inline-grid; place-items: center; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-xs);
+  background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); }
+.appName { flex: 1; text-transform: uppercase; letter-spacing: 0.04em; }
+.noticeWhen { color: var(--wd-color-text-tertiary); }
+.noticeTitle { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); overflow-wrap: anywhere; }
+.noticeText { margin: 0; font-size: var(--wd-text-sm); line-height: 1.4; color: var(--wd-color-text); overflow-wrap: anywhere; }
+.noticeButtons { display: flex; gap: var(--wd-space-1-5); margin-block-start: var(--wd-space-1-5); }
+.noticeButtons > span { flex: 1; padding: var(--wd-space-1-5); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); text-align: center;
+  font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, RecordName, Skeleton, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EditableFieldList, EmptyState, ErrorState, FactRow, InlineNotice, InspectorSheet, NoResultsState, RecordName, Skeleton, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { PayablesState, SupplierBalance, SupplierState } from "@/lib/payables/types";
@@ -59,25 +59,25 @@ function OwedSheet({ api, vendorId, onChanged, onClose, onOpenBill, onOpenPaymen
       <Button variant="primary" onPress={() => setPaying(true)}>{t("Record payment")}</Button></div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} shape="rows" /> : <div className={styles.sheet}>
       {state.supplier.bankChangePending ? <InlineNotice tone="info" message={t("New bank details are waiting for approval. Pay into the approved account.")} /> : null}
-      <dl className={styles.facts}>
-        {state.balances.map((row) => <div key={`${row.legalEntityId}|${row.currency}`}><dt>{row.companyName}</dt><dd>
+      <EditableFieldList>
+        {state.balances.map((row) => <FactRow key={`${row.legalEntityId}|${row.currency}`} label={row.companyName}>
           <span className={styles.money}>{Number(row.owed) < 0 ? t("{amount} paid ahead", { amount: format.money(plain(row.owed).replace("-", ""), row.currency) })
             : t("{amount} owed", { amount: format.money(row.owed, row.currency) })}</span>
           {Number(row.overdue) > 0 ? <span className={styles.lateText}>{t("{amount} overdue", { amount: format.money(row.overdue, row.currency) })}</span> : null}
           {Number(row.retention) > 0 ? <span className={styles.muted}>{t("{amount} retention held", { amount: format.money(row.retention, row.currency) })}</span> : null}
           {Number(row.debited) > 0 ? <span className={styles.muted}>{t("{amount} in debit notes", { amount: format.money(row.debited, row.currency) })}</span> : null}
-        </dd></div>)}
-        <div><dt>{t("Bank account")}</dt><dd>{state.supplier.bank ? t("{bank} ending {digits}", { bank: state.supplier.bank.bankName, digits: state.supplier.bank.last4 })
-          : <span className={styles.muted}>{t("None approved")}</span>}</dd></div>
-        {state.supplier.creditDays ? <div><dt>{t("Credit")}</dt><dd>{t("{count} days", { count: state.supplier.creditDays })}</dd></div> : null}
-      </dl>
+        </FactRow>)}
+        <FactRow label={t("Bank account")}>{state.supplier.bank ? t("{bank} ending {digits}", { bank: state.supplier.bank.bankName, digits: state.supplier.bank.last4 })
+          : <span className={styles.muted}>{t("None approved")}</span>}</FactRow>
+        {state.supplier.creditDays ? <FactRow label={t("Credit")}>{t("{count} days", { count: state.supplier.creditDays })}</FactRow> : null}
+      </EditableFieldList>
       {open.length ? <section className={styles.part} aria-label={t("Open invoices")}>
         <h3 className={styles.subhead}>{t("Open invoices")}</h3>
         <ul className={styles.list}>{open.map((bill) => <li key={bill.id}>
-          <span className={styles.nameCell}><button type="button" className={styles.linkButton} onClick={() => onOpenBill(bill.id)}>{bill.number}</button>
+          <span className={styles.nameCell}><span><Button variant="quiet" size="compact" onPress={() => onOpenBill(bill.id)}>{bill.number}</Button></span>
             <small>{[bill.dueDate ? t("Due {date}", { date: format.day(bill.dueDate) }) : "", bill.orders.join(", ")].filter(Boolean).join(" · ")}</small></span>
           <span className={styles.nameCell}><span className={styles.money}>{format.money(bill.status === "approved" ? bill.balance : bill.total, bill.currency)}</span>
-            <BillStatusLabel bill={bill} today={today} /></span>
+            <span><BillStatusLabel bill={bill} today={today} /></span></span>
         </li>)}</ul>
       </section> : null}
       {state.debitNotes.length ? <section className={styles.part} aria-label={t("Debit notes")}>
@@ -89,7 +89,7 @@ function OwedSheet({ api, vendorId, onChanged, onClose, onOpenBill, onOpenPaymen
       {state.payments.length ? <section className={styles.part} aria-label={t("Payments")}>
         <h3 className={styles.subhead}>{t("Payments")}</h3>
         <ul className={styles.list}>{state.payments.slice(0, 20).map((payment) => <li key={payment.id}>
-          <button type="button" className={styles.linkButton} onClick={() => onOpenPayment(payment.id)}>{[format.day(payment.paidOn), payment.reference].filter(Boolean).join(" · ")}</button>
+          <Button variant="quiet" size="compact" onPress={() => onOpenPayment(payment.id)}>{[format.day(payment.paidOn), payment.reference].filter(Boolean).join(" · ")}</Button>
           <span className={payment.status === "reversed" ? `${styles.money} ${styles.lateText}` : styles.money}>{format.money(payment.amount, payment.currency)}</span></li>)}</ul>
       </section> : null}
     </div>}

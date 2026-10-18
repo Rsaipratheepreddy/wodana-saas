@@ -7,8 +7,9 @@
 .label[data-color="viz-4"] { background: var(--wd-color-viz-4-soft); color: var(--wd-color-viz-4); }
 .label[data-color="viz-5"] { background: var(--wd-color-viz-5-soft); color: var(--wd-color-viz-5); }
 .label[data-color="viz-6"] { background: var(--wd-color-viz-6-soft); color: var(--wd-color-viz-6); }
-.wait { display: inline-flex; align-items: center; gap: var(--wd-space-1); flex-shrink: 0; padding-inline: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); font-size: var(--wd-text-2xs); font-weight: 600; white-space: nowrap; }
-.wait[data-level="late"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.wait { display: inline-flex; align-items: center; gap: var(--wd-space-1); flex-shrink: 0; min-block-size: var(--wd-space-5); padding-inline: var(--wd-space-1-5); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); font-variant-numeric: tabular-nums; }
+/* Waiting over an hour: a calm tint and the warning ink, never a block of red. */
+.wait[data-level="late"] { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
 .page { display: grid; gap: var(--wd-space-6); max-inline-size: 64rem; }
 .inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .inline :global(.wd-field) { min-inline-size: 14rem; }

@@ -8,6 +8,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { noticeDecision } from "../../notifications/notice-choices";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { DatabaseService } from "../../database/database.service";
@@ -41,6 +42,7 @@ import { loadEnquiryFacts, requirementContext, requirementProblems } from "./enq
 import { readLeadTeam, teamRolesForType } from "./lead-team";
 import { clearPartySpam, flagPartySpam } from "../spam/contact-spam";
 import { canReadNotes, isNotesField, notesReader, redactNotes } from "./internal-notes";
+import { ownLeadSql, ownRecordsScope } from "../shared/record-scope";
 import {
   formatDeadline, leadFacts, leadLink, loadSalesSettings, memberPerson, refreshUnownedEscalation,
   salesEscalationRecipients, salesSchedule, tell, workspaceClock, workspaceOwners,
@@ -534,6 +536,9 @@ export class CrmLeadsService {
         values.push(query.queueId);
         clauses.push(`lead.queue_id = $${values.length}`);
       }
+      // §0.3 P0 (guide C): without the right to see every enquiry, only one's own.
+      const own = await ownRecordsScope(client, this.access, workspaceId, user.userId);
+      if (own) { values.push(own); clauses.push(ownLeadSql("lead", `$${values.length}`)); }
       if (query.search) {
         values.push(normalizeName(query.search));
         clauses.push(`(party.normalized_name % $${values.length} OR party.normalized_name LIKE '%' || $${values.length} || '%' OR lower(enquiry.reference) LIKE '%' || $${values.length} || '%' OR lower(enquiry.title) LIKE '%' || $${values.length} || '%')`);
@@ -629,6 +634,10 @@ export class CrmLeadsService {
   get(actor: RequestActor, workspaceId: string, leadId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, actorUser) => {
       const lead = await this.requireLead(client, workspaceId, leadId, false);
+      // §0.3 P0 (guide C): someone else's enquiry is not found for whoever sees only their own.
+      const own = await ownRecordsScope(client, this.access, workspaceId, actorUser.userId);
+      if (own && !(await client.query(`SELECT 1 FROM crm_leads lead WHERE lead.workspace_id = $1 AND lead.id = $2 AND ${ownLeadSql("lead", "$3")}`, [workspaceId, leadId, own])).rowCount)
+        throw new NotFoundException("Enquiry not found");
       const qualification = await client.query(
           `SELECT question_key AS "questionKey", value, captured_at AS "capturedAt"
            FROM crm_lead_qualification_values WHERE workspace_id = $1 AND lead_id = $2
@@ -904,6 +913,18 @@ export class CrmLeadsService {
              JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
             WHERE lead.workspace_id=$1 AND lead.party_id=$2 AND lead.id<>$3 AND lead.closed_at IS NULL
               AND lead.status NOT IN ('qualified','disqualified','duplicate') ORDER BY lead.created_at LIMIT 1`, [workspaceId, partyId, leadId]);
+        // Guide 3: the same client with an open enquiry makes this one a duplicate, as at intake: linked to the original,
+        // with its owner, kept out of routing, timers and reports. An enquiry already converted stays as it is.
+        const original = other.rows[0];
+        if (original && !["qualified", "disqualified", "duplicate"].includes(String(lead.status))) {
+          await client.query(`UPDATE crm_leads SET status = 'duplicate', duplicate_of_lead_id = $3, owner_membership_id = $4, closed_at = now(), version = version + 1, updated_at = now()
+            WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId, original.id, original.owner]);
+          await client.query(`INSERT INTO crm_assignment_history (workspace_id, lead_id, owner_membership_id, assignment_method, explanation, reason, assigned_by)
+            VALUES ($1, $2, $3, 'manual', $4, $5, $6)`, [workspaceId, leadId, original.owner, { mode: "duplicate", originalLeadId: original.id },
+            `Duplicate of ${original.reference ?? "an open enquiry"}`, actorUser.userId]);
+          await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.duplicate_detected.v1", entityType: "crm_lead", entityId: leadId,
+            after: { originalLeadId: original.id, method: "client_confirmed" } });
+        }
         const otherOwner = other.rows[0]?.owner && other.rows[0].owner !== lead.owner_membership_id ? await memberPerson(client, workspaceId, other.rows[0].owner) : null;
         if (otherOwner) {
           const facts = await leadFacts(client, workspaceId, leadId);
@@ -2073,24 +2094,19 @@ export class CrmLeadsService {
     const subject = selection.ownerMembershipId ? "New enquiry assigned" : "New enquiry in your queue";
     const correlationId = randomUUID();
     for (const recipient of recipients.rows) {
-      const preference = await client.query<{ enabled: boolean }>(
-        `SELECT enabled FROM notification_preferences
-         WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2
-           AND channel='in_app' AND event_type IN ($3,'crm.lead.*','*')
-         ORDER BY CASE event_type WHEN $3 THEN 0 WHEN 'crm.lead.*' THEN 1 ELSE 2 END LIMIT 1`,
-        [workspaceId, recipient.userId, eventType],
-      );
-      if (preference.rows[0]?.enabled === false) continue;
+      // The person's choices for sales notices in the app (notice-choices.ts).
+      const inApp = await noticeDecision(client, { workspaceId, userId: recipient.userId, eventType, channel: "in_app" });
+      if (!inApp.send) continue;
       await client.query(
         `INSERT INTO notifications
           (workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,
-           deep_link,idempotency_key,correlation_id,delivered_at)
-         VALUES ($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now())
+           deep_link,idempotency_key,correlation_id,delivered_at,silent)
+         VALUES ($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now(),$9)
          ON CONFLICT (workspace_id,idempotency_key) DO NOTHING`,
         [workspaceId, recipient.userId, eventType, subject,
           "Please review this enquiry and record your next action.",
           `/workspace/crm/leads?lead=${leadId}`,
-          `crm:assignment:${leadId}:${assignmentVersion}:${recipient.userId}`, correlationId],
+          `crm:assignment:${leadId}:${assignmentVersion}:${recipient.userId}`, correlationId, inApp.silent],
       );
     }
   }

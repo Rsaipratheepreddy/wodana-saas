@@ -6,7 +6,7 @@ import type { QuoteLine } from "@/lib/commercial/types";
 import { commercialPath, jsonRequest, money } from "@/lib/commercial/client";
 import { translateKnown } from "@/lib/i18n/keys";
 import { catalogPriceInput, catalogPriceProvenance, catalogResolvedRate, priceBasisCurrent, type CatalogPriceResult } from "@/lib/commercial/catalog-price";
-import { Button, ControlledModalDialog, Form, MoneyInput, TextInput, useDesignSystem } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, Form, InlineNotice, MoneyField, TextInput, useDesignSystem } from "@/design-system";
 import styles from "./quotation-catalog-price.module.css";
 
 export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, caseId, readOnly, canOverride, showRate = true, onApply }: {
@@ -64,8 +64,8 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
   return <>
     <div className={styles.cell}>
       {showRate ? <strong className={styles.rate}>{line.rate.toFixed(2)}</strong> : null}
-      <span className={styles.status} data-issue={needsAttention || undefined}>{status}</span>
-      <button type="button" className={styles.reviewButton} onClick={() => setReviewOpen(true)} aria-label={t("Review price for {title}", { title: line.title })}>{t("Review price")}</button>
+      <Badge tone={needsAttention ? "warning" : "neutral"}>{status}</Badge>
+      <Button size="compact" variant="quiet" onPress={() => setReviewOpen(true)} aria-label={t("Review price for {title}", { title: line.title })}>{t("Review price")}</Button>
     </div>
     <ControlledModalDialog title={t("Price review · {title}", { title: line.title })} isOpen={reviewOpen} onOpenChange={open => { if (!busy) { setReviewOpen(open); if (!open) setOverride(false); } }} size="md" footer={<div className={styles.footer}>
       <Button size="compact" variant="quiet" onPress={() => { setReviewOpen(false); setOverride(false); }} isDisabled={busy}>{t("Close")}</Button>
@@ -73,7 +73,7 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
       {!readOnly && canOverride && input ? <Button size="compact" variant="primary" onPress={() => { setAmount(line.rate > 0 ? String(line.rate) : ""); setReason(""); setOverride(open => !open); }}>{t(override ? "Cancel override" : "Override price")}</Button> : null}
     </div>}>
       <div className={styles.review}>
-        {error ? <p role="alert" className={styles.error}>{translateKnown(t, error)}</p> : null}
+        {error ? <InlineNotice tone="error" message={translateKnown(t, error)} /> : null}
         <div className={styles.reviewSummary}><span>{t("Unit rate")}</span><strong>{money(line.rate, currency, locale)}</strong></div>
         <p className={styles.reviewStatus} data-issue={needsAttention || undefined}>{status}</p>
         {provenance ? <div className={styles.provenance}>
@@ -82,7 +82,7 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
           {provenance.issue ? <p className={styles.issue}>{provenance.issue}</p> : null}
         </div> : <p className={styles.explanation}>{t("Check this catalogue item to retrieve its current selling price.")}</p>}
         {override ? <Form className={styles.override} onSubmit={applyOverride}>
-          <MoneyInput aria-label={t("Override rate for {title}", { title: line.title })} currency={currency} label={t("Unit rate")} minValue={0.01} maxValue={100000000} step={0.01} isRequired value={amount ? Number(amount) : undefined} onChange={(value) => setAmount(String(value))} />
+          <MoneyField aria-label={t("Override rate for {title}", { title: line.title })} currency={currency} label={t("Unit rate")} min="0.01" max="100000000" isRequired value={amount} onChange={setAmount} />
           <TextInput aria-label={t("Override reason for {title}", { title: line.title })} label={t("Reason")} maxLength={500} isRequired value={reason} onChange={setReason} />
           <Button type="submit" size="compact" variant="primary">{t("Use override")}</Button>
         </Form> : null}

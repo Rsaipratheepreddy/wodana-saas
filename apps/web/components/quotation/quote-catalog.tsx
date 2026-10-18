@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Image as ImageIcon, Plus } from "lucide-react";
-import { SearchInput, Skeleton, useDesignSystem } from "@/design-system";
+import { Button, SearchInput, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { money } from "@/lib/quotation/format";
 import type { CatalogHit } from "@/lib/quotation/types";
@@ -49,8 +49,8 @@ export function QuoteCatalog({ active = false, search, thumb, currency, decimals
         <CellPicker label={t("Area to add to")} value={areaId} options={areas} noneLabel={t("General")} onChange={onAreaChange} bordered />
       </label> : null}
       {categories.length > 1 ? <div className={catalog.chips} role="group" aria-label={t("Categories")}>
-        <button type="button" aria-pressed={!category} onClick={() => setCategory(null)}>{t("All")}</button>
-        {categories.map((name) => <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(category === name ? null : name)}>{name}</button>)}
+        <Button size="compact" variant="quiet" aria-pressed={!category} onPress={() => setCategory(null)}>{t("All")}</Button>
+        {categories.map((name) => <Button key={name} size="compact" variant="quiet" aria-pressed={category === name} onPress={() => setCategory(category === name ? null : name)}>{name}</Button>)}
       </div> : null}
     </div>
     <div className={catalog.list}>

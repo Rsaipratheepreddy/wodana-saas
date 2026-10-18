@@ -13,7 +13,7 @@ export const ProposalColumnsContext = createContext<ProposalColumn[]>([]);
  * the invoice always agree). Amounts are the engine's decimal strings.
  */
 export type ProposalFacts = {
-  reference: string; date: string; validUntil: string; phone: string; email: string; address: string; approvedBy: string;
+  reference: string; date: string; validUntil: string; phone: string; email: string; address: string; approvedBy: string; estimator?: string; designer?: string;
   subtotal: string; discount: string; net: string; tax: string; total: string; lineAmount: Record<string, string>;
 };
 export const ProposalFactsContext = createContext<ProposalFacts | null>(null);

@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, DataGrid, EmptyState, ErrorState, NoResultsState, type DataGridColumn } from "@/design-system";
+import { Badge, DataGrid, EmptyState, ErrorState, NoResultsState, StateChip, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { ProductionRow, ProductionState, ProductionWindow } from "@/lib/factory/types";
 import { Cell } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { PRODUCTION_TONE, useProductionStepLabel } from "./factory-labels";
-import styles from "./factory.module.css";
 
 /** A window's dates in words: "3 Oct – 17 Oct", "Since 3 Oct", or nothing. */
 export function useWindowText() {
@@ -43,7 +42,7 @@ export function ProductionSchedule({ api, refreshKey, onOpenProject }: { api: Fa
     { id: "project", header: t("Project"), accessorFn: (row) => row.reference, size: 260, meta: { primary: true, renderCell: (row) =>
       <Cell title={`${row.reference} · ${row.name}`} meta={row.clientName} /> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.step?.kind ?? "", size: 200, meta: { renderCell: (row) =>
-      <Cell title={row.step ? <Badge tone={PRODUCTION_TONE[row.step.kind]}>{stepLabel(row.step)}</Badge> : <span className={styles.muted}>{t("Not scheduled")}</span>}
+      <Cell title={row.step ? <Badge tone={PRODUCTION_TONE[row.step.kind]}>{stepLabel(row.step)}</Badge> : <StateChip state="upcoming" label={t("Not scheduled")} />}
         meta={row.held ? t("On hold") : row.orders ? t("{ready} of {count} work orders ready", { ready: row.ready, count: row.orders }) : t("No work orders yet")}
         tone={row.held ? "warning" : undefined} /> } },
     { id: "planned", header: t("Planned"), accessorFn: (row) => row.planned.start ?? "", size: 190, meta: { mobileHidden: true, renderCell: (row) =>

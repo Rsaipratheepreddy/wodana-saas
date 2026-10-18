@@ -4661,11 +4661,12 @@ export class WorkspacesService {
         [roleId, workspaceId, code, name, description],
       );
     }
+    // Owners and administrators get every permission, except that only an owner may view as someone else.
     for (const roleCode of ["owner", "administrator"] as const) {
       await client.query(
         `INSERT INTO role_permissions (workspace_id, role_id, permission_id)
-         SELECT $1, $2, id FROM permissions`,
-        [workspaceId, roleIds.get(roleCode)],
+         SELECT $1, $2, id FROM permissions WHERE $3 = 'owner' OR code <> 'workspace.view_as'`,
+        [workspaceId, roleIds.get(roleCode), roleCode],
       );
     }
     for (const roleCode of ["member", "viewer"] as const) {

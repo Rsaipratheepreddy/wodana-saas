@@ -1,4 +1,9 @@
+import { commercialRepository } from "../commercial/commercial-repository";
+import { emptyCommercial } from "../commercial/commercial.domain";
+import type { CommercialData } from "../commercial/commercial.types";
+import { designDepositReady } from "../commercial/release-integrity";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { tellClients } from "../client-portal/portal-notices";
 import type { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -15,20 +20,23 @@ import { markNotApplicable, notApplicableRoles } from "../project-core/project-t
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
   APPROVAL_METHODS, approvalProblem, isCalendarDay, isCheckStatus, kickoffProblem, MATERIAL_STAGES, normaliseSiteQuestions, renderSignOffProblem,
-  samplesProblem, scopeKey, siteChecklistProblem, siteEvidenceProblem, STAGE_LABELS, stageRevisions, TASK_LABELS, type CheckStatus, type JourneyStage, type JourneyTask,
+  samplesProblem, scopeKey, siteChecklistProblem, siteEvidenceProblem, STAGE_LABELS, TASK_LABELS, type CheckStatus, type JourneyStage, type JourneyTask,
 } from "./design-journey.domain";
 import { jobPending, readJobChecklist } from "./design-checklists";
 import {
-  caseFacts, caseRoleHolder, completeStage, completeTask, designTeamConfig, dueText, event, formatDay, formatDue, holdsRole, journeyTimings, leadDesigner, membersWithRole,
+  allocationJob, caseFacts, caseRoleHolder, completeStage, completeTask, designTeamConfig, dueText, event, formatDay, formatDue, holdsRole, journeyTimings, leadDesigner, membersWithRole,
   readTasks, recordProjectSiteVisit, roleLabels, salesAdminMembership, startJourney, tellMembers, tellRenderTag, workspaceToday,
 } from "./design-journey.store";
 import { allocationMissing, DESIGNER_SLOTS, designerPairProblem, settableSlots, TEAM_SLOTS, type DesignTeamConfig, type TeamSlot } from "./design-team.domain";
 import { lockLedger, readLedger } from "./design-ledger.store";
 import { startClientCalls } from "../client-calls/client-calls.store";
 import { isDesignOnlyJob } from "./design-only";
-import { presentedRounds } from "./design-presentations.store";
+import { readStepRevisions } from "./design-revisions.store";
 import { completeConceptIfReady, isDeliverableStage, stageProgress, syncDesignStages } from "./design-stage-sync";
 import { casePlan } from "../pre-projects/case-plan";
+import { readAnswers, writeAnswers } from "../setup/questionnaires.store";
+import type { AnswerValue } from "../setup/questionnaires.domain";
+import { caseJobType } from "../setup/job-type";
 
 /** `atClientHome`: a sample meeting at the client's home instead of the showroom (no showroom slot, an address instead). */
 export type ScheduleInput = { startsAt: string; endsAt?: string | null; timezone: string; address?: string | null; version: number; atClientHome?: boolean | null };
@@ -73,8 +81,18 @@ export class DesignJourneyService {
       const view = await this.view(client, workspaceId, caseId, user.userId);
       const rights = await this.rights(client, workspaceId, user.userId);
       // A case whose path has no site visit and no design (stock or supplier goods, PLM-121/126) has nothing to start.
-      return { ...view, ...rights, canStart: rights.canStart && Boolean(view.journey || view.startsAs) };
+      // Guide §3: why the design can't start yet (the Design Fee not paid and verified), said once on the Design tab.
+      const startBlocker = view.journey ? null : await this.startBlocker(client, workspaceId, caseId);
+      return { ...view, ...rights, startBlocker, canStart: rights.canStart && Boolean(view.journey || view.startsAs) && !startBlocker };
     });
+  }
+
+  /** Why the design stages can't start yet, or null: they wait for the Design Fee to be paid and verified when the deal has a design round. */
+  private async startBlocker(client: PoolClient, workspaceId: string, caseId: string): Promise<string | null> {
+    const commercial = (await commercialRepository.load(client, workspaceId, caseId))?.content as CommercialData | undefined;
+    if (!commercial?.servicePath?.scope.design) return null;
+    const fee = commercial.quotes.find((quote) => quote.round === "design" && quote.status === "accepted");
+    return fee && designDepositReady({ ...emptyCommercial(), ...commercial } as CommercialData, fee) ? null : "The design starts once the Design Fee is paid and verified by Finance";
   }
 
   start(actor: RequestActor, workspaceId: string, caseId: string) {
@@ -82,6 +100,9 @@ export class DesignJourneyService {
       await this.lockCase(client, workspaceId, caseId);
       const plan = await casePlan(client, workspaceId, caseId);
       if (!plan.siteVisit && !plan.design) throw new UnprocessableEntityException("This order goes straight to the quotation: its path has no site visit or design stages");
+      // Guide §3: design starts once the Design Fee (Proposal 1) is paid as agreed, by hand too.
+      const blocker = await this.startBlocker(client, workspaceId, caseId);
+      if (blocker) throw new ConflictException(blocker);
       if (!(await startJourney(client, workspaceId, caseId, user.userId))) throw new ConflictException("The design stages have already started");
       return this.view(client, workspaceId, caseId, user.userId);
     });
@@ -177,7 +198,7 @@ export class DesignJourneyService {
         const na = (await notApplicableRoles(client, workspaceId, { caseId })).includes(role);
         if (holder || na) settled.set(role, { membershipId: holder, notApplicable: !holder && na });
       }
-      if (!allocationMissing(config, settled).length) await completeTask(client, workspaceId, caseId, "team_allocation", user.userId, null);
+      if (!allocationMissing(config, settled, await allocationJob(client, workspaceId, caseId)).length) await completeTask(client, workspaceId, caseId, "team_allocation", user.userId, null);
       return this.view(client, workspaceId, caseId, user.userId);
     });
   }
@@ -208,7 +229,7 @@ export class DesignJourneyService {
    * is recorded with it (when the package has renders) and becomes the renders' client-facing date. The concept and the
    * design site measure count from the meeting.
    */
-  completeKickoff(actor: RequestActor, workspaceId: string, caseId: string, input: { renderSignoffOn?: string | null; note?: string | null; version: number }) {
+  completeKickoff(actor: RequestActor, workspaceId: string, caseId: string, input: { renderSignoffOn?: string | null; note?: string | null; version: number; answers?: Record<string, AnswerValue> }) {
     return this.edit(actor, workspaceId, caseId, async (client, userId) => {
       await this.activeStage(client, workspaceId, caseId, "kickoff", input.version);
       const timings = await journeyTimings(client, workspaceId, caseId);
@@ -218,6 +239,15 @@ export class DesignJourneyService {
       const problem = kickoffProblem({ scheduledAt: scheduled ? new Date(scheduled) : null, now: new Date(), includesRenders: timings.includesRenders, renderSignoffOn: input.renderSignoffOn ?? null,
         today: await workspaceToday(client, workspaceId) });
       if (problem) throw new UnprocessableEntityException(problem);
+      // Guide step 3: on the guide's order the kick-off's minutes are posted to the client in the portal before it closes.
+      if (timings.flowVersion === 3) {
+        const shared = (await client.query(
+          `SELECT 1 FROM design_journey_stages stage JOIN meeting_minutes minutes ON minutes.workspace_id = stage.workspace_id AND minutes.activity_id = stage.activity_id
+            WHERE stage.workspace_id = $1 AND stage.case_id = $2 AND stage.stage = 'kickoff' AND minutes.shared_at IS NOT NULL`, [workspaceId, caseId])).rowCount;
+        if (!shared) throw new UnprocessableEntityException("Post the kick-off minutes to the client in the portal first");
+      }
+      // §0.3 P3: the firm's kick-off questions are answered with it; the ones it marked required must be.
+      await writeAnswers(client, workspaceId, "kickoff", { type: "case", id: caseId }, input.answers, { userId, name: null }, await caseJobType(client, workspaceId, caseId), { complete: true });
       const renderOn = timings.includesRenders ? input.renderSignoffOn! : null;
       await client.query(`UPDATE design_journeys SET render_signoff_due_on = $3, version = version + 1 WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId, renderOn]);
       const note = [renderOn ? `Render sign-off agreed for ${formatDay(renderOn, "en")}` : null, input.note?.trim() || null].filter(Boolean).join(". ") || null;
@@ -261,7 +291,7 @@ export class DesignJourneyService {
     return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.record_client_design_decisions"], async (client, user) => {
       await this.lockCase(client, workspaceId, caseId);
       await this.activeStage(client, workspaceId, caseId, "renders", input.version);
-      if ((await journeyTimings(client, workspaceId, caseId)).flowVersion !== 2) throw new ConflictException("The renders of this job end when their files are approved");
+      if ((await journeyTimings(client, workspaceId, caseId)).flowVersion < 2) throw new ConflictException("The renders of this job end when their files are approved");
       const invalid = renderSignOffProblem(input, await workspaceToday(client, workspaceId));
       if (invalid) throw new UnprocessableEntityException(invalid);
       if (!(await client.query(`SELECT 1 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, input.assetId])).rowCount)
@@ -327,6 +357,49 @@ export class DesignJourneyService {
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.samples_approved.v1", entityType: "pre_project_case", entityId: caseId, after: { materials: materials.length } });
       return this.view(client, workspaceId, caseId, userId);
     });
+  }
+
+  /**
+   * Guide step 11: the final render runs only if the client asks for one. Not asked for closes the step with that note;
+   * approved needs every render to be client-approved, with at least one revision made since the material selection.
+   */
+  finalRender(actor: RequestActor, workspaceId: string, caseId: string, input: { version: number; decision: "not_requested" | "approved" }) {
+    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
+      await this.activeStage(client, workspaceId, caseId, "final_render", input.version);
+      if (input.decision === "approved") {
+        const renders = (await stageProgress(client, workspaceId, caseId)).find((item) => item.stage === "renders");
+        const since = (await client.query<{ at: Date | null }>(
+          `SELECT started_at AS at FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage = 'final_render'`, [workspaceId, caseId])).rows[0]?.at ?? null;
+        const updated = since ? (await client.query(
+          `SELECT 1 FROM pre_project_design_versions version JOIN pre_project_designs design ON design.workspace_id = version.workspace_id AND design.id = version.design_id
+            WHERE version.workspace_id = $1 AND version.case_id = $2 AND design.stage = 'renders' AND design.archived_at IS NULL AND version.created_at >= $3 LIMIT 1`,
+          [workspaceId, caseId, since])).rowCount : 0;
+        if (!updated) throw new UnprocessableEntityException("Upload the updated render on the Design tab first.");
+        if (!renders || renders.pending > 0) throw new UnprocessableEntityException("The client approves the updated render in the portal first.");
+      }
+      const note = input.decision === "approved" ? "Updated render approved by the client" : "The client didn't ask for a final render";
+      await completeStage(client, workspaceId, caseId, "final_render", userId, note, input.decision === "approved" ? "approved" : "not_requested");
+      await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.final_render_closed.v1", entityType: "pre_project_case", entityId: caseId, after: { decision: input.decision } });
+      return this.view(client, workspaceId, caseId, userId);
+    });
+  }
+
+  /** What still stands between the job and its design approval: an open step, a file not yet approved, a blocking comment. */
+  private async missingBeforeApproval(client: PoolClient, workspaceId: string, caseId: string) {
+    const open = (await client.query<{ stage: JourneyStage }>(
+      `SELECT stage FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage <> 'approval' AND status <> 'done' ORDER BY position`, [workspaceId, caseId])).rows;
+    const unapproved = (await client.query<{ title: string }>(
+      `SELECT design.title FROM pre_project_designs design
+         JOIN LATERAL (SELECT status FROM pre_project_design_versions version WHERE version.workspace_id = design.workspace_id AND version.design_id = design.id ORDER BY number DESC LIMIT 1) latest ON true
+        WHERE design.workspace_id = $1 AND design.case_id = $2 AND design.archived_at IS NULL AND design.stage IS NOT NULL AND design.stage <> 'concepts'
+          -- On the guide's order space planning is a PDF with no client approval.
+          AND NOT (design.stage = 'space_planning' AND EXISTS (SELECT 1 FROM design_journeys journey WHERE journey.workspace_id = design.workspace_id AND journey.case_id = design.case_id AND journey.flow_version = 3))
+          AND latest.status <> 'approved' ORDER BY design.title LIMIT 5`, [workspaceId, caseId])).rows;
+    const blocking = (await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM pre_project_design_threads thread JOIN pre_project_designs design ON design.workspace_id = thread.workspace_id AND design.id = thread.design_id
+        WHERE thread.workspace_id = $1 AND thread.case_id = $2 AND design.archived_at IS NULL AND thread.blocking AND thread.status = 'open'`, [workspaceId, caseId])).rows[0].count;
+    return [...open.map((row) => STAGE_LABELS[row.stage]), ...unapproved.map((row) => `${row.title} (not approved)`),
+      ...(blocking ? [blocking === 1 ? "1 blocking comment" : `${blocking} blocking comments`] : [])];
   }
 
   /** The free showroom slots for the stage's owner between two firm-local dates (the booking slot engine). */
@@ -501,7 +574,8 @@ export class DesignJourneyService {
       const measurements = await this.measurements(client, workspaceId, caseId);
       // The general questions and the checklists that apply: every question answered, every line marked (pending counts).
       const job = await readJobChecklist(client, workspaceId, caseId);
-      const required = job ? job.groups.filter((group) => group.required).flatMap((group) => group.questions) : [];
+      // Only questions the firm marked required block the visit; the rest are asked, not enforced (§0.3 P0).
+      const required = job ? job.groups.filter((group) => group.required).flatMap((group) => group.questions).filter((question) => question.required === true) : [];
       const problem = siteEvidenceProblem(measurements) ?? siteChecklistProblem(required, (job?.answers ?? []).map((row) => row.key));
       if (problem) throw new UnprocessableEntityException(problem);
       const files = measurements.reduce((sum, item) => sum + item.files, 0);
@@ -514,7 +588,11 @@ export class DesignJourneyService {
       }
       await recordProjectSiteVisit(client, workspaceId, caseId, summary, `${measurements.length} measurement sets, ${files} files`, userId);
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.site_visit_completed.v1", entityType: "pre_project_case", entityId: caseId, after: { measurements: measurements.length, files, within: target.kind } });
-      if (target.kind === "task") await completeConceptIfReady(client, workspaceId, caseId, userId);
+      if (target.kind === "task") {
+        await completeConceptIfReady(client, workspaceId, caseId, userId);
+        // Guide step 6: with the measurements in, a space planning PDF already uploaded completes its step.
+        await syncDesignStages(client, workspaceId, caseId, userId);
+      }
       const timings = await journeyTimings(client, workspaceId, caseId);
       if (timings.kind === "site_and_materials") {
         // PLM-080: the measurements and photos go to the QS for pricing.
@@ -610,6 +688,16 @@ export class DesignJourneyService {
    * are told and the estimate's week starts; then the Proposal 2 estimate is prepared (best effort, see handOff).
    */
   async signOff(actor: RequestActor, workspaceId: string, caseId: string, input: SignOffInput) {
+    // Guide L: anything still missing is flagged to the lead designer first (told in its own transaction, so the notice
+    // stays although the approval is refused), and the approval waits.
+    const missing = await this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client) => {
+      const list = await this.missingBeforeApproval(client, workspaceId, caseId);
+      const facts = list.length ? await caseFacts(client, workspaceId, caseId) : null;
+      if (facts) await tellMembers(client, workspaceId, [await leadDesigner(client, workspaceId, caseId)], "design.missing_before_approval",
+        { clientName: facts.clientName, note: list.join(", ") }, `/workspace/pre-projects/cases/${caseId}/designs`, `design:${caseId}:missing:${list.join("|").slice(0, 120)}`, true);
+      return list;
+    });
+    if (missing.length) throw new ConflictException(`Still missing: ${missing.join(", ")}. The lead designer has been told.`);
     const view = await this.clientDecision(actor, workspaceId, caseId, async (client, userId) => {
       await this.activeStage(client, workspaceId, caseId, "approval", input.version);
       const invalid = approvalProblem(input, await workspaceToday(client, workspaceId));
@@ -654,6 +742,16 @@ export class DesignJourneyService {
           await notifyUserInApp(client, { ...message, idempotencyKey: `design-signed-off:${caseId}:${recipient.userId}` });
           await queueUserEmail(client, { ...message, idempotencyKey: `design-signed-off:${caseId}:${recipient.userId}:email` });
         }
+      }
+      // §0.3 P0: a design-only job ends here: the client is thanked, in their portal and by the firm's branded email.
+      if (designOnly) {
+        // Guide J: "Your {package} design is complete": the package the client chose at the intro.
+        const pkg = (await client.query<{ name: string }>(
+          `SELECT package.name FROM pre_project_cases pre_case
+             JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = pre_case.workspace_id AND discovery.opportunity_id = pre_case.opportunity_id
+             JOIN design_packages package ON package.workspace_id = discovery.workspace_id AND package.id = discovery.design_package_id
+            WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0]?.name ?? "";
+        await tellClients(client, { workspaceId, caseId, event: "design_completed", recordId: caseId, title: pkg, note: "" });
       }
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.signed_off.v1", entityType: "pre_project_case", entityId: caseId,
         after: { note: input.note?.trim() || null, approvedOn: input.approvedOn, signer: input.signer!.trim(), method, assetId: input.assetId, estimateDueAt: journey.estimateDueAt, ledgerLock: lockNumber,
@@ -730,14 +828,8 @@ export class DesignJourneyService {
          FROM design_journeys journey LEFT JOIN pre_project_brief_assets asset ON asset.workspace_id = journey.workspace_id AND asset.id = journey.approval_asset_id
          LEFT JOIN pre_project_brief_assets render_asset ON render_asset.workspace_id = journey.workspace_id AND render_asset.id = journey.render_signoff_asset_id
         WHERE journey.workspace_id = $1 AND journey.case_id = $2`, [workspaceId, caseId])).rows[0] ?? null;
-    // Rounds per stage: concepts count their presentations; other stages the client rounds of their files.
-    const presented = journey ? await presentedRounds(client, workspaceId, caseId) : [];
-    const fileRounds = journey ? (await client.query<{ stage: string; rounds: number }>(
-      `SELECT design.stage, max(rounds.count)::int AS rounds FROM pre_project_designs design
-         JOIN LATERAL (SELECT count(DISTINCT activity.version_id) AS count FROM pre_project_design_activity activity
-                        WHERE activity.workspace_id = design.workspace_id AND activity.design_id = design.id AND activity.action = 'client_review') rounds ON true
-        WHERE design.workspace_id = $1 AND design.case_id = $2 AND design.archived_at IS NULL AND design.stage IS NOT NULL GROUP BY design.stage`, [workspaceId, caseId])).rows : [];
-    const roundsOf = (stage: string) => Math.max(presented.find((item) => item.stage === stage)?.rounds ?? 0, fileRounds.find((item) => item.stage === stage)?.rounds ?? 0);
+    // PLM-049/051: per step, the client's asks for changes against the package's free revisions, and the extra revision's change.
+    const revisions = journey ? await readStepRevisions(client, workspaceId, caseId) : null;
     const stages = journey ? (await client.query<{ stage: JourneyStage; outcome: string | null; dueAt: Date | null } & Record<string, unknown>>(
       `SELECT stage.stage, stage.position, stage.status, stage.owner_membership_id AS "ownerId", account.display_name AS "ownerName", stage.started_at AS "startedAt",
               stage.due_at AS "dueAt", stage.client_due_at AS "clientDueAt", stage.completed_at AS "completedAt", completer.display_name AS "completedByName", stage.note, stage.version, stage.activity_id AS "activityId",
@@ -752,13 +844,13 @@ export class DesignJourneyService {
          LEFT JOIN crm_appointments appointment ON appointment.workspace_id = stage.workspace_id AND appointment.activity_id = stage.activity_id
         WHERE stage.workspace_id = $1 AND stage.case_id = $2 ORDER BY stage.position`, [workspaceId, caseId])).rows
       .map((row) => ({ ...row, label: STAGE_LABELS[row.stage], overdue: row.status === "active" && row.dueAt instanceof Date && row.dueAt.getTime() < Date.now(),
-        revisions: isDeliverableStage(row.stage) ? stageRevisions(roundsOf(row.stage), journey.includedRevisions) : null })) : [];
+        revisions: isDeliverableStage(row.stage) ? revisions?.[row.stage] ?? null : null })) : [];
     const measurements = journey ? await this.measurements(client, workspaceId, caseId) : [];
     const job = journey ? await readJobChecklist(client, workspaceId, caseId) : null;
     const questions = job?.questions ?? [];
     const answers = job?.answers ?? [];
     const groups = job?.groups ?? [];
-    const required = groups.filter((group) => group.required).flatMap((group) => group.questions);
+    const required = groups.filter((group) => group.required).flatMap((group) => group.questions).filter((question) => question.required === true);
     const timezone = (await client.query<{ timezone: string }>(`SELECT default_timezone AS timezone FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.timezone ?? "UTC";
     const progress = journey ? await stageProgress(client, workspaceId, caseId) : [];
     const ledger = journey ? await readLedger(client, workspaceId, caseId) : null;
@@ -808,6 +900,8 @@ export class DesignJourneyService {
       team: journey ? await this.teamView(client, workspaceId, caseId, userId, journey.reviewerRoleCode, journey.includesRenders !== false) : null,
       showroomBooking: Boolean(await this.showroomType(client, workspaceId)),
       timezone,
+      // §0.3 P3: the firm's kick-off questions (Setup → Questionnaires), the version this job answers and its answers so far.
+      kickoffQuestions: journey ? await readAnswers(client, workspaceId, "kickoff", { type: "case", id: caseId }, await caseJobType(client, workspaceId, caseId)) : null,
     };
   }
 
@@ -835,7 +929,7 @@ export class DesignJourneyService {
       `SELECT membership.id, account.display_name AS "displayName" FROM workspace_memberships membership
          JOIN users account ON account.id = membership.user_id AND account.status = 'active'
         WHERE membership.workspace_id = $1 AND membership.status = 'active' ORDER BY account.display_name, membership.id`, [workspaceId])).rows : [];
-    return { slots, candidates, missing: allocationMissing(config, settled), reviewRole, version: (await client.query<{ version: number }>(`SELECT version FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.version ?? 0 };
+    return { slots, candidates, missing: allocationMissing(config, settled, await allocationJob(client, workspaceId, caseId)), reviewRole, version: (await client.query<{ version: number }>(`SELECT version FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.version ?? 0 };
   }
 
   /** The slots a person may set on this job: from being its Account Manager, lead designer, the package's reviewer, a technical lead or an admin. */

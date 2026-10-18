@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import {
   Button, DateField, EmptyState, ErrorState, InlineNotice, isNoAccessError, NoAccessState, SelectField, SettingsPage, Skeleton, Tabs,
@@ -25,6 +25,7 @@ const TABS = ["general", "accounts", "tax-codes", "payment-accounts", "statement
  */
 export function LedgerSettings({ workspaceId, companyId: initialCompany }: { workspaceId: string; companyId?: string | null }) {
   const t = useT();
+  const router = useRouter();
   const api = useMemo(() => booksSettingsApi(workspaceId), [workspaceId]);
   const [overview, setOverview] = useState<LedgerOverview | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(initialCompany ?? null);
@@ -68,7 +69,7 @@ export function LedgerSettings({ workspaceId, companyId: initialCompany }: { wor
   };
 
   return <SettingsPage title={t(L.ledger)} actions={picker} width="wide">
-    {!company ? <EmptyState title={t(L.noCompanies)} action={<Link className={styles.link} href="/workspace/legal-entities">{t(L.addCompany)}</Link>} />
+    {!company ? <EmptyState title={t(L.noCompanies)} action={<Button variant="primary" onPress={() => router.push("/workspace/legal-entities")}>{t(L.addCompany)}</Button>} />
       : !turnedOn ? <>
         <TurnOn api={api} company={company} canManage={overview.canManage} onDone={(next) => { changed(next); }} />
         <StatementsTab workspaceId={workspaceId} companyId={company.id} />

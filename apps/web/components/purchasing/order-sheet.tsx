@@ -5,7 +5,8 @@ import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { Ban, Plus, Replace, X } from "lucide-react";
 import {
-  Badge, Button, DateField, EditableField, ErrorState, FormSection, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, StageTracker, Tabs, TextAreaField, TextInput, type WorkflowStage,
+  AmountList, Badge, Button, ButtonGroup, DataGrid, DateField, EditableField, EditableFieldList, EmptyState, ErrorState, FactRow, FormSection, IconButton, InlineNotice, InspectorSheet, MoneyField, NumericInput,
+  PercentageInput, QuantityInput, SelectField, Skeleton, StageTracker, Tabs, TextAreaField, TextInput, VisuallyHidden, type DataGridColumn, type WorkflowStage,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, currencyDecimals, orderTotals, priceLine, subtractExact } from "@/lib/purchasing/amounts";
@@ -18,7 +19,7 @@ import {
   CancelLineDialog, ChaseDialog, ConfirmDialog, OfferAlternateDialog, ReasonDialog, RefuseAlternateDialog, SendDialog, ShipmentDialog,
 } from "./order-dialogs";
 import { RecordHistory } from "../history/record-history";
-import { OrderStatusLabel, quantityText, useOrderLabels } from "./order-labels";
+import { OrderStatusLabel, fieldNumber, fieldText, quantityText, useOrderLabels } from "./order-labels";
 import { ReceiptResult } from "./receipt-sheet";
 import { ReceiveDialog } from "./receive-dialog";
 import { percentText, useSupplierLabels } from "./supplier-labels";
@@ -36,7 +37,6 @@ export type OrderIntent = "send" | "confirm" | "chase" | "receive" | "close";
 type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | "funds" | { shipment: Shipment | null } | { waive: GateKey } | null;
 /** Still to come on a line: ordered less cancelled, credited, accepted and waiting for inspection. */
 const stillToCome = (line: OrderLine) => subtractExact(line.quantity, addExact(line.cancelled, line.credited, line.accepted, line.pending));
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const TERMS: PaymentTerms[] = ["upfront", "split", "on_delivery", "credit", "statement"];
 const DELIVERY: DeliverTo[] = ["site", "factory", "warehouse", "pickup", "other"];
 const FOLLOWING = ["approved", "sent", "confirmed", "partly_received"];
@@ -248,6 +248,63 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
   const shipments = state?.shipments ?? [];
   const canTrack = Boolean(order && state?.canBuy && FOLLOWING.includes(order.status));
   const deliveriesCount = (state?.receipts.length ?? 0) + (state?.returns.length ?? 0) + shipments.length;
+  const savedLine = (lineId: string) => state?.lines.find((item) => item.id === lineId);
+  const pricedOf = (lineId: string) => priced[(form?.lines ?? []).findIndex((item) => item.id === lineId)];
+  const hidden = (text: string) => <VisuallyHidden>{text}</VisuallyHidden>;
+  const lineColumns: DataGridColumn<LineDraft>[] = !state || !order || !form ? [] : [
+    { id: "item", header: t("Item"), size: 280, accessorFn: (line) => line.description, meta: { renderCell: (line) => {
+      const saved = savedLine(line.id);
+      return <span className={styles.nameCell}>
+        {draft && line.source === "free" && !line.stockItemId ? <TextInput label={hidden(t("What"))} value={line.description} onChange={(description) => setLine(line.id, { description })} /> : <span>{line.description}</span>}
+        <small>{[line.projectReference, line.specification, line.stockItemId ? t("Restock") : ""].filter(Boolean).join(" · ")}</small>
+        {!draft && arrived(saved) ? <small className={styles.arrived}>{arrived(saved)}</small> : null}
+        {!draft && saved && lineFacts(saved) ? <small>{lineFacts(saved)}</small> : null}
+        {state.neededBy[line.id] ? <small className={arrivesLate(line.id) ? styles.lateText : undefined}>{arrivesLate(line.id)
+          ? t("Arrives after it's needed on {date}", { date: format.day(state.neededBy[line.id]) }) : t("Needed {date}", { date: format.day(state.neededBy[line.id]) })}</small> : null}
+        {contractOf(line.id) ? <small className={contractOf(line.id)!.above ? styles.lateText : undefined}>{contractOf(line.id)!.above
+          ? t("Above the {reference} price of {price}", { reference: contractOf(line.id)!.reference, price: money(contractOf(line.id)!.unitPrice) })
+          : t("{reference} price", { reference: contractOf(line.id)!.reference })}</small> : null}
+        {!draft && saved?.alternateStatus === "offered" ? <span className={styles.alternate} role="note">
+          <small>{t("The supplier offers {item} at {price}: {note}", { item: [saved.alternateDescription, saved.alternateSpecification].filter(Boolean).join(", "),
+            price: money(saved.alternateUnitPrice ?? saved.unitPrice), note: saved.alternateNote })}</small>
+          {canDecide(saved) ? <span><Button size="compact" onPress={() => setRefusing(saved)}>{t("Review")}</Button></span>
+            : <small className={styles.muted}>{t("Waiting for someone who approves orders.")}</small>}
+        </span> : null}
+        {draft ? (state.packs ?? []).filter((pack) => pack.lineId === line.id).map((pack) => <small key={pack.lineId} className={styles.packHint}>
+          {pack.packSize && pack.minimum ? t("Sold in packs of {pack}, at least {minimum}", { pack: pack.packSize, minimum: pack.minimum })
+            : pack.packSize ? t("Sold in packs of {pack}", { pack: pack.packSize }) : t("At least {minimum}", { minimum: pack.minimum ?? "" })}
+          {line.quantity !== pack.suggested ? <Button size="compact" variant="quiet" onPress={() => setLine(line.id, { quantity: pack.suggested })}>{t("Order {quantity}", { quantity: pack.suggested })}</Button> : null}
+        </small>) : null}
+      </span>;
+    } } },
+    { id: "quantity", header: t("Quantity"), size: 150, accessorFn: (line) => Number(line.quantity), meta: { align: "end", renderCell: (line) => draft
+      ? <QuantityInput label={hidden(t("Quantity for {item}", { item: line.description }))} unit={line.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(line.quantity)} onChange={(value) => setLine(line.id, { quantity: fieldText(value) })} />
+      : <span className={styles.money}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span> } },
+    { id: "price", header: t("Price"), size: 150, accessorFn: (line) => Number(line.unitPrice), meta: { align: "end", renderCell: (line) => draft
+      ? <MoneyField label={hidden(t("Price for {item}", { item: line.description }))} currency={order.currency} min="0" value={line.unitPrice} onChange={(unitPrice) => setLine(line.id, { unitPrice })} />
+      : <span className={styles.money}>{money(line.unitPrice)}</span> } },
+    { id: "discount", header: t("Discount %"), size: 110, accessorFn: (line) => Number(line.discountPercent), meta: { align: "end", renderCell: (line) => draft
+      ? <PercentageInput label={hidden(t("Discount for {item}", { item: line.description }))} formatOptions={{ maximumFractionDigits: 2 }}
+        value={fieldNumber(line.discountPercent)} onChange={(value) => setLine(line.id, { discountPercent: fieldText(value) })} />
+      : <span className={styles.money}>{Number(line.discountPercent) ? `${line.discountPercent}%` : "—"}</span> } },
+    { id: "tax", header: t("Tax %"), size: 110, accessorFn: (line) => Number(line.taxRate), meta: { align: "end", renderCell: (line) => draft
+      ? <PercentageInput label={hidden(t("Tax for {item}", { item: line.description }))} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(line.taxRate)} onChange={(value) => setLine(line.id, { taxRate: fieldText(value) })} />
+      : <span className={styles.money}>{Number(line.taxRate) ? `${line.taxRate}%` : "—"}</span> } },
+    { id: "total", header: t("Total"), size: 130, accessorFn: (line) => Number(pricedOf(line.id)?.total ?? 0), meta: { align: "end", renderCell: (line) =>
+      <span className={styles.money}>{pricedOf(line.id) ? money(pricedOf(line.id)!.total) : "—"}</span> } },
+    { id: "actions", header: "", size: 96, enableSorting: false, meta: { align: "end", renderCell: (line) => {
+      const saved = savedLine(line.id);
+      return draft && form.lines.length > 1 ? <IconButton aria-label={t("Remove {item}", { item: line.description })} size="compact" variant="quiet"
+        onPress={() => setForm({ ...form, lines: form.lines.filter((item) => item.id !== line.id) })}><X aria-hidden="true" size={14} /></IconButton>
+        : following && saved && stillToCome(saved) !== "0" ? <ButtonGroup>
+          {saved.alternateStatus !== "offered" ? <IconButton aria-label={t("The supplier offers an alternative for {item}", { item: line.description })} size="compact" variant="quiet"
+            onPress={() => setOffering(saved)}><Replace aria-hidden="true" size={14} /></IconButton> : null}
+          <IconButton aria-label={t("Cancel the rest of {item}", { item: line.description })} size="compact" variant="quiet"
+            onPress={() => setCancelling(saved)}><Ban aria-hidden="true" size={14} /></IconButton></ButtonGroup> : null;
+    } } },
+  ];
   const linesPanel = !state || !order || !form ? null : <div className={styles.sheet}>
     {draft ? <div className={styles.stack}>
       <FormSection title={t("Delivery")}>
@@ -258,83 +315,37 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
       <FormSection title={t("Payment")}>
         <SelectField label={t("Payment terms")} selectedKey={form.paymentTerms} onSelectionChange={(key) => setForm({ ...form, paymentTerms: key as PaymentTerms })}
           items={TERMS.map((id) => ({ id, label: supplierLabels.terms[id] }))} />
-        {form.paymentTerms === "split" ? <TextInput label={t("Advance")} inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => setForm({ ...form, advancePercent: numeric(value) })} />
-          : form.paymentTerms === "credit" ? <TextInput label={t("Days")} inputMode="numeric" value={form.creditDays} onChange={(value) => setForm({ ...form, creditDays: value.replace(/\D/g, "").slice(0, 3) })} /> : null}
-        <TextInput label={t("Retention")} inputMode="decimal" suffix="%" value={form.retentionPercent}
-          onChange={(value) => setForm({ ...form, retentionPercent: numeric(value) })} />
+        {form.paymentTerms === "split" ? <PercentageInput label={t("Advance")} formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.advancePercent)}
+          onChange={(value) => setForm({ ...form, advancePercent: fieldText(value) })} />
+          : form.paymentTerms === "credit" ? <NumericInput label={t("Days")} minValue={0} maxValue={999} formatOptions={{ maximumFractionDigits: 0 }} value={fieldNumber(form.creditDays)}
+            onChange={(value) => setForm({ ...form, creditDays: fieldText(value) })} /> : null}
+        <PercentageInput label={t("Retention")} formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.retentionPercent)}
+          onChange={(value) => setForm({ ...form, retentionPercent: fieldText(value) })} />
       </FormSection>
-    </div> : <dl className={styles.facts}>
-      <div><dt>{t("Supplier")}</dt><dd>{[order.supplierName, state.supplier?.contactName, state.supplier?.phone].filter(Boolean).join(" · ")}</dd></div>
-      <div><dt>{t("Needed by")}</dt><dd>{format.day(order.expectedDate) || "—"}</dd></div>
-      <div><dt>{t("Deliver to")}</dt><dd>{[labels.deliverTo[order.deliverTo], order.deliveryAddress].filter(Boolean).join(" · ")}</dd></div>
-      <div><dt>{t("Payment")}</dt><dd>{supplierLabels.termsText(order)}</dd></div>
+    </div> : <EditableFieldList>
+      <FactRow label={t("Supplier")}>{[order.supplierName, state.supplier?.contactName, state.supplier?.phone].filter(Boolean).join(" · ")}</FactRow>
+      <FactRow label={t("Needed by")}>{format.day(order.expectedDate) || "—"}</FactRow>
+      <FactRow label={t("Deliver to")}>{[labels.deliverTo[order.deliverTo], order.deliveryAddress].filter(Boolean).join(" · ")}</FactRow>
+      <FactRow label={t("Payment")}>{supplierLabels.termsText(order)}</FactRow>
       {confirmed ? <>
         <EditableField display={order.promisedDate ? format.day(order.promisedDate) : undefined} kind="date" label={t("Promised")} onReload={() => void load()}
           onSave={(promisedDate) => reconfirm({ promisedDate: promisedDate || null })} placeholder={t("Not set")} value={order.promisedDate ?? ""} />
         <EditableField label={t("Supplier reference")} maxLength={120} onReload={() => void load()} onSave={(supplierReference) => reconfirm({ supplierReference })} placeholder={t("Not set")} value={order.supplierReference ?? ""} />
-      </> : order.promisedDate || order.supplierReference ? <div><dt>{t("Promised")}</dt><dd>{[format.day(order.promisedDate), order.supplierReference].filter(Boolean).join(" · ")}</dd></div> : null}
-    </dl>}
+      </> : order.promisedDate || order.supplierReference ? <FactRow label={t("Promised")}>{[format.day(order.promisedDate), order.supplierReference].filter(Boolean).join(" · ")}</FactRow> : null}
+      {order.notes ? <FactRow label={t("Notes for the supplier")}>{order.notes}</FactRow> : null}
+    </EditableFieldList>}
 
     <section className={styles.part} aria-label={t("Lines")}>
-      <div className={styles.orderLines} role="table" aria-label={t("Lines")}>
-        <div role="row" className={styles.orderLineHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Quantity")}</span><span role="columnheader">{t("Price")}</span>
-          <span role="columnheader">{t("Discount %")}</span><span role="columnheader">{t("Tax %")}</span><span role="columnheader">{t("Total")}</span><span /></div>
-        {form.lines.map((line, index) => <div role="row" key={line.id} className={styles.orderLine}>
-          <span role="cell" className={styles.nameCell}>
-            {draft && line.source === "free" && !line.stockItemId ? <TextInput aria-label={t("What")} label={null} value={line.description} onChange={(description) => setLine(line.id, { description })} /> : <span>{line.description}</span>}
-            <small>{[line.projectReference, line.specification, line.stockItemId ? t("Restock") : ""].filter(Boolean).join(" · ")}</small>
-            {!draft && arrived(state.lines[index]) ? <small className={styles.arrived}>{arrived(state.lines[index])}</small> : null}
-            {!draft && state.lines[index] && lineFacts(state.lines[index]) ? <small>{lineFacts(state.lines[index])}</small> : null}
-            {state.neededBy[line.id] ? <small className={arrivesLate(line.id) ? styles.lateText : undefined}>{arrivesLate(line.id)
-              ? t("Arrives after it's needed on {date}", { date: format.day(state.neededBy[line.id]) }) : t("Needed {date}", { date: format.day(state.neededBy[line.id]) })}</small> : null}
-            {contractOf(line.id) ? <small className={contractOf(line.id)!.above ? styles.lateText : undefined}>{contractOf(line.id)!.above
-              ? t("Above the {reference} price of {price}", { reference: contractOf(line.id)!.reference, price: money(contractOf(line.id)!.unitPrice) })
-              : t("{reference} price", { reference: contractOf(line.id)!.reference })}</small> : null}
-            {!draft && state.lines[index]?.alternateStatus === "offered" ? <span className={styles.alternate} role="note">
-              <small>{t("The supplier offers {item} at {price}: {note}", { item: [state.lines[index].alternateDescription, state.lines[index].alternateSpecification].filter(Boolean).join(", "),
-                price: money(state.lines[index].alternateUnitPrice ?? state.lines[index].unitPrice), note: state.lines[index].alternateNote })}</small>
-              {canDecide(state.lines[index]) ? <span className={styles.filters}>
-                <Button size="compact" onPress={() => void run("decide_alternate", { lineId: line.id, decision: "accept" })}>{t("Take it")}</Button>
-                <Button size="compact" variant="quiet" onPress={() => setRefusing(state.lines[index])}>{t("Refuse")}</Button>
-              </span> : <small className={styles.muted}>{t("Waiting for someone who approves orders.")}</small>}
-            </span> : null}
-            {draft ? (state.packs ?? []).filter((pack) => pack.lineId === line.id).map((pack) => <small key={pack.lineId} className={styles.packHint}>
-              {pack.packSize && pack.minimum ? t("Sold in packs of {pack}, at least {minimum}", { pack: pack.packSize, minimum: pack.minimum })
-                : pack.packSize ? t("Sold in packs of {pack}", { pack: pack.packSize }) : t("At least {minimum}", { minimum: pack.minimum ?? "" })}
-              {line.quantity !== pack.suggested ? <Button size="compact" variant="quiet" onPress={() => setLine(line.id, { quantity: pack.suggested })}>{t("Order {quantity}", { quantity: pack.suggested })}</Button> : null}
-            </small>) : null}
-          </span>
-          {draft ? <>
-            <span role="cell"><TextInput aria-label={t("Quantity for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.quantity} suffix={line.unit || undefined} onChange={(value) => setLine(line.id, { quantity: numeric(value) })} /></span>
-            <span role="cell"><TextInput aria-label={t("Price for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.unitPrice} onChange={(value) => setLine(line.id, { unitPrice: numeric(value) })} /></span>
-            <span role="cell"><TextInput aria-label={t("Discount for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.discountPercent} onChange={(value) => setLine(line.id, { discountPercent: numeric(value) })} /></span>
-            <span role="cell"><TextInput aria-label={t("Tax for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.taxRate} onChange={(value) => setLine(line.id, { taxRate: numeric(value) })} /></span>
-          </> : <>
-            <span role="cell" className={styles.money}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span>
-            <span role="cell" className={styles.money}>{money(line.unitPrice)}</span>
-            <span role="cell" className={styles.money}>{Number(line.discountPercent) ? `${line.discountPercent}%` : "—"}</span>
-            <span role="cell" className={styles.money}>{Number(line.taxRate) ? `${line.taxRate}%` : "—"}</span>
-          </>}
-          <span role="cell" className={styles.money}>{priced[index] ? money(priced[index]!.total) : "—"}</span>
-          <span role="cell">{draft && form.lines.length > 1 ? <IconButton aria-label={t("Remove {item}", { item: line.description })} size="compact" variant="quiet"
-            onPress={() => setForm({ ...form, lines: form.lines.filter((item) => item.id !== line.id) })}><X aria-hidden="true" size={14} /></IconButton>
-            : following && state.lines[index] && stillToCome(state.lines[index]) !== "0" ? <span className={styles.lineActions}>
-              {state.lines[index].alternateStatus !== "offered" ? <IconButton aria-label={t("The supplier offers an alternative for {item}", { item: line.description })} size="compact" variant="quiet"
-                onPress={() => setOffering(state.lines[index])}><Replace aria-hidden="true" size={14} /></IconButton> : null}
-              <IconButton aria-label={t("Cancel the rest of {item}", { item: line.description })} size="compact" variant="quiet"
-                onPress={() => setCancelling(state.lines[index])}><Ban aria-hidden="true" size={14} /></IconButton></span> : null}</span>
-        </div>)}
-      </div>
-      {draft ? <Button size="compact" variant="quiet" onPress={() => setForm({ ...form, lines: [...form.lines, { id: crypto.randomUUID(), source: "free", materialItemId: null, boqLineId: null, projectId: null,
+      <DataGrid ariaLabel={t("Lines")} data={form.lines} getRowId={(line) => line.id} columns={lineColumns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
+      {draft ? <div><Button size="compact" variant="quiet" onPress={() => setForm({ ...form, lines: [...form.lines, { id: crypto.randomUUID(), source: "free", materialItemId: null, boqLineId: null, projectId: null,
         projectReference: null, description: "", specification: "", unit: "", quantity: "1", unitPrice: "", discountPercent: form.lines[0]?.discountPercent ?? "0", taxRate: form.lines[0]?.taxRate ?? "0" }] })}>
-        <Plus aria-hidden="true" size={14} />{t("Add line")}</Button> : null}
-      <dl className={styles.totals}>
-        <div><dt>{t("Net")}</dt><dd>{money(totals.net)}</dd></div>
-        <div><dt>{t("Tax")}</dt><dd>{money(totals.tax)}</dd></div>
-        <div><dt>{t("Total")}</dt><dd><strong>{money(totals.total)}</strong></dd></div>
-      </dl>
+        <Plus aria-hidden="true" size={14} />{t("Add line")}</Button></div> : null}
+      <AmountList label={t("Total")} rows={[{ id: "net", label: t("Net"), amount: <span className={styles.money}>{money(totals.net)}</span> },
+        { id: "tax", label: t("Tax"), amount: <span className={styles.money}>{money(totals.tax)}</span> }]}
+        total={{ label: t("Total"), amount: <strong className={styles.money}>{money(totals.total)}</strong> }} />
     </section>
-    {draft ? <TextAreaField label={t("Notes for the supplier")} value={form.notes} onChange={(notes) => setForm({ ...form, notes })} /> : order.notes ? <p className={styles.dialogText}>{order.notes}</p> : null}
+    {draft ? <TextAreaField label={t("Notes for the supplier")} value={form.notes} onChange={(notes) => setForm({ ...form, notes })} /> : null}
   </div>;
 
   const deliveriesPanel = !state || !order ? null : <div className={styles.sheet}>
@@ -346,14 +357,14 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
         <Badge tone={shipment.status === "delayed" ? "danger" : shipment.status === "arrived" ? "success" : shipment.status === "cancelled" ? "neutral" : "info"}>{labels.shipment[shipment.status]}</Badge>
         {shipment.trackingUrl ? <a className={ops.projectLink} href={shipment.trackingUrl} target="_blank" rel="noreferrer noopener">{t("Track")}</a> : null}
         {canTrack ? <Button size="compact" variant="quiet" onPress={() => setDialog({ shipment })}>{t("Update")}</Button> : null}
-      </li>)}</ul> : <p className={ops.empty}>{t("No shipment followed yet.")}</p>}
+      </li>)}</ul> : <EmptyState illustration={null} title={t("No shipment followed yet.")} />}
     </Section>
     <Section title={t("Deliveries")}>
       {state.receipts.length ? <ul className={ops.list}>{state.receipts.map((receipt) => <li key={receipt.id}>
         <Button size="compact" variant="quiet" onPress={() => onReceipt(receipt.id)}>{t("Delivery {number}", { number: receipt.number })}</Button>
         <span className={styles.muted}>{[format.day(receipt.receivedOn), receipt.locationName].join(" · ")}</span>
         <ReceiptResult receipt={receipt} />
-      </li>)}</ul> : <p className={ops.empty}>{t("Nothing has arrived yet.")}</p>}
+      </li>)}</ul> : <EmptyState illustration={null} title={t("Nothing has arrived yet.")} />}
     </Section>
     {state.returns.length ? <Section title={t("Returns")}>
       <ul className={ops.list}>{state.returns.map((back) => <li key={back.id}>
@@ -370,7 +381,7 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
       <Badge tone={bill.status === "approved" ? "success" : bill.status === "held" ? "warning" : "neutral"}>{bill.status === "approved" ? t("Matched") : bill.status === "held" ? t("Held")
         : bill.status === "draft" ? t("Draft") : t("Cancelled")}</Badge>
       <span className={styles.money}>{format.money(bill.total, bill.currency)}</span>
-    </li>)}</ul> : <p className={ops.empty}>{t("No invoice from the supplier yet.")}</p>}
+    </li>)}</ul> : <EmptyState illustration={null} title={t("No invoice from the supplier yet.")} />}
   </div>;
 
   return <InspectorSheet isOpen size="lg" title={order ? order.number : t("Order")} onOpenChange={(open) => { if (!open) onClose(); }} footer={footer}>
@@ -419,10 +430,10 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
         <Cell title={gateLabel[check.key]} tone={check.passed ? "success" : check.waiver ? "info" : "danger"}
           meta={check.passed ? t("Done") : check.waiver ? t("Not applicable, {name}: {reason}", { name: check.waiver.byName ?? "", reason: check.waiver.reason }) : check.missing} />
         {check.passed ? null : check.waiver ? (state.canApprove ? <Button size="compact" variant="quiet" isLoading={busy} onPress={() => void run("clear_waiver", { checkKey: check.key })}>{t("Applies again")}</Button> : null)
-          : <span className={styles.lineActions}>
+          : <ButtonGroup>
             {check.key === "qs_signoff" && state.canQsSignOff ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void run("qs_signoff")}>{t("Sign off (QS)")}</Button> : gateFix(check)}
             {state.canApprove ? <Button size="compact" variant="quiet" onPress={() => setDialog({ waive: check.key })}>{t("Not applicable")}</Button> : null}
-          </span>}
+          </ButtonGroup>}
       </li>)}</ul> : null}
       {order.qsSignedOffAt && !gate.some((check) => check.key === "qs_signoff") ? <InlineNotice tone="info" message={t("Signed off by the QS ({name}, {date})", { name: order.qsSignedOffByName ?? "", date: format.when(order.qsSignedOffAt) })} /> : null}
       {(state.blockers ?? []).length ? <ul className={ops.list} aria-label={t("Work held up")}>{state.blockers!.map((blocker) => <li key={blocker.workItemId}>
@@ -453,7 +464,8 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
       onSave={async (input) => { await run("track", input, undefined, true); { setDialog(null); setTab("deliveries"); } }} /> : null}
     {offering ? <OfferAlternateDialog line={offering} currency={order?.currency} onClose={() => setOffering(null)}
       onSave={async (input) => { await run("offer_alternate", { lineId: offering.id, ...input }, undefined, true); setOffering(null); }} /> : null}
-    {refusing ? <RefuseAlternateDialog onClose={() => setRefusing(null)}
+    {refusing ? <RefuseAlternateDialog line={refusing} currency={order?.currency} onClose={() => setRefusing(null)}
+      onAccept={async () => { await run("decide_alternate", { lineId: refusing.id, decision: "accept" }, undefined, true); setRefusing(null); }}
       onSave={async (note) => { await run("decide_alternate", { lineId: refusing.id, decision: "reject", note }, undefined, true); setRefusing(null); }} /> : null}
     {cancelling ? <CancelLineDialog api={api} line={cancelling} left={stillToCome(cancelling)} vendorId={order?.vendorId ?? ""} onClose={() => setCancelling(null)}
       onSave={async (input) => {

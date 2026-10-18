@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { parseDate } from "@internationalized/date";
 import type { AttendanceDay, AttendanceReview, HrmsBootstrap, LeaveRequest, TeamTimeWeek } from "@wodana/contracts";
-import { ListTabs, Button, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SelectField, TextAreaField, type DataGridColumn } from "@/design-system";
+import { ListTabs, Button, DataGrid, DateRangeField, EmptyState, ErrorState, InspectorSheet, ReviewDialog, SelectField, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { addDays } from "@/lib/hrms/time";
@@ -140,30 +140,27 @@ function ApprovalSheet({ api, boot, item, onClose, onDecided }: { api: HrmsApi; 
   const t = useT();
   const format = useHrmsFormat();
   const labels = useHrmsLabels();
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
-  const [error, setError] = useState("");
+  const [reviewing, setReviewing] = useState(false);
   const { leave, review } = item;
   const deciding = (leave?.canDecide ?? review?.canDecide) === true;
-  const decide = async (decision: "approve" | "reject") => {
-    setBusy(decision); setError("");
+  // Always with a reason; the review shows why a decision failed and stays open.
+  const decide = async (decision: "approve" | "reject", reason: string) => {
+    if (reason.length < MIN_REASON) throw new Error(t("At least {count} characters", { count: MIN_REASON }));
     try {
-      if (leave) await api.decideLeave(leave.id, { decision, reason: reason.trim() });
-      else if (review) await api.decideReview(review.id, { decision, reason: reason.trim() });
-      onDecided();
-    } catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(null); }
+      if (leave) await api.decideLeave(leave.id, { decision, reason });
+      else if (review) await api.decideReview(review.id, { decision, reason });
+    } catch (cause) { throw new Error(format.failure(cause, t("Could not save."))); }
+    onDecided();
   };
-  const short = reason.trim().length < MIN_REASON;
   const evidence = review?.evidence;
   // The location is shown on its own; the other issues after it.
   const issues = (evidence?.issues ?? []).filter((issue) => !(evidence?.arrival && issue.startsWith("Location ")));
-  return <InspectorSheet isOpen size="md" title={item.name} isDirty={Boolean(reason.trim()) && !busy} onOpenChange={(value) => { if (!value) onClose(); }}
+  const photo = review?.captureId && evidence?.photoCaptured && boot.permissions.evidence ? api.photoUrl(review.captureId) : null;
+  return <InspectorSheet isOpen size="md" title={item.name} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={deciding ? <div className="wd-dialog-actions"><span className={styles.spacer} />
-      <Button isLoading={busy === "reject"} isDisabled={short || Boolean(busy)} onPress={() => void decide("reject")}>{t("Reject")}</Button>
-      <Button variant="primary" isLoading={busy === "approve"} isDisabled={short || Boolean(busy)} onPress={() => void decide("approve")}>{t("Approve")}</Button>
+      <Button variant="primary" onPress={() => setReviewing(true)}>{t("Review")}</Button>
     </div> : null}>
     <div className={styles.sheet}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
       {leave ? <Facts items={[
         [t("Status"), <LeaveStatus key="status" status={leave.status} />],
         [t("Type"), leave.leaveTypeName],
@@ -186,10 +183,22 @@ function ApprovalSheet({ api, boot, item, onClose, onDecided }: { api: HrmsApi; 
         evidence?.exceptionReason && evidence.exceptionReason !== review.reason ? [t("Exception reason"), evidence.exceptionReason] : null,
         review.decisionReason ? [t("Decision"), review.decisionReason] : null,
       ]} /> : null}
-      {review?.captureId && evidence?.photoCaptured && boot.permissions.evidence
-        ? <EvidencePhoto size="large" src={api.photoUrl(review.captureId)} alt={t("Photo from {name}", { name: item.name })} /> : null}
-      {deciding ? <TextAreaField label={t("Reason for your decision")} isRequired value={reason} onChange={setReason} /> : null}
+      {photo ? <EvidencePhoto size="large" src={photo} alt={t("Photo from {name}", { name: item.name })} /> : null}
     </div>
+    {reviewing ? <ReviewDialog title={leave ? t("Leave request") : review ? labels.review(review.kind) : item.what} description={item.name} onClose={() => setReviewing(false)}
+      facts={leave ? [
+        { label: t("Type"), value: leave.leaveTypeName },
+        { label: t("Dates"), value: format.range(leave.startDate, leave.endDate) },
+        { label: t("Days"), value: [format.days(leave.days), leave.dayPart !== "full" ? labels.part(leave.dayPart) : ""].filter(Boolean).join(" · ") },
+        { label: t("Reason"), value: leave.reason },
+      ] : review ? [
+        { label: t("Reason"), value: review.reason },
+        ...(evidence?.arrival ? [{ label: t("Location"), value: labels.location(evidence.arrival.status) }] : []),
+        ...(issues.length ? [{ label: t("Issues"), value: issues.map(labels.issue).join(", ") }] : []),
+      ] : []}
+      files={photo ? [{ id: review!.captureId!, name: t("Photo from {name}", { name: item.name }), href: photo, previewHref: photo }] : undefined}
+      confirmLabel={t("Approve")} confirmNeedsNote onConfirm={(reason) => decide("approve", reason)}
+      rejectLabel={t("Reject")} onReject={(reason) => decide("reject", reason)} /> : null}
   </InspectorSheet>;
 }
 

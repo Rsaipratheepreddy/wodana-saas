@@ -88,7 +88,7 @@ function TaxSection({ data, canManage, workspaceId, entityId, onSaved }: { data:
 
 function NumberingSection({ data, canManage, workspaceId, entityId, onSaved }: { data: TaxNumbering; canManage: boolean; workspaceId: string; entityId: string; onSaved: (next: TaxNumbering) => void }) {
   const t = useT();
-  const documentLabel = { QUOTATION: t("Quotations"), INVOICE: t("Invoices"), CREDIT_NOTE: t("Credit notes"), PURCHASE_ORDER: t("Purchase orders"), DEAL_FILE: t("Deal files") };
+  const documentLabel = { QUOTATION: t("Quotations"), INVOICE: t("Invoices"), CREDIT_NOTE: t("Credit notes"), PURCHASE_ORDER: t("Purchase orders"), DEAL_FILE: t("Deal files"), AGREEMENT: t("Agreements") };
   const [rows, setRows] = useState<NumberingRow[]>(data.numbering);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);

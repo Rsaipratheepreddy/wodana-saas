@@ -19,8 +19,14 @@ const CRM_DAY_TO_DAY = [
   "crm.opportunities.view", "crm.opportunities.manage", "crm.opportunities.transition", "crm.opportunities.sensitive_values",
   "crm.activities.view", "crm.activities.manage",
   "crm.communications.view", "crm.communications.send",
-  "crm.notifications.view", "crm.reports.view",
+  "crm.notifications.view", "crm.reports.view", "crm.leads.view_all",
 ] as const;
+
+/**
+ * §0.3 P0: an account manager works their own enquiries (no assigning, no one else's records). Guide A: the inbox is the
+ * Sales Admin team's (and the owner's); an account manager talks to clients in the chats of their own jobs.
+ */
+const ACCOUNT_MANAGER = CRM_DAY_TO_DAY.filter((code) => code !== "crm.leads.assign" && code !== "crm.leads.view_all" && code !== "crm.communications.view");
 
 export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   {
@@ -34,6 +40,57 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "finance_requests.raise",
       // Assigns enquiries, so works the team's My day (0289).
       "reminders.team"],
+  },
+  // §0.3 P0: the seats a design firm's sales and design teams fill. Labels are the firm's to change (Setup → Seats).
+  {
+    code: "account_manager",
+    name: "Account manager",
+    description: "Works their own enquiries and opportunities from first contact to the deal; never sees internal costs or anyone else's records",
+    permissions: [...ACCOUNT_MANAGER, "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view", "portal.contacts.manage", "commercial.record_decision", "finance_requests.raise"],
+  },
+  {
+    code: "sales_admin",
+    name: "Sales admin",
+    description: "Receives and assigns every enquiry, keeps client details right and supports the account managers; no access to Settings",
+    // Guide A: the Sales Admin team works the inbox (its queue, closing messages after a confirmation).
+    permissions: [...CRM_DAY_TO_DAY, "crm.inbox.team", "crm.inbox.close_chats", "crm.parties.identity", "pre_projects.view", "pre_projects.edit", "catalog.view", "reminders.team"],
+  },
+  {
+    code: "designer",
+    name: "Interior designer",
+    description: "Designs the job: site measure, drawings, the client's design decisions and progress reports",
+    permissions: ["pre_projects.view", "pre_projects.edit", "pre_projects.verify_measurements", "pre_projects.record_client_design_decisions",
+      "crm.activities.view", "crm.activities.manage", "projects.view", "projects.report", "catalog.view"],
+  },
+  {
+    code: "creative_director",
+    name: "Creative director",
+    description: "Reviews and approves designs before the client sees them",
+    permissions: ["pre_projects.view", "pre_projects.review_designs", "projects.view", "catalog.view"],
+  },
+  {
+    code: "visualiser",
+    name: "Visualiser",
+    description: "Makes the renders for the jobs they are given",
+    permissions: ["pre_projects.view", "projects.view", "projects.report", "catalog.view"],
+  },
+  {
+    code: "material_coordinator",
+    name: "Material coordinator",
+    description: "Keeps the material log and the sample library, and sources what the designs need",
+    permissions: ["pre_projects.view", "pre_projects.manage_materials", "catalog.samples.manage", "projects.view", "catalog.view", "vendors.view", "stock.view"],
+  },
+  {
+    code: "technical_lead",
+    name: "Technical lead",
+    description: "Leads the technical drawings for production, item by item",
+    permissions: ["pre_projects.view", "projects.view", "projects.report", "catalog.view"],
+  },
+  {
+    code: "marketing",
+    name: "Marketing",
+    description: "Reads the sales reports and the catalogue",
+    permissions: ["catalog.view", "crm.reports.view"],
   },
   {
     code: "quantity_surveyor",
@@ -135,12 +192,15 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
 
 export const ROLE_TEMPLATE_CODES: readonly string[] = ROLE_TEMPLATES.map((template) => template.code);
 
+/** §0.3 P0: the design firm seats come only with a kit that lists them, never with the "every template" default. */
+export const OPT_IN_ROLE_TEMPLATES: ReadonlySet<string> = new Set(["account_manager", "sales_admin", "designer", "creative_director", "visualiser", "material_coordinator", "technical_lead", "marketing"]);
+
 /**
  * The template codes a kit configuration asks for. A kit without `roleTemplates` gets every
- * template; an unknown or malformed entry is a configuration error, never silently skipped.
+ * template but the opt-in seats; an unknown or malformed entry is a configuration error, never silently skipped.
  */
 export function parseRoleTemplateCodes(value: unknown): string[] {
-  if (value === undefined || value === null) return [...ROLE_TEMPLATE_CODES];
+  if (value === undefined || value === null) return ROLE_TEMPLATE_CODES.filter((code) => !OPT_IN_ROLE_TEMPLATES.has(code));
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
     throw new BadRequestException("The firm kit's roleTemplates must be a list of role template codes");
   }

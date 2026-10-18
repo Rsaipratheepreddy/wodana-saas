@@ -21,7 +21,7 @@ export function FollowUpKanban({groups,timeZone,onOpen}:{groups:{title:string;it
      chip={<Badge tone={group.title==='Overdue'?'danger':group.title==='Completed'?'success':group.title==='Today'?'warning':'info'}>{lane(group.title)}</Badge>}
      footer={<><span className={c.owner}><Avatar name={owner} size="sm"/><span className={c.srOnly}>{owner}</span></span>{Number.isFinite(due)&&<span className={c.due}><CalendarDays size={13} aria-hidden="true"/><time dateTime={String(item.dueAt)}>{new Intl.DateTimeFormat(locale,{timeZone,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(due)}</time></span>}</>}>
      <span className={c.customer}>{String(item.partyName??item.leadTitle??t('Not linked'))}</span>
-     <span className={c.chips}><Badge tone="neutral">{t(item.type==='call'?'Call':item.type==='meeting'?'Meeting':'Task')}</Badge><span className={c.priority} data-priority={priority}>{PRIORITIES[priority]?t(PRIORITIES[priority]):priority}</span></span>
+     <span className={c.chips}><Badge hue={item.type==='call'?1:item.type==='meeting'?2:6}>{t(item.type==='call'?'Call':item.type==='meeting'?'Meeting':'Task')}</Badge><span className={c.priority} data-priority={priority}>{PRIORITIES[priority]?t(PRIORITIES[priority]):priority}</span></span>
     </Card>
    </li>;})}</ul>:null}
   </section>)}

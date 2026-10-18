@@ -93,7 +93,8 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
         const questions = flow.siteVisitQuestions.map((item) => {
           const scope = item.scope?.trim() || null;
           // A section heads general questions only; a checklist is its scope.
-          return { key: item.key, question: item.question.trim(), scope, section: scope ? null : item.section?.trim() || null, kind: item.kind === "check" ? "check" as const : null };
+          return { key: item.key, question: item.question.trim(), scope, section: scope ? null : item.section?.trim() || null, kind: item.kind === "check" ? "check" as const : null,
+            ...(item.required ? { required: true } : {}) };
         });
         await saveDesignFlow(workspaceId, { ...flow, siteVisitQuestions: questions, siteVisitScopes: checklistScopes(questions, flow.siteVisitScopes ?? []) }, version);
       }
@@ -106,7 +107,7 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     { accessorKey: "name", header: t("Package"), size: 240, cell: ({ row: { original: pkg } }) => <span className={styles.name}><strong>{pkg.name}</strong>{pkg.inclusions ? <small>{pkg.inclusions}</small> : null}</span> },
     { id: "price", header: t("Price"), size: 170, accessorFn: price },
     { accessorKey: "includedRevisions", header: t("Revisions"), size: 110, cell: ({ getValue }) => t("{count} included", { count: Number(getValue()) }) },
-    { id: "includes", header: t("Includes"), size: 200, enableSorting: false, cell: ({ row: { original: pkg } }) => <span className={styles.chips}>{pkg.includesSpacePlanning ? <Badge tone="neutral">{t("Space planning")}</Badge> : null}{pkg.includesRenders ? <Badge tone="neutral">{t("Renders")}</Badge> : null}{pkg.reviewRoleCode ? <Badge tone="info">{t("Reviewed by {role}", { role: pkg.reviewRoleCode.replace(/_/g, " ") })}</Badge> : null}{pkg.requiredRoleCode ? <Badge tone="info">{pkg.requiredRoleCode.replace(/_/g, " ")}</Badge> : null}</span> },
+    { id: "includes", header: t("Includes"), size: 200, enableSorting: false, cell: ({ row: { original: pkg } }) => <span className={styles.chips}>{pkg.includesSpacePlanning ? <Badge hue={6}>{t("Space planning")}</Badge> : null}{pkg.includesRenders ? <Badge hue={2}>{t("Renders")}</Badge> : null}{pkg.reviewRoleCode ? <Badge tone="info">{t("Reviewed by {role}", { role: pkg.reviewRoleCode.replace(/_/g, " ") })}</Badge> : null}{pkg.requiredRoleCode ? <Badge hue="auto">{pkg.requiredRoleCode.replace(/_/g, " ")}</Badge> : null}</span> },
     { accessorKey: "status", header: t("Status"), size: 100, cell: ({ row: { original: pkg } }) => <Badge tone={pkg.status === "active" ? "success" : "neutral"}>{pkg.status === "active" ? t("Offered") : t("Archived")}</Badge> },
     ...(canManage ? [{ id: "actions", header: "", size: 170, enableSorting: false, cell: ({ row: { original: pkg } }: { row: { original: DesignPackage } }) => <span className={styles.rowActions}>
       <Button size="compact" variant="secondary" onPress={() => setEditing(pkg)}><Pencil aria-hidden="true" size={13} />{t("Edit")}</Button>
@@ -196,6 +197,9 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
             onChange={(question) => change({ question, key: item.key || questionKey(question, flow.siteVisitQuestions.filter((_, other) => other !== index).map((entry) => entry.key)) })} />
           <SelectField aria-label={t("Answer of question {number}", { number: index + 1 })} isDisabled={!canManage} label={null} accent="neutral" selectedKey={item.kind === "check" ? "check" : "answer"}
             items={[{ id: "answer", label: t("In words") }, { id: "check", label: t("Check") }]} onSelectionChange={(kind) => change({ kind: kind === "check" ? "check" : null })} />
+          {/* Optional unless marked: only required questions block completing the visit. */}
+          <Switch aria-label={t("Question {number} is required", { number: index + 1 })} isDisabled={!canManage} isSelected={item.required === true}
+            onChange={(required) => change({ required })}>{t("Required")}</Switch>
           {canManage ? <IconButton aria-label={t("Remove question {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setFlowValue("siteVisitQuestions", flow.siteVisitQuestions.filter((_, position) => position !== index))}><Trash2 aria-hidden="true" size={14} /></IconButton> : null}
         </li>;
       })}</ol>

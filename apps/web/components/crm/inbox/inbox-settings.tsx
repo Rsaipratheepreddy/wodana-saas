@@ -181,7 +181,7 @@ function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: st
         <ul className={styles.starterList}>{pack.items.filter((item) => languages.has(item.language)).map((item) => <li key={`${item.name}:${item.language}`}>
           <span className={styles.name}><strong>{item.name}</strong><small dir="auto">{item.body}</small></span>
           {item.status ? <Badge tone={TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.tone ?? "neutral"}>{t(TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.label ?? "Added")}</Badge>
-            : item.problem ? <Badge tone="warning">{translateKnown(t, item.problem)}</Badge> : <Badge tone="neutral">{names[item.language] ?? item.language}</Badge>}
+            : item.problem ? <Badge tone="warning">{translateKnown(t, item.problem)}</Badge> : <Badge hue="auto">{names[item.language] ?? item.language}</Badge>}
         </li>)}</ul>
       </> : null}
     </div>

@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Crypto from 'expo-crypto';
-import { Camera, Plus, Ruler, Trash2 } from 'lucide-react-native';
+import { Camera, ListChecks, Plus, Ruler, Trash2 } from 'lucide-react-native';
 import { errorMessage, useApi } from '../../core/api';
 import { useFormat } from '../../core/format';
 import { key, useT } from '../../core/i18n';
@@ -14,13 +14,14 @@ import { useSession } from '../../core/session';
 import { OptionSheet, SearchField, SegmentedControl, SelectField, TextField, cleanDecimal } from '../../ui/fields';
 import { Banner, Card, Empty, Failure, ListRow, ListScreen, Loading, Screen, Section } from '../../ui/layout';
 import { PhotoGrid } from '../../ui/photos';
-import { Button, IconButton, Row, Text } from '../../ui/primitives';
+import { Button, Chip, IconButton, Row, Text } from '../../ui/primitives';
 import { Sheet } from '../../ui/sheet';
 import { StatusChip } from '../../ui/status';
 import { useToast } from '../../ui/toast';
 import { useTheme } from '../../ui/theme';
 import { useMarkup } from '../capture/use-markup';
-import { assetPath, surveyKeys, useBrief, useCase, useCases, useSurvey } from './api';
+import { assetPath, surveyKeys, useBrief, useCase, useCases, useDesignJourney, useSurvey } from './api';
+import { askedGroups, draftsFrom, isAnswered, requiredLeft } from './questions-model';
 import { areaAndVolume, parseMeasure, toDimensions, UNITS, type Basis, type Unit } from './measure-model';
 import type { MeasurementPayload } from './outbox';
 
@@ -62,6 +63,12 @@ export function SurveyScreen() {
   const measurements = records.filter((record) => record.kind === 'measurement');
   const notes = records.filter((record) => record.kind === 'observation');
   const visits = records.filter((record) => record.kind === 'visit' && record.status === 'planned');
+  // The firm's site questions as this job carries them: how many are answered, and how many required are left.
+  const journey = useDesignJourney(caseId);
+  const questionGroups = journey.data ? askedGroups(journey.data) : [];
+  const asked = questionGroups.flatMap((group) => group.questions);
+  const saved = draftsFrom(journey.data?.checklist ?? []);
+  const requiredOpen = requiredLeft(questionGroups, saved);
   if (detail.isLoading || site.isLoading) return <Screen back><Loading shape="record" count={4} /></Screen>;
   if (detail.error || site.error) return <Screen back><Failure message={errorMessage(detail.error ?? site.error, t('This case could not be loaded.'))} onRetry={() => { void detail.refetch(); void site.refetch(); }} /></Screen>;
   return <Screen back title={detail.data?.customerName ?? detail.data?.title ?? t('Site survey')} subtitle={detail.data?.title}
@@ -73,6 +80,12 @@ export function SurveyScreen() {
     {pending.length ? <Banner tone="info" title={t('{count} waiting to send', { count: pending.length })} action={{ label: t('View'), onPress: () => router.push('/outbox') }} /> : null}
     {visits.length ? <Section title={t('Visits')}>
       {visits.map((visit, index) => <ListRow key={visit.id} first={index === 0} title={visit.title} detail={[visit.scheduledAt ? format.when(visit.scheduledAt) : null, visit.assigneeName, visit.location].filter(Boolean).join(' · ')} />)}
+    </Section> : null}
+    {asked.length ? <Section>
+      <ListRow first icon={ListChecks} title={t('Questions')}
+        detail={t('{answered} of {total} answered', { answered: asked.filter((item) => isAnswered(item, saved[item.key])).length, total: asked.length })}
+        trailing={requiredOpen ? <Chip tone="warning" label={t('{count} required', { count: requiredOpen })} /> : undefined}
+        onPress={() => router.push(`/survey/${caseId}/questions`)} />
     </Section> : null}
     <Section title={t('Measurements')}>
       {measurements.length ? measurements.map((record, index) => <ListRow key={record.id} first={index === 0} icon={Ruler} title={record.title || record.roomName || t('Measurement')}

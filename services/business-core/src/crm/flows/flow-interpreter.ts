@@ -22,6 +22,10 @@ export type CheckFacts = {
   budgetBand: string | null;
   contactLogged: boolean;
   introCompleted: boolean;
+  /** §0.3 P0 (guide G): the intro's outcome is recorded as going ahead (with its scope). */
+  qualificationProceed: boolean;
+  /** The client's target completion date is on the enquiry. */
+  targetCompletionSet: boolean;
   /** Everything the discovery form still lacks (PLM-040). */
   discoveryMissing: Array<{ key: string; label: string }>;
   furniturePath: FurniturePath | null;
@@ -64,6 +68,8 @@ const CHECK: Record<SimpleCheck, { key: string; label: string; done: (facts: Che
   contact_logged: { key: "contact", label: "Contact logged", done: (facts) => facts.contactLogged },
   intro_meeting_completed: { key: "introMeeting", label: "Intro meeting completed", done: (facts) => facts.introCompleted },
   client_type_set: { key: "clientType", label: "Client type chosen (not TBC)", done: (facts) => facts.clientTypeResolved },
+  qualification_outcome_recorded: { key: "qualificationOutcome", label: "Intro outcome recorded: going ahead", done: (facts) => facts.qualificationProceed },
+  target_completion_set: { key: "targetCompletion", label: "Target completion date", done: (facts) => facts.targetCompletionSet },
   sub_path_chosen: { key: "furniturePath", label: "Furniture sub-path chosen", done: (facts) => Boolean(facts.furniturePath) },
   feasibility_confirmed: { key: "feasibility", label: "Feasibility confirmed by Factory/Technical", done: (facts) => facts.feasibilityConfirmed },
   package_chosen: { key: "package", label: "Design package chosen", done: (facts) => Boolean(facts.packageCode) },

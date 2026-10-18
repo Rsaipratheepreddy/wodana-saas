@@ -8,6 +8,7 @@ import { fireSteps, type FireResult } from "./fire";
 import { planSubjects, type PlanResult } from "./plan";
 import { inSavepoint, messageOf } from "./savepoint";
 import { emitRemindersChanged, scanSources, type ScanResult } from "./scan";
+import { watchJourneys } from "../../jobs/journey-watch";
 
 export type SweepOptions = {
   sources: ReminderSourceRegistry;
@@ -20,6 +21,8 @@ export type SweepOptions = {
   health?: boolean;
   /** Emails this sweep may hand to delivery (REMINDERS_SWEEP_EMAIL_CAP); the rest carry over to the next minutes. */
   emailCap?: number;
+  /** §0.3: look at a batch of jobs' steps and send the progress pushes (the timed sweep, with its scan). */
+  journeys?: boolean;
 };
 
 export type SweepResult = {
@@ -33,6 +36,8 @@ export type SweepResult = {
   health: HealthAlertResult | null;
   /** Emails carried over to the next sweeps by the email cap. */
   pace: PaceResult | null;
+  /** §0.3: the jobs looked at for a changed step, and the progress pushes that queued. */
+  journeys?: Awaited<ReturnType<typeof watchJourneys>> | null;
   errors: string[];
 };
 
@@ -62,6 +67,7 @@ export async function sweepWorkspace(db: Db, workspaceId: string, options: Sweep
   result.fallback = await phase("fallback", () => runFallbacks(db, ctx));
   if (options.digests !== false) result.digest = await phase("digest", () => runDigests(db, ctx));
   if (options.health !== false) result.health = await phase("health", () => runHealthAlerts(db, ctx));
+  if (options.journeys && options.scan !== false) result.journeys = await phase("journeys", () => watchJourneys(db, workspaceId, { now }));
   // Last, as every phase above may queue emails: past the cap they move to the next minutes (a catch-up sweep).
   result.pace = await phase("pace", () => paceReminderEmails(db, ctx, options.emailCap ?? DEFAULT_SWEEP_EMAIL_CAP));
   for (const part of [result.scan, result.fire, result.fallback, result.digest]) if (part && "errors" in part) result.errors.push(...part.errors);

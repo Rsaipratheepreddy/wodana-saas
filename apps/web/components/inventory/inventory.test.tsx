@@ -35,7 +35,7 @@ const mount = (respond: (url: string, body: Record<string, unknown> | undefined)
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 };
-const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
+const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST" && typeof init.body === "string").map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
 const page = (section: InventorySection = "stock") => render(<DesignSystemProvider><InventoryPage workspaceId="w" section={section} /></DesignSystemProvider>);
 const rowOf = async (name: string) => (await screen.findByText(name)).closest("tr")!;
 
@@ -62,6 +62,7 @@ describe("inventory", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: /Project/ }));
     await userEvent.click(await screen.findByRole("option", { name: "PRJ-0007 · Villa 12" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Quantity" }), "20");
+    await userEvent.tab();
     expect(within(dialog).getByText("Only 17 nos there.")).toBeInTheDocument();
     await userEvent.clear(within(dialog).getByRole("textbox", { name: "Quantity" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Quantity" }), "5");
@@ -104,8 +105,9 @@ describe("inventory", () => {
     expect(screen.queryByText("No quantities recorded yet. Count stock or import quantities.")).not.toBeInTheDocument();
   });
 
-  it("counts stock and asks why when the count is different", async () => {
-    const fetcher = mount(() => stock());
+  it("counts stock and asks why when the count is different, with the count sheet", async () => {
+    const sheet = { id: "11111111-1111-4111-8111-111111111111", name: "count.jpg", mimeType: "image/jpeg", hasPreview: true, uploadedAt: "2026-09-27T12:30:00Z" };
+    const fetcher = mount((url) => (url.startsWith("/api/workspace/evidence") ? sheet : stock()));
     page();
     const glue = await rowOf("Wood glue");
     await userEvent.click(within(glue).getByRole("button", { name: "Actions" }));
@@ -115,11 +117,16 @@ describe("inventory", () => {
     expect(counted).toHaveValue("17");
     await userEvent.clear(counted);
     await userEvent.type(counted, "16");
+    await userEvent.tab();
     const save = within(dialog).getByRole("button", { name: "Save count" });
     expect(save).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's different/ }), "One tube dried out");
+    // A different count comes with the count sheet or a photo of the shelf.
+    expect(save).toBeDisabled();
+    await userEvent.upload(within(dialog).getByLabelText("Add a photo or PDF"), new File(["x"], "count.jpg", { type: "image/jpeg" }));
+    await within(dialog).findByRole("link", { name: "Open count.jpg" });
     await userEvent.click(save);
-    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "count", itemId: "i1", locationId: "w1", counted: "16", reason: "One tube dried out" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "count", itemId: "i1", locationId: "w1", counted: "16", reason: "One tube dried out", evidenceFileIds: [sheet.id] }));
   });
 
   it("moves a project's stock to its site and opens the move", async () => {
@@ -147,6 +154,7 @@ describe("inventory", () => {
     expect(arrived).toHaveValue("10");
     await userEvent.clear(arrived);
     await userEvent.type(arrived, "9");
+    await userEvent.tab();
     const receive = within(sheet).getByRole("button", { name: "Receive" });
     expect(receive).toBeDisabled();
     await userEvent.type(within(sheet).getByRole("textbox", { name: /What happened to the rest/ }), "Cracked in the truck");
@@ -164,10 +172,13 @@ describe("inventory", () => {
     expect(await rowOf("Calacatta slab")).toHaveTextContent(/3,500/);
     const waiting = screen.getByRole("region", { name: "Corrections waiting for approval" });
     expect(within(waiting).getByText(/Counted 6 m² \(-4\), worth .*1,400(\.00)?: Two slabs broken \(Sam Store\)/)).toBeInTheDocument();
-    await userEvent.click(within(waiting).getByRole("button", { name: "Refuse" }));
-    const dialog = await screen.findByRole("dialog", { name: "Refuse the correction" });
+    // Decided in a review of the count and its sheet (never one click).
+    await userEvent.click(within(waiting).getByRole("button", { name: "Review" }));
+    const dialog = await screen.findByRole("dialog", { name: "Stock correction" });
+    expect(within(dialog).getByText("No file attached")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Refuse" }));
     expect(within(dialog).getByRole("button", { name: "Refuse" })).toBeDisabled();
-    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's refused/ }), "Recount first");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it is refused/ }), "Recount first");
     await userEvent.click(within(dialog).getByRole("button", { name: "Refuse" }));
     await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining(`/adjustments/${request.id}`), body: { action: "reject", note: "Recount first" } }));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Corrections waiting for approval" })).not.toBeInTheDocument());
@@ -247,6 +258,7 @@ describe("inventory", () => {
     expect(await within(sheet).findByRole("link", { name: "WO-0005" })).toHaveAttribute("href", "/workspace/factory/orders?order=wo1");
     expect(within(sheet).getByText(/it goes back to the factory to be made again/)).toBeInTheDocument();
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Refused of Calacatta slab" }), "2");
+    await userEvent.tab();
     const receive = within(sheet).getByRole("button", { name: "Receive" });
     expect(receive).toBeDisabled();
     await userEvent.type(within(sheet).getByRole("textbox", { name: /Why Calacatta slab is refused/ }), "Veneer lifted");

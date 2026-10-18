@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Clock3, TriangleAlert } from "lucide-react";
-import { Button, Checkbox, FormDialog, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
+import { Button, Checkbox, FormDialog, InlineNotice, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -95,7 +95,7 @@ export function ScheduledMessages({ workspaceId, conversationId, items, canSend,
         <Button size="compact" variant="quiet" onPress={() => cancel(item)}>{item.status === "failed" ? t("Clear") : t("Cancel")}</Button>
       </div> : null}
     </article>)}
-    {failure ? <p className={styles.error} role="alert">{failure}</p> : null}
+    {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {editing ? <ScheduleDialog title={t("Edit scheduled message")} initial={wallTime(new Date(editing.sendAt), timeZone)} freeText={!editing.templateId} windowClosesAt={windowClosesAt}
       text={editing.templateId ? undefined : text} onTextChange={editing.templateId ? undefined : setText} onClose={() => setEditing(null)}
       onSchedule={async (sendAt) => {

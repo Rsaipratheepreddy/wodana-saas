@@ -19,6 +19,25 @@ export async function quoteReferences(db: Db, workspaceId: string, caseIds: stri
   return byCase;
 }
 
+/** Guide M: an estimate proposal's reference, from its quotation's number (QUO becomes EST); each revision adds "rev n". */
+export function estimateReference(quotationReference: string, revision: number) {
+  const base = quotationReference.includes("QUO") ? quotationReference.replace("QUO", "EST") : `EST-${quotationReference}`;
+  return revision > 0 ? `${base} rev ${revision}` : base;
+}
+
+/** The estimate proposal reference of each main quotation with a quotation number, by quote id: its place in its family is its revision. */
+export function estimateReferences(quotes: Array<{ id: string; number: number; kind: string; round?: string | null; familyId?: string | null }>, references: Record<string, string>) {
+  const out: Record<string, string> = {};
+  for (const quote of quotes) {
+    const reference = references[quote.id];
+    if (!reference || quote.kind !== "quotation" || quote.round === "design") continue;
+    const family = quote.familyId ?? quote.id;
+    const revision = quotes.filter((other) => (other.familyId ?? other.id) === family && other.number < quote.number).length;
+    out[quote.id] = estimateReference(reference, revision);
+  }
+  return out;
+}
+
 /** What a case's stage and next step are read from, for a list of cases: its quotations, its agreement and the references. */
 export type CaseQuoteFacts = {
   data: {

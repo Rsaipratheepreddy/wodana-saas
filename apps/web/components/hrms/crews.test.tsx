@@ -138,10 +138,9 @@ describe("Crews", () => {
     await choose(sheet, /Crew$/, "Joinery A");
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Worker code" }), "W-03");
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Phone" }), "7700 900123");
-    // A rate is exact: at most four places.
+    // A rate is exact: it stops at the currency's places (never more than four).
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Day rate" }), "195.12345");
-    expect(within(sheet).getByText("Up to four decimal places.")).toBeInTheDocument();
-    expect(within(sheet).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(within(sheet).getByRole("textbox", { name: "Day rate" })).toHaveValue("195.12");
     await userEvent.clear(within(sheet).getByRole("textbox", { name: "Day rate" }));
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Day rate" }), "195.5");
     await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));

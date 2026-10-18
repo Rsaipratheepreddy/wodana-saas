@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, ErrorState, FileUploader, FormDialog, InlineNotice, PageShell, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, EditableFieldList, EmptyState, ErrorState, FactRow, FileUploader, FormDialog, InlineNotice, PageShell, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
 import type { InspectionState } from "@/lib/factory/types";
@@ -99,19 +99,19 @@ export function InspectionRecord({ workspaceId, inspectionId }: { workspaceId: s
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {open && !state.canRecord ? <InlineNotice tone="info" message={row.requestedByMe ? t("You marked it ready: someone in the design team records the inspection.")
         : t("Only the inspecting designer or a manager records it.")} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Item")}</dt><dd>{[`${quantityText(row.quantity)} ${row.unit}`.trim(), row.title, row.specification].filter(Boolean).join(" · ")}</dd></div>
-        <div><dt>{t("Project")}</dt><dd><Link className={ops.projectLink} href={projectHref(row.projectId)}>{row.projectReference}</Link><span>{row.projectName}</span></dd></div>
-        <div><dt>{t("Inspector")}</dt><dd>{row.inspectorName ?? t("Nobody on the team inspects")}</dd></div>
-        <div><dt>{t("Marked ready")}</dt><dd>{t("{name} on {date}", { name: row.requestedByName, date: format.when(row.requestedAt) })}</dd></div>
-        {row.comments ? <div><dt>{t("Comments")}</dt><dd>{row.comments}</dd></div> : null}
-        {state.canSeeFactory ? <div><dt>{t("Work order")}</dt><dd>
-          <Link className={ops.projectLink} href={`/workspace/factory/orders?order=${row.workOrderId}`}>{orderNumber(row.number)}</Link></dd></div> : null}
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("Item")}>{[`${quantityText(row.quantity)} ${row.unit}`.trim(), row.title, row.specification].filter(Boolean).join(" · ")}</FactRow>
+        <FactRow label={t("Project")}><Link className={ops.projectLink} href={projectHref(row.projectId)}>{row.projectReference}</Link><span>{row.projectName}</span></FactRow>
+        <FactRow label={t("Inspector")}>{row.inspectorName ?? t("Nobody on the team inspects")}</FactRow>
+        <FactRow label={t("Marked ready")}>{t("{name} on {date}", { name: row.requestedByName, date: format.when(row.requestedAt) })}</FactRow>
+        {row.comments ? <FactRow label={t("Comments")}>{row.comments}</FactRow> : null}
+        {state.canSeeFactory ? <FactRow label={t("Work order")}>
+          <Link className={ops.projectLink} href={`/workspace/factory/orders?order=${row.workOrderId}`}>{orderNumber(row.number)}</Link></FactRow> : null}
+      </EditableFieldList>
       <Section title={t("Photos")} action={canRecord ? <FileUploader appearance="button" accept="image/*" label={uploading ? t("Saving the photo") : t("Add a photo")}
         onFiles={(files) => void addPhotos(files)} /> : null}>
         {state.photos.length ? <SavedPhotos photos={state.photos} url={api.inspectionPhotoUrl} />
-          : <p className={ops.empty}>{canRecord ? t("Take a photo of each problem before failing it.") : t("No photos.")}</p>}
+          : <EmptyState illustration={null} title={t("No photos.")} description={canRecord ? t("Take a photo of each problem before failing it.") : undefined} />}
       </Section>
       {state.snags.length ? <Section title={t("Snags")}>
         <ul className={ops.list}>{state.snags.map((snag) => <li key={snag.id}>

@@ -3,10 +3,10 @@
 .target { display: flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .target > span { flex: none; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); }
-.chips button { min-block-size: var(--wd-control-xs); padding: 0 var(--wd-space-2-5); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
-.chips button:hover { border-color: var(--wd-color-border-strong); color: var(--wd-color-text); }
-.chips button[aria-pressed="true"] { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-weight: var(--wd-weight-medium); }
-.chips button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+
+
+.chips [aria-pressed="true"] { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-weight: var(--wd-weight-medium); }
+
 .list { display: grid; align-content: start; flex: 1 1 auto; min-block-size: 0; overflow-y: auto; padding: var(--wd-space-2); }
 .item { display: flex; align-items: center; gap: var(--wd-space-3); min-block-size: var(--wd-space-13); padding: var(--wd-space-2); border-radius: var(--wd-radius-md); }
 .item:hover { background: var(--wd-color-surface-hover); }

@@ -119,8 +119,6 @@
 .sheet .statusSelect { inline-size: auto; max-inline-size: 112px; }
 .sheet .statusSelect :global(.wd-select-button) { min-block-size: 24px; block-size: 24px; border-radius: var(--wd-radius-2xs); padding-inline: var(--wd-space-1-5); font-size: var(--wd-text-2xs); }
 .sheet .statusSelect :global(.wd-select-indicator) { inline-size: 15px; }
-.sheet :global([data-source-chip]) { padding: var(--wd-space-0-5) var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); font-size: var(--wd-text-2xs); line-height: 1.4; }
-.sheet :global([data-source-chip] svg) { inline-size: 13px; block-size: 13px; }
 .sheet .assigneeButton { min-block-size: 28px; padding: 0; gap: var(--wd-space-1-5); color: var(--wd-color-text); font-size: var(--wd-text-xs); }
 .sheet .assigneeButton :global(.wd-avatar) { inline-size: 24px; block-size: 24px; font-size: var(--wd-text-2xs); }
 .sheet .managerCell :global(.wd-button), .sheet .nextAction { min-block-size: 28px; block-size: 28px; padding-inline: var(--wd-space-1-5); font-size: var(--wd-text-2xs); border-radius: var(--wd-radius-2xs); white-space: nowrap; }
@@ -187,7 +185,6 @@
 .sheet .managerCell { gap: var(--wd-space-1); min-inline-size: 0; }
 .sheet .nextAction { font-size: var(--wd-text-xs); gap: var(--wd-space-1-5); padding-inline: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); }
 .sheet .nextAction[data-overdue] { color: var(--wd-color-danger); background: color-mix(in srgb, var(--wd-color-danger) 8%, var(--wd-color-surface)); }
-.sheet :global([data-source-chip]) { font-size: var(--wd-text-xs); padding: var(--wd-space-1) var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); }
 .clientMatch { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
 .clientMatch > strong { font-size: var(--wd-text-md); }
 .clientMatch > p { margin: 0; font-size: var(--wd-text-xs); line-height: 1.5; color: var(--wd-color-text-secondary); }

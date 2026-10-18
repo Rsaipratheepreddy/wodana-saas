@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { dayGroup, moduleEnabled, notificationModule } from "@/lib/workspace/notification-modules";
+import { choiceEnabled, dayGroup, notificationModule } from "@/lib/workspace/notification-modules";
 import { NotificationSettingsPage } from "./notification-settings-page";
 import { NotificationsPage } from "./notifications-page";
 
@@ -23,57 +23,85 @@ describe("notification groups (FD-7)", () => {
     expect(dayGroup("2026-09-28T01:00:00Z", "UTC", now)).toBe("today");
     expect(dayGroup("2026-09-23T01:00:00Z", "UTC", now)).toBe("week");
     expect(dayGroup("2026-09-10T01:00:00Z", "UTC", now)).toBe("earlier");
-    expect(moduleEnabled([{ eventType: "crm.*", channel: "email", enabled: false, quietHours: {}, version: 1 }], "sales", "email")).toBe(false);
-    expect(moduleEnabled([], "sales", "email")).toBe(true);
+    expect(choiceEnabled([{ group: "sales", channel: "email", enabled: false }], "sales", "email")).toBe(false);
+    expect(choiceEnabled([], "sales", "email")).toBe(true);
   });
 });
 
 describe("Settings → Notifications", () => {
-  const person = { digestEnabled: true, digestTime: null, quietHours: null, timeZone: null, version: 3, firm: { quietStart: "20:00", quietEnd: "08:00", digestTime: "08:00" },
-    effectiveTimeZone: "Europe/Lisbon", workspaceTimeZone: "UTC", criticalEventTypes: ["approvals.waiting", "receivables.overdue"] };
-  function api({ putStatus = 200 } = {}) {
-    const posts: unknown[] = [];
-    const puts: unknown[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: string, options?: RequestInit) => {
-      if (options?.method === "POST") { posts.push(JSON.parse(String(options.body))); return { ok: true, json: async () => ({}) }; }
+  const groups = ["sales", "planning", "projects", "operations", "finance", "ledger", "people", "workspace"];
+  const view = (channels: string[] = ["in_app", "email", "push"]) => ({
+    groups, channels, choices: groups.flatMap((group) => channels.map((channel) => ({ group, channel, enabled: !(group === "finance" && channel === "push") }))),
+    quietHours: null, digestEnabled: true, digestTime: null, timeZone: null, version: 3,
+    firm: { quietStart: "20:00", quietEnd: "08:00", digestTime: "08:00" }, effectiveTimeZone: "Europe/Lisbon", workspaceTimeZone: "Europe/Lisbon",
+  });
+  function api({ putStatus = 200, channels }: { putStatus?: number; channels?: string[] } = {}) {
+    const puts: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: string, options?: RequestInit) => {
       if (options?.method === "PUT") {
         const body = JSON.parse(String(options.body));
         puts.push(body);
-        return putStatus >= 400 ? { ok: false, status: putStatus, json: async () => ({ message: "Changed" }) } : { ok: true, status: 200, json: async () => ({ ...body, version: body.version + 1 }) };
+        return putStatus >= 400 ? { ok: false, status: putStatus, json: async () => ({ message: "Changed" }) } : { ok: true, status: 200, json: async () => ({ ...view(channels), ...body, version: body.version + 1 }) };
       }
-      return { ok: true, json: async () => (String(input).includes("notification-person-settings") ? person : []) };
+      return { ok: true, status: 200, json: async () => view(channels) };
     }));
-    return { posts, puts };
+    return { puts };
   }
+  const cell = (body: Record<string, unknown>, group: string, channel: string) => (body.choices as Array<{ group: string; channel: string; enabled: boolean }>).find((item) => item.group === group && item.channel === channel);
 
-  it("switches a module's channel off for every event it covers", async () => {
-    const { posts } = api();
-    render(<NotificationSettingsPage workspaceId={workspaceId} userId={userId} />);
-    await userEvent.click(await screen.findByRole("switch", { name: "Projects: Email" }));
-    await waitFor(() => expect(posts).toHaveLength(6));
-    expect(posts).toContainEqual({ recipientType: "user", recipientId: userId, eventType: "site.*", channel: "email", enabled: false });
+  it("shows a switch per group for each channel the workspace has turned on, with the alert row locked on", async () => {
+    api();
+    render(<NotificationSettingsPage workspaceId={workspaceId} />);
+    expect(await screen.findByRole("switch", { name: "Projects: Email" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Finance: Phone" })).not.toBeChecked();
+    expect(screen.queryByRole("switch", { name: "Sales: WhatsApp" })).not.toBeInTheDocument();
+    for (const channel of ["In the app", "Email", "Phone"]) {
+      const locked = screen.getByRole("switch", { name: `Alerts: ${channel}` });
+      expect(locked).toBeChecked();
+      expect(locked).toBeDisabled();
+    }
+    expect(screen.getByText("Always on: in the app and your fastest channel")).toBeInTheDocument();
+    // Nothing changed yet: no save bar.
+    expect(screen.queryByRole("region", { name: "Unsaved changes" })).not.toBeInTheDocument();
   });
 
-  it("keeps critical notices always on, and saves the digest, quiet hours for every channel and the time zone with their version", async () => {
+  it("adds WhatsApp when the workspace has it", async () => {
+    api({ channels: ["in_app", "email", "whatsapp"] });
+    render(<NotificationSettingsPage workspaceId={workspaceId} />);
+    expect(await screen.findByRole("switch", { name: "Sales: WhatsApp" })).toBeChecked();
+    expect(screen.queryByRole("switch", { name: "Sales: Phone" })).not.toBeInTheDocument();
+  });
+
+  it("saves the grid, quiet hours and the digest together with their version, bottom-end", async () => {
     const { puts } = api();
-    render(<NotificationSettingsPage workspaceId={workspaceId} userId={userId} />);
-    const locked = await screen.findByRole("switch", { name: "Approvals waiting: always on" });
-    expect(locked).toBeChecked();
-    expect(locked).toBeDisabled();
-    expect(screen.getByRole("switch", { name: "Invoice overdue: always on" })).toBeDisabled();
+    render(<NotificationSettingsPage workspaceId={workspaceId} />);
+    await userEvent.click(await screen.findByRole("switch", { name: "Projects: Email" }));
     expect(await screen.findByText("Workspace hours 20:00–08:00")).toBeInTheDocument();
-    expect(screen.getByText("Workspace time 08:00")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("switch", { name: "My own quiet hours" }));
-    await waitFor(() => expect(puts).toEqual([{ digestEnabled: true, digestTime: null, quietHours: { start: "20:00", end: "08:00" }, timeZone: null, version: 3 }]));
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Send me a daily digest" })).not.toBeDisabled());
     await userEvent.click(screen.getByRole("switch", { name: "Send me a daily digest" }));
-    await waitFor(() => expect(puts[1]).toEqual({ digestEnabled: false, digestTime: null, quietHours: { start: "20:00", end: "08:00" }, timeZone: null, version: 4 }));
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    await userEvent.click(within(bar).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({ quietHours: { start: "20:00", end: "08:00" }, digestEnabled: false, digestTime: null, timeZone: null, version: 3 });
+    expect(cell(puts[0], "projects", "email")).toEqual({ group: "projects", channel: "email", enabled: false });
+    expect(cell(puts[0], "finance", "push")).toEqual({ group: "finance", channel: "push", enabled: false });
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved");
+  });
+
+  it("puts the switches back on Discard", async () => {
+    api();
+    render(<NotificationSettingsPage workspaceId={workspaceId} />);
+    await userEvent.click(await screen.findByRole("switch", { name: "Sales: In the app" }));
+    expect(screen.getByRole("switch", { name: "Sales: In the app" })).not.toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.getByRole("switch", { name: "Sales: In the app" })).toBeChecked();
   });
 
   it("says when someone else changed the settings first", async () => {
     api({ putStatus: 409 });
-    render(<NotificationSettingsPage workspaceId={workspaceId} userId={userId} />);
+    render(<NotificationSettingsPage workspaceId={workspaceId} />);
     await userEvent.click(await screen.findByRole("switch", { name: "My own quiet hours" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Changed by someone else");
   });
 });

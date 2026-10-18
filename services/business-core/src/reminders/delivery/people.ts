@@ -1,4 +1,3 @@
-import type { ReminderChannel } from "../reminders-contract";
 import { isTimeZone, resolveRecipientZone, type Db } from "../engine/engine";
 import type { ReminderSettings } from "../engine/context";
 
@@ -12,6 +11,8 @@ export type StaffPerson = {
   quiet: { start: string; end: string } | null;
   /** The person set their own quiet hours (a rule's quiet hours apply only when they didn't). */
   ownQuiet: boolean;
+  /** The firm's quiet hours (null when start = end): an alert waits only for these, when the firm says so. */
+  firmQuiet?: { start: string; end: string } | null;
   digestEnabled: boolean;
   digestTime: string;
   /** The phone's switch is on and a phone is registered. */
@@ -56,38 +57,12 @@ export async function readStaffPeople(db: Db, workspaceId: string, membershipIds
       timeZone: resolveRecipientZone(row.personZone, row.deviceZone, row.preferredZone, workspaceZone),
       quiet: quietStart === quietEnd ? null : { start: quietStart, end: quietEnd },
       ownQuiet: Boolean(row.quietStart && row.quietEnd),
+      firmQuiet: firm.quietStart === firm.quietEnd ? null : { start: firm.quietStart, end: firm.quietEnd },
       digestEnabled: row.digestEnabled ?? true,
       digestTime: hhmm(row.digestTime) ?? firm.digestTime,
       pushReachable: row.pushReachable,
     }];
   }));
-}
-
-/** One person's switches for an event (exact, its module's `prefix.*`, or everything `*`), per channel. */
-export type ChannelMutes = Record<Exclude<ReminderChannel, "whatsapp">, boolean>;
-
-/**
- * Which channels a person muted for an event: the most specific preference wins (the event, then its module,
- * then everything), except push, whose `*` row is the phone's own switch (handled as reachability, not a mute).
- */
-export async function readMutes(db: Db, workspaceId: string, userIds: readonly string[], eventType: string): Promise<Map<string, ChannelMutes>> {
-  const ids = [...new Set(userIds)];
-  const result = new Map<string, ChannelMutes>(ids.map((id) => [id, { in_app: false, push: false, email: false }]));
-  if (!ids.length) return result;
-  const rows = (await db.query<{ userId: string; channel: string; eventType: string; enabled: boolean }>(
-    `SELECT recipient_id AS "userId", channel::text AS channel, event_type::text AS "eventType", enabled FROM notification_preferences
-      WHERE workspace_id = $1 AND recipient_type = 'user' AND recipient_id = ANY($2::uuid[]) AND channel::text IN ('in_app', 'push', 'email')
-        AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')`,
-    [workspaceId, ids, eventType])).rows;
-  const rank = (type: string) => (type === eventType ? 0 : type === "*" ? 2 : 1);
-  for (const id of ids) {
-    const mine = rows.filter((row) => row.userId === id);
-    for (const channel of ["in_app", "push", "email"] as const) {
-      const candidates = mine.filter((row) => row.channel === channel && !(channel === "push" && row.eventType === "*")).sort((a, b) => rank(a.eventType) - rank(b.eventType));
-      if (candidates[0]?.enabled === false) result.get(id)![channel] = true;
-    }
-  }
-  return result;
 }
 
 /** Owners and administrators (system roles), active. */

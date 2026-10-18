@@ -14,6 +14,7 @@ import { myDayKeys } from '../today/api';
 import { APPROVE_ACTION, type ApprovalOutcome, type PushApproval } from './approval-action-model';
 import { approveFromNotice, noticeFor, postNotice, registerApprovalCategories, sendPendingApprovals } from './approval-actions';
 import { pushOpening } from './push-open';
+import { isLater, registerPushButtons } from './push-buttons';
 import { notificationSettingsKey } from './push-registration';
 
 const native = Platform.OS === 'ios' || Platform.OS === 'android';
@@ -55,7 +56,7 @@ export function useNotificationOpens() {
     else if (outcome === 'elsewhere') toast.show(t('This notification is for another workspace.'));
   }, [queryClient, workspaceId, t, toast, router]);
 
-  useEffect(() => { void registerApprovalCategories(t).catch(() => undefined); }, [t]);
+  useEffect(() => { void registerApprovalCategories(t).catch(() => undefined); void registerPushButtons(t).catch(() => undefined); }, [t]);
 
   useEffect(() => {
     if (!native) return;
@@ -73,6 +74,8 @@ export function useNotificationOpens() {
       if (opened.has(identifier)) return;
       opened.add(identifier);
       if (response.actionIdentifier === APPROVE_ACTION && await approveFromNotice(response, report)) return;
+      // "Later" only puts the notice away.
+      if (isLater(response.actionIdentifier)) { void Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => undefined); return; }
       const target = pushOpening(response.notification.request.content.data, workspaceId);
       if (target.otherWorkspace) { toast.show(t('This notification is for another workspace.')); return; }
       let route = target.route;

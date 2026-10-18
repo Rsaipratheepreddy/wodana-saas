@@ -60,6 +60,8 @@ export class ListOpportunitiesQueryDto {
   @IsOptional() @IsUUID() ownerMembershipId?: string;
   @IsOptional() @IsIn(["open", "won", "lost", "abandoned"]) status?: string;
   @IsOptional() @IsString() @MaxLength(160) search?: string;
+  /** §0.3 P0 (guide J/K): the opportunities whose Proposal 2 the client withdrew (confirmed), apart from Won and Lost. */
+  @IsOptional() @IsIn(["withdrawn"]) proposal2?: "withdrawn";
   @IsOptional() @IsString() cursor?: string;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(100) limit = 25;
 }
@@ -105,6 +107,17 @@ export class TransitionOpportunityDto {
   @IsOptional() @IsIn(["open", "won", "lost", "abandoned"]) status?: string;
   @IsOptional() @IsString() @MaxLength(160) reason?: string;
   @IsOptional() @IsString() @MaxLength(160) competitor?: string;
+}
+
+/** §0.3 P0 (guide G): the intro's outcome: going ahead (scope and target date), needs time (follow-up date) or lost (reason). */
+export class QualificationOutcomeDto {
+  @IsInt() @Min(1) version!: number;
+  @IsIn(["proceed", "needs_time", "lost"]) outcome!: "proceed" | "needs_time" | "lost";
+  /** Going ahead: what with, one of the firm's enquiry types. */
+  @IsOptional() @IsString() @MaxLength(100) scope?: string;
+  @IsOptional() @IsString() @MaxLength(10) targetCompletion?: string;
+  @IsOptional() @IsString() @MaxLength(10) followUpOn?: string;
+  @IsOptional() @IsString() @MaxLength(160) reason?: string;
 }
 
 export class AddStakeholderDto {

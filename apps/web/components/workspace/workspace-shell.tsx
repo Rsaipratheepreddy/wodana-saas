@@ -29,6 +29,7 @@ import { SettingsLayout } from "./settings-layout";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { WorkspaceAccountMenu } from "./workspace-account-menu";
 import { WorkspaceNotifications } from "./workspace-notifications";
+import { QuickPanel } from "./quick-panel";
 import { CommandPalette } from "./command-palette";
 import type { AccessContext } from "@/lib/workspace/access";
 import { PreProjectProvider, usePreProject } from "@/components/pre-project/pre-project-context";
@@ -202,8 +203,10 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
             {workspaceId ? <CommandPalette workspaceId={workspaceId} modules={modules} access={access ?? {}} /> : null}
             <TourPersonaBadge />
             <div className={styles.woddyControl}>
-              <WoddyMenu avatarClassName={styles.woddyAvatar} className={styles.woddyButton} labelClassName={styles.woddyLabel} onChat={aiReady ? woddy?.open : undefined} />
+              {/* §0.3 P11: Help (this screen and the tours); the assistant panel is gone, AI suggests inside each step. */}
+              <WoddyMenu plain className={styles.themeToggle} />
             </div>
+            {workspaceId ? <QuickPanel workspaceId={workspaceId} className={styles.themeToggle} /> : null}
             <WorkspaceNotifications workspaceId={workspaceId} />
             {settingsModule ? <Link
               aria-current={route.settings ? "page" : undefined}

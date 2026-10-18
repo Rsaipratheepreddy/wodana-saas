@@ -5,13 +5,13 @@ const choices = { emirates: [{ id: "dubai", label: "Dubai" }, { id: "other", lab
 
 describe("enquiry title", () => {
   it("uses the customer name, area and emirate", () => {
-    expect(enquiryTitle(" Cece Serna ", { emirate: "dubai", area: "al_barsha" }, choices)).toBe("Cece Serna (Al Barsha, Dubai)");
+    expect(enquiryTitle(" Cece Serna ", { emirate: "dubai", area: "al_barsha" }, choices)).toBe("Cece Serna · Al Barsha, Dubai");
   });
   it("omits an empty area", () => {
-    expect(enquiryTitle("Cece Serna", { emirate: "dubai" }, choices)).toBe("Cece Serna (Dubai)");
+    expect(enquiryTitle("Cece Serna", { emirate: "dubai" }, choices)).toBe("Cece Serna · Dubai");
   });
   it("uses the typed place for a region outside the list", () => {
-    expect(enquiryTitle("Cece Serna", { emirate: "other", area: "London, UK" }, choices)).toBe("Cece Serna (London, UK)");
+    expect(enquiryTitle("Cece Serna", { emirate: "other", area: "London, UK" }, choices)).toBe("Cece Serna · London, UK");
   });
   it("uses the name alone without a place, and the place alone without a name", () => {
     expect(enquiryTitle("Cece Serna", {}, choices)).toBe("Cece Serna");
@@ -27,7 +27,7 @@ describe("enquiry title", () => {
       return { rows: [] };
     });
     await refreshEnquiryTitlesForParty({ query } as never, "workspace", "party", "Cece Serna");
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("UPDATE crm_enquiries SET title=$3"), ["workspace", "enquiry-1", "Cece Serna (Dubai)"]);
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("UPDATE crm_enquiries SET title=$3"), ["workspace", "enquiry-2", "Cece Serna (London, UK)"]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("UPDATE crm_enquiries SET title=$3"), ["workspace", "enquiry-1", "Cece Serna · Dubai"]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("UPDATE crm_enquiries SET title=$3"), ["workspace", "enquiry-2", "Cece Serna · London, UK"]);
   });
 });

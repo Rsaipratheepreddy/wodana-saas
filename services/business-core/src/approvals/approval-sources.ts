@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { canDecideApproval, pendingForPerson } from "./approval-engine";
 import { KINDS_WITH_OWN_INBOX_ROW } from "./approval-policy";
 import { quoteReviewAction } from "../proposals/qs-requirement";
+import { billFiles, claimReceipts, decisionFiles, designFiles, engineFiles, ENGINE_KINDS_WITH_FILES, receiptFiles, reportPhotos, type ApprovalFile } from "./approval-files";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -57,6 +58,8 @@ export type ApprovalRow = {
   cover?: { via: "delegate" | "escalation"; for: string | null } | null;
   /** E3-3: a change to an approved amount, old → new. */
   change?: { from: string; to: string } | null;
+  /** The files the decision rests on (a proof, a bill, a receipt, a drawing); an empty list says nothing was attached. */
+  files?: ApprovalFile[];
 };
 
 export type ApprovalContext = {
@@ -172,7 +175,8 @@ const receipts: Source = async (db, ctx) => {
     amount: receipt.amount, currency: receipt.currency, since: receipt.since, version: receipt.revision, parentId: receipt.caseId,
     own: receipt.source === "manual" && (receipt.reportedById ? receipt.reportedById === ctx.userId : receipt.reportedBy === ctx.displayName),
     href: `/workspace/pre-projects/cases/${receipt.caseId}/payment-plan`,
-    decide: { approve: "verify_payment", other: null, approveNeedsNote: false },
+    // A receipt the team recorded can be returned with a reason; a provider's settlement is reversed by the provider.
+    decide: { approve: "verify_payment", other: receipt.source === "manual" ? "return" : null, approveNeedsNote: false },
   }));
 };
 
@@ -545,6 +549,7 @@ const ENGINE_GROUP: Record<string, ApprovalGroup> = { opportunity_value: "deals"
  */
 const engine: Source = async (db, ctx) => {
   const waiting = await pendingForPerson(db, ctx.workspaceId, ctx.userId, { excludeKinds: KINDS_WITH_OWN_INBOX_ROW });
+  const files = await engineFiles(db, ctx.workspaceId, waiting.map(({ status }) => ({ id: status.id, kind: status.kind, subjectId: status.subjectId })));
   return waiting.map(({ status, eligibility }) => ({
     ...row({
       kind: "approval", group: ENGINE_GROUP[status.kind] ?? "finance", id: status.id, title: status.title, subject: status.requestedBy.name || null,
@@ -555,8 +560,27 @@ const engine: Source = async (db, ctx) => {
     }),
     cover: eligibility.via === "delegate" || eligibility.via === "escalation" ? { via: eligibility.via, for: null } : null,
     change: status.previousAmount && status.amount ? { from: status.previousAmount, to: status.amount } : null,
+    ...(ENGINE_KINDS_WITH_FILES.has(status.kind) ? { files: files.get(status.id) ?? [] } : {}),
   }));
 };
+
+/** The files behind each row whose decision rests on one, read in one query per kind. */
+async function attachFiles(db: Db, workspaceId: string, rows: ApprovalRow[]) {
+  const ids = (...kinds: ApprovalKind[]) => [...new Set(rows.filter((item) => kinds.includes(item.kind)).map((item) => item.id))];
+  const [receipts, photos, claims, bills, designs, output, counts] = await Promise.all([
+    receiptFiles(db, workspaceId, ids("receipt")), reportPhotos(db, workspaceId, ids("site_report")), claimReceipts(db, workspaceId, ids("petty_cash", "reimbursement")),
+    billFiles(db, workspaceId, ids("bill"), ids("payment_run")), designFiles(db, workspaceId, ids("design_review")),
+    decisionFiles(db, workspaceId, "factory_output", ids("output")), decisionFiles(db, workspaceId, "stock_correction", ids("stock_correction")),
+  ]);
+  const byKind: Partial<Record<ApprovalKind, Map<string, ApprovalFile[]>>> = {
+    receipt: receipts, site_report: photos, petty_cash: claims, reimbursement: claims, bill: bills, payment_run: bills, design_review: designs,
+    output, stock_correction: counts,
+  };
+  return rows.map((item) => {
+    const map = byKind[item.kind];
+    return map ? { ...item, files: map.get(item.id) ?? [] } : item;
+  });
+}
 
 export const APPROVAL_SOURCES: Source[] = [designReviews, quotes, qsReviews, receipts, invoices, agreements, deals, orders, factory, site, stock, finance, aiActions, engine];
 
@@ -564,6 +588,7 @@ export const APPROVAL_SOURCES: Source[] = [designReviews, quotes, qsReviews, rec
 export async function waitingFor(db: Db, ctx: ApprovalContext) {
   const rows: ApprovalRow[] = [];
   for (const source of APPROVAL_SOURCES) rows.push(...await source(db, ctx));
+  rows.splice(0, rows.length, ...await attachFiles(db, ctx.workspaceId, rows));
   rows.sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.since.localeCompare(right.since));
   const counts = Object.fromEntries(APPROVAL_GROUPS.map((group) => [group, rows.filter((item) => item.group === group && item.canDecide).length])) as Record<ApprovalGroup, number>;
   return { rows, count: rows.filter((item) => item.canDecide).length, counts };

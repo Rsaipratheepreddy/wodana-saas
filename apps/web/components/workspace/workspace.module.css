@@ -1724,6 +1724,9 @@
 /* One tab row: the areas at the start, the open area's views as a segmented switch at the end. */
 .flowTabRow { display:flex; align-items:center; gap:var(--wd-space-4); min-inline-size:0; }
 .flowTabRow > .flowTabs { flex:1 1 auto; }
+/* Planning: the open area's views sit on their own row under the areas, never squeezed beside them. */
+.flowTabRow[data-stacked] { flex-direction:column; align-items:stretch; gap:var(--wd-space-1); }
+.flowTabRow[data-stacked] > .flowViews { align-self:flex-start; margin-block-end:var(--wd-space-2); }
 .flowViews { flex:none; max-inline-size:100%; overflow-x:auto; scrollbar-width:none; }
 .flowViews::-webkit-scrollbar { display:none; }
 @media(max-width:600px) { .flowTabRow { flex-wrap:wrap; gap:0 var(--wd-space-2); } .flowViews { margin-block-end:var(--wd-space-1-5); } }

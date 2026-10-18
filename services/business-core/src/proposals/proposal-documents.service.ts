@@ -7,7 +7,9 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { currentTemplate, quotationPageData } from "./proposal-data";
 import { acceptFile, readBytes, type ObjectStore, type UploadedFile } from "./proposal-files";
-import { composeProposal, sha256, templatePageCount, type TemplatePage } from "./proposal-pdf";
+import { readPortalSettings } from "../client-portal/portal-settings";
+import { browserPrinter, printQuotation, type QuotationPrinter } from "./portal-print";
+import { composeProposal, composeProposalWithPrinted, sha256, templatePageCount, type QuotationPage, type TemplatePage } from "./proposal-pdf";
 import { documentFileName } from "../documents/pdf-layout";
 
 type Db = PoolClient;
@@ -57,7 +59,18 @@ export async function addDocumentVersion(db: Db, store: ObjectStore, input: {
  * The proposal PDF of a sent quote as an immutable document version: the template's pages around the quotation
  * page, composed once per quote revision and template version (asking again returns the same version).
  */
-export async function issueProposalVersion(db: Db, store: ObjectStore, input: { workspaceId: string; caseId: string; quoteId: string; actorUserId: string }) {
+/**
+ * The proposal's bytes: the quotation pages printed from the client's portal page when the server prints proposals
+ * that way (portal-print.ts), else drawn by the built-in composer; the firm's own pages around them either way.
+ */
+export async function proposalBytes(db: Db, input: { workspaceId: string; caseId: string; quoteId: string; quoteHash: string | null }, template: TemplatePage[], data: QuotationPage,
+  printer: QuotationPrinter | null = browserPrinter()) {
+  const printed = printer ? await printQuotation(printer, { ...input, slug: (await readPortalSettings(db, input.workspaceId)).slug }) : null;
+  return Buffer.from(printed ? await composeProposalWithPrinted(template, data, printed) : await composeProposal(template, data));
+}
+
+export async function issueProposalVersion(db: Db, store: ObjectStore, input: { workspaceId: string; caseId: string; quoteId: string; actorUserId: string },
+  printer: QuotationPrinter | null = browserPrinter()) {
   const quote = (await db.query<{ status: string; title: string; hash: string | null; total: string; currency: string }>(
     `SELECT status, title, hash, total::text AS total, currency FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
     [input.workspaceId, input.caseId, input.quoteId])).rows[0];
@@ -78,7 +91,7 @@ export async function issueProposalVersion(db: Db, store: ObjectStore, input: { 
       WHERE workspace_id = $1 AND document_id = $2 AND purpose = 'issued' AND quote_hash IS NOT DISTINCT FROM $3 AND template_version = $4 ORDER BY number DESC LIMIT 1`,
     [input.workspaceId, document.id, quote.hash, template.version])).rows[0];
   if (latest) return { documentId: document.id, number: latest.number, sha256: latest.sha256, reference: data.reference, title: quote.title, reused: true };
-  const bytes = Buffer.from(await composeProposal(template.pages, data));
+  const bytes = await proposalBytes(db, { workspaceId: input.workspaceId, caseId: input.caseId, quoteId: input.quoteId, quoteHash: quote.hash }, template.pages, data, printer);
   const version = await addDocumentVersion(db, store, { workspaceId: input.workspaceId, caseId: input.caseId, documentId: document.id, purpose: "issued", bytes,
     fileName: documentFileName(data.reference, data.client.name || quote.title), mimeType: "application/pdf", quoteHash: quote.hash, templateVersion: template.version, actorUserId: input.actorUserId });
   await recordAudit(db, { workspaceId: input.workspaceId, actorUserId: input.actorUserId, action: "quotation.proposal_pdf_issued.v1", entityType: "pre_project_case", entityId: input.caseId,
@@ -178,7 +191,12 @@ export class ProposalDocumentsService {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
       const data = await quotationPageData(client, workspaceId, caseId, quoteId, this.storage);
       const template = await templatePages(client, this.storage, workspaceId);
-      return { body: Buffer.from(await composeProposal(template.pages, data)), contentType: "application/pdf", name: documentFileName(data.reference, data.client.name || data.title) };
+      // Only a sent quotation is on the client's portal page; a draft's preview is drawn by the built-in composer.
+      const quote = (await client.query<{ hash: string | null; status: string }>(`SELECT hash, status FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
+        [workspaceId, caseId, quoteId])).rows[0];
+      const printer = quote?.status === "issued" ? browserPrinter() : null;
+      return { body: await proposalBytes(client, { workspaceId, caseId, quoteId, quoteHash: quote?.hash ?? null }, template.pages, data, printer), contentType: "application/pdf",
+        name: documentFileName(data.reference, data.client.name || data.title) };
     });
   }
 

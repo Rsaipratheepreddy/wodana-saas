@@ -78,7 +78,7 @@ export class CrmReportingService {
           LEFT JOIN workspace_memberships membership ON membership.id=lead.owner_membership_id AND membership.workspace_id=lead.workspace_id
           LEFT JOIN users account ON account.id=membership.user_id
           LEFT JOIN crm_queues queue ON queue.id=lead.queue_id AND queue.workspace_id=lead.workspace_id
-          WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3 AND lead.spam_at IS NULL
+          WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3 AND lead.spam_at IS NULL AND lead.status <> 'duplicate'
           GROUP BY ${dimension}, ${groupId} ORDER BY label`, customField ? [workspaceId, from, to, customField] : [workspaceId, from, to]);
         const processing = await client.query(`SELECT status,count(*)::int AS count FROM crm_intake_events
           WHERE workspace_id=$1 AND received_at >= $2 AND received_at < $3 GROUP BY status`, [workspaceId, from, to]);
@@ -89,7 +89,7 @@ export class CrmReportingService {
           count(*) FILTER (WHERE ${UNREACHABLE})::int AS unreachable,
           count(*) FILTER (WHERE lead.status NOT IN ('qualified','disqualified') AND greatest(lead.updated_at,enquiry.updated_at) < now()-interval '7 days')::int AS stale
           FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.id=lead.enquiry_id AND enquiry.workspace_id=lead.workspace_id
-          WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3 AND lead.spam_at IS NULL`, [workspaceId, from, to]);
+          WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3 AND lead.spam_at IS NULL AND lead.status <> 'duplicate'`, [workspaceId, from, to]);
         // S-14: walk-ins are whichever channels the workspace's own taxonomy names as walk-ins (a showroom and an
         // office walk-in, under any source), not one hard-coded source and channel.
         const walkInChannels = walkInChannelsOf(await loadLeadOptions(client, workspaceId));

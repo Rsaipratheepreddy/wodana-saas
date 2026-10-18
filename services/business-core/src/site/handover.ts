@@ -6,18 +6,12 @@ import { projectBalance } from "../project-core/project-milestones";
 import { noticeStageReady } from "../project-core/project-stage-watch";
 import { raiseSnag } from "../project-core/project-work";
 import { thankForHandover } from "../crm/conversations/inbox/client-followups";
+import { handedOver } from "./handed-over";
 import { startWarranty } from "./warranty";
 
-type Db = Pick<PoolClient, "query">;
+export { handedOver };
 
-/** Whether accepted packs cover the project: a whole-project pack, or every one of its areas (a project with no areas needs a whole-project pack). */
-export function handedOver(packs: Array<{ status: string; areaIds: string[] }>, areaIds: string[]) {
-  const accepted = packs.filter((pack) => pack.status === "accepted");
-  if (accepted.some((pack) => !pack.areaIds.length)) return true;
-  if (!areaIds.length) return false;
-  const covered = new Set(accepted.flatMap((pack) => pack.areaIds));
-  return areaIds.every((id) => covered.has(id));
-}
+type Db = Pick<PoolClient, "query">;
 
 /** Whether the client accepted the project's handover: its packs against its areas (the stage check "The client accepted the handover"). */
 export async function projectHandedOver(db: Db, workspaceId: string, project: { id: string; caseId: string }) {
@@ -28,7 +22,7 @@ export async function projectHandedOver(db: Db, workspaceId: string, project: { 
 
 /**
  * The client's decision on an issued pack, recorded by staff or given in the portal. Accepted: only while no
- * critical snag is open where the client takes over; the warranty of what it covers starts that day, and
+ * snag is open where the client takes over; the warranty of what it covers starts that day, and
  * what's still outstanding becomes minor snags from the client. Refused with why: a major snag, and a new
  * draft revision with the same documents to issue once it's fixed. Snags carry the staff member who
  * recorded it, or (from the portal) the person who issued the pack.
@@ -42,12 +36,13 @@ export async function decideHandoverPack(db: Db, workspaceId: string, projectId:
   const within = (areaId: string | null) => !pack.areaIds.length || !areaId || pack.areaIds.includes(areaId);
   const from = input.grantId ? " (client portal)" : "";
   if (input.decision === "accept") {
-    const critical = (await db.query<{ number: number; areaId: string | null }>(
-      `SELECT number, area_id AS "areaId" FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND type = 'snag' AND severity = 'critical' AND status NOT IN ('done', 'cancelled')`,
+    // Guide N (16 Oct 2026): every open snag where the client takes over holds the handover, not only a critical one.
+    const open = (await db.query<{ number: number; areaId: string | null }>(
+      `SELECT number, area_id AS "areaId" FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND type = 'snag' AND status NOT IN ('done', 'cancelled')`,
       [workspaceId, projectId])).rows.filter((snag) => within(snag.areaId));
-    if (critical.length)
-      throw new ConflictException(input.grantId ? "There's still a critical fix open in this handover. Your project team will let you know when it's ready."
-        : `Close the critical snag${critical.length === 1 ? "" : "s"} first: ${critical.map((snag) => `#${snag.number}`).join(", ")}.`);
+    if (open.length)
+      throw new ConflictException(input.grantId ? "There's still a fix open in this handover. Your project team will let you know when it's ready."
+        : `Close the open snag${open.length === 1 ? "" : "s"} first: ${open.map((snag) => `#${snag.number}`).join(", ")}.`);
     await db.query(`UPDATE handover_packs SET status = 'accepted', decided_on = $3, decided_by_name = $4, decision_method = $5, decision_note = $6, recorded_by = $7,
       decided_by_grant_id = $8, version = version + 1 WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, pack.id, input.decidedOn, input.decidedByName, input.method, input.outstanding.join("\n").slice(0, 1000), input.recordedBy, input.grantId]);

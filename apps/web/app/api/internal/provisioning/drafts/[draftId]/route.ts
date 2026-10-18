@@ -2,7 +2,7 @@ import { internalJsonResponse } from "@/lib/internal/proxy";
 import { invalidRequest } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 
-export async function GET(_request: Request, context: { params: Promise<{ draftId: string }> }) {
+export async function GET(_request: Request, context: RouteContext<"/api/internal/provisioning/drafts/[draftId]">) {
   const t = await getServerT();
   const { draftId } = await context.params;
   if (!/^[0-9a-f-]{36}$/i.test(draftId)) return invalidRequest(t("Choose a valid draft."));

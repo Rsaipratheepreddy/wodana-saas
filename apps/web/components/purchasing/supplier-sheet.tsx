@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Badge,
-  Button, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormSection, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem,
+  Button, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormSection, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, NumericInput, PercentageInput, PhoneField,
+  ReasonDialog, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { joinPhone, phoneCountry, splitPhone } from "@/lib/phone";
@@ -11,6 +12,7 @@ import type { Approval, Deal, PaymentTerms, Supplier, SupplierState, TaxNumberRu
 import { SupplierControls } from "./supplier-controls";
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
+import { fieldNumber, fieldText } from "./order-labels";
 import { APPROVAL_TONE, percentText, useSupplierLabels } from "./supplier-labels";
 import styles from "./purchasing.module.css";
 
@@ -81,12 +83,12 @@ function SupplierRecord({ api, state, supplier, onState, onClose }: SheetProps &
       {edit ? <EditableField heading="h2" isRequired label={t("Name")} maxLength={240} onReload={reload} onSave={(name) => save({ name })} value={supplier.name} /> : null}
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {supplier.status === "archived" ? <InlineNotice tone="info" message={t("Archived: {reason}", { reason: supplier.archivedReason ?? "" })} /> : null}
-      <div className={styles.approvalRow}>
-        <Badge tone={APPROVAL_TONE[supplier.approval]}>{labels.approval[supplier.approval]}</Badge>
-        <span className={styles.muted}>{[supplier.preferredFor.length ? t("Preferred for {categories}", { categories: supplier.preferredFor.join(", ") }) : "",
-          supplier.approvalByName ? t("by {name}", { name: supplier.approvalByName }) : "", supplier.approvalNote].filter(Boolean).join(" · ")}</span>
-        {state.canApprove && supplier.status !== "archived" ? <Button size="compact" onPress={() => setDialog("approval")}>{t("Change approval")}</Button> : null}
-      </div>
+      <EditableFieldList>
+        <FactRow label={t("Approval")} action={state.canApprove && supplier.status !== "archived" ? <Button size="compact" variant="quiet" onPress={() => setDialog("approval")}>{t("Change approval")}</Button> : null}>
+          <Badge tone={APPROVAL_TONE[supplier.approval]}>{labels.approval[supplier.approval]}</Badge>
+          <span>{[supplier.preferredFor.length ? t("Preferred for {categories}", { categories: supplier.preferredFor.join(", ") }) : "",
+            supplier.approvalByName ? t("by {name}", { name: supplier.approvalByName }) : "", supplier.approvalNote].filter(Boolean).join(" · ")}</span></FactRow>
+      </EditableFieldList>
 
       <TagsField label={t("Categories")} isReadOnly={!edit} values={supplier.categories} onChange={(categories) => quietly({ categories })} suggestions={state.categories} placeholder={t("e.g. Marble, Joinery, Paint")} />
       {state.entities.length > 1 ? <MultiSelectField isDisabled={!edit} label={t("Companies that buy from it")} selectedKeys={new Set(supplier.entityIds)}
@@ -133,13 +135,13 @@ function TermsDialog({ supplier, onClose, onSave, onReload }: { supplier: Suppli
   return <FormDialog conflict={{ onReload: () => { onReload(); onClose(); } }} isDirty={JSON.stringify(form) !== JSON.stringify(initial)} onClose={onClose}
     onSubmit={() => onSave({ ...form, creditDays: form.creditDays ? Number(form.creditDays) : null })} submitLabel={t("Save")} title={t("Payment terms")}>
     <SelectField label={t("Payment terms")} isRequired selectedKey={form.paymentTerms} onSelectionChange={(key) => set("paymentTerms")(key as PaymentTerms)} items={TERMS.map((item) => ({ id: item, label: labels.terms[item] }))} />
-    {form.paymentTerms === "split" ? <TextInput label={t("Advance")} isRequired inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => set("advancePercent")(value.replace(/[^\d.]/g, ""))}
-      validate={(value) => value && Number(value) > 0 && Number(value) < 100 ? null : t("Between 1 and 99%.")} /> : null}
-    {form.paymentTerms === "credit" ? <TextInput label={t("Days")} isRequired inputMode="numeric" value={form.creditDays} onChange={(value) => set("creditDays")(value.replace(/\D/g, "").slice(0, 3))}
-      validate={(value) => Number(value) >= 1 && Number(value) <= 365 ? null : t("Between 1 and 365 days.")} /> : null}
+    {form.paymentTerms === "split" ? <PercentageInput label={t("Advance")} isRequired formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.advancePercent)}
+      onChange={(value) => set("advancePercent")(fieldText(value))} validate={(value) => value > 0 && value < 100 ? null : t("Between 1 and 99%.")} /> : null}
+    {form.paymentTerms === "credit" ? <NumericInput label={t("Days")} isRequired minValue={0} maxValue={999} formatOptions={{ maximumFractionDigits: 0 }} value={fieldNumber(form.creditDays)}
+      onChange={(value) => set("creditDays")(fieldText(value))} validate={(value) => value >= 1 && value <= 365 ? null : t("Between 1 and 365 days.")} /> : null}
     <TextInput label={t("Terms note")} maxLength={500} value={form.termsNote} onChange={set("termsNote")} />
-    <TextInput label={t("Retention")} inputMode="decimal" suffix="%" value={form.retentionPercent}
-      onChange={(value) => set("retentionPercent")(value.replace(/[^\d.]/g, ""))} validate={(value) => !value || Number(value) < 100 ? null : t("Less than 100%.")} />
+    <PercentageInput label={t("Retention")} formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.retentionPercent)}
+      onChange={(value) => set("retentionPercent")(fieldText(value))} validate={(value) => Number.isNaN(value) || value < 100 ? null : t("Less than 100%.")} />
   </FormDialog>;
 }
 
@@ -154,8 +156,8 @@ function DealDialog({ supplier, onClose, onSave, onReload }: { supplier: Supplie
   return <FormDialog conflict={{ onReload: () => { onReload(); onClose(); } }} isDirty={JSON.stringify(form) !== JSON.stringify(initial)} onClose={onClose}
     onSubmit={() => onSave({ ...form, dealPercent: needsPercent ? form.dealPercent : "" })} submitLabel={t("Save")} title={t("Discount or commission")}>
     <SelectField label={t("Discount or commission")} isRequired selectedKey={form.deal} onSelectionChange={(key) => set("deal")(key as Deal)} items={DEALS.map((item) => ({ id: item, label: labels.deal[item] }))} />
-    {needsPercent ? <TextInput label={t("Percent")} isRequired inputMode="decimal" suffix="%" value={form.dealPercent} onChange={(value) => set("dealPercent")(value.replace(/[^\d.]/g, ""))}
-      validate={(value) => value && Number(value) > 0 && Number(value) < 100 ? null : t("Between 1 and 99%.")} /> : null}
+    {needsPercent ? <PercentageInput label={t("Percent")} isRequired formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.dealPercent)}
+      onChange={(value) => set("dealPercent")(fieldText(value))} validate={(value) => value > 0 && value < 100 ? null : t("Between 1 and 99%.")} /> : null}
     {form.deal !== "none" ? <TextInput label={t("Deal note")} maxLength={500} value={form.dealNote} onChange={set("dealNote")} /> : null}
   </FormDialog>;
 }
@@ -192,8 +194,7 @@ function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
     ...(found.phone ? { phone: found.phone } : {}), ...(found.email ? { email: found.email } : {}), ...(found.locality ? { locality: found.locality } : {}),
     ...(found.taxRegistrationNumber ? { taxRegistrationNumber: found.taxRegistrationNumber } : {}), ...(found.notes ? { notes: found.notes } : {}),
     ...(found.categories ? { categories: [...new Set([...current.categories, ...found.categories.split(",").map((item) => item.trim()).filter(Boolean)])] } : {}) }));
-  const percent = (value: string) => value.replace(/[^\d.]/g, "");
-  const inRange = (value: string) => value && Number(value) > 0 && Number(value) < 100 ? null : t("Between 1 and 99%.");
+  const inRange = (value: number) => value > 0 && value < 100 ? null : t("Between 1 and 99%.");
   const moreFilled = [form.email, form.locality, form.legalName, form.taxRegistrationNumber, form.notes, form.termsNote, form.retentionPercent, form.deal !== "none" ? "deal" : ""].filter(Boolean).length;
   return <FormDialog isDirty={dirty} onClose={onClose} onSubmit={save} size="lg" submitLabel={t("Add supplier")} title={t("New supplier")}
     lead={aiReady ? <FillWithWoddy fields={[{ key: "name", label: t("Name") }, { key: "categories", label: t("Categories") }, { key: "contactName", label: t("Contact") }, { key: "phone", label: t("Phone") },
@@ -208,9 +209,10 @@ function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
     <FormSection title={t("Payment")}>
       <SelectField label={t("Payment terms")} isRequired selectedKey={form.paymentTerms} onSelectionChange={(key) => set("paymentTerms")(key as PaymentTerms)}
         items={TERMS.map((item) => ({ id: item, label: labels.terms[item] }))} />
-      {form.paymentTerms === "split" ? <TextInput label={t("Advance")} isRequired inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => set("advancePercent")(percent(value))} validate={inRange} />
-        : form.paymentTerms === "credit" ? <TextInput label={t("Days")} isRequired inputMode="numeric" value={form.creditDays} onChange={(value) => set("creditDays")(value.replace(/\D/g, "").slice(0, 3))}
-          validate={(value) => Number(value) >= 1 && Number(value) <= 365 ? null : t("Between 1 and 365 days.")} /> : null}
+      {form.paymentTerms === "split" ? <PercentageInput label={t("Advance")} isRequired formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.advancePercent)}
+        onChange={(value) => set("advancePercent")(fieldText(value))} validate={inRange} />
+        : form.paymentTerms === "credit" ? <NumericInput label={t("Days")} isRequired minValue={0} maxValue={999} formatOptions={{ maximumFractionDigits: 0 }} value={fieldNumber(form.creditDays)}
+          onChange={(value) => set("creditDays")(fieldText(value))} validate={(value) => value >= 1 && value <= 365 ? null : t("Between 1 and 365 days.")} /> : null}
     </FormSection>
     <MoreDetails filled={moreFilled}>
       <TextInput label={t("Email")} inputType="email" maxLength={320} value={form.email} onChange={set("email")} />
@@ -221,11 +223,11 @@ function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
       {state.entities.length > 1 ? <MultiSelectField label={t("Companies that buy from it")} selectedKeys={new Set(form.entityIds)}
         onSelectionChange={(keys) => set("entityIds")([...keys].map(String))} items={state.entities.map((entity) => ({ id: entity.id, label: entity.name }))} /> : null}
       <TextInput label={t("Terms note")} maxLength={500} value={form.termsNote} onChange={set("termsNote")} />
-      <TextInput label={t("Retention")} inputMode="decimal" suffix="%" value={form.retentionPercent}
-        onChange={(value) => set("retentionPercent")(percent(value))} validate={(value) => !value || Number(value) < 100 ? null : t("Less than 100%.")} />
+      <PercentageInput label={t("Retention")} formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.retentionPercent)}
+        onChange={(value) => set("retentionPercent")(fieldText(value))} validate={(value) => Number.isNaN(value) || value < 100 ? null : t("Less than 100%.")} />
       <SelectField label={t("Discount or commission")} selectedKey={form.deal} onSelectionChange={(key) => set("deal")(key as Deal)} items={DEALS.map((item) => ({ id: item, label: labels.deal[item] }))} />
-      {form.deal === "discount" || form.deal === "commission" ? <TextInput label={t("Percent")} isRequired inputMode="decimal" suffix="%" value={form.dealPercent}
-        onChange={(value) => set("dealPercent")(percent(value))} validate={inRange} /> : null}
+      {form.deal === "discount" || form.deal === "commission" ? <PercentageInput label={t("Percent")} isRequired formatOptions={{ maximumFractionDigits: 2 }} value={fieldNumber(form.dealPercent)}
+        onChange={(value) => set("dealPercent")(fieldText(value))} validate={inRange} /> : null}
       {form.deal !== "none" ? <TextInput label={t("Deal note")} maxLength={500} value={form.dealNote} onChange={set("dealNote")} /> : null}
       <TextAreaField label={t("Notes")} maxLength={10000} value={form.notes} onChange={set("notes")} />
     </MoreDetails>
@@ -252,9 +254,5 @@ function ApprovalDialog({ supplier, onClose, onSave }: { supplier: Supplier; onC
 
 function ArchiveDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
-  const [reason, setReason] = useState("");
-  return <FormDialog size="md" title={t("Archive")} onClose={onClose} cancelLabel={t("Cancel")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
-    submitLabel={t("Archive")} submitVariant={"danger"} onSubmit={() => onSave(reason.trim())}>
-    <TextAreaField label={t("Why you no longer use it")} isRequired value={reason} onChange={setReason} />
-  </FormDialog>;
+  return <ReasonDialog title={t("Archive")} label={t("Why you no longer use it")} confirmLabel={t("Archive")} confirmVariant="danger" onConfirm={onSave} onClose={onClose} />;
 }

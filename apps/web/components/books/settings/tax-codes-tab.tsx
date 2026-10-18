@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Badge, Button, DateField, FormDialog, FormRow, InlineNotice, RecordTable, SelectField, SettingsSection, Switch, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DateField, FormDialog, FormRow, InlineNotice, PercentageInput, RecordTable, SelectField, SettingsSection, Switch, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { BooksSettingsApi, LedgerSettingsView, TaxCodeView } from "@/lib/books/settings-client";
 import { DIRECTION_LABELS, L, TREATMENT_LABELS } from "./ledger-labels";
@@ -63,7 +63,8 @@ function TaxCodeDialog({ api, view, tax, onClose, onSaved }: { api: BooksSetting
     </FormRow>
     <TextInput label={t(L.name)} isRequired value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
     <FormRow>
-      <TextInput label={t(L.rate)} isRequired isDisabled={locked} inputMode="decimal" suffix="%" value={draft.rate} onChange={(value) => setDraft({ ...draft, rate: value.trim() })} />
+      <PercentageInput label={t(L.rate)} isRequired isDisabled={locked} formatOptions={{ maximumFractionDigits: 4 }} value={draft.rate === "" ? Number.NaN : Number(draft.rate)}
+        onChange={(next) => setDraft({ ...draft, rate: Number.isFinite(next) ? String(next) : "" })} />
       <SelectField label={t(L.treatment)} isDisabled={locked} selectedKey={draft.treatment} onSelectionChange={(key) => key && setDraft({ ...draft, treatment: String(key) as TaxCodeView["treatment"] })}
         items={Object.entries(TREATMENT_LABELS).filter(([id]) => draft.direction === "purchases" || (id !== "reverse_charge" && id !== "import_reverse_charge"))
           .map(([id, label]) => ({ id, label: t(label) }))} />

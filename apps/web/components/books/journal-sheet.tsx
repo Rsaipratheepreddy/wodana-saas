@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { DataGrid, ErrorState, InspectorSheet, Skeleton, type DataGridColumn } from "@/design-system";
+import { DataGrid, EditableFieldList, ErrorState, FactRow, InspectorSheet, Skeleton, type DataGridColumn } from "@/design-system";
 import { ledgerPaths, type JournalDetail, type JournalLine, type LedgerApi, type LedgerScope } from "@/lib/books/reports-client";
 import { LedgerRegion, useLedgerFormat, useLedgerT, type LedgerT } from "./reports/ledger-format";
 import { SourceLink } from "./reports/report-views";
@@ -84,17 +84,17 @@ function JournalBody({ detail, scope }: { detail: JournalDetail; scope: LedgerSc
       meta: { align: "end", renderCell: (row) => <span className={styles.money}>{format.amountOrBlank(row.credit)}</span> } },
   ], [t, format, scope]);
   return <div className={styles.sheet}>
-    <dl className={styles.facts}>
-      <div><dt>{t("Date")}</dt><dd>{format.day(journal.journalDate)}{journal.late ? ` · ${t("Happened {date}, after the books were locked", { date: format.day(journal.eventDate) })}` : ""}</dd></div>
-      <div><dt>{t("Kind")}</dt><dd>{journalEventLabel(t, journal)}</dd></div>
-      {journal.sourceLabel || journal.sourceHref ? <div><dt>{t("Record")}</dt><dd><SourceLink href={journal.sourceHref} label={journal.sourceLabel} /></dd></div> : null}
-      {journal.description && journal.description !== journal.sourceLabel ? <div><dt>{t("Description")}</dt><dd>{journal.description}</dd></div> : null}
-      <div><dt>{t("Total")}</dt><dd className={styles.money}>{format.money(journal.total)}</dd></div>
-      {journal.currency !== journal.functionalCurrency ? <div><dt>{t("Rate")}</dt><dd>{`1 ${journal.currency} = ${journal.rate} ${journal.functionalCurrency}`}</dd></div> : null}
-      {journal.reversesJournalId ? <div><dt>{t("Reverses")}</dt><dd><Link className={styles.link} href={ledgerPaths.journal(journal.reversesJournalId, scope)}>{t("The journal it reverses")}</Link></dd></div> : null}
-      {journal.reversedByJournalId ? <div><dt>{t("Reversed by")}</dt><dd><Link className={styles.link} href={ledgerPaths.journal(journal.reversedByJournalId, scope)}>{t("The reversal")}</Link></dd></div> : null}
-      {journal.postedByName ? <div><dt>{t("Posted by")}</dt><dd>{journal.postedByName}</dd></div> : null}
-    </dl>
+    <EditableFieldList>
+      <FactRow label={t("Date")}>{format.day(journal.journalDate)}{journal.late ? ` · ${t("Happened {date}, after the books were locked", { date: format.day(journal.eventDate) })}` : ""}</FactRow>
+      <FactRow label={t("Kind")}>{journalEventLabel(t, journal)}</FactRow>
+      {journal.sourceLabel || journal.sourceHref ? <FactRow label={t("Record")}><SourceLink href={journal.sourceHref} label={journal.sourceLabel} /></FactRow> : null}
+      {journal.description && journal.description !== journal.sourceLabel ? <FactRow label={t("Description")}>{journal.description}</FactRow> : null}
+      <FactRow label={t("Total")}><span className={styles.money}>{format.money(journal.total)}</span></FactRow>
+      {journal.currency !== journal.functionalCurrency ? <FactRow label={t("Rate")}>{`1 ${journal.currency} = ${journal.rate} ${journal.functionalCurrency}`}</FactRow> : null}
+      {journal.reversesJournalId ? <FactRow label={t("Reverses")}><Link className={styles.link} href={ledgerPaths.journal(journal.reversesJournalId, scope)}>{t("The journal it reverses")}</Link></FactRow> : null}
+      {journal.reversedByJournalId ? <FactRow label={t("Reversed by")}><Link className={styles.link} href={ledgerPaths.journal(journal.reversedByJournalId, scope)}>{t("The reversal")}</Link></FactRow> : null}
+      {journal.postedByName ? <FactRow label={t("Posted by")}>{journal.postedByName}</FactRow> : null}
+    </EditableFieldList>
     <DataGrid<JournalLine> rowNumbers={false} selectable={false} pageSize={500} ariaLabel={t("Journal lines")} columns={columns} data={[...detail.lines, totalLine(t, detail)]} getRowId={(row) => row.id}
       showToolbar={false} totalRowCount={detail.lines.length}
       exportFileName={`${journal.number}.csv`} />

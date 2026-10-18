@@ -38,7 +38,7 @@ describe("what happens after the client accepts", () => {
 
   it("opens the Deal File to submit, check or approve the deal, not the case's Approvals table (M4)", () => {
     const paid = { agreement: { quoteId: "q1", status: "executed" } as never, payments: [payment("verified")] as never };
-    const dealFile = "/workspace/pre-projects/cases/c/execution-release";
+    const dealFile = "/workspace/pre-projects/cases/c/deal-file";
     expect(nextSteps(state(paid, { canEdit: true }), quote, "c", false)[2].action).toEqual({ label: "Submit", href: dealFile });
     expect(nextSteps(state({ ...paid, ownerReview: { quoteId: "q1", status: "pending_finance" } as never }, { canVerifyFinance: true }), quote, "c", false)[2].action)
       .toEqual({ label: "Check", href: dealFile });

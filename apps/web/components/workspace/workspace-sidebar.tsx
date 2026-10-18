@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronsUpDown,
   ClipboardCheck,
+  Route,
   ClipboardList,
   Factory,
   FileText,
@@ -46,6 +47,7 @@ import {
   Wrench,
   X,
   ChartNoAxesCombined,
+  MessageSquareText,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -101,6 +103,8 @@ const icons: Record<WorkspaceIconName, LucideIcon> = {
   members: Users,
   opportunities: Handshake,
   preProjects: ClipboardCheck,
+  jobs: Route,
+  teamChat: MessageSquareText,
   procurement: ShoppingCart,
   production: Factory,
   projects: FolderKanban,

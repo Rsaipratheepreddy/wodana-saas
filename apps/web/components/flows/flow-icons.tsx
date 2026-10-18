@@ -1,5 +1,5 @@
 import {
-  BadgeCheck, Calculator, ClipboardList, Compass, Factory, FileText, GitFork, Handshake, Landmark, ListChecks, MapPin, Package,
+  BadgeCheck, CalendarClock, Calculator, ClipboardList, Compass, Factory, FileText, Flag, GitFork, Handshake, Landmark, ListChecks, MapPin, Package,
   PencilRuler, PhoneCall, Receipt, Send, ShieldCheck, Signpost, ThumbsUp, UserRound, type LucideIcon,
 } from "lucide-react";
 import type { FlowCheck } from "@/lib/flows/flow-model";
@@ -10,6 +10,8 @@ export const CHECK_ICONS: Record<FlowCheck, LucideIcon> = {
   details_complete: ClipboardList,
   client_type_set: UserRound,
   intro_meeting_completed: Handshake,
+  qualification_outcome_recorded: Flag,
+  target_completion_set: CalendarClock,
   site_visit_recorded: MapPin,
   discovery_complete: Compass,
   sub_path_chosen: Signpost,

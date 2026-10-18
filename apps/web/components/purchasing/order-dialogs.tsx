@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { DateField, EmailInput, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, SelectField, TextAreaField, TextInput, VisuallyHidden } from "@/design-system";
+import {
+  DataGrid, DateField, EmailInput, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, QuantityInput, ReasonDialog as SharedReasonDialog, ReviewDialog, SelectField, TextAreaField, TextInput, VisuallyHidden, type DataGridColumn,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { OrderLine, Shipment, ShipmentStatus } from "@/lib/purchasing/types";
-import { quantityText, useOrderLabels } from "./order-labels";
+import { useProjectFormat } from "../project-core/format";
+import { fieldNumber, fieldText, quantityText, useOrderLabels } from "./order-labels";
 import styles from "./purchasing.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 export type ReasonKind = "cancel" | "change" | "return" | "close" | "continue" | "funds" | "waive";
 
 /** One reason, and the action it's for (cancel, change, send back, close, continue on hold, go ahead beyond the money, a check that doesn't apply). */
@@ -22,10 +24,11 @@ export function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind
   const label = kind === "cancel" ? t("Why it's cancelled") : kind === "change" ? t("What's changing") : kind === "close" ? t("Why the rest won't come")
     : kind === "continue" ? t("Why it continues while the supplier is on hold") : kind === "funds" ? t("Why it goes ahead beyond the money in hand")
     : kind === "waive" ? t("Why this check doesn't apply to the order") : t("What needs to change");
-  return <FormDialog size="md" title={title} description={kind === "change" ? t("The order goes back to draft and through approval again.") : undefined}
-    onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!optional && !reason.trim()} submitLabel={title}
-    submitVariant={kind === "cancel" ? "danger" : "primary"} onSubmit={() => onSave(reason.trim())}>
-    <TextAreaField label={optional ? t("Note") : label} isRequired={!optional} value={reason} onChange={setReason} />
+  const description = kind === "change" ? t("The order goes back to draft and through approval again.") : undefined;
+  if (!optional) return <SharedReasonDialog title={title} description={description} label={label} confirmLabel={title} confirmVariant={kind === "cancel" ? "danger" : "primary"}
+    onConfirm={onSave} onClose={onClose} />;
+  return <FormDialog size="md" title={title} description={description} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} submitLabel={title} onSubmit={() => onSave(reason.trim())}>
+    <TextAreaField label={t("Note")} value={reason} onChange={setReason} />
   </FormDialog>;
 }
 
@@ -49,19 +52,22 @@ export function ConfirmDialog({ promised, reference, lines, onClose, onSave }: {
   const [ref, setRef] = useState(reference);
   const [rows, setRows] = useState(() => Object.fromEntries(open.map((line) => [line.id, { date: line.promisedDate ?? promised, quantity: line.confirmedQuantity ? quantityText(line.confirmedQuantity) : "" }])));
   const tooMuch = open.find((line) => rows[line.id].quantity !== "" && Number(rows[line.id].quantity) > Number(subtractExact(line.quantity, line.cancelled)));
+  const setRow = (lineId: string, patch: Partial<(typeof rows)[string]>) => setRows((current) => ({ ...current, [lineId]: { ...current[lineId], ...patch } }));
+  const columns: DataGridColumn<OrderLine>[] = [
+    { id: "item", header: t("Item"), size: 220, accessorFn: (line) => line.description, meta: { renderCell: (line) => <span className={styles.nameCell}><span>{line.description}</span>
+      <small>{t("Ordered {quantity}", { quantity: `${quantityText(subtractExact(line.quantity, line.cancelled))} ${line.unit}`.trim() })}</small></span> } },
+    { id: "confirmed", header: t("They confirm"), size: 160, accessorFn: (line) => rows[line.id].quantity, meta: { align: "end", renderCell: (line) =>
+      <QuantityInput label={<VisuallyHidden>{t("Confirmed of {item}", { item: line.description })}</VisuallyHidden>} unit={line.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(rows[line.id].quantity)} onChange={(value) => setRow(line.id, { quantity: fieldText(value) })} /> } },
+    { id: "promised", header: t("Promised"), size: 190, accessorFn: (line) => rows[line.id].date ?? "", meta: { renderCell: (line) =>
+      <DateField label={<VisuallyHidden>{t("Promised date for {item}", { item: line.description })}</VisuallyHidden>} value={rows[line.id].date ? parseDate(rows[line.id].date!) : null}
+        onChange={(value) => setRow(line.id, { date: value ? value.toString() : null })} /> } },
+  ];
   return <FormDialog size="lg" title={t("Supplier's confirmation")} onClose={onClose} isSubmitDisabled={Boolean(tooMuch)} submitLabel={t("Save")}
     onSubmit={() => onSave({ supplierReference: ref.trim(), lines: open.map((line) => ({ lineId: line.id, promisedDate: rows[line.id].date, confirmedQuantity: rows[line.id].quantity || null })) })}>
       <TextInput label={t("Their reference")} maxLength={120} value={ref} onChange={setRef} />
-      <div className={styles.receiveLines} role="table" aria-label={t("Lines")} data-columns="3">
-        <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("They confirm")}</span><span role="columnheader">{t("Promised")}</span></div>
-        {open.map((line) => <div role="row" key={line.id} className={styles.receiveLine}>
-          <span role="cell" className={styles.nameCell}><span>{line.description}</span><small>{t("Ordered {quantity}", { quantity: `${quantityText(subtractExact(line.quantity, line.cancelled))} ${line.unit}`.trim() })}</small></span>
-          <span role="cell"><TextInput label={<VisuallyHidden>{t("Confirmed of {item}", { item: line.description })}</VisuallyHidden>} inputMode="decimal" placeholder={t("All")} suffix={line.unit || undefined}
-            value={rows[line.id].quantity} onChange={(value) => setRows({ ...rows, [line.id]: { ...rows[line.id], quantity: numeric(value) } })} /></span>
-          <span role="cell"><DateField label={<VisuallyHidden>{t("Promised date for {item}", { item: line.description })}</VisuallyHidden>} value={rows[line.id].date ? parseDate(rows[line.id].date!) : null}
-            onChange={(value) => setRows({ ...rows, [line.id]: { ...rows[line.id], date: value ? value.toString() : null } })} /></span>
-        </div>)}
-      </div>
+      <DataGrid ariaLabel={t("Lines")} data={open} getRowId={(line) => line.id} columns={columns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
       {tooMuch ? <InlineNotice tone="error" message={t("The supplier can't confirm more of {item} than was ordered.", { item: tooMuch.description })} /> : null}
   </FormDialog>;
 }
@@ -94,13 +100,23 @@ export function OfferAlternateDialog({ line, currency, onClose, onSave }: { line
   </FormDialog>;
 }
 
-export function RefuseAlternateDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
+/**
+ * The supplier's alternative for a line, reviewed by someone who approves orders (not the one who recorded it):
+ * what's offered, at what price and why; taken, or refused with the reason.
+ */
+export function RefuseAlternateDialog({ line, currency, onAccept, onClose, onSave }: {
+  line: OrderLine; currency?: string; onAccept: () => Promise<void>; onClose: () => void; onSave: (note: string) => Promise<void>;
+}) {
   const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={t("Refuse the alternative")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()}
-    submitLabel={t("Refuse")} onSubmit={() => onSave(note.trim())}>
-    <TextAreaField label={t("Why it's refused")} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
+  const format = useProjectFormat();
+  const price = line.alternateUnitPrice ?? line.unitPrice;
+  return <ReviewDialog title={t("The supplier offers an alternative")} description={t("Instead of {item}", { item: [line.description, line.specification].filter(Boolean).join(", ") })}
+    facts={[
+      { label: t("What they offer"), value: [line.alternateDescription, line.alternateSpecification].filter(Boolean).join(", ") },
+      { label: t("Price each"), value: currency ? format.money(price, currency) : quantityText(price) },
+      ...(line.alternateNote ? [{ label: t("Why they offer it"), value: line.alternateNote }] : []),
+    ]}
+    confirmLabel={t("Take it")} onConfirm={() => onAccept()} rejectLabel={t("Refuse")} onReject={(reason) => onSave(reason)} onClose={onClose} />;
 }
 
 /** The rest of a line won't come: how much, why, and optionally which other supplier gets it (as a new draft order). */
@@ -120,7 +136,7 @@ export function CancelLineDialog({ api, line, left, vendorId, onClose, onSave }:
   return <FormDialog size="md" title={t("Cancel the rest of {item}", { item: line.description })} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())}
     isSubmitDisabled={!reason.trim() || !(Number(quantity) > 0) || tooMuch} submitLabel={t("Cancel the rest")} submitVariant="danger"
     onSubmit={() => onSave({ quantity, reason: reason.trim(), reorderVendorId: reorder })}>
-      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={line.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
+      <QuantityInput label={t("Quantity")} isRequired unit={line.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }} value={fieldNumber(quantity)} onChange={(value) => setQuantity(fieldText(value))} />
       {tooMuch ? <InlineNotice tone="error" message={t("At most {quantity} is still to come.", { quantity: `${quantityText(left)} ${line.unit}`.trim() })} /> : null}
       <TextAreaField label={t("Why it won't come")} isRequired value={reason} onChange={setReason} />
       <SelectField label={t("Order it from")} selectedKey={reorder ?? "none"} onSelectionChange={(key) => setReorder(key === null || key === "none" ? null : String(key))}

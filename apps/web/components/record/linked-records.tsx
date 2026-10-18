@@ -17,7 +17,7 @@ export function recordHrefs(links: Pick<RecordLinks, "caseId"> & { project: { id
   const projectId = links.project.id;
   return {
     quote: `/workspace/pre-projects/cases/${links.caseId}/quotations`,
-    dealFile: `/workspace/pre-projects/cases/${links.caseId}/execution-release`,
+    dealFile: `/workspace/pre-projects/cases/${links.caseId}/deal-file`,
     project: `/workspace/projects/${projectId}`,
     purchaseOrders: `/workspace/purchasing/orders?project=${projectId}`,
     purchaseOrder: (id: string) => `/workspace/purchasing/orders?order=${id}&project=${projectId}`,

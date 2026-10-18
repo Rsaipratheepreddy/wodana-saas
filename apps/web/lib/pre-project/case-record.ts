@@ -2,15 +2,13 @@ import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { fromMinor, minorUnits, toMinor } from "@/lib/money-exact";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { ProjectDetail } from "@/lib/project-core/types";
-import { nextStepPhrase } from "@/lib/project-core/next-step";
 import type { JourneyStageKey, JourneyStageView, JourneyView } from "./design-workspace";
 import type { ValueEngineeringView } from "@/lib/value-engineering/client";
 import { caseHref, type CaseCommercialFacts, type CasePlan, type PreProjectCase } from "./types";
 
 /**
- * A planning case read as a record (§5c D.7): where it stands, the one next step computed from its real state
- * (the design stages, the quotation, the agreement, the payments, the project it opened), its money, its
- * timeline and its activity. Everything here is read from the API; a value that isn't known is left out.
+ * A planning case read as a record (§5c D.7): where it stands (its lifecycle state; the next step is the job's journey),
+ * its money, its timeline and its activity. Everything here is read from the API; a value that isn't known is left out.
  */
 export type CaseRecordInput = {
   record: PreProjectCase;
@@ -76,10 +74,10 @@ export function plannedPhase(phase: PreProjectCase["phase"], plan?: CasePlan | n
 }
 
 export const JOURNEY_STAGE_LABEL: Record<JourneyStageKey, MessageKey> = {
-  inspiration: tKey("Inspiration"), kickoff: tKey("Kick-off meeting"), site_visit: tKey("Site visit"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"),
-  material_selection: tKey("Material selection"), renders: tKey("Renders"), samples: tKey("Samples"), approval: tKey("Design approval"),
+  inspiration: tKey("Inspiration"), kickoff: tKey("Kick-off meeting"), site_visit: tKey("Site visit"), moodboards: tKey("Mood boards"), concepts: tKey("Concepts"), space_planning: tKey("Space planning"),
+  material_selection: tKey("Material selection"), renders: tKey("Renders"), samples: tKey("Samples"), final_render: tKey("Final render"), approval: tKey("Design approval"),
 };
-const DELIVERABLE: JourneyStageKey[] = ["concepts", "space_planning", "material_selection", "renders"];
+const DELIVERABLE: JourneyStageKey[] = ["moodboards", "concepts", "space_planning", "material_selection", "renders"];
 
 const dayOf = (value: string) => value.slice(0, 10);
 const href = (record: PreProjectCase, section: string, query?: Record<string, string>) => {
@@ -157,92 +155,25 @@ export function casePosition(record: PhaseRecord, commercial?: CaseCommercialFac
   return { position: phases.indexOf(effectivePhase(record, commercial)) + 1, count: phases.length };
 }
 
-/** The one next step, from the case's real state, in the order the work happens. */
-export function caseNextStep({ record, commercial, journey, project, today, valueEngineering }: CaseRecordInput): CaseNextStep {
-  const owner = record.engagementOwnerName;
+/**
+ * §0.3 P10: what's next for a job is its journey's step now (shown by the shared Now bar). The case adds only the
+ * states the journey doesn't hold: cancelled or on hold (with the one way back), and ready to start its design.
+ */
+export function caseLifecycleStep({ record, journey }: Pick<CaseRecordInput, "record" | "journey">): CaseNextStep | null {
   if (record.status === "cancelled") return {
     title: { key: tKey("Planning cancelled") }, why: record.cancellationReason ? { text: record.cancellationReason } : null, status: "attention",
     action: record.canManageLifecycle ? { label: { key: tKey("Reopen planning") }, command: "reopen" } : null,
   };
   if (record.status === "on_hold") return {
-    title: { key: tKey("On hold") }, why: record.holdReason ? { text: record.holdReason } : null, owner, status: "attention",
+    title: { key: tKey("On hold") }, why: record.holdReason ? { text: record.holdReason } : null, owner: record.engagementOwnerName, status: "attention",
     action: record.canManageLifecycle ? { label: { key: tKey("Resume") }, command: "resume" } : null,
   };
-  if (record.projectId || record.status === "released") {
-    const open = record.projectId ? { label: { key: tKey("Open the project") }, href: `/workspace/projects/${record.projectId}` } : null;
-    if (project && project.project.status === "active") {
-      const current = project.stages.find((stage) => stage.status === "current");
-      return {
-        title: project.next ? nextStepPhrase(project.next) : { key: tKey("Open the project") },
-        why: current ? { key: tKey("{project} · {stage} · {position} of {count}"), values: { project: project.project.reference, stage: current.name, position: current.position + 1, count: project.stages.length } } : null,
-        owner: project.next?.owner ?? null, due: project.project.promiseDate, overdue: Boolean(project.project.promiseDate && project.project.promiseDate < today), action: open,
-      };
-    }
-    if (project && project.project.status === "completed") return { title: { key: tKey("Project completed") }, why: { key: tKey("{project} was handed over"), values: { project: project.project.reference } }, status: "done", action: open };
-    if (project && project.project.status === "on_hold") return { title: { key: tKey("Project on hold") }, why: project.project.holdReason ? { text: project.project.holdReason } : null, status: "attention", action: open };
-    return { title: { key: tKey("Released to the project") }, status: "done", action: open };
-  }
-
-  // The design stages, once they run, lead the case.
-  const stage = activeJourneyStage(journey);
-  if (stage) return {
-    title: { key: JOURNEY_STAGE_LABEL[stage.stage] ?? (stage.label as MessageKey) },
-    why: stage.progress?.total ? { key: tKey("{approved} of {total} approved"), values: { approved: stage.progress.approved, total: stage.progress.total } } : { key: tKey("Design stage {position} of {count}"), values: { position: journey!.stages.indexOf(stage) + 1, count: journey!.stages.length } },
-    owner: stage.ownerName ?? owner, due: stage.dueAt, overdue: stage.overdue, status: stage.overdue ? "attention" : undefined,
-    action: DELIVERABLE.includes(stage.stage) ? { label: { key: tKey("Open design") }, href: href(record, "designs", { stage: stage.stage }) } : null,
-  };
-  // A design-only job (Full ID) ends with the client's design approval.
-  if (record.designComplete || journey?.journey?.designComplete) return {
-    title: { key: tKey("Design complete") }, status: "done", action: null,
-  };
-  if (journey && !journey.journey && journey.canStart && (!record.plan || record.plan.siteVisit || record.plan.design)) {
+  if (!record.projectId && record.status !== "released" && journey && !journey.journey && journey.canStart && (!record.plan || record.plan.siteVisit || record.plan.design)) {
     const site = journey.startsAs === "site_and_materials";
-    return { title: { key: site ? tKey("Start the site visit") : tKey("Start the design") }, why: { key: site ? tKey("The order needs measuring before materials are chosen.") : tKey("The design deposit is in; the design stages can start.") }, owner,
-      action: { label: { key: site ? tKey("Start site visit") : tKey("Start design") }, command: "start_journey" } };
+    return { title: { key: site ? tKey("Start the site visit") : tKey("Start the design") }, why: { key: site ? tKey("The order needs measuring before materials are chosen.") : tKey("The design deposit is in; the design stages can start.") },
+      owner: record.engagementOwnerName, action: { label: { key: site ? tKey("Start site visit") : tKey("Start design") }, command: "start_journey" } };
   }
-
-  // PLM-147: value engineering, while a round is open, is the job's step: the lead designer leads it with the QS.
-  const ve = valueEngineering?.open;
-  if (ve && ve.status === "open") return {
-    title: { key: tKey("Value engineering") },
-    why: ve.step === "agree_options" ? (ve.qsName ? { key: tKey("Agree the savings with {name}"), values: { name: ve.qsName } } : { key: tKey("Agree the savings with the QS") })
-      : ve.step === "present_options" ? { key: tKey("Present the options to the client") } : { key: tKey("Waiting for the client's decision") },
-    owner: ve.lead.name || owner,
-    action: { label: { key: tKey("Open quotation") }, href: href(record, "quotations", { quote: ve.quoteId }) },
-  };
-
-  const quote = currentQuote(commercial);
-  if (quote && commercial) {
-    const step = quoteStep(quote, commercial);
-    if (step) {
-      const { attention, ...shown } = step;
-      const open = quote.status === "declined" || quote.status === "expired" ? { label: { key: tKey("Open quotations") }, href: href(record, "quotations") }
-        : { label: { key: tKey("Open quotation") }, href: href(record, "quotations", { quote: quote.id }) };
-      return { ...shown, owner: quote.status === "internal_review" ? quote.approvedBy ?? owner : owner, action: open,
-        ...(attention ? { status: "attention" as const } : {}),
-        ...(quote.status === "issued" ? { due: quote.validUntil, overdue: Boolean(quote.validUntil && dayOf(quote.validUntil) < today) } : {}) };
-    }
-    // Accepted: the agreement, then the payments it schedules, then the release.
-    const agreement = commercial.data.agreement;
-    if (!agreement || agreement.status !== "executed") return { title: { key: tKey("Sign the agreement") }, why: { key: tKey("{quote} accepted"), values: { quote: quoteName(quote, commercial) } }, owner, action: { label: { key: tKey("Open the agreement") }, href: href(record, "contracts") } };
-    const waiting = commercial.data.payments.filter((payment) => payment.status !== "verified").sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"))[0];
-    if (waiting) {
-      const amount = { title: waiting.title };
-      const due = waiting.dueDate || null;
-      return waiting.status === "proof_submitted"
-        ? { title: { key: tKey("Verify {title}"), values: amount }, why: { key: tKey("The client's payment proof is in") }, due, action: { label: { key: tKey("Open payments") }, href: href(record, "payment-plan", { payment: waiting.id }) } }
-        : { title: { key: tKey("Collect {title}"), values: amount }, owner, due, overdue: Boolean(due && dayOf(due) < today), status: due && dayOf(due) < today ? "attention" : undefined,
-          action: { label: { key: tKey("Open payments") }, href: href(record, "payment-plan", { payment: waiting.id }) } };
-    }
-    const review = commercial.data.ownerReview;
-    if (!commercial.data.dealFile && review && ["submitted", "pending_finance", "pending_approval"].includes(review.status)) return { title: { key: tKey("Approve the deal") }, why: { key: tKey("Waiting for the owner's review") }, action: { label: { key: tKey("Open approvals") }, href: href(record, "approvals") } };
-    // A paid design fee opens the design work (above, once its stages run); the order is priced after it, so nothing is released yet.
-    if (quote.round !== "design")
-      return { title: { key: casePhaseText("release", record.plan).next }, why: { key: tKey("Agreed and paid") }, owner, action: { label: { key: tKey("Open release") }, href: href(record, "execution-release") } };
-  }
-
-  const phase = casePhaseText(effectivePhase(record, commercial), record.plan);
-  return { title: { key: phase.next }, owner, due: record.targetDate, overdue: Boolean(record.targetDate && record.targetDate < today), action: { label: { key: phase.open }, href: href(record, phase.section) } };
+  return null;
 }
 
 export type CaseMoney = { currency: string; quoted: string | null; agreed: string | null; paid: string | null; outstanding: string | null; paidShare: number | null };
@@ -288,18 +219,6 @@ export type CaseStep = {
   people: Array<{ id: string; name: string }>;
   detail?: Message | null;
 };
-
-/**
- * A case's stage and next step as the Planning list shows them, from the same reading as its overview: the phase the
- * records put it in, and what its current quotation waits for while it is with the firm or the client.
- */
-export function caseListStep(record: PhaseRecord, commercial?: CaseCommercialFacts | null): { stage: MessageKey; next: Message } {
-  const phase = casePhaseText(effectivePhase(record, commercial), record.plan);
-  if (record.designComplete) return { stage: phase.stage, next: { key: tKey("Design complete") } };
-  const quote = currentQuote(commercial);
-  const step = quote ? quoteStep(quote, commercial) : null;
-  return { stage: phase.stage, next: step?.title ?? { key: phase.next } };
-}
 
 /** The case's phases as steps (✓ done · ● now · ○ next), with who and when where the records say; then its project. */
 export function caseTimeline({ record, commercial, journey, project }: CaseRecordInput): CaseStep[] {
@@ -354,6 +273,7 @@ const AUDIT_TEXT: Record<string, MessageKey> = {
   decide_owner_review: tKey("{who} decided on the deal"),
   report_payment_receipt: tKey("{who} recorded a payment"),
   verify_payment: tKey("{who} verified a payment"),
+  return_payment: tKey("{who} sent a payment receipt back"),
   comment: tKey("{who} added a note"),
 };
 

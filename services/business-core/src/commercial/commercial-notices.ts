@@ -92,3 +92,29 @@ export async function noticeReceiptStep(db: Db, input: {
   }
   return { told };
 }
+
+/**
+ * Finance returned a receipt someone on the team recorded: the person who recorded it hears why (in the app and by
+ * email) and opens the payment to record it again. The client hears nothing: the money is still being checked.
+ */
+export async function noticeReceiptReturned(db: Db, input: {
+  workspaceId: string; caseId: string; payment: Pick<Payment, "id" | "title" | "amount" | "currency">; reason: string;
+  actorUserId: string; reporterUserId: string | null; revision: number;
+}) {
+  if (!input.reporterUserId || input.reporterUserId === input.actorUserId) return { told: 0 };
+  const clientName = (await db.query<{ clientName: string }>(
+    `SELECT coalesce(party.display_name, opportunity.title) AS "clientName"
+       FROM pre_project_cases pre_case
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+      WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [input.workspaceId, input.caseId])).rows[0]?.clientName ?? "";
+  const actor = (await db.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [input.actorUserId])).rows[0]?.name ?? "Finance";
+  const variables = { title: input.payment.title, clientName, actor, amount: amountText(input.payment.amount, input.payment.currency), note: input.reason };
+  const code = "commercial.receipt_returned";
+  const message = { workspaceId: input.workspaceId, recipientUserId: input.reporterUserId, code, eventType: code, variables,
+    deepLink: `/workspace/pre-projects/cases/${input.caseId}/payment-plan` };
+  const key = `${code}:${input.payment.id}:${input.revision}:${input.reporterUserId}`;
+  const result = await notifyUserInApp(db, { ...message, idempotencyKey: key });
+  await queueUserEmail(db, { ...message, idempotencyKey: `${key}:email` });
+  return { told: result.queued ? 1 : 0 };
+}

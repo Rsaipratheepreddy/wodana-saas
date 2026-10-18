@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { parseDate } from "@internationalized/date";
 import type { HrmsBootstrap, HrmsEmployee, MyTimeWeek, TeamTimeWeek, TimeWeek, Utilisation } from "@wodana/contracts";
 import {
-  Badge, Button, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SelectField, TextAreaField, TextInput, useDesignSystem, type DataGridColumn,
+  Badge, Button, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, ReviewDialog, SelectField, TextInput, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
@@ -161,9 +161,7 @@ export function TimesheetSheet({ api, week, canDecide, onClose, onDecided }: {
 }) {
   const t = useT();
   const format = useHrmsFormat();
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState<"approve" | "return" | null>(null);
-  const [error, setError] = useState("");
+  const [reviewing, setReviewing] = useState(false);
   const sheet = week.timesheet;
   const deciding = canDecide && sheet?.status === "submitted";
   const expected = week.days.reduce((sum, day) => sum + day.scheduledMinutes, 0);
@@ -173,23 +171,23 @@ export function TimesheetSheet({ api, week, canDecide, onClose, onDecided }: {
     row.minutes += entry.minutes;
     return map.set(key, row);
   }, new Map<string, { label: string; detail: string; minutes: number }>()).values()];
-  const decide = async (decision: "approve" | "return") => {
+  // The review shows why a decision failed and stays open.
+  const decide = async (decision: "approve" | "return", note: string) => {
     if (!sheet) return;
-    setBusy(decision); setError("");
-    try { onDecided(await api.decideWeek(sheet.id, { version: sheet.version, decision, note: note.trim() })); }
-    catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(null); }
+    if (decision === "return" && note.length < MIN_NOTE) throw new Error(t("At least {count} characters", { count: MIN_NOTE }));
+    try { onDecided(await api.decideWeek(sheet.id, { version: sheet.version, decision, note })); }
+    catch (cause) { throw new Error(format.failure(cause, t("Could not save."))); }
   };
-  return <InspectorSheet isOpen size="md" title={week.name} description={format.range(week.weekStart, addDays(week.weekStart, 6))} isDirty={Boolean(note.trim()) && !busy}
+  const hours = `${format.duration(week.totalMinutes) || "0m"} / ${format.duration(expected) || "0m"}`;
+  return <InspectorSheet isOpen size="md" title={week.name} description={format.range(week.weekStart, addDays(week.weekStart, 6))}
     onOpenChange={(value) => { if (!value) onClose(); }}
     footer={deciding ? <div className="wd-dialog-actions"><span className={styles.spacer} />
-      <Button isLoading={busy === "return"} isDisabled={Boolean(busy) || note.trim().length < MIN_NOTE} onPress={() => void decide("return")}>{t("Send back")}</Button>
-      <Button variant="primary" isLoading={busy === "approve"} isDisabled={Boolean(busy)} onPress={() => void decide("approve")}>{t("Approve")}</Button>
+      <Button variant="primary" onPress={() => setReviewing(true)}>{t("Review")}</Button>
     </div> : null}>
     <div className={styles.sheet}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
       <Facts items={[
         [t("Status"), sheet ? <SheetStatus key="status" status={sheet.status} /> : t("Not started")],
-        [t("Hours"), `${format.duration(week.totalMinutes) || "0m"} / ${format.duration(expected) || "0m"}`],
+        [t("Hours"), hours],
         sheet?.submittedAt ? [t("Submitted"), format.moment(sheet.submittedAt)] : null,
         sheet?.decidedByName ? [sheet.status === "approved" ? t("Approved by") : t("Sent back by"), sheet.decidedByName] : null,
         sheet?.decisionNote ? [t("Note"), sheet.decisionNote] : null,
@@ -199,7 +197,7 @@ export function TimesheetSheet({ api, week, canDecide, onClose, onDecided }: {
         {byWork.length ? <ul className={styles.list}>{byWork.map((row) => <li key={`${row.label}|${row.detail}`}>
           <span className={styles.grow}><span>{row.label}</span>{row.detail ? <small>{row.detail}</small> : null}</span>
           <span className={styles.number}>{format.duration(row.minutes)}</span>
-        </li>)}</ul> : <p className={styles.muted}>{t("No hours this week")}</p>}
+        </li>)}</ul> : <EmptyState illustration={null} title={t("No hours this week")} />}
       </section>
       <section className={styles.part} aria-label={t("By day")}>
         <h3 className={styles.subhead}>{t("By day")}</h3>
@@ -212,8 +210,14 @@ export function TimesheetSheet({ api, week, canDecide, onClose, onDecided }: {
           </li>;
         })}</ul>
       </section>
-      {deciding ? <TextAreaField label={t("Note")} description={t("Needed to send it back")} value={note} onChange={setNote} /> : null}
     </div>
+    {reviewing ? <ReviewDialog title={t("Review")} description={week.name} onClose={() => setReviewing(false)}
+      facts={[
+        { label: t("Week"), value: format.range(week.weekStart, addDays(week.weekStart, 6)) },
+        { label: t("Hours"), value: hours },
+        ...(sheet?.submittedAt ? [{ label: t("Submitted"), value: format.moment(sheet.submittedAt) }] : []),
+      ]}
+      confirmLabel={t("Approve")} onConfirm={(note) => decide("approve", note)} returnLabel={t("Send back")} onReturn={(note) => decide("return", note)} /> : null}
   </InspectorSheet>;
 }
 

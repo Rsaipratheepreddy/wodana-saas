@@ -57,10 +57,10 @@ export function ConfirmCode({ api, purpose, channels, confirmLabel, onConfirm, o
       </div>
     </> : null}
     <div className={styles.links}>
-      <button className={styles.textButton} type="button" disabled={busy || wait > 0} onClick={() => void send(challenge?.channel ?? "whatsapp")}>
-        {wait > 0 ? t("Send a new code in {seconds} s", { seconds: wait }) : t("Send a new code")}</button>
-      {channels.includes("email") && challenge?.channel !== "email" ? <button className={styles.textButton} type="button" disabled={busy || wait > 0} onClick={() => void send("email")}>
-        {t("Send it by email instead")}</button> : null}
+      <Button variant="quiet" size="compact" isDisabled={busy || wait > 0} onPress={() => void send(challenge?.channel ?? "whatsapp")}>
+        {wait > 0 ? t("Send a new code in {seconds} s", { seconds: wait }) : t("Send a new code")}</Button>
+      {channels.includes("email") && challenge?.channel !== "email" ? <Button variant="quiet" size="compact" isDisabled={busy || wait > 0} onPress={() => void send("email")}>
+        {t("Send it by email instead")}</Button> : null}
     </div>
     <div className={styles.choices}>
       <Button onPress={onBack} isDisabled={busy}>{t("Back")}</Button>

@@ -1,4 +1,5 @@
 import { ConflictException, UnprocessableEntityException } from "@nestjs/common";
+import { evidenceFor, type EvidenceFile } from "../../evidence/decision-evidence";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../../audit/record-audit";
 import { Dec } from "../../catalog-core/decimal";
@@ -30,6 +31,10 @@ export type ProposalRow = {
   id: string; kind: ProposalKind; amount: string | null; currencyCode: string | null; valueStatus: ValueStatus;
   enteredAt: string | null; enteredBy: string | null; verifiedAt: string | null; verifiedBy: string | null;
   approvedAt: string | null; approvedBy: string | null; wonAt: string | null; quoteId: string | null; version: number;
+  /** §0.3 P0: Proposal 2 withdrawn by the client: requested (with the reason), then confirmed by whoever approves deals. */
+  withdrawal: null | { status: "requested" | "confirmed"; reason: string; requestedBy: string | null; requestedAt: string; decidedBy: string | null; decidedAt: string | null; note: string | null;
+    /** The client's message (a photo or PDF), shown when the withdrawal is confirmed. */
+    files?: EvidenceFile[] };
 };
 export type ValueEvent = {
   id: string; kind: ProposalKind; action: "entered" | "changed" | "verified" | "approved" | "returned" | "won";
@@ -111,18 +116,26 @@ export function valueStatusFrom(approval: Pick<ApprovalStatus, "status" | "curre
 
 const PROPOSAL_SELECT = `proposal.id, proposal.kind, proposal.amount::text AS amount, proposal.currency_code AS "currencyCode", proposal.value_status AS "valueStatus",
   proposal.entered_at AS "enteredAt", entered.display_name AS "enteredBy", proposal.verified_at AS "verifiedAt", verified.display_name AS "verifiedBy",
-  proposal.approved_at AS "approvedAt", approved.display_name AS "approvedBy", proposal.won_at AS "wonAt", proposal.quote_id AS "quoteId", proposal.version`;
+  proposal.approved_at AS "approvedAt", approved.display_name AS "approvedBy", proposal.won_at AS "wonAt", proposal.quote_id AS "quoteId", proposal.version,
+  CASE WHEN proposal.withdrawal_status IS NULL THEN NULL ELSE jsonb_build_object('status', proposal.withdrawal_status, 'reason', proposal.withdrawal_reason,
+    'requestedBy', withdrawal_requester.display_name, 'requestedAt', proposal.withdrawal_requested_at, 'decidedBy', withdrawal_decider.display_name,
+    'decidedAt', proposal.withdrawal_decided_at, 'note', proposal.withdrawal_note) END AS withdrawal`;
 const PROPOSAL_FROM = `crm_opportunity_proposals proposal
-  LEFT JOIN users entered ON entered.id = proposal.entered_by LEFT JOIN users verified ON verified.id = proposal.verified_by LEFT JOIN users approved ON approved.id = proposal.approved_by`;
+  LEFT JOIN users entered ON entered.id = proposal.entered_by LEFT JOIN users verified ON verified.id = proposal.verified_by LEFT JOIN users approved ON approved.id = proposal.approved_by
+  LEFT JOIN users withdrawal_requester ON withdrawal_requester.id = proposal.withdrawal_requested_by
+  LEFT JOIN users withdrawal_decider ON withdrawal_decider.id = proposal.withdrawal_decided_by`;
 
 const isoRow = <T extends Record<string, unknown>>(row: T) =>
   Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value instanceof Date ? value.toISOString() : value])) as T;
 
 export async function loadProposals(db: Db, workspaceId: string, opportunityId: string): Promise<ProposalRow[]> {
-  return (await db.query<ProposalRow>(
+  const rows = (await db.query<ProposalRow>(
     `SELECT ${PROPOSAL_SELECT} FROM ${PROPOSAL_FROM} WHERE proposal.workspace_id = $1 AND proposal.opportunity_id = $2
       ORDER BY CASE proposal.kind WHEN 'design' THEN 1 ELSE 2 END`, [workspaceId, opportunityId])).rows
     .map((row) => isoRow({ ...row, amount: trim(row.amount) }));
+  const withdrawn = rows.filter((row) => row.withdrawal);
+  const files = await evidenceFor(db, workspaceId, "proposal_withdrawal", withdrawn.map((row) => row.id));
+  return rows.map((row) => (row.withdrawal ? { ...row, withdrawal: { ...row.withdrawal, files: files.get(row.id) ?? [] } } : row));
 }
 
 async function lockProposal(db: Db, workspaceId: string, opportunityId: string, kind: ProposalKind) {
@@ -254,6 +267,39 @@ export async function decideProposalValue(db: Db, input: {
     decision: input.decision, note: input.note, expectedVersion: input.expectedVersion, commandId: input.commandId, waiveSeparation: input.waiveSeparation });
   await applyValueDecision(db, input.workspaceId, approval, input.decision, input.actorUserId, input.note);
   return approval;
+}
+
+/**
+ * Guide J and §0.3: a proposal's value is its round's quotation, linked, never typed: the sent quotation of each round
+ * (the accepted one once the client accepted) sets the value, which then goes to Finance to verify at the Deal File and
+ * locks when the Deal File is approved. A value Finance verified or the Deal File locked is never moved from here.
+ */
+export async function syncProposalsFromQuotes(db: Db, input: {
+  workspaceId: string; opportunityId: string; actorUserId: string | null;
+  quotes: Array<{ id: string; number: number; round: ProposalKind; amount: string | number; currencyCode: string }>;
+}) {
+  let changed = false;
+  for (const quote of input.quotes) {
+    const amount = trim(Dec.of(quote.amount).toFixed(4));
+    // The quotation's id links the proposal when it is a record id (an imported or older document's id isn't one).
+    const quoteId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(quote.id) ? quote.id : null;
+    const current = (await loadProposals(db, input.workspaceId, input.opportunityId)).find((proposal) => proposal.kind === quote.round);
+    if (current && (current.valueStatus === "verified" || current.valueStatus === "approved")) continue;
+    if (current && current.amount === amount && current.currencyCode === quote.currencyCode && current.quoteId === quoteId) continue;
+    const row = (await db.query<{ id: string }>(
+      `INSERT INTO crm_opportunity_proposals (workspace_id, opportunity_id, kind, amount, currency_code, value_status, entered_by, entered_at, quote_id)
+       VALUES ($1, $2, $3, $4::numeric, $5, 'entered', $6::uuid, now(), $7::uuid)
+       ON CONFLICT (workspace_id, opportunity_id, kind) DO UPDATE SET amount = EXCLUDED.amount, currency_code = EXCLUDED.currency_code, value_status = 'entered',
+         quote_id = EXCLUDED.quote_id, entered_at = now(), version = crm_opportunity_proposals.version + 1
+       WHERE crm_opportunity_proposals.value_status NOT IN ('verified', 'approved')
+       RETURNING id`, [input.workspaceId, input.opportunityId, quote.round, amount, quote.currencyCode, input.actorUserId, quoteId])).rows[0];
+    if (!row) continue;
+    await logValue(db, { workspaceId: input.workspaceId, opportunityId: input.opportunityId, proposalId: row.id, kind: quote.round, action: current?.amount ? "changed" : "entered",
+      from: current?.amount ?? null, to: amount, currency: quote.currencyCode, note: `From Q-${quote.number}`, actorUserId: input.actorUserId });
+    changed = true;
+  }
+  if (changed) await syncHeadline(db, input.workspaceId, input.opportunityId);
+  return changed;
 }
 
 /**

@@ -8,10 +8,12 @@ import { formatCalendarDay } from "../common/calendar-day";
 import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
 import { workingDeadline } from "../project-core/work-calendar";
 import {
-  addDays, CURRENT_FLOW, DEFAULT_SITE_VISIT_QUESTIONS, developmentWindowDays, journeyStages, nextStage, normaliseChecklistScopes, normaliseSiteQuestions, SITE_AND_MATERIALS_STAGES, stageDeadlines,
+  addDays, CURRENT_FLOW, DEFAULT_SITE_VISIT_QUESTIONS, developmentWindowDays, isCurrentOrder, journeyStages, nextStage, normaliseChecklistScopes, normaliseSiteQuestions, SITE_AND_MATERIALS_STAGES, stageDeadlines,
   STAGE_LABELS, TASK_LABELS, TASK_STAGE, type DueRule, type FlowVersion, type JourneyKind, type JourneyStage, type JourneyTask, type StageTimings,
 } from "./design-journey.domain";
 import { allocationSlots, DEFAULT_DESIGN_TEAM, type DesignTeamConfig } from "./design-team.domain";
+import { caseWonAreas } from "../crm/flows/flow-won-areas";
+import { startClientCalls } from "../client-calls/client-calls.store";
 
 type Db = Pick<PoolClient, "query">;
 type CaseFacts = { caseId: string; opportunityId: string; clientName: string; designerId: string | null; accountManagerId: string | null; leadId: string | null; partyId: string };
@@ -147,6 +149,8 @@ export async function startJourney(db: Db, workspaceId: string, caseId: string, 
   const questions = settings ? normaliseSiteQuestions(settings.questions) : DEFAULT_SITE_VISIT_QUESTIONS;
   const kind: JourneyKind = pkg ? "design" : "site_and_materials";
   const flow: FlowVersion = kind === "design" ? options.flow ?? CURRENT_FLOW : 1;
+  // Guide step 10: the material selection only on jobs that include it (the firm's job areas for the enquiry type and path).
+  const materialSelection = kind !== "design" || flow !== 3 || (await caseWonAreas(db, workspaceId, caseId)).areas.includes("selection");
   const created = await db.query(
     `INSERT INTO design_journeys (workspace_id, case_id, package_id, package_name, included_revisions, includes_space_planning, includes_renders, reviewer_role_code, inspiration_days, site_visit_hours,
                                   design_internal_days, design_client_days, material_selection_days, estimate_days, site_visit_questions, started_by, render_internal_days, render_client_days,
@@ -160,10 +164,10 @@ export async function startJourney(db: Db, workspaceId: string, caseId: string, 
       value("developmentDaysPerRoom", 7), value("sampleCollectionDays", 7), value("sampleMeetingDays", 7), settings?.conceptOptionsMax ?? null]);
   if (!created.rowCount) return false;
   // The checklists' match words are frozen with the questions.
-  await db.query(`UPDATE design_journeys SET site_visit_scopes = $3::jsonb WHERE workspace_id = $1 AND case_id = $2`,
-    [workspaceId, caseId, JSON.stringify(normaliseChecklistScopes(settings?.scopes))]);
-  const order = kind === "design" ? journeyStages({ includesSpacePlanning: pkg.includesSpacePlanning, includesRenders: pkg.includesRenders }, flow) : SITE_AND_MATERIALS_STAGES;
-  const owner = flow === 2 ? await leadDesigner(db, workspaceId, caseId) ?? facts.accountManagerId : facts.designerId ?? facts.accountManagerId;
+  await db.query(`UPDATE design_journeys SET site_visit_scopes = $3::jsonb, material_selection = $4 WHERE workspace_id = $1 AND case_id = $2`,
+    [workspaceId, caseId, JSON.stringify(normaliseChecklistScopes(settings?.scopes)), materialSelection]);
+  const order = kind === "design" ? journeyStages({ includesSpacePlanning: pkg.includesSpacePlanning, includesRenders: pkg.includesRenders, materialSelection }, flow) : SITE_AND_MATERIALS_STAGES;
+  const owner = isCurrentOrder(flow) ? await leadDesigner(db, workspaceId, caseId) ?? facts.accountManagerId : facts.designerId ?? facts.accountManagerId;
   for (const [index, stage] of order.entries()) {
     await db.query(
       `INSERT INTO design_journey_stages (workspace_id, case_id, stage, position, status, owner_membership_id) VALUES ($1, $2, $3, $4, 'locked', $5)`,
@@ -171,8 +175,10 @@ export async function startJourney(db: Db, workspaceId: string, caseId: string, 
   }
   await activateStage(db, workspaceId, caseId, order[0], userId);
   // PLM-151: the fee is paid, so the design team is allocated now (the kick-off is booked with them).
-  if (flow === 2) await openAllocation(db, workspaceId, caseId, userId, value("allocationDays", 1), pkg?.reviewRoleCode ?? null);
-  await recordAudit(db, { workspaceId, actorUserId: userId, action: "design.journey_started.v1", entityType: "pre_project_case", entityId: caseId, after: { kind, flow, packageId: pkg?.id ?? null, stages: order } });
+  if (isCurrentOrder(flow)) await openAllocation(db, workspaceId, caseId, userId, value("allocationDays", 1), pkg?.reviewRoleCode ?? null);
+  // Guide step 2: the weekly client update (a call or a portal update, the firm's setting) runs from the start of the design.
+  if (flow === 3) await startClientCalls(db, workspaceId, caseId, "design_start", userId);
+  await recordAudit(db, { workspaceId, actorUserId: userId, action: "design.journey_started.v1", entityType: "pre_project_case", entityId: caseId, after: { kind, flow, packageId: pkg?.id ?? null, stages: order, materialSelection } });
   return true;
 }
 
@@ -201,6 +207,9 @@ export async function completeStage(db: Db, workspaceId: string, caseId: string,
 
 const STAGE_TASKS: Partial<Record<JourneyStage, string>> = {
   kickoff: "Kick-off meeting: book it with the client",
+  moodboards: "Mood boards: two options for the client to choose from in the portal",
+  space_planning: "Space planning: upload the layout PDF once the site measure is in",
+  final_render: "Final render: only if the client asks for one",
   site_visit: "Site visit: measurements, photos and the question list",
   material_selection: "Material selection: book the showroom appointment",
   renders: "Renders from the confirmed material list",
@@ -228,11 +237,13 @@ export async function journeyDueRule(db: Db, workspaceId: string, current: boole
 async function activateStage(db: Db, workspaceId: string, caseId: string, stage: JourneyStage, userId: string | null) {
   const timings = await journeyTimings(db, workspaceId, caseId);
   const now = new Date();
-  const current = timings.flowVersion === 2;
+  const current = isCurrentOrder(timings.flowVersion);
   const due = await journeyDueRule(db, workspaceId, current);
-  // The kick-off meeting the concept counts from, and the development window from the rooms in scope (PLM-142).
-  const kickoffAt = current && stage === "concepts" ? await kickoffMoment(db, workspaceId, caseId) : null;
-  const developmentDays = current && stage === "concepts" ? developmentWindowDays(await roomCount(db, workspaceId, caseId),
+  // The kick-off meeting the first design step counts from (the concept; on the guide's order the mood boards), and the
+  // development window from the rooms in scope (PLM-142).
+  const counted = timings.flowVersion === 3 ? stage === "moodboards" : stage === "concepts";
+  const kickoffAt = current && counted ? await kickoffMoment(db, workspaceId, caseId) : null;
+  const developmentDays = current && counted ? developmentWindowDays(await roomCount(db, workspaceId, caseId),
     { minDays: timings.developmentMinDays, maxDays: timings.developmentMaxDays, daysPerRoom: timings.developmentDaysPerRoom }) : null;
   const { dueAt, clientDueAt, bookingReminderAt } = stageDeadlines(stage, now, timings, { kickoffAt, developmentDays, renderSignoffDueOn: timings.renderSignoffDueOn, due });
   const facts = await caseFacts(db, workspaceId, caseId);
@@ -244,7 +255,8 @@ async function activateStage(db: Db, workspaceId: string, caseId: string, stage:
     owner = (await membersWithRole(db, workspaceId, roleCode))[0] ?? null;
   }
   let activityId: string | null = null;
-  const title = stage === "renders" && current ? "Renders: tag the team and record the client's sign-off" : STAGE_TASKS[stage];
+  const title = stage === "renders" && current ? (timings.flowVersion === 3 ? "Renders: tag the team, approve them, then send them to the client" : "Renders: tag the team and record the client's sign-off")
+    : STAGE_TASKS[stage];
   if (title && facts && owner) activityId = await ownerTask(db, workspaceId, facts, title, owner, dueAt, userId);
   await db.query(
     `UPDATE design_journey_stages SET status = 'active', started_at = now(), due_at = $4, client_due_at = $5, booking_reminder_at = $6, owner_membership_id = COALESCE($7, owner_membership_id),
@@ -253,12 +265,14 @@ async function activateStage(db: Db, workspaceId: string, caseId: string, stage:
   await event(db, workspaceId, caseId, stage, "started", null, userId);
   if (facts && dueAt) await tell(db, workspaceId, caseId, facts, "design.stage_started", { stage, due: dueAt }, `design:${caseId}:${stage}:started`, { extra: [owner] });
   if (!current || !facts) return;
-  if (stage === "concepts") {
-    // PLM-141: the design site measure runs beside the concept, due within its days of the kick-off.
+  if (timings.flowVersion === 3 ? stage === "moodboards" : stage === "concepts") {
+    // PLM-141 / guide step 4: the design site measure, due within its days of the kick-off, by whichever designer is free
+    // (on the guide's order it opens with the mood boards and space planning waits for it).
     const measureDue = due(kickoffAt && kickoffAt.getTime() < now.getTime() ? kickoffAt : now, (await db.query<{ days: number }>(
       `SELECT site_measure_days AS days FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.days ?? 3);
     const designers = await caseDesigners(db, workspaceId, caseId);
-    await openTask(db, workspaceId, caseId, "site_measure", { owner: owner ?? designers[0] ?? facts.accountManagerId, dueAt: measureDue, userId });
+    await openTask(db, workspaceId, caseId, "site_measure", { owner: timings.flowVersion === 3 ? null : owner ?? designers[0] ?? facts.accountManagerId, dueAt: measureDue, userId,
+      stage: timings.flowVersion === 3 ? "space_planning" : undefined });
     await tellMembers(db, workspaceId, designers.length ? designers : [owner], "design.site_measure_due", { clientName: facts.clientName, due: await dueText(db, workspaceId, measureDue) },
       `/workspace/pre-projects/cases/${caseId}/site`, `design:${caseId}:site_measure:due`, true);
   }
@@ -321,15 +335,15 @@ async function ownerTask(db: Db, workspaceId: string, facts: CaseFacts, title: s
 }
 
 /** Opens a piece of work inside a step (idempotent per task): its owner's task, its deadline and its history line. */
-export async function openTask(db: Db, workspaceId: string, caseId: string, task: JourneyTask, input: { owner: string | null; dueAt: Date | null; userId: string | null }) {
+export async function openTask(db: Db, workspaceId: string, caseId: string, task: JourneyTask, input: { owner: string | null; dueAt: Date | null; userId: string | null; stage?: JourneyStage }) {
   const facts = await caseFacts(db, workspaceId, caseId);
   const exists = (await db.query(`SELECT 1 FROM design_journey_tasks WHERE workspace_id = $1 AND case_id = $2 AND task = $3`, [workspaceId, caseId, task])).rowCount;
   if (exists) return false;
   const activityId = facts && input.owner ? await ownerTask(db, workspaceId, facts, TASK_TITLES[task], input.owner, input.dueAt, input.userId) : null;
   await db.query(
     `INSERT INTO design_journey_tasks (workspace_id, case_id, task, stage, owner_membership_id, activity_id, due_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [workspaceId, caseId, task, TASK_STAGE[task], input.owner, activityId, input.dueAt]);
-  await event(db, workspaceId, caseId, TASK_STAGE[task], `${task}_opened`, null, input.userId);
+    [workspaceId, caseId, task, input.stage ?? TASK_STAGE[task], input.owner, activityId, input.dueAt]);
+  await event(db, workspaceId, caseId, input.stage ?? TASK_STAGE[task], `${task}_opened`, null, input.userId);
   return true;
 }
 
@@ -365,7 +379,7 @@ async function openAllocation(db: Db, workspaceId: string, caseId: string, userI
   const facts = await caseFacts(db, workspaceId, caseId);
   if (!facts) return;
   const config = await designTeamConfig(db, workspaceId);
-  const slots = allocationSlots(config);
+  const slots = allocationSlots(config, await allocationJob(db, workspaceId, caseId));
   if (!slots.length) return;
   // Only journeys of the current order allocate the team: the firm's working days.
   const due = (await journeyDueRule(db, workspaceId, true))(new Date(), days);
@@ -379,6 +393,15 @@ async function openAllocation(db: Db, workspaceId: string, caseId: string, userI
   const link = `/workspace/pre-projects/cases/${caseId}/overview`;
   if (amSlots.length) await tellMembers(db, workspaceId, [facts.accountManagerId], "design.team_to_allocate", { ...variables(amSlots), due: dueAt }, link, `design:${caseId}:team:allocate`, true);
   if (reviewers.length) await tellMembers(db, workspaceId, reviewers, "design.team_to_allocate", { ...variables(["lead_designer"]), due: dueAt }, link, `design:${caseId}:team:lead`, true);
+}
+
+/** What the job asks of the team allocation (guide step 1): renders (a Visualiser) and a material selection (a Material Coordinator). */
+export async function allocationJob(db: Db, workspaceId: string, caseId: string) {
+  const row = (await db.query<{ renders: boolean; materialSelection: boolean; flow: number }>(
+    `SELECT includes_renders AS renders, material_selection AS "materialSelection", flow_version AS flow FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`,
+    [workspaceId, caseId])).rows[0];
+  // Journeys of earlier orders keep allocating the three slots they always did.
+  return row && Number(row.flow) === 3 ? { renders: Boolean(row.renders), materialSelection: Boolean(row.materialSelection) } : undefined;
 }
 
 /** The workspace's role labels by key (Settings › Projects). */

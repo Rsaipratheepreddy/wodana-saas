@@ -79,7 +79,7 @@ export const requirementViews = [
   { section: "inspiration", view: "inspiration", label: tKey("Client inspirations") },
   { section: "site-layouts", view: "file", label: tKey("Site layouts") },
 ] as const;
-export const caseSections = ["overview", ...requirementViews.map(item => item.section), "site", "designs", "definition", "boq", "quotations", "contracts", "payment-plan", "variations", "approvals", "execution-release", "client-portal", "documents"];
+export const caseSections = ["overview", ...requirementViews.map(item => item.section), "site", "designs", "definition", "boq", "quotations", "contracts", "payment-plan", "variations", "approvals", "deal-file", "execution-release", "client-portal", "documents"];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function caseRoute(path: string) {
   const match = path.match(/^\/workspace\/pre-projects\/cases\/([^/]+)(?:\/([^/]+))?$/);

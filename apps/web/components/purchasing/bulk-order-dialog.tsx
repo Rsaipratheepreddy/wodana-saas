@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { FormDialog, InlineNotice, MoneyField, SelectField, Skeleton, TextInput, VisuallyHidden } from "@/design-system";
+import { DataGrid, FormDialog, InlineNotice, MoneyField, QuantityInput, SelectField, Skeleton, VisuallyHidden, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { Need, SupplierState } from "@/lib/purchasing/types";
-import { quantityText } from "./order-labels";
+import { fieldNumber, fieldText, quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
 type Line = { need: Need; vendorId: string | null; quantity: string; unitPrice: string };
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 
 /**
  * PLM-071: the lines chosen in "To order", each with its supplier (the catalog's preferred one, or the one its material
@@ -42,7 +41,21 @@ export function BulkOrderDialog({ api, needs, onClose, onCreated }: { api: Purch
   // A supplier several of your companies buy from needs the buying company once for the batch.
   const needsCompany = entities.length > 1 && vendors.some((id) => (active.find((item) => item.id === id)?.entityIds.length ?? 0) !== 1);
   const valid = lines.length > 0 && lines.every((line) => line.vendorId && Number(line.quantity) > 0) && (!needsCompany || companyId);
-  const update = (key: string, patch: Partial<Line>) => setLines(lines.map((line) => (line.need.key === key ? { ...line, ...patch } : line)));
+  const update = (key: string, patch: Partial<Line>) => setLines((current) => current.map((line) => (line.need.key === key ? { ...line, ...patch } : line)));
+  const hidden = (text: string) => <VisuallyHidden>{text}</VisuallyHidden>;
+  const columns: DataGridColumn<Line>[] = [
+    { id: "item", header: t("Item"), size: 220, accessorFn: (line) => line.need.title, meta: { renderCell: (line) => <span className={styles.nameCell}><span>{line.need.title}</span>
+      <small>{line.need.projectReference}{line.need.detail ? ` · ${line.need.detail}` : ""}</small></span> } },
+    { id: "supplier", header: t("Supplier"), size: 200, accessorFn: (line) => line.vendorId ?? "", meta: { renderCell: (line) =>
+      <SelectField label={hidden(t("Supplier for {item}", { item: line.need.title }))} placeholder={t("Choose a supplier")} selectedKey={line.vendorId}
+        onSelectionChange={(key) => update(line.need.key, { vendorId: key === null ? null : String(key) })} items={active.map((item) => ({ id: item.id, label: item.name }))} /> } },
+    { id: "quantity", header: t("Quantity"), size: 150, accessorFn: (line) => line.quantity, meta: { align: "end", renderCell: (line) =>
+      <QuantityInput label={hidden(t("Quantity for {item}", { item: line.need.title }))} unit={line.need.unit} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(line.quantity)} onChange={(value) => update(line.need.key, { quantity: fieldText(value) })} /> } },
+    { id: "price", header: t("Price"), size: 160, accessorFn: (line) => line.unitPrice, meta: { align: "end", renderCell: (line) =>
+      <MoneyField label={hidden(t("Price for {item}", { item: line.need.title }))} placeholder={t("Price")}
+        currency={active.find((item) => item.id === line.vendorId)?.currency ?? undefined} value={line.unitPrice} onChange={(unitPrice) => update(line.need.key, { unitPrice })} /> } },
+  ];
   const idFor = (vendorId: string) => { if (!ids.has(vendorId)) ids.set(vendorId, crypto.randomUUID()); return ids.get(vendorId)!; };
 
   const save = async () => {
@@ -67,17 +80,8 @@ export function BulkOrderDialog({ api, needs, onClose, onCreated }: { api: Purch
         onSelectionChange={(key) => setCompanyId(key === null ? null : String(key))} items={entities.map((entity) => ({ id: entity.id, label: entity.name }))} /> : null}
       {lines.some((line) => line.need.projectStatus === "on_hold")
         ? <InlineNotice tone="info" message={t("A project is on hold: its order is drafted, and placing it asks why it goes ahead.")} /> : null}
-      <ul className={styles.draftLines} aria-label={t("Lines")}>
-        {lines.map((line) => <li key={line.need.key}>
-          <span className={styles.nameCell}><span>{line.need.title}</span><small>{line.need.projectReference}{line.need.detail ? ` · ${line.need.detail}` : ""}</small></span>
-          <SelectField aria-label={t("Supplier for {item}", { item: line.need.title })} label={null} placeholder={t("Choose a supplier")} selectedKey={line.vendorId}
-            onSelectionChange={(key) => update(line.need.key, { vendorId: key === null ? null : String(key) })} items={active.map((item) => ({ id: item.id, label: item.name }))} />
-          <TextInput aria-label={t("Quantity for {item}", { item: line.need.title })} label={null} inputMode="decimal" placeholder={t("Quantity")} value={line.quantity}
-            onChange={(value) => update(line.need.key, { quantity: numeric(value) })} suffix={line.need.unit} />
-          <MoneyField label={<VisuallyHidden>{t("Price for {item}", { item: line.need.title })}</VisuallyHidden>} placeholder={t("Price")}
-            currency={active.find((item) => item.id === line.vendorId)?.currency ?? undefined} value={line.unitPrice} onChange={(unitPrice) => update(line.need.key, { unitPrice })} />
-        </li>)}
-      </ul>
+      <DataGrid ariaLabel={t("Lines")} data={lines} getRowId={(line) => line.need.key} columns={columns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
     </>}
   </FormDialog>;
 }

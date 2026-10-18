@@ -363,14 +363,14 @@ integration("team calendars, client update calls and areas after Won", () => {
     await w.client.query("UPDATE crm_opportunities SET flow_version_id = $3, furniture_path = 'take_home_now' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, w.opportunityId, versionId]);
     await w.client.query("SET LOCAL session_replication_role = origin");
     // Nothing set: every area, exactly as before.
-    expect(await projectAreas(w.client, w.workspaceId, w.projectId, w.caseId)).toEqual({ planning: true, production: true, supply: true, delivery: true });
+    expect(await projectAreas(w.client, w.workspaceId, w.projectId, w.caseId)).toEqual({ planning: true, production: true, supply: true, delivery: true, selection: true });
     const proposals = new OpportunityProposalsService(access(w, w.people.manager, ["crm.settings.manage"]));
     const before = await proposals.wonAreas(actor, w.workspaceId, flowId);
     expect(before.rules).toEqual([]);
     const saved = await proposals.saveWonAreas(actor, w.workspaceId, flowId, { rules: [{ furniturePath: null, areas: ["delivery"] }], versions: "" });
     expect(saved.rules).toEqual([{ furniturePath: null, areas: ["delivery"], version: 1 }]);
     await expect(proposals.saveWonAreas(actor, w.workspaceId, flowId, { rules: [], versions: "" })).rejects.toThrow("Someone changed the areas");
-    expect(await projectAreas(w.client, w.workspaceId, w.projectId, w.caseId)).toEqual({ planning: false, production: false, supply: false, delivery: true });
+    expect(await projectAreas(w.client, w.workspaceId, w.projectId, w.caseId)).toEqual({ planning: false, production: false, supply: false, delivery: true, selection: false });
     // A factory slot already booked keeps Production showing.
     await w.client.query("SET LOCAL session_replication_role = replica");
     await w.client.query("UPDATE delivery_projects SET factory_slot_on = $3 WHERE workspace_id = $1 AND id = $2", [w.workspaceId, w.projectId, w.today]);

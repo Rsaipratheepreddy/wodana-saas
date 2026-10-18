@@ -190,3 +190,27 @@ export async function writeFactorySlot(db: Db, input: {
   if (slot && !before.on) await reserveForProduction(db, workspaceId, { projectId, actorUserId: input.actorUserId });
   return before;
 }
+
+/**
+ * Guide step 23 (16 Oct 2026), the single pre-installation checklist: everything made and ready, the lead designer's
+ * check that the items match the design, the building permit collected where there is one, the crew and vehicle booked
+ * for the visit, and a person with a login on it. Read from the records; what is not done holds the delivery.
+ */
+export async function preInstallationChecklist(db: Db, workspaceId: string, projectId: string) {
+  const project = (await db.query<{ checked: boolean }>(`SELECT design_checked_at IS NOT NULL AS checked FROM delivery_projects WHERE workspace_id = $1 AND id = $2`,
+    [workspaceId, projectId])).rows[0];
+  const permits = (await db.query<{ status: string }>(`SELECT status FROM building_permits WHERE workspace_id = $1 AND project_id = $2 AND status <> 'cancelled'`, [workspaceId, projectId])).rows;
+  const visits = (await db.query<{ kind: string; people: number; vehicle: boolean; login: boolean }>(
+    `SELECT assignment.kind, (SELECT count(*)::int FROM logistics_assignment_people person WHERE person.workspace_id = assignment.workspace_id AND person.assignment_id = assignment.id) AS people,
+            assignment.vehicle_id IS NOT NULL AS vehicle, assignment.site_member_id IS NOT NULL AS login
+       FROM logistics_assignments assignment WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.kind IN ('delivery', 'installation')`,
+    [workspaceId, projectId])).rows;
+  const booked = visits.some((visit) => visit.people > 0) && (!visits.some((visit) => visit.kind === "delivery") || visits.some((visit) => visit.kind === "delivery" && visit.vehicle));
+  return [
+    { key: "ready", label: "Everything made and ready", done: await everythingMade(db, workspaceId, projectId) },
+    { key: "design_check", label: "Lead designer checked the items match the design", done: Boolean(project?.checked) },
+    { key: "permit", label: "Building permit collected", done: !permits.length || permits.some((permit) => permit.status === "collected") },
+    { key: "crew", label: "Crew and vehicle booked", done: booked },
+    { key: "login", label: "A person with a login on the visit", done: visits.length > 0 && visits.every((visit) => visit.login) },
+  ];
+}

@@ -3,7 +3,7 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useId, useMemo, useState, type FormEvent } from "react";
 import { ChevronDown, ChevronRight, Lock, Plus } from "lucide-react";
-import { Avatar, AvatarGroup, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, EmptyState, IconMenuButton, SaveBar, SegmentedControl, SelectField, SettingsPage, Tabs, TextAreaField, TextInput, FormDialog } from "@/design-system";
+import { Avatar, AvatarGroup, Badge, Button, Callout, Checkbox, ConfirmationDialog, DesignSystemProvider, EmptyState, IconMenuButton, SaveBar, SegmentedControl, SelectField, SettingsPage, Tabs, TextAreaField, TextInput, FormDialog } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
   ACCESS_LEVELS,
@@ -347,17 +347,16 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         onOpenChange={(isOpen) => { if (!isOpen && !busy) setDeletingRole(null); }}
         title={t("Delete custom role?")}
       />
-      <ControlledModalDialog
-        footer={<div className="wd-dialog-actions">
-          <Button onPress={() => setBlockedRole(null)}>{t("Keep editing")}</Button>
-          {blockedRole ? <Button variant="primary" onPress={() => { setBlockedRole(null); setTab("members"); }}>{t("Open Members")}</Button> : null}
-        </div>}
+      <ConfirmationDialog
+        body={t("Reassign members, teams and pending invites before deleting this role.")}
+        cancelLabel={t("Keep editing")}
+        confirmLabel={t("Open Members")}
+        confirmVariant="primary"
         isOpen={Boolean(blockedRole)}
+        onConfirm={() => { setBlockedRole(null); setTab("members"); }}
         onOpenChange={(isOpen) => { if (!isOpen) setBlockedRole(null); }}
         title={t("Delete custom role?")}
-      >
-        {t("Reassign members, teams and pending invites before deleting this role.")}
-      </ControlledModalDialog>
+      />
     </DesignSystemProvider>
   );
 }

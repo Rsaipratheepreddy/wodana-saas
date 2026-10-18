@@ -3,18 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, DateField, FormDialog, IconButton, InlineNotice, MoneyField, SelectField, Skeleton, TextInput, VisuallyHidden } from "@/design-system";
+import { Button, DataGrid, DateField, FormDialog, IconButton, InlineNotice, MoneyField, QuantityInput, SelectField, Skeleton, TextInput, VisuallyHidden, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { ReorderPoint } from "@/lib/inventory/types";
 import type { Need, SupplierState } from "@/lib/purchasing/types";
 import { restockQuantity } from "@/lib/inventory/levels";
-import { quantityText } from "./order-labels";
+import { fieldNumber, fieldText, quantityText } from "./order-labels";
 import { useSupplierLabels } from "./supplier-labels";
 import styles from "./purchasing.module.css";
 
 type Draft = { key: string; need: Need | null; stock: ReorderPoint | null; description: string; quantity: string; unit: string; unitPrice: string };
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 
 /**
  * A new order to one supplier: from the lines chosen in "To order" (each keeps what it's for), stock to
@@ -54,7 +53,25 @@ export function CreateOrderDialog({ api, needs, restock = [], onClose, onCreated
   const companies = (suppliers?.entities ?? []).filter((entity) => !supplier?.entityIds.length || supplier.entityIds.includes(entity.id));
   const company = companies.length === 1 ? companies[0].id : companyId;
   const valid = supplier && company && lines.length && lines.every((line) => line.description.trim() && Number(line.quantity) > 0);
-  const update = (key: string, patch: Partial<Draft>) => setLines(lines.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  const update = (key: string, patch: Partial<Draft>) => setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  const hidden = (text: string) => <VisuallyHidden>{text}</VisuallyHidden>;
+  const named = (line: Draft) => line.description || t("the line");
+  const columns: DataGridColumn<Draft>[] = [
+    { id: "item", header: t("Item"), size: 240, accessorFn: (line) => line.description, meta: { renderCell: (line) => line.need
+      ? <span className={styles.nameCell}><span>{line.need.title}</span><small>{line.need.projectReference}{line.need.detail ? ` · ${line.need.detail}` : ""}</small></span>
+      : line.stock ? <span className={styles.nameCell}><span>{line.stock.itemName}</span><small>{t("Restock · {place}", { place: line.stock.locationName ?? t("Every place") })}</small></span>
+      : <TextInput label={hidden(t("What"))} maxLength={240} placeholder={t("What")} value={line.description} onChange={(description) => update(line.key, { description })} /> } },
+    { id: "quantity", header: t("Quantity"), size: 150, accessorFn: (line) => line.quantity, meta: { align: "end", renderCell: (line) =>
+      <QuantityInput label={hidden(t("Quantity for {item}", { item: named(line) }))} unit={line.need || line.stock ? line.unit : ""} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(line.quantity)} onChange={(value) => update(line.key, { quantity: fieldText(value) })} /> } },
+    ...(lines.some((line) => !line.need && !line.stock) ? [{ id: "unit", header: t("Unit"), size: 110, accessorFn: (line: Draft) => line.unit, meta: { renderCell: (line: Draft) => line.need || line.stock ? null
+      : <TextInput label={hidden(t("Unit"))} placeholder={t("Unit")} value={line.unit} onChange={(unit) => update(line.key, { unit })} /> } }] : []),
+    { id: "price", header: t("Price"), size: 160, accessorFn: (line) => line.unitPrice, meta: { align: "end", renderCell: (line) =>
+      <MoneyField label={hidden(t("Price for {item}", { item: named(line) }))} placeholder={t("Price")} currency={supplier?.currency ?? undefined}
+        value={line.unitPrice} onChange={(unitPrice) => update(line.key, { unitPrice })} /> } },
+    ...(lines.length > 1 ? [{ id: "remove", header: "", size: 56, enableSorting: false, meta: { align: "end" as const, renderCell: (line: Draft) =>
+      <IconButton aria-label={t("Remove {item}", { item: named(line) })} size="compact" variant="quiet" onPress={() => setLines(lines.filter((item) => item.key !== line.key))}><X aria-hidden="true" size={14} /></IconButton> } }] : []),
+  ];
 
   const save = async () => {
     if (!supplier || !company) return;
@@ -79,21 +96,10 @@ export function CreateOrderDialog({ api, needs, restock = [], onClose, onCreated
       {supplier && !companies.length ? <InlineNotice tone="error" message={t("None of your companies buys from {supplier}. Add one to the supplier first.", { supplier: supplier.name })} /> : null}
       {supplier && supplier.approval !== "approved" ? <InlineNotice tone="info" message={t("{supplier} isn't approved yet; the order can be drafted but not placed.", { supplier: supplier.name })} /> : null}
       {held.length ? <InlineNotice tone="info" message={t("{projects} is on hold: the order is drafted, and placing it asks why it goes ahead.", { projects: held.join(", ") })} /> : null}
-      <ul className={styles.draftLines} aria-label={t("Lines")}>
-        {lines.map((line) => <li key={line.key}>
-          {line.need ? <span className={styles.nameCell}><span>{line.need.title}</span><small>{line.need.projectReference}{line.need.detail ? ` · ${line.need.detail}` : ""}</small></span>
-            : line.stock ? <span className={styles.nameCell}><span>{line.stock.itemName}</span><small>{t("Restock · {place}", { place: line.stock.locationName ?? t("Every place") })}</small></span>
-            : <TextInput label={<VisuallyHidden>{t("What")}</VisuallyHidden>} maxLength={240} placeholder={t("What")} value={line.description} onChange={(description) => update(line.key, { description })} />}
-          <TextInput aria-label={t("Quantity for {item}", { item: line.description || t("the line") })} label={null} inputMode="decimal" placeholder={t("Quantity")} value={line.quantity}
-            onChange={(value) => update(line.key, { quantity: numeric(value) })} suffix={line.need || line.stock ? line.unit : undefined} />
-          {line.need || line.stock ? null : <TextInput aria-label={t("Unit")} label={null} placeholder={t("Unit")} value={line.unit} onChange={(unit) => update(line.key, { unit })} />}
-          <MoneyField label={<VisuallyHidden>{t("Price for {item}", { item: line.description || t("the line") })}</VisuallyHidden>} placeholder={t("Price")} currency={supplier?.currency ?? undefined}
-            value={line.unitPrice} onChange={(unitPrice) => update(line.key, { unitPrice })} />
-          {lines.length > 1 ? <IconButton aria-label={t("Remove {item}", { item: line.description || t("the line") })} size="compact" variant="quiet" onPress={() => setLines(lines.filter((item) => item.key !== line.key))}><X aria-hidden="true" size={14} /></IconButton> : <span />}
-        </li>)}
-      </ul>
-      {!needs.length && !restock.length ? <Button size="compact" variant="quiet" onPress={() => setLines([...lines, { key: crypto.randomUUID(), need: null, stock: null, description: "", quantity: "", unit: "", unitPrice: "" }])}>
-        <Plus aria-hidden="true" size={14} />{t("Add line")}</Button> : null}
+      <DataGrid ariaLabel={t("Lines")} data={lines} getRowId={(line) => line.key} columns={columns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
+      {!needs.length && !restock.length ? <div><Button size="compact" variant="quiet" onPress={() => setLines([...lines, { key: crypto.randomUUID(), need: null, stock: null, description: "", quantity: "", unit: "", unitPrice: "" }])}>
+        <Plus aria-hidden="true" size={14} />{t("Add line")}</Button></div> : null}
     </>}
   </FormDialog>;
 }

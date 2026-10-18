@@ -39,6 +39,11 @@ const details = () => step("details", "Complete the client details", "sales", "d
 const enquiryType = () => step("enquiry_type", "Choose the enquiry type", "sales", "details_complete", "qualification", { needs: ["enquiryType"] });
 const introMeeting = () => step("intro_meeting", "Hold the intro meeting", "sales", "intro_meeting_completed", "qualification", { clientVisible: true });
 const clientType = () => step("client_type", "Set the client type", "sales", "client_type_set", "qualification");
+// Guide G: Qualified needs the intro's outcome (with its scope, or a booked follow-up) and the target completion date.
+const qualified = () => [
+  step("intro_outcome", "Record the intro outcome", "sales", "qualification_outcome_recorded", "qualification"),
+  step("target_completion", "Set the target completion date", "sales", "target_completion_set", "qualification"),
+];
 
 // Design package round (Proposal 1).
 const designRound = () => [
@@ -60,7 +65,8 @@ const pricedQuote = () => [
   step("send_quote", "Send the proposal", "sales", "quote_sent", "proposal", { clientVisible: true, notify: ["sales"] }),
   // Quotes are valid for 7 days.
   step("client_accepted", "Get the client's acceptance", "sales", "client_accepted", "negotiation", { clientVisible: true, deadline: { amount: 7, unit: "days" } }),
-  step("payment_proof", "Attach the 50% deposit proof", "sales", "payment_proof_attached", "won", { clientVisible: true, notify: ["finance", "factory_lead"] }),
+  // The upfront payment the payment agreement sets (never a fixed share).
+  step("payment_proof", "Attach the upfront payment proof", "sales", "payment_proof_attached", "won", { clientVisible: true, notify: ["finance", "factory_lead"] }),
 ];
 
 /**
@@ -178,7 +184,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     group: "Interior design",
     // PLM-127: concept clients are Interior design with the Concept package chosen after the intro; no separate type.
     suggestedEnquiryTypes: ["Interior design"],
-    definition: line([firstContact(), details(), introMeeting(), clientType(), ...designRound()]),
+    definition: line([firstContact(), details(), introMeeting(), clientType(), ...qualified(), ...designRound()]),
   },
   {
     key: "design_bespoke",
@@ -186,7 +192,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     description: "Full design priced by area, with space planning and 3D renders, paid up front.",
     group: "Interior design",
     suggestedEnquiryTypes: ["Interior design"],
-    definition: line([firstContact(), details(), introMeeting(), clientType(), ...designRound()]),
+    definition: line([firstContact(), details(), introMeeting(), clientType(), ...qualified(), ...designRound()]),
   },
   {
     key: "design_creative_director",
@@ -194,7 +200,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     description: "Premium design the creative director leads and reviews before the client sees it.",
     group: "Interior design",
     suggestedEnquiryTypes: ["Interior design"],
-    definition: line([firstContact(), details(), introMeeting(), clientType(), ...designRound()]),
+    definition: line([firstContact(), details(), introMeeting(), clientType(), ...qualified(), ...designRound()]),
   },
   {
     key: "design_and_furniture",
@@ -202,7 +208,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     description: "Design fee first; the furniture quotation follows once the design is approved.",
     group: "Interior design",
     suggestedEnquiryTypes: ["Interior design + furniture"],
-    definition: line([firstContact(), details(), introMeeting(), clientType(), siteVisit(true), ...designRound()]),
+    definition: line([firstContact(), details(), introMeeting(), clientType(), ...qualified(), siteVisit(true), ...designRound()]),
   },
   // Fit-out (joinery path)
   {
@@ -211,7 +217,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     description: "Built-in joinery: measure the site, price it with the QS, then take the deposit.",
     group: "Fit-out",
     suggestedEnquiryTypes: ["Joinery only", "Renovation / fit-out"],
-    definition: line([firstContact(), details(), introMeeting(), clientType(), siteVisit(), materialSelection(), ...pricedQuote()]),
+    definition: line([firstContact(), details(), introMeeting(), clientType(), ...qualified(), siteVisit(), materialSelection(), ...pricedQuote()]),
   },
   {
     key: "full_fit_out",
@@ -220,7 +226,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     group: "Fit-out",
     suggestedEnquiryTypes: ["Full fit-out", "Full fit-out + furniture", "Full interior design"],
     definition: line([
-      firstContact(), details(), introMeeting(), clientType(), siteVisit(),
+      firstContact(), details(), introMeeting(), clientType(), ...qualified(), siteVisit(),
       step("discovery", "Complete discovery", "sales", "discovery_complete", "proposal"),
       step("package", "Choose the design package", "sales", "package_chosen", "proposal", { optional: true }),
       materialSelection(),
@@ -234,7 +240,7 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     group: "Fit-out",
     suggestedEnquiryTypes: ["Renovation / fit-out"],
     definition: line([
-      firstContact(), details(), introMeeting(), clientType(), siteVisit(),
+      firstContact(), details(), introMeeting(), clientType(), ...qualified(), siteVisit(),
       step("discovery", "Complete discovery", "sales", "discovery_complete", "proposal"),
       materialSelection(),
       ...pricedQuote(),

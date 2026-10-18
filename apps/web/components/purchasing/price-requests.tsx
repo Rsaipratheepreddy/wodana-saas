@@ -1,15 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn, FormDialog, MoneyField, NumericInput, PercentageInput, VisuallyHidden } from "@/design-system";
+import {
+  Badge, Button, DataGrid, EditableFieldList, EmptyState, ErrorState, FactRow, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, ToggleButton,
+  type DataGridColumn, FormDialog, MoneyField, NumericInput, PercentageInput, VisuallyHidden,
+} from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { PriceRequestRow, PriceRequestState, PriceRequestsState, PriceRequestStatus } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
-import { quantityText } from "./order-labels";
+import { fieldNumber, fieldText, quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
+
+type RequestLine = PriceRequestState["lines"][number];
+/** A row of the comparison: one line against each supplier, or the totals under them. */
+type CompareRow = { id: string; line: RequestLine | null };
 
 function useRequestLabels() {
   const t = useT();
@@ -95,6 +102,33 @@ function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { ap
   const open = state?.request.status === "open" && state.canBuy;
   const quote = (lineId: string, vendorId: string) => state?.quotes.find((item) => item.lineId === lineId && item.vendorId === vendorId);
   const complete = state ? state.lines.every((line) => award[line.id]?.vendorId && (award[line.id].vendorId === state.cheapest[line.id] || award[line.id].reason.trim())) : false;
+  const compareRows: CompareRow[] = state ? [...state.lines.map((line) => ({ id: line.id, line })), { id: "__total", line: null }] : [];
+  const compareColumns: DataGridColumn<CompareRow>[] = !state ? [] : [
+    { id: "item", header: t("Item"), size: 220, enableSorting: false, accessorFn: (row) => row.line?.description ?? "", meta: { renderCell: (row) => row.line
+      ? <span className={styles.nameCell}><span>{row.line.description}</span><small>{[`${quantityText(row.line.quantity)} ${row.line.unit}`, row.line.projectReference].filter(Boolean).join(" · ")}</small></span>
+      : <strong>{t("Total")}</strong> } },
+    ...state.suppliers.map((supplier): DataGridColumn<CompareRow> => ({ id: `supplier-${supplier.vendorId}`, size: 190, enableSorting: false,
+      header: () => <span className={styles.nameCell}><strong>{supplier.name}</strong>
+        <small>{supplier.status === "replied" ? [supplier.leadTimeDays !== null ? t("{count} days", { count: supplier.leadTimeDays }) : "", supplier.validUntil ? t("valid to {date}", { date: format.day(supplier.validUntil) }) : ""].filter(Boolean).join(" · ") || t("Replied")
+          : supplier.status === "declined" ? t("Declined") : t("Waiting")}</small>
+        {open ? <span><Button size="compact" variant="quiet" onPress={() => setReplying(supplier.vendorId)}>{supplier.status === "replied" ? t("Change reply") : t("Record reply")}</Button></span> : null}</span>,
+      meta: { interactive: true, renderCell: (row) => {
+        if (!row.line) return <span className={styles.money}>{state.totals[supplier.vendorId]?.priced ? format.money(state.totals[supplier.vendorId].net, state.request.currency) : "—"}</span>;
+        const line = row.line;
+        const price = quote(line.id, supplier.vendorId);
+        if (!price) return <span className={styles.muted}>—</span>;
+        const cheapest = state.cheapest[line.id] === supplier.vendorId;
+        const chosen = (state.request.status === "open" ? award[line.id]?.vendorId : line.awardedVendorId) === supplier.vendorId;
+        return <span className={styles.nameCell}>
+          <span><ToggleButton size="compact" variant={chosen ? "primary" : "secondary"} isSelected={chosen} isDisabled={!open}
+            aria-label={t("Award {item} to {supplier}", { item: line.description, supplier: supplier.name })}
+            onPress={() => setAward({ ...award, [line.id]: { vendorId: supplier.vendorId, reason: award[line.id]?.reason ?? "" } })}>
+            {format.money(price.net, state.request.currency)}{cheapest ? ` · ${t("Cheapest")}` : ""}</ToggleButton></span>
+          <small>{Number(price.discountPercent) ? t("{price} less {percent}%", { price: format.money(price.unitPrice, state.request.currency), percent: quantityText(price.discountPercent) })
+            : format.money(price.unitPrice, state.request.currency)}</small>
+        </span>;
+      } } })),
+  ];
 
   return <InspectorSheet isOpen size="lg" title={state ? t("Price request {number}", { number: state.request.number }) : t("Price request")} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={open ? <div className="wd-dialog-actions"><span className={styles.spacer} />
@@ -103,48 +137,21 @@ function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { ap
         if (next?.orders[0]) onOrder(next.orders[0].id);
       }}>{t("Award and create orders")}</Button></div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} shape="rows" /> : <div className={styles.sheet}>
-      <div className={styles.approvalRow}>
-        {(() => { const shown = requestState(state.request.status, state.suppliers.filter((item) => item.status !== "asked").length, state.suppliers.length); return <Badge tone={shown.tone}>{shown.label}</Badge>; })()}
-        <span className={styles.muted}>{[state.request.companyName, state.request.neededBy ? t("Needed by {date}", { date: format.day(state.request.neededBy) }) : ""].filter(Boolean).join(" · ")}</span>
-      </div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {state.orders.length ? <InlineNotice tone="success" message={t("Orders: {orders}", { orders: state.orders.map((order) => order.number).join(", ") })} /> : null}
-      <div className={styles.compare} role="table" aria-label={t("Prices")} style={{ "--suppliers": state.suppliers.length } as React.CSSProperties}>
-        <div role="row" className={styles.compareRow}>
-          <span role="columnheader">{t("Item")}</span>
-          {state.suppliers.map((supplier) => <span role="columnheader" key={supplier.vendorId} className={styles.compareHead}>
-            <strong>{supplier.name}</strong>
-            <small>{supplier.status === "replied" ? [supplier.leadTimeDays !== null ? t("{count} days", { count: supplier.leadTimeDays }) : "", supplier.validUntil ? t("valid to {date}", { date: format.day(supplier.validUntil) }) : ""].filter(Boolean).join(" · ") || t("Replied")
-              : supplier.status === "declined" ? t("Declined") : t("Waiting")}</small>
-            {open ? <Button size="compact" variant="quiet" onPress={() => setReplying(supplier.vendorId)}>{supplier.status === "replied" ? t("Change reply") : t("Record reply")}</Button> : null}
-          </span>)}
-        </div>
-        {state.lines.map((line) => <div role="row" key={line.id} className={styles.compareRow}>
-          <span role="cell" className={styles.nameCell}><span>{line.description}</span><small>{[`${quantityText(line.quantity)} ${line.unit}`, line.projectReference].filter(Boolean).join(" · ")}</small></span>
-          {state.suppliers.map((supplier) => {
-            const price = quote(line.id, supplier.vendorId);
-            const cheapest = state.cheapest[line.id] === supplier.vendorId;
-            const chosen = (state.request.status === "open" ? award[line.id]?.vendorId : line.awardedVendorId) === supplier.vendorId;
-            return <span role="cell" key={supplier.vendorId} className={styles.compareCell} data-cheapest={cheapest || undefined} data-chosen={chosen || undefined}>
-              {price ? <button type="button" disabled={!open} aria-pressed={chosen} aria-label={t("Award {item} to {supplier}", { item: line.description, supplier: supplier.name })}
-                onClick={() => setAward({ ...award, [line.id]: { vendorId: supplier.vendorId, reason: award[line.id]?.reason ?? "" } })}>
-                <span className={styles.money}>{format.money(price.net, state.request.currency)}</span>
-                <small>{Number(price.discountPercent) ? t("{price} less {percent}%", { price: format.money(price.unitPrice, state.request.currency), percent: quantityText(price.discountPercent) }) : format.money(price.unitPrice, state.request.currency)}{cheapest ? ` · ${t("Cheapest")}` : ""}</small>
-              </button> : <span className={styles.muted}>—</span>}
-            </span>;
-          })}
-        </div>)}
-        <div role="row" className={styles.compareRow}>
-          <span role="cell"><strong>{t("Total")}</strong></span>
-          {state.suppliers.map((supplier) => <span role="cell" key={supplier.vendorId} className={styles.money}>
-            {state.totals[supplier.vendorId]?.priced ? format.money(state.totals[supplier.vendorId].net, state.request.currency) : "—"}</span>)}
-        </div>
-      </div>
+      <EditableFieldList>
+        <FactRow label={t("Status")}>{(() => { const shown = requestState(state.request.status, state.suppliers.filter((item) => item.status !== "asked").length, state.suppliers.length); return <Badge tone={shown.tone}>{shown.label}</Badge>; })()}</FactRow>
+        {state.request.companyName ? <FactRow label={t("Buying company")}>{state.request.companyName}</FactRow> : null}
+        {state.request.neededBy ? <FactRow label={t("Needed by")}>{format.day(state.request.neededBy)}</FactRow> : null}
+      </EditableFieldList>
+      <DataGrid ariaLabel={t("Prices")} data={compareRows} getRowId={(row) => row.id} columns={compareColumns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
       {open ? state.lines.filter((line) => award[line.id]?.vendorId && award[line.id].vendorId !== state.cheapest[line.id]).map((line) =>
         <TextInput key={line.id} label={t("Why {item} isn't going to the cheapest", { item: line.description })} isRequired value={award[line.id].reason}
           onChange={(reason) => setAward({ ...award, [line.id]: { ...award[line.id], reason } })} />) : null}
-      {state.request.status === "awarded" ? state.lines.filter((line) => line.awardReason).map((line) =>
-        <p key={line.id} className={styles.dialogText}>{t("{item}: {reason}", { item: line.description, reason: line.awardReason })}</p>) : null}
+      {state.request.status === "awarded" && state.lines.some((line) => line.awardReason) ? <EditableFieldList>
+        {state.lines.filter((line) => line.awardReason).map((line) => <FactRow key={line.id} label={line.description}>{line.awardReason}</FactRow>)}
+      </EditableFieldList> : null}
     </div>}
     {replying && state ? <ReplyDialog state={state} vendorId={replying} onClose={() => setReplying(null)}
       onDecline={async (note) => { if (await run("decline", { vendorId: replying, note })) setReplying(null); }}
@@ -167,20 +174,22 @@ function ReplyDialog({ state, vendorId, onClose, onSave, onDecline }: {
   const [note, setNote] = useState(supplier.note);
   const [declining, setDeclining] = useState(false);
   const any = Object.values(prices).some((item) => Number(item.unitPrice) > 0);
+  const setPrice = (lineId: string, patch: Partial<{ unitPrice: string; discountPercent: string }>) => setPrices((current) => ({ ...current, [lineId]: { ...current[lineId], ...patch } }));
+  const columns: DataGridColumn<RequestLine>[] = [
+    { id: "item", header: t("Item"), size: 220, accessorFn: (line) => line.description, meta: { renderCell: (line) => <span className={styles.nameCell}><span>{line.description}</span>
+      <small>{`${quantityText(line.quantity)} ${line.unit}`}</small></span> } },
+    { id: "price", header: t("Price"), size: 160, accessorFn: (line) => prices[line.id].unitPrice, meta: { align: "end", renderCell: (line) =>
+      <MoneyField label={<VisuallyHidden>{t("Price for {item}", { item: line.description })}</VisuallyHidden>} placeholder={t("Price")} currency={state.request.currency} value={prices[line.id].unitPrice}
+        onChange={(unitPrice) => setPrice(line.id, { unitPrice })} /> } },
+    { id: "discount", header: t("Discount %"), size: 120, accessorFn: (line) => prices[line.id].discountPercent, meta: { align: "end", renderCell: (line) =>
+      <PercentageInput label={<VisuallyHidden>{t("Discount for {item}", { item: line.description })}</VisuallyHidden>} formatOptions={{ maximumFractionDigits: 2 }}
+        value={fieldNumber(prices[line.id].discountPercent)} onChange={(value) => setPrice(line.id, { discountPercent: fieldText(value) })} /> } },
+  ];
   return <FormDialog size="lg" title={supplier.name} onClose={onClose} isSubmitDisabled={!any} submitLabel={t("Save")} isDirty={any && !state.quotes.some((item) => item.vendorId === vendorId)}
     onSubmit={() => onSave({ prices: Object.entries(prices).map(([lineId, item]) => ({ lineId, unitPrice: item.unitPrice || null, discountPercent: item.discountPercent || null })), leadTimeDays: lead || null, validUntil: valid, note: note.trim() })}
     secondaryAction={<Button variant="quiet" isLoading={declining} onPress={async () => { setDeclining(true); try { await onDecline(note.trim()); } finally { setDeclining(false); } }}>{t("They declined")}</Button>}>
-      <ul className={styles.draftLines} aria-label={t("Prices")}>
-        {state.lines.map((line) => <li key={line.id}>
-          <span className={styles.nameCell}><span>{line.description}</span><small>{`${quantityText(line.quantity)} ${line.unit}`}</small></span>
-          <MoneyField label={<VisuallyHidden>{t("Price for {item}", { item: line.description })}</VisuallyHidden>} placeholder={t("Price")} currency={state.request.currency} value={prices[line.id].unitPrice}
-            onChange={(unitPrice) => setPrices({ ...prices, [line.id]: { ...prices[line.id], unitPrice } })} />
-          <PercentageInput label={<VisuallyHidden>{t("Discount for {item}", { item: line.description })}</VisuallyHidden>} formatOptions={{ maximumFractionDigits: 2 }}
-            value={prices[line.id].discountPercent === "" ? Number.NaN : Number(prices[line.id].discountPercent)}
-            onChange={(value) => setPrices({ ...prices, [line.id]: { ...prices[line.id], discountPercent: Number.isFinite(value) ? String(value) : "" } })} />
-          <span />
-        </li>)}
-      </ul>
+      <DataGrid ariaLabel={t("Prices")} data={state.lines} getRowId={(line) => line.id} columns={columns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
       <NumericInput label={t("Delivery in days")} minValue={0} maxValue={9999} formatOptions={{ maximumFractionDigits: 0 }} value={lead === "" ? Number.NaN : Number(lead)}
         onChange={(value) => setLead(Number.isFinite(value) ? String(Math.round(value)) : "")} />
       <DateField label={t("Prices valid until")} value={valid ? parseDate(valid) : null} onChange={(value) => setValid(value ? value.toString() : null)} />

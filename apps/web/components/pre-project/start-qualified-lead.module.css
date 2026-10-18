@@ -1,3 +1,3 @@
 .provider { min-block-size: 0; background: transparent; --wd-field-focus-border: var(--wd-color-focus); --wd-field-focus-shadow: var(--wd-focus-ring); }
 .provider :global(.wd-focus-frame)::after { display: none; }
-.provider :global(.wd-select-button), .provider :global(.wd-button) { border-radius: var(--wd-radius-xs); box-shadow: none; }
+.provider :global(.wd-select-button), .provider :global(.wd-button) { box-shadow: none; }

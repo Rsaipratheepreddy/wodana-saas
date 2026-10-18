@@ -295,6 +295,19 @@ integration("reminder engine on real Postgres (sweep, delivery, escalation, clie
     for (const [kind, key] of [["work.due", "w4"], ["invoice.overdue", "i1"], ["invoice.overdue", "i2"]] as const) drop(ws, kind, key);
   });
 
+  it("folds a held push and email into the digest when the person's digest goes first, keeping the in-app notice", async () => {
+    // The planner's digest is at 06:30 in Kolkata, before their quiet hours end at 07:00: the reminder waits in it.
+    await tenant(ws, users.owner, (db) => db.query("UPDATE notification_person_settings SET digest_time = '06:30' WHERE workspace_id = $1 AND membership_id = $2", [ws, m.planner]));
+    put(ws, "work.due", { key: "w9", dueAt: new Date("2030-01-09T05:00:00Z"), ownerMembershipId: m.planner, ccMembershipIds: [m.lead] });
+    await sweep(ws, "2030-01-09T17:00:00Z");
+    expect((await notices("work.due", "w9")).map((notice) => [who(notice.recipient), notice.channel, notice.status].join(" ")).sort()).toEqual([
+      "lead email pending", "lead in_app delivered", "planner in_app delivered",
+    ].sort());
+    expect((await steps("work.due", "w9")).find((step) => step.stepKey === "r:0")).toMatchObject({ state: "sent" });
+    await tenant(ws, users.owner, (db) => db.query("UPDATE notification_person_settings SET digest_time = NULL WHERE workspace_id = $1 AND membership_id = $2", [ws, m.planner]));
+    drop(ws, "work.due", "w9");
+  });
+
   it("sends a client one reminder a day: the payment wins over a decision the same day, which waits for the next working day's window", async () => {
     clientCalls.length = 0;
     put(ws, "payment.due", { key: "p1", dueAt: new Date("2030-01-14T05:00:00Z"), ownerMembershipId: m.planner, partyId: parties.aisha, caseId: cases.aisha }); // −3 days = Friday 11th? no: offsets −3 → Friday

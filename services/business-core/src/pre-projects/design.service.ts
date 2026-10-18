@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { bindEvidence, evidenceIds } from '../evidence/decision-evidence';
 import { randomUUID } from "node:crypto";
 import { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
@@ -10,6 +11,7 @@ import { tellClients } from "../client-portal/portal-notices";
 import { designQueue, noticeDesignMentions, noticeDesignStep, noticeExtraRevision } from "./design-notices";
 import { STAGE_LABELS, type JourneyStage } from "../design/design-journey.domain";
 import { membersWithRole } from "../design/design-journey.store";
+import { askedForChanges, assertRevisionCanStart } from "../design/design-revisions.store";
 import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto, DesignThreadAudienceDto } from "./design.dto";
 
 /**
@@ -47,7 +49,7 @@ const designSelect=`SELECT d.id,d.title,d.folder_id AS "folderId",d.document_typ
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',v.id,'number',v.number,'note',v.note,'status',CASE WHEN v.status='client_review' AND v.client_review_expires_at<=now() THEN 'expired' ELSE v.status END,'includedClientRounds',v.included_client_rounds,'clientReviewExpiresAt',v.client_review_expires_at,'createdAt',v.created_at,'createdByName',u.display_name,'createdBy',v.created_by,'reviewerId',v.reviewer_id,'asset',jsonb_build_object('id',a.id,'name',a.original_name,'mimeType',a.mime_type,'byteSize',a.byte_size,'hasPreview',a.preview_key IS NOT NULL)) ORDER BY v.number DESC)
  FROM pre_project_design_versions v JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.case_id=v.case_id AND a.id=v.asset_id JOIN users u ON u.id=v.created_by WHERE v.workspace_id=d.workspace_id AND v.design_id=d.id),'[]'::jsonb) AS versions,
  COALESCE((SELECT count(DISTINCT h.version_id)::int FROM pre_project_design_activity h WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id AND h.action='client_review'),0) AS "clientRoundsUsed",
- COALESCE((SELECT jsonb_agg(jsonb_build_object('id',h.id,'versionId',h.version_id,'action',h.action,'note',h.note,'decisionBy',h.decision_by,'reviewerId',h.reviewer_id,'decisionSource',h.decision_source,'decisionAt',h.decision_at,'createdAt',h.created_at,'createdByName',COALESCE(u.display_name,'Client portal')) ORDER BY h.created_at,h.id) FROM pre_project_design_activity h LEFT JOIN users u ON u.id=h.created_by WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id),'[]'::jsonb) AS activity,
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('id',h.id,'versionId',h.version_id,'action',h.action,'note',h.note,'decisionBy',h.decision_by,'reviewerId',h.reviewer_id,'decisionSource',h.decision_source,'decisionAt',h.decision_at,'files',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',f.id,'name',f.file_name,'mimeType',f.mime_type,'hasPreview',f.has_preview,'uploadedAt',f.uploaded_at) ORDER BY f.uploaded_at) FROM decision_evidence_files f WHERE f.workspace_id=h.workspace_id AND f.kind='design_decision' AND f.subject_id=h.id::text),'[]'::jsonb),'createdAt',h.created_at,'createdByName',COALESCE(u.display_name,'Client portal')) ORDER BY h.created_at,h.id) FROM pre_project_design_activity h LEFT JOIN users u ON u.id=h.created_by WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id),'[]'::jsonb) AS activity,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'versionId',t.version_id,'title',t.title,'anchor',t.anchor,'mentions',t.mentions,'blocking',t.blocking,'status',t.status,'version',t.version,'createdBy',t.created_by,'createdByName',COALESCE(tu.display_name,tg.name),'clientVisible',t.client_visible,'fromClient',t.client_grant_id IS NOT NULL,'createdAt',t.created_at,'resolvedAt',t.resolved_at,'resolvedByName',COALESCE(ru.display_name,rg.name),'messages',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',m.id,'body',m.body,'createdBy',m.created_by,'createdByName',COALESCE(mu.display_name,mg.name),'fromClient',m.client_grant_id IS NOT NULL,'createdAt',m.created_at) ORDER BY m.created_at,m.id) FROM pre_project_design_messages m LEFT JOIN users mu ON mu.id=m.created_by LEFT JOIN client_portal_grants mg ON mg.workspace_id=m.workspace_id AND mg.id=m.client_grant_id WHERE m.workspace_id=t.workspace_id AND m.thread_id=t.id),'[]'::jsonb)) ORDER BY t.created_at,t.id) FROM pre_project_design_threads t LEFT JOIN users tu ON tu.id=t.created_by LEFT JOIN client_portal_grants tg ON tg.workspace_id=t.workspace_id AND tg.id=t.client_grant_id LEFT JOIN users ru ON ru.id=t.resolved_by LEFT JOIN client_portal_grants rg ON rg.workspace_id=t.workspace_id AND rg.id=t.resolved_by_grant_id WHERE t.workspace_id=d.workspace_id AND t.case_id=d.case_id AND t.design_id=d.id),'[]'::jsonb) AS threads
  FROM pre_project_designs d LEFT JOIN pre_project_rooms r ON r.workspace_id=d.workspace_id AND r.case_id=d.case_id AND r.id=d.room_id LEFT JOIN pre_project_brief_entries e ON e.workspace_id=d.workspace_id AND e.case_id=d.case_id AND e.id=d.scope_entry_id`;
 
@@ -110,11 +112,15 @@ export class DesignService {
    const retry=design.versions.find((v:{id:string})=>v.id===input.id);
    if(retry) { if(retry.asset.id!==input.assetId||retry.note!==input.note||(input.includedClientRounds!==undefined&&(retry.includedClientRounds??null)!==input.includedClientRounds)) throw new ConflictException('This version ID is already in use.'); return design; }
    this.mutable(design,input.version);
+   // PLM-049/051: beyond the free revisions, the step's next revision waits for the extra revision's change to be agreed.
+   await assertRevisionCanStart(client,workspaceId,caseId,design.stage);
    await this.belongs(client,'pre_project_brief_assets',workspaceId,caseId,input.assetId,'file');
    await client.query(`INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,note,created_by,included_client_rounds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[input.id,workspaceId,caseId,id,(design.versions[0]?.number??0)+1,input.assetId,input.note,userId,nextIncludedClientRounds(input.includedClientRounds,design.versions[0]?.includedClientRounds)]);
    await client.query(`UPDATE pre_project_designs SET description=$3 WHERE workspace_id=$1 AND id=$2`,[workspaceId,id,input.note]);
    await this.touch(client,workspaceId,caseId,id);
    await this.event(client,workspaceId,caseId,userId,id,'design_version_added',input);
+   // Guide step 6: an uploaded space planning PDF completes its step (no client approval) once the site measure is in.
+   await syncDesignStages(client,workspaceId,caseId,userId);
    return this.read(client,workspaceId,caseId,id);
   });
  }
@@ -159,6 +165,8 @@ export class DesignService {
    if(input.action==='internal_review')await client.query(`UPDATE pre_project_design_versions SET reviewer_id=$4 WHERE workspace_id=$1 AND design_id=$2 AND id=$3`,[workspaceId,id,input.versionId,input.reviewerId]);
    if(input.action!=='comment') await client.query(`UPDATE pre_project_design_versions SET status=$4::varchar,client_review_expires_at=CASE WHEN $4::varchar='client_review' THEN $5::timestamptz ELSE client_review_expires_at END WHERE workspace_id=$1 AND design_id=$2 AND id=$3`,[workspaceId,id,input.versionId,input.action,reviewExpiresAt]);
    await client.query(`INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by,reviewer_id,decision_source,decision_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[input.id,workspaceId,caseId,id,input.versionId,input.action,input.note,input.decisionBy,userId,input.reviewerId??null,input.decisionSource??null,input.decisionAt??null]);
+   // §0.3 P0: a client decision staff take down comes with what it came in (a signed page, an email, a message).
+   if(clientDecision)await bindEvidence(client,workspaceId,userId,'design_decision',input.id,evidenceIds(input.evidenceFileIds));
    await this.touch(client,workspaceId,caseId,id);
    await this.event(client,workspaceId,caseId,userId,id,'design_'+input.action,input);
    if(input.action==='approved')await syncDesignStages(client,workspaceId,caseId,userId);
@@ -167,6 +175,8 @@ export class DesignService {
    if(input.action==='client_review')await noticeExtraRevision(client,{workspaceId,caseId,designId:id,title:design.title,stage:design.stage??null,round:(design.clientRoundsUsed??0)+1,included:latest.includedClientRounds??null,actorUserId:userId,versionId:input.versionId});
    if(input.action==='client_review')await tellClients(client,{workspaceId,caseId,event:'decision_waiting',recordId:`design:${input.versionId}`,title:`${design.title} (V${latest.number})`,due:reviewExpiresAt});
    if(input.action!=='comment')await noticeDesignStep(client,{workspaceId,caseId,designId:id,title:design.title,action:input.action,fromStatus:latest.status,actorUserId:userId,reviewerUserId:input.reviewerId??latest.reviewerId??null,uploaderUserId:latest.createdBy??null,note:input.note,activityId:input.id});
+   // PLM-049/051: the client's ask counts against the step's free revisions; beyond them it drafts the extra revision's change request.
+   if(clientDecision&&input.action==='changes_requested')await askedForChanges(client,workspaceId,caseId,design.stage,{userId},{note:input.note,source:`design:${input.id}`});
    return this.read(client,workspaceId,caseId,id);
   },decision?'pre_projects.review_designs':undefined);
  }

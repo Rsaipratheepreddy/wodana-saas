@@ -4,6 +4,7 @@ import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
 import { paymentHasFinanceVerifiedReceipt } from "../commercial/finance-ledger";
 import { currencyDecimals } from "../purchasing/orders";
+import { handedOver } from "../site/handed-over";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -20,6 +21,15 @@ export type Milestone = {
   receipt: { status: string; reportedBy: string; reportedAt: string; verifiedBy: string | null; verifiedAt: string | null } | null;
 };
 
+/** The day the client accepted the last pack that completed the project's handover; null until it is handed over in full. */
+async function handoverAcceptedOn(db: Db, workspaceId: string, project: { id: string; caseId: string }) {
+  const packs = (await db.query<{ status: string; areaIds: string[]; decidedOn: string | null }>(
+    `SELECT status, area_ids AS "areaIds", decided_on::text AS "decidedOn" FROM handover_packs WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, project.id])).rows;
+  const areas = (await db.query<{ id: string }>(`SELECT id FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, project.caseId])).rows.map((row) => row.id);
+  if (!handedOver(packs, areas)) return null;
+  return packs.filter((pack) => pack.status === "accepted" && pack.decidedOn).map((pack) => pack.decidedOn!).sort().at(-1) ?? null;
+}
+
 /**
  * The project's payment milestones, read from the deal (the commercial case) for the quotations sealed on the
  * project, with the tax invoice issued for each and its receipt. Amounts are exact to the currency's minor
@@ -35,6 +45,7 @@ export async function readMilestones(db: Db, workspaceId: string, project: { id:
     `SELECT id, payment_id AS "paymentId", number, total::text AS total, due_date::text AS "dueDate" FROM client_invoices
       WHERE workspace_id = $1 AND (project_id = $2 OR case_id = $3) AND status = 'issued'`, [workspaceId, project.id, project.caseId])).rows;
   const places = currencyDecimals(project.currency);
+  const handoverDay = (data?.payments ?? []).some((payment) => payment.dueAtHandover && !payment.dueDate) ? await handoverAcceptedOn(db, workspaceId, project) : null;
   const milestones: Milestone[] = (data?.payments ?? []).filter((payment) => payment.sourceQuoteId && quotes.has(payment.sourceQuoteId)).map((payment) => {
     const invoice = invoices.find((row) => row.paymentId === payment.id) ?? null;
     const receipt = [...(data?.receipts ?? [])].reverse().find((row) => row.paymentId === payment.id && row.status !== "rejected") ?? null;
@@ -42,7 +53,7 @@ export async function readMilestones(db: Db, workspaceId: string, project: { id:
     const state: MilestoneState = verified ? "verified" : receipt || payment.status === "proof_submitted" ? "reported" : invoice ? "invoiced" : "to_invoice";
     return {
       id: payment.id, title: payment.title, trigger: payment.trigger ?? "", amount: Dec.of(payment.amount).round(places).toFixed(places), currency: payment.currency ?? project.currency,
-      dueDate: payment.dueDate || null, quoteId: payment.sourceQuoteId ?? null, requiredForProduction: payment.requiredForProduction === true, state, reference: payment.reference ?? "",
+      dueDate: payment.dueDate || (payment.dueAtHandover ? handoverDay : null) || null, quoteId: payment.sourceQuoteId ?? null, requiredForProduction: payment.requiredForProduction === true, state, reference: payment.reference ?? "",
       requiredForRelease: payment.requiredForRelease === true,
       invoice: invoice ? { id: invoice.id, number: invoice.number, total: invoice.total, dueDate: invoice.dueDate } : null,
       receipt: receipt ? { status: receipt.status, reportedBy: receipt.reportedBy, reportedAt: receipt.reportedAt, verifiedBy: receipt.verifiedBy ?? null, verifiedAt: receipt.verifiedAt ?? null } : null,

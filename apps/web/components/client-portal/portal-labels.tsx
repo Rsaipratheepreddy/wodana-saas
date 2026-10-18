@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { Badge } from "@/design-system";
 import type { PortalSection } from "@/lib/client-portal/types";
-import styles from "./portal.module.css";
 
 type Tone = "success" | "warning" | "danger" | "info" | "neutral";
 
@@ -48,5 +48,5 @@ export function StateLabel({ state, canDecide }: { state: string; canDecide?: bo
   const t = useT();
   const { states } = usePortalLabels();
   const [label, tone] = canDecide === false && WAITING_STATES.has(state) ? [t("Waiting for a decision"), "info" as Tone] : states[state] ?? [state, "neutral" as Tone];
-  return <span className={styles.state} data-tone={tone}>{label}</span>;
+  return <Badge tone={tone}>{label}</Badge>;
 }

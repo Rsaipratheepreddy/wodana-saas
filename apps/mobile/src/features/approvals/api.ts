@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, useApi } from '../../core/api';
 import { key } from '../../core/i18n';
+import { paymentEvidence, type CaseReceipt, type ClientPaymentReport } from './review-model';
 
 /**
  * "Waiting for you" (AP-1): one list across modules from `GET approvals/mine`, decided in the row through
@@ -90,6 +91,40 @@ export function useDecide() {
       queryClient.setQueryData(approvalCountKey(api.workspaceId), { count: list.count, counts: list.counts });
     },
     // Whatever happened, the list shows what still waits (someone else may have decided it).
+    onSettled: () => queryClient.invalidateQueries({ queryKey: approvalsKey(api.workspaceId) }),
+  });
+}
+
+/**
+ * The evidence of a payment to verify, for its review: the receipt on the case's commercial record (how it was paid,
+ * the reference, who recorded it) and the client's proof when they reported it in the portal. Either may be refused to
+ * this person (their permissions); the review then shows what the row itself says.
+ */
+export function usePaymentEvidence(row: ApprovalRow | null) {
+  const api = useApi();
+  const caseId = row?.kind === 'receipt' ? row.parentId : null;
+  const receipts = useQuery({
+    queryKey: ['approvals', api.workspaceId, 'receipts', caseId],
+    queryFn: async () => (await api.get<{ data: { receipts?: CaseReceipt[] } }>(`commercial/cases/${caseId}`)).data.receipts ?? [],
+    enabled: !!caseId, retry: false,
+  });
+  const reports = useQuery({
+    queryKey: ['approvals', api.workspaceId, 'payment-reports', caseId],
+    queryFn: async () => (await api.get<{ reports: ClientPaymentReport[] }>(`client-portal/cases/${caseId}/payment-reports`)).reports,
+    enabled: !!caseId, retry: false,
+  });
+  const loading = !!caseId && (receipts.isLoading || reports.isLoading);
+  const evidence = row && caseId && !loading ? paymentEvidence(row, receipts.data ?? [], reports.data ?? []) : null;
+  return { evidence, loading, caseId };
+}
+
+/** Returns a client's payment report as not received, with the reason the client reads (Finance's return of a portal payment). */
+export function useReturnPaymentReport() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reportId, version, reason }: { reportId: string; version: number; reason: string }) =>
+      api.send(`client-portal/payment-reports/${reportId}`, 'POST', { decision: 'not_received', note: reason.trim(), version }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: approvalsKey(api.workspaceId) }),
   });
 }

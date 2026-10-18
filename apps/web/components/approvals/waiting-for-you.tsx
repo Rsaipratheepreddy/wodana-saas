@@ -1,11 +1,13 @@
 "use client";
 
-import { useId, useMemo, useState, useSyncExternalStore } from "react";
+import { Banknote, Clock, UserRoundCheck } from "lucide-react";
+import { useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, usePageToolbarSlot, type DataGridColumn, FormDialog } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, ReviewDialog, SegmentedControl, useDesignSystem, usePageToolbarSlot, type DataGridColumn, FormNotSaved } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { APPROVAL_FILTERS, OTHER_LABEL, approvalsApi, approveLabel, approvalHeading, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
+import { APPROVAL_FILTERS, OTHER_LABEL, approvalFileLinks, approvalsApi, approveLabel, approvalHeading, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import { playFeedback } from "@/lib/feedback/sounds";
 import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
@@ -13,7 +15,7 @@ import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { cardTitle } from "@/components/woddy/woddy-action-card";
 import { siteApi } from "@/lib/site/client";
 
-type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
+type Decision = "approve" | "return" | "reject";
 
 /**
  * Everything waiting for this person across the modules: design reviews, quotes, payments, deals, orders,
@@ -40,7 +42,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [reviewing, setReviewing] = useState<ApprovalRow | null>(null);
   const now = useSyncExternalStore(subscribeMinute, currentMinute, noClockOnServer);
 
   const reload = async () => {
@@ -48,9 +50,10 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     try { setState(await api.mine()); } catch (cause) { setLoadError(cause instanceof Error ? cause.message : t("What's waiting for you could not be loaded.")); }
   };
   // Something submitted or decided elsewhere shows up without a refresh.
-  useLiveInvalidate(workspaceId, WAITING_SCOPES, () => { if (!busy && !pending) void reload(); }, 1_500);
-  const decide = async (row: ApprovalRow, decision: Pending["decision"], note = "") => {
-    setBusy(`${row.kind}:${row.id}`); setError(""); setDone("");
+  useLiveInvalidate(workspaceId, WAITING_SCOPES, () => { if (!busy) void reload(); }, 1_500);
+  const stateError = useRef(false);
+  const decide = async (row: ApprovalRow, decision: Decision, note = "") => {
+    setBusy(`${row.kind}:${row.id}`); setError(""); setDone(""); stateError.current = false;
     try {
       setState(await api.decide(row, decision, note));
       window.dispatchEvent(new Event(APPROVALS_CHANGED));
@@ -60,11 +63,16 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
         : row.kind === "receipt" ? t("{name} verified.", { name })
           : row.kind === "site_report" ? t("{name} approved and sent to the client.", { name }) : t("{name} approved.", { name }));
       if (decision === "approve") playFeedback("approve");
-      setPending(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("The decision could not be saved.")); }
+    } catch (cause) { stateError.current = true; setError(cause instanceof Error ? cause.message : t("The decision could not be saved.")); }
     finally { setBusy(null); }
   };
 
+  // In the review: a refused decision keeps the dialog open with the reason; a saved one closes it.
+  const decideOrThrow = async (row: ApprovalRow, decision: Decision, note: string) => {
+    await decide(row, decision, note);
+    if (stateError.current) throw new FormNotSaved();
+    setReviewing(null);
+  };
   if (loadError && !state) return <ErrorState title={t("What's waiting for you didn't load")} description={loadError} onRetry={() => void reload()} />;
   const rows = filterRows(state?.rows ?? [], filter);
   const money = (row: ApprovalRow) => {
@@ -96,11 +104,10 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
       meta: { renderCell: (row) => (now === null ? "" : waitingSince(row.since, new Date(now), locale)) } },
     { id: "decide", header: t("Decide"), size: 220, accessorFn: () => "", enableSorting: false, meta: { align: "end", renderCell: (row) => <span className={styles.actions} onClick={(event) => event.stopPropagation()}>
       {!row.canDecide ? <span className={styles.muted}>{t("Someone else decides")}</span>
-        : row.decide ? <>
-          {row.decide.other ? <Button size="compact" isDisabled={Boolean(busy)} onPress={() => setPending({ row, decision: row.decide!.other! })}>{t(OTHER_LABEL[row.decide.other])}</Button> : null}
-          <Button size="compact" variant="primary" isLoading={busy === `${row.kind}:${row.id}`} isDisabled={Boolean(busy) && busy !== `${row.kind}:${row.id}`}
-            onPress={() => (row.decide!.approveNeedsNote ? setPending({ row, decision: "approve" }) : void decide(row, "approve"))}>{t(approveLabel(row.kind))}</Button>
-        </> : <Button size="compact" onPress={() => router.push(row.href)}>{t("Open")}</Button>}
+        // §0.3 P0: a list never decides in one click; Review opens what is being decided, with its record.
+        : row.decide ? <Button size="compact" variant="primary" isLoading={busy === `${row.kind}:${row.id}`} isDisabled={Boolean(busy) && busy !== `${row.kind}:${row.id}`}
+            onPress={() => setReviewing(row)}>{t("Review")}</Button>
+        : <Button size="compact" onPress={() => router.push(row.href)}>{t("Open")}</Button>}
     </span> } },
   ];
   const counts = state?.counts;
@@ -115,18 +122,21 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     {rows.length ? <DataGrid ariaLabel={t("Waiting for you")} wrapText columns={columns} data={rows} getRowId={(row) => `${row.kind}:${row.id}`}
       onRowAction={(row) => router.push(row.href)} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50} />
       : <EmptyState illustration="done" title={t("Nothing waiting for you")} description={t("Quotes, payments, deals, orders and reports that need you appear here.")} />}
-    {pending ? <DecisionNote pending={pending} busy={Boolean(busy)} onClose={() => setPending(null)} onSave={(note) => void decide(pending.row, pending.decision, note)} /> : null}
+    {reviewing?.decide ? <ReviewDialog title={title(reviewing)} description={[reviewing.subject, reviewing.project ? [reviewing.project.reference, reviewing.project.name].filter(Boolean).join(" · ") : null].filter(Boolean).join(" · ") || undefined}
+      confirmLabel={t(approveLabel(reviewing.kind))} confirmNeedsNote={reviewing.decide.approveNeedsNote} onClose={() => setReviewing(null)}
+      facts={[
+        ...(reviewing.amount !== null ? [{ icon: <Banknote />, label: t("Amount"), value: reviewing.change ? t("Changed from {from} to {to}", { from: money({ ...reviewing, amount: reviewing.change.from }), to: money({ ...reviewing, amount: reviewing.change.to }) }) : money(reviewing) }] : []),
+        ...(now !== null ? [{ icon: <Clock />, label: t("Waiting for"), value: waitingSince(reviewing.since, new Date(now), locale) }] : []),
+        ...(reviewing.cover ? [{ icon: <UserRoundCheck />, label: t("Why you"), value: reviewing.cover.via === "delegate" ? t("Covering for someone away") : t("Escalated to you") }] : []),
+      ]}
+      files={approvalFileLinks(workspaceId, reviewing)}
+      evidence={<>
+        {reviewing.preview?.text ? <p className={styles.preview} dir="auto">{reviewing.preview.text}</p> : null}
+        <Link href={reviewing.href}>{t("Open the record ↗")}</Link>
+      </>}
+      onConfirm={async (note) => { await decideOrThrow(reviewing, "approve", note); }}
+      onReturn={reviewing.decide.other === "return" ? async (note) => { await decideOrThrow(reviewing, "return", note); } : undefined}
+      onReject={reviewing.decide.other === "reject" ? async (note) => { await decideOrThrow(reviewing, "reject", note); } : undefined}
+      returnLabel={t(OTHER_LABEL.return)} rejectLabel={t(OTHER_LABEL.reject)} /> : null}
   </div>;
-}
-
-/** A return, a refusal or an approval that needs its reason: one note, then the decision. */
-function DecisionNote({ pending, busy, onClose, onSave }: { pending: Pending; busy: boolean; onClose: () => void; onSave: (note: string) => void }) {
-  const t = useT();
-  const { locale } = useDesignSystem();
-  const [note, setNote] = useState("");
-  const approve = pending.decision === "approve";
-  const label = approve ? t("Approve") : t(OTHER_LABEL[pending.decision as "return" | "reject"]);
-  return <FormDialog size="md" title={`${label} · ${approvalTitle(pending.row, locale)}`} onClose={onClose} isSubmitting={busy} isSubmitDisabled={!note.trim()} submitLabel={label} onSubmit={() => onSave(note.trim())}>
-    <TextAreaField label={approve ? t("Why it's approved") : t("What needs to change")} isRequired value={note} onChange={setNote} maxLength={1000} />
-  </FormDialog>;
 }

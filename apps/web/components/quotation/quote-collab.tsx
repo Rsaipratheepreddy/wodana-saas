@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, MessageCircle, RotateCcw, Send, X } from "lucide-react";
-import { Avatar, IconButton, useDesignSystem } from "@/design-system";
+import { Avatar, Button, IconButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import type { QuoteAnchor, QuotePerson, QuoteThread } from "@/lib/quotation/types";
@@ -74,7 +74,7 @@ export function CommentPanel({ anchor, title, threads, members, api, meId, onThr
   return <section className={styles.commentPanel} aria-label={t("Comments on {name}", { name: title })} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
     <header>
       <strong>{title}</strong>
-      {resolvedCount ? <button type="button" className={styles.linkButton} onClick={() => setShowResolved((value) => !value)}>{showResolved ? t("Hide resolved") : t("Resolved · {count}", { count: resolvedCount })}</button> : null}
+      {resolvedCount ? <Button size="compact" variant="quiet" onPress={() => setShowResolved((value) => !value)}>{showResolved ? t("Hide resolved") : t("Resolved · {count}", { count: resolvedCount })}</Button> : null}
       <IconButton aria-label={t("Close")} size="compact" variant="quiet" onPress={onClose}><X aria-hidden="true" size={14} /></IconButton>
     </header>
     {here.map((thread) => <article key={thread.id} className={styles.thread} data-resolved={thread.status === "resolved" || undefined}>
@@ -127,7 +127,7 @@ export function CommentsList({ threads, members, api, meId, titleOf, onOpen, onT
         </button>
       </li>;
     })}</ul> : <p className={styles.noComments}><MessageCircle aria-hidden="true" size={18} />{t("No comments yet")}</p>}
-    {resolved.length ? <button type="button" className={styles.linkButton} onClick={() => setShowResolved((value) => !value)}>{showResolved ? t("Hide resolved") : t("Resolved · {count}", { count: resolved.length })}</button> : null}
+    {resolved.length ? <Button size="compact" variant="quiet" onPress={() => setShowResolved((value) => !value)}>{showResolved ? t("Hide resolved") : t("Resolved · {count}", { count: resolved.length })}</Button> : null}
     <Composer members={members} meId={meId} placeholder={t("Comment on the quote · @ to mention")}
       onSend={async (body, mentions) => { try { onThreads((await api.comment(crypto.randomUUID(), { kind: "total", key: "" }, body, mentions)).threads ?? []); return true; } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); return false; } }} />
   </div>;

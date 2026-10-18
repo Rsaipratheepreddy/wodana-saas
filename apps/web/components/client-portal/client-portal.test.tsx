@@ -287,7 +287,9 @@ describe("client portal", () => {
     await user.click(await screen.findByRole("button", { name: "Add an idea" }));
     const idea = await screen.findByRole("dialog", { name: "Add an idea" });
     await user.upload(within(idea).getByLabelText("Add photos"), new File(["x"], "sofa.jpg", { type: "image/jpeg" }));
-    expect(await within(idea).findByText("Added")).toBeInTheDocument();
+    // The photo shows in the list as it uploads; the form waits until it's up.
+    expect(await within(idea).findByRole("link", { name: "Open sofa.jpg" })).toBeInTheDocument();
+    await waitFor(() => expect(within(idea).queryByText("Adding…")).not.toBeInTheDocument());
     await user.type(within(idea).getByRole("textbox", { name: "What do you like about it?" }), "This sofa");
     await user.click(within(idea).getByRole("button", { name: "Add to moodboard" }));
     await waitFor(() => expect(sent(fetcher, "command").at(-1)).toEqual(expect.objectContaining({ action: "add_inspiration", caseId: "c1", note: "This sofa",

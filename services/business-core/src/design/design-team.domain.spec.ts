@@ -5,8 +5,8 @@ import { agreedRate } from "./design-packages.domain";
 describe("the design team of a job (PLM-151)", () => {
   const nobody = { admin: false, accountManager: false, reviewer: false, leadDesigner: false, technicalLead: false };
 
-  it("lets the Account Manager allocate the designers and the Sales Admin, the lead tag the Visualiser and the technical lead tag the Draftsman", () => {
-    expect(settableSlots({ ...nobody, accountManager: true }, false)).toEqual(["lead_designer", "junior_designer", "sales_admin", "material_coordinator"]);
+  it("lets the Account Manager allocate the designers, the Sales Admin and the Visualiser (guide step 1), the lead tag the Visualiser too and the technical lead tag the Draftsman", () => {
+    expect(settableSlots({ ...nobody, accountManager: true }, false)).toEqual(["lead_designer", "junior_designer", "sales_admin", "visualiser", "material_coordinator"]);
     expect(settableSlots({ ...nobody, leadDesigner: true }, false)).toEqual(["visualiser", "material_coordinator"]);
     expect(settableSlots({ ...nobody, technicalLead: true }, false)).toEqual(["draftsman"]);
     expect(settableSlots(nobody, false)).toEqual([]);
@@ -15,7 +15,7 @@ describe("the design team of a job (PLM-151)", () => {
 
   it("gives the lead designer's choice to the package's reviewer when the package has one (PLM-145)", () => {
     expect(slotSetters("lead_designer", true)).toEqual(["reviewer"]);
-    expect(settableSlots({ ...nobody, accountManager: true }, true)).toEqual(["junior_designer", "sales_admin", "material_coordinator"]);
+    expect(settableSlots({ ...nobody, accountManager: true }, true)).toEqual(["junior_designer", "sales_admin", "visualiser", "material_coordinator"]);
     expect(settableSlots({ ...nobody, reviewer: true }, true)).toEqual(["lead_designer"]);
   });
 
@@ -25,6 +25,9 @@ describe("the design team of a job (PLM-151)", () => {
     team.set("designer", { membershipId: "m1", notApplicable: false });
     team.set("junior_designer", { membershipId: null, notApplicable: true });
     expect(allocationMissing(DEFAULT_DESIGN_TEAM, team)).toEqual(["sales_admin"]);
+    // Guide step 1: the Visualiser is allocated too when the package has renders, the Material Coordinator on a job with a material selection.
+    expect(allocationMissing(DEFAULT_DESIGN_TEAM, team, { renders: true, materialSelection: true })).toEqual(["sales_admin", "visualiser", "material_coordinator"]);
+    expect(allocationMissing(DEFAULT_DESIGN_TEAM, team, { renders: false, materialSelection: false })).toEqual(["sales_admin"]);
     team.set("sales_admin", { membershipId: "m2", notApplicable: false });
     expect(allocationMissing(DEFAULT_DESIGN_TEAM, team)).toEqual([]);
     // A firm without a junior designer or a Sales Admin per job only allocates the lead.

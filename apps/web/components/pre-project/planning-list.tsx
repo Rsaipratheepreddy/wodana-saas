@@ -5,8 +5,7 @@ import Link, { useLinkStatus } from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import {
-  Badge, Button, Callout, ControlledModalDialog, DataGrid, EmptyState, ListTabs, NoResultsState, OwnerCell, PageShell, personDisplayName, RecordName, SearchInput, SelectField,
-  type DataGridColumn, type ToolbarFilter,
+  Badge, Button, Callout, ControlledModalDialog, DataGrid, EmptyState, ListTabs, NoResultsState, OwnerCell, PageShell, personDisplayName, RecordName, SearchInput, SelectField, Skeleton, type DataGridColumn, type ToolbarFilter,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
@@ -16,7 +15,8 @@ import { projectDisplayName } from "@/lib/projects/format";
 import type { PortfolioRow } from "@/components/projects/project-portfolio";
 import { useProjectFormat } from "@/components/project-core/format";
 import { StartQualifiedLead } from "./start-qualified-lead";
-import { caseListStep } from "@/lib/pre-project/case-record";
+import { casePhaseText, effectivePhase } from "@/lib/pre-project/case-record";
+import { useJobNow, type RecordType } from "@/lib/jobs/job-now";
 import styles from "./planning-list.module.css";
 
 export type PlanningGroup = "ready" | "before_deal" | "in_design";
@@ -46,7 +46,9 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
   const caseRows: PlanningRow[] = planning.filter((item) => !item.projectId && !item.project && !portfolio.has(item.id) && item.status !== "cancelled").map((item) => {
     // A case's planning phase as the person reads it on its path's own line (PLM-121/126), moved on by its quotations
     // and agreement as its overview reads them, and what it needs next (a sent quotation waits for the client).
-    const step = caseListStep({ phase: item.phase ?? "discover", plan: item.plan, designApprovedOn: item.designApprovedOn, designComplete: item.designComplete }, item.commercial);
+    const phase = casePhaseText(effectivePhase({ phase: item.phase ?? "discover", plan: item.plan, designApprovedOn: item.designApprovedOn, designComplete: item.designComplete }, item.commercial), item.plan);
+    // The next step is the job's journey (filled in by the list from the server); until it answers, the phase's own words.
+    const step = { stage: phase.stage, next: { key: item.designComplete ? tKey("Design complete") : phase.next, values: undefined as Record<string, string | number> | undefined } };
     const ready = Boolean(item.qualifiedLead) || item.status === "qualified";
     return {
       id: `case-${item.id}`, title: item.title, description: item.description?.trim() || undefined, customer: item.customerName, group: ready ? "ready" : "before_deal",
@@ -108,7 +110,14 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
   const [starting, setStarting] = useState(false);
   const lock = useRef(false);
 
-  const rows = useMemo(() => planningRows(projects, planning.items, workflow, servicePathEnabled), [projects, planning.items, workflow, servicePathEnabled]);
+  const listed = useMemo(() => planningRows(projects, planning.items, workflow, servicePathEnabled), [projects, planning.items, workflow, servicePathEnabled]);
+  // §0.3 P10: each row's next step is its job's step now, read from the journey (one source for every screen).
+  const records = useMemo(() => listed.flatMap((row): Array<{ type: RecordType; id: string }> => row.group === "ready" ? [] : row.caseId ? [{ type: "case", id: row.caseId }] : row.projectId ? [{ type: "project", id: row.projectId }] : []), [listed]);
+  const { lookup } = useJobNow(planning.workspaceId, records);
+  const rows = useMemo(() => listed.map((row) => {
+    const job = row.caseId ? lookup("case", row.caseId) : row.projectId ? lookup("project", row.projectId) : null;
+    return job?.now && row.group !== "ready" ? { ...row, next: job.now.label, nextValues: undefined } : row;
+  }), [listed, lookup]);
   const visible = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return rows.filter((row) => (group === "all" || row.group === group) && (status === "all" || (status === "hold" ? row.onHold : !row.onHold))
@@ -237,7 +246,7 @@ function StartPlanningDialog({ planning, canStart, onClose }: { planning: PrePro
       : !canStart ? <Callout tone="warning" title={t("Project creation needs access")}>{t("Your account needs Planning create and Opportunities view permissions. Ask your workspace administrator to update your role.")}</Callout>
       : <><div className={styles.candidateSearch}><SearchInput label={t("Search opportunities")} placeholder={t("Find by project or client")} value={search} onChange={setSearch} />
           <Button size="compact" isDisabled={loading} onPress={() => void load(search)}>{t("Find")}</Button></div>
-        {loading ? <p role="status">{t("Loading opportunities…")}</p> : candidates.length ? <>
+        {loading ? <Skeleton lines={3} /> : candidates.length ? <>
           <SelectField label={t("Opportunity")} isRequired items={candidates.map((item) => ({ id: item.id, label: `${item.title} · ${item.customerName}` }))} selectedKey={opportunityId || null}
             onSelectionChange={(key) => setOpportunityId(String(key ?? ""))} placeholder={t("Choose an opportunity")} />
           {more ? <p className={styles.hint}>{t("More opportunities exist. Search by project or client to find one beyond this list.")}</p> : null}</>

@@ -5,6 +5,7 @@ import { DesignSystemProvider } from "@/design-system";
 import type { PreProjectCase } from "@/lib/pre-project/types";
 import type { CommercialState } from "@/lib/commercial/types";
 import type { JourneyView } from "@/lib/pre-project/design-workspace";
+import { clearJobNowCache } from "@/lib/jobs/job-now";
 import { CaseOverview } from "./case-overview";
 
 const { caseRequest, commands } = vi.hoisted(() => ({ caseRequest: vi.fn(), commands: [] as unknown[] }));
@@ -43,11 +44,14 @@ function answer(...values: unknown[]) {
   });
 }
 const commandsSent = () => caseRequest.mock.calls.filter(([, , path]) => path !== "design-journey" && path !== "client-calls" && path !== "value-engineering");
-afterEach(() => { caseRequest.mockReset(); commands.length = 0; });
+afterEach(() => { caseRequest.mockReset(); commands.length = 0; vi.unstubAllGlobals(); });
 
 describe("planning case overview", () => {
-  it("shows the case as a record: one title, where it stands, the next step and the stages", async () => {
+  it("shows the case as a record: one title, where it stands, the job's step now and the stages", async () => {
     answer();
+    clearJobNowCache();
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ items: [{ type: "case", id: "case-1", jobId: "job-1", reference: "J-000007", chapter: "win",
+      now: { label: "Proposal 1 sent", owner: "Owner", dueAt: null, late: false, href: null } }] }) })));
     view();
     expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 2, name: "Villa interiors" })).toBeVisible();
@@ -61,9 +65,11 @@ describe("planning case overview", () => {
     expect(stage).toHaveTextContent("Scope confirmationStage 2 of 6");
     expect(within(stage as HTMLElement).getByRole("button")).toBeInTheDocument();
     expect(within(screen.getByRole("tablist", { name: "Lists" })).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Stages", "History"]);
-    // Defining the scope is next; it opens where it's done.
-    expect(await screen.findByRole("heading", { level: 3, name: "Confirm the scope" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open the scope" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/definition");
+    // §0.3 P10: what's next is the job's step now, the same words as the job page, with a way to the job.
+    const now = await screen.findByRole("region", { name: "Now · Win" });
+    expect(now).toHaveTextContent("Proposal 1 sent");
+    expect(within(now).getByRole("link", { name: "Open job" })).toHaveAttribute("href", "/workspace/jobs/job-1");
+    expect(screen.queryByRole("heading", { level: 3, name: "Confirm the scope" })).not.toBeInTheDocument();
     expect(within(screen.getByRole("list", { name: "Stages" })).getAllByRole("listitem")).toHaveLength(6);
     // Team: the sales owner and the case owner, each with email.
     expect(screen.getByRole("link", { name: "Email Designer" })).toHaveAttribute("href", "mailto:designer@example.test");

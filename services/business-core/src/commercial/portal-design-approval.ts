@@ -2,6 +2,7 @@ import {BadRequestException,ConflictException,ForbiddenException} from '@nestjs/
 import type {PoolClient} from 'pg';
 import {syncDesignStages} from '../design/design-stage-sync';
 import {noticeDesignStep} from '../pre-projects/design-notices';
+import {askedForChanges} from '../design/design-revisions.store';
 
 export async function portalReviewDesign(client:PoolClient,workspaceId:string,caseId:string,versionId:string) {
  if(!/^[0-9a-f-]{36}$/i.test(versionId))throw new BadRequestException('Choose a design file.');
@@ -29,5 +30,10 @@ export async function decidePortalDesign(client:PoolClient,workspaceId:string,ca
  if(action==='approved')await syncDesignStages(client,workspaceId,caseId,null);
  const shown=(await client.query<{title:string;createdBy:string}>(`SELECT d.title,v.created_by AS "createdBy" FROM pre_project_designs d JOIN pre_project_design_versions v ON v.workspace_id=d.workspace_id AND v.design_id=d.id WHERE d.workspace_id=$1 AND v.id=$2`,[workspaceId,input.versionId])).rows[0];
  if(shown)await noticeDesignStep(client,{workspaceId,caseId,designId:design.id,title:shown.title,action,fromStatus:'client_review',actorUserId:null,uploaderUserId:shown.createdBy,note:input.note,activityId:input.challengeId});
+ // PLM-049/051: the client's ask counts against the step's free revisions; beyond them it drafts the extra revision's change request.
+ if(action==='changes_requested'){
+  const stage=(await client.query<{stage:string|null}>(`SELECT stage FROM pre_project_designs WHERE workspace_id=$1 AND id=$2`,[workspaceId,design.id])).rows[0]?.stage??null;
+  await askedForChanges(client,workspaceId,caseId,stage,{grantId:grant.id,name:grant.name},{note:input.note,source:`design:${input.challengeId}`});
+ }
  return {ok:true};
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Button, Callout, DesignSystemProvider, FormDialog, SelectField, useWorkingCalendar } from "@/design-system";
+import { Button, Callout, DesignSystemProvider, FormDialog, SelectField, Skeleton, useWorkingCalendar } from "@/design-system";
 import { CrmDateTimeField } from "@/components/crm/crm-date-time-field";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import type { PreProjectListItem } from "@/lib/pre-project/types";
@@ -43,7 +43,7 @@ function StartDialog({ workspaceId, lead, onClose, onStarted }: { workspaceId: s
   return <FormDialog title={t("Start planning")} description={`${lead.customerName} · ${lead.title}`} onClose={onClose} submitLabel={t("Start planning")}
     isSubmitDisabled={loading || !members.some((member) => member.id === owner) || !date || !time} errorTitle={t("Could not start planning")} onSubmit={start}>
     {loadFailure ? <Callout title={t("Could not start planning")} tone="warning">{loadFailure}<Button size="compact" isDisabled={loading} onPress={() => { setLoading(true); setLoadFailure(""); setAttempt((n) => n + 1); }}>{t("Retry")}</Button></Callout> : null}
-    {loading ? <p role="status">{t("Loading lead managers…")}</p> : <>
+    {loading ? <Skeleton shape="form" lines={2} /> : <>
       {!members.length && !loadFailure ? <p>{t("No active lead managers. Ask an administrator to add a workspace member.")}</p> : null}
       <SelectField label={t("Lead manager")} isRequired selectedKey={members.some((member) => member.id === owner) ? owner : null} onSelectionChange={(key) => setOwner(String(key ?? ""))} items={members.map((member) => ({ id: member.id, label: member.name }))} />
       <CrmDateTimeField label={t("Next follow-up")} isRequired value={when} onChange={setWhen} />

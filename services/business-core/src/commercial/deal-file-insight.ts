@@ -136,6 +136,16 @@ const CURRENT_DESIGN_SECTIONS: Array<[string, string]> = [
 ];
 
 /**
+ * Guide L (16 Oct 2026): the design lines turn Done from the work itself: the site measure filled in, the mood board the
+ * client chose, the space planning PDF uploaded, the 2D concept and the renders approved, the design approval signed.
+ * A line shows only when the job has that step (a Full ID job has no samples, a Concept package no renders).
+ */
+const GUIDE_DESIGN_SECTIONS: Array<[string, string]> = [
+  ["kickoff", "kickoff"], ["site_measure", "site_visit"], ["moodboards", "moodboards"], ["space_planning", "space_planning"], ["concept_2d", "concepts"],
+  ["renders", "renders"], ["samples", "samples"], ["final_render", "final_render"], ["design_approval", "approval"],
+];
+
+/**
  * The Deal File's contents (PLM-123): what every Deal File holds, then what the enquiry type adds — Furniture (items,
  * collection or delivery, approved drawing for D/E, materials approval when they change, supplier orders for C,
  * proof of delivery), Full ID (design fee proposal and every design stage), ID & Furniture and fit-out (Proposal 2,
@@ -193,10 +203,13 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
     const proposal = live.proposals.find((item) => item.kind === "design");
     sections.push({ key: "design_fee_proposal", group: "design", state: state(Boolean(proposal?.wonAt) || data.quotes.some((item) => item.round === "design" && item.status === "accepted"), Boolean(proposal)), href: caseHref("quotations") });
     // A journey started in the old order keeps its own steps; a new one (or none yet) shows the current order.
-    const current = !Object.keys(live.designStages).length || "kickoff" in live.designStages;
-    for (const [key, stage] of current ? CURRENT_DESIGN_SECTIONS : DESIGN_SECTIONS) {
+    const guide = !Object.keys(live.designStages).length || "moodboards" in live.designStages;
+    const current = "kickoff" in live.designStages;
+    for (const [key, stage] of guide ? GUIDE_DESIGN_SECTIONS : current ? CURRENT_DESIGN_SECTIONS : DESIGN_SECTIONS) {
       const status = live.designStages[stage];
-      if (!status && ["space_planning", "renders"].includes(stage)) continue;
+      // Before the journey starts only the steps every package has show; once it has started, only the job's own steps.
+      const started = Object.keys(live.designStages).length > 0;
+      if (!status && (guide ? (started ? stage !== "approval" : ["renders", "samples", "final_render"].includes(stage)) : ["space_planning", "renders"].includes(stage))) continue;
       sections.push({ key, group: "design", state: state(status === "done", status === "active"), href: caseHref("designs") });
     }
   }

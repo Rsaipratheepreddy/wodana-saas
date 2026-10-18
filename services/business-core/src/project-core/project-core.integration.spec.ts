@@ -37,6 +37,7 @@ import { processDailyProgressAutoSend, processWeeklyRollups } from "../site/prog
 import { PayablesService } from "../purchasing/payables.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { processProjectBudgets } from "./project-money";
+import { readMilestones } from "./project-milestones";
 import { ReceivablesService } from "../receivables/receivables.service";
 import { CommercialService } from "../commercial/commercial.service";
 import { AccountingService } from "../accounting/accounting.service";
@@ -556,6 +557,10 @@ integration("projects core (plan §6.10)", () => {
         ["Decide {count} requirements before sending", { count: "1" }], ["{name} is included but no line covers it", { name: "Soft-close drawers" }]]));
       // The blocked check opens the requirement to decide in one click.
       expect(state.checks.find((check) => check.code === "Decide {count} requirements before sending")?.requirementId).toBe(fridge);
+      // The design-fee proposal goes out after the intro, before requirements are decided (§0.3 P0): nothing blocks it.
+      await w.client.query("UPDATE commercial_quotes SET round = 'design' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, w.quoteId]);
+      expect((await w.builder.builder(actor, w.workspaceId, w.caseId, w.quoteId)).checks.filter((check) => /requirement|covers it/.test(check.code))).toEqual([]);
+      await w.client.query("UPDATE commercial_quotes SET round = NULL WHERE workspace_id = $1 AND id = $2", [w.workspaceId, w.quoteId]);
       const cabinets = state.lines.find((line) => line.id === "a")!;
       await expect(w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: cabinets.version, scopeId: fridge } }] })).rejects.toThrow(/included in the scope/);
       state = await w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: cabinets.version, scopeId: drawers } }] });
@@ -831,6 +836,9 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query(`UPDATE work_items SET due_date = ${today} - 2 WHERE id = $1`, [late]);
       await w.client.query(`UPDATE work_items SET due_date = ${today} - 10 WHERE id = $1`, [old]);
       await w.client.query(`UPDATE work_items SET due_date = ${today} - 1, status = 'done', completed_at = now() WHERE id = $1`, [done]);
+      // With no digest: on a weekend or after hours a held email would otherwise wait in the next working morning's digest.
+      await w.client.query(`INSERT INTO notification_person_settings (workspace_id, membership_id, digest_enabled) SELECT workspace_id, id, false FROM workspace_memberships WHERE workspace_id = $1
+        ON CONFLICT (workspace_id, membership_id) DO UPDATE SET digest_enabled = false`, [w.workspaceId]);
       await runReminderSweep(w.client, w.workspaceId);
       await runReminderSweep(w.client, w.workspaceId);
       const sent = (await w.client.query<{ channel: string; recipient: string; subject: string }>(
@@ -2830,7 +2838,7 @@ integration("projects core (plan §6.10)", () => {
       const refused = (await w.client.query("SELECT title, severity, source FROM work_items WHERE project_id = $1 AND type = 'snag'", [projectId])).rows;
       expect(refused).toEqual([{ title: "Handover refused: Cabinet doors misaligned", severity: "major", source: "client" }]);
 
-      // Accepted only when no critical snag is open in the kitchen.
+      // Accepted only when no snag is open in the kitchen (guide N: any open snag holds the handover).
       const second = state.packs[0];
       state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: second.id, version: second.version, ...open });
       await w.client.query(`INSERT INTO work_items (id, workspace_id, project_id, number, type, title, severity, source, area_id, created_by)
@@ -2838,8 +2846,8 @@ integration("projects core (plan §6.10)", () => {
       const issued = state.packs[0];
       const acceptance = { action: "accept", packId: issued.id, decidedOn: "2026-09-27", decidedByName: "Maya Client", method: "signed_document", outstanding: ["Touch-up paint on the skirting"], ...open,
         balanceReason: "Final payment due on handover" };
-      await expect(pm.command(actor, w.workspaceId, projectId, { ...acceptance, version: issued.version })).rejects.toThrow("Close the critical snag first: #99.");
-      await w.client.query("UPDATE work_items SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND number = 99", [projectId, w.manager]);
+      await expect(pm.command(actor, w.workspaceId, projectId, { ...acceptance, version: issued.version })).rejects.toThrow("Close the open snags first: #1, #99.");
+      await w.client.query("UPDATE work_items SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND type = 'snag'", [projectId, w.manager]);
       state = await pm.command(actor, w.workspaceId, projectId, { ...acceptance, version: issued.version });
       expect([state.packs[0].status, state.covered]).toEqual(["accepted", true]);
       const minor = (await w.client.query("SELECT title, severity, source FROM work_items WHERE project_id = $1 AND type = 'snag' AND severity = 'minor'", [projectId])).rows;
@@ -2863,6 +2871,24 @@ integration("projects core (plan §6.10)", () => {
       const listed = (await cases.list(actor, w.workspaceId, {})).items.find((item: { id: string }) => item.id === w.caseId);
       const current = (await w.client.query<{ name: string }>("SELECT name FROM project_stages WHERE project_id = $1 AND status = 'current'", [projectId])).rows[0];
       expect(listed).toMatchObject({ projectId, project: { id: projectId, caseId: w.caseId, staged: true, stageName: current.name, workflow: null } });
+    });
+  });
+
+  it("gives the payment marked due at handover the day the client accepted the full handover (an explicit flag, never the trigger text)", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
+      const data = { ...(loaded.content as CommercialData), revision: loaded.revision + 1 };
+      data.payments = [...data.payments,
+        { id: "p3", sourceQuoteId: w.quoteId, title: "On handover", trigger: "At client handover", amount: 100, dueDate: "", requiredForRelease: false, dueAtHandover: true, status: "pending", proof: "", reference: "" },
+        { id: "p4", sourceQuoteId: w.quoteId, title: "Retention", trigger: "At client handover", amount: 50, dueDate: "", requiredForRelease: false, status: "pending", proof: "", reference: "" }];
+      await commercialRepository.save(w.client, w.workspaceId, w.caseId, data);
+      const project = (await w.client.query<{ id: string; caseId: string; currency: string }>(`SELECT id, case_id AS "caseId", currency FROM delivery_projects WHERE id = $1`, [projectId])).rows[0];
+      const due = async () => Object.fromEntries((await readMilestones(w.client, w.workspaceId, project)).milestones.map((milestone) => [milestone.id, milestone.dueDate]));
+      expect(await due()).toMatchObject({ p3: null, p4: null });
+      await acceptHandover(w, projectId);
+      expect(await due()).toMatchObject({ p3: "2026-09-26", p4: null });
     });
   });
 
@@ -3544,7 +3570,7 @@ integration("projects core (plan §6.10)", () => {
       expect(state.lines.map((line) => [line.description, line.total])).toEqual([["Advance", `${half.toFixed(2)}00`]]);
       expect((await send({ action: "issue", id: advance, caseId: w.caseId, paymentId: "p1" })).invoice.number).toBe(`FAC-INV-${year}-00001`);
       await expect(send({ action: "issue", id: randomUUID(), caseId: w.caseId, paymentId: "p1" })).rejects.toThrow(/already issued/);
-      await expect(send({ action: "issue", id: randomUUID(), caseId: w.caseId, paymentId: "nope" })).rejects.toThrow(/isn't on a started project/);
+      await expect(send({ action: "issue", id: randomUUID(), caseId: w.caseId, paymentId: "nope" })).rejects.toThrow(/isn't on an accepted design quotation or a started project/);
 
       // The second milestone, invoiced; its amount is now fixed on the deal until the invoice is credited.
       const second = randomUUID();

@@ -22,6 +22,9 @@ const projectFlow = (optional: FlowStepDefinition[]): FlowDefinition => ({
     enquiryType,
     step("intro_meeting", "Hold the intro meeting", "sales", "intro_meeting_completed", "qualification", { clientVisible: true }),
     step("client_type", "Set the client type", "sales", "client_type_set", "qualification"),
+    // §0.3 P0 (guide G): Qualified needs the intro's outcome (going ahead, with its scope) and the target completion date.
+    step("intro_outcome", "Record the intro outcome", "sales", "qualification_outcome_recorded", "qualification"),
+    step("target_completion", "Set the target completion date", "sales", "target_completion_set", "qualification"),
     step("discovery", "Complete discovery", "sales", "discovery_complete", "proposal"),
     ...optional,
     paymentProof,

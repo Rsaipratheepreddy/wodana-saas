@@ -49,7 +49,7 @@ describe("Factory form dialogs", () => {
   });
 
   it("reports output in one column", async () => {
-    render(<DesignSystemProvider><ReportDialog unit="m" left="3" onClose={vi.fn()} onSave={vi.fn()} /></DesignSystemProvider>);
+    render(<DesignSystemProvider><ReportDialog workspaceId="2ab00a25-4912-469a-9081-d8602f2b715a" unit="m" left="3" onClose={vi.fn()} onSave={vi.fn()} /></DesignSystemProvider>);
     const dialog = await screen.findByRole("dialog", { name: "Report output" });
     expect(rows(dialog)).toBe(0);
     saveAtTheEnd(dialog, "Report output");

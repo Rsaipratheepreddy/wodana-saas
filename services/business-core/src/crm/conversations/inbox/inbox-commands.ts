@@ -1,4 +1,4 @@
-import { ConflictException, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, UnprocessableEntityException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { CrmEventsService } from "../../shared/crm-events.service";
 import { INBOX_MEMBERS_SQL } from "./inbox-assignment";
@@ -41,8 +41,28 @@ export function mapConversation(row: ConversationRow) {
     id: row.id, partyId: row.party_id, leadId: row.lead_id, channel: row.channel, subject: row.subject, status: row.status,
     ownerMembershipId: row.owner_membership_id, lastMessageAt: row.last_message_at, lastInboundAt: row.last_inbound_at,
     unreadCount: row.unread_count, snoozedUntil: row.snoozed_until ?? null, waitingSince: row.waiting_since ?? null,
-    assignedAt: row.assigned_at ?? null, resolvedAt: row.resolved_at ?? null, connectionId: row.connection_id ?? null, closingDueAt: row.closing_due_at ?? null, version: Number(row.version),
+    assignedAt: row.assigned_at ?? null, resolvedAt: row.resolved_at ?? null, resolvedBy: row.resolved_by ?? null, connectionId: row.connection_id ?? null, closingDueAt: row.closing_due_at ?? null, version: Number(row.version),
   };
+}
+
+/** Who may reopen a resolved chat, and the sentence that says so to anyone else. */
+export const REOPEN_REFUSED = "Only the person who resolved this chat, or an inbox manager, can reopen it.";
+export type Reopener = { userId: string; membershipId: string | null; manager: boolean };
+
+/**
+ * A resolved chat is reopened only by the person who resolved it or by an inbox manager. A chat the system resolved
+ * (a quiet chat, so nobody is named) counts as resolved by its owner. Any other state is not a reopen.
+ */
+export function mayReopen(chat: ConversationRow, who: Reopener) {
+  if (chat.status !== "closed" || who.manager) return true;
+  if (chat.resolved_by) return chat.resolved_by === who.userId;
+  return Boolean(who.membershipId) && chat.owner_membership_id === who.membershipId;
+}
+
+/** The same rule for a list's rows; the placeholders hold the user id, the membership id and whether they manage the inbox. */
+export function reopenSql(user: string, membership: string, manager: string, alias = "conversation") {
+  return `(${alias}.status = 'closed' AND COALESCE(${manager}::boolean OR ${alias}.resolved_by = ${user}::uuid
+    OR (${alias}.resolved_by IS NULL AND ${alias}.owner_membership_id = ${membership}::uuid), false))`;
 }
 
 async function requireInboxMember(db: Db, workspaceId: string, membershipId: string) {
@@ -64,6 +84,8 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
   method: "manual" | "bulk" | "enquiry"; expectedVersion?: number;
   /** The closing message (PLM-137) that set the state, kept on the history line. */
   closing?: string;
+  /** Who is acting, for reopening a resolved chat; without it only the person who resolved the chat may. */
+  reopener?: Omit<Reopener, "userId">;
 }) {
   const { workspaceId, before, change, actorUserId } = input;
   const conversationId = String(before.id);
@@ -85,6 +107,7 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
   if (!statusChanged && !ownerChanged && !leadChanged && !subjectChanged) return { after: mapConversation(before), changed: false };
   // PLM-138: a spam chat leaves Spam only when its contact is cleared ("Not spam", with a reason).
   if (statusChanged && before.status === "spam") throw new UnprocessableEntityException("This chat is marked as spam. Mark it Not spam first.");
+  if (statusChanged && !mayReopen(before, { userId: actorUserId, membershipId: input.reopener?.membershipId ?? null, manager: input.reopener?.manager === true })) throw new ForbiddenException(REOPEN_REFUSED);
   if (input.expectedVersion !== undefined && Number(before.version) !== input.expectedVersion) throw new ConflictException("Conversation changed; refresh before trying again");
   if (ownerChanged && owner) await requireInboxMember(db, workspaceId, owner);
   if (leadChanged && leadId) {
@@ -95,6 +118,7 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
   const updated = await db.query<ConversationRow>(
     `UPDATE crm_conversations SET status = $3::varchar, snoozed_until = $4::timestamptz,
             resolved_at = CASE WHEN $3::varchar = 'closed' THEN COALESCE(CASE WHEN status = 'closed' THEN resolved_at END, now()) ELSE NULL END,
+            resolved_by = CASE WHEN $3::varchar = 'closed' THEN (CASE WHEN status = 'closed' THEN resolved_by ELSE $9::uuid END) ELSE NULL END,
             owner_membership_id = $5::uuid,
             assigned_at = CASE WHEN $5::uuid IS NULL THEN NULL WHEN owner_membership_id IS DISTINCT FROM $5::uuid THEN now() ELSE assigned_at END,
             lead_id = $6::uuid, subject = $7::varchar, version = version + 1, updated_at = now(),
@@ -103,7 +127,7 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
             job_id = CASE WHEN $8::boolean AND job_id IS NULL AND $6::uuid IS NOT NULL THEN $6::uuid ELSE job_id END,
             filed_at = CASE WHEN $8::boolean AND job_id IS NULL AND $6::uuid IS NOT NULL THEN now() ELSE filed_at END
       WHERE workspace_id = $1 AND id = $2 RETURNING *`,
-    [workspaceId, conversationId, status, snoozedUntil, owner, leadId, subject, leadChanged],
+    [workspaceId, conversationId, status, snoozedUntil, owner, leadId, subject, leadChanged, actorUserId],
   );
   const after = updated.rows[0];
   const method = input.method === "enquiry" ? "enquiry" : input.method;

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, MoneyField, PercentageInput, QuantityInput, SelectField, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogApi } from "@/lib/workspace/catalog-v2";
 import styles from "./catalog-page.module.css";
@@ -12,7 +12,6 @@ type Book = { id: string; name: string; currency: string; status: string; versio
 type Draft = { method: string; price: string; rate: string; minimumCharge: string; cost: string; markupPercent: string; labour: string; marginPercent: string; tiers: Array<{ fromQuantity: string; price: string }> };
 
 const blank = (method = "fixed"): Draft => ({ method, price: "", rate: "", minimumCharge: "", cost: "", markupPercent: "", labour: "", marginPercent: "", tiers: [{ fromQuantity: "1", price: "" }] });
-const number = (value: string) => value.replace(/[^\d.]/g, "");
 
 /** Prices of one item across price lists: set, QS review, go live. */
 export function CatalogPrices({ workspaceId, catalogId, itemId, itemType, unitCode, prices, canManage, canReview, currency, locale, onChanged }: {
@@ -62,8 +61,14 @@ export function CatalogPrices({ workspaceId, catalogId, itemId, itemType, unitCo
     await catalogApi(workspaceId, `price-books/${bookId}/items/${itemId}`, { method: "PUT", body });
     setEditing(null);
   }, t("Saved as a draft. It needs a review before it goes live."));
-  const field = (key: keyof Omit<Draft, "method" | "tiers">, label: string, suffix?: string) =>
-    <TextInput inputType="text" isRequired label={label} onChange={(value) => setDraft((current) => ({ ...current, [key]: number(value) }))} suffix={suffix} value={draft[key]} />;
+  type Amount = keyof Omit<Draft, "method" | "tiers">;
+  const set = (key: Amount) => (value: string) => setDraft((current) => ({ ...current, [key]: value }));
+  const amount = (key: Amount, label: string, code: string, isRequired = true) =>
+    <MoneyField currency={code} isRequired={isRequired} label={label} min="0" onChange={set(key)} value={draft[key]} />;
+  // A markup (and a build-up's margin, applied as one) can be more than the cost itself.
+  const percent = (key: Amount, label: string, isRequired: boolean) =>
+    <PercentageInput formatOptions={{ maximumFractionDigits: 2 }} isRequired={isRequired} label={label} maxValue={Number.POSITIVE_INFINITY} onChange={(next) => set(key)(Number.isFinite(next) ? String(next) : "")}
+      value={draft[key] === "" ? Number.NaN : Number(draft[key])} />;
 
   return <div className={styles.prices}>
     {books.map((book) => {
@@ -72,17 +77,19 @@ export function CatalogPrices({ workspaceId, catalogId, itemId, itemType, unitCo
         <header><strong>{book.name}</strong><small>{book.currency}{book.status !== "active" ? ` · ${book.status}` : ""}</small></header>
         {editing === book.id ? <div className={styles.form}>
           <SelectField items={methods} label={t("How it is priced")} onSelectionChange={(key) => setDraft((current) => ({ ...current, method: String(key) }))} selectedKey={draft.method} />
-          {draft.method === "fixed" ? field("price", t("Price"), `${book.currency} / ${unitCode}`) : null}
-          {draft.method === "per_measure" ? <>{field("rate", t("Rate"), `${book.currency} / ${unitCode}`)}<TextInput label={t("Minimum charge")} onChange={(value) => setDraft((current) => ({ ...current, minimumCharge: number(value) }))} suffix={book.currency} value={draft.minimumCharge} /></> : null}
-          {draft.method === "cost_plus" ? <>{field("cost", t("Cost"), book.currency)}{field("markupPercent", t("Markup"), "%")}</> : null}
-          {draft.method === "assembly_rollup" ? <><TextInput label={t("Labour")} onChange={(value) => setDraft((current) => ({ ...current, labour: number(value) }))} suffix={book.currency} value={draft.labour} /><TextInput label={t("Margin")} onChange={(value) => setDraft((current) => ({ ...current, marginPercent: number(value) }))} suffix="%" value={draft.marginPercent} /></> : null}
+          {draft.method === "fixed" ? amount("price", `${t("Price")} / ${unitCode}`, book.currency) : null}
+          {draft.method === "per_measure" ? <>{amount("rate", `${t("Rate per")} ${unitCode}`, book.currency)}{amount("minimumCharge", t("Minimum charge"), book.currency, false)}</> : null}
+          {draft.method === "cost_plus" ? <>{amount("cost", t("Cost"), book.currency)}{percent("markupPercent", t("Markup"), true)}</> : null}
+          {draft.method === "assembly_rollup" ? <>{amount("labour", t("Labour"), book.currency, false)}{percent("marginPercent", t("Margin"), false)}</> : null}
           {draft.method === "tiered" ? <div className={styles.tiers}>
             {draft.tiers.map((tier, index) => <div className={styles.tierRow} key={index}>
-              <TextInput isRequired label={`${t("From quantity")} (${unitCode})`} onChange={(value) => setDraft((current) => ({ ...current, tiers: current.tiers.map((row, at) => at === index ? { ...row, fromQuantity: number(value) } : row) }))} value={tier.fromQuantity} />
-              <TextInput isRequired label={t("Price")} onChange={(value) => setDraft((current) => ({ ...current, tiers: current.tiers.map((row, at) => at === index ? { ...row, price: number(value) } : row) }))} suffix={book.currency} value={tier.price} />
+              <QuantityInput formatOptions={{ maximumFractionDigits: 4 }} isRequired label={t("From quantity")} minValue={0} unit={unitCode}
+                onChange={(next) => setDraft((current) => ({ ...current, tiers: current.tiers.map((row, at) => at === index ? { ...row, fromQuantity: Number.isFinite(next) ? String(next) : "" } : row) }))}
+                value={tier.fromQuantity === "" ? Number.NaN : Number(tier.fromQuantity)} />
+              <MoneyField currency={book.currency} isRequired label={t("Price")} min="0" onChange={(value) => setDraft((current) => ({ ...current, tiers: current.tiers.map((row, at) => at === index ? { ...row, price: value } : row) }))} value={tier.price} />
               {draft.tiers.length > 1 ? <IconButton aria-label={t("Remove tier")} onPress={() => setDraft((current) => ({ ...current, tiers: current.tiers.filter((_, at) => at !== index) }))}><Trash2 aria-hidden="true" size={15} /></IconButton> : null}
             </div>)}
-            <Button onPress={() => setDraft((current) => ({ ...current, tiers: [...current.tiers, { fromQuantity: "", price: "" }] }))} size="compact" variant="quiet"><Plus aria-hidden="true" size={14} />{t("Add tier")}</Button>
+            <div><Button onPress={() => setDraft((current) => ({ ...current, tiers: [...current.tiers, { fromQuantity: "", price: "" }] }))} size="compact" variant="quiet"><Plus aria-hidden="true" size={14} />{t("Add tier")}</Button></div>
           </div> : null}
           <div className={styles.actions}><Button onPress={() => setEditing(null)}>{t("Cancel")}</Button><Button isLoading={busy} onPress={() => void save(book.id)} variant="primary">{t("Save price")}</Button></div>
         </div> : current ? <div className={styles.priceLine}>

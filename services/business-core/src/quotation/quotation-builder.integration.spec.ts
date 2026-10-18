@@ -95,6 +95,49 @@ integration("quotation builder (plan §6.8)", () => {
     });
   });
 
+  it("fills the pricing request sheet from the job: site-measure L / H / D, catalogue standard size, chosen materials and the render (guide step 12)", async () => {
+    await withQuote(async (client, ids, service) => {
+      const user = (await client.query<{ id: string }>("SELECT created_by AS id FROM pre_project_cases WHERE id = $1", [ids.caseId])).rows[0].id;
+      const requirement = randomUUID(), entry = randomUUID(), design = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      // A kitchen requirement measured on site, with its materials; the wardrobe's standard size in the catalogue.
+      await client.query("INSERT INTO pre_project_brief_entries(id,workspace_id,case_id,kind,title,room_id,scope_status,created_by,updated_by) VALUES($1,$2,$3,'requirement','Kitchen cabinets',$4,'included',$5,$5)", [requirement, ids.workspaceId, ids.caseId, ids.kitchen, user]);
+      await client.query("INSERT INTO pre_project_item_specifications(workspace_id,case_id,entry_id,version,content,created_by) VALUES($1,$2,$3,1,$4,$5)", [ids.workspaceId, ids.caseId, requirement,
+        JSON.stringify({ dimensions: [{ name: "Length", measured: 3.6, approximate: 3.5, unit: "m" }, { name: "Height", measured: 900, unit: "mm" }, { name: "Depth", measured: 0.6, unit: "m" }],
+          materials: [{ productName: "Oak veneer", finishCode: "OK-12" }, { productName: "Quartz top", finishCode: "" }] }), user]);
+      await client.query("INSERT INTO catalog_item_dimensions(workspace_id,item_id,width,depth,height,unit,source,updated_by) VALUES($1,$2,120,60,240,'cm','person',$3)", [ids.workspaceId, ids.wardrobe, user]);
+      // The living room: a material the client confirmed and an approved render.
+      await client.query("INSERT INTO design_ledger_entries(id,workspace_id,case_id,kind,room_id,created_by) VALUES($1,$2,$3,'material',$4,$5)", [entry, ids.workspaceId, ids.caseId, ids.living, user]);
+      await client.query(`INSERT INTO design_ledger_versions(id,workspace_id,case_id,entry_id,number,title,specification,source,said_at,status,confirmed_at,confirmation_method,confirmed_by_name,recorded_by)
+        VALUES($1,$2,$3,$4,1,'Walnut','Brushed, matt','meeting',now(),'confirmed',now(),'in_person','Maya Client',$5)`, [randomUUID(), ids.workspaceId, ids.caseId, entry, user]);
+      await client.query("INSERT INTO pre_project_designs(id,workspace_id,case_id,room_id,title,document_type,created_by) VALUES($1,$2,$3,$4,'Living render','render',$5)", [design, ids.workspaceId, ids.caseId, ids.living, user]);
+      await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,status,created_by) VALUES($1,$2,$3,$4,1,$5,'approved',$6)", [randomUUID(), ids.workspaceId, ids.caseId, design, ids.photo, user]);
+      await client.query("SET LOCAL session_replication_role = origin");
+
+      const state = await service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [
+        { op: "upsert", line: { id: "k1", title: "Kitchen base units", areaId: ids.kitchen, scopeId: requirement, quantity: "1", rate: "100" } },
+        { op: "catalog", itemId: ids.wardrobe, line: { id: "w1", areaId: ids.living } },
+        { op: "upsert", line: { id: "s1", title: "Open shelf", areaId: ids.kitchen, quantity: "1", rate: "10" } },
+        { op: "upsert", line: { id: "m1", title: "Mirror", areaId: ids.living, quantity: "1", rate: "10", length: "80", dimensionUnit: "cm", material: "Bevelled glass" } },
+      ] });
+      const line = (id: string) => state.lines.find((item) => item.id === id)!;
+      const size = (id: string) => [line(id).length, line(id).height, line(id).width].map((value) => (value === null ? null : Number(value)));
+      // Joinery: the site measure, in the first dimension's unit (900 mm = 0.9 m); materials from the specification.
+      expect(size("k1")).toEqual([3.6, 0.9, 0.6]);
+      expect(line("k1")).toMatchObject({ dimensionUnit: "m", material: "Oak veneer OK-12 / Quartz top" });
+      // Furniture: the catalogue's standard size; the room's confirmed material and its approved render.
+      expect(size("w1")).toEqual([120, 240, 60]);
+      expect(line("w1")).toMatchObject({ dimensionUnit: "cm", material: "Walnut · Brushed, matt", imageAssetId: ids.photo });
+      // What the person typed is kept.
+      expect(size("m1")).toEqual([80, null, null]);
+      expect(line("m1").material).toBe("Bevelled glass");
+      // An item with neither shows on the checks.
+      expect(state.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "{name} has no size (L / H / D)", lineId: "s1" }), expect.objectContaining({ code: "{name} has no materials", lineId: "s1" })]));
+      expect(state.checks.filter((check) => check.lineId === "k1" && /size|materials/.test(check.code))).toEqual([]);
+    });
+  });
+
   it("refuses a stale edit with the current line, accepts a replay, and keeps build-ups through a case save", async () => {
     await withQuote(async (client, ids, service) => {
       let state = await service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "a", title: "Demolish wall", kind: "dismantle", unit: "m²", quantity: "6", rate: "45" } }] });

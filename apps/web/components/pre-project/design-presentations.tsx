@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { DesignLinkCard, isCanvaUrl, useLinkCard } from "@/components/catalog/design-link-card";
 import { linkCardImageUrl } from "@/lib/workspace/product-sourcing";
 import { ExternalLink, ImageIcon, Plus, Trash2 } from "lucide-react";
@@ -9,7 +9,8 @@ import {
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseApi, caseRequest, type CaseDesign } from "@/lib/pre-project/content";
-import { DECISION_SOURCES, PRESENTATION_STATUS_LABEL, revisionDetail, SOURCE_LABEL, type Presentation, type PresentationsView } from "@/lib/pre-project/design-decisions";
+import { DECISION_SOURCES, PRESENTATION_STATUS_LABEL, SOURCE_LABEL, type Presentation, type PresentationsView } from "@/lib/pre-project/design-decisions";
+import { RevisionChips } from "./revision-chips";
 import styles from "./design-decisions.module.css";
 
 type OptionDraft = { id: string; title: string; mode: "link" | "file"; linkUrl: string; designId: string | null };
@@ -18,9 +19,12 @@ const newOption = (): OptionDraft => ({ id: crypto.randomUUID(), title: "", mode
 /**
  * PLM-049/051/052: a stage's presentations to the client. Each round shows options as cards (a Canva link or an
  * uploaded design); the client picks one in their portal (or staff record the decision with where it was made).
- * The revision counter runs from the package's included revisions; the next one is chargeable and Sales hear it.
+ * The revision chips count the client's asks against the package's free revisions; the ask beyond them drafts a change
+ * request, and the next round waits until it is agreed.
  */
-export function DesignPresentations({ workspaceId, caseId, stage, designs, canEdit, canRecordClient, clientName, onChanged }: {
+export function DesignPresentations({ workspaceId, caseId, stage, designs, canEdit, canRecordClient, clientName, onChanged, status }: {
+  /** The stage's state chip, shown at the start of the bar so the tab has one header row. */
+  status?: ReactNode;
   workspaceId: string; caseId: string; stage: Presentation["stage"]; designs: CaseDesign[]; canEdit: boolean; canRecordClient: boolean; clientName?: string; onChanged?: () => void;
 }) {
   const t = useT();
@@ -41,7 +45,7 @@ export function DesignPresentations({ workspaceId, caseId, stage, designs, canEd
   if (!view) return <Skeleton lines={3} shape="rows" />;
   const rounds = (view.presentations ?? []).filter((item) => item.stage === stage && item.status !== "withdrawn");
   const open = rounds.find((item) => item.status === "draft" || item.status === "presented");
-  const revision = revisionDetail(view.revisions?.[stage]);
+  const revisions = view.revisions?.[stage];
   const day = (iso: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short" }).format(new Date(iso)); } catch { return iso; } };
   const done = (message: string, next: PresentationsView) => { setView(next); setNotice(message); setFailure(""); onChanged?.(); };
   const act = async (round: Presentation, path: "present" | "withdraw" | "review") => {
@@ -58,9 +62,10 @@ export function DesignPresentations({ workspaceId, caseId, stage, designs, canEd
 
   return <section className={styles.section} aria-label={t("Presentations")}>
     <div className={styles.bar}>
-      {revision ? <Badge tone={view.revisions?.[stage]?.chargeable ? "warning" : "neutral"}>{t(revision.key, revision.values)}</Badge> : null}
+      {status}
+      <RevisionChips revisions={revisions} workspaceId={workspaceId} caseId={caseId} stage={stage} canEdit={canEdit} onChanged={() => { void load(); onChanged?.(); }} />
       <span className={styles.spacer} />
-      {canEdit && !open ? <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{rounds.length ? t("New revision") : t("New presentation")}</Button> : null}
+      {canEdit && !open && rounds.length && !revisions?.waiting ? <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("New revision")}</Button> : null}
     </div>
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
     {failure ? <InlineNotice tone="error" message={failure} /> : null}

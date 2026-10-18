@@ -85,6 +85,27 @@ integration("intro meeting and dedicated designer (PLM-043, PLM-088)", () => {
     });
   });
 
+  it("§0.3 P0: booking the intro moves the card to Intro booked, recorded like any stage move", async () => {
+    await withOpportunity(async (client, ids, service) => {
+      const pipeline = randomUUID(), first = randomUUID(), intro = randomUUID(), qualified = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO crm_pipelines(id,workspace_id,code,name) VALUES($1,$2,'sales','Sales')", [pipeline, ids.workspaceId]);
+      await client.query(`INSERT INTO crm_pipeline_stages(id,workspace_id,pipeline_id,code,name,position,probability) VALUES
+        ($1,$4,$5,'qualified','New Opportunity',1,20),($2,$4,$5,'intro_booked','Intro booked',2,25),($3,$4,$5,'qualification','Qualified',3,35)`, [first, intro, qualified, ids.workspaceId, pipeline]);
+      await client.query("UPDATE crm_opportunities SET pipeline_id = $3, stage_id = $4 WHERE workspace_id = $1 AND id = $2", [ids.workspaceId, ids.opportunityId, pipeline, first]);
+      const plan = (await client.query(`SELECT value->>'id' AS id FROM crm_lead_qualification_values WHERE workspace_id = $1`, [ids.workspaceId])).rows[0].id;
+      await client.query(`INSERT INTO crm_opportunity_discovery(workspace_id,opportunity_id,area,area_unit,client_email,floor_plan_asset_id) VALUES($1,$2,120,'sqm','maya@example.com',$3)`, [ids.workspaceId, ids.opportunityId, plan]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const versionBefore = Number((await client.query("SELECT version FROM crm_opportunities WHERE id = $1", [ids.opportunityId])).rows[0].version);
+      await service.book(actor, ids.workspaceId, ids.opportunityId, { designerMembershipId: ids.designerA, mode: "in_person", ...slot(3) });
+      const after = (await client.query("SELECT stage_id, probability::int AS probability, version FROM crm_opportunities WHERE id = $1", [ids.opportunityId])).rows[0];
+      expect(after).toMatchObject({ stage_id: intro, probability: 25, version: versionBefore + 1 });
+      expect((await client.query("SELECT from_stage_id, to_stage_id, reason FROM crm_stage_history WHERE opportunity_id = $1", [ids.opportunityId])).rows)
+        .toEqual([{ from_stage_id: first, to_stage_id: intro, reason: "Intro booked" }]);
+      expect(Number((await client.query("SELECT count(*) FROM crm_forecast_snapshots WHERE opportunity_id = $1 AND snapshot_reason = 'stage_changed'", [ids.opportunityId])).rows[0].count)).toBe(1);
+    });
+  });
+
   it("PLM-155: names what the enquiry still needs (marked as the enquiry's), and a Discovery email counts though the enquiry form left it empty", async () => {
     await withOpportunity(async (client, ids, service) => {
       // The firm requires the area and the client's target completion before the intro (Palm); the email too (the default).

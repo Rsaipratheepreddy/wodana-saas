@@ -45,6 +45,8 @@ export class SiteQuestionDto {
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(60) section?: string | null;
   /** A checklist line, answered confirmed, pending or not applicable with a note; left out, a question answered in words. */
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsIn(["answer", "check"]) kind?: "answer" | "check" | null;
+  /** Must be answered before the visit completes; questions are optional unless marked. */
+  @IsOptional() @IsBoolean() required?: boolean;
 }
 export class ChecklistScopeDto {
   @IsString() @MinLength(1) @MaxLength(60) scope!: string;

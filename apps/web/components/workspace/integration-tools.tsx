@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useId, useState, type FormEvent } from "react";
-import { Button, Callout, ControlledModalDialog, Form, FormSection, NumericInput, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Button, Callout, ControlledModalDialog, EmptyState, Form, FormSection, NumericInput, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { IntegrationConnection } from "@/lib/workspace/integrations";
 import styles from "./integration-tools.module.css";
 import { templateBody, type MetaTemplate } from "@/lib/crm/whatsapp-templates";
@@ -128,7 +128,7 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
           {action === "calendars" ? <Switch isDisabled={!canManage} isSelected={Boolean(selectedCalendars[String(row.resourceId)])} onChange={(checked) => setSelectedCalendars((current) => ({ ...current, [String(row.resourceId)]: checked }))}>{String(row.displayName)}</Switch> : null}
           {action === "templates" ? <div className={styles.templateDetails}><small>{String(row.language ?? "")} · {String(row.category ?? "")}</small><p>{templateBody(row as unknown as MetaTemplate)}</p>{row.category === "AUTHENTICATION" ? <small>{t("Used automatically for secure portal login.")}</small> : null}</div> : null}
           {action === "events" ? <EventDetails changes={row.changes} /> : null}
-        </div>)}</div> : result?.items ? <p>{t("No records returned.")}</p> : null}
+        </div>)}</div> : result?.items ? <EmptyState illustration={null} title={t("No records returned.")} /> : null}
         {action === "calendars" && rows.length ? <Button isDisabled={!canManage || busy} onPress={() => void run(async () => {
           await request("", { workspaceId, action: "calendars.select", payload: { version: calendarVersion, resources: rows.map((row) => ({ resourceId: row.resourceId, enabled: Boolean(selectedCalendars[String(row.resourceId)]), direction: ["owner", "writer"].includes(String(row.accessRole)) ? "bidirectional" : "inbound" })) } });
           await load("calendars");

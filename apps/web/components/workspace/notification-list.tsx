@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, BookOpen, BriefcaseBusiness, Factory, FolderKanban, LayoutGrid, Ruler, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Bell, BookOpen, BriefcaseBusiness, Factory, FolderKanban, LayoutGrid, Ruler, TriangleAlert, Users, Wallet, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -20,6 +20,10 @@ export type WorkspaceNotice = {
   deepLink: string | null;
   readAt: string | null;
   createdAt: string;
+  /** An alert: something needs action now (it stays at the top, and pops up until it's dismissed). */
+  critical?: boolean;
+  /** Landed during the person's quiet hours: listed, but no sound and no pop-up. */
+  silent?: boolean;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,10 +31,12 @@ const LIVE_SCOPES = ["notifications", "workspace"] as const;
 export const MODULE_ICONS: Record<NotificationModule, LucideIcon> = {
   sales: BriefcaseBusiness, planning: Ruler, projects: FolderKanban, operations: Factory, finance: Wallet, ledger: BookOpen, people: Users, workspace: LayoutGrid,
 };
+/** Each module's colour (calm hues only), so a notice's kind reads at a glance; alerts stay red. */
+const MODULE_HUE: Partial<Record<NotificationModule, 1 | 2 | 6>> = { sales: 1, planning: 2, projects: 6, operations: 1, finance: 6, ledger: 6, people: 2 };
 
 /** The signed-in person's notices (newest 200), refreshed every 30 seconds while the page is visible. */
 /** `announce`: a soft sound when a new unread notice arrives after the first load (the bell, not the full page). */
-export function useWorkspaceNotices(workspaceId: string, { announce = false }: { announce?: boolean } = {}) {
+export function useWorkspaceNotices(workspaceId: string, { announce = false, onArrive }: { announce?: boolean; onArrive?: (items: WorkspaceNotice[]) => void } = {}) {
   const seen = useRef<Set<string> | null>(null);
   const [items, setItems] = useState<WorkspaceNotice[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -47,13 +53,15 @@ export function useWorkspaceNotices(workspaceId: string, { announce = false }: {
         const data: unknown = await response.json();
         return Array.isArray(data) ? data as WorkspaceNotice[] : [];
       }, { maxAgeMs: 5_000, force: fresh });
-      if (announce && seen.current && rows.some((row) => !row.readAt && !seen.current!.has(row.id))) playFeedback("notice");
+      const arrived = seen.current ? rows.filter((row) => !row.readAt && !row.silent && !seen.current!.has(row.id)) : [];
+      if (announce && arrived.length) { playFeedback("notice"); onArrive?.(arrived); }
       seen.current = new Set(rows.map((row) => row.id));
       setItems(rows);
       setFailure(false);
     } catch {
       setFailure(true);
     } finally { setLoaded(true); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onArrive is read when notices arrive, not a reason to read again
   }, [workspaceId, announce]);
   // A new notice arrives with the change that caused it, so any workspace change re-reads the list; polling
   // stays as a fallback (every 30 seconds without the live stream, every minute with it).
@@ -105,23 +113,28 @@ export const matchesFilter = (item: WorkspaceNotice, filter: NoticeFilter) =>
 export function NoticeGroups({ items, onOpen, action }: { items: WorkspaceNotice[]; onOpen: (item: WorkspaceNotice) => void; action?: (item: WorkspaceNotice) => ReactNode }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
+  // Alerts not yet handled stand apart at the top ("Needs action"); everything else by day. Nothing shows twice.
+  const alerts = items.filter((item) => item.critical && !item.readAt);
   const groups = useMemo(() => {
     const now = new Date();
     const byGroup = new Map<DayGroup, WorkspaceNotice[]>();
     for (const item of items) {
+      if (item.critical && !item.readAt) continue;
       const group = dayGroup(item.createdAt, timeZone, now);
       byGroup.set(group, [...(byGroup.get(group) ?? []), item]);
     }
     return (["today", "week", "earlier"] as DayGroup[]).filter((group) => byGroup.has(group)).map((group) => ({ group, items: byGroup.get(group)! }));
   }, [items, timeZone]);
-  return <>{groups.map(({ group, items: rows }) => <section key={group} className={styles.group} aria-label={t(DAY_GROUP_LABELS[group] as never)}>
-    <h3 className={styles.groupTitle}>{t(DAY_GROUP_LABELS[group] as never)}</h3>
+  const sections = [...(alerts.length ? [{ key: "alerts", label: t("Needs action"), rows: alerts }] : []),
+    ...groups.map(({ group, items: rows }) => ({ key: group, label: t(DAY_GROUP_LABELS[group] as never), rows }))];
+  return <>{sections.map(({ key, label, rows }) => <section key={key} className={styles.group} data-alerts={key === "alerts" || undefined} aria-label={label}>
+    <h3 className={styles.groupTitle}>{key === "alerts" ? <TriangleAlert aria-hidden="true" size={12} /> : null}{label}</h3>
     {rows.map((item) => {
       const kind = notificationModule(item.eventType);
-      const Icon = MODULE_ICONS[kind] ?? Bell;
+      const Icon = item.critical ? TriangleAlert : MODULE_ICONS[kind] ?? Bell;
       const date = new Date(item.createdAt);
-      const content = <><span className={styles.avatar} data-kind={kind}><Icon size={20} aria-hidden="true" /></span><span className={styles.content}><strong>{item.subject || t("Update")}</strong><span className={styles.meta}><time dateTime={item.createdAt}>{Number.isNaN(date.getTime()) ? "" : date.toLocaleString(locale, { timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time><span>{relativeTime(item.createdAt, t, locale)}</span></span>{item.body && <span className={styles.body}>{item.body}</span>}</span>{!item.readAt && <span className={styles.unread} aria-label={t("Unread")} />}</>;
-      return <div className={styles.item} data-unread={!item.readAt || undefined} key={item.id}>
+      const content = <><span className={styles.avatar} data-kind={kind} data-hue={MODULE_HUE[kind]} data-alert={item.critical || undefined}><Icon size={18} aria-hidden="true" /></span><span className={styles.content}><strong>{item.critical ? <span className={styles.alertChip}>{t("Alert")}</span> : null}{item.subject || t("Update")}</strong><span className={styles.meta}><time dateTime={item.createdAt}>{Number.isNaN(date.getTime()) ? "" : date.toLocaleString(locale, { timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time><span>{relativeTime(item.createdAt, t, locale)}</span></span>{item.body && <span className={styles.body}>{item.body}</span>}</span>{!item.readAt && <span className={styles.unread} aria-label={t("Unread")} />}</>;
+      return <div className={styles.item} data-unread={!item.readAt || undefined} data-alert={(item.critical && !item.readAt) || undefined} key={item.id}>
         {item.deepLink?.startsWith("/workspace/") ? <Link href={item.deepLink} onClick={() => onOpen(item)}>{content}</Link> : <button type="button" onClick={() => onOpen(item)}>{content}</button>}
         {action ? <span className={styles.itemAction}>{action(item)}</span> : null}
       </div>;

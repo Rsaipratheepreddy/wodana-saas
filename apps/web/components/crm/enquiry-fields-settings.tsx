@@ -21,7 +21,7 @@ type Draft = { label: string; type: EnquiryFieldType; options: string[] };
 /** Always required to create an enquiry (the record can't exist without them). */
 const ALWAYS_REQUIRED = new Set(["displayName", "mobile", "region", "serviceType", "source"]);
 /** Fields a firm can require per enquiry type (PLM-096); team roles and its own fields join them. */
-const REQUIRABLE = new Set(["email", "area", "address", "budgetRange", "customerType", "summary", "targetCompletion"]);
+const REQUIRABLE = new Set(["email", "area", "address", "budgetRange", "customerType", "projectType", "floorPlan", "summary", "targetCompletion"]);
 const requirable = (key: string) => REQUIRABLE.has(key) || key.startsWith("team:") || key.startsWith("cf:");
 const INTERNAL_NOTES = "internalNotes";
 

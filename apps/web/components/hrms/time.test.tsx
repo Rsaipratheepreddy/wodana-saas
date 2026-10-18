@@ -156,9 +156,12 @@ describe("Time", () => {
     expect(within(sheet).getByText("10h 0m / 32h 0m")).toBeInTheDocument();
     expect(within(sheet).getByRole("region", { name: "By work" })).toHaveTextContent(/PRJ-7 · Villa 12.*Design.*8h 0m.*Internal.*2h 0m/);
     expect(within(sheet).getByRole("region", { name: "By day" })).toHaveTextContent(/Wed 23 Sept?.*Leave/);
-    expect(within(sheet).getByRole("button", { name: "Send back" })).toBeDisabled();
-    await userEvent.type(within(sheet).getByRole("textbox", { name: /Note/ }), "Split Monday by stage");
-    await userEvent.click(within(sheet).getByRole("button", { name: "Send back" }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("dialog", { name: "Review" });
+    await userEvent.click(within(review).getByRole("radio", { name: "Send back" }));
+    expect(within(review).getByRole("button", { name: "Send back" })).toBeDisabled();
+    await userEvent.type(within(review).getByRole("textbox", { name: /What needs to change/ }), "Split Monday by stage");
+    await userEvent.click(within(review).getByRole("button", { name: "Send back" }));
     await waitFor(() => expect(calls.filter((call) => call.path === "time/ts9/decision").map((call) => call.body)).toEqual([{ version: 3, decision: "return", note: "Split Monday by stage" }]));
     expect(nav.replace).toHaveBeenLastCalledWith("/workspace/hrms/team");
   });

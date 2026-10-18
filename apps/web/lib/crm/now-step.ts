@@ -10,7 +10,7 @@ import { flowCapabilities } from "./flow-capabilities";
  */
 
 /** Where a requirement is resolved. */
-export type RequirementTarget = "proof" | "furniture" | "intro" | "discovery" | "quote" | "enquiry" | "edit" | "siteVisit" | "materials";
+export type RequirementTarget = "proof" | "furniture" | "intro" | "outcome" | "discovery" | "quote" | "enquiry" | "edit" | "siteVisit" | "materials";
 /** What the Now card's one primary button does. */
 export type NowTarget = RequirementTarget | "advance" | "win" | "planning" | "project" | "reopen";
 export type PlanningSection = "overview" | "designs" | "quotations" | "approvals";
@@ -56,6 +56,9 @@ const STEPS: Record<string, StepDef> = {
   furniturePath: { id: "furniturePath", title: tKey("Choose how it's supplied"), short: tKey("Choose sub-path"), target: "furniture" },
   feasibility: { id: "feasibility", title: tKey("Confirm feasibility with the factory"), short: tKey("Confirm feasibility"), target: "furniture" },
   introMeeting: { id: "introMeeting", title: tKey("Book the intro meeting"), short: tKey("Book intro"), target: "intro" },
+  // §0.3 P0 (guide G): after the intro, its outcome; going ahead also takes the client's target date.
+  qualificationOutcome: { id: "qualificationOutcome", title: tKey("Record the intro outcome"), short: tKey("Record outcome"), target: "outcome" },
+  targetCompletion: { id: "qualificationOutcome", title: tKey("Record the intro outcome"), short: tKey("Record outcome"), target: "outcome" },
   quotation: { id: "quotation", title: tKey("Prepare the quotation"), short: tKey("Prepare quote"), target: "quote" },
   // PLM-080/044: the joinery site visit, booked for the salesperson and a designer together.
   siteVisit: { id: "siteVisit", title: tKey("Book the site visit"), short: tKey("Book site visit"), target: "siteVisit" },
@@ -171,7 +174,7 @@ export type FactGroup = "client" | "property" | "package" | "questions" | "intro
 const GROUP_OF: Record<string, FactGroup> = {
   floorPlan: "property", area: "property", floorPlanOrArea: "property", spaces: "property", propertyLocation: "property", clientEmail: "property", budget: "client",
   enquiryType: "client", clientType: "client", contact: "client",
-  package: "package", introMeeting: "intro", paymentProof: "payment",
+  package: "package", introMeeting: "intro", qualificationOutcome: "intro", targetCompletion: "intro", paymentProof: "payment",
   furniturePath: "supply", feasibility: "supply", clientApproval: "supply",
   quotation: "planning", siteVisit: "planning", qsApproval: "planning", quoteSent: "planning", clientAccepted: "planning", paymentVerified: "planning", dealApproved: "planning", materialList: "planning",
   owner: "deal", nextAction: "deal", amount: "deal", expectedCloseAt: "deal", stakeholders: "deal",
@@ -186,7 +189,7 @@ export function groupForRequirement(key: string): FactGroup {
 }
 
 const GROUP_OF_CHECK: Record<string, FactGroup> = {
-  intro_meeting_completed: "intro", client_type_set: "client", sub_path_chosen: "supply", feasibility_confirmed: "supply", client_approved_on_spot: "supply",
+  intro_meeting_completed: "intro", qualification_outcome_recorded: "intro", target_completion_set: "intro", client_type_set: "client", sub_path_chosen: "supply", feasibility_confirmed: "supply", client_approved_on_spot: "supply",
   package_chosen: "package", payment_proof_attached: "payment", discovery_complete: "property", contact_logged: "client",
 };
 
@@ -195,6 +198,7 @@ function rowAction(key: string): MessageKey {
   const bare = key.replace(/^discovery:/, "");
   const group = groupForRequirement(key);
   if (bare === "floorPlan") return tKey("Upload");
+  if (bare === "qualificationOutcome" || bare === "targetCompletion") return tKey("Record");
   if (bare === "siteVisit") return tKey("Book");
   if (bare === "designStage:material_selection") return tKey("Choose");
   if (group === "questions") return tKey("Answer");

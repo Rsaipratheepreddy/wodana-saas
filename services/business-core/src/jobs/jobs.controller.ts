@@ -22,6 +22,21 @@ export class JobsController {
     return this.jobs.list(actor, workspaceId, limit, offset);
   }
 
+  @Get("overview")
+  overview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("limit") limit?: string, @Query("offset") offset?: string) {
+    return this.jobs.overview(actor, workspaceId, limit, offset);
+  }
+
+  @Get("threads")
+  threads(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.jobs.threads(actor, workspaceId);
+  }
+
+  @Get("now")
+  now(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("records") records?: string) {
+    return this.jobs.nowByRecords(actor, workspaceId, records);
+  }
+
   @Get(":jobId")
   get(
     @CurrentActor() actor: RequestActor,
@@ -29,6 +44,57 @@ export class JobsController {
     @Param("jobId", ParseUUIDPipe) jobId: string,
   ) {
     return this.jobs.get(actor, workspaceId, jobId);
+  }
+
+  @Get("by-source/:type/:id")
+  bySource(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("type") type: string, @Param("id", ParseUUIDPipe) id: string) {
+    return this.jobs.bySource(actor, workspaceId, type, id);
+  }
+
+  @Get(":jobId/thread")
+  thread(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+    return this.jobs.thread(actor, workspaceId, jobId);
+  }
+
+  @Post(":jobId/thread")
+  post(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string, @Body() body: unknown) {
+    return this.jobs.post(actor, workspaceId, jobId, body && typeof body === "object" ? body as Record<string, unknown> : {});
+  }
+
+  @Post(":jobId/thread/read")
+  markRead(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+    return this.jobs.markThreadRead(actor, workspaceId, jobId);
+  }
+
+  @Get(":jobId/suggestions")
+  suggestions(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+    return this.jobs.suggestions(actor, workspaceId, jobId);
+  }
+
+  @Post(":jobId/suggestions/:suggestionId")
+  decideSuggestion(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string,
+    @Param("suggestionId", ParseUUIDPipe) suggestionId: string, @Body() body: unknown) {
+    return this.jobs.decideSuggestion(actor, workspaceId, jobId, suggestionId, body && typeof body === "object" ? body as Record<string, unknown> : {});
+  }
+
+  @Get(":jobId/costs")
+  costs(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+    return this.jobs.costs(actor, workspaceId, jobId);
+  }
+
+  @Get(":jobId/money")
+  money(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+    return this.jobs.money(actor, workspaceId, jobId);
+  }
+
+  @Get(":jobId/documents")
+  documents(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+    return this.jobs.documents(actor, workspaceId, jobId);
+  }
+
+  @Get(":jobId/journey")
+  journey(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+    return this.jobs.journey(actor, workspaceId, jobId);
   }
 
   @Get(":jobId/tree")

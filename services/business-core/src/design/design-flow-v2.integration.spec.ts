@@ -15,6 +15,7 @@ import { projectBrief, workOrderBrief } from "./design-checklists";
 import { DesignDecisionsService } from "./design-decisions.service";
 import { DesignJourneyService } from "./design-journey.service";
 import { processDesignDeadlines, samplesApprovedAt, startJourney } from "./design-journey.store";
+import { syncDesignStages } from "./design-stage-sync";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Every service call runs as the app role
 // (wodana_app, forced RLS) in its own committed transaction, as the person named, with only the permissions given.
@@ -50,7 +51,7 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     finally { client.release(); }
   }
 
-  async function seed(packageCode: "bespoke" | "concept" | "director"): Promise<Seed> {
+  async function seed(packageCode: "bespoke" | "concept" | "director", flow: 2 | 3 = 2): Promise<Seed> {
     const workspaceId = randomUUID(), caseId = randomUUID(), opportunityId = randomUUID(), partyId = randomUUID();
     const names = { ops: "Omar Ops", am: "Aisha AM", lead: "Lina Lead", junior: "Jad Junior", admin: "Sara Sales Admin", visualiser: "Vik Visualiser", draftsman: "Dev Draftsman",
       techLead: "Tara Technical Lead", coordinator: "Mona Materials", director: "Cece Creative" } as const;
@@ -85,13 +86,13 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
         [packages.bespoke, packages.concept, packages.director, workspaceId]);
       await client.query("INSERT INTO crm_opportunity_discovery(workspace_id,opportunity_id,design_package_id,area,area_unit) VALUES($1,$2,$3,2000,'sqft')", [workspaceId, opportunityId, packages[packageCode]]);
       await client.query(`INSERT INTO workspace_design_settings(workspace_id,inspiration_days,site_visit_questions,concept_options_max) VALUES($1,7,$2,2)`, [workspaceId, JSON.stringify([
-        { key: "access", question: "How do we get in?" }, { key: "family", question: "How big is the family?", scope: "Kitchen" }, { key: "beds", question: "Bed sizes?", scope: "Bedrooms" }])]);
+        { key: "access", question: "How do we get in?" }, { key: "family", question: "How big is the family?", scope: "Kitchen", required: true }, { key: "beds", question: "Bed sizes?", scope: "Bedrooms", required: true }])]);
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, opportunityId, people.ops.user]);
       await client.query("INSERT INTO pre_project_rooms(id,workspace_id,case_id,name) VALUES($1,$2,$3,'Main kitchen')", [randomUUID(), workspaceId, caseId]);
       await seedDefaultNotificationTemplates(client, workspaceId);
       await client.query("COMMIT");
     } finally { client.release(); }
-    await asApp(workspaceId, people.ops.user, (client) => startJourney(client, workspaceId, caseId, people.ops.user));
+    await asApp(workspaceId, people.ops.user, (client) => startJourney(client, workspaceId, caseId, people.ops.user, { flow }));
     return { workspaceId, caseId, opportunityId, packages, people };
   }
 
@@ -127,6 +128,64 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     return id;
   };
   const team = (lead: string, extra: Array<{ slot: string; membershipId?: string | null; notApplicable?: boolean }> = []) => [{ slot: "lead_designer", membershipId: lead }, ...extra];
+
+  it("runs the guide's order (16 Oct 2026): minutes before the kick-off closes, the mood board the client chooses, space planning once the site measure is in, then the concept", async () => {
+    const ids = await seed("concept", 3);
+    const ops = as(ids, "ops", ALL), am = as(ids, "am", ["pre_projects.view"]), lead = as(ids, "lead", DESIGNER), junior = as(ids, "junior", DESIGNER);
+    let view = await ops.journey.get(actor, ids.workspaceId, ids.caseId);
+    // A Concept package (no renders) on a job with a material selection: no final render.
+    expect(view.stages.map((row) => row.stage)).toEqual(["inspiration", "kickoff", "moodboards", "space_planning", "concepts", "samples", "approval"]);
+    expect(view.journey).toMatchObject({ flowVersion: 3 });
+    // Guide step 1: the Material Coordinator is allocated with the designers on a job with a material selection.
+    expect(view.team?.missing).toEqual(["lead_designer", "junior_designer", "sales_admin", "material_coordinator"]);
+    view = await ops.journey.closeInspiration(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "inspiration").version });
+    const version = () => am.journey.get(actor, ids.workspaceId, ids.caseId).then((current) => current.journey!.version as number);
+    view = await am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.lead.member, [
+      { slot: "junior_designer", membershipId: ids.people.junior.member }, { slot: "sales_admin", membershipId: ids.people.admin.member },
+      { slot: "material_coordinator", membershipId: ids.people.coordinator.member }]) });
+    expect(view.tasks.find((task) => task.task === "team_allocation")?.status).toBe("done");
+
+    // Guide step 3: the kick-off closes once its minutes are posted to the client in the portal.
+    view = await lead.journey.scheduleKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version, startsAt: future(1), endsAt: future(1.05), timezone: "Asia/Dubai", address: "Villa 12" });
+    await held(ids, "kickoff");
+    await expect(lead.journey.completeKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version })).rejects.toThrow("Post the kick-off minutes to the client in the portal first");
+    await sql(ids, `INSERT INTO meeting_minutes(id,workspace_id,activity_id,title,body,created_by,updated_by,shared_at,shared_by,shared_revision)
+      SELECT $3, stage.workspace_id, stage.activity_id, 'Kick-off', 'Brief confirmed', $4, $4, now(), $4, 1 FROM design_journey_stages stage WHERE stage.workspace_id = $1 AND stage.case_id = $2 AND stage.stage = 'kickoff'`,
+      [ids.workspaceId, ids.caseId, randomUUID(), ids.people.lead.user]);
+    view = await lead.journey.completeKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version });
+    // Guide steps 4–5: the mood boards start, and the site measure is open to whichever designer is free.
+    expect(stageRow(view, "moodboards").status).toBe("active");
+    expect(view.tasks.find((task) => task.task === "site_measure")).toMatchObject({ status: "open", ownerName: null });
+
+    // Two mood boards; the client chooses one (never on WhatsApp during design), which completes the step.
+    const boards = Array.from({ length: 2 }, (_, index) => ({ id: randomUUID(), title: `Board ${index + 1}`, linkUrl: `https://www.canva.com/design/board-${index}` }));
+    const round = { id: randomUUID(), stage: "moodboards", options: boards };
+    await lead.decisions.createPresentation(actor, ids.workspaceId, ids.caseId, round);
+    const presented = await lead.decisions.present(actor, ids.workspaceId, ids.caseId, round.id, { version: 1 });
+    const shown = presented.presentations[0];
+    await expect(lead.decisions.decide(actor, ids.workspaceId, ids.caseId, round.id, { version: shown.version, decision: "chosen", optionId: shown.options[1].id, source: "whatsapp", decidedBy: "Maya Client" }))
+      .rejects.toThrow("not WhatsApp");
+    const decided = await lead.decisions.decide(actor, ids.workspaceId, ids.caseId, round.id, { version: shown.version, decision: "chosen", optionId: shown.options[1].id, source: "meeting", decidedBy: "Maya Client" });
+    expect(decided.completed).toBe(true);
+    view = await lead.journey.get(actor, ids.workspaceId, ids.caseId);
+    expect([stageRow(view, "moodboards").status, stageRow(view, "space_planning").status]).toEqual(["done", "active"]);
+
+    // Guide step 6: the space planning PDF waits for the site measure; once both are in, the step closes without a client approval.
+    const pdf = await asset(ids);
+    const design = randomUUID();
+    await sql(ids, "INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,stage,created_by) VALUES($1,$2,$3,'Layout','concept','space_planning',$4)", [design, ids.workspaceId, ids.caseId, ids.people.lead.user]);
+    await sql(ids, "INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status) VALUES($1,$2,$3,$4,1,$5,$6,'draft')",
+      [randomUUID(), ids.workspaceId, ids.caseId, design, pdf, ids.people.lead.user]);
+    await asApp(ids.workspaceId, ids.people.lead.user, (client) => syncDesignStages(client, ids.workspaceId, ids.caseId, ids.people.lead.user));
+    expect(stageRow(await lead.journey.get(actor, ids.workspaceId, ids.caseId), "space_planning").status).toBe("active");
+    view = await junior.journey.get(actor, ids.workspaceId, ids.caseId);
+    const room = (await sql<{ id: string }>(ids, "SELECT id FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2", [ids.workspaceId, ids.caseId]))[0].id;
+    await sql(ids, `INSERT INTO pre_project_site_records(id,workspace_id,case_id,kind,room_id,title,status,version,content,created_by,updated_by) VALUES($1,$2,$3,'measurement',$4,'Kitchen wall','measured',1,$5,$6,$6)`,
+      [randomUUID(), ids.workspaceId, ids.caseId, room, JSON.stringify({ assetIds: [randomUUID()] }), ids.people.junior.user]);
+    view = await junior.journey.answerSiteVisit(actor, ids.workspaceId, ids.caseId, { version: view.siteVisit!.version, answers: [{ key: "family", answer: "Five, cooks daily" }] });
+    view = await junior.journey.completeSiteVisit(actor, ids.workspaceId, ids.caseId, { version: view.siteVisit!.version, summary: "Every wall measured" });
+    expect([stageRow(view, "space_planning").status, stageRow(view, "concepts").status]).toEqual(["done", "active"]);
+  });
 
   it("runs a Bespoke job from the fee to the design approval: team, kick-off, concept with the site measure, renders and their sign-off, samples", async () => {
     const ids = await seed("bespoke");
@@ -169,8 +228,9 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     view = await am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: team(ids.people.lead.member), reason: "Lina is back" });
     const history = await sql<{ reason: string }>(ids, "SELECT reason FROM crm_opportunity_designer_history WHERE workspace_id = $1 AND opportunity_id = $2 ORDER BY changed_at", [ids.workspaceId, ids.opportunityId]);
     expect(history.map((row) => row.reason)).toEqual(["Allocated as the lead designer", "Lina is on leave", "Lina is back"]);
-    // The Account Manager doesn't tag the Visualiser: the lead designer does.
-    await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: [{ slot: "visualiser", membershipId: ids.people.visualiser.member }] })).rejects.toThrow(/can't set/);
+    // Guide step 1: the Account Manager allocates the Visualiser too (the lead designer may still tag one).
+    view = await am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: await version(), roles: [{ slot: "visualiser", membershipId: ids.people.visualiser.member }] });
+    expect(view.team?.slots.find((slot) => slot.slot === "visualiser")?.member?.membershipId).toBe(ids.people.visualiser.member);
 
     // PLM-140: the kick-off, booked and held, with the render sign-off date agreed there.
     view = await lead.journey.scheduleKickoff(actor, ids.workspaceId, ids.caseId, { version: stageRow(view, "kickoff").version, startsAt: future(1), endsAt: future(1.05), timezone: "Asia/Dubai", address: "Villa 12" });
@@ -370,7 +430,7 @@ integration("the design order of 13 Oct 2026 (PLM-139–145, PLM-151, PLM-152, P
     let view = await am.journey.get(actor, ids.workspaceId, ids.caseId);
     // The reviewer is told to choose the lead; the Account Manager the rest.
     expect(await told(ids, "design.team_to_allocate")).toEqual([ids.people.am.user, ids.people.director.user].sort());
-    expect(view.team?.slots.filter((slot) => slot.canSet).map((slot) => slot.slot)).toEqual(["junior_designer", "sales_admin", "material_coordinator"]);
+    expect(view.team?.slots.filter((slot) => slot.canSet).map((slot) => slot.slot)).toEqual(["junior_designer", "sales_admin", "visualiser", "material_coordinator"]);
     await expect(am.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: team(ids.people.lead.member) })).rejects.toThrow(/can't set/);
     view = await director.journey.setTeam(actor, ids.workspaceId, ids.caseId, { version: view.journey!.version as number, roles: team(ids.people.lead.member) });
     expect(view.team?.slots.find((slot) => slot.slot === "lead_designer")?.member?.membershipId).toBe(ids.people.lead.member);

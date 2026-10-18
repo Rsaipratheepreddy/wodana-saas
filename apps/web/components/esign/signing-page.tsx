@@ -5,6 +5,7 @@ import { Download, FileText } from "lucide-react";
 import { EmptyState, ErrorState, InlineNotice, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { signingApi, type SigningView } from "@/lib/proposals/client";
+import { ConfirmSigner } from "./confirm-signer";
 import { SignDocument } from "./sign-document";
 import styles from "./esign.module.css";
 
@@ -47,13 +48,13 @@ export function SigningPage({ token, initial }: { token: string; initial?: Signi
     </section>
     {view.state === "open" ? <>
       <iframe className={styles.viewer} src={api.documentUrl(false)} title={view.document.title} />
-      <SignDocument signer={view.signer} busy={busy} onSign={async (input) => {
+      {view.code && !view.code.verified ? <ConfirmSigner api={api} code={view.code} onConfirmed={load} /> : <SignDocument signer={view.signer} busy={busy} onSign={async (input) => {
         setBusy(true);
         try {
           await api.sign({ ...input, email: input.email || undefined, phone: input.phone || undefined, documentSha256: view.document.sha256 });
           await load();
         } finally { setBusy(false); }
-      }} />
+      }} />}
     </> : view.state === "signed" && view.signed ? <InlineNotice tone="success" message={t("{name} signed on {date}. A copy was sent by email.", {
       name: view.signed.name, date: new Intl.DateTimeFormat(undefined, { dateStyle: "long", timeStyle: "short" }).format(new Date(view.signed.at)) })} />
       : <EmptyState illustration="error" title={view.state === "expired" ? t("This signing link has expired") : t("This signing link was withdrawn")}

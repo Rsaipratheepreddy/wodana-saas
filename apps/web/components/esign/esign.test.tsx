@@ -57,6 +57,34 @@ describe("signing a document by link (R8)", () => {
     expect(screen.getByRole("link", { name: "Download your signed copy" })).toHaveAttribute("href", `/api/esign/${"t".repeat(43)}/document?copy=signed`);
   });
 
+  it("asks for a one-time code before the signature, and signs once it's confirmed (§0.3 P4)", async () => {
+    const calls: Array<{ url: string; body?: string }> = [];
+    let verified = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: init?.body as string | undefined });
+      if (url.endsWith("/code")) return new Response(JSON.stringify({ channel: "email", resendAfter: 30, expiresIn: 600, sentTo: "m***@example.com" }), { status: 200 });
+      if (url.endsWith("/code/verify")) {
+        verified = JSON.parse(String(init?.body)).code === "482913";
+        return new Response(JSON.stringify(verified ? { verified: true, message: null } : { verified: false, message: "That code isn't right. Check it and try again." }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ...view, code: { verified, canEmail: true, canWhatsapp: false, demo: false } }), { status: 200 });
+    }));
+    render(<DesignSystemProvider><SigningPage token={"t".repeat(43)} /></DesignSystemProvider>);
+    expect(await screen.findByRole("heading", { name: "Enter your code" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Send a new code" }));
+    const field = await screen.findByRole("textbox", { name: "Six-digit code" });
+    expect(screen.getByText("m***@example.com")).toBeInTheDocument();
+    await userEvent.type(field, "111111");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(await screen.findByText("That code isn't right. Check it and try again.")).toBeInTheDocument();
+    await userEvent.clear(field);
+    await userEvent.type(field, "482913");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(await screen.findByRole("button", { name: "Sign" })).toBeInTheDocument();
+    expect(JSON.parse(calls.find((call) => call.url.endsWith("/code"))!.body!)).toEqual({ channel: "email" });
+  });
+
   it("says an expired link can't be signed, and who to ask", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...view, state: "expired" }), { status: 200 })));
     render(<DesignSystemProvider><SigningPage token={"t".repeat(43)} /></DesignSystemProvider>);

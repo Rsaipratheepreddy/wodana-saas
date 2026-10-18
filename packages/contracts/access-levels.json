@@ -7,7 +7,7 @@
       "view": ["crm.leads.view", "crm.parties.view", "crm.opportunities.view", "crm.activities.view", "crm.reports.view", "crm.notifications.view"],
       "edit": ["crm.leads.manage", "crm.parties.manage", "crm.opportunities.manage", "crm.opportunities.transition", "crm.opportunities.sensitive_values", "crm.activities.manage"],
       "manage": ["crm.leads.assign", "crm.parties.identity", "crm.parties.merge", "crm.notifications.manage"],
-      "advanced": ["crm.parties.export", "crm.privacy.erase", "crm.spam.unmark"]
+      "advanced": ["crm.leads.view_all", "crm.parties.export", "crm.privacy.erase", "crm.spam.unmark"]
     },
     {
       "id": "inbox",

@@ -117,7 +117,7 @@ describe("CompanyProfile", () => {
     expect(screen.getByText("Sign-in background")).toBeInTheDocument();
     expect(screen.getByText("Default")).toBeInTheDocument();
     const file = new File([new Uint8Array(2048)], "showroom.jpg", { type: "image/jpeg" });
-    await interaction.upload(screen.getByLabelText("Choose sign-in background"), file);
+    await interaction.upload(screen.getByLabelText("Upload background"), file);
 
     await waitFor(() => expect(screen.getByText("Sign-in background updated.")).toBeInTheDocument());
     const started = fetchMock.mock.calls.find(([url]) => url === "/api/workspace/company-profile/login-background-uploads");
@@ -142,7 +142,7 @@ describe("CompanyProfile", () => {
     render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
     const file = new File(["x"], "huge.png", { type: "image/png" });
     Object.defineProperty(file, "size", { value: 10 * 1024 * 1024 + 1 });
-    await interaction.upload(screen.getByLabelText("Choose sign-in background"), file);
+    await interaction.upload(screen.getByLabelText("Upload background"), file);
     expect(await screen.findByText("Sign-in background must be 10 MB or smaller.")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("login-background"))).toBe(false);
   });

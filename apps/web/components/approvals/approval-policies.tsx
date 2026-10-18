@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { today, getLocalTimeZone, type CalendarDate } from "@internationalized/date";
 import {
-  Badge, Button, DataGrid, DateField, EmptyState, ErrorState, FormDialog, InlineNotice, MoneyField, SelectField, SettingsPage, SettingsSection, Skeleton, Switch, TextInput,
+  Badge, Button, DataGrid, DateField, EmptyState, ErrorState, FormDialog, InlineNotice, MoneyField, NumericInput, PercentageInput, SelectField, SettingsPage, SettingsSection, Skeleton, Switch, TextInput,
   isNoAccessError, NoAccessState, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -141,10 +141,10 @@ function PolicyDialog({ editing, data, onClose, onSave }: { editing: Editing; da
       </div>)}
       {form.steps.length < 6 ? <div><Button size="compact" variant="quiet" onPress={() => setForm({ ...form, steps: [...form.steps, emptyStep()] })}><Plus aria-hidden="true" size={14} />{t("Add approver")}</Button></div> : null}
     </fieldset>
-    <TextInput label={t("Escalate after")} inputMode="numeric" suffix={t("hours")} value={form.escalateAfterHours ? String(form.escalateAfterHours) : ""}
-      onChange={(value) => { const hours = value.replace(/\D/g, "").slice(0, 3); setForm({ ...form, escalateAfterHours: hours ? Number(hours) : null }); }} />
-    <TextInput label={t("Change allowed without new approval")} inputMode="decimal" suffix="%" value={form.resetTolerancePercent}
-      onChange={(value) => setForm({ ...form, resetTolerancePercent: value.replace(/[^\d.]/g, "") || "0" })} />
+    <NumericInput label={t("Escalate after")} suffix={t("hours")} minValue={0} maxValue={999} formatOptions={{ maximumFractionDigits: 0 }}
+      value={form.escalateAfterHours ? form.escalateAfterHours : Number.NaN} onChange={(hours) => setForm({ ...form, escalateAfterHours: Number.isFinite(hours) ? hours : null })} />
+    <PercentageInput label={t("Change allowed without new approval")} formatOptions={{ maximumFractionDigits: 4 }}
+      value={Number(form.resetTolerancePercent || "0")} onChange={(next) => setForm({ ...form, resetTolerancePercent: Number.isFinite(next) ? String(next) : "0" })} />
     <Switch isSelected={form.waiverAllowed} onChange={(waiverAllowed) => setForm({ ...form, waiverAllowed })}>{t("Requester may approve with a recorded reason")}</Switch>
   </FormDialog>;
 }

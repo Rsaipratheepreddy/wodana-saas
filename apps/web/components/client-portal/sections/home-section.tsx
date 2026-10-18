@@ -10,6 +10,7 @@ import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
 import { ProfileDetails, useStepText } from "../project-profile";
 import { BudgetTracker, FeedList, feedTarget, WhatChanged } from "./portal-home";
+import { PortalNow } from "./portal-now";
 import type { SectionProps } from "./section-types";
 
 /**
@@ -51,6 +52,8 @@ export function HomeSection({ project, site, api, format, today, open, go, reloa
   };
   const canAskChange = project.role === "approver" && project.sections.decisions && Boolean(project.changes);
   return <div className={styles.section} data-tour="portal-home">
+    {/* §0.3 P5: where the job stands, who looks after the client and what happens next, before anything else. */}
+    {project.journey && !wide ? <PortalNow journey={project.journey} project={project} format={format} /> : null}
     <WhatChanged digest={project.digest} format={format} />
 
     <section className={styles.group} aria-labelledby="portal-next">
@@ -95,7 +98,7 @@ export function HomeSection({ project, site, api, format, today, open, go, reloa
       </div>
     </section> : null}
 
-    {coming.length ? <section className={styles.group} aria-labelledby="portal-coming">
+    {coming.length && !project.journey?.next.length ? <section className={styles.group} aria-labelledby="portal-coming">
       <h3 className={styles.groupTitle} id="portal-coming">{t("Coming up")}</h3>
       <ol className={styles.milestones}>{coming.map((stage) => <li key={stage.index} data-state={stage.state}>
         <CalendarClock aria-hidden="true" size={16} />

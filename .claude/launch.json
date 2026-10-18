@@ -11,6 +11,15 @@
       "port": 8000
     },
     {
+      "name": "business-core-stable",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd services/business-core && node -r ts-node/register src/main.ts"
+      ],
+      "port": 8000
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

@@ -1,7 +1,6 @@
 /* Notion-like: quiet surfaces, soft hover, few lines. */
 .layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--wd-phi-3); align-items: start; min-inline-size: 0; }
-.tree { position: sticky; inset-block-start: var(--wd-space-4); display: grid; gap: var(--wd-space-0-5); }
-.tree > :global(.wd-field) { margin-block-end: var(--wd-space-3); }
+.tree { position: sticky; inset-block-start: var(--wd-space-4); display: grid; gap: var(--wd-space-3); }
 .treeList { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
 .treeRow { display: flex; align-items: center; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .treeRow[data-depth="1"] { padding-inline-start: var(--wd-space-4); }
@@ -34,9 +33,6 @@ button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outl
 .muted { color: var(--wd-color-text-tertiary); }
 .form { display: grid; gap: var(--wd-space-4); }
 .inspector { display: grid; gap: var(--wd-space-5); }
-.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); margin: 0; }
-.facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
-.facts dd { margin: var(--wd-space-0-5) 0 0; font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
 .list { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
 .list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1) var(--wd-space-3); padding: var(--wd-space-2); border-radius: var(--wd-radius-xs); }
 .list li:hover { background: var(--wd-color-surface-hover); }
@@ -50,7 +46,6 @@ button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outl
   .treeList .treeList { display: none; }
   .treeRow[data-depth] { padding-inline-start: 0; }
   .treeItem { flex: none; }
-  .facts { grid-template-columns: minmax(0, 1fr); }
 }
 .prices { display: grid; gap: var(--wd-space-3); }
 .priceBook { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-2) var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
@@ -59,22 +54,17 @@ button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outl
 .priceLine { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
 .priceValue { font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
 .priceLine small { color: var(--wd-color-text-tertiary); }
-.priceActions { display: flex; gap: var(--wd-space-1); margin-inline-start: auto; }
+.priceActions { display: flex; gap: var(--wd-action-gap); margin-inline-start: auto; }
 .tiers { display: grid; gap: var(--wd-space-2); }
 /* One price tier per line: the quantity it starts at, its price, remove. */
 .tierRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-3); }
-.actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
-.tiers > :global(.wd-button) { justify-self: start; }
-.inspectorActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.actions { display: flex; justify-content: flex-end; gap: var(--wd-action-gap); }
+.inspectorActions { display: flex; flex-wrap: wrap; gap: var(--wd-action-gap); }
 .componentRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 7rem 2.25rem; align-items: center; gap: var(--wd-space-2); }
 .componentHead { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
-/* One header row instead of a label on every line; labels stay for screen readers. */
-.componentLine :global(.wd-field-label) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.componentRow :global(.wd-input) { font-family: inherit; }
 /* PLM-162: a recipe line is its component row plus a row for its kind, basis and hours (labels shown). */
 .recipeLine { display: grid; gap: var(--wd-space-2); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-border); }
 .recipeRow { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); align-items: end; gap: var(--wd-space-2); }
-.form > :global(.wd-button) { justify-self: start; }
 @media (max-width: 48rem) { .componentRow { grid-template-columns: minmax(0, 1fr) 6rem 2.25rem; } .componentRow > :first-child { grid-column: 1 / -1; } .componentHead { display: none; } }
 .ideas { display: grid; gap: var(--wd-space-1); margin: 0; padding: var(--wd-space-2); list-style: none; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
 .ideas li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3); padding: var(--wd-space-2); }
@@ -88,7 +78,8 @@ button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outl
 .images li { position: relative; display: flex; flex-direction: column; gap: var(--wd-space-1); }
 .images img { inline-size: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
 .images li small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
-.images li :global(.wd-icon-button) { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); background: var(--wd-color-surface); }
+/* Remove sits over the picture's corner. */
+.remove { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); }
 
 /* The item's picture in the list, medium and square; an empty tile when it has none. */
 .thumb { display: block; inline-size: var(--wd-space-12); block-size: var(--wd-space-12); border-radius: var(--wd-radius-sm); object-fit: cover; background: var(--wd-color-surface-muted); border: 1px solid var(--wd-color-border); }

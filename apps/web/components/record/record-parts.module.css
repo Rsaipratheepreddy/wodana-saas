@@ -27,7 +27,7 @@
   .timelineFrame:not([data-many], [data-layout="list"]) .timeline > li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-2); padding-block-end: 0; padding-inline-end: var(--wd-space-2); }
   .timelineFrame:not([data-many], [data-layout="list"]) .timeline > li:not(:last-child)::after { inset-block: var(--wd-space-3) auto; inset-inline: calc(var(--wd-space-6) + var(--wd-space-1)) var(--wd-space-1); border-inline-start: 0; border-block-start: 1px solid var(--wd-color-border); }
   .timelineFrame:not([data-many], [data-layout="list"]) .timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
-  .timelineFrame:not([data-many], [data-layout="list"]) .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-0-5); padding-block-start: var(--wd-space-0-5); }
+  .timelineFrame:not([data-many], [data-layout="list"]) .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-1-5); padding-block-start: var(--wd-space-1); }
   .timelineFrame:not([data-many], [data-layout="list"]) .stepPeople { padding-block-start: var(--wd-space-1); }
   .timelineFrame:not([data-many], [data-layout="list"]) .stepLabel { overflow: hidden; font-size: var(--wd-text-xs); overflow-wrap: normal; hyphens: manual; text-overflow: ellipsis; }
 }
@@ -79,7 +79,3 @@
 .files a { color: var(--wd-color-link); text-decoration: none; overflow-wrap: anywhere; }
 .files a:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
 .fileMeta { inline-size: 100%; padding-inline-start: var(--wd-space-6); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-
-/* A person inline: avatar and name. */
-.chip { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; }
-.chip > span:last-child { overflow-wrap: anywhere; }

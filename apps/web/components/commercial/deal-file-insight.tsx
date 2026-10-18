@@ -19,7 +19,8 @@ const SECTION: Record<string, MessageKey> = {
   collection_delivery: tKey("Collection or delivery"), approved_drawing: tKey("Approved drawing"), materials_approval: tKey("Creative director approval"),
   supplier_orders: tKey("Supplier orders"), proof_of_delivery: tKey("Proof of delivery"), design_fee_proposal: tKey("Proposal 1 · Design fee"), inspiration: tKey("Inspiration"),
   site_visit: tKey("Site visit"), concepts: tKey("Mood boards & concepts"), space_planning: tKey("Space planning"), material_list: tKey("Material list"), renders: tKey("Renders"),
-  kickoff: tKey("Kick-off meeting"), samples: tKey("Samples"),
+  kickoff: tKey("Kick-off meeting"), samples: tKey("Samples"), site_measure: tKey("Site measure"), moodboards: tKey("Mood boards"), concept_2d: tKey("2D concept"),
+  final_render: tKey("Final render"),
   design_approval: tKey("Design approval"), main_quotation: tKey("Proposal 2 · Main quotation"), boq: tKey("BOQ"), technical_drawings: tKey("Technical drawings"),
   production: tKey("Production"), delivery_installation: tKey("Delivery & installation"), building_permit: tKey("Building permit"),
 };

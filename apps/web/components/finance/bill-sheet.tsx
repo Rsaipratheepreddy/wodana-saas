@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, SelectField, Skeleton, TextAreaField } from "@/design-system";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ApprovalRow, Button, EditableFieldList, ErrorState, FactRow, FileUploader, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, ReasonDialog, ReviewDialog, ReviewFiles,
+  SelectField, Skeleton, TextAreaField,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { BillState, PayablesState } from "@/lib/payables/types";
@@ -32,27 +35,27 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
   const [release, setRelease] = useState<{ key: string; amount: string }>({ key: "", amount: "" });
-  const file = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
     try { setState(await api.bill(billId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The invoice didn't load.")); }
   }, [api, billId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  /** Runs one change; a clash with someone else's change reloads the invoice and says so. */
-  const run = async (action: "submit" | "approve" | "cancel" | "release", input: Record<string, unknown> = {}) => {
-    if (!state) return false;
+  /** Runs one change; a clash with someone else's change reloads the invoice and says so. Throws why it wasn't saved (a dialog shows it). */
+  const change = async (action: "submit" | "approve" | "cancel" | "release", input: Record<string, unknown> = {}) => {
+    if (!state) throw new FormNotSaved();
     setBusy(true); setNotice("");
-    try { setState(await api.billCommand(action, { id: billId, version: state.bill.version, ...input })); onChanged(); return true; }
+    try { setState(await api.billCommand(action, { id: billId, version: state.bill.version, ...input })); onChanged(); }
     catch (cause) {
       setNotice(cause instanceof Error ? cause.message : t("Could not save."));
       if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
-      return false;
+      throw cause;
     } finally { setBusy(false); }
   };
+  const run = (action: "submit" | "release", input: Record<string, unknown> = {}) => change(action, input).then(() => true, () => false);
   const upload = async (chosen: File | undefined) => {
     if (!chosen) return;
     setBusy(true); setNotice("");
     try { setState(await api.uploadFile(billId, chosen)); onChanged(); } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("The file could not be uploaded.")); }
-    finally { setBusy(false); if (file.current) file.current.value = ""; }
+    finally { setBusy(false); }
   };
   const bill = state?.bill;
   const money = (value: string) => (bill ? format.money(value, bill.currency) : value);
@@ -86,23 +89,22 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
         {!state.canApproveThis && state.canApprove && bill.createdBy ? <p className={styles.muted}>{t("Someone other than who entered it approves it.")}</p> : null}
       </section> : null}
       {bill.status === "cancelled" ? <InlineNotice tone="info" message={t("Cancelled: {reason}", { reason: bill.cancelReason ?? "" })} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Invoice date")}</dt><dd>{format.day(bill.invoiceDate)}</dd></div>
-        <div><dt>{t("Due")}</dt><dd>{bill.dueDate ? format.day(bill.dueDate) : "—"}</dd></div>
-        <div><dt>{t("Total")}</dt><dd className={styles.money}>{money(bill.total)}</dd></div>
-        {bill.status === "approved" ? <div><dt>{t("Left to pay")}</dt><dd className={styles.money}>{money(bill.balance)}</dd></div> : null}
-        {Number(bill.retentionHeld) > 0 ? <div><dt>{t("Retention held")}</dt><dd className={styles.money}>{money(bill.retentionHeld)}</dd></div> : null}
-        {Number(bill.reserved) > 0 ? <div><dt>{t("In a payment run")}</dt><dd className={styles.money}>{money(bill.reserved)}</dd></div> : null}
-        <div><dt>{t("Entered by")}</dt><dd>{bill.createdByName}</dd></div>
-        {bill.approvedByName ? <div><dt>{t("Approved by")}</dt><dd>{[bill.approvedByName, bill.approvalNote].filter(Boolean).join(" · ")}</dd></div> : null}
-        <div><dt>{t("Document")}</dt><dd>
-          {bill.fileName ? <a href={api.fileUrl(bill.id)} target="_blank" rel="noreferrer">{bill.fileName}</a> : <span className={styles.muted}>{t("None yet")}</span>}
-          {documentOpen ? <>
-            <input ref={file} type="file" hidden accept="application/pdf,image/*" onChange={(event) => void upload(event.target.files?.[0])} />
-            <Button size="compact" variant="quiet" isLoading={busy} onPress={() => file.current?.click()}>{bill.fileName ? t("Replace") : t("Attach")}</Button>
-          </> : null}
-        </dd></div>
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("Invoice date")}>{format.day(bill.invoiceDate)}</FactRow>
+        <FactRow label={t("Due")}>{bill.dueDate ? format.day(bill.dueDate) : "—"}</FactRow>
+        <FactRow label={t("Total")}><span className={styles.money}>{money(bill.total)}</span></FactRow>
+        {bill.status === "approved" ? <FactRow label={t("Left to pay")}><span className={styles.money}>{money(bill.balance)}</span></FactRow> : null}
+        {Number(bill.retentionHeld) > 0 ? <FactRow label={t("Retention held")}><span className={styles.money}>{money(bill.retentionHeld)}</span></FactRow> : null}
+        {Number(bill.reserved) > 0 ? <FactRow label={t("In a payment run")}><span className={styles.money}>{money(bill.reserved)}</span></FactRow> : null}
+        <FactRow label={t("Entered by")}>{bill.createdByName}</FactRow>
+      </EditableFieldList>
+      {bill.approvedByName ? <ApprovalRow state="approved" label={bill.approvedByName}
+        description={[bill.approvedAt ? format.when(bill.approvedAt) : "", bill.approvalNote].filter(Boolean).join(" · ") || undefined} /> : null}
+      <div className={styles.document}>
+        <ReviewFiles label={t("Document")} files={bill.fileName ? [{ id: bill.id, name: bill.fileName, href: api.fileUrl(bill.id) }] : []} />
+        {documentOpen ? <FileUploader appearance="button" accept="application/pdf,image/*" multiple={false} label={bill.fileName ? t("Replace") : t("Attach")}
+          onFiles={(files) => void upload(files[0])} /> : null}
+      </div>
       <section className={styles.part} aria-label={t("Lines")}>
         <ul className={styles.list}>{state.lines.map((line) => <li key={line.id}>
           <span className={styles.nameCell}><span>{line.description}</span>
@@ -138,12 +140,23 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
     </div>}
     {dialog === "edit" && state ? <BillEditor api={api} vendors={vendors} companies={companies} existing={state} onClose={() => setDialog(null)}
       onSaved={() => { setDialog(null); onChanged(); void load(); }} /> : null}
-    {dialog === "approve" || dialog === "cancel" ? <FormDialog size="md" title={dialog === "approve" ? t("Approve invoice") : t("Cancel invoice")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
-      error={notice || undefined} isSubmitting={busy} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()}
-      submitLabel={dialog === "approve" ? t("Approve") : t("Cancel invoice")} submitVariant={dialog === "approve" ? "primary" : "danger"}
-      onSubmit={async () => { if (!(await run(dialog, dialog === "approve" ? { note: text.trim() } : { reason: text.trim() }))) throw new FormNotSaved(); setDialog(null); }}>
-      <TextAreaField label={dialog === "approve" ? t("Why it's approved") : t("Why it's cancelled")} isRequired value={text} onChange={setText} />
-    </FormDialog> : null}
+    {/* §0.3 P0: a held invoice is approved in a review of why it's held and the supplier's document, never one click. */}
+    {dialog === "approve" && bill ? <ReviewDialog title={t("Approve invoice")} description={`${bill.supplierName} · ${bill.number}`} confirmLabel={t("Approve")} confirmNeedsNote
+      onClose={() => setDialog(null)}
+      facts={[
+        { label: t("Total"), value: money(bill.total) },
+        { label: t("Invoice date"), value: format.day(bill.invoiceDate) },
+        { label: t("Due"), value: bill.dueDate ? format.day(bill.dueDate) : "—" },
+        { label: t("Entered by"), value: bill.createdByName },
+      ]}
+      files={bill.fileName ? [{ id: bill.id, name: bill.fileName, href: api.fileUrl(bill.id) }] : []}
+      evidence={bill.holdReasons ? <section className={styles.part} aria-label={t("Why it's held")}>
+        <h3 className={styles.subhead}>{t("Why it's held")}</h3>
+        <ul className={styles.reasons}>{bill.holdReasons.split("\n").map((reason) => <li key={reason}>{reason}</li>)}</ul>
+      </section> : null}
+      onConfirm={async (note) => { await change("approve", { note }); setDialog(null); }} /> : null}
+    {dialog === "cancel" ? <ReasonDialog title={t("Cancel invoice")} label={t("Why it's cancelled")} confirmLabel={t("Cancel invoice")} confirmVariant="danger"
+      onClose={() => setDialog(null)} onConfirm={(reason) => change("cancel", { reason })} /> : null}
     {dialog === "release" && bill ? <FormDialog size="md" title={t("Release retention")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
       error={notice || undefined} isSubmitting={busy} isDirty={Boolean(text.trim())} submitLabel={t("Release")}
       isSubmitDisabled={!releasing || !text.trim() || !(Number(release.amount) > 0) || subtractExact(release.amount, releasing.held) !== "0"}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CalendarClock, Check, Plus, UserRound } from "lucide-react";
-import { Badge, Button, Callout, DateField, FieldCaption, FormDialog, MoneyField, MoreDetails, NumericInput, PersonNameField, PhoneNumberField, SelectField, TextInput, TextAreaField, Checkbox, Skeleton, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, DateField, EmptyState, InlineNotice, FieldCaption, FormDialog, MoneyField, MoreDetails, NumericInput, PersonNameField, PhoneNumberField, SelectField, TextInput, TextAreaField, Checkbox, Skeleton, useDesignSystem } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import styles from "./crm-workbench.module.css";
@@ -186,13 +186,13 @@ export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, own
   const panel = <div className={`${styles.workbench} ${styles.activityPanel}`}>
     {title ? null : <div className={styles.toolbar}>{add}</div>}
     <ResourceState {...resource} retry={resource.refresh} />
-    {!resource.loading && !resource.failure && !activities.length && !assignments.length ? <p className={styles.empty}>{t("No activities yet. Schedule a follow-up or record a note.")}</p> : null}
+    {!resource.loading && !resource.failure && !activities.length && !assignments.length ? <EmptyState illustration={null} title={t("No activities yet. Schedule a follow-up or record a note.")} /> : null}
     {timelineOf(activities, assignments).map((entry) => entry.kind === "assignment" ? <div className={styles.timelineAssignment} key={`assignment-${entry.item.id}`}>
       <UserRound aria-hidden="true" size={14} />
       <div><strong>{entry.item.ownerName ? t("Assigned to {name}", { name: entry.item.ownerName }) : t("Returned to the queue")}</strong><small>{label(entry.item.method)} · {dateText(entry.item.at)}</small>{entry.item.reason ? <p>{entry.item.reason}</p> : null}</div>
     </div> : (activity => <div className={styles.row} key={activity.id}><div><strong>{activityTitle(activity, t)}</strong><small>{label(activity.type)}{activity.interactionDirection ? ` · ${label(activity.interactionDirection)}` : ""} · {label(activity.status)} · {dateText(activity.dueAt, zoned)}{activity.isNextAction ? ` · ${t("Next action")}` : ""}</small>{activity.description ? <p>{String(activity.description)}</p> : null}</div>{activity.status === "pending" ? <div className={`${styles.actions} ${styles.activityActions}`}><Button size="compact" onPress={() => setAction(rescheduleActivityAction(t, activity))}><CalendarClock aria-hidden="true" size={14} />{t("Reschedule")}</Button><Button size="compact" variant="primary" onPress={() => setAction(completeActivityAction(t, activity))}><Check aria-hidden="true" size={14} />{t("Complete")}</Button></div> : <Badge tone="neutral">{label(activity.status)}</Badge>}</div>)(entry.item))}
     {nextCursor && cursor !== "done" ? <Button size="compact" onPress={async () => { try { const result = await crmRequest<{ data: RecordData[]; nextCursor: string | null }>(workspaceId, `activities?${query}&cursor=${encodeURIComponent(nextCursor)}`); setExtra((old) => [...old, ...result.data.filter((row) => !activities.some((a) => a.id === row.id))]); setCursor(result.nextCursor ?? "done"); } catch (error) { setPageError((error as Error).message); } }}>{t("Load more activities")}</Button> : null}
-    {pageError ? <p role="alert">{pageError}</p> : null}
+    {pageError ? <InlineNotice message={pageError} tone="error" /> : null}
     {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={async () => { setExtra([]); setCursor(null); resource.refresh(); await onChanged?.(); }} /> : null}
   </div>;
   return title ? <SideSection title={title} action={add}>{panel}</SideSection> : panel;

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, X } from "lucide-react";
-import { Button, Checkbox, EmptyState, Form, FormDialog, FormNotSaved, IconButton, InlineNotice, MoneyField, PercentageInput, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, Checkbox, EmptyState, Form, FormDialog, FormNotSaved, IconButton, InlineNotice, MoneyField, MultiSelectField, PercentageInput, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { commercialPath } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quotationPath } from "@/lib/quotation/client";
@@ -20,7 +20,7 @@ import styles from "./quotation-settings.module.css";
 const QS_ITEM_TYPES = ["assembly", "material", "package", "product", "ready_made", "service"] as const;
 
 type Loaded = { settings: Settings; workPackages: Array<{ id: string; name: string; archived: boolean; qsReview?: boolean }>; priceBooks: Array<{ id: string; name: string; currency: string; status: string }>;
-  paymentTemplates?: Array<{ id: string; name: string }>; canManage: boolean };
+  paymentTemplates?: Array<{ id: string; name: string }>; teamRoles?: Array<{ id: string; label: string }>; canManage: boolean };
 
 async function call<T>(url: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store" });
@@ -152,6 +152,11 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       {qsRules ? <SettingsRow align="start" label={t("Catalogue kinds for QS review")}>
         <div className={styles.kinds}>{QS_ITEM_TYPES.map((type) => <Checkbox key={type} isDisabled={readOnly} isSelected={(form.qsReviewItemTypes ?? []).includes(type)}
           onChange={(on) => set("qsReviewItemTypes", QS_ITEM_TYPES.filter((item) => (item === type ? on : (form.qsReviewItemTypes ?? []).includes(item))))}>{kinds[type]}</Checkbox>)}</div>
+      </SettingsRow> : null}
+      {/* §0.3 P8: manager approval from the job's own lead designer, creative director or account manager (empty: anyone who approves quotes). */}
+      {data.teamRoles?.length ? <SettingsRow label={t("Approved by")}>
+        <MultiSelectField label={t("Approved by")} isDisabled={readOnly} items={data.teamRoles} selectedKeys={new Set(form.approvalTeamRoles ?? [])}
+          onSelectionChange={(keys) => set("approvalTeamRoles", [...keys].map(String))} />
       </SettingsRow> : null}
       {/* PLM-147: the client keeps changing: past these rounds a value engineering round is chargeable. */}
       <SettingsRow label={t("Free value engineering rounds")} hint={t("Later rounds are chargeable. Leave empty for no limit.")}>

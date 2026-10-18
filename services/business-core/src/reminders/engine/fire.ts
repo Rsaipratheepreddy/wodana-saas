@@ -104,7 +104,7 @@ async function fireStaffRemind(db: Db, { ctx, templates }: FireDeps, step: StepR
   const result = await deliverToStaff(db, {
     workspaceId: ctx.workspaceId, stepId: step.stepId, code: reminderTemplateCode.kind(kind), eventType: REMINDER_KIND_INFO[kind].eventType ?? kind,
     critical: subject.critical, channels: rule.channels, recipients, variables: (person) => variablesFor(subject, ctx.now, person.timeZone), deepLink: subject.href,
-    now: ctx.now, digest: rule.digest, criticalBreaksQuiet: ctx.settings.criticalBreaksQuiet, ruleQuiet: rule.quietHours, calendar: ctx.clock, templates,
+    now: ctx.now, digest: rule.digest, foldHeldIntoDigest: true, criticalBreaksQuiet: ctx.settings.criticalBreaksQuiet, ruleQuiet: rule.quietHours, calendar: ctx.clock, templates,
   });
   return staffOutcome(result);
 }

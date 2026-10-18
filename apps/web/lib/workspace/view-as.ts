@@ -1,4 +1,4 @@
-/** View as: an owner or administrator reads the workspace as one team member (or one role), read-only, time-boxed. */
+/** View as: the owner reads the workspace as one team member (or one role), read-only, time-boxed. */
 export type ViewAsSummary = {
   sessionId: string;
   kind: "person" | "role";

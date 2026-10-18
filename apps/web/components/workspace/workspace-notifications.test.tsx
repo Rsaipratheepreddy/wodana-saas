@@ -50,7 +50,10 @@ it("groups notices by the module their event comes from, and by day, and marks t
   expect(screen.getByRole('region', { name: 'Today' })).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Earlier' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'See all notifications' })).toHaveAttribute('href', '/workspace/notifications');
-  await user.click(screen.getByRole('button', { name: /Projects 1/ }));
+  // The modules sit in one menu, so the filter row never runs off the panel's edge.
+  await user.click(screen.getByRole('button', { name: 'Module' }));
+  await user.click(await screen.findByRole('menuitem', { name: /Projects/ }));
+  expect(screen.getByRole('button', { name: 'Projects 1' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.queryByRole('link', { name: /New enquiry assigned/ })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Report missing/ })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /Unread 1/ }));

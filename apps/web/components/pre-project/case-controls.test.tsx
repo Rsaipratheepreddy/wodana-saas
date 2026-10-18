@@ -7,7 +7,6 @@ describe('multiple record attachments',()=>{
  it('uploads each selected file and preserves earlier attachments',async()=>{
   const saved=vi.fn();const error=vi.fn();vi.mocked(caseRequest).mockResolvedValueOnce({id:'one',name:'one.png'}).mockResolvedValueOnce({id:'two',name:'two.png'});
   render(<AssetUpload workspaceId="w" caseId="c" currentCount={3} onUploaded={saved} onError={error}/>);
-  expect(screen.getByText(/3 of 20 attached/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Attach reference files'),{target:{files:[new File(['one'],'one.png',{type:'image/png'}),new File(['two'],'two.png',{type:'image/png'})]}});
   await waitFor(()=>expect(saved).toHaveBeenCalledTimes(2));expect(saved.mock.calls.map(([asset])=>asset.id)).toEqual(['one','two']);
  });

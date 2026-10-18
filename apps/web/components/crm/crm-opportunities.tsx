@@ -9,9 +9,11 @@ import { tKey, type Translate } from "@/lib/i18n/keys";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
 import { crmRequest, rows, type MissingRequirement, type RecordData } from "@/lib/crm/client";
 import { missingFrom, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
-import { nowPlan, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
+import { type NowStep } from "@/lib/crm/now-step";
+import { useJobNow } from "@/lib/jobs/job-now";
 import { PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
-import { DueChip, useStepText } from "./opportunity-now";
+import { DueChip } from "./opportunity-now";
+import { translateKnown } from "@/lib/i18n/keys";
 import { LinkedRecordWorkbench } from "./crm-record-workbench";
 import { CrmProductShell } from "./crm-product-shell";
 import styles from "./crm-opportunities.module.css";
@@ -104,31 +106,9 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     document.addEventListener("visibilitychange", onVisible);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [initialData.workspaceId]);
-  // Each open card shows its step now, read from the opportunity's detail once per version.
-  const stepText = useStepText();
-  const [nowSteps, setNowSteps] = useState<Record<string, { version: string; step: NowStep | null }>>({});
-  const asked = useRef(new Set<string>());
-  useEffect(() => {
-    const wanted = items.filter((item) => item.status === "open" && !asked.current.has(`${item.id}:${String(item.version ?? "")}`)).slice(0, 60);
-    if (!wanted.length) return;
-    let cancelled = false;
-    const queue = [...wanted];
-    const worker = async () => {
-      for (let item = queue.shift(); item && !cancelled; item = queue.shift()) {
-        const version = String(item.version ?? "");
-        asked.current.add(`${item.id}:${version}`);
-        try {
-          const detail = await crmRequest<RecordData & { flow?: OpportunityFlowView; funnel?: FunnelStep[] }>(initialData.workspaceId, `opportunities/${item.id}`);
-          if (!detail || typeof detail !== "object") continue;
-          const step = nowPlan({ flow: detail.flow && typeof detail.flow === "object" ? detail.flow : null, status: String(detail.status ?? item.status), funnel: detail.funnel, caseId: detail.preProjectCaseId ? String(detail.preProjectCaseId) : null,
-            project: detail.projectId ? { id: String(detail.projectId), reference: detail.projectReference ? String(detail.projectReference) : null } : null }).now;
-          setNowSteps((current) => ({ ...current, [item!.id]: { version, step } }));
-        } catch { /* the card simply shows no step */ }
-      }
-    };
-    void Promise.all([worker(), worker(), worker()]);
-    return () => { cancelled = true; };
-  }, [items, initialData.workspaceId]);
+  // §0.3 P10: each open card shows its job's step now, read from the journey in one request (the job page's words).
+  const openRecords = useMemo(() => items.filter((item) => item.status === "open").map((item) => ({ type: "opportunity" as const, id: item.id })), [items]);
+  const jobNow = useJobNow(initialData.workspaceId, openRecords);
   const [layout, setLayout] = useState<"board" | "list">("board");
   const board = useScrollEdges<HTMLDivElement>();
   const [search, setSearch] = useState("");
@@ -248,7 +228,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     {layout === "board" && !activePipelines.length && !items.length ? <EmptyState title={t("Your pipeline starts with an enquiry")} description={t("Open an enquiry and choose Convert to opportunity. Its customer, owner and follow-up stay connected.")}
       action={<Button variant="primary" onPress={() => router.push("/workspace/crm/leads")}>{t("Open enquiries")}</Button>} /> : null}
     {layout === "board" && activePipelines.length > 0 && !boardItems.length ? filtered ? <NoResultsState onClear={clearFilters} />
-      : <p className={styles.emptyNotice}>{view === "closed" ? t("No closed opportunities yet.") : view === "open" ? t("No open opportunities yet. Convert one from an enquiry.") : t("No opportunities yet. Convert one from an enquiry.")}</p> : null}
+      : <EmptyState illustration={null} title={view === "closed" ? t("No closed opportunities yet.") : view === "open" ? t("No open opportunities yet. Convert one from an enquiry.") : t("No opportunities yet. Convert one from an enquiry.")} /> : null}
     {layout === "board" ? <>
       <span id="pipeline-drag-hint" className={styles.srOnly}>{t("Open opportunity. Drag to move stage, or use Alt and the left or right arrow keys.")}</span>
       {/* Every stage keeps a readable width; an empty one is narrower so the board fits, and what doesn't fit fades at the edge with buttons to page across (UX-031). */}
@@ -268,8 +248,9 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
             // The client's line only when the title doesn't already name them ("Farah Nasser (Dubai Hills Estate)").
             const showCustomer = Boolean(customer) && !title.toLocaleLowerCase().includes(customer.toLocaleLowerCase());
             const value = moneyLabel(item, locale);
+            const enquiryRef = String(item.enquiryReference ?? "").trim();
             const outcomeMismatch = (column.code === "won" || column.code === "lost") && item.status !== column.code;
-            const now = item.status === "open" ? nowSteps[item.id]?.step ?? null : null;
+            const now = item.status === "open" ? jobNow.lookup("opportunity", item.id)?.now ?? null : null;
             // The card is the shared Card; its title is the button that opens it (and moves it with Alt+arrows).
             return <div className={styles.boardCard} key={item.id} draggable={item.status === "open" && !moving} aria-busy={moving === item.id} data-dragging={dragged === item.id || undefined}
               onDragStart={event => { setDragged(item.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }}
@@ -279,8 +260,9 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
                 footer={<><span className={styles.cardDue}>{item.status === "open" ? (typeof item.nextActionAt === "string" ? <DueChip at={item.nextActionAt} /> : <span className={styles.cardNoDue}>{t("No follow-up")}</span>) : item.status === "won" && item.dealClosed === true ? <Badge tone="success">{t("Deal closed")}</Badge> : null}</span>
                   <span className={styles.owner} title={owner || t("Unassigned")}><span aria-hidden="true"><Avatar name={owner || t("Unassigned")} seed={owner ? String(item.ownerMembershipId ?? owner) : undefined} size="sm" /></span><span className={styles.srOnly}>{owner || t("Unassigned")}</span></span></>}>
                 {outcomeMismatch && <span className={styles.cardWarning}>{t("Status is {status}. Review the outcome.", { status: String(item.status).replaceAll("_", " ") })}</span>}
-                {showCustomer || value ? <span className={styles.cardMeta}>{showCustomer ? <span>{customer}</span> : null}{value ? <b>{value}</b> : null}</span> : null}
-                {now ? <span className={styles.cardNow}>{stepText(now, "short")}</span> : null}
+                {/* Guide 8: the card names its enquiry (its reference), then the client when the title doesn't. */}
+                {enquiryRef || showCustomer || value ? <span className={styles.cardMeta}>{enquiryRef || showCustomer ? <span>{[enquiryRef, showCustomer ? customer : ""].filter(Boolean).join(" · ")}</span> : null}{value ? <b>{value}</b> : null}</span> : null}
+                {now ? <span className={styles.cardNow}>{translateKnown(t, now.label)}</span> : null}
               </Card>
             </div>;
           })}</div>

@@ -373,7 +373,11 @@ describe("finance", () => {
     page("runs");
     const sheet = await screen.findByRole("dialog", { name: "Run 1" });
     expect(within(sheet).getByRole("region", { name: "Payments" })).toHaveTextContent(/Nile Marble · Studio Furniture.*INV-4.*Emirates NBD ending 4321/);
-    await userEvent.click(within(sheet).getByRole("button", { name: "Approve" }));
+    // Approval opens a review of each payment, its bank and the bills (never one click).
+    await userEvent.click(within(sheet).getByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("dialog", { name: "Approve run 1" });
+    expect(within(review).getByText(/Emirates NBD ending 4321/)).toBeInTheDocument();
+    await userEvent.click(within(review).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "approve", id: "r1", version: 2 }));
     await userEvent.click(await within(sheet).findByRole("button", { name: "Download file" }));
     await waitFor(() => expect(created).toHaveBeenCalled());
@@ -405,7 +409,9 @@ describe("finance", () => {
     page("runs");
     const sheet = await screen.findByRole("dialog", { name: "Run 1" });
     expect(within(sheet).getByText("New bank details for Nile Marble are waiting for approval.")).toBeInTheDocument();
-    await userEvent.click(within(sheet).getByRole("button", { name: "Approve" }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Review" }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Approve run 1" })).getByRole("button", { name: "Approve" }));
+    // A refusal closes the review so its reason shows on the run.
     expect(await within(sheet).findByText(/decide them first/)).toBeInTheDocument();
     await userEvent.click(within(sheet).getByRole("button", { name: "More" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Send back" }));

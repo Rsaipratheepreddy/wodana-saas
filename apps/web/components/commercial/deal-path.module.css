@@ -1,0 +1,7 @@
+/* The deal path: the shared stepper, then the one next step on a soft tint with its action at the end. */
+.path { display: grid; gap: var(--wd-space-4); margin-block-end: var(--wd-space-5); }
+.next { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); min-block-size: var(--wd-space-12);
+  padding: var(--wd-space-2) var(--wd-space-2) var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-selected); }
+.next > :first-child { flex: none; }
+.nextText { flex: 1 1 220px; min-inline-size: 0; font-size: var(--wd-text-sm); line-height: var(--wd-leading-tight); color: var(--wd-color-text); }
+.nextAction { display: inline-flex; flex: none; gap: var(--wd-space-2); margin-inline-start: auto; }

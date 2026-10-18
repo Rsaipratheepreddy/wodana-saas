@@ -2,7 +2,7 @@ import { internalJsonResponse } from "@/lib/internal/proxy";
 import { invalidRequest, isSameOrigin } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 
-export async function POST(request: Request, context: { params: Promise<{ draftId: string }> }) {
+export async function POST(request: Request, context: RouteContext<"/api/internal/provisioning/drafts/[draftId]/provision">) {
   const t = await getServerT();
   if (!isSameOrigin(request)) return invalidRequest(t("The request origin is not allowed."));
   const { draftId } = await context.params;

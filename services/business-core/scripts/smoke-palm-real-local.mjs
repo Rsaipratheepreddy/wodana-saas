@@ -362,6 +362,8 @@ try {
     reference: `QA-RECEIPT-${marker}`,
     evidence: `Local synthetic QA receipt ${marker}`,
     evidenceKind: "operational",
+    method: "bank",
+    receivedOn: new Date().toISOString().slice(0, 10),
   });
   assert.equal(receipt.data.payments.find(item => item.id === payment.id)?.status, "proof_submitted");
   const finance = await createQaActor("finance_reviewer");
@@ -572,6 +574,8 @@ try {
     reference: `QA-MAIN-RECEIPT-${marker}`,
     evidence: `Local synthetic QA main payment receipt ${marker}`,
     evidenceKind: "operational",
+    method: "bank",
+    receivedOn: new Date().toISOString().slice(0, 10),
   });
   token = finance.token;
   const mainVerified = await commercialCommand("verify_payment", { paymentId: mainPayment.id });

@@ -1,20 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Checkbox, ErrorState, FormDialog, InlineNotice, InspectorSheet, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import {
+  Badge, Button, Checkbox, DataGrid, EditableFieldList, ErrorState, FactRow, InlineNotice, InspectorSheet, NumericInput, ReasonDialog, Skeleton, VisuallyHidden, type DataGridColumn,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
-import type { ReceiptState, RejectKind, SupplierReturnState } from "@/lib/purchasing/types";
+import type { ReceiptLine, ReceiptState, RejectKind, SupplierReturnState } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
 import { PhotoPicker, SavedPhotos } from "./delivery-photos";
-import { quantityText, useOrderLabels } from "./order-labels";
+import { fieldNumber, fieldText, quantityText, useOrderLabels } from "./order-labels";
 import { RejectFields, usePlaceLabel } from "./receive-dialog";
 import { ReturnDialog } from "./return-dialog";
 import styles from "./purchasing.module.css";
 
 type Check = { include: boolean; rejected: string; kind: RejectKind | null; reason: string };
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const amount = (value: string, unit: string) => `${quantityText(value)} ${unit}`.trim();
 
 /** Whether a receipt still waits for inspection, and what came of it. */
@@ -69,7 +70,31 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
 
   const receipt = state?.receipt;
   const inspecting = Boolean(state?.canInspectThis);
-  const setCheck = (id: string, patch: Partial<Check>) => setChecks({ ...checks, [id]: { ...checks[id], ...patch } });
+  const setCheck = (id: string, patch: Partial<Check>) => setChecks((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
+  /** A line still waiting that this inspector is checking now. */
+  const checking = (line: ReceiptLine) => Boolean(inspecting && checks[line.id] && Number(line.pending) > 0 && !receipt?.reversedAt);
+  const lineColumns: DataGridColumn<ReceiptLine>[] = [
+    { id: "item", header: t("Item"), size: 260, accessorFn: (line) => line.description, meta: { renderCell: (line) => {
+      const check = checks[line.id];
+      const open = checking(line);
+      const missing = line.noted !== null && Number(line.noted) > Number(line.received) ? subtractExact(line.noted, line.received) : null;
+      const back = addExact(line.returnedRejected, line.returnedAccepted);
+      const facts = [line.projectReference, line.specification].filter(Boolean).join(" · ");
+      return <span className={styles.nameCell}><span>{line.description}</span>{facts ? <small>{facts}</small> : null}
+        {open ? <Checkbox isSelected={check.include} onChange={(include) => setCheck(line.id, { include })}>{t("Inspect now")}</Checkbox> : null}
+        {!open && Number(line.rejected) > 0 ? <small>{[line.rejectKind ? labels.rejectKind[line.rejectKind] : "", line.rejectReason].filter(Boolean).join(": ")}</small> : null}
+        {missing ? <small className={styles.lateText}>{t("{quantity} missing against the note", { quantity: amount(missing, line.unit) })}</small> : null}
+        {back !== "0" ? <small>{t("{quantity} going back to the supplier", { quantity: amount(back, line.unit) })}</small> : null}</span>;
+    } } },
+    { id: "received", header: t("Received"), size: 120, accessorFn: (line) => Number(line.received), meta: { align: "end", renderCell: (line) => <span className={styles.money}>{amount(line.received, line.unit)}</span> } },
+    { id: "accepted", header: t("Accepted"), size: 130, accessorFn: (line) => Number(line.accepted), meta: { align: "end", renderCell: (line) => checking(line) && checks[line.id].include
+      ? <span className={styles.money}>{amount(addExact(line.accepted, subtractExact(line.pending, checks[line.id].rejected || "0")), line.unit)}</span>
+      : <span className={styles.money}>{Number(line.pending) > 0 && !receipt?.reversedAt ? <span className={styles.muted}>{t("To inspect")}</span> : amount(line.accepted, line.unit)}</span> } },
+    { id: "rejected", header: t("Rejected"), size: 130, accessorFn: (line) => Number(line.rejected), meta: { align: "end", renderCell: (line) => checking(line) && checks[line.id].include
+      ? <NumericInput label={<VisuallyHidden>{t("Rejected of {item}", { item: line.description })}</VisuallyHidden>} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(checks[line.id].rejected)} onChange={(value) => setCheck(line.id, { rejected: fieldText(value) })} />
+      : <span className={styles.money}>{Number(line.rejected) > 0 ? amount(line.rejected, line.unit) : "—"}</span> } },
+  ];
   const chosen = (state?.lines ?? []).filter((line) => Number(line.pending) > 0 && checks[line.id]?.include);
   const invalid = chosen.find((line) => {
     const check = checks[line.id];
@@ -97,53 +122,28 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
 
   return <InspectorSheet isOpen size="lg" title={receipt ? t("Delivery {number}", { number: receipt.number }) : t("Delivery")} onOpenChange={(open) => { if (!open) onClose(); }} footer={footer}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !receipt ? <Skeleton lines={6} shape="facts" /> : <div className={styles.sheet}>
-      <div className={styles.approvalRow}>
-        <ReceiptResult receipt={receipt} />
-        <span className={styles.muted}>{receipt.supplierName}</span>
-        <Button size="compact" variant="quiet" onPress={() => onOpenOrder(receipt.orderId)}>{receipt.orderNumber}</Button>
-      </div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {receipt.reversedAt ? <InlineNotice tone="info" message={t("Reversed by {name}: {reason}", { name: receipt.reversedByName ?? "", reason: receipt.reverseReason ?? "" })} />
         : Number(receipt.pending) > 0 && !inspecting ? <InlineNotice tone="info" message={state.canInspect ? t("Someone else inspects goods you received.") : t("Waiting for someone who inspects deliveries.")} /> : null}
       {state.needsPhoto ? <InlineNotice tone="error" message={t("No photo of this site delivery yet.")} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Arrived at")}</dt><dd>{placeLabel({ kind: receipt.locationKind, name: receipt.locationName, projectReference: null })}</dd></div>
-        <div><dt>{t("Received")}</dt><dd>{[format.day(receipt.receivedOn), receipt.receivedByName].join(" · ")}</dd></div>
-        {receipt.deliveryNote ? <div><dt>{t("Delivery note")}</dt><dd>{receipt.deliveryNote}</dd></div> : null}
-        {receipt.handedOverBy ? <div><dt>{t("Handed over by")}</dt><dd>{receipt.handedOverBy}</dd></div> : null}
-        {receipt.inspectedByName ? <div><dt>{t("Inspected")}</dt><dd>{[format.when(receipt.inspectedAt), receipt.inspectedByName].join(" · ")}</dd></div> : null}
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("Status")}><ReceiptResult receipt={receipt} /></FactRow>
+        <FactRow label={t("Supplier")}>{receipt.supplierName}</FactRow>
+        <FactRow label={t("Order")}><Button size="compact" variant="quiet" onPress={() => onOpenOrder(receipt.orderId)}>{receipt.orderNumber}</Button></FactRow>
+        <FactRow label={t("Arrived at")}>{placeLabel({ kind: receipt.locationKind, name: receipt.locationName, projectReference: null })}</FactRow>
+        <FactRow label={t("Received")}>{[format.day(receipt.receivedOn), receipt.receivedByName].join(" · ")}</FactRow>
+        {receipt.deliveryNote ? <FactRow label={t("Delivery note")}>{receipt.deliveryNote}</FactRow> : null}
+        {receipt.handedOverBy ? <FactRow label={t("Handed over by")}>{receipt.handedOverBy}</FactRow> : null}
+        {receipt.inspectedByName ? <FactRow label={t("Inspected")}>{[format.when(receipt.inspectedAt), receipt.inspectedByName].join(" · ")}</FactRow> : null}
+        {receipt.notes ? <FactRow label={t("Notes")}>{receipt.notes}</FactRow> : null}
+      </EditableFieldList>
       <section className={styles.part} aria-label={t("Lines")}>
-        <div className={styles.receiveLines} role="table" aria-label={t("Lines")}>
-          <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Received")}</span>
-            <span role="columnheader">{t("Accepted")}</span><span role="columnheader">{t("Rejected")}</span></div>
-          {state.lines.map((line) => {
-            const check = checks[line.id];
-            const open = inspecting && check && Number(line.pending) > 0 && !receipt.reversedAt;
-            const missing = line.noted !== null && Number(line.noted) > Number(line.received) ? subtractExact(line.noted, line.received) : null;
-            const back = addExact(line.returnedRejected, line.returnedAccepted);
-            const facts = [line.projectReference, line.specification].filter(Boolean).join(" · ");
-            return <div role="row" key={line.id} className={styles.receiveLine}>
-              <span role="cell" className={styles.nameCell}><span>{line.description}</span>{facts ? <small>{facts}</small> : null}
-                {open ? <Checkbox isSelected={check.include} onChange={(include) => setCheck(line.id, { include })}>{t("Inspect now")}</Checkbox> : null}
-                {!open && Number(line.rejected) > 0 ? <small>{[line.rejectKind ? labels.rejectKind[line.rejectKind] : "", line.rejectReason].filter(Boolean).join(": ")}</small> : null}
-                {missing ? <small className={styles.lateText}>{t("{quantity} missing against the note", { quantity: amount(missing, line.unit) })}</small> : null}
-                {back !== "0" ? <small>{t("{quantity} going back to the supplier", { quantity: amount(back, line.unit) })}</small> : null}</span>
-              <span role="cell" className={styles.money}>{amount(line.received, line.unit)}</span>
-              {open && check.include ? <>
-                <span role="cell" className={styles.money}>{amount(addExact(line.accepted, subtractExact(line.pending, check.rejected || "0")), line.unit)}</span>
-                <span role="cell"><TextInput aria-label={t("Rejected of {item}", { item: line.description })} label={null} inputMode="decimal" value={check.rejected}
-                  onChange={(value) => setCheck(line.id, { rejected: numeric(value) })} /></span>
-                {Number(check.rejected) > 0 ? <RejectFields description={line.description} kind={check.kind} reason={check.reason} labels={labels.rejectKind} onChange={(patch) => setCheck(line.id, patch)} /> : null}
-              </> : <>
-                <span role="cell" className={styles.money}>{Number(line.pending) > 0 && !receipt.reversedAt ? <span className={styles.muted}>{t("To inspect")}</span> : amount(line.accepted, line.unit)}</span>
-                <span role="cell" className={styles.money}>{Number(line.rejected) > 0 ? amount(line.rejected, line.unit) : "—"}</span>
-              </>}
-            </div>;
-          })}
-        </div>
+        <DataGrid ariaLabel={t("Lines")} data={state.lines} getRowId={(line) => line.id} columns={lineColumns}
+          showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
+        {/* What was wrong with each line rejected now, under the table, named by its item. */}
+        {state.lines.filter((line) => checking(line) && checks[line.id].include && Number(checks[line.id].rejected) > 0).map((line) => <RejectFields key={line.id}
+          description={line.description} kind={checks[line.id].kind} reason={checks[line.id].reason} labels={labels.rejectKind} onChange={(patch) => setCheck(line.id, patch)} />)}
       </section>
-      {receipt.notes ? <p className={styles.dialogText}>{receipt.notes}</p> : null}
       {state.photos.length || (state.canReceive && !receipt.reversedAt) ? <section className={styles.part} aria-label={t("Photos")}>
         <h3 className={styles.subhead}>{t("Photos")}</h3>
         <SavedPhotos photos={state.photos} url={api.photoUrl} />
@@ -160,9 +160,6 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
 
 function ReverseDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
-  const [reason, setReason] = useState("");
-  return <FormDialog size="md" title={t("Reverse this delivery")} description={t("Its goods come out of stock.")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
-    submitLabel={t("Reverse")} submitVariant={"danger"} onSubmit={() => onSave(reason.trim())}>
-    <TextAreaField label={t("What was wrong with it")} isRequired value={reason} onChange={setReason} />
-  </FormDialog>;
+  return <ReasonDialog title={t("Reverse this delivery")} description={t("Its goods come out of stock.")} label={t("What was wrong with it")} confirmLabel={t("Reverse")} confirmVariant="danger"
+    onConfirm={onSave} onClose={onClose} />;
 }

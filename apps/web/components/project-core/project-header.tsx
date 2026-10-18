@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Info } from "lucide-react";
+import { Info, Route } from "lucide-react";
 import { Badge, Button, EditableField, IconButton, IconMenuButton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Health, ProjectDetail } from "@/lib/project-core/types";
@@ -110,6 +110,8 @@ export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDi
         {next ? next.href
           ? <Link className="wd-button" data-variant="primary" data-size="compact" href={next.href} aria-label={next.ariaLabel}>{next.label}</Link>
           : <Button size="compact" variant="primary" aria-label={next.ariaLabel} onPress={() => { next.press?.(); onAction?.(); }}>{next.label}</Button> : null}
+        {/* §0.3 P2: the whole job, enquiry to warranty, on its map. */}
+        <Link className="wd-button" data-size="compact" href={`/workspace/jobs/for/opportunity/${detail.project.opportunityId}`}><Route aria-hidden="true" size={14} />{t("Journey")}</Link>
         {record ? null : <IconButton aria-label={detailsOpen ? t("Hide details") : t("Show details")} aria-pressed={detailsOpen} onPress={onToggleDetails}><Info aria-hidden="true" size={16} /></IconButton>}
         {actions.length ? <IconMenuButton ariaLabel={t("Project actions")} onAction={(id) => onDialog(id as ProjectDialog)} items={actions} /> : null}
       </div>

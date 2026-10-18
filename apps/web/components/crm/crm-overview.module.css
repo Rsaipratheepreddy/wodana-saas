@@ -23,9 +23,6 @@
 .legend i { flex-shrink: 0; inline-size: 9px; block-size: 9px; border-radius: var(--wd-radius-2xs); }
 .legend strong { margin-inline-start: auto; }
 .legend small { inline-size: 28px; color: var(--wd-color-text-secondary); text-align: end; }
-.attentionFilters { display: flex; gap: var(--wd-space-1-5); }
-.attentionFilters button { min-block-size: 32px; padding: var(--wd-space-1-5) var(--wd-space-2); border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
-.attentionFilters button[aria-pressed="true"] { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-weight: var(--wd-weight-semibold); }
 .attention { display: grid; gap: var(--wd-space-2); max-block-size: 270px; overflow: auto; }
 .attention > a { display: flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-xs); background: var(--wd-color-info-subtle); color: inherit; text-decoration: none; }
 .attention > a[data-urgent="true"] { background: var(--wd-color-warning-subtle); }
@@ -43,8 +40,6 @@
 .healthRow { display: flex; align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-space-3); color: inherit; font-size: var(--wd-text-sm); text-decoration: none; }
 .healthRow span { display: flex; flex: 1; align-items: center; gap: var(--wd-space-2); }
 .healthRow strong { font-size: var(--wd-text-lg); }
-.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--wd-space-2); min-block-size: 120px; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); text-align: center; }
-.empty a { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-action-primary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
-.metrics a:focus-visible, .quickActions a:focus-visible, .attention a:focus-visible, .healthRow:focus-visible, .cardLink:focus-visible, .attentionFilters button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
+.metrics a:focus-visible, .quickActions a:focus-visible, .attention a:focus-visible, .healthRow:focus-visible, .cardLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
 @media (max-width: 1100px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sourceBody { flex-direction: column; } .legend { inline-size: 100%; } }
 @media (max-width: 480px) { .metrics > a { flex-direction: column; align-items: flex-start; } .attention time { white-space: normal; } }

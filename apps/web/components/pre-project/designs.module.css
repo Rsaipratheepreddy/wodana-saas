@@ -703,10 +703,9 @@
 .folderArtwork { inline-size:100%; max-inline-size:210px; block-size:148px; margin:var(--wd-space-2) 0 0; }
 .folder > strong { position:absolute; inset-block-start:52px; inset-inline:26px; min-block-size:0; max-block-size:40px; color:var(--wd-color-info); text-align:start; font-size:var(--wd-text-sm); line-height:18px; }
 .folder > small { position:absolute; inset-block-start:94px; inset-inline:26px; color:var(--wd-color-info); text-align:start; font-size:var(--wd-text-2xs); }
-.folder > :global(.wd-badge) { position:absolute; inset-block-end:24px; inset-inline-start:26px; font-size:var(--wd-text-2xs); }
+.folder > :global(.wd-badge) { position:absolute; inset-block-end:24px; inset-inline-start:26px; }
 .folderOwner { position:absolute; inset-block-end:20px; inset-inline-end:24px; margin:0; }
 .folderOwner > span:last-child:not(:global(.wd-avatar)) { display:none; }
-.folderOwner :global(.wd-avatar) { inline-size:26px; block-size:26px; font-size:var(--wd-text-2xs); }
 .folderGrid { grid-template-columns:repeat(auto-fill,210px); gap:var(--wd-space-4); }
 .folderOwner { color:var(--wd-color-info); }
 @media(max-width:480px) { .folderGrid { grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:var(--wd-space-2); } }

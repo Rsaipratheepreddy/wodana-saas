@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import type { HrmsEmployee, LeaveBalance, LeaveRequest, LeaveType } from "@wodana/contracts";
 import {
-  Button, DataGrid, DateField, EmptyState, ErrorState, FormRow, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton, TextAreaField,
+  Button, DataGrid, DateField, EmptyState, ErrorState, FormRow, InlineNotice, InspectorSheet, NoResultsState, ReasonDialog, SegmentedControl, SelectField, Skeleton, TextAreaField,
   type DataGridColumn,
  FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -157,11 +157,10 @@ function LeaveRequestSheet({ api, request, onClose, onChanged }: { api: HrmsApi;
 function CancelLeaveDialog({ api, request, onClose, onCancelled }: { api: HrmsApi; request: LeaveRequest; onClose: () => void; onCancelled: () => void }) {
   const t = useT();
   const format = useHrmsFormat();
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState("");
-  return <FormDialog size="md" title={t("Cancel request")} onClose={onClose} cancelLabel={t("Back")} error={error || undefined} isSubmitDisabled={reason.trim().length < MIN_REASON} submitVariant="danger" submitLabel={t("Cancel request")} onSubmit={async () => { setError("");
-        try { await api.cancelLeave(request.id, reason.trim()); onCancelled(); } catch (cause) { setError(format.failure(cause, t("Could not save."))); }
-      }}>
-      <TextAreaField label={t("Why cancel")} isRequired value={reason} onChange={setReason} />
-  </FormDialog>;
+  return <ReasonDialog title={t("Cancel request")} label={t("Why cancel")} confirmLabel={t("Cancel request")} confirmVariant="danger" onClose={onClose}
+    onConfirm={async (reason) => {
+      if (reason.length < MIN_REASON) throw new Error(t("At least {count} characters", { count: MIN_REASON }));
+      try { await api.cancelLeave(request.id, reason); } catch (cause) { throw new Error(format.failure(cause, t("Could not save."))); }
+      onCancelled();
+    }} />;
 }

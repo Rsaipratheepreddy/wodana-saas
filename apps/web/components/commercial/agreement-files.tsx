@@ -2,7 +2,7 @@
 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
-import { Button } from "@/design-system";
+import { Button, InlineNotice } from "@/design-system";
 import { AssetFiles, AssetUpload } from "../pre-project/case-controls";
 import type { CaseAsset } from "@/lib/pre-project/content";
 import type { CommercialState } from "@/lib/commercial/types";
@@ -29,7 +29,7 @@ export function AgreementFiles({ state, run, busy }: {
   return <section className={styles.files} aria-label={t("Signed agreement files")}>
     <h3>{t("Signed documents")}</h3>
     <AssetFiles workspaceId={state.workspaceId} caseId={state.caseId} assets={agreement?.files ?? []} />
-    {failure && <p role="alert">{failure}</p>}
+    {failure && <InlineNotice tone="error" message={failure} />}
     {pending ? <Button size="compact" isDisabled={busy || linking} onPress={() => void attach(pending)}>{t("Attach {name}", { name: pending.name })}</Button> : state.canEdit && agreement ? <AssetUpload workspaceId={state.workspaceId} caseId={state.caseId} multiple={false} label={t("Upload signed agreement")} currentCount={agreement.files?.length ?? 0} disabled={busy || linking} onUploaded={asset => void attach(asset)} onError={setFailure} /> : !agreement ? <p>{t("Save the agreement to attach its signed PDF or photos.")}</p> : null}
   </section>;
 }

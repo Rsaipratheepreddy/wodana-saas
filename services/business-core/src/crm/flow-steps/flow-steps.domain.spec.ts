@@ -114,7 +114,8 @@ describe("PLM-081: the publisher's rule for furniture and joinery flows", () => 
   it("refuses material selection that is used if needed or auto-passed, and a path without it", () => {
     const definition = structuredClone(flowTemplate("fit_out_joinery")!.definition);
     definition.steps.find((item) => item.key === "material_selection")!.optional = true;
-    expect(flowPolicyProblems(definition).map((problem) => problem.path)).toEqual(["steps[5].optional", "steps"]);
+    const at = definition.steps.findIndex((item) => item.key === "material_selection");
+    expect(flowPolicyProblems(definition).map((problem) => problem.path)).toEqual([`steps[${at}].optional`, "steps"]);
   });
 
   it("splits a definition into its paths", () => {

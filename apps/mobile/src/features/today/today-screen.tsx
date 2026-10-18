@@ -24,6 +24,9 @@ import { useInbox } from '../inbox/api';
 import { useSitesToday } from '../projects/api';
 import { useDeliveries } from '../purchasing/api';
 import { WoddyButton } from '../woddy/woddy-screen';
+import { missing, useMySteps } from '../jobs/api';
+import { orderMySteps } from '../jobs/model';
+import { MyStepRow } from '../jobs/screens';
 import { useHomeMetrics, useHomeSummary, useMyDay, useRefetchOnFocus } from './api';
 import { expectsNumbers, figuresFor, lensFor, reportIsLate, showsPipeline, STAGE_LABEL, type Figure } from './home-model';
 import { topItems } from './my-day-model';
@@ -67,13 +70,16 @@ export function TodayScreen() {
   const summary = useHomeSummary();
   const myDay = useMyDay();
   useRefetchOnFocus(myDay.refetch);
+  // My job steps that are late or due today lead My day's section; the rest wait on the full list.
+  const mySteps = useMySteps();
+  useRefetchOnFocus(mySteps.refetch);
   const zoned = useZonedFormat(myDay.data?.timeZone);
   const numbersExpected = expectsNumbers(session.can);
   const metrics = useHomeMetrics(numbersExpected);
   const today = format.today();
 
   const refresh = () => {
-    void current.refetch(); void sites.refetch(); void summary.refetch(); void myDay.refetch(); void inbox.refetch(); void deliveries.refetch();
+    void current.refetch(); void sites.refetch(); void summary.refetch(); void myDay.refetch(); void mySteps.refetch(); void inbox.refetch(); void deliveries.refetch();
     void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); if (numbersExpected) void metrics.refetch();
   };
   const open = current.data && !current.data.endedAt ? current.data : null;
@@ -82,7 +88,8 @@ export function TodayScreen() {
     + (teamReviews.data ?? []).filter((item) => item.canDecide && item.status === 'pending').length
     + (teamTime.data?.weeks ?? []).filter((week) => week.canDecide).length
     + (crewDays.data?.days ?? []).filter((day) => day.status === 'submitted' && day.canDecide).length;
-  const needs = topItems(myDay.data, VISIBLE, COUNTED_ABOVE);
+  const urgentSteps = mySteps.data ? orderMySteps(mySteps.data.items, new Date(), mySteps.data.timeZone).filter((item) => item.urgency !== 'later').slice(0, 3) : [];
+  const needs = topItems(myDay.data, VISIBLE - urgentSteps.length, COUNTED_ABOVE);
   // A server without My day yet (an older release) answers 404: the section stays away instead of an error.
   const myDayMissing = errorStatus(myDay.error) === 404;
   const funnel = summary.data && showsPipeline(summary.data.funnel) ? summary.data.funnel : [];
@@ -93,8 +100,8 @@ export function TodayScreen() {
   // My sites first: today's report with one tap; once the workspace's daily report is due, a missing report turns amber.
   const mySites = sites.data?.sites ?? [];
   const late = reportIsLate(sites.data?.hour, sites.data?.dueTime);
-  const nothing = !needs.length && !approvals && !waiting.count && !expected.length && !(inbox.unread > 0) && !mySites.length && !upcoming.length;
-  const failed = summary.error ?? (myDayMissing ? null : myDay.error) ?? (hrms ? current.error : null);
+  const nothing = !needs.length && !urgentSteps.length && !approvals && !waiting.count && !expected.length && !(inbox.unread > 0) && !mySites.length && !upcoming.length;
+  const failed = summary.error ?? (myDayMissing ? null : myDay.error) ?? (missing(mySteps.error) ? null : mySteps.error) ?? (hrms ? current.error : null);
   // Something the phone has no screen for is opened on the web.
   const go = (link: string | null | undefined, fallback?: string) => { const route = appRouteFor(link) ?? fallback; if (route) router.push(route as Href); else toast.show(t('Open this on the web to see it.')); };
 
@@ -129,8 +136,9 @@ export function TodayScreen() {
     </Section> : null}
 
     {myDay.isLoading ? <Section><View style={{ padding: theme.space(4), gap: theme.space(2) }}><Shimmer width="60%" height={12} /><Shimmer width="40%" height={9} /></View></Section>
-      : needs.length ? <Section title={t('My day')} action={<Button size="sm" variant="ghost" label={t('See all')} onPress={() => router.push('/my-day')} />}>
-        {needs.map((entry, index) => <MyDayRow key={entry.item.id} entry={entry} first={index === 0} withJob today={myDay.data?.today ?? zoned.today()} format={zoned}
+      : needs.length || urgentSteps.length ? <Section title={t('My day')} action={<Button size="sm" variant="ghost" label={t('See all')} onPress={() => router.push('/my-day')} />}>
+        {urgentSteps.map((item, index) => <MyStepRow key={item.jobId} item={item} first={index === 0} onPress={() => router.push(`/jobs/${item.jobId}`)} />)}
+        {needs.map((entry, index) => <MyDayRow key={entry.item.id} entry={entry} first={index === 0 && !urgentSteps.length} withJob today={myDay.data?.today ?? zoned.today()} format={zoned}
           onPress={() => go(entry.item.href)} />)}
       </Section> : null}
 

@@ -164,29 +164,31 @@ integration("view as", () => {
     });
   });
 
-  it("refuses an administrator viewing as an owner, a Wodana operator, oneself, and people without the permission", async () => {
+  it("lets only the owner view as someone: refuses an administrator, a Wodana operator, oneself, and people without the permission", async () => {
     await world(async (client, { a, memberships, actor, viewAs }) => {
       const refused = async (who: People, membershipId: string) => failure(client, () =>
         viewAs.start(actor(who), a, { kind: "person", membershipId }, `refuse-${randomUUID()}`));
-      expect(code(await refused("admin", memberships.owner))).toBe("view_as_owner_protected");
+      expect(code(await refused("admin", memberships.owner))).toBe("view_as_not_allowed");
+      expect(code(await refused("admin", memberships.sales))).toBe("view_as_not_allowed");
       expect(code(await refused("owner", memberships.operator))).toBe("view_as_operator");
       expect(code(await refused("owner", memberships.owner))).toBe("view_as_self");
       expect(code(await refused("sales", memberships.admin))).toBe("view_as_not_allowed");
       const missing = await refused("owner", randomUUID());
       expect(missing).toBeInstanceOf(NotFoundException);
-      // An administrator may view as another administrator's peer (a team member) and as an administrator.
-      await expect(viewAs.start(actor("admin"), a, { kind: "person", membershipId: memberships.sales }, "admin-sales-test-1")).resolves.toMatchObject({ subjectName: "Sara Sales" });
+      // The owner views as a team member (and as an administrator).
+      await expect(viewAs.start(actor("owner"), a, { kind: "person", membershipId: memberships.sales }, "owner-sales-test-1")).resolves.toMatchObject({ subjectName: "Sara Sales" });
     });
   });
 
   it("previews a role for 15 minutes with that role's permissions, and ends a view past its time", async () => {
     await world(async (client, { a, users, roles, memberships, actor, viewAs }) => {
-      const preview = await viewAs.start(actor("admin"), a, { kind: "role", roleId: roles.sales }, "role-preview-test-1");
+      const preview = await viewAs.start(actor("owner"), a, { kind: "role", roleId: roles.sales }, "role-preview-test-1");
       expect(new Date(preview.expiresAt).getTime() - new Date(preview.startedAt).getTime()).toBe(15 * 60_000);
-      const session = await viewAs.resolve(actor("admin"));
-      expect(session).toMatchObject({ kind: "role", effectiveUserId: users.admin, subjectName: "Sales" });
+      const session = await viewAs.resolve(actor("owner"));
+      expect(session).toMatchObject({ kind: "role", effectiveUserId: users.owner, subjectName: "Sales" });
       expect([...session!.permissions].sort()).toEqual(["crm.activities.view", "crm.leads.view", "hrms.self"]);
-      expect(code(await failure(client, () => viewAs.start(actor("admin"), a, { kind: "role", roleId: roles.owner }, "role-preview-test-2")))).toBe("view_as_owner_protected");
+      await viewAs.exit(actor("owner"), a, preview.sessionId);
+      expect(code(await failure(client, () => viewAs.start(actor("admin"), a, { kind: "role", roleId: roles.sales }, "role-preview-test-2")))).toBe("view_as_not_allowed");
 
       // A person view past its 30 minutes: the next request ends it (as the sweep would) and the subject is told.
       const view = await viewAs.start(actor("owner"), a, { kind: "person", membershipId: memberships.sales }, "expiring-test-1");

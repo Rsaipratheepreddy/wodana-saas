@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
-import { Button, EditableField, ErrorState, Skeleton, Tabs, type TabItem } from "@/design-system";
+import { Button, EditableField, EditableFieldList, EmptyState, ErrorState, Skeleton, Tabs, TextLink, type TabItem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { CatalogRequestError, catalogApi } from "@/lib/workspace/catalog-v2";
 import type { CatalogStructure } from "@/lib/workspace/catalog-v2";
@@ -83,7 +83,7 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
   const decimalProblem = (text: string) => text && !/^\d+(\.\d+)?$/.test(text) ? t("Enter a number, like 5 or 2.5.") : null;
   const itemTypes = [{ id: "product", label: t("Product") }, { id: "material", label: t("Material") }, { id: "assembly", label: t("Assembly") }, { id: "service", label: t("Service") }, { id: "package", label: t("Package") }, { id: "ready_made", label: t("Ready-made") }];
   const isAssembly = item.itemType === "assembly" || item.itemType === "package";
-  const drawingLink = item.technicalDrawingUrl ? <a href={item.technicalDrawingUrl} target="_blank" rel="noreferrer" dir="ltr">{t("Open the drawing")}</a> : null;
+  const drawingLink = item.technicalDrawingUrl ? <TextLink href={item.technicalDrawingUrl} target="_blank" rel="noreferrer" dir="ltr">{t("Open the drawing")}</TextLink> : null;
   const filled = (value: string | null | undefined) => Boolean(value && value.trim());
   const notes = sized ? item.values[SIZE_NOTES] ?? "" : "";
   const notesAttribute = structure?.attributes.find((attribute) => attribute.code === SIZE_NOTES && !attribute.categoryId);
@@ -98,7 +98,7 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
     ? <CatalogItemForm catalogId={catalogId} item={item} onCancel={() => setEditing(null)} onSaved={saved} structure={structure} workspaceId={workspaceId} />
     : <div className={styles.inspector}>
       {canEdit ? <div className={styles.actions}><Button onPress={() => setEditing("details")} size="compact"><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button></div> : null}
-      <dl className="wd-editable-list">
+      <EditableFieldList>
         <EditableField canEdit={canEdit} display={<bdi dir="ltr">{item.code}</bdi>} isRequired label={t("Code")} maxLength={80} onReload={reload} onSave={(code) => saveFact({ code })} value={item.code} />
         <EditableField canEdit={canEdit} items={itemTypes} kind="select" label={t("Type")} onReload={reload} onSave={(itemType) => saveFact({ itemType })} value={item.itemType} />
         <EditableField canEdit={canEdit} items={structure?.units.map((unit) => ({ id: unit.code, label: `${unit.code} · ${unit.label}` })) ?? []} kind="select" label={t("Unit")} onReload={reload}
@@ -126,7 +126,7 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
           value={item.technicalDrawingUrl ?? ""} /> : null}
         {canEdit || filled(item.description) ? <EditableField canEdit={canEdit} kind="multiline" label={t("Description")} maxLength={4000} onReload={reload}
           onSave={(description) => saveFact({ description: description || null })} value={item.description ?? ""} /> : null}
-      </dl>
+      </EditableFieldList>
     </div>;
 
   // PLM-162 / PLM-166: the production recipe by kind, with its verification (the factory marks it; a change clears it).
@@ -134,10 +134,10 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
     ? <CatalogComponentsEditor catalogId={catalogId} item={item} onCancel={() => setEditing(null)} onSaved={saved} structure={structure} workspaceId={workspaceId} />
     : <CatalogRecipe catalogId={catalogId} item={item} workspaceId={workspaceId} canEdit={canEdit && isAssembly} onEdit={() => setEditing("components")} onChanged={reload} />;
 
-  const sizeNotes = filled(notes) ? <dl className="wd-editable-list" data-layout="stacked">
+  const sizeNotes = filled(notes) ? <EditableFieldList layout="stacked">
     <EditableField canEdit={canEdit && Boolean(notesAttribute)} kind="multiline" label={t("Size notes")} maxLength={500} onReload={reload}
       onSave={(value) => saveFact({}, { ...item.values, [SIZE_NOTES]: value })} value={notes} />
-  </dl> : null;
+  </EditableFieldList> : null;
   const provenance = source.data?.source ?? null;
   const tabs: TabItem[] = [
     { id: "details", label: t("Details"), panel: details },
@@ -145,7 +145,7 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
     ...(sized ? [{ id: "size", label: t("Size"), panel: <CatalogItemSize canManage={canManage} itemId={item.id} notes={sizeNotes} source={source} workspaceId={workspaceId} /> }] : []),
     ...(item.components.length || isAssembly ? [{ id: "components", label: t("Recipe"), panel: components }] : []),
     { id: "prices", label: t("Prices"), panel: <CatalogPrices canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={item.id} itemType={item.itemType} locale={locale} onChanged={() => { setAttempt((value) => value + 1); onChanged?.(); }} prices={item.prices} unitCode={item.unitCode} workspaceId={workspaceId} /> },
-    ...(item.canViewCosts ? [{ id: "suppliers", label: t("Suppliers"), panel: item.suppliers.length ? <ul className={styles.list}>{item.suppliers.map((supplier) => <li key={supplier.id}><strong>{supplier.vendorName}</strong><small dir="ltr">{supplier.vendorSku ?? ""}</small><span dir="ltr">{money(supplier.cost, supplier.currency)}</span></li>)}</ul> : <p className={styles.muted}>{t("No suppliers linked")}</p> }] : []),
+    ...(item.canViewCosts ? [{ id: "suppliers", label: t("Suppliers"), panel: item.suppliers.length ? <ul className={styles.list}>{item.suppliers.map((supplier) => <li key={supplier.id}><strong>{supplier.vendorName}</strong><small dir="ltr">{supplier.vendorSku ?? ""}</small><span dir="ltr">{money(supplier.cost, supplier.currency)}</span></li>)}</ul> : <EmptyState illustration={null} title={t("No suppliers linked")} /> }] : []),
     ...(provenance ? [{ id: "source", label: t("Source"), panel: <CatalogItemProvenance source={provenance} /> }] : []),
   ];
   const selected = tabs.some((entry) => entry.id === tab) ? tab : "details";

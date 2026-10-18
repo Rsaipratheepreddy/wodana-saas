@@ -119,3 +119,13 @@
     display: none;
   }
 }
+
+/* §0.3 P4: the code step before signing; a quiet panel, the shield in a soft chip. */
+.confirm { display: flex; align-items: flex-start; gap: var(--wd-space-3); padding: var(--wd-space-4); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); }
+.confirmIcon { flex: none; display: inline-grid; place-items: center; inline-size: var(--wd-space-8); block-size: var(--wd-space-8); border-radius: var(--wd-radius-md);
+  background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); }
+.confirmBody { display: grid; gap: var(--wd-space-3); min-inline-size: 0; flex: 1; }
+.confirmTitle { margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.confirmRow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--wd-space-2); }
+.confirmRow :global(.wd-field) { flex: 1 1 12rem; }
+.confirmHint { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }

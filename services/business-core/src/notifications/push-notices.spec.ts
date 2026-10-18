@@ -8,10 +8,10 @@ function db(options: { pushPreference?: boolean | null; device?: boolean; module
   const calls: Array<{ sql: string; values: unknown[] }> = [];
   const query = vi.fn(async (sql: string, values: unknown[] = []) => {
     calls.push({ sql, values });
-    if (sql.includes("FROM notification_preferences") && sql.includes("channel='push'")) return { rows: [...(options.pushPreference == null ? [] : [{ eventType: "*", enabled: options.pushPreference, quietHours: {} }]), ...(options.moduleOff ? [{ eventType: "site.*", enabled: false, quietHours: {} }] : [])], rowCount: 1 };
-    if (sql.includes("FROM notification_preferences")) return { rows: [], rowCount: 0 };
+    // The person's choices: the phone's own switch, a phone, and (moduleOff) push switched off for the group.
+    if (sql.includes("FROM notification_channel_choices")) return { rows: [{ userId, membershipId: "m", groupSwitches: options.moduleOff ? { push: false } : null, eventSwitches: [],
+      pushSwitch: options.pushPreference === true, pushDevice: Boolean(options.device), workspacePush: Boolean(options.device), workspaceWhatsapp: false }], rowCount: 1 };
     if (sql.includes("FROM notification_templates")) return { rows: [{ id: "template", subject: "Report missing for {{project}}", body: "Add today's report." }], rowCount: 1 };
-    if (sql.includes("FROM device_endpoints")) return { rows: [], rowCount: options.device ? 1 : 0 };
     if (sql.includes("INSERT INTO notifications") && sql.includes("'push'")) return { rows: [{ id: "push-1", correlationId: "c" }], rowCount: 1 };
     if (sql.includes("INSERT INTO notifications")) return { rows: [], rowCount: 1 };
     return { rows: [], rowCount: 0 };
@@ -26,7 +26,7 @@ describe("pushes for work people act on away from a desk (FD-3)", () => {
     const { db: client, calls } = db({ pushPreference: true, device: true });
     await notifyUserInApp(client, notice("site.report_missing"));
     const push = calls.find((call) => call.sql.includes("INSERT INTO notifications") && call.sql.includes("'push'"));
-    expect(push?.values).toEqual([workspaceId, "template", userId, "site.report_missing", "Report missing for Villa 4", "Add today's report.", "/workspace/projects/p/site", "site.report_missing:1:push", expect.any(Date), false]);
+    expect(push?.values).toEqual([workspaceId, "template", userId, "site.report_missing", "Report missing for Villa 4", "Add today's report.", "/workspace/projects/p/site", "site.report_missing:1:push", expect.any(Date), "pending", false]);
     expect(calls.some((call) => call.sql.includes("notification.delivery_requested.v1"))).toBe(true);
   });
 

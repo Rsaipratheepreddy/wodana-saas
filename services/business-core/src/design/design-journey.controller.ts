@@ -1,13 +1,15 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { CHECK_STATUSES, type CheckStatus } from "./design-journey.domain";
 import { DesignJourneyService } from "./design-journey.service";
 
 class StageVersionDto { @IsInt() @Min(1) version!: number; @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(2000) note?: string | null; }
+/** Guide step 11: the final render, only if the client asks: not asked for, or the updated render approved by the client. */
+class FinalRenderDto { @IsInt() @Min(1) version!: number; @IsIn(["not_requested", "approved"]) decision!: "not_requested" | "approved"; }
 class ScheduleDto {
   @IsInt() @Min(1) version!: number;
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}T/) startsAt!: string;
@@ -40,7 +42,11 @@ class TeamDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(6) @ValidateNested({ each: true }) @Type(() => TeamRoleDto) roles!: TeamRoleDto[];
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(500) reason?: string | null;
 }
-class KickoffDto extends StageVersionDto { @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) renderSignoffOn?: string | null; }
+class KickoffDto extends StageVersionDto {
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) renderSignoffOn?: string | null;
+  /** §0.3 P3: answers to the firm's kick-off questions, by question key. */
+  @IsOptional() @IsObject() answers?: Record<string, string | number | boolean | string[] | null>;
+}
 class DeadlineDto { @IsInt() @Min(1) version!: number; @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) dueOn!: string; }
 class RenderSignOffDto extends StageVersionDto {
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) signedOn!: string;
@@ -83,6 +89,11 @@ export class DesignJourneyController {
 
   @Post("samples/collected")
   completeSampleCollection(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: StageVersionDto) { return this.journey.completeSampleCollection(actor, workspaceId, caseId, input); }
+
+  @Post("final-render")
+  finalRender(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: FinalRenderDto) {
+    return this.journey.finalRender(actor, workspaceId, caseId, input);
+  }
 
   @Post("samples/approve")
   approveSamples(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: StageVersionDto) { return this.journey.approveSamples(actor, workspaceId, caseId, input); }

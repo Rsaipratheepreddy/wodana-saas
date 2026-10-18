@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button, Checkbox, DataGrid, ControlledModalDialog, Skeleton } from "@/design-system";
+import { Badge, Button, Checkbox, DataGrid, ControlledModalDialog, InlineNotice, Skeleton } from "@/design-system";
 import { caseRequest, type CaseContent } from "@/lib/pre-project/content";
 import type { Quote } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -83,9 +83,7 @@ export function ScopeImport({
     >
       <div className={s.form}>
         {error && (
-          <p className={s.error} role="alert">
-            {translateKnown(t, error)}
-          </p>
+          <InlineNotice tone="error" message={translateKnown(t, error)} />
         )}
         {!content && !error && <Skeleton lines={5} />}
         {included.length > 0 && <DataGrid compactToolbar rowNumbers={false} ariaLabel={t("Requirement import")} data={included} getRowId={row=>row.id} searchLabel={t("Search requirement import")} exportFileName="requirement-import.csv" selectable={false} columns={[{id:"include",header:t("Include"),size:80,cell:({row:{original:e}})=><Checkbox aria-label={t("Include {title}", { title: e.title })} isDisabled={busy} isSelected={selected.includes(e.id)} onChange={checked=>setSelected(ids=>checked?[...ids,e.id]:ids.filter(id=>id!==e.id))}/>},{id:"title",header:t("Room / item"),size:320,accessorFn:(e)=>`${e.roomName ?? t("General")} ${e.title}`,cell:({row:{original:e}})=>{return <>
@@ -98,15 +96,13 @@ export function ScopeImport({
                       {e.quantity ?? 1} {e.unit || "nos"}
                     </>;}},
 {id:"status",header:t("In this quotation"),size:200,accessorFn:(e)=>!quote.lines.some(l=>l.scopeId===e.id)?t("New item"):quote.lines.some(l=>l.scopeId===e.id&&(l.scopeVersion!==e.version||l.specificationVersion!==e.specification?.version))?t("Source updated"):t("Already included"),cell:({row:{original:e}})=>{const prior=quote.lines.find(l=>l.scopeId===e.id);return <>
-                      <span className={s.status}>
-                        {!prior
-                          ? t("New item")
-                          : prior.scopeVersion !== e.version ||
-                              prior.specificationVersion !==
-                                e.specification?.version
-                            ? t("Source updated")
-                            : t("Already included")}
-                      </span>
+                      {!prior
+                        ? <Badge tone="info">{t("New item")}</Badge>
+                        : prior.scopeVersion !== e.version ||
+                            prior.specificationVersion !==
+                              e.specification?.version
+                          ? <Badge tone="warning">{t("Source updated")}</Badge>
+                          : <Badge tone="success">{t("Already included")}</Badge>}
                     </>;}}]}/>}
         {content && !included.length && (
           <p className={s.notice}>

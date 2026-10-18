@@ -367,8 +367,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const customColumns = state.columns ?? [];
   const day = (value: Date) => new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "long", year: "numeric" }).format(value);
   const proposalFacts = {
-    reference: `${t("Q-{number}", { number: state.quote.number })} · ${t("R{number}", { number: Math.max(1, state.family.findIndex((item) => item.id === state.quote.id) + 1) })}`,
-    date: day(new Date()), validUntil: state.quote.validUntil ? day(new Date(`${state.quote.validUntil}T12:00:00Z`)) : "", approvedBy: state.quote.approvedBy ?? "",
+    reference: state.quote.estimateReference ?? `${t("Q-{number}", { number: state.quote.number })} · ${t("R{number}", { number: Math.max(1, state.family.findIndex((item) => item.id === state.quote.id) + 1) })}`,
+    date: day(new Date()), validUntil: state.quote.validUntil ? day(new Date(`${state.quote.validUntil}T12:00:00Z`)) : "", approvedBy: state.quote.approvedBy ?? "", estimator: state.quote.estimator ?? "", designer: state.quote.designer ?? "",
     subtotal: state.pricing.subtotal, discount: state.pricing.discounts.total, net: state.pricing.net, tax: state.pricing.tax, total: state.pricing.total,
     lineAmount: Object.fromEntries(state.pricing.lines.map((line) => [line.id, String(Number(line.gross) - Number(line.lineDiscount))])),
   };
@@ -483,7 +483,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           {" "}<Link href="/workspace/catalogs">{t("Set a price book")}</Link>
         </span></div> : null}
         {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow}>
-          <button type="button" data-tour="quote-new-line" data-tour-safe onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{t("New line")}</button>
+          <Button size="compact" variant="quiet" data-tour="quote-new-line" data-tour-safe onPress={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{t("New line")}</Button>
         </div> : null}
       </>}
     </div>;
@@ -583,10 +583,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             <button type="button" onClick={() => openPanel("catalog")}><Store aria-hidden="true" size={18} /><strong>{t("Pick from the catalog")}</strong><small>{t("Search and add")}</small></button>
             <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
           </div> : null}
-          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} data-tour="quote-grid" className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--grid-min": `${gridMinWidth(column, columns, widths.width, customColumns)}px`, "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
-            "--stick-item": `${widths.width("gutter") + widths.width("serial") + (columns.picture ? widths.width("picture") : 0)}px`, "--stick-menu": `${widths.width("menu")}px`,
-            "--stick-rate": `${widths.width("menu") + widths.width("amount")}px`, "--stick-unit": `${widths.width("menu") + widths.width("amount") + widths.width("rate")}px`,
-            "--stick-qty": `${widths.width("menu") + widths.width("amount") + widths.width("rate") + widths.width("unit")}px` } as React.CSSProperties}
+          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} data-tour="quote-grid" className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--grid-min": `${gridMinWidth(column, columns, widths.width, customColumns)}px` } as React.CSSProperties}
             onFocusCapture={(event) => {
               const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
               const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
@@ -600,9 +597,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             {empty && !state.canEdit ? <EmptyState title={t("No items yet")} /> : null}
           </div></div>
           {state.canEdit ? <div className={styles.tableFoot}>
-            {view !== "trade" ? <button type="button" onClick={() => setRoomFor("new")}><Plus aria-hidden="true" size={14} />{t("Add area")}</button>
-              : <button type="button" onClick={() => setTradeFor("new")}><Plus aria-hidden="true" size={14} />{t("New work package")}</button>}
-            {canAsk ? <button type="button" aria-keyshortcuts="Meta+K Control+K" onClick={() => askAbout(null)}><Sparkles aria-hidden="true" size={14} />{t("Ask AI")}</button> : null}
+            {view !== "trade" ? <Button size="compact" variant="quiet" onPress={() => setRoomFor("new")}><Plus aria-hidden="true" size={14} />{t("Add area")}</Button>
+              : <Button size="compact" variant="quiet" onPress={() => setTradeFor("new")}><Plus aria-hidden="true" size={14} />{t("New work package")}</Button>}
+            {canAsk ? <Button size="compact" variant="quiet" aria-keyshortcuts="Meta+K Control+K" onPress={() => askAbout(null)}><Sparkles aria-hidden="true" size={14} />{t("Ask AI")}</Button> : null}
           </div> : null}
         </>}
       </main>

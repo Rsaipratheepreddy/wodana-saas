@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
 import { crmRequest } from "@/lib/crm/client";
 import { CrmOpportunities } from "./crm-opportunities";
+import { clearJobNowCache } from "@/lib/jobs/job-now";
 
 vi.mock("next/font/google", () => ({ Caveat: () => ({ variable: "note-font" }) }));
 
@@ -205,9 +206,15 @@ describe("CrmOpportunities", () => {
     vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}`
       ? { ...record, flow: { flow: "design", next: { stageId: "x", name: "Qualified", step: "qualified" }, missing: [{ key: "introMeeting", label: "Intro meeting completed" }], toWon: [], steps: [] } }
       : { ...record, id: String(path), flow: null });
+    // §0.3 P10: the card's step now is its job's, read from the journey in one request for the board.
+    clearJobNowCache();
+    const fetcher = vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("/jobs/now")
+      ? { items: [{ type: "opportunity", id: record.id, jobId: "job-1", reference: "J-000001", chapter: "win", now: { label: "Intro booked", owner: null, dueAt: null, late: false, href: null } }] } : {} }));
+    vi.stubGlobal("fetch", fetcher);
     render(<CrmOpportunities initialData={data} />);
     const card = within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ }).closest("article")!;
-    expect(await within(card).findByText("Book intro")).toBeInTheDocument();
+    expect(await within(card).findByText("Intro booked")).toBeInTheDocument();
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/jobs/now"))).toHaveLength(1);
     expect(within(card).getByText(/Overdue/)).toBeInTheDocument();
     expect(within(card).getByText(String(record.ownerName))).toBeInTheDocument();
     expect(card.querySelector(".wd-avatar")).toHaveAttribute("aria-label", String(record.ownerName));

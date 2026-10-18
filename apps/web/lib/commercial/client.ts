@@ -1,6 +1,10 @@
 import { fromMinor, percentOf, toMinor } from "@/lib/money-exact";
-import type { Quote, QuoteLine } from "./types";
+import type { ManualPaymentMethod, Quote, QuoteLine } from "./types";
 import { tKey, translatorFor, type Translate } from "@/lib/i18n/keys";
+/** How a client paid a receipt, as Finance reads it (posting picks the matching payment account). */
+export const paymentMethodLabel: Record<ManualPaymentMethod, string> = {
+  bank: tKey("Bank transfer"), card: tKey("Card"), cash: tKey("Cash"), cheque: tKey("Cheque"), other: tKey("Other"),
+};
 export const statusLabel: Record<string, string> = {
   draft: tKey("Draft"),
   internal_review: tKey("Internal review"),

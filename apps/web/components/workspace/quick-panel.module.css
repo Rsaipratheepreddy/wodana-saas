@@ -1,0 +1,18 @@
+/* §0.3: the quick panel: find a job, then look at it without leaving the page. Rows and chips, no frames. */
+.finder { display: grid; gap: var(--wd-space-4); }
+.group { display: grid; gap: var(--wd-space-1); }
+.groupTitle { margin: 0; font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--wd-color-text-secondary); }
+.list { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); inline-size: 100%; padding: var(--wd-space-2) var(--wd-space-2-5);
+  border: 0; border-radius: var(--wd-radius-sm); background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.row:hover { background: var(--wd-color-surface-hover); }
+.row:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.rowText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; flex: 1; }
+.rowText strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+.rowText small { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.rowChips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.peek { display: grid; gap: var(--wd-space-3); }
+.peekHead { display: flex; align-items: center; gap: var(--wd-space-2); }
+.now { display: grid; gap: var(--wd-space-1); padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-action-primary-subtle); }
+.now strong { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.nowKicker { font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--wd-color-text-secondary); }

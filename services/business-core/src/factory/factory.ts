@@ -25,6 +25,8 @@ export type FactorySettings = {
    * (PLM-165), the line's factory requirements confirmed or its recipe verified (PLM-166), the quotation past its QS step.
    */
   requireTechnicalHandover: boolean; requireFactoryRequirements: boolean; requireQs: boolean;
+  /** Guide step 21: a work order is released only after procurement signed off its item's supplies. */
+  requireSuppliesSignoff: boolean;
 };
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
 
@@ -111,12 +113,15 @@ export async function readWorkOrders(db: Db, workspaceId: string, filter: { id?:
 export async function readToMake(db: Db, workspaceId: string, lineId: string | null = null): Promise<MakeLine[]> {
   return (await db.query<MakeLine>(
     `SELECT line.id AS "lineId", project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName", package.id AS "packageId",
-            package.name AS "packageName", line.title, coalesce(line.description, '') AS specification, line.unit, line.quantity::text AS quantity,
-            coalesce(planned.quantity, 0)::text AS planned, (line.quantity - coalesce(planned.quantity, 0))::text AS "left",
+            package.name AS "packageName", line.title, coalesce(line.description, '') AS specification, line.unit, coalesce(signed.quantity, line.quantity)::text AS quantity,
+            coalesce(planned.quantity, 0)::text AS planned, (coalesce(signed.quantity, line.quantity) - coalesce(planned.quantity, 0))::text AS "left",
             needed.start::text AS "suggestedStart", needed.due::text AS "suggestedEnd", project.status AS "projectStatus"
        FROM project_boq_lines line
        JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
        JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id
+       -- Guide step 19: once the client signed the item's drawing, the factory makes the signed quantity.
+       LEFT JOIN project_item_drawings signed_item ON signed_item.workspace_id = line.workspace_id AND signed_item.line_id = line.id AND signed_item.status = 'signed'
+       LEFT JOIN LATERAL (SELECT signed_item.locked_quantity AS quantity WHERE signed_item.locked_unit IS NULL OR signed_item.locked_unit = line.unit) signed ON true
        LEFT JOIN LATERAL (SELECT sum(CASE WHEN wo.status = 'short_closed' THEN quality.passed - reworked.quantity ELSE wo.quantity END) AS quantity
                             FROM work_orders wo ${ORDER_TOTALS}
                            WHERE wo.workspace_id = line.workspace_id AND wo.boq_line_id = line.id AND wo.status <> 'cancelled') planned ON true
@@ -137,7 +142,7 @@ export async function ensureFactorySettings(db: Db, workspaceId: string): Promis
             production_steps AS "productionSteps", production_weeks AS "productionWeeks", balance_reminder_days AS "balanceReminderDays",
             inspections_enabled AS "inspectionsEnabled", inspection_stages AS "inspectionStages", inspection_work_packages::text[] AS "inspectionWorkPackages",
             inspector_role AS "inspectorRole", director_role AS "directorRole", director_packages::text[] AS "directorPackages", inspection_days AS "inspectionDays",
-            require_technical_handover AS "requireTechnicalHandover", require_factory_requirements AS "requireFactoryRequirements", require_qs AS "requireQs"
+            require_technical_handover AS "requireTechnicalHandover", require_factory_requirements AS "requireFactoryRequirements", require_qs AS "requireQs", require_supplies_signoff AS "requireSuppliesSignoff"
        FROM workspace_factory_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

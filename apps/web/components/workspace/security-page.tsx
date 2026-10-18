@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, ShieldCheck } from "lucide-react";
-import { Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, OtpInput, SettingsPage, SettingsRow, SettingsSection, TextInput, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, OtpInput, SettingsPage, SettingsRow, SettingsSection, Spinner, TextInput, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
 import type { Translate } from "@/lib/i18n/keys";
 import type { MfaSecurityStatus, SecurityPageData, SecuritySession } from "@/lib/workspace/security";
 import type { ViewAsActivity } from "@/lib/workspace/view-as";
@@ -271,7 +271,7 @@ export function SecurityPage({ initialData, viewAsActivity = [] }: { initialData
       <div className={styles.mfaDialogBody}>
         {failure ? <Callout title={t("Could not continue")} tone="danger">{failure}</Callout> : null}
         {mfaDialog === "setup" && mfaSetup ? <>
-          <div className={styles.qrPanel}>{mfaQrCode ? <Image alt={t("Authenticator setup QR code")} height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">{t("Preparing QR code…")}</span>}</div>
+          <div className={styles.qrPanel}>{mfaQrCode ? <Image alt={t("Authenticator setup QR code")} height={200} src={mfaQrCode} unoptimized width={200} /> : <Spinner label={t("Preparing QR code…")} />}</div>
           <div className={styles.manualKey}><span>{t("Manual setup key")}</span><code>{mfaSetup.secret}</code><Button onPress={() => void copySecurityText(mfaSetup.secret, t("Setup key copied."), t("Select and copy the key manually."))} size="compact" variant="quiet"><Copy size={13} />{t("Copy")}</Button></div>
         </> : null}
         {mfaDialog === "setup" ? <label className={styles.otpField}>

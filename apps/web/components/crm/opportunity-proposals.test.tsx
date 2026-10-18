@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
@@ -41,7 +41,12 @@ describe("opportunity proposals (PLM-101 / PLM-103)", () => {
     expect(screen.getByText("Change to approve: AED 15,000.00 → AED 18,000.00")).toBeInTheDocument();
     expect(screen.getByText("Finance verifies · waiting for Fatima")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Attach Proposal 2 payment proof" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Verify" }));
+    // §0.3 P0: the approver reviews the value (old → new) before verifying; nothing is sent until then.
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Change to approve: AED 15,000.00 → AED 18,000.00")).toBeInTheDocument();
+    expect(fetch.mock.calls.some(([url]) => String(url).includes("/decide"))).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Verify" }));
     const decide = fetch.mock.calls.find(([url]) => String(url).includes("/proposals/design/decide"));
     expect(decide).toBeDefined();
     expect(JSON.parse(String(decide![1]?.body))).toMatchObject({ decision: "approve", version: 1 });

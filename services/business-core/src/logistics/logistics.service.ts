@@ -97,7 +97,11 @@ export class LogisticsService {
         `SELECT id, name, plate, kind, capacity_note AS "capacityNote" FROM logistics_vehicles WHERE workspace_id = $1 AND active ORDER BY lower(name), id`, [workspaceId])).rows;
       const permitTypes = (await client.query<{ type: string }>(
         `SELECT DISTINCT permit_type AS type FROM building_permits WHERE workspace_id = $1 AND permit_type <> '' ORDER BY 1 LIMIT 50`, [workspaceId])).rows.map((row) => row.type);
-      return { projects, deals: deals.map((deal) => ({ ...deal, permitRequired: dealPermit })), workOrders, workers, crews, vehicles, permitTypes,
+      // Guide step 24: the people with a login, one of whom goes on each delivery or installation visit.
+      const members = (await client.query<{ id: string; name: string }>(
+        `SELECT member.id, coalesce(person.display_name, person.primary_email) AS name FROM workspace_memberships member JOIN users person ON person.id = member.user_id
+          WHERE member.workspace_id = $1 AND member.status = 'active' ORDER BY lower(coalesce(person.display_name, person.primary_email)), member.id LIMIT 500`, [workspaceId])).rows;
+      return { projects, deals: deals.map((deal) => ({ ...deal, permitRequired: dealPermit })), workOrders, workers, crews, vehicles, permitTypes, members,
         canBook: await this.any(client, workspaceId, user.userId, BOOKERS),
         canAddPeople: await this.any(client, workspaceId, user.userId, [...BOOKERS, "hrms.manage", "projects.manage", "projects.view", ...DEAL_FULFIL]),
         permitWarningDays: (await permitWarningDays(client, workspaceId)).days };
@@ -189,6 +193,16 @@ export class LogisticsService {
           `INSERT INTO logistics_assignments (id, workspace_id, kind, project_id, opportunity_id, work_order_id, permit_id, crew_id, vehicle_id, driver_worker_id, note, created_by, updated_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)`,
           [id, workspaceId, subject.kind, subject.projectId, subject.opportunityId, subject.workOrderId, subject.permitId, next.crewId, next.vehicleId, next.driverId, next.note, user.userId]);
+        // Guide step 24: at least one person on a delivery or installation visit has a login (workers often don't): the
+        // one chosen, else the project's manager is added.
+        if ((subject.kind === "delivery" || subject.kind === "installation") && subject.projectId) {
+          const chosen = typeof (input as { siteMemberId?: unknown }).siteMemberId === "string" && UUID.test((input as { siteMemberId: string }).siteMemberId)
+            ? (input as { siteMemberId: string }).siteMemberId : null;
+          await client.query(
+            `UPDATE logistics_assignments SET site_member_id = coalesce($3::uuid, site_member_id,
+                (SELECT assignment.membership_id FROM project_assignments assignment WHERE assignment.workspace_id = $1 AND assignment.project_id = $4 AND assignment.is_manager LIMIT 1))
+              WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, chosen, subject.projectId]);
+        }
         if (people.people !== undefined) {
           await client.query(`DELETE FROM logistics_assignment_people WHERE workspace_id = $1 AND assignment_id = $2`, [workspaceId, id]);
           for (const person of people.people)
@@ -698,6 +712,8 @@ export class LogisticsService {
       kind: subject.kind, projectId: subject.projectId, opportunityId: subject.opportunityId, workOrderId: subject.workOrderId, permitId, project: await this.label(client, workspaceId, subject),
       start: current.start, end: current.end, assignmentId: slot?.assignmentId ?? null, version: slot?.version ?? 0, people: slot?.people ?? [], crew: slot?.crew ?? null,
       vehicle: slot?.vehicle ?? null, driver: slot?.driver ?? null, note: slot?.note ?? "", permit, canBook: rights.book, canClear: rights.clear,
+      siteMemberId: slot?.assignmentId ? (await client.query<{ id: string | null }>(`SELECT site_member_id AS id FROM logistics_assignments WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, slot.assignmentId])).rows[0]?.id ?? null : null,
     };
   }
 

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { ArrowRight, Plus, X } from "lucide-react";
 import {
-  ActivityFeed, Avatar, Button, Checkbox, DateField, FormDialog, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
+  ActivityFeed, Avatar, Button, Checkbox, DateField, FormDialog, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, ReasonDialog, SegmentedControl, SelectField, Skeleton,
   FileUploader, Switch, TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -107,7 +107,7 @@ function WorkBody({ workspaceId, detail, board, run, notice, onOpenItem, preview
   return <div className={styles.sheet}>
     <p className={styles.sheetKey}>
       <TypeIcon type={detail.type} /><span>{labels.type[detail.type]} #{detail.number}</span>
-      {parent ? <button type="button" className={styles.linkButton} onClick={() => onOpenItem(parent.id)}>{t("Subtask of #{number} {title}", { number: parent.number, title: parent.title })}</button> : null}
+      {parent ? <Button size="compact" variant="quiet" onPress={() => onOpenItem(parent.id)}>{t("Subtask of #{number} {title}", { number: parent.number, title: parent.title })}</Button> : null}
     </p>
     {edit ? <div className={styles.titleField}><TextInput label={null} aria-label={t("Title")} value={title} onChange={setTitle}
         onBlur={() => { if (title.trim() && title.trim() !== detail.title) void update({ title }); }} /></div>
@@ -120,7 +120,8 @@ function WorkBody({ workspaceId, detail, board, run, notice, onOpenItem, preview
           onAction={(id) => { if (snag && detail.status === "done" && isOpen(id as WorkStatus)) setReopening(id); else void update({ status: id }); }}
           items={ALL_STATUSES.filter((status) => status !== detail.status).map((status) => ({ id: status, label: labels.status[status] }))} /> : <StatusLabel status={detail.status} />}
         {detail.blockedBy.length && isOpen(detail.status) ? <span className={styles.blocked}>{t("Blocked")}</span> : null}
-        {reopening ? <ReopenDialog onClose={() => setReopening(null)} onSave={async (reason) => { await run("update", { version: detail.version, status: reopening, reason }, { inDialog: true }); setReopening(null); }} /> : null}
+        {reopening ? <ReasonDialog title={t("Open the snag again")} label={t("Why it's open again")} confirmLabel={t("Open again")} onClose={() => setReopening(null)}
+          onConfirm={async (reason) => { await run("update", { version: detail.version, status: reopening, reason }, { inDialog: true }); setReopening(null); }} /> : null}
       </dd></div>
       <div><dt>{t("Assignee")}</dt><dd>
         {edit ? <MenuButton size="compact" label={detail.assigneeName ? <span className={styles.person}><Avatar name={detail.assigneeName} size="sm" />{detail.assigneeName}</span> : t("No one")}
@@ -375,12 +376,3 @@ function useActivityText() {
   };
 }
 
-/** A closed snag opens again only with why; its history keeps both. */
-function ReopenDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
-  const t = useT();
-  const [reason, setReason] = useState("");
-  return <FormDialog size="md" title={t("Open the snag again")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
-    submitLabel={t("Open again")} onSubmit={() => onSave(reason.trim())}>
-    <TextAreaField label={t("Why it's open again")} isRequired value={reason} onChange={setReason} />
-  </FormDialog>;
-}

@@ -52,6 +52,8 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
     <div className={styles.rowHead}>
       <StateLabel state={quote.expired && quote.status === "issued" ? "expired" : quote.status} canDecide={quote.canDecide} />
       {quote.reference ? <span className={styles.muted} dir="ltr">{quote.reference}</span> : null}
+      {/* §0.3 P4: the version's fingerprint, the same as on the PDF and in the decision record. */}
+      {quote.hash ? <span className={styles.muted} dir="ltr">{t("Version {code}", { code: quote.hash.slice(0, 8) })}</span> : null}
       <a className={styles.muted} href={print} rel="noreferrer" target="_blank">{t("Print or save as PDF")}</a>
     </div>
     <div className={styles.document}><QuotationDocument quote={documentQuote(quote, brand)} customerName={customer} /></div>

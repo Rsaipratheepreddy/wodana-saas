@@ -82,6 +82,8 @@ export type PaymentTerm = {
   requiredForRelease: boolean;
   /** Explicit H3 applicability; never inferred from free-text trigger/title. */
   requiredForProduction?: boolean;
+  /** Falls due the day the client accepts the full handover (explicit, never read from the trigger text). */
+  dueAtHandover?: boolean;
 };
 export type PaymentTemplate = {
   id: string;
@@ -301,6 +303,8 @@ export type Quote = {
   createdAt: string;
   issuedAt?: string;
   approvedBy?: string;
+  /** Guide M: who approved the discount (the firm's discount approver), and when; Finance confirms it before Received / Approved. */
+  discountApproval?: { by: string; byId: string; at: string };
   approverId?: string;
   decisionChallengeId?: string;
   decidedAt?: string;
@@ -486,6 +490,9 @@ export type FinanceDocument = {
   issuedAt: string;
   updatedAt: string;
 };
+/** The ways a client pays a manual receipt; a provider's own receipts are "provider" in the books. */
+export const MANUAL_PAYMENT_METHODS = ["bank", "card", "cash", "cheque", "other"] as const;
+export type ManualPaymentMethod = (typeof MANUAL_PAYMENT_METHODS)[number];
 export type FinanceReceipt = {
   id: string;
   paymentId: string;
@@ -500,6 +507,9 @@ export type FinanceReceipt = {
     | "rejected";
   reference: string;
   evidence: string;
+  /** How a manual receipt was paid (posting picks the matching payment account) and the day the money arrived (§0.3 P0). */
+  method?: ManualPaymentMethod;
+  receivedOn?: string;
   provider?: string;
   connectionId?: string;
   providerDocumentId?: string;
@@ -512,6 +522,9 @@ export type FinanceReceipt = {
   verifiedById?: string;
   rejectedAt?: string;
   rejectionReason?: string;
+  /** Who returned a reported receipt (Finance, with the reason above); the payment waits for a new one. */
+  rejectedBy?: string;
+  rejectedById?: string;
 };
 export type FinanceAllocation = {
   id: string;
@@ -551,6 +564,8 @@ export type Payment = {
   requiredForRelease: boolean;
   /** Finance-verified receipt is required before manufacturing starts. */
   requiredForProduction?: boolean;
+  /** Falls due the day the client accepts the full handover. */
+  dueAtHandover?: boolean;
   status: "pending" | "proof_submitted" | "verified";
   proof: string;
   reference: string;
@@ -758,6 +773,8 @@ export type CommercialState = {
   data: CommercialData;
   /** The quotation number each quote's family was issued under (PLM-QUO-2026-00001), by quote id, once it was sent. */
   quoteReferences?: Record<string, string>;
+  /** Guide M: each main quotation's estimate proposal reference (its quotation number with EST, "rev n" for a revision). */
+  estimateReferences?: Record<string, string>;
   /** PLM-146: the quotations marked as a budget range the client asked for. */
   budgetRangeQuoteIds?: string[];
   contacts: PortalGrant[];
@@ -766,6 +783,10 @@ export type CommercialState = {
   canEstimate?: boolean;
   /** Deal quotations in review that the firm's QS rules send to the QS estimate; any other one is approved as priced. */
   qsEstimateQuoteIds?: string[];
+  /** §0.3 P0: the photo or PDF the team attached to each receipt it recorded (by receipt id). */
+  receiptFiles?: Record<string, Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>>;
+  /** The credit note or refund proof Finance attached to each client credit (by credit id). */
+  creditFiles?: Record<string, Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>>;
   canApproveDeal?: boolean;
   /** Who is looking (their user id), for the separation-of-duties rules the page shows. */
   viewerId?: string;

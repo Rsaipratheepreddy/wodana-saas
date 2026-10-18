@@ -81,7 +81,9 @@ export class ApprovalsService {
           ? { action: row.decide!.approve, revision: row.version, quoteId: row.id }
           : { action: "return", revision: row.version, quoteId: row.id, note });
       case "receipt":
-        return this.commercial.command(actor, workspaceId, row.parentId!, { action: "verify_payment", revision: row.version, paymentId: row.id });
+        return this.commercial.command(actor, workspaceId, row.parentId!, approve
+          ? { action: "verify_payment", revision: row.version, paymentId: row.id }
+          : { action: "return_payment", revision: row.version, paymentId: row.id, note });
       case "order":
         return this.orders.command(actor, workspaceId, row.id, { action: approve ? "approve" : "return", version: row.version, note });
       case "output":

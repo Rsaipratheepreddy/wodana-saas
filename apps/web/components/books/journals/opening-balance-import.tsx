@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, FileUploader, InlineNotice, RecordTable, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { AmountList, Button, FileUploader, InlineNotice, RecordTable, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey } from "@/lib/i18n/keys";
 import { manualJournalsApi, newId, type JournalDetail, type OpeningPreview } from "@/lib/books/settings-client";
@@ -90,19 +90,15 @@ export function OpeningBalanceImport({ workspaceId, legalEntityId, onDone }: { w
   return <div className={styles.editor}>
     <FileUploader appearance="button" accept=".csv,text/csv" multiple={false} label={t(O.choose)} onFiles={(files) => void read(files)} />
     {error ? <InlineNotice tone="error" message={error} /> : null}
-    {preview?.errors.length ? <div className={styles.errors} role="alert">
-      <ul>{preview.errors.map((item, index) => <li key={`${item.row ?? "file"}-${index}`}>{item.row ? t(O.rowError, { row: item.row, message: item.message }) : item.message}</li>)}</ul>
-    </div> : null}
+    {preview?.errors.length ? <InlineNotice tone="error" message={<ul className={styles.errorList}>{preview.errors.map((item, index) => <li key={`${item.row ?? "file"}-${index}`}>
+      {item.row ? t(O.rowError, { row: item.row, message: item.message }) : item.message}</li>)}</ul>} /> : null}
     {done ? <InlineNotice tone="success" message={t(O.submitted, { reference: done.journal.reference })} /> : null}
     {preview && preview.lines.length ? <>
       {preview.asAt && preview.journalDate ? <p className={styles.muted}>{t(O.asAt, { date: preview.asAt, start: preview.journalDate })}</p> : null}
       <RecordTable ariaLabel={t(O.rows)} data={preview.lines} columns={columns} getRowId={(row) => String(row.row)} selectable={false} rowNumbers={false} showToolbar={false} />
       <div className={styles.foot}>
         <span className={styles.spacer} />
-        <dl className={styles.totals}>
-          <div><dt>{t(O.debit)}</dt><dd>{money(preview.debit)}</dd></div>
-          <div><dt>{t(O.credit)}</dt><dd>{money(preview.credit)}</dd></div>
-        </dl>
+        <AmountList label={t("Total")} rows={[{ id: "debit", label: t(O.debit), amount: money(preview.debit) }, { id: "credit", label: t(O.credit), amount: money(preview.credit) }]} />
       </div>
       <div className={styles.actions}>
         <span className={styles.spacer} />

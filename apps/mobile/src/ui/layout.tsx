@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { AlertTriangle, ChevronLeft, ChevronRight, Info, type LucideIcon } from 'lucide-react-native';
 import { useT } from '../core/i18n';
 import { haptic } from '../core/haptics';
-import { Button, IconBadge, IconButton, Row, Text } from './primitives';
+import { Button, IconBadge, IconButton, Row, Text, type ChipHue } from './primitives';
 import { useTheme } from './theme';
 
 type HeaderProps = {
@@ -290,10 +290,10 @@ export function Failure({ message, onRetry }: { message: string; onRetry?: () =>
   </View>;
 }
 
-/** A thin progress bar (0–1) with its value spoken. */
-export function Progress({ value, tone = 'action', label }: { value: number; tone?: 'action' | 'success' | 'warning' | 'danger'; label?: string }) {
+/** A thin progress bar (0–1) with its value spoken; a category's bar (a job's chapter) takes its calm `hue`. */
+export function Progress({ value, tone = 'action', hue, label }: { value: number; tone?: 'action' | 'success' | 'warning' | 'danger'; hue?: ChipHue; label?: string }) {
   const theme = useTheme();
-  const colour = { action: theme.colors.actionPrimary, success: theme.colors.success, warning: theme.colors.warning, danger: theme.colors.danger }[tone];
+  const colour = hue ? theme.colors[`viz-${hue}`] : { action: theme.colors.actionPrimary, success: theme.colors.success, warning: theme.colors.warning, danger: theme.colors.danger }[tone];
   const share = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
   return <View accessibilityRole="progressbar" accessibilityLabel={label} accessibilityValue={{ min: 0, max: 100, now: Math.round(share * 100) }}
     style={{ height: 6, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceMuted, overflow: 'hidden' }}>

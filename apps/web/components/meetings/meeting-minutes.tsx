@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { NotebookPen, Paperclip, X } from "lucide-react";
+import { NotebookPen } from "lucide-react";
 import {
-  Badge, Button, ErrorState, FileUploader, Form, FormDialog, FormSection, IconButton, InlineNotice, InspectorSheet, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem,
+  Badge, Button, EmptyState, ErrorState, FileUploader, Form, FormDialog, FormSection, InlineNotice, InspectorSheet, ReviewFiles, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem,
+  type ReviewFile,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
@@ -12,6 +13,11 @@ import styles from "./meeting-minutes.module.css";
 
 const ACCEPT = "application/pdf,image/*";
 const uuid = () => crypto.randomUUID();
+/** A minutes file as the shared file list shows it: a photo opens as its own small picture. */
+const reviewFile = (api: ReturnType<typeof minutesApi>, activityId: string, file: MinutesFile): ReviewFile => {
+  const href = api.fileUrl(activityId, file.id);
+  return { id: file.id, name: file.name, href, previewHref: file.mimeType.startsWith("image/") ? href : null };
+};
 
 /**
  * PLM-153: the minutes of a client meeting, wherever the meeting opens (the follow-up, the calendar, the design
@@ -49,11 +55,10 @@ export function MeetingMinutes({ workspaceId, activityId }: { workspaceId: strin
       {canEdit ? <Button size="compact" variant={minutes ? "secondary" : "primary"} onPress={() => { setNotice(""); setEditing(true); }}>{minutes ? t("Edit minutes") : t("Write minutes")}</Button> : null}
     </div>
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
-    {!minutes ? <p className={styles.muted}>{state.problem ? translateKnown(t, state.problem) : t("No minutes yet.")}</p> : <>
+    {!minutes ? state.problem ? <InlineNotice tone="info" message={translateKnown(t, state.problem)} /> : <EmptyState illustration={null} title={t("No minutes yet.")} /> : <>
       <p className={styles.meta}>{[minutes.title, t("R{number}", { number: minutes.revision }), minutes.updatedByName, when(minutes.updatedAt)].join(" · ")}</p>
       <p className={styles.text} dir="auto">{minutes.body}</p>
-      {files.length ? <ul className={styles.files}>{files.map((file) => <li key={file.id}>
-        <a href={api.fileUrl(activityId, file.id)} target="_blank" rel="noreferrer"><Paperclip aria-hidden="true" size={13} />{file.name}</a></li>)}</ul> : null}
+      {files.length ? <ReviewFiles label={t("Photos and files")} files={files.map((file) => reviewFile(api, activityId, file))} /> : null}
       {reach ? <InlineNotice tone="info" message={reach} /> : null}
       {state.comments.length || minutes.sharedAt ? <Conversation state={state} when={when} canReply={state.canWrite && Boolean(minutes.sharedAt)}
         onReply={async (text) => setState(await api.reply(activityId, { commentId: uuid(), text }))} /> : null}
@@ -125,12 +130,11 @@ function MinutesDialog({ state, api, onClose, onSaved }: { state: MinutesState; 
       {error ? <InlineNotice tone="error" message={translateKnown(t, error)} /> : null}
       <TextInput label={t("Title")} isRequired maxLength={200} value={title} onChange={setTitle} />
       <TextAreaField label={t("Minutes")} isRequired maxLength={20000} value={body} onChange={setBody} />
-      {kept.length ? <ul className={styles.files}>{kept.map((file) => <li key={file.id}><Paperclip aria-hidden="true" size={13} /><span>{file.name}</span>
-        <IconButton aria-label={t("Remove {name}", { name: file.name })} size="compact" variant="quiet" onPress={() => setKept((current) => current.filter((item) => item.id !== file.id))}>
-          <X aria-hidden="true" size={13} /></IconButton></li>)}</ul> : null}
-      {kept.length < 20 ? <FileUploader accept={ACCEPT} label={t("Photos and files")} onFiles={(files) => void add(files)} /> : null}
+      <ReviewFiles label={t("Photos and files")} files={kept.map((file) => reviewFile(api, activityId, file))} empty={null}
+        onRemove={(id) => setKept((current) => current.filter((item) => item.id !== id))} />
+      {kept.length < 20 ? <FileUploader appearance="button" accept={ACCEPT} label={uploading ? t("Uploading…") : kept.length ? t("Add another") : t("Add a photo or PDF")} onFiles={(files) => void add(files)} /> : null}
       <Switch isSelected={shared} onChange={setShared}>{t("Share with the client")}</Switch>
-      {minutes?.sharedAt && shared ? <p className={styles.muted}>{t("The client sees your changes; the earlier version stays in the history.")}</p> : null}
+      {minutes?.sharedAt && shared ? <InlineNotice tone="info" message={t("The client sees your changes; the earlier version stays in the history.")} /> : null}
     </FormSection>
   </FormDialog>;
 }

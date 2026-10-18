@@ -1,7 +1,7 @@
 "use client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
-import { Checkbox } from "@/design-system";
+import { Button, Checkbox, IconButton, SegmentedControl, TextAreaField, TextInput } from "@/design-system";
 import { QuotationItemMaterials } from "./quotation-item-materials";
 import { Check, Link2, Package, Pencil, Plus, X } from "lucide-react";
 import {
@@ -70,16 +70,15 @@ export function QuotationMaterialsSummary({
       )}
       <CustomMaterialSummary materials={line.customMaterials} />
       {onEdit && (
-        <button
-          className={q.materialAction}
+        <Button size="compact" variant="quiet" className={q.materialAction}
           aria-label={t("Edit material for {title}", { title: line.title })}
-          onClick={onEdit}
+          onPress={onEdit}
         >
           <Pencil size={12} />
           {t(line.material || selections.length
             ? "Edit materials"
             : "Select materials")}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -155,11 +154,9 @@ function MaterialSelectionSection({
               <Check size={11} /> {t("Catalog linked · v{version}", { version: selection.version })}
             </small>
           </div>
-          <button
-            type="button"
-            className={q.removeSelection}
+          <IconButton size="compact"
             aria-label={t("Remove {title}", { title: selection.snapshot.name })}
-            onClick={() =>
+            onPress={() =>
               onChange(
                 updateMaterials(
                   item,
@@ -171,31 +168,19 @@ function MaterialSelectionSection({
               )
             }
           >
-            <X size={15} />
-          </button>
+            <X aria-hidden="true" size={15} />
+          </IconButton>
         </div>
       ))}
       {(adding || !selections.length) && !atLimit ? (
         <div className={q.searchArea}>
           {anchor && (
-            <div
-              className={q.sourceOptions}
-              role="group"
-              aria-label={t(role === "material" ? "material catalog source" : "finish catalog source")}
-            >
-              <button
-                type="button"
-                aria-pressed={!related}
-                onClick={() => setRelated(false)}
-              >
-                {t("All catalogs")}</button>
-              <button
-                type="button"
-                aria-pressed={related}
-                onClick={() => setRelated(true)}
-              >
-                {t("Linked to this item")}</button>
-            </div>
+            <SegmentedControl
+              label={t(role === "material" ? "material catalog source" : "finish catalog source")}
+              value={related ? "linked" : "all"}
+              onChange={(value) => setRelated(value === "linked")}
+              options={[{ id: "all", label: t("All catalogs") }, { id: "linked", label: t("Linked to this item") }]}
+            />
           )}
           <CommercialCatalogPicker
             workspaceId={workspaceId}
@@ -212,49 +197,38 @@ function MaterialSelectionSection({
             excludeIds={selections.map((selection) => selection.recordId)}
           />
           {selections.length > 0 && (
-            <button
-              type="button"
-              className={q.textButton}
-              onClick={() => setAdding(false)}
+            <Button size="compact" variant="quiet"
+              onPress={() => setAdding(false)}
             >
-              {t("Cancel selection")}</button>
+              {t("Cancel selection")}</Button>
           )}
         </div>
       ) : (
         !atLimit && (
-          <button
-            type="button"
-            className={q.addSelection}
-            onClick={() => setAdding(true)}
+          <Button size="compact" variant="quiet"
+            onPress={() => setAdding(true)}
           >
             <Plus size={14} />
             {t(role === "material" ? "Add material or hardware" : "Add finish")}
-          </button>
+          </Button>
         )
       )}
       {atLimit && (
         <p className={q.muted}>
           {t("This item has reached its 12 catalog selections. Remove a selection to add another.")}</p>
       )}
-      <label className={q.notesField}>
-        {t(role === "material"
-          ? "Material specification / notes"
-          : "Finish / hardware notes")}
-        <textarea
-          rows={2}
+      <TextAreaField
+          label={t(role === "material"
+            ? "Material specification / notes"
+            : "Finish / hardware notes")}
           placeholder={
             t(role === "material"
               ? "Thickness, application, dimensions or a custom material…"
               : "Colour, finish code or installation detail…")
           }
           value={materialNotes(item, role)}
-          onChange={(event) =>
-            onChange(
-              updateMaterials(item, role, selections, event.target.value),
-            )
-          }
+          onChange={(notes) => onChange(updateMaterials(item, role, selections, notes))}
         />
-      </label>
     </section>
   );
 }
@@ -320,66 +294,31 @@ export function QuotationMaterialsEditor(props: {
                 {t(m.suppliedByClient ? "Client supplied" : "Quotation only")}
               </small>
             </div>
-            <button
-              type="button"
-              className={q.removeSelection}
+            <IconButton size="compact"
               aria-label={t("Edit custom material {name}", { name: m.name })}
-              onClick={() => setCustom({ ...m })}
+              onPress={() => setCustom({ ...m })}
             >
-              <Pencil size={14} />
-            </button>
-            <button
-              type="button"
-              className={q.removeSelection}
+              <Pencil aria-hidden="true" size={14} />
+            </IconButton>
+            <IconButton size="compact"
               aria-label={t("Remove custom material {name}", { name: m.name })}
-              onClick={() =>
+              onPress={() =>
                 props.onChange({
                   ...props.item,
                   customMaterials: materials.filter((x) => x.id !== m.id),
                 })
               }
             >
-              <X size={14} />
-            </button>
+              <X aria-hidden="true" size={14} />
+            </IconButton>
           </div>
         ))}
         {custom ? (
           <div className={q.customForm}>
-            <label>
-              {t("Material name")}<input
-                autoFocus
-                value={custom.name}
-                maxLength={240}
-                onChange={(e) => setCustom({ ...custom, name: e.target.value })}
-              />
-            </label>
-            <label>
-              {t("Product / finish code")}<input
-                value={custom.code}
-                maxLength={80}
-                onChange={(e) => setCustom({ ...custom, code: e.target.value })}
-              />
-            </label>
-            <label>
-              {t("Brand / manufacturer")}<input
-                value={custom.brand}
-                maxLength={160}
-                onChange={(e) =>
-                  setCustom({ ...custom, brand: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              {t("Material specification")}<textarea
-                rows={3}
-                value={custom.specification}
-                maxLength={3000}
-                placeholder={t("Dimensions, thickness, colour, finish…")}
-                onChange={(e) =>
-                  setCustom({ ...custom, specification: e.target.value })
-                }
-              />
-            </label>
+            <TextInput label={t("Material name")} autoFocus value={custom.name} maxLength={240} onChange={(name) => setCustom({ ...custom, name })} />
+            <TextInput label={t("Product / finish code")} value={custom.code} maxLength={80} onChange={(code) => setCustom({ ...custom, code })} />
+            <TextInput label={t("Brand / manufacturer")} value={custom.brand} maxLength={160} onChange={(brand) => setCustom({ ...custom, brand })} />
+            <TextAreaField label={t("Material specification")} value={custom.specification} maxLength={3000} placeholder={t("Dimensions, thickness, colour, finish…")} onChange={(specification) => setCustom({ ...custom, specification })} />
             <Checkbox
               isSelected={custom.suppliedByClient}
               onChange={(suppliedByClient) =>
@@ -388,11 +327,11 @@ export function QuotationMaterialsEditor(props: {
             >
               {t("Supplied by the client")}
             </Checkbox>
-            <div className={q.sourceOptions}>
-              <button
-                type="button"
-                disabled={!custom.name.trim()}
-                onClick={() => {
+            <div className={q.customActions}>
+              <Button size="compact"
+                variant="primary"
+                isDisabled={!custom.name.trim()}
+                onPress={() => {
                   props.onChange({
                     ...props.item,
                     customMaterials: materials.some((m) => m.id === custom.id)
@@ -402,17 +341,15 @@ export function QuotationMaterialsEditor(props: {
                   setCustom(null);
                 }}
               >
-                {t("Save material")}</button>
-              <button type="button" onClick={() => setCustom(null)}>
-                {t("Cancel")}</button>
+                {t("Save material")}</Button>
+              <Button size="compact" onPress={() => setCustom(null)}>
+                {t("Cancel")}</Button>
             </div>
           </div>
         ) : (
           materials.length < 20 && (
-            <button
-              type="button"
-              className={q.addSelection}
-              onClick={() =>
+            <Button size="compact" variant="quiet"
+              onPress={() =>
                 setCustom({
                   id: crypto.randomUUID(),
                   name: "",
@@ -424,27 +361,24 @@ export function QuotationMaterialsEditor(props: {
               }
             >
               <Plus size={14} />
-              {t("Add custom material")}</button>
+              {t("Add custom material")}</Button>
           )
         )}
         {!!props.library?.length && (
           <>
-            <button
-              type="button"
-              className={q.textButton}
-              onClick={() => setReuse(!reuse)}
+            <Button size="compact" variant="quiet"
+              onPress={() => setReuse(!reuse)}
             >
-              {t("Reuse from this quotation")}</button>
+              {t("Reuse from this quotation")}</Button>
             {reuse &&
               props.library
                 .filter((m) => !materials.some((x) => x.id === m.id))
                 .map((m) => (
-                  <button
-                    type="button"
+                  <Button size="compact"
                     key={m.id}
-                    className={q.addSelection}
-                    disabled={materials.length >= 20}
-                    onClick={() => {
+                    variant="quiet"
+                    isDisabled={materials.length >= 20}
+                    onPress={() => {
                       props.onChange({
                         ...props.item,
                         customMaterials: [
@@ -457,7 +391,7 @@ export function QuotationMaterialsEditor(props: {
                   >
                     <Plus size={13} />
                     {m.name}
-                  </button>
+                  </Button>
                 ))}
           </>
         )}

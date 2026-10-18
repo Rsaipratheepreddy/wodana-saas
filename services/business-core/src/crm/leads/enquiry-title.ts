@@ -4,7 +4,10 @@ import { loadLeadOptions, REGION_OTHER } from "./lead-options";
 type Location = { emirate?: string; area?: string; location?: string };
 type Choices = Pick<Awaited<ReturnType<typeof loadLeadOptions>>, "emirates" | "areas">;
 
-/** "Customer Name (Area, Region)", "Customer Name (Region)" or "Customer Name (typed place)"; the name alone without a place. */
+/**
+ * Guide B: "Customer Name · Area, Region" (or "· Region", "· typed place"); the name alone without a place. Lists put the
+ * enquiry's locked reference in front of it, so a row reads "Ref · Client · Area, Region" with nothing said twice.
+ */
 export function enquiryTitle(customerName: string, details: Location, choices: Choices): string {
   const name = customerName.trim();
   const emirate = choices.emirates.find(option => option.id === details.emirate)?.label
@@ -14,7 +17,7 @@ export function enquiryTitle(customerName: string, details: Location, choices: C
   const place = details.emirate === REGION_OTHER ? areaName || emirate : [areaName, emirate].filter(Boolean).join(", ");
   if (!place) return name.slice(0, 240);
   if (!name) return place.slice(0, 240);
-  return `${name} (${place})`.slice(0, 240);
+  return `${name} · ${place}`.slice(0, 240);
 }
 
 export async function refreshEnquiryTitlesForParty(client: PoolClient, workspaceId: string, partyId: string, customerName: string): Promise<void> {

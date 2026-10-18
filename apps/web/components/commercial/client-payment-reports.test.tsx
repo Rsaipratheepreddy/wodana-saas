@@ -53,8 +53,8 @@ describe("client payment reports", () => {
     expect(entry).toHaveTextContent("Paid from my business account");
     expect(entry).toHaveTextContent(/4,000\.00/);
     // Proof: a photo preview and the PDF by name, both served privately for the team.
-    expect(within(entry).getByRole("img", { name: "transfer.jpg" })).toHaveAttribute("src", `/api/client-portal-admin/cases/${CASE}/files/f1?workspaceId=${WS}&preview=1`);
-    expect(within(entry).getByRole("link", { name: "bank-slip.pdf" })).toHaveAttribute("href", `/api/client-portal-admin/cases/${CASE}/files/f2?workspaceId=${WS}`);
+    expect(within(entry).getByRole("link", { name: "Open transfer.jpg" }).querySelector("img")).toHaveAttribute("src", `/api/client-portal-admin/cases/${CASE}/files/f1?workspaceId=${WS}&preview=1`);
+    expect(within(entry).getByRole("link", { name: "Open bank-slip.pdf" })).toHaveAttribute("href", `/api/client-portal-admin/cases/${CASE}/files/f2?workspaceId=${WS}`);
     // Recorded needs the receipt in the ledger first.
     expect(within(dialog).getByRole("button", { name: "Mark recorded" })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Record receipt" })).toBeEnabled();

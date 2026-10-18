@@ -132,7 +132,7 @@ export class ReceivablesService {
     await client.query(`UPDATE client_invoices SET status = 'credited', version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
     const actor = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [userId])).rows[0]?.name ?? "Someone";
     const amount = `${invoice.currency} ${Dec.of(invoice.total).toFixed(currencyDecimals(invoice.currency))}`;
-    for (const person of await this.projectManagers(client, workspaceId, invoice.projectId))
+    for (const person of invoice.projectId ? await this.projectManagers(client, workspaceId, invoice.projectId) : [])
       if (person !== userId)
         await notifyUserInApp(client, { workspaceId, recipientUserId: person, code: "receivables.credited", eventType: "receivables.credited",
           variables: { invoice: invoice.number, client: invoice.customerName, amount, actor, note: `${number}: ${reason}`.slice(0, 480) },
@@ -143,10 +143,18 @@ export class ReceivablesService {
   /** The invoice a milestone would get: its company, currency, lines by tax rate, and the client and company details. */
   private async draft(client: Db, workspaceId: string, caseId: string, paymentId: string) {
     const milestone = (await readMilestones(client, workspaceId, { caseId, paymentId }))[0] as Milestone | undefined;
-    if (!milestone) throw new NotFoundException("That milestone isn't on a started project's accepted quotation.");
-    const seal = (await client.query<{ currency: string; pricing: { total: string; taxes: Array<{ rate: string; base: string; tax: string }> }; includeTax: boolean | null }>(
+    if (!milestone) throw new NotFoundException("That milestone isn't on an accepted design quotation or a started project's accepted quotation.");
+    // The tax split: a sealed quotation's rates; for the design fee (no seal), the accepted design quotation's rate,
+    // exactly as its receipts are posted, so the invoice and the ledger agree to the minor unit.
+    const seal = milestone.sealed ? (await client.query<{ currency: string; pricing: { total: string; taxes: Array<{ rate: string; base: string; tax: string }> }; includeTax: boolean | null }>(
       `SELECT currency, snapshot->'pricing' AS pricing, (snapshot->'quote'->>'pricesIncludeTax')::boolean AS "includeTax"
-         FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND quote_id = $3 ORDER BY sealed_at LIMIT 1`, [workspaceId, milestone.projectId, milestone.quoteId])).rows[0];
+         FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND quote_id = $3 ORDER BY sealed_at LIMIT 1`, [workspaceId, milestone.projectId, milestone.quoteId])).rows[0]
+      : (await client.query<{ currency: string; total: string; rate: string; includeTax: boolean | null }>(
+        `SELECT trim(currency) AS currency, total::text AS total, coalesce(tax_rate, 0)::text AS rate, (detail->'pricing'->>'pricesIncludeTax')::boolean AS "includeTax"
+           FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, milestone.quoteId])).rows
+        .map((quote) => ({ currency: quote.currency, includeTax: quote.includeTax,
+          pricing: { total: quote.total, taxes: Dec.of(quote.rate).isZero() ? [] : [{ rate: quote.rate, base: quote.total, tax: "0" }] } }))[0];
+    if (!seal) throw new NotFoundException("The milestone's quotation isn't there any more.");
     const currency = (milestone.currency ?? seal.currency).trim();
     if (currency !== seal.currency.trim()) throw new ConflictException(`The milestone is in ${currency} and its quotation in ${seal.currency.trim()}.`);
     // The contract's company; a deal kept before companies were recorded uses the only active one.

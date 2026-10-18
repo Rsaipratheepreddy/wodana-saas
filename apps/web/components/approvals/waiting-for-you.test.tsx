@@ -37,7 +37,9 @@ describe("Waiting for you: what a decision says (m25)", () => {
     const empty: WaitingForYou = { rows: [], count: 0, counts: { ...waiting.counts, ai: 0 } };
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 201, json: async () => empty })));
     render(<DesignSystemProvider><WaitingForYouList workspaceId="00000000-0000-4000-8000-000000000001" initial={{ rows: [receipt], count: 1, counts: { ...waiting.counts, ai: 0, payments: 1 } }} /></DesignSystemProvider>);
-    await userEvent.click(screen.getByRole("button", { name: "Verify" }));
+    // §0.3 P0: the row opens a review; the payment is verified from there, never in one click.
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Verify" }));
     expect(await screen.findByText("Advance on signing verified.")).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
@@ -58,7 +60,11 @@ describe("Waiting for you: E3 rows", () => {
     expect(within(table).getByText("Covering for someone away")).toBeInTheDocument();
     await userEvent.click(within(table).getAllByRole("button", { name: "Open" })[0]);
     expect(push).toHaveBeenCalledWith("/workspace/pre-projects/cases/c/quotations?quote=q");
-    expect(within(table).getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    // Decided in a review of the row, with the change shown again.
+    await userEvent.click(within(table).getByRole("button", { name: "Review" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Changed from AED 45,000.00 to AED 52,000.00")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 });
 
@@ -80,8 +86,9 @@ describe("Waiting for you: design reviews", () => {
     expect(within(table).getByText("D-0012 · Majlis design")).toBeInTheDocument();
     await userEvent.click(within(table).getByText("Review design · Majlis concept · V2"));
     expect(push).toHaveBeenCalledWith(`/workspace/pre-projects/cases/${CASE}/designs?file=${DESIGN}`);
-    await userEvent.click(within(table).getByRole("button", { name: "Return" }));
+    await userEvent.click(within(table).getByRole("button", { name: "Review" }));
     const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Return" }));
     await userEvent.type(within(dialog).getByLabelText(/What needs to change/), "Seat twelve, not ten");
     await userEvent.click(within(dialog).getByRole("button", { name: "Return" }));
     expect(await screen.findByText("Majlis concept · V2 sent back.")).toBeInTheDocument();

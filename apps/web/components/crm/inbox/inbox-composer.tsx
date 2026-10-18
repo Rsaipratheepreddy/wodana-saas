@@ -3,7 +3,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { CalendarClock, FileText, Lock, Paperclip, Send, StickyNote, UserRound, X, Zap } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog, useDesignSystem, useReadOnlyReason, FormDialog } from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, SearchInput, SegmentedControl, TextInput, useConfirmationDialog, useDesignSystem, useReadOnlyReason, FormDialog } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
 import { ATTACH_ACCEPT, attachProblem, channelName, fileSizeText, fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableKind, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, uploadAttachment, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -181,7 +181,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
       <Button className={styles.sendButton} aria-label={instruction !== null ? t("Ask Woddy") : mode === "note" ? t("Add note") : t("Send message")} variant="primary" type="submit" isDisabled={(!draft.trim() && !file) || (instruction === null ? Boolean(replyBlocked) : woddyBusy || !instruction)} isLoading={busy || (instruction !== null && woddyBusy)}><Send data-directional="true" size={19} /></Button>
     </div> : null}
     <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{instruction !== null ? t("Only Woddy reads this line. It is never sent.") : mode === "note" ? t("Only your team sees notes") : thread.signatureEnabled ? t("Signed with your first name") : t("Enter to send · Shift+Enter for a new line")}</small></div>
-    {failure ? <p className={styles.error} role="alert">{failure}{isWhatsApp && windowClosed && mode === "reply" ? <> <Button size="compact" variant="quiet" onPress={() => setPicking(true)}>{t("Choose template")}</Button></> : null}</p> : null}
+    {failure ? <InlineNotice action={isWhatsApp && windowClosed && mode === "reply" ? <Button size="compact" variant="quiet" onPress={() => setPicking(true)}>{t("Choose template")}</Button> : undefined} message={failure} tone="error" /> : null}
     {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} connected={thread.whatsappConnected !== false} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }}
       onSendLater={readOnly ? undefined : (template, templateParameters) => { setPicking(false); setLater({ templateId: template.id, templateParameters }); }} /> : null}
     {later ? <ScheduleDialog title={later.templateId ? t("Send the template later") : t("Send later")} freeText={!later.templateId} windowClosesAt={isWhatsApp ? String(thread.windowClosesAt ?? "") || null : undefined}

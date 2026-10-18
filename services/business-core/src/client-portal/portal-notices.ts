@@ -8,6 +8,7 @@ import { partyOfCase, recordClientMessageSkipped, sendClientEvent, type ClientGa
 import { clientDailyGate } from "../reminders/delivery/client-gate";
 import type { TemplateContext } from "../crm/conversations/inbox/template-variables";
 import type { StarterEvent } from "../crm/conversations/inbox/whatsapp-starter-pack";
+import { recordSend, type DocumentKind } from "../documents/document-sends";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -21,7 +22,7 @@ type Db = Pick<PoolClient, "query">;
  * Each email opens the portal where the thing is.
  */
 export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "message_replied" | "payment_checked" | "issue_triaged"
-  | "payment_due" | "site_access" | "daily_progress" | "weekly_rollup" | "minutes_shared" | "minutes_replied" | "design_replied";
+  | "payment_due" | "site_access" | "daily_progress" | "weekly_rollup" | "minutes_shared" | "minutes_replied" | "design_replied" | "design_completed";
 
 //   team_replied       the team answered them on the moodboard   everyone on the project
 //   message_replied    the team answered them in Messages        everyone on the project
@@ -34,14 +35,15 @@ export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting"
 //   minutes_shared     the notes of a meeting are shared (PLM-153) everyone on the project (email)
 //   minutes_replied    the team answered them on a meeting's notes  everyone on the project (email)
 //   design_replied     the team answered them on a design file      everyone on the project (email; Designs, Decisions or the Moodboard)
+//   design_completed   a design-only job is approved and complete: thanks (§0.3 P0)  everyone on the project (email)
 const SECTION: Record<ClientEvent, Section | readonly Section[]> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress",
   team_replied: "moodboard", message_replied: "messages", payment_checked: "payments", issue_triaged: "progress", payment_due: "payments", site_access: "progress", daily_progress: "progress", weekly_rollup: "progress",
-  minutes_shared: "meetings", minutes_replied: "meetings", design_replied: ["designs", "decisions", "moodboard"] };
+  minutes_shared: "meetings", minutes_replied: "meetings", design_replied: ["designs", "decisions", "moodboard"], design_completed: ["designs", "progress", "decisions"] };
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
   team_replied: "portal.team_replied", message_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged", payment_due: "portal.payment_due", site_access: "portal.site_access",
   daily_progress: "portal.daily_progress", weekly_rollup: "portal.weekly_rollup", minutes_shared: "portal.minutes_shared", minutes_replied: "portal.team_replied",
-  design_replied: "portal.team_replied",
+  design_replied: "portal.team_replied", design_completed: "portal.design_completed",
 };
 /** The WhatsApp client message a portal event is (the others go by email only). */
 const WHATSAPP_EVENT: Partial<Record<ClientEvent, StarterEvent>> = {
@@ -49,7 +51,17 @@ const WHATSAPP_EVENT: Partial<Record<ClientEvent, StarterEvent>> = {
   payment_due: "payments.reminder", daily_progress: "portal.update_published", weekly_rollup: "portal.update_published",
 };
 /** Events that go by WhatsApp and also by the branded email (each where the client's preferences allow), not one or the other. */
-const BOTH_CHANNELS = new Set<ClientEvent>(["daily_progress", "weekly_rollup"]);
+// A proposal or quotation goes by WhatsApp and email both, so one failing channel never leaves the client without it.
+const BOTH_CHANNELS = new Set<ClientEvent>(["daily_progress", "weekly_rollup", "quote_issued"]);
+
+/** §0.3 P4: the events that send a document, recorded on the job as a tracked send. */
+const SEND_KIND: Partial<Record<ClientEvent, DocumentKind>> = { quote_issued: "quotation", invoice_issued: "invoice", design_completed: "design_completed" };
+/** Why a send couldn't leave, for the team (WhatsApp turned off, paused or capped isn't a failure: the firm chose it). */
+const SEND_FAILURE: Partial<Record<string, string>> = {
+  no_client: "No client on the job", blocked: "The client blocked WhatsApp messages", not_connected: "WhatsApp isn't connected", no_consent: "The client hasn't agreed to WhatsApp",
+  no_phone: "No WhatsApp number for the client", template_not_approved: "The WhatsApp template isn't approved", value_missing: "A value the message needs is missing",
+  no_contact: "No client contact with an email", template_missing: "The email template is missing", demo_test_contacts_only: "Only test contacts get emails here",
+};
 
 const render = (template: string, variables: Record<string, string>) => template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
 
@@ -94,6 +106,12 @@ export async function tellClients(db: Db, input: {
   }
   // WhatsApp first when the firm has the event on and an approved template; email to the portal contacts otherwise.
   const whatsappEvent = WHATSAPP_EVENT[input.event];
+  const sendKind = SEND_KIND[input.event];
+  // A document that reached nobody is shown on the job with why.
+  const unsent = async (reason: string) => {
+    if (sendKind && !whatsappSent) await recordSend(db, { workspaceId: input.workspaceId, caseId: input.caseId, kind: sendKind, ref: input.recordId, title: input.title, channel: "email",
+      status: "failed", reason: SEND_FAILURE[reason] ?? reason });
+  };
   const both = BOTH_CHANNELS.has(input.event);
   let whatsappSent: string | null = null;
   if (whatsappEvent) {
@@ -103,6 +121,10 @@ export async function tellClients(db: Db, input: {
       record: input.record ? { projectId: facts.projectId, ...input.record } : input.event === "invoice_issued" ? { invoiceId: input.recordId, projectId: facts.projectId }
         : input.event === "quote_issued" ? { quoteId: input.recordId.split(":")[0], projectId: facts.projectId } : { projectId: facts.projectId },
     });
+    if (sendKind && whatsapp.sent && !whatsapp.duplicate) await recordSend(db, { workspaceId: input.workspaceId, caseId: input.caseId, kind: sendKind, ref: input.recordId, title: input.title,
+      channel: "whatsapp", status: "sent", messageId: whatsapp.messageId });
+    if (sendKind && !whatsapp.sent && SEND_FAILURE[whatsapp.reason]) await recordSend(db, { workspaceId: input.workspaceId, caseId: input.caseId, kind: sendKind, ref: input.recordId,
+      title: input.title, channel: "whatsapp", status: "failed", reason: SEND_FAILURE[whatsapp.reason] });
     if (whatsapp.sent && !both) return { queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsapp.messageId };
     if (whatsapp.sent) whatsappSent = whatsapp.messageId;
     else await recordClientMessageSkipped(db, input.workspaceId, whatsappEvent, input.recordId, whatsapp, true);
@@ -115,12 +137,18 @@ export async function tellClients(db: Db, input: {
     [input.workspaceId, input.caseId, input.event === "decision_waiting"])).rows;
   // A demonstration environment only ever emails its test contacts; it says so rather than "nobody has an email".
   const recipients = demo ? reachable.filter((recipient) => recipient.testContact) : reachable;
-  if (!recipients.length) return whatsappSent ? whatsappOnly() : { queued: 0, reason: reachable.length ? "demo_test_contacts_only" as const : "no_contact" as const };
+  if (!recipients.length) {
+    await unsent(reachable.length ? "demo_test_contacts_only" : "no_contact");
+    return whatsappSent ? whatsappOnly() : { queued: 0, reason: reachable.length ? "demo_test_contacts_only" as const : "no_contact" as const };
+  }
   const template = (await db.query<{ id: string; subject: string | null; body: string }>(
     `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
       WHERE workspace_id = $1 AND code = $2 AND channel = 'email' AND status = 'approved' AND locale = 'en' ORDER BY version_number DESC LIMIT 1`,
     [input.workspaceId, TEMPLATE[input.event]])).rows[0];
-  if (!template) return whatsappSent ? whatsappOnly() : { queued: 0, reason: "template_missing" as const };
+  if (!template) {
+    await unsent("template_missing");
+    return whatsappSent ? whatsappOnly() : { queued: 0, reason: "template_missing" as const };
+  }
   let due = "";
   if (input.due) {
     try { due = `Due ${new Intl.DateTimeFormat(facts.locale, { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${input.due.slice(0, 10)}T00:00:00Z`))}.`; }
@@ -141,11 +169,14 @@ export async function tellClients(db: Db, input: {
       `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status, scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
        VALUES ($1, $2, 'portal_contact', $3, 'email', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid())
        ON CONFLICT (workspace_id, idempotency_key) DO NOTHING RETURNING id, correlation_id AS "correlationId"`,
-      [input.workspaceId, template.id, recipient.id, TEMPLATE[input.event], template.subject ? render(template.subject, variables) : null, render(template.body, variables),
+      [input.workspaceId, template.id, recipient.id, TEMPLATE[input.event], template.subject ? render(template.subject, { ...variables, name: recipient.name.split(/\s+/)[0] ?? "" }) : null,
+        render(template.body, { ...variables, name: recipient.name.split(/\s+/)[0] ?? "" }),
         link, `${TEMPLATE[input.event]}:${input.recordId}:${recipient.id}`.slice(0, 160)])).rows[0];
     if (!inserted) continue;
     queued += 1;
     names.push(recipient.name);
+    if (sendKind) await recordSend(db, { workspaceId: input.workspaceId, caseId: input.caseId, kind: sendKind, ref: input.recordId, title: input.title, channel: "email",
+      recipient: recipient.name, status: "sent", notificationId: inserted.id });
     // Wake the notification worker now rather than at its next poll.
     const eventId = randomUUID();
     await db.query(

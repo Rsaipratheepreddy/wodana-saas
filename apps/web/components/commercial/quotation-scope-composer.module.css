@@ -8,7 +8,7 @@
 .scopeLink { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-action-primary); font-weight: 600; text-decoration: none; }
 .complete { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-success) !important; font-size: var(--wd-text-xs); font-weight: 600; }
 .compact { display:flex; align-items:center; justify-content:center; gap:var(--wd-space-1-5); min-inline-size:0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); white-space:nowrap; }
-.compact :global(.wd-button) { min-block-size:1.75rem; padding:var(--wd-space-1) var(--wd-space-2); }
+
 .compactError { color:var(--wd-color-danger); font-weight:600; }
 .compactNotice { max-inline-size:14rem; overflow:hidden; text-overflow:ellipsis; }
 .muted { margin: 0 0 var(--wd-space-3); line-height: 1.5; }

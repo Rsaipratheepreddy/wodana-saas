@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import type { HrmsBootstrap, HrmsCrewState, HrmsDocument, HrmsDocumentKind, HrmsDocuments, HrmsPerson } from "@wodana/contracts";
 import {
-  Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, FileUploader, FormRow, FormSection, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton,
-  TextAreaField, TextInput, type DataGridColumn, type ToolbarFilter,
+  Button, ConfirmationDialog, DataGrid, DateField, EmptyState, ErrorState, FileUploader, FormRow, FormSection, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton,
+  TextAreaField, TextInput, TextLink, type DataGridColumn, type ToolbarFilter,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
@@ -123,7 +123,7 @@ function DocumentSheet({ api, document, manage, subjects, onClose, onDone }: {
       onDone();
     } catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); }
   };
-  const fileLink = document?.fileName ? <a href={api.documentFileUrl(document.id)} target="_blank" rel="noreferrer">{document.fileName}</a> : null;
+  const fileLink = document?.fileName ? <TextLink href={api.documentFileUrl(document.id)} target="_blank" rel="noreferrer">{document.fileName}</TextLink> : null;
   return <InspectorSheet isOpen size="md" title={document ? document.title : t("New document")} description={document ? [document.personName, kinds[document.kind]].filter(Boolean).join(" · ") : undefined}
     isDirty={manage && dirty && !busy} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={manage ? <div className="wd-dialog-actions">
@@ -184,14 +184,13 @@ function RemoveDocumentDialog({ api, document, onClose, onRemoved }: { api: Hrms
   const format = useHrmsFormat();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Remove {document}?", { document: document.title })} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Keep")}</Button>
-      <Button variant="danger" isLoading={busy} onPress={async () => {
-        setBusy(true); setError("");
-        try { await api.removeDocument(document.id, document.version); onRemoved(); } catch (cause) { setError(format.failure(cause, t("Could not remove."))); setBusy(false); }
-      }}>{t("Remove")}</Button></div>}>
-    {error ? <InlineNotice tone="error" message={error} /> : <p className={styles.muted}>{document.personName}</p>}
-  </ControlledModalDialog>;
+  const remove = async () => {
+    setBusy(true); setError("");
+    try { await api.removeDocument(document.id, document.version); onRemoved(); } catch (cause) { setError(format.failure(cause, t("Could not remove."))); setBusy(false); }
+  };
+  return <ConfirmationDialog isOpen title={t("Remove {document}?", { document: document.title })} onOpenChange={(value) => { if (!value) onClose(); }}
+    cancelLabel={t("Keep")} confirmLabel={t("Remove")} confirmVariant="danger" isConfirming={busy} onConfirm={() => void remove()}
+    body={error ? <InlineNotice tone="error" message={error} /> : document.personName} />;
 }
 
 /** A person's or a worker's documents, on their own record; each opens in Documents. */
@@ -207,7 +206,7 @@ export function PersonDocuments({ api, membershipId, workerId, onOpen }: { api: 
   }, [api, membershipId, workerId]);
   return <section className={styles.part} aria-label={t("Documents")}>
     <h3 className={styles.subhead}>{t("Documents")}</h3>
-    {!documents ? <Skeleton lines={2} /> : !documents.length ? <p className={styles.muted}>{t("No documents yet")}</p>
+    {!documents ? <Skeleton lines={2} /> : !documents.length ? <EmptyState illustration={null} title={t("No documents yet")} />
       : <ul className={styles.list}>{documents.map((document) => <li key={document.id}>
         <button type="button" className={styles.rowButton} onClick={() => onOpen(document.id)}>
           <span className={styles.grow}><span>{document.title}</span>

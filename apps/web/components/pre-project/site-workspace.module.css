@@ -1,19 +1,20 @@
 .page { display: flex; flex-direction: column; gap: var(--wd-space-5); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
-.toolbar :global(.wd-field) { inline-size: auto; min-inline-size: 12rem; gap: 0; }
-.toolbar :global(.wd-select-button), .toolbar :global(.wd-button) { block-size: var(--wd-control-sm); min-block-size: var(--wd-control-sm); }
+.toolbar :global(.wd-field) { inline-size: auto; min-inline-size: 12rem; }
 .spacer { flex: 1 1 auto; }
 .hiddenInput { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
 
 .visits { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
-.visit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); padding: var(--wd-space-2) var(--wd-space-3); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
-.visit:hover { border-color: var(--wd-color-text-secondary); }
+.visit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); padding: var(--wd-space-1-5) var(--wd-space-3); border: 0; border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-subtle); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-xs); text-align: start; cursor: pointer; }
+.visit:hover { background: var(--wd-color-surface-hover); }
 .visit span { color: var(--wd-color-text-secondary); }
 
 /* A card per room: name and state, key facts, thumbnails. */
 .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
-.room { scroll-margin-block-start: var(--wd-space-6); display: flex; flex-direction: column; gap: var(--wd-space-3); block-size: 100%; padding: var(--wd-space-4); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); }
-.room:hover { border-color: var(--wd-color-border-strong); }
+/* A room is a quiet tile (no border, per the design system): its name, its state, its facts as chips, its photos. */
+.room { scroll-margin-block-start: var(--wd-space-6); display: flex; flex-direction: column; gap: var(--wd-space-2-5); block-size: 100%; padding: var(--wd-space-3); border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-surface-subtle); transition: background var(--wd-duration-fast) var(--wd-ease-standard); }
+.room:hover { background: var(--wd-color-surface-hover); }
 .roomHead { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
 .roomName { display: inline-flex; flex: 1 1 auto; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; padding: 0; border: 0; background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); text-align: start; cursor: pointer; }
 .roomName span { overflow-wrap: anywhere; }
@@ -56,9 +57,6 @@
 .pdf { display: grid; place-items: center; gap: var(--wd-space-1); aspect-ratio: 4 / 3; padding: var(--wd-space-3); color: var(--wd-color-text); font-size: var(--wd-text-xs); text-align: center; text-decoration: none; overflow-wrap: anywhere; }
 .photoFoot { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: calc(var(--wd-space-10) - var(--wd-space-1)); padding: var(--wd-space-1) var(--wd-space-1) var(--wd-space-1) var(--wd-space-3); border-block-start: 1px solid var(--wd-color-border); }
 .photoName { flex: 1 1 auto; min-inline-size: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
-.drop { display: flex; align-items: center; justify-content: center; gap: var(--wd-space-2); min-block-size: calc(var(--wd-space-10) * 2); border: 1px dashed var(--wd-color-border-strong); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-sm); cursor: pointer; }
-.drop:hover:not(:disabled) { border-color: var(--wd-color-text-secondary); color: var(--wd-color-text); }
-.drop:disabled { cursor: default; }
 
 .issues { display: flex; flex-direction: column; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; }
 .issues button { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); inline-size: 100%; padding: var(--wd-space-2) var(--wd-space-3); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
@@ -71,3 +69,21 @@
 }
 .sheetSection .issues { inline-size: 100%; }
 .room > .drop { margin-block-start: auto; min-block-size: var(--wd-space-16); }
+
+/* The site visit's steps, and a room's facts, as chips: a tick when done, a warning tone for open issues. */
+.stepChips, .factChips { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; }
+.stepChips li, .factChips li { display: inline-flex; align-items: center; gap: var(--wd-space-1); padding: var(--wd-space-1) var(--wd-space-2-5); border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface); color: var(--wd-color-text); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.stepChips li { color: var(--wd-color-text-secondary); }
+.stepChips li[data-done] { background: var(--wd-color-success-subtle); color: var(--wd-color-text); }
+.stepChips li[data-done] svg { color: var(--wd-color-success); }
+.factChips li svg { color: var(--wd-color-icon); }
+.factChips li[data-empty] { color: var(--wd-color-text-secondary); }
+.factChips li[data-hue] { background: var(--wd-hue-soft); color: var(--wd-hue); }
+.factChips li[data-hue] svg { color: currentColor; }
+.factChips li[data-done] { background: var(--wd-color-success-subtle); }
+.factChips li[data-done] svg { color: var(--wd-color-success); }
+.factChips li[data-warn] { background: var(--wd-color-warning-subtle); }
+.factChips li[data-warn] svg { color: var(--wd-color-warning); }
+.factChips li strong { font-weight: var(--wd-weight-semibold); }
+.roomNote { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

@@ -1,4 +1,4 @@
-import { loadEnquiryFacts, requirementContext, requirementProblems, throwProblems } from "../leads/enquiry-problems";
+import { loadEnquiryFacts, ProblemList, requirementContext, requirementProblems, throwProblems } from "../leads/enquiry-problems";
 import { carryTeamToOpportunity, teamRolesForType } from "../leads/lead-team";
 import { OpportunityDiscoveryService } from "./discovery.service";
 import { opportunityFunnel } from "./opportunity-funnel";
@@ -13,7 +13,7 @@ import { CrmEventsService } from "../shared/crm-events.service";
 import { canonicalHash, decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
-import { hasResolvedEnquiryType } from "../leads/lead-options";
+import { hasResolvedEnquiryType, loadLeadOptions } from "../leads/lead-options";
 import { thankForDeal } from "../conversations/inbox/client-followups";
 import { markProposalWon, type ProposalKind } from "./opportunity-proposals";
 import { tellDealOutcome } from "../leads/sales-attention";
@@ -21,6 +21,7 @@ import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm
 import { loadDealClosing } from "./deal-closing";
 import { takeForDeal } from "../../fulfilment/stock-reservations";
 import { cancelOpenFollowUps } from "./follow-ups";
+import { ownOpportunitySql, ownRecordsScope } from "../shared/record-scope";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -29,6 +30,7 @@ import {
   ListOpportunitiesQueryDto,
   OpportunityTeamMemberDto,
   PipelineStageDto,
+  QualificationOutcomeDto,
   QualifyLeadDto,
   TransitionOpportunityDto,
   UpdateOpportunityDto,
@@ -196,6 +198,11 @@ export class CrmOpportunitiesService {
         if (value) { values.push(value); clauses.push(`opportunity.${column} = $${values.length}`); }
       }
       if (query.status) { values.push(query.status); clauses.push(`opportunity.status = $${values.length}::crm_opportunity_status`); }
+      if (query.proposal2 === "withdrawn") clauses.push(`EXISTS (SELECT 1 FROM crm_opportunity_proposals withdrawn WHERE withdrawn.workspace_id = opportunity.workspace_id
+        AND withdrawn.opportunity_id = opportunity.id AND withdrawn.kind = 'main' AND withdrawn.withdrawal_status = 'confirmed')`);
+      // §0.3 P0 (guide C): without the right to see every enquiry, only one's own opportunities.
+      const own = await ownRecordsScope(client, this.access, workspaceId, actorUser.userId);
+      if (own) { values.push(own); clauses.push(ownOpportunitySql("opportunity", `$${values.length}`)); }
       if (query.search) { values.push(normalizeName(query.search)); clauses.push(`(party.normalized_name % $${values.length} OR lower(opportunity.title) LIKE '%' || $${values.length} || '%')`); }
       if (cursor) { values.push(cursor.value, cursor.id); clauses.push(`(opportunity.created_at, opportunity.id) < ($${values.length - 1}::timestamptz, $${values.length}::uuid)`); }
       values.push(query.limit + 1);
@@ -223,6 +230,9 @@ export class CrmOpportunitiesService {
   get(actor: RequestActor, workspaceId: string, opportunityId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.opportunities.view", async (client, actorUser) => {
       const opportunity = await this.requireOpportunity(client, workspaceId, opportunityId, false);
+      const own = await ownRecordsScope(client, this.access, workspaceId, actorUser.userId);
+      if (own && !(await client.query(`SELECT 1 FROM crm_opportunities opportunity WHERE opportunity.workspace_id = $1 AND opportunity.id = $2 AND ${ownOpportunitySql("opportunity", "$3")}`, [workspaceId, opportunityId, own])).rowCount)
+        throw new NotFoundException("Opportunity not found");
       const stakeholders = await client.query(`SELECT stakeholder.party_id AS "partyId", party.display_name AS "partyName", stakeholder.role, stakeholder.influence, stakeholder.is_primary AS "isPrimary" FROM crm_opportunity_stakeholders stakeholder JOIN crm_parties party ON party.id = stakeholder.party_id AND party.workspace_id = stakeholder.workspace_id WHERE stakeholder.workspace_id = $1 AND stakeholder.opportunity_id = $2 ORDER BY stakeholder.is_primary DESC, stakeholder.role`, [workspaceId, opportunityId]);
       const team = await client.query(`SELECT team.membership_id AS "membershipId", account.display_name AS name, team.role FROM crm_opportunity_team team JOIN workspace_memberships membership ON membership.id = team.membership_id JOIN users account ON account.id = membership.user_id WHERE team.workspace_id = $1 AND team.opportunity_id = $2 ORDER BY team.role, account.display_name`, [workspaceId, opportunityId]);
       const history = await client.query(`SELECT history.id, history.from_stage_id AS "fromStageId", from_stage.name AS "fromStageName", history.to_stage_id AS "toStageId", to_stage.name AS "toStageName", history.from_status AS "fromStatus", history.to_status AS "toStatus", history.reason, history.changed_at AS "changedAt" FROM crm_stage_history history LEFT JOIN crm_pipeline_stages from_stage ON from_stage.id = history.from_stage_id LEFT JOIN crm_pipeline_stages to_stage ON to_stage.id = history.to_stage_id WHERE history.workspace_id = $1 AND history.opportunity_id = $2 ORDER BY history.changed_at DESC`, [workspaceId, opportunityId]);
@@ -299,6 +309,11 @@ export class CrmOpportunitiesService {
       const opportunity = await this.createInTransaction(client, workspaceId, { ...input, leadId }, actorUser.userId, true, conversion);
       // PLM-100: the enquiry's team (and its designer) carries into the opportunity.
       await carryTeamToOpportunity(client, workspaceId, leadId, String(opportunity.id), actorUser.userId);
+      // §0.3 P0: no floor plan yet, only an estimate: the owner gets a task to get the real plan before the site visit.
+      if (facts?.floorPlan?.status === "not_available")
+        await client.query(`INSERT INTO crm_activities (workspace_id, party_id, opportunity_id, type, title, description, owner_membership_id, is_next_action, created_by)
+          VALUES ($1,$2,$3,'task','Get the floor plan before the site visit',$4,$5,false,$6)`,
+          [workspaceId, opportunity.party_id, opportunity.id, facts.floorPlan.builtUpArea ? `Estimate given: ${facts.floorPlan.builtUpArea}` : null, opportunity.owner_membership_id ?? null, actorUser.userId]);
       const updated = await client.query(
         `UPDATE crm_leads SET status='qualified',next_action_at=NULL,
            qualified_at=COALESCE(qualified_at,now()),qualification_evidence=$4,
@@ -368,6 +383,67 @@ export class CrmOpportunitiesService {
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.opportunity.updated.v1", entityType: "crm_opportunity", entityId: opportunityId, before, after: response });
       const canViewSensitiveValues = permissions.length > 1 || await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
       return this.presentOpportunity(response, canViewSensitiveValues);
+    });
+  }
+
+  /**
+   * §0.3 P0 (guide G): the intro's outcome. Going ahead names the scope (one of the firm's enquiry types) and needs the
+   * client's target completion date (saved on the enquiry); needs time to think books the follow-up on a date, as the
+   * opportunity's next action; lost closes it with the reason through the Lost transition. Version-checked and audited.
+   */
+  recordOutcome(actor: RequestActor, workspaceId: string, opportunityId: string, input: QualificationOutcomeDto) {
+    const permissions = input.outcome === "lost" ? ["crm.opportunities.manage", "crm.opportunities.transition"] : ["crm.opportunities.manage"];
+    return this.access.withPermissions(actor, workspaceId, permissions, async (client, actorUser) => {
+      const before = await this.requireOpportunity(client, workspaceId, opportunityId, true);
+      if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
+      if (String(before.status) !== "open") throw new UnprocessableEntityException("Reopen the opportunity before recording the intro outcome");
+      const canViewSensitiveValues = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
+      if (input.outcome === "lost") {
+        const reason = input.reason?.trim() ?? "";
+        new ProblemList().when(!reason, "reason", "Say why the opportunity was lost").throwIfAny();
+        const lost = (await client.query<{ id: string }>(`SELECT id FROM crm_pipeline_stages WHERE workspace_id = $1 AND pipeline_id = $2 AND code = 'lost' AND status = 'active' LIMIT 1`,
+          [workspaceId, before.pipeline_id])).rows[0];
+        const closed = await this.transitionWithin(client, actorUser.userId, workspaceId, opportunityId, { version: input.version, status: "lost", reason, ...(lost ? { stageId: lost.id } : {}) });
+        return this.presentOpportunity(closed as Row, canViewSensitiveValues);
+      }
+      const day = /^\d{4}-\d{2}-\d{2}$/;
+      const validDay = (value: string | undefined): value is string => Boolean(value && day.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value);
+      // A day of slack: the firm's calendar can be ahead of UTC.
+      const today = new Date().toISOString().slice(0, 10), yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+      const scope = input.scope?.trim() ?? "";
+      const problems = new ProblemList();
+      if (input.outcome === "proceed") {
+        const types = (await loadLeadOptions(client, workspaceId)).enquiryTypes;
+        problems.when(!hasResolvedEnquiryType(scope) || !types.some((type) => type.id === scope), "scope", "Choose what the client is going ahead with");
+        problems.when(!validDay(input.targetCompletion) || input.targetCompletion < yesterday, "targetCompletion", "Enter the client's target completion date");
+      } else {
+        problems.when(!validDay(input.followUpOn) || input.followUpOn < today, "followUpOn", "Book the follow-up date");
+      }
+      problems.throwIfAny();
+      if (input.outcome === "proceed")
+        await client.query(`UPDATE crm_enquiries enquiry SET details = jsonb_set(COALESCE(enquiry.details, '{}'::jsonb), '{targetCompletion}', to_jsonb($3::text)), version = enquiry.version + 1, updated_at = now()
+          FROM crm_leads lead WHERE lead.workspace_id = $1 AND lead.id = $2 AND enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+            AND enquiry.details->>'targetCompletion' IS DISTINCT FROM $3::text`,
+          [workspaceId, before.lead_id, input.targetCompletion]);
+      // Needs time: the follow-up is the opportunity's next action, at the start of the firm's working day.
+      const followUpAt = input.outcome === "needs_time" ? (await client.query<{ at: Date }>(
+        `SELECT ($2::date + time '09:00') AT TIME ZONE COALESCE(NULLIF(default_timezone, ''), 'UTC') AS at FROM workspaces WHERE id = $1`, [workspaceId, input.followUpOn])).rows[0]?.at ?? null : null;
+      const updated = (await client.query<Row>(
+        `UPDATE crm_opportunities SET qualification_outcome = $3, qualification_scope = $4, qualification_follow_up_on = $5::date,
+           qualification_outcome_at = now(), qualification_outcome_by = $6,
+           next_action_at = COALESCE($7::timestamptz, next_action_at), version = version + 1
+         WHERE workspace_id = $1 AND id = $2 RETURNING id`,
+        [workspaceId, opportunityId, input.outcome, input.outcome === "proceed" ? scope : null, input.outcome === "needs_time" ? input.followUpOn : null, actorUser.userId, followUpAt])).rows[0];
+      if (followUpAt) {
+        await client.query(`UPDATE crm_activities SET is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND opportunity_id = $2 AND is_next_action`, [workspaceId, opportunityId]);
+        await client.query(`INSERT INTO crm_activities (workspace_id, party_id, opportunity_id, type, title, owner_membership_id, due_at, is_next_action, created_by)
+          VALUES ($1,$2,$3,'task','Follow up: the client is thinking it over',$4,$5,true,$6)`, [workspaceId, before.party_id, opportunityId, before.owner_membership_id ?? null, followUpAt, actorUser.userId]);
+      }
+      const after = await this.requireOpportunity(client, workspaceId, String(updated.id), false);
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.opportunity.qualification_outcome.v1", entityType: "crm_opportunity", entityId: opportunityId,
+        before: { qualificationOutcome: before.qualification_outcome ?? null, qualificationScope: before.qualification_scope ?? null },
+        after: { qualificationOutcome: input.outcome, qualificationScope: input.outcome === "proceed" ? scope : null, targetCompletion: input.outcome === "proceed" ? input.targetCompletion : undefined, followUpOn: input.outcome === "needs_time" ? input.followUpOn : undefined } });
+      return this.presentOpportunity(after, canViewSensitiveValues);
     });
   }
 
@@ -694,7 +770,7 @@ export class CrmOpportunitiesService {
   private presentOpportunity(opportunity: Row, canViewSensitiveValues: boolean): Row {
     // Keep mutation and list/detail responses consistent for every linked CRM screen.
     const presented = { ...opportunity };
-    for (const [source, target] of Object.entries({ party_id: "partyId", lead_id: "leadId", pipeline_id: "pipelineId", stage_id: "stageId", owner_membership_id: "ownerMembershipId", currency_code: "currencyCode", reporting_currency_code: "reportingCurrencyCode", reporting_amount: "reportingAmount", next_action_at: "nextActionAt", expected_close_at: "expectedCloseAt", paused_reason: "pausedReason", outcome_reason: "outcomeReason", conversion_origin: "conversionOrigin", qualification_evidence: "qualificationEvidence", qualification_evidence_hash: "qualificationEvidenceHash", converted_by: "convertedBy", converted_at: "convertedAt", created_at: "createdAt", updated_at: "updatedAt" })) {
+    for (const [source, target] of Object.entries({ party_id: "partyId", lead_id: "leadId", pipeline_id: "pipelineId", stage_id: "stageId", owner_membership_id: "ownerMembershipId", currency_code: "currencyCode", reporting_currency_code: "reportingCurrencyCode", reporting_amount: "reportingAmount", next_action_at: "nextActionAt", expected_close_at: "expectedCloseAt", qualification_outcome: "qualificationOutcome", qualification_scope: "qualificationScope", qualification_follow_up_on: "qualificationFollowUpOn", qualification_outcome_at: "qualificationOutcomeAt", paused_reason: "pausedReason", outcome_reason: "outcomeReason", conversion_origin: "conversionOrigin", qualification_evidence: "qualificationEvidence", qualification_evidence_hash: "qualificationEvidenceHash", converted_by: "convertedBy", converted_at: "convertedAt", created_at: "createdAt", updated_at: "updatedAt" })) {
       if (Object.hasOwn(opportunity, source)) presented[target] = opportunity[source];
     }
     // The fingerprint is an internal replay guard, not part of the public CRM model.

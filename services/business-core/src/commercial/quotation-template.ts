@@ -51,13 +51,14 @@ export function quotationTemplateContent(
     exclusions: q.exclusions,
     presentation: q.presentation?{...q.presentation,details:q.presentation.details?Object.fromEntries(Object.entries(q.presentation.details).filter(([key])=>['companyName','preparedBy','estimator','manager'].includes(key))):undefined}:undefined,
     paymentTerms: q.paymentTerms.map(
-      ({ id, title, percent, trigger, requiredForRelease, requiredForProduction }) => ({
+      ({ id, title, percent, trigger, requiredForRelease, requiredForProduction, dueAtHandover }) => ({
         id,
         title,
         percent,
         trigger,
         requiredForRelease,
         requiredForProduction: requiredForProduction === true,
+        ...(dueAtHandover === true ? { dueAtHandover: true } : {}),
       }),
     ),
   });

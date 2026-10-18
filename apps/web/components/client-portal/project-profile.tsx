@@ -1,8 +1,8 @@
 "use client";
 
-import { BellRing, CalendarDays, ChevronRight, ExternalLink, Mail, MapPin, MessageCircle, Phone, UserRound, UsersRound, Wallet } from "lucide-react";
+import { BellRing, CalendarDays, ChevronRight, ExternalLink, Mail, MapPin, MessageCircle, Phone, ShoppingBag, UserRound, UsersRound, Wallet } from "lucide-react";
 import { useState } from "react";
-import { Avatar, Button, InlineNotice, Progress, SelectField } from "@/design-system";
+import { Avatar, Badge, Button, InlineNotice, Progress, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import { stageName } from "@/lib/client-portal/stage-names";
@@ -10,6 +10,8 @@ import type { PortalProject, PortalSite, PortalStep, PortalTeamMember, PortalTea
 import { formatPhoneForDisplay, whatsappUrl } from "@/lib/phone";
 import { daysBetween, isolate, type PortalFormat } from "./portal-format";
 import { usePortalLabels } from "./portal-labels";
+import { CLIENT_CHAPTER } from "./sections/portal-now";
+import { translateKnown } from "@/lib/i18n/keys";
 import styles from "./portal.module.css";
 import type { PortalTarget } from "./sections/section-types";
 
@@ -20,7 +22,7 @@ type Open = (target: PortalTarget) => void;
 export function useStepText(format: PortalFormat) {
   const t = useT();
   const kinds: Record<PortalStep["kind"], string> = {
-    quote: t("Quotation to decide"), design: t("Design to review"), definition: t("Requirements to confirm"), materials: t("Material list to sign off"), drawings: t("Drawings to approve"),
+    quote: t("Quotation to decide"), design: t("Design to review"), definition: t("Requirements to confirm"), materials: t("Material list to sign off"), drawings: t("Drawings to approve"), item_drawings: t("Shop drawings to sign"),
     handover: t("Handover to accept"), request: t("Question to answer"), invoice: t("Invoice to pay"), site_access: t("Confirm site access"),
     change: t("Change to approve"), presentation: t("Concepts to choose from"), choice: t("Choice to make"),
   };
@@ -41,6 +43,16 @@ function percentOf(project: PortalProject) {
 
 function StageSummary({ project }: { project: PortalProject }) {
   const t = useT();
+  // §0.3 P5: with a journey, where the job is reads from it (its chapter, in the client's words), so the side and the home agree.
+  const journey = project.journey;
+  if (journey && journey.progress.total) {
+    const share = project.status === "completed" ? 100 : Math.round((journey.progress.done / journey.progress.total) * 100);
+    return <div className={styles.profileStage}>
+      <p className={styles.profileStageTitle}>{journey.chapter ? translateKnown(t, CLIENT_CHAPTER[journey.chapter]) : t("All done")}</p>
+      <Progress label={t("How far the project is")} value={share} />
+      <span className={styles.muted}>{t("{percent}% complete", { percent: share })}</span>
+    </div>;
+  }
   const percent = percentOf(project);
   if (!project.stage && percent === null) return null;
   const stage = project.stage;
@@ -81,7 +93,8 @@ function KeyDates({ project, format, today }: { project: PortalProject; format: 
   const rows: Array<[string, string]> = [];
   // A start still ahead reads "Starts", never "Started" with a future date.
   if (project.startDate) rows.push([daysBetween(today, project.startDate) > 0 ? t("Starts") : t("Started"), format.date(project.startDate)]);
-  if (nextName) rows.push([t("Next milestone"), nextName]);
+  // With a journey, what comes next is told once, in "What happens next".
+  if (nextName && !project.journey) rows.push([t("Next milestone"), nextName]);
   if (project.handedOverOn) {
     rows.push([t("Handed over"), format.date(project.handedOverOn)]);
     if (project.warrantyUntil) rows.push([t("Warranty until"), format.date(project.warrantyUntil)]);
@@ -121,7 +134,7 @@ function Balance({ project, format, go }: { project: PortalProject; format: Port
       <span className={styles.itemText}>
         <span className={styles.muted}>{t("Next payment")}</span>
         <span className={styles.nextPaymentTitle} dir="auto">{next.title}{labels.states[next.status]
-          ? <span className={styles.state} data-tone={labels.states[next.status][1]}>{labels.states[next.status][0]}</span> : null}</span>
+          ? <Badge tone={labels.states[next.status][1]}>{labels.states[next.status][0]}</Badge> : null}</span>
         <span className={styles.itemMeta}>{[next.left ?? next.amount ? money(next.left ?? next.amount) : "", next.dueDate ? t("due {date}", { date: format.date(next.dueDate) }) : ""]
           .filter(Boolean).join(" · ")}</span>
       </span>
@@ -148,7 +161,7 @@ function Team({ project, site }: { project: PortalProject; site: PortalSite }) {
   const roles = useRoleLabels();
   const team: PortalTeamMember[] = project.team ?? (project.manager ? [{ roles: ["manager"], name: project.manager, email: null, avatar: null }] : []);
   const whatsapp = site.support.whatsapp ? whatsappUrl(site.support.whatsapp) : null;
-  const firm = Boolean(site.support.phone || whatsapp || site.support.email);
+  const firm = Boolean(site.support.phone || whatsapp || site.support.email || site.catalogueUrl);
   if (!team.length && !firm) return null;
   return <section className={styles.profileBlock} aria-labelledby={`team-${project.id}`}>
     <h2 className={styles.groupTitle} id={`team-${project.id}`}><UsersRound aria-hidden="true" className={styles.cardIcon} size={15} />{t("Your team")}</h2>
@@ -177,6 +190,8 @@ function Team({ project, site }: { project: PortalProject; site: PortalSite }) {
             rel="noreferrer" target="_blank"><MessageCircle aria-hidden="true" size={15} /></a> : null}
           {site.support.email ? <a aria-label={t("Email {name}", { name: site.brand.name })} className="wd-button wd-icon-button" data-size="compact" data-variant="quiet"
             href={`mailto:${site.support.email}`}><Mail aria-hidden="true" size={15} /></a> : null}
+          {site.catalogueUrl ? <a aria-label={t("Our catalogue")} className="wd-button wd-icon-button" data-size="compact" data-variant="quiet" href={site.catalogueUrl}
+            rel="noreferrer" target="_blank"><ShoppingBag aria-hidden="true" size={15} /></a> : null}
         </span>
       </li> : null}
     </ul>

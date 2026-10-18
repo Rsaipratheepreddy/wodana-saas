@@ -18,7 +18,7 @@ const site: PortalSite = {
 };
 const settings: PortalSettings = {
   workspaceId: W, slug: "studio", enabled: false, version: 3, sections: { progress: true, moodboard: true, decisions: true, payments: true, boq: false, documents: true, warranty: true, meetings: true, designs: true, messages: true },
-  progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, boqEnquiryTypes: [], welcomeTitle: "Welcome home", welcomeText: "", support: { phone: "", email: "", whatsapp: "" },
+  progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, boqEnquiryTypes: [], welcomeTitle: "Welcome home", welcomeText: "", support: { phone: "", email: "", whatsapp: "" }, catalogueUrl: ""
 };
 const contact: PortalContact = { id: G, name: "Maya", confirmedName: null, phone: "+12025550123", email: "maya@example.com", role: "approver", active: true,
   testContact: false, demoCode: false, lastSignedInAt: "2026-09-26T09:00:00.000Z", version: 2, signedIn: true };

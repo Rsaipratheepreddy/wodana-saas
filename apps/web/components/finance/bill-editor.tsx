@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, DateField, FormDialog, FormRow, FormSection, IconButton, InlineNotice, MoneyField, SelectField, TextInput, VisuallyHidden } from "@/design-system";
+import {
+  Button, DataGrid, DateField, FormDialog, FormRow, FormSection, IconButton, InlineNotice, MoneyField, PercentageInput, QuantityInput, SelectField, TextInput, VisuallyHidden, type DataGridColumn,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { captureApi, defaultTaxCode, usableCoding, waitForReading, type BillCoding, type CaptureState } from "@/lib/books/capture-client";
 import type { PayablesApi } from "@/lib/payables/client";
@@ -16,7 +18,6 @@ import { useProjectFormat } from "../project-core/format";
 import { plain } from "./finance-labels";
 import styles from "./finance.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 type LineDraft = {
   key: string; orderLineId: string | null; orderNumber: string | null; projectId: string | null; projectReference: string | null;
   description: string; unit: string; quantity: string; unitPrice: string; taxRate: string;
@@ -171,6 +172,32 @@ export function BillEditor({ api, vendors, companies, existing, capture, onClose
   const priced = useMemo(() => lines.map((line) => priceLine({ ...line, discountPercent: "0" }, decimals)), [lines, decimals]);
   const totals = orderTotals(priced, decimals);
   const money = (value: string) => (currency ? format.money(value, currency) : value);
+  const pricedByKey = new Map(lines.map((line, index) => [line.key, priced[index]]));
+  const hidden = (text: string) => <VisuallyHidden>{text}</VisuallyHidden>;
+  const columns: DataGridColumn<LineDraft>[] = [
+    { id: "item", header: t("Item"), size: 260, accessorFn: (line) => line.description, meta: { renderCell: (line) => <span className={styles.nameCell}>
+      {line.orderLineId ? <span>{line.description}</span>
+        : <TextInput aria-label={t("What")} label={null} placeholder={t("Delivery, installation…")} value={line.description} onChange={(description) => setLine(line.key, { description })} />}
+      <small>{[line.orderNumber, line.projectReference].filter(Boolean).join(" · ")}</small>
+      {coding ? <BillLineCoding booksAccountId={line.booksAccountId} coding={coding} item={line.description || t("line")} taxCode={line.taxCode}
+        onChange={(patch) => setLine(line.key, { ...patch, ...(patch.taxCode !== undefined ? { taxAuto: false } : {}) })} /> : null}
+    </span> } },
+    { id: "quantity", header: t("Quantity"), size: 130, accessorFn: (line) => line.quantity, meta: { align: "end", renderCell: (line) =>
+      <QuantityInput label={hidden(t("Quantity for {item}", { item: line.description }))} unit={line.unit || undefined} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={line.quantity === "" ? Number.NaN : Number(line.quantity)} onChange={(next) => setLine(line.key, { quantity: Number.isFinite(next) ? String(next) : "" })} /> } },
+    { id: "price", header: t("Price"), size: 140, accessorFn: (line) => line.unitPrice, meta: { align: "end", renderCell: (line) =>
+      <MoneyField label={hidden(t("Price for {item}", { item: line.description }))} currency={currency || undefined} value={line.unitPrice} onChange={(unitPrice) => setLine(line.key, { unitPrice })} /> } },
+    { id: "tax", header: t("Tax %"), size: 110, accessorFn: (line) => line.taxRate, meta: { align: "end", renderCell: (line) =>
+      <PercentageInput label={hidden(t("Tax for {item}", { item: line.description }))} formatOptions={{ maximumFractionDigits: 4 }}
+        value={line.taxRate === "" ? Number.NaN : Number(line.taxRate)} onChange={(next) => setLine(line.key, { taxRate: Number.isFinite(next) ? String(next) : "" })} /> } },
+    { id: "total", header: t("Total"), size: 130, accessorFn: (line) => pricedByKey.get(line.key)?.total ?? "", meta: { align: "end", renderCell: (line) => {
+      const total = pricedByKey.get(line.key)?.total;
+      return <span className={styles.money}>{total ? money(total) : "—"}</span>;
+    } } },
+    { id: "remove", header: "", size: 56, enableSorting: false, meta: { renderCell: (line) =>
+      <IconButton aria-label={t("Remove {item}", { item: line.description || t("line") })} size="compact" variant="quiet"
+        onPress={() => setLines(lines.filter((item) => item.key !== line.key))}><X aria-hidden="true" size={14} /></IconButton> } },
+  ];
   const ready = Boolean(vendorId && legalEntityId && /^[A-Z]{3}$/.test(currency) && number.trim() && invoiceDate && lines.length && priced.every(Boolean)
     && lines.every((line) => line.orderLineId || line.description.trim()));
 
@@ -221,28 +248,8 @@ export function BillEditor({ api, vendors, companies, existing, capture, onClose
       <FormSection title={t("Lines")}>
       {vendorId && orders.length ? <SelectField label={t("Add lines from an order")} placeholder={t("Choose an order")} selectedKey={null}
         onSelectionChange={(key) => { if (key) void addOrder(String(key)); }} items={orders.map((order) => ({ id: order.id, label: `${order.number} · ${format.money(order.total, order.currency)}` }))} /> : null}
-      {lines.length ? <div className={styles.lines} role="table" aria-label={t("Lines")}>
-        <div role="row" className={styles.lineHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Quantity")}</span>
-          <span role="columnheader">{t("Price")}</span><span role="columnheader">{t("Tax %")}</span><span role="columnheader">{t("Total")}</span><span /></div>
-        {lines.map((line, index) => <div role="row" key={line.key} className={styles.line}>
-          <span role="cell" className={styles.nameCell}>
-            {line.orderLineId ? <span>{line.description}</span>
-              : <TextInput aria-label={t("What")} label={null} placeholder={t("Delivery, installation…")} value={line.description} onChange={(description) => setLine(line.key, { description })} />}
-            <small>{[line.orderNumber, line.projectReference].filter(Boolean).join(" · ")}</small>
-            {coding ? <BillLineCoding booksAccountId={line.booksAccountId} coding={coding} item={line.description || t("line")} taxCode={line.taxCode}
-              onChange={(patch) => setLine(line.key, { ...patch, ...(patch.taxCode !== undefined ? { taxAuto: false } : {}) })} /> : null}
-          </span>
-          <span role="cell"><TextInput aria-label={t("Quantity for {item}", { item: line.description })} label={null} inputMode="decimal" suffix={line.unit || undefined}
-            value={line.quantity} onChange={(value) => setLine(line.key, { quantity: numeric(value) })} /></span>
-          <span role="cell"><MoneyField label={<VisuallyHidden>{t("Price for {item}", { item: line.description })}</VisuallyHidden>} currency={currency || undefined} value={line.unitPrice}
-            onChange={(unitPrice) => setLine(line.key, { unitPrice })} /></span>
-          <span role="cell"><TextInput aria-label={t("Tax for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.taxRate}
-            onChange={(value) => setLine(line.key, { taxRate: numeric(value) })} /></span>
-          <span role="cell" className={styles.money}>{priced[index] ? money(priced[index]!.total) : "—"}</span>
-          <span role="cell"><IconButton aria-label={t("Remove {item}", { item: line.description || t("line") })} size="compact" variant="quiet"
-            onPress={() => setLines(lines.filter((item) => item.key !== line.key))}><X aria-hidden="true" size={14} /></IconButton></span>
-        </div>)}
-      </div> : captured?.proposal && !captured.proposal.lines.length ? <InlineNotice message={t("Woddy couldn't read the lines. Add them from the photo.")} /> : null}
+      {lines.length ? <DataGrid ariaLabel={t("Lines")} data={lines} getRowId={(line) => line.key} columns={columns}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} /> : captured?.proposal && !captured.proposal.lines.length ? <InlineNotice message={t("Woddy couldn't read the lines. Add them from the photo.")} /> : null}
       <div><Button size="compact" variant="quiet" isDisabled={!vendorId} onPress={addCharge}><Plus aria-hidden="true" size={14} />{t("Add a charge not on an order")}</Button></div>
       <MoneyField label={t("Total on the invoice")} currency={currency || undefined} value={statedTotal} onChange={setStatedTotal} description={hint("total", statedTotal === seed?.statedTotal)} />
       {lines.length ? <dl className={styles.totals}>

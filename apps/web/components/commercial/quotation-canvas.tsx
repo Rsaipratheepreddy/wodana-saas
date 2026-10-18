@@ -41,6 +41,7 @@ import {
 } from "./quotation-document-page";
 import "@xyflow/react/dist/style.css";
 import {QuoteRichText} from "./quotation-rich-text";
+import { Button, IconButton, NumericInput, TextAreaField } from "@/design-system";
 import styles from "./quotation-canvas.module.css";
 
 const PAGE_WIDTH = 940;
@@ -266,16 +267,16 @@ function SequentialWorkspace({ quote, brand, customerName, readOnly = false, onC
       <header className={styles.toolbar}>
         <div>
           {toolbarStart}
-          {!readOnly ? <button type="button" className={styles.addItem} onClick={onEditItems}><Plus size={15} />{t("Add item")}</button> : null}
-          {!readOnly ? <button type="button" onClick={addText}><Type size={15} />{t("Text")}</button> : null}
-          {!readOnly ? <button type="button" onClick={() => imageInput.current?.click()}><ImagePlus size={15} />{t("Image")}</button> : null}
+          {!readOnly ? <Button size="compact" variant="primary" onPress={onEditItems}><Plus size={15} />{t("Add item")}</Button> : null}
+          {!readOnly ? <Button size="compact" onPress={addText}><Type size={15} />{t("Text")}</Button> : null}
+          {!readOnly ? <Button size="compact" onPress={() => imageInput.current?.click()}><ImagePlus size={15} />{t("Image")}</Button> : null}
           <input ref={imageInput} hidden type="file" accept="image/*" onChange={(event) => { void addImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
         </div>
         <div>
           {toolbarEnd}
           {!readOnly && activePage ? <label className={styles.colorTool}>{t("Page")}{" "}<input aria-label={t("Page background colour")} type="color" value={activeOverride?.background ?? presentation.pageBackground} onChange={(event) => updatePage(activePage.id, { background: event.target.value })} /></label> : null}
-          {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />{t("Background")}</button> : null}
-          {activeOverride?.backgroundImage && !readOnly ? <button type="button" onClick={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />{t("Remove")}</button> : null}
+          {!readOnly ? <Button size="compact" onPress={() => backgroundInput.current?.click()}><Upload size={14} />{t("Background")}</Button> : null}
+          {activeOverride?.backgroundImage && !readOnly ? <Button size="compact" onPress={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />{t("Remove")}</Button> : null}
           <input ref={backgroundInput} hidden type="file" accept="image/*" onChange={(event) => { void addImage(event.target.files?.[0], true); event.currentTarget.value = ""; }} />
         </div>
       </header>
@@ -310,7 +311,7 @@ function SequentialWorkspace({ quote, brand, customerName, readOnly = false, onC
                   ) : (
                     <textarea aria-label={t("Custom quotation text")} value={element.text ?? ""} style={{ color: element.color ?? presentation.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? "left" }} onChange={(event) => updateElement(page.id, element.id, { text: event.target.value })} />
                   )}
-                  {!readOnly ? <button type="button" aria-label={t("Remove custom element")} onClick={(event) => { event.stopPropagation(); updatePage(page.id, { elements: (override?.elements ?? []).filter((candidate) => candidate.id !== element.id) }); }}><Trash2 size={13} /></button> : null}
+                  {!readOnly ? <IconButton size="compact" aria-label={t("Remove custom element")} onPress={() => { updatePage(page.id, { elements: (override?.elements ?? []).filter((candidate) => candidate.id !== element.id) }); }}><Trash2 aria-hidden="true" size={13} /></IconButton> : null}
                 </div>
               ))}
             </section>
@@ -574,8 +575,7 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
           {pages.map((page, index) => {
             const override = pageOverride(presentation, page.id);
             return (
-              <button
-                type="button"
+              <button type="button"
                 key={page.id}
                 title={page.title}
                 aria-current={page.id === activePage?.id ? "page" : undefined}
@@ -596,19 +596,19 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
         <header className={styles.toolbar}>
           <div>
             {toolbarStart}
-            {!readOnly ? <button type="button" className={styles.addItem} onClick={onEditItems}><Plus size={15} />{t("Add item")}</button> : null}
-            {!readOnly ? <button type="button" onClick={addText}><Type size={15} />{t("Text")}</button> : null}
-            {!readOnly ? <button type="button" onClick={() => imageInput.current?.click()}><ImagePlus size={15} />{t("Image")}</button> : null}
+            {!readOnly ? <Button size="compact" variant="primary" onPress={onEditItems}><Plus size={15} />{t("Add item")}</Button> : null}
+            {!readOnly ? <Button size="compact" onPress={addText}><Type size={15} />{t("Text")}</Button> : null}
+            {!readOnly ? <Button size="compact" onPress={() => imageInput.current?.click()}><ImagePlus size={15} />{t("Image")}</Button> : null}
             <input ref={imageInput} hidden type="file" accept="image/*" onChange={(event) => { void addImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
           </div>
           <div className={styles.pageTools}>
             {toolbarEnd}
-            <button type="button" aria-expanded={pageMenu} onClick={() => setPageMenu(!pageMenu)}><Palette size={15} />{t("Page")}</button>
+            <Button size="compact" aria-expanded={pageMenu} onPress={() => setPageMenu(!pageMenu)}><Palette size={15} />{t("Page")}</Button>
             {pageMenu ? (
               <div className={styles.pagePopover}>
                 <label>{t("Background")}{" "}<input type="color" value={activeOverride?.background ?? presentation.pageBackground} disabled={readOnly} onChange={(event) => activePage && updatePage(activePage.id, { background: event.target.value })} /></label>
-                {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />{t("Upload background")}</button> : null}
-                {activeOverride?.backgroundImage && !readOnly ? <button type="button" onClick={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />{t("Remove image")}</button> : null}
+                {!readOnly ? <Button size="compact" onPress={() => backgroundInput.current?.click()}><Upload size={14} />{t("Upload background")}</Button> : null}
+                {activeOverride?.backgroundImage && !readOnly ? <Button size="compact" onPress={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />{t("Remove image")}</Button> : null}
                 <input ref={backgroundInput} hidden type="file" accept="image/*" onChange={(event) => { void setBackground(event.target.files?.[0]); event.currentTarget.value = ""; }} />
               </div>
             ) : null}
@@ -650,33 +650,33 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
 
       {selected || pageSelected ? (
         <aside className={styles.inspector} aria-label={t("Selected element properties")}>
-          <header><strong>{t(pageSelected ? "Page" : selected?.type === "text" ? "Text" : "Image")}</strong><button type="button" aria-label={t("Close properties")} onClick={() => setSelectedId("")}><X size={15} /></button></header>
+          <header><strong>{t(pageSelected ? "Page" : selected?.type === "text" ? "Text" : "Image")}</strong><IconButton size="compact" aria-label={t("Close properties")} onPress={() => setSelectedId("")}><X aria-hidden="true" size={15} /></IconButton></header>
           {pageSelected ? (
             <div className={styles.inspectorBody}>
               <label>{t("Background")}<input type="color" value={activeOverride?.background ?? presentation.pageBackground} disabled={readOnly} onChange={(event) => activePage && updatePage(activePage.id, { background: event.target.value })} /></label>
-              {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />{t("Background image")}</button> : null}
-              {activePage?.kind === "room" ? <button type="button" className={styles.editItems} onClick={onEditItems}><Plus size={14} />{t("Edit quotation items")}</button> : null}
+              {!readOnly ? <Button size="compact" onPress={() => backgroundInput.current?.click()}><Upload size={14} />{t("Background image")}</Button> : null}
+              {activePage?.kind === "room" ? <Button size="compact" variant="primary" onPress={onEditItems}><Plus size={14} />{t("Edit quotation items")}</Button> : null}
               <p>{t("Smart content is synced from the quotation. Add free text and images from the top toolbar.")}</p>
             </div>
           ) : selected?.type === "text" ? (
             <div className={styles.inspectorBody}>
-              <label>{t("Content")}<textarea value={selected.text ?? ""} disabled={readOnly} onChange={(event) => updateElement(selected.id, { text: event.target.value })} /></label>
-              <label>{t("Size")}<input type="number" min="10" max="96" value={selected.fontSize ?? 28} disabled={readOnly} onChange={(event) => updateElement(selected.id, { fontSize: Math.max(10, Math.min(96, Number(event.target.value) || 10)) })} /></label>
+              <TextAreaField label={t("Content")} value={selected.text ?? ""} isDisabled={readOnly} onChange={(text) => updateElement(selected.id, { text })} />
+              <NumericInput label={t("Size")} minValue={10} maxValue={96} value={selected.fontSize ?? 28} isDisabled={readOnly} onChange={(value) => updateElement(selected.id, { fontSize: Math.max(10, Math.min(96, value || 10)) })} />
               <label>{t("Colour")}<input type="color" value={selected.color ?? presentation.textColor} disabled={readOnly} onChange={(event) => updateElement(selected.id, { color: event.target.value })} /></label>
               <div className={styles.align} aria-label={t("Text alignment")}>
                 {(["left", "center", "right"] as const).map((align) => {
                   const Icon = align === "left" ? AlignLeft : align === "center" ? AlignCenter : AlignRight;
-                  return <button type="button" key={align} aria-label={t(align === "left" ? "Align left" : align === "center" ? "Align center" : "Align right")} aria-pressed={(selected.align ?? "left") === align} disabled={readOnly} onClick={() => updateElement(selected.id, { align })}><Icon size={15} /></button>;
+                  return <IconButton size="compact" key={align} aria-label={t(align === "left" ? "Align left" : align === "center" ? "Align center" : "Align right")} aria-pressed={(selected.align ?? "left") === align} isDisabled={readOnly} onPress={() => updateElement(selected.id, { align })}><Icon aria-hidden="true" size={15} /></IconButton>;
                 })}
               </div>
             </div>
           ) : (
-            <div className={styles.inspectorBody}><p>{t("Move and resize the image directly on the page.")}</p><button type="button" disabled={readOnly} onClick={() => imageInput.current?.click()}><Upload size={14} />{t("Add another image")}</button></div>
+            <div className={styles.inspectorBody}><p>{t("Move and resize the image directly on the page.")}</p><Button size="compact" isDisabled={readOnly} onPress={() => imageInput.current?.click()}><Upload size={14} />{t("Add another image")}</Button></div>
           )}
           {selected ? <div className={styles.inspectorBody}>
-            {([['x', tKey('Horizontal position')], ['y', tKey('Vertical position')], ['width', tKey('Width')], ['height', tKey('Height')]] as const).map(([key, label]) => <label key={key}>{t(label)}<input type="number" min={key === 'width' || key === 'height' ? 24 : 0} max={key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT} value={Math.round(selected[key])} disabled={readOnly} onChange={event => updateElement(selected.id, { [key]: Math.max(key === 'width' || key === 'height' ? 24 : 0, Math.min(key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT, Number(event.target.value) || 0)) })}/></label>)}
+            {([['x', tKey('Horizontal position')], ['y', tKey('Vertical position')], ['width', tKey('Width')], ['height', tKey('Height')]] as const).map(([key, label]) => <NumericInput key={key} label={t(label)} minValue={key === 'width' || key === 'height' ? 24 : 0} maxValue={key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT} value={Math.round(selected[key])} isDisabled={readOnly} onChange={value => updateElement(selected.id, { [key]: Math.max(key === 'width' || key === 'height' ? 24 : 0, Math.min(key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT, value || 0)) })}/>)}
           </div> : null}
-          {selected && !readOnly ? <button type="button" className={styles.deleteElement} onClick={() => { updatePage(activePage!.id, { elements: (activeOverride?.elements ?? []).filter((element) => element.id !== selected.id) }); setSelectedId(""); }}><Trash2 size={14} />{t("Delete element")}</button> : null}
+          {selected && !readOnly ? <Button size="compact" className={styles.deleteElement} onPress={() => { updatePage(activePage!.id, { elements: (activeOverride?.elements ?? []).filter((element) => element.id !== selected.id) }); setSelectedId(""); }}><Trash2 size={14} />{t("Delete element")}</Button> : null}
         </aside>
       ) : null}
     </section>

@@ -1,8 +1,9 @@
 import { personDisplayName } from "@/design-system/components/person";
 import type { CaseDesign, DesignOptions } from "./content";
+import type { Revisions } from "./design-decisions";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
-export type JourneyStageKey = "inspiration" | "kickoff" | "site_visit" | "concepts" | "space_planning" | "material_selection" | "renders" | "samples" | "approval";
+export type JourneyStageKey = "inspiration" | "kickoff" | "site_visit" | "moodboards" | "concepts" | "space_planning" | "material_selection" | "renders" | "samples" | "final_render" | "approval";
 /**
  * Work inside a step (PLM-141, PLM-144, PLM-151): the design team to allocate, the design site measure, the sample
  * collection; PLM-146: the finishes marked and sent to QS once the samples are approved.
@@ -19,7 +20,7 @@ export type TeamSlotView = { slot: TeamSlotKey; role: string; label: string | nu
 export type SiteVisitState = {
   within: "stage" | "task"; open: boolean; done: boolean; version: number; dueAt: string | null; ownerName: string | null; scheduledAt: string | null; completedAt: string | null; overdue: boolean;
 };
-export const DELIVERABLE_STAGES: JourneyStageKey[] = ["space_planning", "concepts", "material_selection", "renders"];
+export const DELIVERABLE_STAGES: JourneyStageKey[] = ["moodboards", "space_planning", "concepts", "material_selection", "renders"];
 export const isDeliverableStage = (stage: string | null | undefined) => DELIVERABLE_STAGES.includes(stage as JourneyStageKey);
 
 export type JourneyStageView = {
@@ -28,8 +29,8 @@ export type JourneyStageView = {
   progress?: { total: number; approved: number; pending: number } | null;
   /** PLM-049/051: the client-facing deadline next to the internal `dueAt`. */
   clientDueAt?: string | null;
-  /** PLM-049/051: revisions shown to the client on this stage against the package's included ones. */
-  revisions?: { used: number; included: number; chargeable: boolean } | null;
+  /** PLM-049/051: changes the client asked for on this stage against the package's free revisions, and the extra revision's change. */
+  revisions?: Revisions | null;
   /** How the stage ended: completed, approved, chosen, skipped, not_required, material_list_confirmed, timer_ended, closed_early, signed_off. */
   outcome?: string | null; completedByName?: string | null;
   activityId?: string | null; bookingReminder?: boolean;
@@ -62,6 +63,8 @@ export type ChecklistGroupRead = {
 export type SiteAnswerInput = { key: string; answer: string; status?: CheckStatus | null };
 export type SiteMeasurement = { title: string; status: string; files: number; roomId?: string | null };
 export type JourneyView = {
+  /** §0.3 P3: the firm's kick-off questions, the version this job answers and its answers so far. */
+  kickoffQuestions?: import("@/lib/setup/questionnaires").QuestionnaireAnswers | null;
   journey: {
     packageName: string | null; includedRevisions: number | null; includesSpacePlanning?: boolean; includesRenders?: boolean;
     /** `design` after Won with a package; `site_and_materials` for a furniture/joinery order (PLM-080/081). */
@@ -82,6 +85,8 @@ export type JourneyView = {
   team?: { slots: TeamSlotView[]; candidates?: Array<{ id: string; displayName: string }>; missing: TeamSlotKey[]; reviewRole: string | null; version: number } | null;
   /** What the journey will be before it starts: a design package, or a furniture/joinery order's site visit and materials. */
   startsAs?: "design" | "site_and_materials" | null;
+  /** Guide §3: why the design can't start yet (the Design Fee not paid and verified); null when it can. */
+  startBlocker?: string | null;
   stages: JourneyStageView[]; canStart?: boolean; canManage?: boolean; canEdit?: boolean; canReview?: boolean; canRecordClient?: boolean; timezone: string;
   measurements?: SiteMeasurement[]; siteEvidenceProblem?: string | null;
   checklist?: SiteChecklistItem[]; siteChecklistProblem?: string | null;
@@ -124,12 +129,13 @@ export const TEAM_SLOT_LABEL: Record<TeamSlotKey, MessageKey> = {
 
 /** The document type a new file in a stage starts with; the designer can change it. */
 export const STAGE_DOCUMENT_TYPE: Record<string, string> = {
-  space_planning: "Space plan / furniture layout", concepts: "Concept / mood board",
+  moodboards: "Concept / mood board", space_planning: "Space plan / furniture layout", concepts: "Concept / mood board",
   material_selection: "Material / finish board", renders: "3D render / visualization",
 };
 
+// Guide L: Not started · In progress · Sent to client · Changes requested · Approved (the team's review steps read as In progress).
 export const DESIGN_STATUS_LABEL: Record<string, MessageKey> = {
-  draft: tKey("Draft"), internal_review: tKey("In review"), internal_approved: tKey("Ready to present"), client_review: tKey("With client"),
+  draft: tKey("In progress"), internal_review: tKey("In progress"), internal_approved: tKey("In progress"), client_review: tKey("Sent to client"),
   approved: tKey("Approved"), changes_requested: tKey("Changes requested"), rejected: tKey("Rejected"), expired: tKey("Client review expired"),
 };
 export const designStatusTone = (status: string): "neutral" | "info" | "warning" | "success" | "danger" =>

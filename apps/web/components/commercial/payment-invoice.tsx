@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw, ExternalLink, FileText } from "lucide-react";
-import { Button, Checkbox, FormDialog, InlineNotice, MoreDetails, RadioSet, SearchInput, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { Button, Checkbox, FormDialog, InlineNotice, MoreDetails, RadioSet, SearchInput, SelectField, Skeleton, TextInput, useDesignSystem } from "@/design-system";
 import { toMinor } from "@/lib/money-exact";
 import { jsonRequest, money } from "@/lib/commercial/client";
 import type { Payment } from "@/lib/commercial/types";
@@ -250,7 +250,7 @@ export function PaymentInvoice({
                 description: `${i.date} · ${shown(i.total, i.currency)} · ${t("Open")} ${shown(i.balance, i.currency)} · ${matching(i) ? t("Matches milestone") : t("Amount or currency differs")}`,
               }))} />
             {!loading && !visible.length && <p className={s.muted}>{t("No matching invoices in the loaded pages.")}</p>}
-            {loading && <p role="status" className={s.muted}>{t("Loading invoices from your accounting company…")}</p>}
+            {loading && <Skeleton lines={3} />}
             {hasMore && (
               <Button isDisabled={loading} size="compact" variant="quiet"
                 onPress={() => { const c = connections.find((c) => c.id === connectionId); if (c) void loadInvoices(c, page + 1); }}>

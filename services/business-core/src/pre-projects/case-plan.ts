@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import type { FlowDefinition, FlowStepDefinition } from "../crm/flows/flow-definition";
-import { areasFor, loadWonAreas, type WonArea } from "../crm/flows/flow-won-areas";
+import { areasFor, effectiveWonAreas, loadWonAreas, type WonArea } from "../crm/flows/flow-won-areas";
 import type { FurniturePath } from "../crm/opportunities/flow-gates";
 import { FURNITURE_RULES, isFurnitureFlow, loadRules, ruleFor, type FulfilmentRule, type RuleSettings } from "../fulfilment/fulfilment-rules";
 import { engagementPhases, type EngagementPhase } from "./engagement-lifecycle";
@@ -128,8 +128,9 @@ export async function casePlans(db: Db, workspaceId: string, caseIds: string[]):
     if (!row.flowId) { plans.set(row.caseId, FULL_PLAN); continue; }
     if (!rules.has(row.flowId)) {
       const own = await loadRules(db, workspaceId, row.flowId);
-      rules.set(row.flowId, own.length || !(await isFurnitureFlow(db, workspaceId, row.flowId)) ? own : FURNITURE_RULES.map((rule) => ({ ...rule, version: 0 })));
-      areas.set(row.flowId, await loadWonAreas(db, workspaceId, row.flowId));
+      const furniture = await isFurnitureFlow(db, workspaceId, row.flowId);
+      rules.set(row.flowId, own.length || !furniture ? own : FURNITURE_RULES.map((rule) => ({ ...rule, version: 0 })));
+      areas.set(row.flowId, effectiveWonAreas(await loadWonAreas(db, workspaceId, row.flowId), furniture));
     }
     const flowRules = rules.get(row.flowId)!;
     const settings = flowRules.length ? ruleFor(flowRules, row.furniturePath) : null;

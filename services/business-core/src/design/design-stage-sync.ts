@@ -5,7 +5,7 @@ import type { JourneyStage } from "./design-journey.domain";
 type Db = Pick<PoolClient, "query">;
 
 /** Stages whose work is design deliverables (drawings, boards, renders) reviewed and approved per room. */
-export const DELIVERABLE_STAGES = ["space_planning", "concepts", "material_selection", "renders"] as const;
+export const DELIVERABLE_STAGES = ["moodboards", "space_planning", "concepts", "material_selection", "renders"] as const;
 export type DeliverableStage = (typeof DELIVERABLE_STAGES)[number];
 export const isDeliverableStage = (stage: string | null | undefined): stage is DeliverableStage => (DELIVERABLE_STAGES as readonly string[]).includes(stage ?? "");
 
@@ -33,10 +33,15 @@ export async function siteMeasureDone(db: Db, workspaceId: string, caseId: strin
   return !(await db.query(`SELECT 1 FROM design_journey_tasks WHERE workspace_id = $1 AND case_id = $2 AND task = 'site_measure' AND status <> 'done'`, [workspaceId, caseId])).rowCount;
 }
 
+/** The order a case's journey runs in (1, 2 or 3). */
+async function flowOf(db: Db, workspaceId: string, caseId: string) {
+  return Number((await db.query<{ flow: number }>(`SELECT flow_version AS flow FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.flow ?? 1);
+}
+
 /** The current order's renders end with the client's render sign-off (PLM-143), not with approved files. */
 async function signOffEnds(db: Db, workspaceId: string, caseId: string, stage: JourneyStage) {
   if (stage !== "renders") return false;
-  return Boolean((await db.query(`SELECT 1 FROM design_journeys WHERE workspace_id = $1 AND case_id = $2 AND flow_version = 2`, [workspaceId, caseId])).rowCount);
+  return Boolean((await db.query(`SELECT 1 FROM design_journeys WHERE workspace_id = $1 AND case_id = $2 AND flow_version >= 2`, [workspaceId, caseId])).rowCount);
 }
 
 /**
@@ -52,6 +57,13 @@ export async function syncDesignStages(db: Db, workspaceId: string, caseId: stri
       `SELECT stage FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND status = 'active' ORDER BY position LIMIT 1 FOR UPDATE`, [workspaceId, caseId])).rows[0]?.stage;
     if (!active || !isDeliverableStage(active)) break;
     const progress = (await stageProgress(db, workspaceId, caseId)).find((item) => item.stage === active)!;
+    // Guide step 6: space planning is a PDF the team uploads (no client approval), once the site measure is in.
+    if (active === "space_planning" && await flowOf(db, workspaceId, caseId) === 3) {
+      if (progress.total === 0 || !(await siteMeasureDone(db, workspaceId, caseId))) break;
+      await completeStage(db, workspaceId, caseId, active, userId, null, "uploaded");
+      completed.push(active);
+      continue;
+    }
     if (progress.total === 0 || progress.pending > 0) break;
     if (active === "concepts" && !(await siteMeasureDone(db, workspaceId, caseId))) break;
     if (await signOffEnds(db, workspaceId, caseId, active)) break;

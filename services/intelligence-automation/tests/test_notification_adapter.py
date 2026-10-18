@@ -99,6 +99,35 @@ async def test_an_approval_push_shows_approve_and_names_the_row_to_decide() -> N
     assert sent["data"]["approval"] == {"kind": "order", "id": order, "version": 5}
 
 
+@pytest.mark.asyncio
+async def test_a_moment_push_shows_the_firms_button_and_its_own_title() -> None:
+    http = FakeHttp(FakeResponse({"data": {"status": "ok", "id": "expo-ticket"}}))
+    await connected(http).deliver(DeliveryJob.model_validate({
+        "id": NOTIFICATION_ID, "workspaceId": WORKSPACE_ID, "attempt": 1,
+        "channel": "push", "subject": "Villa 12", "body": "Now: Mood boards · Design (14 of 41)",
+        "destination": {"tokenReference": REFERENCE}, "deepLink": "/workspace/jobs/x",
+        "eventType": "project.job_step", "pushCategory": "review",
+    }))
+    sent = http.requests[0][1]["json"]
+    assert isinstance(sent, dict)
+    assert sent["categoryId"] == "review"
+    assert sent["title"] == "Villa 12"
+    assert "approval" not in sent["data"]
+
+
+@pytest.mark.asyncio
+async def test_a_push_without_a_title_never_names_the_platform() -> None:
+    http = FakeHttp(FakeResponse({"data": {"status": "ok", "id": "expo-ticket"}}))
+    await connected(http).deliver(DeliveryJob(
+        id=UUID(NOTIFICATION_ID), workspaceId=UUID(WORKSPACE_ID), attempt=1,
+        channel="push", subject=None, body="A lead needs you",
+        destination={"tokenReference": REFERENCE},
+    ))
+    sent = http.requests[0][1]["json"]
+    assert isinstance(sent, dict)
+    assert "title" not in sent
+
+
 def test_an_unknown_push_category_is_refused() -> None:
     with pytest.raises(ValueError):
         DeliveryJob.model_validate({

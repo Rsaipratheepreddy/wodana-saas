@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
-  Badge, Button, ConfirmationDialog, DataGrid, DateField, ErrorState, FormDialog, IconButton, InlineNotice, MoneyField, SelectField, Skeleton, TextAreaField, TextInput,
+  AmountList, Badge, Button, ConfirmationDialog, DataGrid, DateField, ErrorState, IconButton, InlineNotice, MoneyField, ReviewDialog, SelectField, Skeleton, TextInput,
   useDesignSystem, VisuallyHidden, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -75,7 +75,7 @@ export function ManualJournalEditor({ workspaceId, legalEntityId, journalId = nu
   const [saved, setSaved] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [returning, setReturning] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
   const adopt = useCallback((next: JournalDetail) => {
@@ -158,6 +158,11 @@ export function ManualJournalEditor({ workspaceId, legalEntityId, journalId = nu
         party: partyId ? { type, id: partyId } : null };
     }),
   }));
+  // An approver approves or sends it back from the review; a failure shows there and the review stays open.
+  const decide = async (command: "approve" | "return", body: Record<string, unknown>) => {
+    const next = await api.command(id, command, body);
+    adopt(next); onDone?.(next); setReviewing(false);
+  };
   const submit = async () => {
     const latest = dirty || !detail ? await save() : detail;
     if (latest) await run(() => api.command(id, "submit", { version: latest.journal.version }));
@@ -166,7 +171,7 @@ export function ManualJournalEditor({ workspaceId, legalEntityId, journalId = nu
   const lockDate = options.settings?.lockDate;
 
   return <div className={styles.editor}>
-    {detail ? <div className={styles.status}>
+    {detail ? <div className={styles.reference}>
       <strong>{detail.journal.reference}</strong>
       <Badge tone={status === "approved" ? "success" : status === "returned" ? "warning" : status === "cancelled" ? "neutral" : "info"}>{t(JOURNAL_STATUS_LABELS[status!])}</Badge>
       {detail.journal.postedNumber ? <span className={styles.muted}>{t(J.postedAs, { number: detail.journal.postedNumber })}</span> : null}
@@ -183,39 +188,28 @@ export function ManualJournalEditor({ workspaceId, legalEntityId, journalId = nu
     <div className={styles.foot}>
       {editable ? <Button size="compact" variant="quiet" onPress={() => setLines((rows) => [...rows, blankLine()])}><Plus aria-hidden="true" size={14} />{t(J.addLine)}</Button> : null}
       <span className={styles.spacer} />
-      <dl className={styles.totals}>
-        <div><dt>{t(J.debit)}</dt><dd>{show(totals.debit)}</dd></div>
-        <div><dt>{t(J.credit)}</dt><dd>{show(totals.credit)}</dd></div>
-      </dl>
-      <span className={styles.balance} role="status" data-state={totals.balanced ? "balanced" : totals.debit || totals.credit ? "off" : "empty"}>
-        {totals.balanced ? t(J.balanced) : totals.debit || totals.credit ? t(J.offBy, { amount: show(totals.difference < 0n ? -totals.difference : totals.difference) }) : null}
+      <AmountList label={t(J.total)} rows={[{ id: "debit", label: t(J.debit), amount: show(totals.debit) }, { id: "credit", label: t(J.credit), amount: show(totals.credit) }]} />
+      <span role="status" data-state={totals.balanced ? "balanced" : totals.debit || totals.credit ? "off" : "empty"}>
+        {totals.balanced ? <Badge tone="success">{t(J.balanced)}</Badge>
+          : totals.debit || totals.credit ? <Badge tone="warning">{t(J.offBy, { amount: show(totals.difference < 0n ? -totals.difference : totals.difference) })}</Badge> : null}
       </span>
     </div>
     <div className={styles.actions}>
       {detail?.canCancel ? <Button variant="quiet" isDisabled={busy} onPress={() => setCancelling(true)}>{t(J.cancelJournal)}</Button> : null}
       <span className={styles.spacer} />
-      {detail?.canApprove ? <>
-        <Button isDisabled={busy} onPress={() => setReturning(true)}>{t(J.sendBack)}</Button>
-        <Button variant="primary" isLoading={busy} onPress={() => void run(() => api.command(id, "approve", { version: detail.journal.version }))}>{t(J.approve)}</Button>
-      </> : null}
+      {detail?.canApprove ? <Button variant="primary" isDisabled={busy} onPress={() => setReviewing(true)}>{t("Review")}</Button> : null}
       {editable ? <>
         <Button isDisabled={busy || !journalDate || (!dirty && Boolean(detail))} onPress={() => void save()}>{t(J.save)}</Button>
         <Button variant="primary" isLoading={busy} isDisabled={!journalDate || !totals.balanced} onPress={() => void submit()}>{t(J.submit)}</Button>
       </> : null}
     </div>
-    {returning && detail ? <ReturnDialog reference={detail.journal.reference} onClose={() => setReturning(false)}
-      onSubmit={async (note) => { const next = await api.command(id, "return", { version: detail.journal.version, note }); adopt(next); onDone?.(next); setReturning(false); }} /> : null}
+    {reviewing && detail ? <ReviewDialog title={detail.journal.reference} description={detail.journal.memo || undefined} onClose={() => setReviewing(false)}
+      facts={[{ label: t(J.debit), value: show(totals.debit) }, { label: t(J.credit), value: show(totals.credit) }]}
+      confirmLabel={t(J.approve)} onConfirm={() => decide("approve", { version: detail.journal.version })}
+      returnLabel={t(J.sendBack)} onReturn={(note) => decide("return", { version: detail.journal.version, note })} /> : null}
     {detail ? <ConfirmationDialog isOpen={cancelling} onOpenChange={setCancelling} isConfirming={busy} title={t(J.cancelTitle, { reference: detail.journal.reference })}
-      body={<p className={styles.muted}>{t(J.cancelBody)}</p>} confirmLabel={t(J.cancelJournal)} cancelLabel={t(J.keep)}
+      body={t(J.cancelBody)} confirmLabel={t(J.cancelJournal)} cancelLabel={t(J.keep)}
       onConfirm={() => void run(() => api.command(id, "cancel", { version: detail.journal.version })).then(() => setCancelling(false))} /> : null}
   </div>;
 }
 
-function ReturnDialog({ reference, onClose, onSubmit }: { reference: string; onClose: () => void; onSubmit: (note: string) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog title={t(J.sendBackTitle, { reference })} submitLabel={t(J.sendBack)} onClose={onClose} isDirty={Boolean(note)} isSubmitDisabled={!note.trim()}
-    onSubmit={() => onSubmit(note.trim())}>
-    <TextAreaField label={t(J.reason)} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
-}

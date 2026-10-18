@@ -146,6 +146,9 @@ function checkFacts(facts: FlowFacts, extras: boolean): CheckFacts {
     ...facts, clientType: facts.clientTypeResolved ? "end_user" : null, budgetBand: extras ? "100k_250k" : null, contactLogged: extras,
     packageCode: extras ? "signature" : null, siteVisitRecorded: extras, qsApproved: extras, quoteSent: extras, quoteAccepted: extras,
     clientApprovedOnSpot: extras, paymentVerified: extras, dealApproved: extras, designStagesDone: extras ? ["site_visit"] : [], materialListSignedOff: extras,
+    // §0.3 P0 added two required steps on Qualified (the intro outcome, the target date) that r30 never had: they are
+    // done here, so the rest stays equal to r30; their own test below proves they block.
+    qualificationProceed: true, targetCompletionSet: true,
   };
 }
 
@@ -162,6 +165,15 @@ const strip = (items: Array<{ key: string; label: string; step?: FlowStep; colum
   items.map((item) => ({ key: item.key, label: item.label, column: item.column ?? COLUMN_OF_STEP[item.step!] }));
 
 describe("starter flows ≡ r30 gates (plan §5a, F2)", () => {
+  it.each(["design", "fit_out"] as const)("%s: Qualified also needs the intro outcome (going ahead) and the target completion date (§0.3 P0)", (flow) => {
+    const facts = checkFacts({ flow, enquiryTypeResolved: true, clientTypeResolved: true, clientEmail: true, propertyLocation: true, floorPlanOrArea: true, introCompleted: true,
+      feasibilityConfirmed: false, quotationExists: false, paymentProof: false, discoveryMissing: [], furniturePath: null }, false);
+    const qualified = { code: "qualification", position: 2 }, first = { code: "qualified", position: 1 };
+    const blockers = (overrides: Partial<CheckFacts>) => interpretedBlockers({ definition: STARTER_FLOWS[flow].definition, facts: { ...facts, ...overrides }, from: first, to: qualified, firstPosition: 1, stages: STANDARD, targetStatus: "open" }).map((item) => item.key);
+    expect(blockers({ qualificationProceed: false, targetCompletionSet: false })).toEqual(["qualificationOutcome", "targetCompletion"]);
+    expect(blockers({})).toEqual([]);
+  });
+
   it("every starter flow passes the publisher's validator", () => {
     for (const [code, starter] of Object.entries(STARTER_FLOWS)) expect(validateFlowDefinition(starter.definition), code).toMatchObject({ ok: true });
   });

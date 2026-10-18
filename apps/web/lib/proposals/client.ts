@@ -103,8 +103,12 @@ export type SigningView = {
   signer: { name: string; email: string | null; phone: string | null };
   expiresAt: string;
   signed: { at: string; name: string; sha256: string } | null;
+  /** §0.3 P4: signing needs a one-time code; where it can go and whether one is confirmed. */
+  code?: { verified: boolean; canEmail: boolean; canWhatsapp: boolean; demo: boolean };
 };
 export const signingApi = (token: string) => ({
+  sendCode: (channel: "whatsapp" | "email") => request<{ channel: "whatsapp" | "email" | "demo"; resendAfter: number; expiresIn: number; sentTo: string | null }>(`/api/esign/${token}/code`, "POST", { channel }),
+  verifyCode: (code: string) => request<{ verified: boolean; message: string | null }>(`/api/esign/${token}/code/verify`, "POST", { code }),
   view: () => request<SigningView>(`/api/esign/${token}`),
   documentUrl: (signedCopy = false) => `/api/esign/${token}/document${signedCopy ? "?copy=signed" : ""}`,
   sign: (input: { name: string; email?: string; phone?: string; consent: boolean; documentSha256: string; signature: { kind: "typed"; text: string } | { kind: "drawn"; png: string } }) =>

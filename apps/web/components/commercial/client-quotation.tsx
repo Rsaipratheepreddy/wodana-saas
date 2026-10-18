@@ -2,6 +2,7 @@
 import type { ClientQuote, PortalBrand } from "@/lib/commercial/types";
 import { money } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { CommercialStatus } from "./commercial-status";
 import { QuotationDocument } from "./quotation-document";
 import styles from "./quotation-print.module.css";
 
@@ -15,7 +16,7 @@ export function ClientQuotation({ quote, brand }: { quote: ClientQuote; brand?: 
   return <>
     <div className={styles.head}>
       <span className={styles.muted}>{quote.kind === "variation" ? t("Variation") : t("Quotation")} · V{quote.number}</span>
-      <span className={styles.status} data-status={expired ? "expired" : quote.status}>{expired ? t("Expired") : states[quote.status] ?? quote.status}</span>
+      <span className={styles.status}><CommercialStatus status={expired ? "expired" : quote.status} tone={expired ? "neutral" : quote.status === "accepted" ? "success" : quote.status === "issued" ? "warning" : "neutral"}>{expired ? t("Expired") : states[quote.status] ?? quote.status}</CommercialStatus></span>
     </div>
     <QuotationDocument quote={quote} brand={brand} />
     {evidence?.decision === "accept" && evidence.acceptedTotal !== undefined

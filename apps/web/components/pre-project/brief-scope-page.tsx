@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { FileText, LayoutGrid, Plus, Table2 } from 'lucide-react';
-import { Badge, Button, Checkbox, DataGrid, EmptyState, FormDialog, FormSection, MenuButton, MoneyField, MoreDetails, SelectField, SearchInput, TextInput, TextAreaField, useDesignSystem, type DataGridColumn } from '@/design-system';
+import { Badge, Button, Checkbox, DataGrid, EmptyState, FormDialog, FormSection, InlineNotice, MenuButton, MoneyField, MoreDetails, SearchInput, SegmentedControl, SelectField, TextAreaField, TextInput, TypeChip, useDesignSystem, type DataGridColumn } from '@/design-system';
 import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, scopeLabel, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
 import { documentText, mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
 import { useT } from '@/lib/i18n/i18n-provider';
@@ -47,7 +47,11 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
   const [roomsOpen, setRoomsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [deciding, setDeciding] = useState<{ entry: ScopeEntry; status: string } | null>(null);
+  const [deciding, setDeciding] = useState<{ entries: ScopeEntry[]; status: string } | null>(null);
+  // Requirements are decided several at once: pick the cards, then one scope (and one reason) for all of them.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'undecided' | 'included' | 'not_included'>('all');
+  const [bulkBusy, setBulkBusy] = useState(false);
   const { locale } = useDesignSystem();
   const { workspaceId, caseId } = data;
   const blockedReason = readOnlyReason ?? t('Your role does not have permission to edit this record.');
@@ -98,7 +102,28 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     && (room === 'all' || item.roomId === room)
     && `${item.title} ${item.note} ${item.roomName ?? ''}`.toLowerCase().includes(search.toLowerCase()));
   // Moodboard pins and site photos have their own tabs; Requirements lists only what the client asked for.
-  const rows = visible.filter(item => view === 'requirement' ? ['requirement', 'note'].includes(item.kind) : item.kind === view);
+  const inScopeFilter = (item: ScopeEntry) => scopeFilter === 'all' || (item.kind === 'requirement' && (scopeFilter === 'not_included'
+    ? ['excluded', 'later', 'not_possible'].includes(item.scopeStatus) : item.scopeStatus === scopeFilter));
+  const rows = visible.filter(item => (view === 'requirement' ? ['requirement', 'note'].includes(item.kind) : item.kind === view) && (view !== 'requirement' || inScopeFilter(item)));
+  const requirementsShown = visible.filter(item => item.kind === 'requirement');
+  const decidable = (item: ScopeEntry) => item.kind === 'requirement' && canEditEntry(item) && !archived && !compact;
+  const picked = rows.filter(item => selected.has(item.id) && decidable(item));
+  const toggle = (id: string, on: boolean) => setSelected(current => { const next = new Set(current); if (on) next.add(id); else next.delete(id); return next; });
+  // One scope for every picked requirement; anything not included carries the same reason the client reads.
+  const decideAll = async (entries: ScopeEntry[], status: string, reason?: string) => {
+    setBulkBusy(true); setError('');
+    let failed = 0;
+    for (const item of entries) {
+      try { await saveEntry({ ...item, scopeStatus: status, ...(reason !== undefined ? { scopeNote: reason } : {}) }); } catch { failed += 1; }
+    }
+    setBulkBusy(false);
+    if (failed) setError(t('{count} could not be updated. Reload and try again.', { count: failed }));
+    else { setSelected(new Set()); setMessage(entries.length === 1 ? t('Scope updated.') : t('{count} requirements updated.', { count: entries.length })); }
+  };
+  const chooseScope = (entries: ScopeEntry[], status: string) => {
+    if (['excluded', 'later', 'not_possible'].includes(status)) { setDeciding({ entries, status }); return; }
+    void decideAll(entries, status);
+  };
   const measurementRows: MeasurementRow[] = visible.filter(storedRequirement).flatMap(value => value.specification?.dimensions.length
     ? value.specification.dimensions.map(dimension => ({ id: `${value.id}:${dimension.id}`, entry: value, dimension }))
     : []);
@@ -125,7 +150,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     { id: 'roomName', header: t('Room'), size: 155, accessorFn: item => data.rooms.find(value => value.id === item.roomId)?.name ?? item.roomName ?? '' },
     ...(view === 'requirement' ? [
       { id: 'quantity', header: t('Quantity'), size: 115, accessorFn: item => item.quantity != null ? `${item.quantity} ${item.unit}` : '—' },
-      { id: 'scope', header: t('Scope'), size: 135, accessorFn: item => scopeLabel(t, item.scopeStatus), cell: ({ row: { original } }) => original.kind === 'requirement' ? <Badge tone={original.scopeStatus === 'included' ? 'success' : original.scopeStatus === 'undecided' ? 'warning' : 'neutral'}>{scopeLabel(t, original.scopeStatus)}</Badge> : <Badge tone="neutral">{t(original.kind === 'note' ? 'Note' : original.kind === 'file' ? 'Reference file' : 'Inspiration')}</Badge> },
+      { id: 'scope', header: t('Scope'), size: 135, accessorFn: item => scopeLabel(t, item.scopeStatus), cell: ({ row: { original } }) => original.kind === 'requirement' ? <Badge tone={original.scopeStatus === 'included' ? 'success' : original.scopeStatus === 'undecided' ? 'warning' : 'neutral'}>{scopeLabel(t, original.scopeStatus)}</Badge> : <Badge hue={original.kind === 'note' ? 6 : original.kind === 'file' ? 1 : 2}>{t(original.kind === 'note' ? 'Note' : original.kind === 'file' ? 'Reference file' : 'Inspiration')}</Badge> },
       { id: 'measurements', header: t('Measurements'), size: 170, cell: ({ row: { original } }) => storedRequirement(original) ? <Button size="compact" variant="quiet" onPress={() => openSpecification(original, 'dimensions')}>{t(original.specification?.dimensions?.length ? 'View measurements' : canEditEntry(original) && !archived ? 'Add measurements' : 'Not entered')}</Button> : <span>—</span> },
     ] as DataGridColumn<ScopeEntry>[] : [
       { id: 'files', header: t('Files'), size: 180, cell: ({ row: { original } }) => <span className={styles.referenceCell}>{original.assets[0]?.hasPreview && <Image alt="" unoptimized width={40} height={40} src={assetUrl(original, original.assets[0], true)}/>}<span>{original.assets.length ? t(original.assets.length === 1 ? '{count} file' : '{count} files', { count: original.assets.length }) : t(original.referenceUrl ? 'Linked reference' : 'No attachment')}</span></span> },
@@ -148,26 +173,42 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
       {captureActions}
     </div>
     {view !== 'inspiration' && sharedNotes.loading && <Skeleton lines={4} />}
-    {view !== 'inspiration' && sharedNotes.failure && <p className={styles.error} role="alert">{sharedNotes.failure}<Button size="compact" variant="quiet" onPress={sharedNotes.refresh}>{t('Retry')}</Button></p>}
-    {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={compact ? workspace.srOnly : styles.notice}>{message}</p>}
+    {view !== 'inspiration' && sharedNotes.failure && <InlineNotice tone="error" message={sharedNotes.failure} action={<Button size="compact" variant="quiet" onPress={sharedNotes.refresh}>{t('Retry')}</Button>} />}
+    {view === 'requirement' && requirementsShown.length ? <div className={workspace.scopeBar}>
+      <SegmentedControl label={t('Scope')} value={scopeFilter} onChange={value => { setScopeFilter(value as typeof scopeFilter); setSelected(new Set()); }} options={[
+        { id: 'all', label: t('All'), count: requirementsShown.length },
+        { id: 'undecided', label: scopeLabel(t, 'undecided'), count: requirementsShown.filter(item => item.scopeStatus === 'undecided').length },
+        { id: 'included', label: t('Included'), count: requirementsShown.filter(item => item.scopeStatus === 'included').length },
+        { id: 'not_included', label: t('Not included'), count: requirementsShown.filter(item => ['excluded', 'later', 'not_possible'].includes(item.scopeStatus)).length },
+      ]} />
+      {picked.length ? <div className={workspace.bulkBar} role="group" aria-label={t('Decide the selected requirements')}>
+        <Badge tone="info">{t('{count} selected', { count: picked.length })}</Badge>
+        <Button size="compact" variant="primary" isDisabled={bulkBusy} onPress={() => chooseScope(picked, 'included')}>{t('Include in scope')}</Button>
+        <MenuButton size="compact" label={t('Not included')} items={[{ id: 'excluded', label: t('Not included') }, { id: 'later', label: t('Later phase') }, { id: 'not_possible', label: t('Not possible') }, { id: 'undecided', label: scopeLabel(t, 'undecided') }]}
+          onAction={key => chooseScope(picked, String(key))} />
+        <Button size="compact" variant="quiet" isDisabled={bulkBusy} onPress={() => setSelected(new Set())}>{t('Clear')}</Button>
+      </div> : rows.some(decidable) ? <Button size="compact" variant="quiet" onPress={() => setSelected(new Set(rows.filter(decidable).map(item => item.id)))}>{t('Select all shown')}</Button> : null}
+    </div> : null}
+    {error && <InlineNotice tone="error" message={error} />}{message && <p role="status" className={compact ? workspace.srOnly : styles.notice}>{message}</p>}
     {sharedNotes.loading && !allEntries.length && view !== 'inspiration' ? null : (view === 'requirement' || presentation === 'cards') ? <div className={workspace.cards}>{cardEntries.map(value => {
-      return <article className={workspace.card} data-scope={value.kind === 'requirement' ? value.scopeStatus : undefined} key={value.id} id={value.kind === 'requirement' ? `requirement-${value.id}` : undefined} aria-label={value.title}>
+      return <article className={workspace.card} data-scope={value.kind === 'requirement' ? value.scopeStatus : undefined} data-picked={selected.has(value.id) || undefined} key={value.id} id={value.kind === 'requirement' ? `requirement-${value.id}` : undefined} aria-label={value.title}>
         <div className={workspace.body}>
-          <div className={workspace.meta}><span>{data.rooms.find(r => r.id === value.roomId)?.name ?? value.roomName ?? ''}</span>{!compact && (value.kind === 'requirement' && canEditEntry(value) && !archived ? <MenuButton label={scopeLabel(t, value.scopeStatus)} items={[{id:'included',label:t('Include in scope')},{id:'excluded',label:t('Not included')},{id:'later',label:t('A later phase')},{id:'not_possible',label:t('Not possible')},{id:'undecided',label:t('Decide later')}]} onAction={key => {
+          <div className={workspace.meta}>{decidable(value) ? <Checkbox aria-label={t('Select {title}', { title: value.title })} isSelected={selected.has(value.id)} onChange={on => toggle(value.id, on)} /> : null}{(() => { const room = data.rooms.find(r => r.id === value.roomId)?.name ?? value.roomName ?? ''; return room ? <span className={workspace.room}>{room}</span> : <i aria-hidden="true" />; })()}{!compact && (value.kind === 'requirement' && canEditEntry(value) && !archived ? <MenuButton label={scopeLabel(t, value.scopeStatus)} items={[{id:'included',label:t('Include in scope')},{id:'excluded',label:t('Not included')},{id:'later',label:t('A later phase')},{id:'not_possible',label:t('Not possible')},{id:'undecided',label:t('Decide later')}]} onAction={key => {
             // Anything not included gets a reason the client can read; it's sealed with the accepted scope.
-            if (['excluded','later','not_possible'].includes(String(key))) { setDeciding({ entry: value, status: String(key) }); return; }
-            void saveEntry({...value,scopeStatus:String(key)}).catch(failure=>setError(failure instanceof Error?failure.message:t('Could not update scope.'))); }} /> : <span data-status={value.scopeStatus}>{value.kind === 'file' ? t('Site file') : value.kind === 'inspiration' ? t('Inspiration') : scopeLabel(t, value.scopeStatus)}</span>)}</div>
+            chooseScope([value], String(key)); }} /> : value.kind === 'file' ? <TypeChip>{t('Site file')}</TypeChip> : value.kind === 'inspiration' ? <TypeChip>{t('Inspiration')}</TypeChip>
+            : <Badge tone={value.scopeStatus === 'included' ? 'success' : value.scopeStatus === 'excluded' ? 'danger' : value.scopeStatus === 'undecided' ? 'warning' : 'neutral'}>{scopeLabel(t, value.scopeStatus)}</Badge>)}</div>
           <button type="button" className={workspace.title} aria-label={t('Open details for {title}', { title: value.title })} onClick={() => view === 'measurements' ? openSpecification(value, 'dimensions') : setEntry(value)}>{value.title}</button>
           {view === 'measurements' ? <div className={workspace.measurementPreview}>{value.specification?.dimensions.length ? <DimensionReadout dimensions={value.specification.dimensions.slice(0,2)} /> : <p className={workspace.note}>{t('No measurements yet.')}</p>}</div> : (value.document || value.note) && <NotePreview className={workspace.noteRich} document={value.document} limit={5} text={value.note} />}
           {value.assets.length > 0 && <div className={workspace.attachmentStrip} aria-label={t('{count} attachments', { count: value.assets.length })}>{value.assets.slice(0,3).map(asset => <button type="button" key={asset.id} title={asset.name} aria-label={t('View {name}', { name: asset.name })} onClick={() => setEntry(value)}>{asset.hasPreview ? <Image unoptimized src={assetUrl(value,asset,true)} alt="" width={28} height={28}/> : <FileText size={16}/>}<span>{asset.name}</span></button>)}{value.assets.length > 3 && <span className={workspace.moreAttachments}>+{value.assets.length-3}</span>}</div>}
-          <div className={workspace.footer}>
-            <Button size="compact" variant="quiet" aria-label={canEditEntry(value) && !archived ? (view === 'measurements' ? t('Edit measurements for {title}', { title: value.title }) : t('Edit {title}', { title: value.title })) : (view === 'measurements' ? t('View measurements for {title}', { title: value.title }) : t('View {title}', { title: value.title }))} onPress={() => view === 'measurements' ? openSpecification(value, 'dimensions') : setEntry(value)}>{canEditEntry(value) && !archived ? t(view === 'measurements' ? 'Edit sizes' : value.kind === 'file' ? 'Edit plan' : 'Edit note') : t(view === 'measurements' ? 'View sizes' : value.kind === 'file' ? 'View plan' : 'View note')} ↗</Button>
-            {!compact && canEditEntry(value) && <MenuButton label={t('Actions')} items={[
+          {/* The title opens the item; edit, measurements, moving and archiving sit in one Actions menu (no bare link in a footer). */}
+          {!compact && canEditEntry(value) ? <div className={workspace.footer}>
+            <MenuButton label={t('Actions')} items={[
+              ...(!archived ? [{id:'edit',label:t(view === 'measurements' ? 'Edit sizes' : value.kind === 'file' ? 'Edit plan' : 'Edit note')}] : []),
               ...(!archived && value.kind === 'requirement' ? [{id:'specifications',label:t('Measurements')}] : []),
               ...(archived ? [] : [...data.rooms.filter(item=>item.id!==value.roomId).map(item=>({id:`room:${item.id}`,label:t('Move to {name}',{name:item.name})}))]),
               {id:archived?'restore':'archive',label:t(archived?'Restore':'Archive')},
-            ]} onAction={key => { if(key === 'specifications'){openSpecification(value,'dimensions');return;} const changed = key.startsWith('room:') ? {...value,roomId:key.slice(5)} : value; void saveEntry(changed,key === 'archive' ? true : key === 'restore' ? false : undefined).then(()=>setMessage(t(key === 'archive' ? 'Archived. Find this item using the Archived filter.' : key === 'restore' ? 'Restored.' : 'Room updated.'))).catch(failure=>setError(failure instanceof Error?failure.message:t('Could not update this item.'))); }} />}
-          </div>
+            ]} onAction={key => { if(key === 'edit'){ if (view === 'measurements') openSpecification(value, 'dimensions'); else setEntry(value); return; } if(key === 'specifications'){openSpecification(value,'dimensions');return;} const changed = key.startsWith('room:') ? {...value,roomId:key.slice(5)} : value; void saveEntry(changed,key === 'archive' ? true : key === 'restore' ? false : undefined).then(()=>setMessage(t(key === 'archive' ? 'Archived. Find this item using the Archived filter.' : key === 'restore' ? 'Restored.' : 'Room updated.'))).catch(failure=>setError(failure instanceof Error?failure.message:t('Could not update this item.'))); }} />
+          </div> : null}
         </div>
       </article>;
     })}{!cardEntries.length && <div className={workspace.emptyFrame}><EmptyState illustration={archived || search || room !== "all" ? "search" : view === "file" ? "upload" : "empty"} title={t(archived ? "No archived items" : search || room !== "all" ? "Nothing matches these filters" : view === "file" ? "No site plans yet" : view === "inspiration" ? "No inspiration yet" : "No requirements yet")} description={t(archived || search || room !== "all" ? "Try another room or clear the search." : view === "file" ? "Add a floor plan, survey or site drawing." : view === "inspiration" ? "Collect photos, links and ideas the client likes." : "Add a note to capture what the client needs.")} /></div>}</div> : <div className={tableStyles.recordTablePanel}>{view === 'measurements'
@@ -187,8 +228,9 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     {measurementOpen && <MeasurementCreateForm data={data} entries={allEntries.filter(value => storedRequirement(value) && !value.archivedAt && canEditEntry(value))} initialEntryId={measurementFor} initialRoom={room} onClose={() => setMeasurementOpen(false)} onCreateRequirement={() => { setMeasurementOpen(false); setMeasureAfterSave(true); setEntry(blankEntry(room === 'all' ? null : room)); }} onSaved={(value, specification) => { upsert({ ...value, assets: data.entries.find(item => item.id === value.id)?.assets ?? value.assets, specification }); setSearch(''); setRoom(value.roomId ?? 'all'); setMessage(t('Measurement saved.')); setMeasurementOpen(false); }}/>} 
     {specEntry && <ItemSpecificationEditor entry={specEntry} data={{ ...data, canEdit: canEditEntry(specEntry) }} focusSection={specFocus} onClose={() => setSpecEntry(null)} onSaved={specification => { upsert({ ...specEntry, assets: data.entries.find(item => item.id === specEntry.id)?.assets ?? specEntry.assets, specification }); setSpecEntry(null); setMessage(t('Measurements saved.')); }}/>}
     {briefOpen && <BriefEditor data={data} onClose={() => setBriefOpen(false)} onSave={async brief => { const input = { ...brief }; delete input.updatedAt; const saved = await caseRequest<CaseBrief>(workspaceId, caseId, 'brief', 'PUT', input); setData(current => ({ ...current, brief: saved, fromCrm: false })); setMessage(t('Brief saved.')); }}/>}
-    {deciding && <ScopeReason status={deciding.status} title={deciding.entry.title} initial={deciding.entry.scopeStatus === deciding.status ? deciding.entry.scopeNote ?? '' : ''} onClose={() => setDeciding(null)}
-      onSave={async (reason) => { await saveEntry({ ...deciding.entry, scopeStatus: deciding.status, scopeNote: reason }); setDeciding(null); }} />}
+    {deciding && <ScopeReason status={deciding.status} title={deciding.entries.length === 1 ? deciding.entries[0].title : t('{count} requirements', { count: deciding.entries.length })}
+      initial={deciding.entries.length === 1 && deciding.entries[0].scopeStatus === deciding.status ? deciding.entries[0].scopeNote ?? '' : ''} onClose={() => setDeciding(null)}
+      onSave={async (reason) => { await decideAll(deciding.entries, deciding.status, reason); setDeciding(null); }} />}
     {roomsOpen && data.canEdit && <RoomManager data={data} onClose={() => setRoomsOpen(false)} onSave={async value => { const saved = await caseRequest<CaseRoom>(workspaceId, caseId, 'rooms', 'PUT', { id: value.id, version: value.version, name: value.name, catalogRecordId: value.catalogRecordId ?? null }); setData(current => ({ ...current, rooms: [...current.rooms.filter(item => item.id !== saved.id), saved], entries: current.entries.map(item => item.roomId === saved.id ? { ...item, roomName: saved.name } : item) })); return saved; }}/>}
   </div>;
 }

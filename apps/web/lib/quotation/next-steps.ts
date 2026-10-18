@@ -56,11 +56,11 @@ export function nextSteps(commercial: CommercialState, quote: { id: string; roun
     const submit = design ? tKey("Submit the design deal") : tKey("Submit the deal");
     steps.push(review?.status === "approved" ? { key: "deal", label: tKey("Deal approved"), state: "done", action: null, holders: [] }
       : review?.status === "pending_finance" ? { key: "deal", label: tKey("Finance checks the deal"), state: commercial.canVerifyFinance ? "current" : "waiting",
-        action: commercial.canVerifyFinance ? { label: tKey("Check"), href: `${base}/execution-release` } : null, holders: holders.verifyPayment }
+        action: commercial.canVerifyFinance ? { label: tKey("Check"), href: `${base}/deal-file` } : null, holders: holders.verifyPayment }
         : review?.status === "pending_approval" ? { key: "deal", label: tKey("Approve the deal"), state: commercial.canApproveDeal ? "current" : "waiting",
-          action: commercial.canApproveDeal ? { label: tKey("Approve"), href: `${base}/execution-release` } : null, holders: holders.approveDeal }
+          action: commercial.canApproveDeal ? { label: tKey("Approve"), href: `${base}/deal-file` } : null, holders: holders.approveDeal }
           : { key: "deal", label: submit, state: commercial.canEdit ? "current" : "waiting",
-            action: commercial.canEdit ? { label: tKey("Submit"), href: `${base}/execution-release` } : null, holders: [] });
+            action: commercial.canEdit ? { label: tKey("Submit"), href: `${base}/deal-file` } : null, holders: [] });
   }
 
   if (quote.round !== "design")

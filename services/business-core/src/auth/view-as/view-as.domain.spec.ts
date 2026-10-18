@@ -17,16 +17,18 @@ const person = (roles: string[], extra: Partial<{ userId: string; active: boolea
   ({ userId: "subject", active: true, operator: false, roles, ...extra });
 
 describe("who may view as whom", () => {
-  it("lets an owner or administrator view as an active team member for up to 30 minutes", () => {
+  it("lets only an owner view as an active team member for up to 30 minutes", () => {
     expect(planViewAsStart({ kind: "person", chained: false, viewer: owner, subject: person(["sales"]) })).toEqual({ minutes: VIEW_AS_MAX_MINUTES });
-    expect(planViewAsStart({ kind: "person", chained: false, viewer: admin, subject: person(["administrator"]), minutes: 10 })).toEqual({ minutes: 10 });
+    expect(planViewAsStart({ kind: "person", chained: false, viewer: owner, subject: person(["administrator"]), minutes: 10 })).toEqual({ minutes: 10 });
     expect(planViewAsStart({ kind: "person", chained: false, viewer: owner, subject: person(["owner"]) })).toEqual({ minutes: 30 });
   });
 
-  it("refuses an administrator viewing as an owner, and anyone without the permission", () => {
-    expect(() => planViewAsStart({ kind: "person", chained: false, viewer: admin, subject: person(["owner", "sales"]) }))
-      .toThrow(expect.objectContaining({ code: "view_as_owner_protected" }));
-    expect(() => planViewAsStart({ kind: "person", chained: false, viewer: { ...admin, canViewAs: false }, subject: person(["sales"]) }))
+  it("refuses an administrator (even one granted the permission), and an owner without it", () => {
+    expect(() => planViewAsStart({ kind: "person", chained: false, viewer: admin, subject: person(["sales"]) }))
+      .toThrow(expect.objectContaining({ code: "view_as_not_allowed" }));
+    expect(() => planViewAsStart({ kind: "role", chained: false, viewer: admin, role: { code: "sales" } }))
+      .toThrow(expect.objectContaining({ code: "view_as_not_allowed" }));
+    expect(() => planViewAsStart({ kind: "person", chained: false, viewer: { ...owner, canViewAs: false }, subject: person(["sales"]) }))
       .toThrow(expect.objectContaining({ code: "view_as_not_allowed" }));
   });
 
@@ -41,12 +43,10 @@ describe("who may view as whom", () => {
     expect(refusal({ kind: "person", chained: true, viewer: owner, subject: person(["sales"]) })).toBe("view_as_chained");
   });
 
-  it("previews a role for 15 minutes; only an owner previews the Owner role", () => {
-    expect(planViewAsStart({ kind: "role", chained: false, viewer: admin, role: { code: "sales" } })).toEqual({ minutes: ROLE_PREVIEW_MINUTES });
+  it("lets an owner preview a role for 15 minutes, the Owner role included", () => {
+    expect(planViewAsStart({ kind: "role", chained: false, viewer: owner, role: { code: "sales" } })).toEqual({ minutes: ROLE_PREVIEW_MINUTES });
     expect(planViewAsStart({ kind: "role", chained: false, viewer: owner, role: { code: "owner" } })).toEqual({ minutes: ROLE_PREVIEW_MINUTES });
-    expect(() => planViewAsStart({ kind: "role", chained: false, viewer: admin, role: { code: "owner" } }))
-      .toThrow(expect.objectContaining({ code: "view_as_owner_protected" }));
-    expect(() => planViewAsStart({ kind: "role", chained: false, viewer: admin, role: null }))
+    expect(() => planViewAsStart({ kind: "role", chained: false, viewer: owner, role: null }))
       .toThrow(expect.objectContaining({ code: "view_as_role_not_found" }));
   });
 

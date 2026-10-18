@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, Checkbox, DateField, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, Skeleton, TextAreaField, TextInput, VisuallyHidden } from "@/design-system";
+import {
+  ApprovalStamp, Button, Checkbox, DateField, EditableFieldList, EmptyState, ErrorState, FactRow, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, ReasonDialog, ReviewDialog,
+  Skeleton, TextInput, VisuallyHidden,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { Bill, RunState } from "@/lib/payables/types";
@@ -11,7 +14,7 @@ import { useProjectFormat } from "../project-core/format";
 import { plain, RunStatusLabel } from "./finance-labels";
 import styles from "./finance.module.css";
 
-type Dialog = "return" | "cancel" | "paid" | null;
+type Dialog = "return" | "cancel" | "paid" | "approve" | null;
 type Action = "save" | "submit" | "approve" | "return" | "paid" | "cancel";
 
 /**
@@ -30,7 +33,6 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<Action | "download" | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [text, setText] = useState("");
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
   const [dueBy, setDueBy] = useState<string | null>(format.today());
@@ -47,16 +49,17 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
   }, [api, runId, t, take]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
-  /** Runs one change; a clash with someone else's change reloads the run and says so. */
-  const command = async (action: Action, input: Record<string, unknown>) => {
+  /** Runs one change; a clash with someone else's change reloads the run and says so. Throws why it wasn't saved (a dialog shows it). */
+  const attempt = async (action: Action, input: Record<string, unknown>) => {
     setBusy(action); setNotice("");
     try { const next = await api.runCommand(action, { id, ...input }); take(next); onChanged(); return next; }
     catch (cause) {
       setNotice(cause instanceof Error ? cause.message : t("Could not save."));
       if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
-      return null;
+      throw cause;
     } finally { setBusy(null); }
   };
+  const command = (action: Action, input: Record<string, unknown>) => attempt(action, input).catch(() => null);
 
   const run = state?.run;
   const editing = runId ? Boolean(state?.canEdit) : canManage;
@@ -97,7 +100,7 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
     finally { setBusy(null); }
   };
   const openDialog = (next: Dialog) => {
-    setText(""); setNotice("");
+    setNotice("");
     if (next === "paid" && state) { setPaidOn(format.today()); setReferences(Object.fromEntries(state.payments.map((payment) => [payment.key, payment.reference]))); }
     setDialog(next);
   };
@@ -110,8 +113,9 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
     <Button isLoading={busy === "save"} isDisabled={!ready || Boolean(busy)} onPress={() => void save(false)}>{t("Save draft")}</Button>
     <Button variant="primary" isLoading={busy === "submit"} isDisabled={!ready || Boolean(busy)} onPress={() => void save(true)}>{t("Submit")}</Button>
   </> : !state || !run ? null
+    // §0.3 P0: approved in a review of the run (each payment, its bank, the supplier's invoices), never one click.
     : run.status === "submitted" && state.canApproveThis ? <Button variant="primary" isLoading={busy === "approve"}
-      onPress={() => void command("approve", { version: run.version })}>{t("Approve")}</Button>
+      onPress={() => openDialog("approve")}>{t("Review")}</Button>
     : run.status === "approved" && (state.canPay || state.canDownload) ? <>
       {state.canDownload ? <Button isLoading={busy === "download"} onPress={() => void download()}>{t("Download file")}</Button> : null}
       {state.canPay ? <Button variant="primary" onPress={() => openDialog("paid")}>{t("Mark paid")}</Button> : null}
@@ -149,14 +153,14 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
               value={picks[bill.id]} max={plain(bill.payable)} onChange={(value) => setPicks({ ...picks, [bill.id]: value })} /> : <span />}
           </div>)}</div>
           {pickedTotals.length ? <dl className={styles.totals}>{pickedTotals.map((total) => <div key={total.currency}><dt>{t("Total")}</dt><dd><strong>{money(total.amount, total.currency)}</strong></dd></div>)}</dl> : null}
-        </section> : <p className={styles.muted}>{t("No approved invoices to pay.")}</p>}
+        </section> : <EmptyState illustration={null} title={t("No approved invoices to pay.")} />}
       </> : state && run ? <>
-        <dl className={styles.facts}>
-          <div><dt>{t("Total")}</dt><dd>{run.totals.map((total) => <span key={total.currency} className={styles.money}>{money(total.amount, total.currency)}</span>)}</dd></div>
-          {run.note ? <div><dt>{t("Note")}</dt><dd>{run.note}</dd></div> : null}
-          {run.approvedByName ? <div><dt>{t("Approved by")}</dt><dd>{run.approvedByName}</dd></div> : null}
-          {run.paidOn ? <div><dt>{t("Paid on")}</dt><dd>{[format.day(run.paidOn), run.paidByName].filter(Boolean).join(" · ")}</dd></div> : null}
-        </dl>
+        <EditableFieldList>
+          <FactRow label={t("Total")}>{run.totals.map((total) => <span key={total.currency} className={styles.money}>{money(total.amount, total.currency)}</span>)}</FactRow>
+          {run.note ? <FactRow label={t("Note")}>{run.note}</FactRow> : null}
+          {run.paidOn ? <FactRow label={t("Paid on")}>{[format.day(run.paidOn), run.paidByName].filter(Boolean).join(" · ")}</FactRow> : null}
+        </EditableFieldList>
+        {run.approvedByName ? <div><ApprovalStamp approvedBy={run.approvedByName} date={run.approvedAt ? format.when(run.approvedAt) : "—"} /></div> : null}
         <section className={styles.part} aria-label={t("Payments")}>
           <h3 className={styles.subhead}>{t("Payments")}</h3>
           <ul className={styles.list}>{state.payments.map((payment) => <li key={payment.key}>
@@ -169,12 +173,25 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
       </> : null}
     </div>}
 
-    {dialog === "return" || dialog === "cancel" ? <FormDialog size="md" title={dialog === "return" ? t("Send back run") : t("Cancel run")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
-      error={notice || undefined} isSubmitting={busy === dialog} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()}
-      submitLabel={dialog === "return" ? t("Send back") : t("Cancel run")} submitVariant={dialog === "return" ? "primary" : "danger"}
-      onSubmit={async () => { if (!run || !(await command(dialog, dialog === "return" ? { version: run.version, note: text.trim() } : { version: run.version, reason: text.trim() }))) throw new FormNotSaved(); setDialog(null); }}>
-      <TextAreaField label={dialog === "return" ? t("What to change") : t("Why it's cancelled")} isRequired value={text} onChange={setText} />
-    </FormDialog> : null}
+    {dialog === "approve" && state && run ? <ReviewDialog title={t("Approve run {number}", { number: run.number })} confirmLabel={t("Approve")} onClose={() => setDialog(null)}
+      facts={[
+        { label: t("Total"), value: run.totals.map((total) => money(total.amount, total.currency)).join(" · ") },
+        { label: t("Prepared by"), value: run.preparedByName },
+        ...(run.note ? [{ label: t("Note"), value: run.note }] : []),
+      ]}
+      checks={{ label: t("Payments"), items: state.payments.map((payment) => ({ id: payment.key, label: `${payment.supplierName} · ${money(payment.amount, payment.currency)}`,
+        done: Boolean(payment.bank) && !payment.bankChanged,
+        detail: [payment.invoices.map((invoice) => invoice.number).join(", "), payment.bank ? t("{bank} ending {digits}", { bank: payment.bank.bankName, digits: payment.bank.last4 }) : t("No approved bank account")].join(" · ") })) }}
+      files={state.payments.flatMap((payment) => payment.invoices).flatMap((invoice) => {
+        const bill = bills.find((item) => item.id === invoice.invoiceId);
+        return bill?.fileName ? [{ id: invoice.invoiceId, name: `${invoice.number} · ${bill.fileName}`, href: api.fileUrl(invoice.invoiceId), previewHref: null }] : [];
+      })}
+      // A refusal closes the review so its reason shows on the run.
+      onConfirm={async () => { await command("approve", { version: run.version }); setDialog(null); }} /> : null}
+    {dialog === "return" && run ? <ReasonDialog title={t("Send back run")} label={t("What to change")} confirmLabel={t("Send back")} onClose={() => setDialog(null)}
+      onConfirm={async (note) => { await attempt("return", { version: run.version, note }); }} /> : null}
+    {dialog === "cancel" && run ? <ReasonDialog title={t("Cancel run")} label={t("Why it's cancelled")} confirmLabel={t("Cancel run")} confirmVariant="danger" onClose={() => setDialog(null)}
+      onConfirm={async (reason) => { await attempt("cancel", { version: run.version, reason }); }} /> : null}
     {dialog === "paid" && state && run ? <FormDialog size="md" title={t("Mark paid")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
       error={notice || undefined} isSubmitting={busy === "paid"} submitLabel={t("Mark paid")}
       isSubmitDisabled={!paidOn || state.payments.some((payment) => !references[payment.key]?.trim())}

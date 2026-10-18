@@ -2,7 +2,7 @@ import { UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 
 /** Fixed enquiry fields that can be hidden. Name, mobile, region, enquiry type and source always show. */
-export const OPTIONAL_ENQUIRY_FIELDS = ["email", "customerType", "area", "budgetRange", "summary"] as const;
+export const OPTIONAL_ENQUIRY_FIELDS = ["email", "customerType", "area", "budgetRange", "summary", "projectType", "floorPlan"] as const;
 /** Custom enquiry field types a capture form can ask for. */
 export const ENQUIRY_FIELD_TYPES = ["text", "number", "date", "select", "multi_select"] as const;
 

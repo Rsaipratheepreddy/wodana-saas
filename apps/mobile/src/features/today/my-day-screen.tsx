@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import {
-  AlarmClock, BellRing, BookOpen, Check, CheckCircle2, ClipboardCheck, ClipboardList, ExternalLink, Factory, FileText, Palette, PhoneCall, Truck, Wallet, type LucideIcon,
+  AlarmClock, BellRing, BookOpen, Briefcase, Camera, Check, CheckCircle2, ClipboardCheck, ClipboardList, ExternalLink, Factory, FileText, Palette, PhoneCall, Truck, Wallet, type LucideIcon,
 } from 'lucide-react-native';
 import type { MyDayItem, ReminderModule } from '../../../../../packages/contracts/src/reminders';
 import { errorMessage } from '../../core/api';
@@ -11,13 +11,17 @@ import { makeFormat, useFormat, type Format } from '../../core/format';
 import { useT } from '../../core/i18n';
 import { ActionSheet, type SheetAction } from '../../ui/dialogs';
 import { FilterChips, TextField } from '../../ui/fields';
-import { Banner, Empty, ListRow, ListScreen } from '../../ui/layout';
+import { Banner, Empty, ListRow, ListScreen, Section } from '../../ui/layout';
 import { Button, Chip, Row, Text } from '../../ui/primitives';
 import { Sheet } from '../../ui/sheet';
 import { SwipeRow, type SwipeAction } from '../../ui/swipe-row';
 import { useTheme } from '../../ui/theme';
 import { useToast } from '../../ui/toast';
+import { useSession } from '../../core/session';
 import { useBootstrap as useWorkCalendars } from '../hrms/api';
+import { missing, useMySteps } from '../jobs/api';
+import { captureTarget, orderMySteps, stepRoute, stepsFor, type MyStep } from '../jobs/model';
+import { MyStepRow } from '../jobs/screens';
 import { useMyDay, useMyDayCommand, useRefetchOnFocus } from './api';
 import {
   FILTERS, groupedEntries, groupHeading, isFilter, myDayDueLabel, remindedLabel, rowActions, rowDetail, snoozePresets, snoozeProblem, URGENCY_LABEL,
@@ -81,6 +85,24 @@ export function MyDayScreen() {
   const zoned = useZonedFormat(data?.timeZone);
   const today = data?.today ?? zoned.today();
   const entries = useMemo(() => groupedEntries(data, filter), [data, filter]);
+  // The job steps that are mine now (`GET jobs/my-day`): late first, then due today, then the rest, under the same chips.
+  const mySteps = useMySteps();
+  useRefetchOnFocus(mySteps.refetch);
+  const session = useSession();
+  const allSteps = useMemo(() => (mySteps.data ? orderMySteps(mySteps.data.items, new Date(), mySteps.data.timeZone) : []), [mySteps.data]);
+  const steps = stepsFor(allSteps, filter);
+  const [stepMenu, setStepMenu] = useState<{ item: MyStep; open: boolean } | null>(null);
+  const stepActions = (item: MyStep): SheetAction[] => {
+    const route = stepRoute(item.step.href);
+    const target = captureTarget([item.step.href]);
+    const photo = target.caseId && session.has('pre-project') && session.can('pre_projects.edit') ? { caseId: target.caseId }
+      : target.projectId && session.has('projects') && session.can('projects.view', 'projects.manage') ? { projectId: target.projectId } : null;
+    return [
+      { label: t('Open'), icon: Briefcase, onPress: () => router.push(`/jobs/${item.jobId}`) },
+      ...(route ? [{ label: t('Open {step}', { step: t(item.step.label) }), icon: ExternalLink, onPress: () => router.push(route as Href) }] : []),
+      ...(photo ? [{ label: t('Take photo'), icon: Camera, onPress: () => router.push({ pathname: '/capture/photo', params: photo }) }] : []),
+    ];
+  };
 
   const open = (item: MyDayItem) => {
     const route = appRouteFor(item.href);
@@ -116,15 +138,26 @@ export function MyDayScreen() {
     ];
   };
   // A chip shows when it has something (or is chosen); "All" is always there.
-  const chips = FILTERS.filter((value) => value === 'all' || value === filter || (data?.counts[value] ?? 0) > 0)
-    .map((value) => ({ value, label: value === 'all' ? t('All') : `${t(URGENCY_LABEL[value])} · ${format.number(data?.counts[value] ?? 0, 0)}` }));
+  const count = (value: Exclude<MyDayFilter, 'all'>) => (data?.counts[value] ?? 0) + stepsFor(allSteps, value).length;
+  const chips = FILTERS.filter((value) => value === 'all' || value === filter || count(value) > 0)
+    .map((value) => ({ value, label: value === 'all' ? t('All') : `${t(URGENCY_LABEL[value])} · ${format.number(count(value), 0)}` }));
+  const stepsSection = steps.length ? <Section title={t('Steps')}>
+    {steps.map((item, index) => <MyStepRow key={item.jobId} item={item} first={index === 0} onPress={() => router.push(`/jobs/${item.jobId}`)}
+      onLongPress={() => setStepMenu({ item, open: true })} />)}
+  </Section> : null;
+  // A server without the job steps yet (an older release) answers 404: only the reminders show.
+  const stepsFailed = mySteps.error && !missing(mySteps.error) && !mySteps.data;
 
   return <>
     <ListScreen title={t('My day')} back items={entries} keyExtractor={(entry) => entry.item.id} groupBy={(entry) => groupHeading(entry.group, t('Other work'))}
-      toolbar={chips.length > 1 ? <FilterChips value={filter} onChange={setFilter} options={chips} /> : undefined}
+      toolbar={chips.length > 1 || stepsSection || stepsFailed ? <>
+        {chips.length > 1 ? <FilterChips value={filter} onChange={setFilter} options={chips} /> : null}
+        {stepsFailed ? <Banner tone="warning" title={t('Something went wrong')} detail={errorMessage(mySteps.error, t('Try again'))} action={{ label: t('Try again'), onPress: () => void mySteps.refetch() }} /> : null}
+        {stepsSection}
+      </> : undefined}
       loading={list.isLoading} error={list.error && !data ? errorMessage(list.error, t('Try again')) : null} onRetry={() => void list.refetch()}
-      onRefresh={() => { setPulling(true); void list.refetch().finally(() => setPulling(false)); }} refreshing={pulling}
-      empty={<Empty icon={CheckCircle2} title={filter === 'all' ? t('Nothing due today') : t('Nothing matches')} />}
+      onRefresh={() => { setPulling(true); void Promise.all([list.refetch(), mySteps.refetch()]).finally(() => setPulling(false)); }} refreshing={pulling}
+      empty={steps.length ? null : <Empty icon={CheckCircle2} title={filter === 'all' ? t('Nothing due today') : t('Nothing matches')} />}
       renderItem={(entry, _, first) => {
         const { start, end } = swipes(entry.item);
         return <SwipeRow start={start} end={end}>
@@ -132,6 +165,8 @@ export function MyDayScreen() {
         </SwipeRow>;
       }} />
     <ActionSheet open={!!menu?.open} onClose={() => setMenu((value) => value && { ...value, open: false })} title={menu?.item.title} actions={menu ? menuActions(menu.item) : []} />
+    <ActionSheet open={!!stepMenu?.open} onClose={() => setStepMenu((value) => value && { ...value, open: false })} title={stepMenu ? t(stepMenu.item.step.label) : undefined}
+      actions={stepMenu ? stepActions(stepMenu.item) : []} />
     <SnoozeSheet open={!!snoozing?.open} item={snoozing?.item ?? null} timeZone={zoned.timeZone} format={zoned}
       onClose={() => setSnoozing((value) => value && { ...value, open: false })} onSnooze={snooze} />
   </>;

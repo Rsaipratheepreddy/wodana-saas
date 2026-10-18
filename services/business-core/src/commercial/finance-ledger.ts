@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Dec } from "../catalog-core/decimal";
 import { currencyDecimals } from "../common/currency";
@@ -9,8 +9,10 @@ import type {
   FinanceAllocation,
   FinanceDocument,
   FinanceReceipt,
+  ManualPaymentMethod,
   Payment,
 } from "./commercial.types";
+import { MANUAL_PAYMENT_METHODS } from "./commercial.types";
 
 /** Money, exactly (decimal, never float math), in the currency's minor units; two places without a currency. */
 const money = (value: number, currencyCode?: string) =>
@@ -260,10 +262,26 @@ export function recordProviderSettlement(
   return receipt;
 }
 
+/**
+ * How and when a client paid a manually recorded receipt (§0.3 P0). Both are required: posting picks the payment
+ * account from the method, and Finance checks the date against the bank. A day ahead of UTC is allowed, since
+ * the firm's calendar can run up to 14 hours ahead.
+ */
+export function manualReceiptTerms(body: { method?: unknown; receivedOn?: unknown }, now: string): { method: ManualPaymentMethod; receivedOn: string } {
+  const method = (MANUAL_PAYMENT_METHODS as readonly string[]).includes(String(body.method)) ? body.method as ManualPaymentMethod : null;
+  if (!method) throw new BadRequestException("Choose how the client paid: bank transfer, card, cash, cheque or other.");
+  const receivedOn = typeof body.receivedOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.receivedOn) ? body.receivedOn : "";
+  if (!receivedOn || new Date(`${receivedOn}T00:00:00Z`).toISOString().slice(0, 10) !== receivedOn)
+    throw new BadRequestException("Enter the date the payment was received.");
+  if (receivedOn > new Date(Date.parse(now) + 86_400_000).toISOString().slice(0, 10))
+    throw new BadRequestException("The received date can't be in the future.");
+  return { method, receivedOn };
+}
+
 export function reportManualReceipt(
   data: CommercialData,
   payment: Payment,
-  input: { reference: string; evidence: string },
+  input: { reference: string; evidence: string; method?: FinanceReceipt["method"]; receivedOn?: string },
   actor: string,
   at: string,
   actorUserId?: string,
@@ -295,6 +313,8 @@ export function reportManualReceipt(
     status: "reported",
     reference: input.reference,
     evidence: input.evidence,
+    ...(input.method ? { method: input.method } : {}),
+    ...(input.receivedOn ? { receivedOn: input.receivedOn } : {}),
     reportedAt: at,
     reportedBy: actor,
     ...(actorUserId ? { reportedById: actorUserId } : {}),
@@ -352,6 +372,43 @@ export function verifyReceipt(
   payment.verifiedAt = at;
   payment.verifiedBy = actor;
   payment.reference = receipt.reference;
+  return receipt;
+}
+
+/**
+ * Finance returns a receipt the team recorded (wrong amount, unreadable proof, money not in the account), with a
+ * reason: the receipt is kept as rejected, its allocation is reversed and the milestone waits for a new receipt.
+ * The person who recorded it can't return it, the same rule as verifying.
+ */
+export function returnManualReceipt(
+  data: CommercialData,
+  payment: Payment,
+  reason: string,
+  actor: string,
+  at: string,
+  actorUserId?: string,
+) {
+  const { receipts } = arrays(data);
+  const receipt = receipts.find((item) => item.paymentId === payment.id && item.status === "reported" && item.source === "manual");
+  if (!receipt)
+    throw new NotFoundException("There is no recorded receipt waiting for Finance on this payment.");
+  if (receiptReportedBy(receipt, actor, actorUserId))
+    throw new ConflictException("Another finance-authorized person must return a receipt you recorded.");
+  receipt.status = "rejected";
+  receipt.rejectedAt = at;
+  receipt.rejectionReason = reason;
+  receipt.rejectedBy = actor;
+  if (actorUserId) receipt.rejectedById = actorUserId;
+  for (const allocation of data.allocations ?? []) {
+    if (allocation.receiptId !== receipt.id || allocation.reversedAt) continue;
+    allocation.reversedAt = at;
+    allocation.reversalReason = reason;
+  }
+  payment.status = "pending";
+  payment.proof = "";
+  payment.reference = "";
+  delete payment.verifiedAt;
+  delete payment.verifiedBy;
   return receipt;
 }
 

@@ -50,6 +50,8 @@ export function referencePresentation(quote: Quote, company: string, customer: s
   const companyLogo = context?.portalBrand?.logo || '';
   const contact = context?.contacts.find(item => item.name === customer) ?? context?.contacts[0];
   const terms = referenceTermsFor(quote, kit) ?? '';
+  // Guide M: a main quotation goes out as the estimate proposal, under the reference linked to its quotation number.
+  const estimate = quote.kind === 'quotation' && quote.round !== 'design';
   const columns = terms.trim() ? termColumns(terms) : [];
   const monogram = (x: number, y: number, size: number) => kit?.monogramImage ? [image('brand-mark', kit.monogramImage, x, y, size, size)] : [];
   const termsPictures = kit?.termsImages ?? [];
@@ -60,7 +62,7 @@ export function referencePresentation(quote: Quote, company: string, customer: s
   const pages: QuoteCanvasPage[] = [
     page('cover', [
       text('data:company-logo', brand, 110, 110, 720, 360, 56, ON_BRAND, 'center'),
-      text('proposal-title', 'PROPOSAL', 100, 566, 740, 72, 49, ON_BRAND, 'center'),
+      text('proposal-title', estimate ? 'ESTIMATE PROPOSAL' : 'PROPOSAL', 100, 566, 740, 72, 49, ON_BRAND, 'center'),
       text('data:cover-client', '', 175, 696, 590, 92, 27, ON_BRAND, 'center'),
       text('data:client-logo', '', 790, 700, 100, 80),
       text('created-label', 'PREPARED BY', 43, 1080, 620, 40, 20, ON_BRAND),
@@ -119,8 +121,9 @@ export function referencePresentation(quote: Quote, company: string, customer: s
       companyName: brand, companyLogo, clientName: quote.cover?.preparedFor || customer,
       clientPhone: context?.customerPhone || contact?.phone || '', clientEmail: context?.customerEmail || '',
       projectName: context?.title || quote.title, location: quote.cover?.location || context?.customerAddress || '',
-      reference: `Q-${quote.number}`, date: quote.createdAt?.slice(0, 10) || '',
-      preparedBy: quote.cover?.signerName || '', estimator: '', manager: '',
+      reference: context?.estimateReferences?.[quote.id] ?? context?.quoteReferences?.[quote.id] ?? `Q-${quote.number}`, date: quote.createdAt?.slice(0, 10) || '',
+      // The QS who priced it and the person who gave the manager approval (guide M cover header).
+      preparedBy: quote.cover?.signerName || '', estimator: quote.qsEstimate?.reviewedBy || '', manager: quote.approvedBy || '',
     },
     scopeColumns: {hidden: [], custom: []},
     pageOrder: ['cover', ...(pages.some(item => item.id === 'custom:introduction') ? ['custom:introduction'] : []), 'custom:letter', 'scope', ...custom],

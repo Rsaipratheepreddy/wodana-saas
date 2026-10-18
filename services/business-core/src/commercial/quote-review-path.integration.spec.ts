@@ -9,6 +9,8 @@ import { PreProjectReadinessService } from "../pre-projects/pre-project-readines
 import { CommercialService } from "./commercial.service";
 import { commercialRepository } from "./commercial-repository";
 import { caseQuoteFacts } from "./case-quote-facts";
+import { ensureSettings } from "../project-core/project-core.store";
+import { ReceivablesService } from "../receivables/receivables.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -142,6 +144,51 @@ integration("quotation review by the case's path", { timeout: 30_000 }, () => {
       expect((await w.commercial.state(actor, w.workspaceId, w.caseId)).quoteReferences).toEqual({ q1: reference });
       expect((await caseQuoteFacts(w.client, w.workspaceId, [w.caseId])).get(w.caseId)).toEqual({
         data: { quotes: [{ id: "q1", number: 1, kind: "quotation", round: "main", status: "issued" }], agreement: null }, quoteReferences: { q1: reference } });
+    }, { dealFirst: true });
+  });
+
+  it("gives manager approval to the job's own holder of the roles the firm names (§0.3 P8)", async () => {
+    await world("core_collection_factory", async (w) => {
+      await qsRules(w, false);
+      await submit(w);
+      const role = (await ensureSettings(w.client, w.workspaceId)).roles[0];
+      await w.client.query("UPDATE workspace_quotation_settings SET approval_team_roles = ARRAY[$2]::varchar(64)[] WHERE workspace_id = $1", [w.workspaceId, role.key]);
+      await expect(step(w, "approve")).rejects.toThrow(`Name this job's ${role.key.replace(/_/g, " ")} first`);
+      // Someone else holds the role on this job: they approve, not this approver.
+      const otherUser = randomUUID(), other = randomUUID();
+      await w.client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Lena Lead')", [otherUser, `l-${otherUser.slice(0, 8)}@example.com`]);
+      await w.client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [other, w.workspaceId, otherUser]);
+      await w.client.query("INSERT INTO project_assignments(workspace_id,case_id,membership_id,is_manager,active,role_keys) VALUES($1,$2,$3,false,true,ARRAY[$4::varchar])",
+        [w.workspaceId, w.caseId, other, role.key]);
+      await expect(step(w, "approve")).rejects.toThrow(`Manager approval for this quotation comes from Lena Lead (${role.label}).`);
+      // The approver is the job's holder: approved.
+      const mine = (await w.client.query<{ id: string }>("SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2", [w.workspaceId, w.owner])).rows[0].id;
+      await w.client.query("UPDATE project_assignments SET membership_id = $3 WHERE workspace_id = $1 AND case_id = $2", [w.workspaceId, w.caseId, mine]);
+      await step(w, "approve");
+      expect(await status(w)).toBe("internal_approved");
+    }, { dealFirst: true });
+  });
+
+  it("invoices the design fee before any project, its tax carved out of the accepted design quotation to the fils (§0.3 P8)", async () => {
+    await world("core_collection_factory", async (w) => {
+      const company = randomUUID();
+      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone,tax_registration_number,status)
+        VALUES($1,$2,'STU','Studio','Studio Interiors LLC','AE','AED','en-AE','Asia/Dubai','100200300400003','active')`, [company, w.workspaceId]);
+      // The design quotation, accepted at 15,750.00 with 5% VAT; its 100% design fee milestone.
+      await w.client.query("UPDATE commercial_quotes SET round = 'design', status = 'accepted', total = 15750, tax_rate = 5 WHERE workspace_id = $1 AND case_id = $2 AND id = 'q1'", [w.workspaceId, w.caseId]);
+      await w.client.query(`INSERT INTO commercial_payments(workspace_id,case_id,id,sort_order,title,amount,currency,status,source_quote_id,legal_entity_id)
+        VALUES($1,$2,'fee',0,'Design fee',15750,'AED','pending','q1',$3)`, [w.workspaceId, w.caseId, company]);
+      const runWith = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId: w.owner });
+      const finance = new ReceivablesService({ withPermission: runWith, hasPermission: async () => true } as never);
+      const listed = await finance.overview(actor, w.workspaceId);
+      expect(listed.toInvoice.find((row: { paymentId: string }) => row.paymentId === "fee")).toMatchObject({ projectId: null, title: "Design fee", amount: "15750" });
+      const id = randomUUID();
+      const detail = await finance.command(actor, w.workspaceId, { commandId: randomUUID(), action: "issue", id, caseId: w.caseId, paymentId: "fee" });
+      // 15,750.00 gross at 5%: tax 750.00, net 15,000.00 — exact.
+      expect(detail.invoice).toMatchObject({ projectId: null, total: "15750.0000", tax: "750.0000", net: "15000.0000", status: "issued" });
+      expect(detail.invoice.number).toMatch(/^STU-INV-\d{4}-00001$/);
+      expect(detail.lines.map((line: { taxRate: string; total: string }) => [line.taxRate, line.total])).toEqual([["5.0000", "15750.0000"]]);
+      await expect(finance.command(actor, w.workspaceId, { commandId: randomUUID(), action: "issue", id: randomUUID(), caseId: w.caseId, paymentId: "fee" })).rejects.toThrow(/already issued/);
     }, { dealFirst: true });
   });
 

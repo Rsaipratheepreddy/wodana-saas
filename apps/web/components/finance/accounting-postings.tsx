@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { Button, DataGrid, EmptyState, ErrorState, ListTabs, NoResultsState, RecordName, type DataGridColumn } from "@/design-system";
+import { useRouter } from "next/navigation";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, ListTabs, NoResultsState, RecordName, type DataGridColumn, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { AccountingApi } from "@/lib/accounting/client";
 import type { Posting, PostingKind, PostingStatus } from "@/lib/accounting/types";
@@ -15,6 +15,7 @@ type Show = "attention" | "all";
 export function AccountingPostings({ api }: { api: AccountingApi }) {
   const t = useT();
   const format = useProjectFormat();
+  const router = useRouter();
   const [postings, setPostings] = useState<Posting[] | null>(null);
   const [error, setError] = useState("");
   const [show, setShow] = useState<Show>("attention");
@@ -26,7 +27,7 @@ export function AccountingPostings({ api }: { api: AccountingApi }) {
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const kinds = useMemo<Record<PostingKind, string>>(() => ({ invoice: t("Invoice"), credit_note: t("Credit note"), invoice_payment: t("Client payment"), bill: t("Supplier bill"),
     bill_payment: t("Supplier payment"), bill_payment_void: t("Payment reversed"), expense: t("Petty cash") }), [t]);
-  const statuses = useMemo<Record<PostingStatus, [string, string]>>(() => ({ pending: [t("Waiting"), "info"], sent: [t("Posted"), "success"], failed: [t("Failed"), "danger"],
+  const statuses = useMemo<Record<PostingStatus, [string, StatusTone]>>(() => ({ pending: [t("Waiting"), "info"], sent: [t("Posted"), "success"], failed: [t("Failed"), "danger"],
     blocked: [t("Needs a mapping"), "warning"], cancelled: [t("Not needed"), "neutral"] }), [t]);
   const needsAttention = (row: Posting) => row.status === "blocked" || (row.status === "failed" && !row.nextAt) || row.errorCode === "total_differs";
   const needle = search.trim().toLocaleLowerCase();
@@ -34,8 +35,8 @@ export function AccountingPostings({ api }: { api: AccountingApi }) {
   const columns = useMemo<DataGridColumn<Posting>[]>(() => [
     { id: "document", header: t("Document"), accessorFn: (row) => row.label ?? "", size: 300, meta: { primary: true, renderCell: (row) => <RecordName title={row.label ?? kinds[row.kind]} detail={[kinds[row.kind], row.companyName, format.day(row.documentDate)].join(" · ")} /> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 320, meta: { renderCell: (row) => <span className={styles.nameCell}>
-      <span className={styles.status} data-tone={row.errorCode === "total_differs" ? "warning" : statuses[row.status][1]}>
-        {row.status === "sent" && row.providerNumber ? `${statuses.sent[0]} · ${row.providerNumber}` : statuses[row.status][0]}</span>
+      <span><Badge tone={row.errorCode === "total_differs" ? "warning" : statuses[row.status][1]}>
+        {row.status === "sent" && row.providerNumber ? `${statuses.sent[0]} · ${row.providerNumber}` : statuses[row.status][0]}</Badge></span>
       {row.error ? <small>{row.error}</small> : row.status === "failed" && row.nextAt ? <small>{t("Tries again {date}", { date: format.when(row.nextAt) })}</small> : null}</span> } },
     { id: "action", header: "", accessorFn: () => "", size: 120, meta: { renderCell: (row) => ["failed", "blocked"].includes(row.status)
       ? <Button size="compact" isLoading={busy === row.id} onPress={async () => {
@@ -48,5 +49,5 @@ export function AccountingPostings({ api }: { api: AccountingApi }) {
     onSearchChange={setSearch} searchValue={search} searchLabel={t("Search postings")} rowNumbers={false}
     toolbarLeading={<ListTabs label={t("Show")} value={show} onChange={setShow} items={[{ id: "attention", label: t("Needs attention") }, { id: "all", label: t("All") }]} />}
     emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={show === "attention" ? t("Nothing needs attention") : t("Nothing posted yet")}
-      action={<Link className={styles.linkButton} href="/workspace/settings/accounting">{t("Accounting settings")}</Link>} />} />;
+      action={<Button onPress={() => router.push("/workspace/settings/accounting")}>{t("Accounting settings")}</Button>} />} />;
 }

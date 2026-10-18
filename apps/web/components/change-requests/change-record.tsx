@@ -1,13 +1,13 @@
 "use client";
 
 import { RecordHistory } from "../history/record-history";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Camera, Copy, FileText } from "lucide-react";
+import { Copy } from "lucide-react";
 import {
-  Badge, Button, EmptyState, ErrorState, FormDialog, IconButton, IconMenuButton, InlineNotice, NumericInput, PageHeader, PageSkeleton, RecordTable, Tabs, TextAreaField, TextInput,
-  type DataGridColumn,
+  Badge, Button, EmptyState, ErrorState, FileUploader, FormNotSaved, IconButton, IconMenuButton, InlineNotice, NumericInput, PageHeader, PageSkeleton, ReasonDialog, RecordTable, ReviewDialog, ReviewFiles, Tabs, TextInput,
+  type DataGridColumn, type ReviewFact,
 } from "@/design-system";
 import { useWorkspaceBreadcrumb } from "@/components/workspace/workspace-breadcrumb";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -21,7 +21,7 @@ import styles from "./project-changes.module.css";
 
 type Tab = "scope" | "price" | "timeline" | "approvals" | "history";
 const TABS: Tab[] = ["scope", "price", "timeline", "approvals", "history"];
-type Dialog = "edit" | "withdraw" | "return" | null;
+type Dialog = "edit" | "withdraw" | "return" | "approve" | null;
 
 /**
  * One change on a project: its name is the title, its status one chip, and one primary action that is always its next
@@ -75,7 +75,7 @@ export function ChangeRecord({ workspaceId, projectId, changeId, initial }: { wo
     ? <Link className="wd-button" data-variant="primary" data-size="compact" href={priceHref}>{t(NEXT_STEP_LABEL[next])}</Link>
     : <Button size="compact" variant="primary" isLoading={busy} onPress={() => void (next === "price" ? run(() => api.step(change.id, "price", { version }), t("Priced. Finish the price in the builder."))
       : next === "submit" ? run(() => api.step(change.id, "submit", { version }), t("Sent for approval."))
-      : next === "approve" ? run(() => api.step(change.id, "decide", { decision: "approve", approvalVersion: record.approval?.version, commandId: crypto.randomUUID() }), t("Approved."))
+      : next === "approve" ? setDialog("approve")
       : next === "send" ? run(() => api.step(change.id, "send", { version, commandId: crypto.randomUUID() }), t("Sent to the client."))
       : run(() => api.step(change.id, "apply", { version }), t("Applied to the project.")))}>{t(NEXT_STEP_LABEL[next])}</Button>;
   const menu = [
@@ -112,29 +112,46 @@ export function ChangeRecord({ workspaceId, projectId, changeId, initial }: { wo
       { id: "history", label: t("History"), panel: <RecordHistory workspaceId={workspaceId} recordType="change_request" recordId={changeId} /> },
     ]} />
     {dialog === "edit" ? <RaiseChangeDialog api={api} change={change} onClose={() => setDialog(null)} onSaved={(next) => { setRecord(next); setDialog(null); setNotice({ tone: "success", message: t("Change saved.") }); }} /> : null}
-    {dialog === "withdraw" || dialog === "return" ? <NoteDialog title={dialog === "withdraw" ? t("Withdraw {reference}", { reference: change.reference }) : t("Return {reference}", { reference: change.reference })}
-      label={t("Why")} submitLabel={dialog === "withdraw" ? t("Withdraw") : t("Return")} onClose={() => setDialog(null)}
-      onSubmit={async (note) => {
+    {dialog === "withdraw" || dialog === "return" ? <ReasonDialog title={dialog === "withdraw" ? t("Withdraw {reference}", { reference: change.reference }) : t("Return {reference}", { reference: change.reference })}
+      label={t("Why")} maxLength={2000} confirmLabel={dialog === "withdraw" ? t("Withdraw") : t("Return")} onClose={() => setDialog(null)}
+      onConfirm={async (note) => {
         const ok = await run(() => dialog === "withdraw" ? api.step(change.id, "withdraw", { version, reason: note })
           : api.step(change.id, "decide", { decision: "return", note, approvalVersion: record.approval?.version, commandId: crypto.randomUUID() }),
         dialog === "withdraw" ? t("Change withdrawn.") : t("Returned for changes."));
+        // The page says why it failed; the reason stays in the dialog.
+        if (!ok) throw new FormNotSaved();
+      }} /> : null}
+    {dialog === "approve" ? <ApproveDialog api={api} record={record} onClose={() => setDialog(null)}
+      onDecide={async (decision, note) => {
+        const ok = await run(() => api.step(change.id, "decide", { decision, ...(note ? { note } : {}), approvalVersion: record.approval?.version, commandId: crypto.randomUUID() }),
+          decision === "approve" ? t("Approved.") : t("Returned for changes."));
         if (ok) setDialog(null);
       }} /> : null}
   </div>;
 }
 
-function NoteDialog({ title, label, submitLabel, onClose, onSubmit }: { title: string; label: string; submitLabel: string; onClose: () => void; onSubmit: (note: string) => Promise<void> }) {
-  const [note, setNote] = useState("");
-  return <FormDialog title={title} onClose={onClose} isDirty={Boolean(note)} submitLabel={submitLabel} isSubmitDisabled={!note.trim()} onSubmit={() => onSubmit(note.trim())}>
-    <TextAreaField isRequired autoFocus label={label} maxLength={2000} value={note} onChange={setNote} />
-  </FormDialog>;
+/** §0.3: approving opens the change as it will be decided (why, the price, the handover, its photos); returning needs a reason. */
+function ApproveDialog({ api, record, onClose, onDecide }: { api: ProjectChangesApi; record: Record_; onClose: () => void; onDecide: (decision: "approve" | "return", note: string) => Promise<void> }) {
+  const t = useT();
+  const format = useProjectFormat();
+  const { change, price } = record;
+  const facts: ReviewFact[] = [
+    { label: t("Reason"), value: t(REASON_LABEL[change.reason]) },
+    ...(change.raisedByName ? [{ label: t("Raised by"), value: change.raisedByName }] : []),
+    ...(price && record.canSeeValue !== false ? [{ label: t("Total"), value: <bdi dir="ltr">{signedMoney(price.total, format.money, price.currency)}</bdi> }] : []),
+    ...(change.handoverBefore && change.handoverAfter && change.handoverBefore !== change.handoverAfter ? [{ label: t("Handover"), value: `${format.day(change.handoverBefore)} → ${format.day(change.handoverAfter)}` }] : []),
+  ];
+  return <ReviewDialog title={`${change.reference} · ${change.title}`} description={change.description || undefined} facts={facts}
+    files={record.files.map((file) => ({ id: file.id, name: file.name, href: api.fileUrl(file.id), previewHref: file.hasPreview ? api.fileUrl(file.id, true) : null }))}
+    confirmLabel={t("Approve")} onConfirm={(note) => onDecide("approve", note)}
+    {...(record.actions.includes("return") ? { returnLabel: t("Return"), onReturn: (reason: string) => onDecide("return", reason) } : {})}
+    onClose={onClose} />;
 }
 
 /** What and why: the reason, who raised it, its words, the lines as raised, and its photos and files. */
 function ScopeTab({ api, record, onChanged }: { api: ProjectChangesApi; record: Record_; onChanged: (record: Record_) => void }) {
   const t = useT();
   const format = useProjectFormat();
-  const input = useRef<HTMLInputElement>(null);
   const [failure, setFailure] = useState("");
   const { change } = record;
   const columns: DataGridColumn<RaisedLine>[] = [
@@ -145,12 +162,11 @@ function ScopeTab({ api, record, onChanged }: { api: ProjectChangesApi; record: 
     { id: "quantity", header: t("Qty"), accessorFn: (row) => row.quantity ?? "", meta: { align: "end" }, cell: ({ row: { original } }: { row: { original: RaisedLine } }) =>
       <span className={styles.number}>{original.quantity ? `${Number(original.quantity).toLocaleString()} ${original.unit}`.trim() : "—"}</span> },
   ];
-  const upload = async (files: FileList | null) => {
+  const upload = async (files: File[]) => {
     setFailure("");
-    for (const file of Array.from(files ?? []).slice(0, 10)) {
+    for (const file of files.slice(0, 10)) {
       try { onChanged(await api.upload(change.id, crypto.randomUUID(), file)); } catch (cause) { setFailure(cause instanceof Error ? cause.message : t("The file could not be uploaded.")); }
     }
-    if (input.current) input.current.value = "";
   };
   return <div className={styles.tab}>
     <dl className={styles.facts}>
@@ -159,17 +175,10 @@ function ScopeTab({ api, record, onChanged }: { api: ProjectChangesApi; record: 
       {change.description ? <><dt>{t("What changes")}</dt><dd>{change.description}</dd></> : null}
     </dl>
     {change.lines.length ? <RecordTable ariaLabel={t("Lines")} data={change.lines} columns={columns} getRowId={(row) => row.id} showToolbar={false} selectable={false} rowNumbers={false} wrapText />
-      : <p className={styles.muted}>{change.status === "draft" ? t("No lines yet. Add them when you edit it, or when it's priced.") : t("The price holds what changes.")}</p>}
+      : <EmptyState illustration={null} title={change.status === "draft" ? t("No lines yet. Add them when you edit it, or when it's priced.") : t("The price holds what changes.")} />}
     {failure ? <InlineNotice tone="error" message={failure} /> : null}
-    {record.files.length ? <ul className={styles.files} aria-label={t("Photos and files")}>{record.files.map((file) => <li key={file.id}>
-      <a href={api.fileUrl(file.id)} target="_blank" rel="noreferrer">
-        <span className={styles.thumb}>{file.hasPreview ? <img src={api.fileUrl(file.id, true)} alt="" /> : <FileText aria-hidden="true" size={20} />}</span>
-        <span>{file.name}</span>
-      </a></li>)}</ul> : null}
-    {record.actions.includes("upload") ? <div>
-      <input ref={input} className={styles.hiddenInput} type="file" accept="image/*,application/pdf" multiple aria-label={t("Add photos")} onChange={(event) => void upload(event.target.files)} />
-      <Button size="compact" onPress={() => input.current?.click()}><Camera aria-hidden="true" size={14} />{t("Add photos")}</Button>
-    </div> : null}
+    {record.files.length ? <ReviewFiles label={t("Photos and files")} files={record.files.map((file) => ({ id: file.id, name: file.name, href: api.fileUrl(file.id), previewHref: file.hasPreview ? api.fileUrl(file.id, true) : null }))} /> : null}
+    {record.actions.includes("upload") ? <FileUploader appearance="button" accept="image/*,application/pdf" label={t("Add photos")} onFiles={(files) => void upload(files)} /> : null}
   </div>;
 }
 
@@ -193,7 +202,7 @@ function PriceTab({ record, priceHref }: { record: Record_; priceHref: string })
   const terms = price.paymentTerms.map((term) => `${term.title} · ${term.percent}%`).join(" · ");
   return <div className={styles.tab}>
     {price.lines.length ? <RecordTable ariaLabel={t("Priced lines")} data={price.lines} columns={columns} getRowId={(row) => row.id} showToolbar={false} selectable={false} rowNumbers={false} wrapText />
-      : <p className={styles.muted}>{t("No lines on the price.")}</p>}
+      : <EmptyState illustration={null} title={t("No lines on the price.")} />}
     <dl className={styles.totals}>
       <dt>{t("Net")}</dt><dd>{money(price.net)}</dd>
       <dt>{t("Tax")}</dt><dd>{money(price.tax)}</dd>
@@ -260,7 +269,7 @@ function TimelineTab({ api, record, onSaved }: { api: ProjectChangesApi; record:
     {failure ? <InlineNotice tone="error" message={failure} /> : null}
     {editable && dirty ? <div className={styles.row}><span className={styles.spacer} /><Button size="compact" variant="primary" isLoading={busy} onPress={() => void save()}>{t("Save")}</Button></div> : null}
     {stages.length ? <RecordTable ariaLabel={t("Stages that move")} data={stages} columns={columns} getRowId={(row) => row.id} showToolbar={false} selectable={false} rowNumbers={false} wrapText />
-      : <p className={styles.muted}>{t("No stage moves.")}</p>}
+      : <EmptyState illustration={null} title={t("No stage moves.")} />}
     {timeline.applied?.items?.length ? <p className={styles.muted}>{t("{count} tasks moved.", { count: timeline.applied.items.length })}</p>
       : preview?.items.length ? <p className={styles.muted}>{t("{count} tasks will move.", { count: preview.items.length })}</p> : null}
   </div>;
@@ -276,7 +285,7 @@ function ApprovalsTab({ record }: { record: Record_ }) {
       <span>{step.label}</span>
       <span className={styles.muted}>{step.decidedBy ? `${step.decidedBy} · ${format.when(step.decidedAt)}` : step.state === "current" && approval.waitingFor.length
         ? t("Waiting for {names}", { names: approval.waitingFor.join(", ") }) : step.state === "returned" ? t("Returned") : ""}</span>
-    </li>)}</ol> : <p className={styles.muted}>{t("Not sent for approval yet.")}</p>}
+    </li>)}</ol> : <EmptyState illustration={null} title={t("Not sent for approval yet.")} />}
     <dl className={styles.facts}>
       <dt>{t("Client")}</dt>
       <dd>{change.decidedAt ? `${change.status === "declined" ? t("Declined by {name}", { name: change.decidedByName ?? "" }) : t("Approved by {name}", { name: change.decidedByName ?? "" })} · ${format.when(change.decidedAt)} · ${change.decisionMethod === "signed_link" ? t("Signed") : t("Client portal")}`

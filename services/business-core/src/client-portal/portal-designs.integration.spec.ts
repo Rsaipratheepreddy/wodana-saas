@@ -124,6 +124,14 @@ integration("PLM-153: the client's Designs folder (every shared design file, by 
       expect(thread).toEqual({ versionId: board.versions[0], visible: true, grant: w.grantId });
       const file = (await w.folder())!.groups[0].designs[0].files.find((item) => item.id === board.versions[0])!;
       expect(file.comments).toEqual([expect.objectContaining({ text: "Can we keep the oak floor from this round?", fromClient: true, author: "Maya Client", mine: true })]);
+      // §0.3: a comment pinned on the picture keeps its point (the team sees the same pin); a point off the design is refused.
+      const pinned = randomUUID();
+      await designFileComment(ctx, { caseId: w.caseId, versionId: board.versions[0], commentId: pinned, text: "This corner feels dark", anchor: { x: 0.25, y: 0.333333 } });
+      await expect(designFileComment(ctx, { caseId: w.caseId, versionId: board.versions[0], commentId: randomUUID(), text: "Off", anchor: { x: 1.4, y: 0.2 } }))
+        .rejects.toThrow("Place the pin on the design.");
+      expect((await w.client.query(`SELECT anchor FROM pre_project_design_threads WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, pinned])).rows[0].anchor).toEqual({ x: 0.25, y: 0.3333 });
+      const withPin = (await w.folder())!.groups[0].designs[0].files.find((item) => item.id === board.versions[0])!;
+      expect(withPin.comments.find((comment) => comment.text === "This corner feels dark")).toMatchObject({ anchor: { x: 0.25, y: 0.3333 }, threadId: pinned });
 
       // A file the team takes back (archived) can't be commented on; neither can one that was never shared.
       await w.client.query(`UPDATE pre_project_designs SET archived_at = now() WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, board.id]);

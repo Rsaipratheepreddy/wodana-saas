@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, BellRing, CalendarClock, CheckCircle2, FileText, Inbox, Plus, RefreshCw, TrendingUp, Users } from "lucide-react";
-import { Callout, Card, CardGrid, IconButton, SelectField, useDesignSystem } from "@/design-system";
+import { Button, Callout, Card, CardGrid, EmptyState, IconButton, SegmentedControl, SelectField, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
@@ -19,6 +20,7 @@ const monthText = (key: string, locale: string, withYear = false) => Number.isFi
 
 export function CrmOverview({ initialData }: { initialData: CrmScreenPageData }) {
   const t = useT();
+  const router = useRouter();
   const { locale } = useDesignSystem();
   const crmTime = useCrmTime();
   const [items, setItems] = useState(initialData.items);
@@ -58,9 +60,10 @@ export function CrmOverview({ initialData }: { initialData: CrmScreenPageData })
   const trend = months.map(([key]) => ({ key, title: monthText(key, locale), count: sources.filter(row => row.monthKey === key).reduce((sum,row) => sum + Number(row.count),0) }));
   const max = Math.max(1,...trend.map(row => row.count));
   const attention = <section aria-label={t("Needs attention")}><Card as="div" title={<>{t("Needs attention")} <span className={styles.count}>{total}</span></>} action={<Link className={styles.cardLink} href="/workspace/crm/follow-ups">{t("View all")} <ArrowRight size={13}/></Link>}>
-    <div className={styles.attentionFilters}>{["all", "urgent"].map(filter => <button type="button" key={filter} aria-pressed={attentionFilter === filter} onClick={() => setAttentionFilter(filter)}>{filter === "all" ? t("All work") : t("Overdue & urgent")}</button>)}</div>
+    <SegmentedControl label={t("Needs attention")} options={[{ id: "all", label: t("All work") }, { id: "urgent", label: t("Overdue & urgent") }]} value={attentionFilter} onChange={setAttentionFilter} />
     <div className={styles.attention}>{attentionItems.slice(0,5).map(item => <Link key={item.id} href={crmRecordLink(item)} data-urgent={item.kind === "overdue_activity" || item.kind === "sla_breach"}><span className={styles.attentionIcon} data-urgent={item.kind === "overdue_activity" || item.kind === "sla_breach"}><CalendarClock size={17}/></span><div><strong>{String(item.title ?? item.partyName ?? t("Follow-up"))}</strong><small>{String(item.reason ?? label(item.kind))}</small></div><time>{crmTime(item.dueAt)}</time></Link>)}
-      {!attentionItems.length && <div className={styles.empty}><CheckCircle2 size={28}/><p>{attentionFilter === "urgent" ? t("No overdue or urgent work in this list.") : t("No follow-ups need attention.")}</p><Link href="/workspace/crm/leads?create=true">{t("Create an enquiry")} <ArrowRight size={14}/></Link></div>}</div>
+      {!attentionItems.length && <EmptyState icon={<CheckCircle2 aria-hidden="true" size={28}/>} title={attentionFilter === "urgent" ? t("No overdue or urgent work in this list.") : t("No follow-ups need attention.")}
+        action={<Button size="compact" onPress={() => router.push("/workspace/crm/leads?create=true")}>{t("Create an enquiry")}</Button>} />}</div>
   </Card></section>;
   return <CrmProductShell title={t("Sales")} canView={initialData.canView} useWorkspaceColors kind="dashboard"
     actions={<IconButton aria-label={t("Refresh Sales")} isLoading={busy} onPress={() => void refresh()}><RefreshCw size={15}/></IconButton>}>

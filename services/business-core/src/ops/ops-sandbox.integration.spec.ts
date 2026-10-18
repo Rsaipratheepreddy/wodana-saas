@@ -182,8 +182,8 @@ integration("operator CLI sandbox: a test workspace through the app's own provis
         JOIN crm_parties party ON party.workspace_id = enquiry.workspace_id AND party.id = enquiry.party_id
         JOIN crm_contact_points phone ON phone.workspace_id = party.workspace_id AND phone.party_id = party.id AND phone.type = 'phone'
        WHERE intake.workspace_id = $1 AND intake.external_event_id IN ('SHOWCASE-ENQ-6', 'SHOWCASE-MARINA-1804') ORDER BY intake.external_event_id`, [id])).rows).toEqual([
-      { name: "Nikolai Petrov", phone: "+971506000016", area: "Palm Jumeirah", emirate: "dubai", title: "Nikolai Petrov (Palm Jumeirah, Dubai)" },
-      { name: "Reem Al Marzouqi", phone: "+971502000002", area: "Dubai Marina", emirate: "dubai", title: "Reem Al Marzouqi (Dubai Marina, Dubai)" },
+      { name: "Nikolai Petrov", phone: "+971506000016", area: "Palm Jumeirah", emirate: "dubai", title: "Nikolai Petrov · Palm Jumeirah, Dubai" },
+      { name: "Reem Al Marzouqi", phone: "+971502000002", area: "Dubai Marina", emirate: "dubai", title: "Reem Al Marzouqi · Dubai Marina, Dubai" },
     ]);
   });
 

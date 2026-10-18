@@ -145,4 +145,12 @@ describe("the pending follow-up", () => {
     expect(plan.why).toEqual({ key: "Won. The work continues in project {reference}.", values: { reference: "PRJ-0004" } });
     expect(plan.then).toEqual([]);
   });
+
+  it("sends the intro outcome and the target date to one dialog, as one step (§0.3 P0)", () => {
+    expect(requirementAction("qualificationOutcome")).toEqual({ target: "outcome", label: "Record outcome" });
+    expect(requirementAction("targetCompletion").target).toBe("outcome");
+    expect(groupRequirements([{ key: "qualificationOutcome", label: "Intro outcome recorded: going ahead" },
+      { key: "targetCompletion", label: "Target completion date" }]).map((step) => step.id)).toEqual(["qualificationOutcome"]);
+    expect(groupForRequirement("qualificationOutcome")).toBe("intro");
+  });
 });

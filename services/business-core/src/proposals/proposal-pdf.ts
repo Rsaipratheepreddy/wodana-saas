@@ -22,6 +22,8 @@ export type QuotationPage = {
   title: string;
   /** The quotation number, as allocated or as the firm's own. */
   reference: string;
+  /** §0.3 P4: the snapshot's fingerprint, the same one the portal shows and the client's decision records. */
+  quoteHash?: string | null;
   revision: number;
   issuedOn: string;
   validUntil: string | null;
@@ -51,6 +53,10 @@ export type SignatureEvidence = {
   signedAt: string;
   ip: string;
   userAgent: string;
+  /** The signer's device in a few words ("Chrome on iPhone"). */
+  device?: string | null;
+  /** How the signer was verified: the one-time code's channel and when it was confirmed. */
+  verification?: { channel: "whatsapp" | "email" | "demo"; at: string } | null;
   signature: { kind: "typed"; text: string } | { kind: "drawn"; png: Uint8Array };
   brandName: string;
   /** The brand's accent colour. */
@@ -102,7 +108,7 @@ async function drawQuotation(document: PDFDocument, data: QuotationPage) {
   await layout.header({
     label: "Quotation",
     reference: `${data.reference} · R${data.revision}`,
-    facts: [["Date", date(data.issuedOn)], ["Valid until", date(data.validUntil)], ["Currency", data.currency]],
+    facts: [["Date", date(data.issuedOn)], ["Valid until", date(data.validUntil)], ["Currency", data.currency], ...(data.quoteHash ? [["Version", data.quoteHash.slice(0, 8)] as [string, string]] : [])],
     title: data.title,
     party: { label: "Prepared for", name: data.client.name, lines: [data.client.project !== data.title ? data.client.project : "", data.client.address ?? ""] },
   });
@@ -145,6 +151,25 @@ export async function composeProposal(template: TemplatePage[], quotation: Quota
   return (await renderProposal(template, quotation)).bytes;
 }
 
+/**
+ * The proposal with its quotation pages printed from the client's own portal page (portal-print.ts): the firm's
+ * pages 1–3, the printed pages exactly as the portal draws them, then page 5.
+ */
+export async function composeProposalWithPrinted(template: TemplatePage[], quotation: Pick<QuotationPage, "reference" | "title" | "letterhead" | "brand">, printed: Uint8Array): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  document.setTitle(cleanText(`${quotation.reference} · ${quotation.title}`));
+  document.setAuthor(cleanText(quotation.letterhead?.name ?? quotation.brand.name));
+  document.setCreator(cleanText(quotation.brand.name));
+  document.setProducer("Powered by Wodana");
+  const slot = (number: TemplatePage["slot"]) => template.find((page) => page.slot === number);
+  for (const number of [1, 2, 3] as const) { const page = slot(number); if (page) await addTemplatePage(document, page); }
+  const source = await PDFDocument.load(printed);
+  for (const page of await document.copyPages(source, source.getPageIndices())) document.addPage(page);
+  const closing = slot(5);
+  if (closing) await addTemplatePage(document, closing);
+  return document.save();
+}
+
 /** The proposal PDF and what its generated pages say, as text (for render tests). */
 export async function renderProposal(template: TemplatePage[], quotation: QuotationPage): Promise<{ bytes: Uint8Array; outline: string }> {
   const document = await PDFDocument.create();
@@ -178,7 +203,8 @@ export async function appendCertificate(signed: Uint8Array, evidence: SignatureE
   await layout.header({ label: "Signature certificate", reference: evidence.reference, title: evidence.documentTitle });
   layout.facts([
     ["Signed by", evidence.signer.name], ["Email", evidence.signer.email ?? ""], ["Phone", evidence.signer.phone ?? ""], ["Signed at (UTC)", utcMoment(evidence.signedAt)],
-    ["IP address", evidence.ip], ["Browser", evidence.userAgent], ["Method", evidence.signature.kind === "typed" ? "Typed name" : "Drawn signature"],
+    ["IP address", evidence.ip], ["Device", evidence.device ?? ""], ["Browser", evidence.userAgent], ["Method", evidence.signature.kind === "typed" ? "Typed name" : "Drawn signature"],
+    ...(evidence.verification ? [["Verified by", `One-time code by ${evidence.verification.channel === "whatsapp" ? "WhatsApp" : evidence.verification.channel === "email" ? "email" : "demonstration"}, ${utcMoment(evidence.verification.at)} UTC`] as [string, string]] : []),
   ]);
   const monoRow = (label: string, value: string) => {
     const perLine = Math.max(1, Math.floor((layout.width - 130) / mono.widthOfTextAtSize("0", 9.5)));

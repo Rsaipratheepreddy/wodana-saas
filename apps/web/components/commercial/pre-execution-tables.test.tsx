@@ -28,7 +28,7 @@ describe('Planning shared tables',()=>{
   expect(productionGate).not.toBeChecked();
   await user.click(productionGate);
   expect(productionGate).toBeChecked();
- expect(screen.getByText(/Total: 100.00%/)).toBeVisible();
+ expect(screen.getByText(/100% allocated/)).toBeVisible();
  });
  it('loads payment template history and exposes safe restore controls',async()=>{
   const template={id:'00000000-0000-4000-8000-000000000010',name:'Residential 40 / 60',version:2,milestones:initial.paymentTerms};

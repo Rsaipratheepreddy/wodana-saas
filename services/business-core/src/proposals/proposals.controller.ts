@@ -12,6 +12,7 @@ import { EsignService } from "./esign.service";
 import { introFacts, introPagePdf } from "./intro-deck";
 import { clientPresentation, taxLabel } from "./proposal-data";
 import { ProposalDocumentsService } from "./proposal-documents.service";
+import { ProposalPrintService } from "./proposal-print.service";
 import { MAX_FILE_BYTES, type UploadedFile as Upload } from "./proposal-files";
 import { QsReviewService } from "./qs-review.service";
 
@@ -188,6 +189,17 @@ export class ProposalsController {
   }
 }
 
+/** The portal print page's data for a print link (the link is the key; three minutes, one quotation snapshot). */
+@Public()
+@ApiTags("proposals")
+@Controller("print")
+export class ProposalPrintController {
+  constructor(private readonly print: ProposalPrintService) {}
+
+  @Get("proposals/:token")
+  view(@Param("token") token: string) { return this.print.view(token); }
+}
+
 /** The signing page's API: no account, the link's token is the key (R8). */
 @Public()
 @ApiTags("esign")
@@ -202,6 +214,12 @@ export class EsignController {
   async document(@Param("token") token: string, @Query("copy") copy: string, @Res({ passthrough: true }) response: Response) {
     return pdf(response, await this.esign.document(token, copy === "signed"), copy !== "signed");
   }
+
+  @Post(":token/code")
+  sendCode(@Param("token") token: string, @Body() body: unknown) { return this.esign.sendCode(token, body && typeof body === "object" ? body as Record<string, unknown> : {}); }
+
+  @Post(":token/code/verify")
+  verifyCode(@Param("token") token: string, @Body() body: unknown) { return this.esign.verifyCode(token, body && typeof body === "object" ? body as Record<string, unknown> : {}); }
 
   @Post(":token/sign")
   sign(@Param("token") token: string, @Body() body: unknown, @Headers("x-signer-ip") ip?: string, @Headers("x-signer-agent") agent?: string, @Headers("user-agent") userAgent?: string) {

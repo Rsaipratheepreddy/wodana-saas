@@ -17,3 +17,6 @@
 .referenceSchedule[data-dense] th, .referenceSchedule[data-dense] td { padding-inline: var(--wd-space-0-5); }
 /* Amounts never break mid-number. */
 .referenceItem td:nth-last-child(-n+2) { overflow-wrap: normal; white-space: nowrap; }
+/* Materials print as chips (name · code), centred like the rest of the schedule; the line's other details follow. */
+.referenceSchedule .materialChips { justify-content: center; }
+.referenceSchedule td > .materialChips + small { display: block; margin-block-start: var(--wd-space-1); }

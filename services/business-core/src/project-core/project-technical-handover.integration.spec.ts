@@ -210,6 +210,12 @@ integration("technical handover, factory requirements and the path E checks (PLM
       const production = () => detail.stages.find((stage) => stage.name === "Production")!.checks;
       expect(production().map((check) => [check.kind, check.passed])).toEqual([["technical_handover_accepted", false], ["factory_requirements_confirmed", true], ["qs_approved", true], ["everything_made", false]]);
 
+      // Guide step 17: the material coordinator completed the material list (every detail and a sample photo) before technical starts.
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO project_material_items (id, workspace_id, project_id, position, name, code, supplier, quantity, unit, boq_line_ids, brand, colour, size, finish, sample_photo_asset_id)
+        VALUES (gen_random_uuid(), $1, $2, 1, 'Oak veneer', 'OK-12', 'Board Co', 4, 'sheet', ARRAY[$3::uuid], 'Egger', 'Natural', '2800 x 2070', 'Matt', gen_random_uuid())`,
+        [w.workspaceId, projectId, wardrobe.id]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
       // PLM-165: sales hands the pack over; the technical team hears (in the app and by email) and can't accept it while items are missing.
       await seller.command(actor, w.workspaceId, projectId, { action: "hand_over_technical", note: "Check the sofa arm height", version: await version() });
       pack = await core.technicalHandover(actor, w.workspaceId, projectId);

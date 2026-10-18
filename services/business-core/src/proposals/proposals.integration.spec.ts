@@ -13,10 +13,13 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { TaxNumberingService } from "../workspaces/tax-numbering.service";
 import { EsignService } from "./esign.service";
 import { clientPresentation, portalQuoteExtras } from "./proposal-data";
-import { ProposalDocumentsService } from "./proposal-documents.service";
+import { issueProposalVersion, ProposalDocumentsService } from "./proposal-documents.service";
+import { printToken, readPrintToken, type PrintTarget } from "./portal-print";
+import { ProposalPrintService } from "./proposal-print.service";
 import { sha256 } from "./proposal-pdf";
 import { QsReviewService } from "./qs-review.service";
 import { assignQuotationReference, beforeQuoteIssued } from "./quote-issue";
+import { readCaseDocuments } from "../documents/document-sends";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each world is rolled back; the
 // concurrency test commits into its own workspace and removes it afterwards.
@@ -114,6 +117,7 @@ integration("P3 quotation side: numbering, proposals, QS, e-sign and markup disc
       const mailer = {
         sendSignatureRequest: async (input: { to: string; signUrl: string }) => { mail.push({ kind: "request", to: input.to, url: input.signUrl }); return { status: "sent" }; },
         sendSignedCopy: async (input: { to: string; copyUrl: string }) => { mail.push({ kind: "signed", to: input.to, url: input.copyUrl }); return { status: "sent" }; },
+        sendPortalCode: async (input: { to: string; code: string }) => { mail.push({ kind: "code", to: input.to, url: input.code }); return { status: "sent" }; },
       };
       const commercial = new CommercialService({} as never, config, {} as never, {} as never);
       const esign = new EsignService(database as never, access(sales, SALES_PERMISSIONS), store as never, commercial, mailer as never, config);
@@ -363,6 +367,13 @@ integration("P3 quotation side: numbering, proposals, QS, e-sign and markup disc
       const signing = { name: "Maya Client", consent: true, signature: { kind: "typed", text: "Maya Client" }, documentSha256: second.request.documentSha256 };
       // The signer names what they were shown; another hash is refused.
       await expect(w.esign.sign(token, { ...signing, documentSha256: "0".repeat(64) }, { ip: "203.0.113.7" })).rejects.toThrow(/changed since you opened it/);
+      // §0.3 P4: no signature without a one-time code; a wrong code uses a try, the right one is confirmed.
+      await expect(w.esign.sign(token, signing, { ip: "203.0.113.7" })).rejects.toThrow(/Confirm the code/);
+      expect(await w.esign.sendCode(token, { channel: "email" })).toMatchObject({ channel: "email", resendAfter: 30 });
+      const code = w.mail.filter((item) => item.kind === "code").at(-1)!.url!;
+      expect(await w.esign.verifyCode(token, { code: code === "000000" ? "111111" : "000000" })).toMatchObject({ verified: false });
+      expect(await w.esign.verifyCode(token, { code })).toEqual({ verified: true, message: null });
+      expect((await w.esign.view(token)).code).toMatchObject({ verified: true });
       // Tamper: the stored file no longer hashes to what was sent.
       const key = [...w.store.files.keys()].find((name) => name.includes(second.request.documentId) && name.includes(`/${second.request.documentVersion}-`))!;
       const kept = w.store.files.get(key)!;
@@ -378,6 +389,10 @@ integration("P3 quotation side: numbering, proposals, QS, e-sign and markup disc
       const evidence = (await w.client.query(`SELECT status, signed_name AS name, signer_ip AS ip, signer_user_agent AS agent, signature_kind AS kind, signed_sha256 AS "signedSha256",
         signed_document_version AS version FROM esign_requests WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, second.request.id])).rows[0];
       expect(evidence).toMatchObject({ status: "signed", name: "Maya Client", ip: "203.0.113.7", agent: "Mozilla/5.0 (iPhone)", kind: "typed", signedSha256: signed.signedSha256 });
+      // §0.3 P4: the job lists the signing link as a send (opened, then signed) and the signature with how it was verified.
+      const onJob = await readCaseDocuments(w.client, w.workspaceId, w.caseId);
+      expect(onJob.sends.find((send) => send.kind === "signature_request" && send.recipient === "maya@example.com" && send.state === "signed")).toBeTruthy();
+      expect(onJob.signatures[0]).toMatchObject({ method: "esign", signer: "Maya Client", verifiedBy: "email", device: "iPhone", fingerprint: signed.signedSha256 });
       const copy = await w.esign.document(token, true);
       expect(sha256(copy.body)).toBe(signed.signedSha256);
       expect((await PDFDocument.load(copy.body)).getPageCount()).toBe(3); // + the certificate page
@@ -390,6 +405,54 @@ integration("P3 quotation side: numbering, proposals, QS, e-sign and markup disc
       // The evidence can't be edited afterwards.
       await expect(w.savepoint(() => w.client.query("UPDATE esign_requests SET signed_name = 'Someone else' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, second.request.id]))).rejects.toThrow(/final/);
       await expect(w.esign.view("not-a-token")).rejects.toThrow(/isn't valid/);
+    });
+  });
+
+  it("prints the proposal's quotation pages from the client's portal page (one snapshot, a short link), and draws them itself when printing fails", async () => {
+    await world(async (w) => {
+      const documents = new ProposalDocumentsService(w.access(w.sales, SALES_PERMISSIONS), w.store as never);
+      const cover = await PDFDocument.create(); cover.addPage([595, 842]);
+      const coverBytes = Buffer.from(await cover.save());
+      await documents.setTemplatePage(actor, w.workspaceId, "1", { version: 0 }, { buffer: coverBytes, originalname: "cover.pdf", mimetype: "application/pdf", size: coverBytes.length });
+      await issue(w);
+      const hash = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!.content.quotes!.find((quote) => quote.id === w.quoteId)!.hash!;
+      // The portal page's data for a print link: the quotation as the client's portal gives it, only that snapshot, only while the link lives.
+      const secret = "s".repeat(40);
+      const target: PrintTarget = { workspaceId: w.workspaceId, caseId: w.caseId, quoteId: w.quoteId, quoteHash: hash, slug: "studio" };
+      const token = printToken(secret, target, Date.parse("2026-10-17T10:00:00Z"));
+      expect(readPrintToken(secret, token, Date.parse("2026-10-17T10:02:00Z"))).toEqual(target);
+      expect(readPrintToken(secret, token, Date.parse("2026-10-17T10:04:00Z"))).toBeNull();
+      expect(readPrintToken(secret, `${token.slice(0, -2)}xx`, Date.parse("2026-10-17T10:01:00Z"))).toBeNull();
+      expect(readPrintToken("t".repeat(40), token, Date.parse("2026-10-17T10:01:00Z"))).toBeNull();
+      const database = { tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => Promise<unknown>) => w.savepoint(() => fn(w.client)) };
+      const previous = process.env.PORTAL_OTP_SECRET;
+      process.env.PORTAL_OTP_SECRET = secret;
+      try {
+        const printed = await new ProposalPrintService(database as never).view(printToken(secret, target)) as { quote: Record<string, unknown>; customer: string; site: { brand: { name: string } } };
+        expect(printed).toMatchObject({ quote: { id: w.quoteId, hash, status: "issued", total: expect.any(Number) }, customer: "Maya Client", site: { brand: { name: "Studio Interiors" } } });
+        expect(JSON.stringify(printed.quote)).not.toMatch(/unitCost|costs?"/);
+        await expect(new ProposalPrintService(database as never).view(printToken(secret, { ...target, quoteHash: "0".repeat(64) }))).rejects.toThrow(/isn't available/);
+      } finally {
+        if (previous === undefined) delete process.env.PORTAL_OTP_SECRET; else process.env.PORTAL_OTP_SECRET = previous;
+      }
+
+      // The printer's pages go between the firm's cover and its closing page; the stored copy is exactly those bytes.
+      const page = await PDFDocument.create(); page.addPage([595, 842]); page.addPage([595, 842]);
+      const asked: PrintTarget[] = [];
+      const issued = await issueProposalVersion(w.client, w.store as never, { workspaceId: w.workspaceId, caseId: w.caseId, quoteId: w.quoteId, actorUserId: w.sales },
+        async (printTarget) => { asked.push(printTarget); return page.save(); });
+      expect(asked).toEqual([{ workspaceId: w.workspaceId, caseId: w.caseId, quoteId: w.quoteId, quoteHash: hash, slug: expect.stringMatching(/^p3-/) }]);
+      const stored = (await w.client.query<{ objectKey: string; sha: string }>(`SELECT object_key AS "objectKey", sha256 AS sha FROM quote_document_versions WHERE workspace_id = $1 AND document_id = $2 AND number = $3`,
+        [w.workspaceId, issued.documentId, issued.number])).rows[0];
+      const pdf = await PDFDocument.load((await w.store.read(stored.objectKey)).body);
+      expect(pdf.getPageCount()).toBe(3);
+      expect(stored.sha).toBe(issued.sha256);
+
+      // A printer that fails never blocks sending: the built-in composer draws the quotation instead.
+      await w.client.query(`DELETE FROM quote_document_versions WHERE workspace_id = $1 AND document_id = $2`, [w.workspaceId, issued.documentId]);
+      const fallback = await issueProposalVersion(w.client, w.store as never, { workspaceId: w.workspaceId, caseId: w.caseId, quoteId: w.quoteId, actorUserId: w.sales },
+        async () => { throw new Error("no browser"); });
+      expect(fallback.reused).toBe(false);
     });
   });
 

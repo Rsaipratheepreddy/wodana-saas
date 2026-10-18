@@ -162,29 +162,31 @@
 
   /* Record toolbar above the frame: search, filters, view switch, one primary action. */
   .wd-record-toolbar.wd-record-toolbar { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-3); padding: 0 0 var(--wd-space-3); min-block-size: var(--wd-space-12); background: transparent; border-block-end: 0; }
-  .wd-record-tools, .wd-record-controls, .wd-record-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-1-5); min-inline-size: 0; }
+  .wd-record-tools, .wd-record-controls, .wd-record-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-action-gap); min-inline-size: 0; }
   .wd-record-tools { flex: 1 1 auto; }
   .wd-record-toolbar[data-compact="true"] .wd-record-search { order: -1; margin-inline-end: auto; }
   .wd-record-toolbar[data-compact="true"] .wd-record-tools { justify-content: flex-start; }
-  .wd-record-toolbar .wd-button, .wd-record-toolbar .wd-icon-button { min-block-size: var(--wd-button-height-compact); block-size: var(--wd-button-height-compact); padding-inline: var(--wd-button-padding-compact); border-radius: var(--wd-radius-xs); font-size: var(--wd-text-xs); white-space: nowrap; font-weight: var(--wd-weight-medium); box-shadow: none; }
+  /* A record toolbar holds its buttons and fields at the compact size. */
+  .wd-record-toolbar { --wd-field-height: var(--wd-button-height-compact); }
+  .wd-record-toolbar .wd-button { --wd-button-block: var(--wd-button-height-compact); --wd-button-inline: var(--wd-button-padding-compact); --wd-button-icon-gap: var(--wd-button-gap-compact); --wd-button-type: var(--wd-text-xs); --wd-button-corner: var(--wd-radius-xs); block-size: var(--wd-button-block); white-space: nowrap; font-weight: var(--wd-weight-medium); box-shadow: none; }
   .wd-record-toolbar .wd-button[data-variant="quiet"] { border-color: transparent; background: transparent; }
   .wd-record-toolbar .wd-button[data-variant="quiet"]:hover { background: var(--wd-color-surface-hover); }
   .wd-record-controls > .wd-field > .wd-field-label, .wd-record-search .wd-field-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
   .wd-record-controls > .wd-field { min-inline-size: 0; gap: 0; }
-  .wd-record-controls > .wd-field .wd-select-button { min-block-size: var(--wd-button-height-compact); block-size: var(--wd-button-height-compact); inline-size: auto; min-inline-size: 7rem; padding-inline: var(--wd-button-padding-compact); border: 0; border-radius: var(--wd-radius-xs); background: transparent; box-shadow: none; font-size: var(--wd-text-xs); }
+  .wd-record-controls > .wd-field .wd-select-button { block-size: var(--wd-field-height); inline-size: auto; min-inline-size: 7rem; padding-inline: var(--wd-button-padding-compact); border: 0; border-radius: var(--wd-radius-xs); background: transparent; box-shadow: none; font-size: var(--wd-text-xs); }
   .wd-record-controls > .wd-field .wd-select-indicator { border: 0; margin: 0; padding: 0; inline-size: var(--wd-space-5); }
   .wd-record-count, .wd-record-view { display: inline-flex; align-items: center; flex-shrink: 0; gap: var(--wd-space-1-5); padding-inline: var(--wd-space-1-5); color: var(--wd-color-text); font-size: var(--wd-text-xs); white-space: nowrap; }
   .wd-record-search { display: flex; flex: 0 1 16rem; align-items: center; min-inline-size: 12rem; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); padding-inline-end: var(--wd-space-0-5); background: var(--wd-color-surface); }
-  .wd-record-search .wd-search-field { flex: 1; inline-size: auto; min-inline-size: 0; min-block-size: var(--wd-button-height-compact); block-size: var(--wd-button-height-compact); border: 0; background: transparent; box-shadow: none; }
+  .wd-record-search .wd-search-field { flex: 1; inline-size: auto; min-inline-size: 0; block-size: var(--wd-field-height); border: 0; background: transparent; box-shadow: none; }
   .wd-record-search .wd-input { font-size: var(--wd-text-xs); }
-  .wd-record-search .wd-search-field > svg { inline-size: 13px; }
+  .wd-record-search .wd-search-field > svg { inline-size: var(--wd-button-icon-size); }
   .wd-record-search:focus-within { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
   .wd-record-panel { inline-size: min(19rem, calc(100vw - var(--wd-space-8))); padding: var(--wd-space-3); }
   .wd-record-panel [role="dialog"] { display: grid; gap: var(--wd-space-3); outline: 0; }
-  .wd-record-panel header, .wd-record-panel footer { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
+  .wd-record-panel header, .wd-record-panel footer { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-action-gap); }
   .wd-record-panel footer { padding-block-start: var(--wd-space-2); }
   .wd-record-filter-summary { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); overflow-wrap: anywhere; }
-  .wd-record-footer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-2); }
+  .wd-record-footer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-action-gap); }
   /* The bulk bar sits between the toolbar and the frame. */
   .wd-data-grid .wd-bulk-bar { margin-block-end: var(--wd-space-2); }
   /* The footer is a quiet caption under the frame. */
@@ -204,14 +206,14 @@
     table:is(.wd-table, .wd-record-table, [data-record-table]) :is(.wd-badge, .wd-tag) { white-space: normal; overflow-wrap: break-word; }
     .wd-record-toolbar.wd-record-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
     .wd-record-tools { display: contents; }
-    .wd-record-controls { grid-column: 1 / -1; flex-wrap: nowrap; gap: var(--wd-space-1); max-inline-size: 100%; overflow-x: auto; }
+    .wd-record-controls { grid-column: 1 / -1; flex-wrap: nowrap; max-inline-size: 100%; overflow-x: auto; }
     .wd-record-actions { grid-column: 2; justify-content: flex-end; flex-wrap: nowrap; inline-size: auto; max-inline-size: 45vw; overflow-x: auto; }
     .wd-record-search { grid-column: 1; flex: none; min-inline-size: 0; inline-size: 100%; }
-    .wd-record-search .wd-search-field { min-block-size: var(--wd-control-md); block-size: var(--wd-control-md); }
+    .wd-record-toolbar:not([data-leading]) .wd-record-search { --wd-field-height: var(--wd-control-md); }
     .wd-record-search .wd-input { font-size: var(--wd-text-lg); }
   }
   @media (pointer: coarse) {
-    .wd-record-toolbar .wd-button, .wd-record-toolbar .wd-icon-button { min-block-size: var(--wd-control-lg); block-size: var(--wd-control-lg); }
+    .wd-record-toolbar .wd-button { --wd-button-block: var(--wd-control-lg); }
     .wd-row-index[data-selectable] > span { display: none; }
     .wd-row-index[data-selectable] > .wd-checkbox { opacity: 1; }
   }
@@ -221,7 +223,7 @@
   .wd-grid-title { display: inline-flex; align-items: center; flex: 0 0 auto; min-block-size: var(--wd-button-height-standard); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
   .wd-column-head-content { display: flex; align-items: center; min-inline-size: 0; block-size: 100%; }
   .wd-column-head-content > :is(.wd-sort-button, .wd-column-header) { flex: 1 1 auto; min-inline-size: 0; }
-  .wd-column-options-trigger.wd-icon-button { flex: 0 0 var(--wd-button-height-compact); min-block-size: var(--wd-button-height-compact); inline-size: var(--wd-button-height-compact); margin-inline-end: calc(var(--wd-space-1) * -1); color: var(--wd-color-text-secondary); }
+  .wd-column-options-trigger.wd-icon-button { --wd-button-block: var(--wd-button-height-compact); flex: 0 0 var(--wd-button-block); margin-inline-end: calc(var(--wd-space-1) * -1); color: var(--wd-color-text-secondary); }
   .wd-column-options-popover { min-inline-size: 11rem; padding: var(--wd-space-2); }
   .wd-column-options-popover [role="dialog"] { display: grid; gap: var(--wd-space-0-5); outline: 0; }
   .wd-column-options-popover strong { padding: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
@@ -281,24 +283,26 @@
 
 /* Toolbar with a leading slot (list tabs), Notion style: one row, tools in full ink,
    search collapsed to its icon until used. */
-.wd-grid-toolbar.wd-grid-toolbar[data-leading] { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--wd-space-2); padding: 0; margin-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.wd-grid-toolbar.wd-grid-toolbar[data-leading] { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--wd-action-gap); padding: 0; margin-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .wd-grid-toolbar[data-leading] > .wd-grid-leading { flex: 1 1 auto; min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
 .wd-grid-toolbar[data-leading] > .wd-grid-leading .wd-list-tabs { border-block-end: 0; }
-.wd-grid-toolbar[data-leading] > .wd-record-tools, .wd-grid-toolbar[data-leading] > .wd-record-actions { display: flex; flex: none; flex-wrap: nowrap; align-items: center; gap: var(--wd-space-1); }
-.wd-grid-toolbar[data-leading] .wd-record-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--wd-space-0-5); }
-.wd-grid-toolbar[data-leading] .wd-record-controls .wd-button { inline-size: auto; min-inline-size: var(--wd-control-sm); block-size: var(--wd-control-sm); min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-2); gap: var(--wd-space-1-5); border: 0; background: transparent; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.wd-grid-toolbar[data-leading] > .wd-record-tools, .wd-grid-toolbar[data-leading] > .wd-record-actions { display: flex; flex: none; flex-wrap: nowrap; align-items: center; gap: var(--wd-action-gap); }
+/* A toolbar beside list tabs holds its buttons at the standard height, with compact padding, in full ink. */
+.wd-grid-toolbar[data-leading] { --wd-field-height: var(--wd-button-height-standard); }
+.wd-grid-toolbar[data-leading] .wd-record-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--wd-action-gap); }
+.wd-grid-toolbar[data-leading] :is(.wd-record-controls, .wd-record-actions) .wd-button { --wd-button-block: var(--wd-button-height-standard); --wd-button-type: var(--wd-text-sm); }
+.wd-grid-toolbar[data-leading] .wd-record-controls .wd-button { inline-size: auto; min-inline-size: var(--wd-button-block); border: 0; background: transparent; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
 .wd-grid-toolbar[data-leading] .wd-record-controls .wd-button > span { display: inline; }
 .wd-grid-toolbar[data-leading] .wd-record-controls .wd-button[aria-label="Manage columns"] { padding: 0; justify-content: center; }
 .wd-grid-toolbar[data-leading] .wd-record-controls .wd-button[aria-label="Manage columns"] > span { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .wd-grid-toolbar[data-leading] :is(.wd-record-controls, .wd-record-actions) .wd-button:hover { background: var(--wd-color-surface-hover); }
 .wd-grid-toolbar[data-leading] .wd-record-actions .wd-button:not([data-variant="primary"]) { color: var(--wd-color-text); }
-.wd-grid-toolbar[data-leading] svg { inline-size: 16px; block-size: 16px; }
-.wd-grid-toolbar[data-leading] .wd-record-search { flex: none; inline-size: var(--wd-control-sm); min-inline-size: 0; transition: inline-size 160ms ease; }
+.wd-grid-toolbar[data-leading] svg { inline-size: var(--wd-space-4); block-size: var(--wd-space-4); }
+.wd-grid-toolbar[data-leading] .wd-record-search { flex: none; inline-size: var(--wd-field-height); min-inline-size: 0; transition: inline-size 160ms ease; }
 .wd-grid-toolbar[data-leading] .wd-record-search:focus-within, .wd-grid-toolbar[data-leading] .wd-record-search:has(input:not(:placeholder-shown)) { inline-size: 12rem; }
-.wd-grid-toolbar[data-leading] .wd-record-search .wd-search-field { min-block-size: var(--wd-control-sm); block-size: var(--wd-control-sm); border-color: transparent; background: transparent; box-shadow: none; }
+.wd-grid-toolbar[data-leading] .wd-record-search .wd-search-field { border-color: transparent; background: transparent; box-shadow: none; }
 .wd-grid-toolbar[data-leading] .wd-record-search:focus-within .wd-search-field, .wd-grid-toolbar[data-leading] .wd-record-search:has(input:not(:placeholder-shown)) .wd-search-field { border-color: var(--wd-color-structural-divider); background: var(--wd-color-surface); }
 .wd-grid-toolbar[data-leading] .wd-record-search .wd-search-field svg { color: var(--wd-color-text); }
-.wd-grid-toolbar[data-leading] .wd-record-actions .wd-button[data-variant="primary"] { block-size: var(--wd-control-sm); min-block-size: var(--wd-control-sm); }
 /* On a phone the leading slot (a view switch, a period, filters) takes its own line above the tools, so it never shrinks away. */
 @media (max-width: 48rem) {
   .wd-grid-toolbar.wd-grid-toolbar[data-leading] { flex-wrap: wrap; padding-block-end: var(--wd-space-2); }
@@ -313,10 +317,10 @@
 .wd-table th:hover .wd-column-options-trigger, .wd-table th:focus-within .wd-column-options-trigger { opacity: 1; }
 /* Collapsed search keeps its icon centred; the input takes space only when open. */
 .wd-grid-toolbar[data-leading] .wd-record-search .wd-search-field { position: relative; display: flex; align-items: center; justify-content: center; padding-inline: 0; overflow: hidden; }
-.wd-grid-toolbar[data-leading] .wd-record-search .wd-search-field > svg { position: absolute; inset-inline-start: calc((var(--wd-control-sm) - 16px) / 2); pointer-events: none; }
-.wd-grid-toolbar[data-leading] .wd-record-search input { inline-size: 100%; padding-inline: calc(var(--wd-control-sm) - 2px) var(--wd-space-2); background: transparent; cursor: pointer; }
+.wd-grid-toolbar[data-leading] .wd-record-search .wd-search-field > svg { position: absolute; inset-inline-start: calc((var(--wd-field-height) - var(--wd-space-4)) / 2); pointer-events: none; }
+.wd-grid-toolbar[data-leading] .wd-record-search input { inline-size: 100%; padding-inline: calc(var(--wd-field-height) - 2px) var(--wd-space-2); background: transparent; cursor: pointer; }
 .wd-grid-toolbar[data-leading] .wd-record-search:focus-within input { cursor: text; }
 .wd-grid-toolbar[data-leading] .wd-record-search:not(:focus-within):has(input:placeholder-shown) input::placeholder { color: transparent; }
-.wd-grid-toolbar[data-leading] .wd-record-actions .wd-button[data-variant="primary"] { border: 0; background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); padding-inline: var(--wd-space-3); }
+.wd-grid-toolbar[data-leading] .wd-record-actions .wd-button[data-variant="primary"] { --wd-button-inline: var(--wd-button-padding-standard); border: 0; background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
 .wd-grid-toolbar[data-leading] .wd-record-actions .wd-button[data-variant="primary"]:hover { background: var(--wd-color-action-primary-hover); }
 .wd-grid-toolbar.wd-grid-toolbar[data-leading] { border-block-end: 0; margin-block-end: var(--wd-space-2); }

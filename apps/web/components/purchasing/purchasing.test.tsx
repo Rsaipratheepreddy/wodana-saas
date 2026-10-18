@@ -192,14 +192,18 @@ describe("suppliers", () => {
     expect(await within(sheet).findByText(/Expired/)).toBeInTheDocument();
     await userEvent.click(within(sheet).getByRole("tab", { name: "Bank details" }));
     expect(await within(sheet).findByText("Waiting for checks")).toBeInTheDocument();
-    expect(within(sheet).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(within(sheet).queryByRole("button", { name: "Review" })).toBeNull();
     await userEvent.click(within(sheet).getByRole("button", { name: "Record the call-back" }));
     const dialog = await screen.findByRole("dialog", { name: "Record the call-back" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Who you called/ }), "Called Ahmed on the number from the 2024 contract");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining("/suppliers/s2/bank-accounts/b1"),
       body: { action: "callback", note: "Called Ahmed on the number from the 2024 contract" } }));
-    expect(await within(sheet).findByRole("button", { name: "Approve" })).toBeInTheDocument();
+    // Approval opens a review of the details, the call-back and the supplier's letter (never one click).
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("dialog", { name: "Approve bank details" });
+    expect(within(review).getByText("Called Ahmed on the number from the 2024 contract", { exact: false })).toBeInTheDocument();
+    expect(within(review).getByText("No file attached")).toBeInTheDocument();
   });
 
   it("adds a rate contract with its prices and period", async () => {

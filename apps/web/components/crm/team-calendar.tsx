@@ -45,7 +45,7 @@ export function TeamEntrySheet({ workspaceId, entry, canBook, onClose, onChanged
       <Button variant="primary" isLoading={busy === "complete"} onPress={() => void change("complete")}>{t("Mark done")}</Button>
     </div> : undefined}>
     <div className={styles.details}>
-      <div className={styles.actions}><Badge tone="neutral">{t(ENTRY_LABEL[entry.kind])}</Badge>{entry.overdue ? <Badge tone="danger">{t("Overdue")}</Badge> : null}</div>
+      <div className={styles.actions}><Badge hue="auto">{t(ENTRY_LABEL[entry.kind])}</Badge>{entry.overdue ? <Badge tone="danger">{t("Overdue")}</Badge> : null}</div>
       {error ? <p role="alert">{error}</p> : null}
       <FactList facts={[
         [t("When"), when],

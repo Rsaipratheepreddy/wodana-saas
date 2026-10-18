@@ -46,8 +46,9 @@ node scripts/i18n-keys.mjs  # labels not yet in apps/web/lib/i18n/en.json
 - `src/app/`: routes. `(auth)` is sign-in (email first; the account picks its workspace), two-step
   code and password help. `(app)/(tabs)` is Today · Work · + · Inbox · Me; everything else is a
   pushed screen.
-- `src/features/<module>/`: screens, query hooks and outbox senders per module (hrms, projects,
-  capture, sales, purchasing, factory, survey, inbox, today, me).
+- `src/features/<module>/`: screens, query hooks and outbox senders per module (jobs, hrms, projects,
+  capture, sales, purchasing, factory, survey, approvals, inbox, today, me). Jobs is the web's job journey: every
+  job's chapter and step now, and My day's own steps (`GET jobs/my-day`).
 - `src/core/`: session and permissions (`access.ts`, from the server's permission codes only),
   workspace API, region formats (`format-core.ts`), the offline outbox, deep links, media and
   location.
@@ -58,7 +59,7 @@ node scripts/i18n-keys.mjs  # labels not yet in apps/web/lib/i18n/en.json
 
 ## Offline
 
-Attendance, crew days, site photos, daily reports, snags, measurements and deliveries are saved on
+Attendance, crew days, site photos (photo first, then the room), site questions, daily reports, snags, measurements and deliveries are saved on
 the phone first (sealed with a device key; photos are copied out of the camera cache) and sent in
 order when there is a connection, each with the same operation id so a repeat is recognised by the
 server. When the server asks for something (an exception reason, a fix) the item waits in

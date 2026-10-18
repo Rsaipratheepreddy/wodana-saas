@@ -14,6 +14,8 @@ export type PortalSite = {
   welcomeTitle: string;
   welcomeText: string;
   support: { phone: string; email: string; whatsapp: string };
+  /** The firm's online catalogue (its shop), when it has one. */
+  catalogueUrl?: string | null;
   region: { locale: string; currency: string; timeZone: string; country: string | null };
   signIn: { channels: Array<"whatsapp" | "email">; demo: boolean };
   gallerySlug: string | null;

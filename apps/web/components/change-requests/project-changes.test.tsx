@@ -135,7 +135,12 @@ describe("one change's record", () => {
     render(<DesignSystemProvider><ChangeRecord workspaceId="w" projectId="p1" changeId={ID} initial={record({ change: { ...record().change, status: "pending_approval" }, next: "approve",
       actions: ["approve", "return"], approval: { id: "a1", status: "pending", version: 2, amount: "3360.00", currency: "AED", waitingFor: ["Ada Approver"],
         steps: [{ position: 1, label: "Change approver", state: "current", decidedBy: null, decidedAt: null }] } })} /></DesignSystemProvider>);
+    // Approving opens the review (the reason, its photos); nothing is decided until it's confirmed there.
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const review = await screen.findByRole("dialog");
+    expect(within(review).getByText("Client asked on site.")).toBeInTheDocument();
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes(`/${ID}/decide`))).toBe(false);
+    fireEvent.click(within(review).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes(`/${ID}/decide`) && JSON.parse(String(init?.body)).decision === "approve"
       && JSON.parse(String(init?.body)).approvalVersion === 2)).toBe(true));
   });

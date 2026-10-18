@@ -72,7 +72,7 @@ export class RemindersEngineService implements OnApplicationBootstrap, OnModuleD
 
   private async sweep(workspaceId: string, options: { scan: boolean; now: Date }) {
     const result = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) =>
-      sweepWorkspace(client, workspaceId, { sources: this.sources.registry(), scan: options.scan, now: options.now, emailCap: sweepEmailCap(this.config) }));
+      sweepWorkspace(client, workspaceId, { sources: this.sources.registry(), scan: options.scan, now: options.now, emailCap: sweepEmailCap(this.config), journeys: true }));
     if (result.pace?.carried) this.logger.log(`Reminder sweep of ${workspaceId}: ${result.pace.carried} emails carried to the next sweeps (email cap)`);
     if (options.scan && !result.busy && result.scan) this.scannedAt.set(workspaceId, options.now.getTime());
     if (result.errors.length) this.logger.warn(`Reminder sweep of ${workspaceId}: ${result.errors.slice(0, 5).join("; ")}`);

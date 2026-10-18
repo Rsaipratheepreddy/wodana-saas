@@ -1,27 +1,37 @@
-export type JourneyStage = "inspiration" | "kickoff" | "site_visit" | "concepts" | "space_planning" | "material_selection" | "renders" | "samples" | "approval";
+export type JourneyStage = "inspiration" | "kickoff" | "site_visit" | "moodboards" | "concepts" | "space_planning" | "material_selection" | "renders" | "samples" | "final_render" | "approval";
 export type StageStatus = "locked" | "active" | "done";
 /** `design`: a design package after Won (PLM-047–053). `site_and_materials`: a furniture/joinery order's site visit and material selection (PLM-080/081). */
 export type JourneyKind = "design" | "site_and_materials";
 
 export const STAGE_LABELS: Record<JourneyStage, string> = {
-  inspiration: "Inspiration", kickoff: "Kick-off meeting", site_visit: "Site visit", concepts: "Concepts", space_planning: "Space planning",
-  material_selection: "Material selection", renders: "Renders", samples: "Samples", approval: "Design approval",
+  inspiration: "Inspiration", kickoff: "Kick-off meeting", site_visit: "Site visit", moodboards: "Mood boards", concepts: "Concepts", space_planning: "Space planning",
+  material_selection: "Material selection", renders: "Renders", samples: "Samples", final_render: "Final render", approval: "Design approval",
 };
 
 /**
- * The order a design journey runs in. 2 (from 13 Oct 2026, PLM-140–144): inspiration, the kick-off meeting, the concept
- * (the layout to scale for every package, with the design site measure inside it), renders when the package has them,
- * samples, the design approval. 1: the order before it (site visit, concepts, space planning, material selection,
- * renders); journeys started under it keep it to the end.
+ * The order a design journey runs in. 3 (guide steps 1–11, agreed 16 Oct 2026): inspiration, the kick-off meeting
+ * (the design site measure due within days of it), mood boards (two options, the client chooses), space planning (a PDF,
+ * no client approval, after the site measure), the 2D concept, 3D renders when the package has them, the material
+ * selection on jobs that include it, a final render only when the client asks for one, the design approval. 2 (13 Oct):
+ * inspiration, kick-off, concept, renders, samples, approval. 1: the order before (site visit, concepts, space planning,
+ * material selection, renders). A journey keeps the order it started in to the end.
  */
-export type FlowVersion = 1 | 2;
-export const CURRENT_FLOW: FlowVersion = 2;
+export type FlowVersion = 1 | 2 | 3;
+export const CURRENT_FLOW: FlowVersion = 3;
+/** Orders that count the team's days on the firm's working calendar, with the design team allocated at the start. */
+export const isCurrentOrder = (flow: number | null | undefined) => Number(flow) >= 2;
 
-/** The stages a package includes, in order. Renders only when the package offers them (and, in the old order, space planning). */
-export function journeyStages(pkg: { includesSpacePlanning: boolean; includesRenders: boolean }, flow: FlowVersion = CURRENT_FLOW): JourneyStage[] {
+/**
+ * The stages a package includes, in order. Renders only when the package offers them; on the current order the material
+ * selection only when the job includes it (the firm's job areas), and the final render only after renders and samples.
+ */
+export function journeyStages(pkg: { includesSpacePlanning: boolean; includesRenders: boolean; materialSelection?: boolean }, flow: FlowVersion = CURRENT_FLOW): JourneyStage[] {
   if (flow === 1) return ["inspiration", "site_visit", "concepts", ...(pkg.includesSpacePlanning ? ["space_planning" as const] : []),
     "material_selection", ...(pkg.includesRenders ? ["renders" as const] : []), "approval"];
-  return ["inspiration", "kickoff", "concepts", ...(pkg.includesRenders ? ["renders" as const] : []), "samples", "approval"];
+  if (flow === 2) return ["inspiration", "kickoff", "concepts", ...(pkg.includesRenders ? ["renders" as const] : []), "samples", "approval"];
+  const samples = pkg.materialSelection !== false;
+  return ["inspiration", "kickoff", "moodboards", "space_planning", "concepts", ...(pkg.includesRenders ? ["renders" as const] : []),
+    ...(samples ? ["samples" as const] : []), ...(samples && pkg.includesRenders ? ["final_render" as const] : []), "approval"];
 }
 
 /**
@@ -104,7 +114,7 @@ export const addHours = (from: Date, hours: number) => new Date(from.getTime() +
 export type DueRule = (from: Date, days: number) => Date;
 
 /** Stages with a design deadline: internal (the team's) and client-facing (what the client was promised) run separately (PLM-049/051). */
-export const DESIGN_DEADLINE_STAGES: JourneyStage[] = ["concepts", "space_planning", "renders"];
+export const DESIGN_DEADLINE_STAGES: JourneyStage[] = ["moodboards", "concepts", "space_planning", "renders", "final_render"];
 
 export type StageTimings = {
   siteVisitHours: number; designInternalDays: number; designClientDays: number; materialSelectionDays: number;
@@ -124,12 +134,17 @@ export type StageTimings = {
 export function stageDeadlines(stage: JourneyStage, now: Date, timings: StageTimings,
   context: { kickoffAt?: Date | null; developmentDays?: number | null; renderSignoffDueOn?: string | null; due?: DueRule } = {}):
   { dueAt: Date | null; clientDueAt: Date | null; bookingReminderAt: Date | null } {
-  const current = timings.flowVersion === 2;
+  const current = isCurrentOrder(timings.flowVersion);
   const due = context.due ?? addDays;
   if (stage === "site_visit") return { dueAt: addHours(now, timings.siteVisitHours), clientDueAt: null, bookingReminderAt: null };
   // PLM-140: the kick-off is booked and held within its days of inspiration ending.
   if (stage === "kickoff") return { dueAt: due(now, timings.kickoffDays ?? 5), clientDueAt: null, bookingReminderAt: null };
-  if (stage === "concepts" && current) {
+  // Guide step 5: the mood boards follow the kick-off within the concept days.
+  if (stage === "moodboards" && timings.flowVersion === 3) {
+    const base = context.kickoffAt && context.kickoffAt.getTime() < now.getTime() ? context.kickoffAt : now;
+    return { dueAt: due(base, timings.conceptDays ?? 7), clientDueAt: context.developmentDays ? addDays(base, context.developmentDays) : null, bookingReminderAt: null };
+  }
+  if (stage === "concepts" && current && timings.flowVersion !== 3) {
     // PLM-142: the first concept 4–7 days after the kick-off (the firm's days); the client was promised the development window.
     const base = context.kickoffAt && context.kickoffAt.getTime() < now.getTime() ? context.kickoffAt : now;
     return { dueAt: due(base, timings.conceptDays ?? 7), clientDueAt: context.developmentDays ? addDays(base, context.developmentDays) : null, bookingReminderAt: null };
@@ -168,7 +183,11 @@ export function siteEvidenceProblem(measurements: Array<{ title: string; status:
  * `section` heads and orders the general questions ("Project overview"); it never takes part in room matching.
  * `kind: "check"` is a checklist line answered with a status (confirmed, pending, not applicable) and a note.
  */
-export type SiteQuestion = { key: string; question: string; scope?: string | null; section?: string | null; kind?: "answer" | "check" | null };
+export type SiteQuestion = {
+  key: string; question: string; scope?: string | null; section?: string | null; kind?: "answer" | "check" | null;
+  /** Answering it is needed to complete the visit. Questions are optional unless the firm marks them required (§0.3 P0). */
+  required?: boolean;
+};
 
 /** A checklist line's status; pending is an open item. */
 export const CHECK_STATUSES = ["confirmed", "pending", "not_applicable"] as const;
@@ -214,7 +233,8 @@ export function normaliseSiteQuestions(value: unknown): SiteQuestion[] {
     seen.add(key);
     const scope = oneLine((item as SiteQuestion)?.scope, 60);
     const section = oneLine((item as SiteQuestion)?.section, 60);
-    out.push({ key, question, ...(scope ? { scope } : {}), ...(section ? { section } : {}), ...((item as SiteQuestion)?.kind === "check" ? { kind: "check" as const } : {}) });
+    out.push({ key, question, ...(scope ? { scope } : {}), ...(section ? { section } : {}), ...((item as SiteQuestion)?.kind === "check" ? { kind: "check" as const } : {}),
+      ...((item as SiteQuestion)?.required === true ? { required: true } : {}) });
     if (out.length === MAX_SITE_QUESTIONS) break;
   }
   return out;
@@ -293,7 +313,8 @@ export const scopeKey = (scope: string) => scope.replace(/\s+/g, " ").trim().toL
  * A scope applies when the designer chose it for the job ("Applies to this job"), else when it matches the job's rooms,
  * areas and quotation lines (its match words, or its name), or is for every job. Any other checklist is off until the
  * designer switches it on, so a job with no rooms yet asks only the general questions and the every-job checklists.
- * The general questions and the checklists that apply are required; the rest are shown, not asked.
+ * The general questions and the checklists that apply are asked (`required` on a group means asked on this job); the rest
+ * are shown, not asked. Within what is asked, only questions marked required block completing the visit.
  */
 export function groupSiteQuestions(questions: SiteQuestion[], areas: readonly string[], options: GroupOptions = {}): SiteQuestionGroup[] {
   const definitions = new Map((options.scopes ?? []).map((entry) => [scopeKey(entry.scope), entry]));
@@ -321,9 +342,13 @@ export function groupSiteQuestions(questions: SiteQuestion[], areas: readonly st
   return list.map((group, index) => ({ group, index })).sort((a, b) => rank(a.group) - rank(b.group) || a.index - b.index).map(({ group }) => group);
 }
 
-/** The questions a visit must answer: the general ones and those of the checklists that apply to the job. */
-export const requiredSiteQuestions = (questions: SiteQuestion[], areas: readonly string[], options: GroupOptions = {}) =>
+/** The questions a visit asks: the general ones and those of the checklists that apply to the job. */
+export const askedSiteQuestions = (questions: SiteQuestion[], areas: readonly string[], options: GroupOptions = {}) =>
   groupSiteQuestions(questions, areas, options).filter((group) => group.required).flatMap((group) => group.questions);
+
+/** The asked questions a visit must answer before it completes: those the firm marked required. */
+export const requiredSiteQuestions = (questions: SiteQuestion[], areas: readonly string[], options: GroupOptions = {}) =>
+  askedSiteQuestions(questions, areas, options).filter((question) => question.required === true);
 
 /**
  * PLM-128: the visit also needs every question on the list answered, and every checklist line marked. A line marked

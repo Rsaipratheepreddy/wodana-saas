@@ -24,6 +24,8 @@ export type ClosingFacts = {
   workOrders: { total: number; open: number; lastReadyAt: string | null };
   designApprovedAt: string | null;
   handoverAcceptedAt: string | null;
+  /** Guide J: the job had site work (a handover pack or site reports): its signed handover is then part of closing. */
+  siteWork?: boolean;
 };
 
 export type DealClosing = {
@@ -46,7 +48,9 @@ export function closingState(event: ClosingEvent | null, facts: ClosingFacts, fu
     : event === "delivered" ? [check("delivered", facts.deliveredAt)]
     : event === "collected_or_delivered" ? [check("collected_or_delivered", earliest([facts.collectedAt, facts.deliveredAt]))]
     : event === "design_handover" ? [check("design_approved", facts.designApprovedAt)]
-    : event === "all_produced_delivered_installed" ? [check("produced", produced), check("delivered", facts.deliveredAt), check("installed", facts.installedAt)]
+    // Guide J: every item delivered or installed (installation only where it applies), and the signed handover only with site work.
+    : event === "all_produced_delivered_installed" ? [check("produced", produced), check("delivered", earliest([facts.deliveredAt, facts.installedAt])),
+      ...(facts.siteWork ? [check("handover_accepted", facts.handoverAcceptedAt)] : [])]
     : event === "completion_handover" ? [check("handover_accepted", facts.handoverAcceptedAt)]
     : [];
   const closed = checks.length > 0 && checks.every((item) => item.done);
@@ -69,14 +73,17 @@ export async function loadDealClosing(db: Db, workspaceId: string, opportunityId
   if (!row) return null;
   const flow = await opportunityFlow(db, { workspaceId, opportunityId, code: row.flow, pinnedVersionId: row.flowVersionId });
   const rules = flow.flowId ? await ensureClosingRules(db, workspaceId, { flowId: flow.flowId, code: flow.code, definition: flow.definition }) : [];
-  const event = closingEventFor(rules, row.furniturePath);
+  // Guide J (Q2 withdrawn): once the withdrawal of Proposal 2 is confirmed, the deal completes at design handover.
+  const withdrawn = (await db.query(`SELECT 1 FROM crm_opportunity_proposals WHERE workspace_id = $1 AND opportunity_id = $2 AND kind = 'main' AND withdrawal_status = 'confirmed'`,
+    [workspaceId, opportunityId])).rowCount;
+  const event = withdrawn ? "design_handover" : closingEventFor(rules, row.furniturePath);
   return closingState(event, await closingFacts(db, workspaceId, opportunityId, row.caseId), row.furniturePath);
 }
 
 export async function closingFacts(db: Db, workspaceId: string, opportunityId: string, caseId: string | null): Promise<ClosingFacts> {
   const facts = (await db.query<{
     collectedAt: Date | null; deliveredAt: Date | null; installedAt: Date | null; total: number; open: number; lastReadyAt: Date | null;
-    designApprovedAt: Date | null; handoverAcceptedAt: Date | null;
+    designApprovedAt: Date | null; handoverAcceptedAt: Date | null; siteWork: boolean;
   }>(
     `SELECT (SELECT min(event.recorded_at) FROM crm_deal_fulfilment_events event WHERE event.workspace_id = $1 AND event.opportunity_id = $2 AND event.event = 'collected') AS "collectedAt",
             (SELECT min(event.recorded_at) FROM crm_deal_fulfilment_events event WHERE event.workspace_id = $1 AND event.opportunity_id = $2 AND event.event = 'delivered') AS "deliveredAt",
@@ -84,7 +91,10 @@ export async function closingFacts(db: Db, workspaceId: string, opportunityId: s
             coalesce(work.total, 0) AS total, coalesce(work.open, 0) AS open, work."lastReadyAt",
             (SELECT stage.completed_at FROM design_journey_stages stage WHERE stage.workspace_id = $1 AND stage.case_id = $3::uuid AND stage.stage = 'approval' AND stage.status = 'done') AS "designApprovedAt",
             (SELECT min(pack.decided_on)::timestamptz FROM handover_packs pack JOIN delivery_projects project ON project.workspace_id = pack.workspace_id AND project.id = pack.project_id
-              WHERE pack.workspace_id = $1 AND project.case_id = $3::uuid AND pack.status = 'accepted') AS "handoverAcceptedAt"
+              WHERE pack.workspace_id = $1 AND project.case_id = $3::uuid AND pack.status = 'accepted') AS "handoverAcceptedAt",
+            EXISTS (SELECT 1 FROM delivery_projects project WHERE project.workspace_id = $1 AND project.case_id = $3::uuid AND (
+              EXISTS (SELECT 1 FROM handover_packs pack WHERE pack.workspace_id = project.workspace_id AND pack.project_id = project.id)
+              OR EXISTS (SELECT 1 FROM site_reports report WHERE report.workspace_id = project.workspace_id AND report.project_id = project.id))) AS "siteWork"
        FROM (SELECT 1) one
        LEFT JOIN LATERAL (
          SELECT count(*) FILTER (WHERE work_order.status <> 'cancelled')::int AS total,
@@ -96,16 +106,16 @@ export async function closingFacts(db: Db, workspaceId: string, opportunityId: s
   return {
     collectedAt: iso(facts?.collectedAt), deliveredAt: iso(facts?.deliveredAt), installedAt: iso(facts?.installedAt),
     workOrders: { total: facts?.total ?? 0, open: facts?.open ?? 0, lastReadyAt: iso(facts?.lastReadyAt) },
-    designApprovedAt: iso(facts?.designApprovedAt), handoverAcceptedAt: iso(facts?.handoverAcceptedAt),
+    designApprovedAt: iso(facts?.designApprovedAt), handoverAcceptedAt: iso(facts?.handoverAcceptedAt), siteWork: Boolean(facts?.siteWork),
   };
 }
 
-export type FulfilmentRow = { id: string; event: FulfilmentEvent; receivedBy: string; note: string; recordedBy: string | null; recordedAt: string };
+export type FulfilmentRow = { id: string; event: FulfilmentEvent; receivedBy: string; note: string; recordedBy: string | null; recordedAt: string; hasProof: boolean; proofIsImage: boolean };
 
 export async function loadFulfilment(db: Db, workspaceId: string, opportunityId: string): Promise<FulfilmentRow[]> {
   return (await db.query<FulfilmentRow>(
     `SELECT event.id, event.event, event.received_by AS "receivedBy", event.note, coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS "recordedBy",
-            event.recorded_at AS "recordedAt"
+            event.recorded_at AS "recordedAt", event.proof_storage_key IS NOT NULL AS "hasProof", coalesce(event.proof_mime_type LIKE 'image/%', false) AS "proofIsImage"
        FROM crm_deal_fulfilment_events event LEFT JOIN users account ON account.id = event.recorded_by
       WHERE event.workspace_id = $1 AND event.opportunity_id = $2 ORDER BY event.recorded_at, event.id`, [workspaceId, opportunityId])).rows
     .map((row) => ({ ...row, recordedAt: iso(row.recordedAt as unknown as Date)! }));

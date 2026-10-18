@@ -43,7 +43,7 @@ export function Bills({ api, state, error, openId, onReload, onOpen }: {
       <span className={styles.money}>{format.money(row.total, row.currency)}</span>
       {row.status === "approved" && Number(row.paid) > 0 && Number(row.balance) > 0 ? <small>{t("{amount} left", { amount: format.money(row.balance, row.currency) })}</small> : null}</span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => billState(row, today).key, size: 220, meta: { renderCell: (row) => <span className={styles.nameCell}>
-      <BillStatusLabel bill={row} today={today} />
+      <span><BillStatusLabel bill={row} today={today} /></span>
       {row.status === "held" ? <small>{row.holdReasons.split("\n")[0]}</small> : null}</span> } },
   ], [t, format, today]);
 

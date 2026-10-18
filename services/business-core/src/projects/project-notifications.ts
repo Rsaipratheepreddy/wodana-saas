@@ -6,6 +6,7 @@ import { DatabaseService } from "../database/database.service";
 import type { HrmsContext } from "../hrms/hrms-access.service";
 import { CrmNotificationsService } from "../crm/notifications/crm-notifications.service";
 import type { ProjectData } from "./execution.types";
+import { noticeDecision } from "../notifications/notice-choices";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 const EMAIL_TEMPLATE_CODE = "project.update";
@@ -169,13 +170,11 @@ export class ProjectNotificationsService {
     const correlationId = randomUUID();
 
     for (const recipient of recipients.rows) {
-      const preference = await ctx.client.query<{ enabled: boolean }>(
-        `SELECT enabled FROM notification_preferences WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' AND event_type IN ($3,'project.*','*') ORDER BY CASE event_type WHEN $3 THEN 0 WHEN 'project.*' THEN 1 ELSE 2 END LIMIT 1`,
-        [ctx.workspaceId, recipient.user_id, event],
-      );
-      if (preference.rows[0]?.enabled !== false) {
+      // The person's choices for project notices in the app (notice-choices.ts).
+      const inApp = await noticeDecision(ctx.client, { workspaceId: ctx.workspaceId, userId: recipient.user_id, eventType: event, channel: "in_app" });
+      if (inApp.send) {
         await ctx.client.query(
-          `INSERT INTO notifications(workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,delivered_at) VALUES($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now()) ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
+          `INSERT INTO notifications(workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,delivered_at,silent) VALUES($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now(),$9) ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
           [
             ctx.workspaceId,
             recipient.user_id,
@@ -185,6 +184,7 @@ export class ProjectNotificationsService {
             deepLink,
             `project:${projectId}:${retry}:in-app:${recipient.id}`,
             correlationId,
+            inApp.silent,
           ],
         );
       }
@@ -241,17 +241,11 @@ export class ProjectNotificationsService {
     const deepLink = `/workspace/projects/${input.projectId}/handover?record=${encodeURIComponent(input.claimId)}`;
     const subject = `Warranty claim · ${input.title}`;
     const body = `${input.projectName} · client warranty claim for ${input.handoverTitle}`;
-    const preference = await client.query<{ enabled: boolean }>(
-      `SELECT enabled FROM notification_preferences
-        WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2
-          AND channel='in_app' AND event_type IN ($3,'project.*','*')
-        ORDER BY CASE event_type WHEN $3 THEN 0 WHEN 'project.*' THEN 1 ELSE 2 END LIMIT 1`,
-      [input.workspaceId, userId, eventType],
-    );
-    if (preference.rows[0]?.enabled !== false)
+    const inApp = await noticeDecision(client, { workspaceId: input.workspaceId, userId, eventType, channel: "in_app" });
+    if (inApp.send)
       await client.query(
-        `INSERT INTO notifications(workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,delivered_at)
-         VALUES($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now())
+        `INSERT INTO notifications(workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,delivered_at,silent)
+         VALUES($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now(),$9)
          ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
         [
           input.workspaceId,
@@ -262,6 +256,7 @@ export class ProjectNotificationsService {
           deepLink,
           `${input.idempotencyKey}:in-app:${userId}`,
           randomUUID(),
+          inApp.silent,
         ],
       );
     await this.queueOptionalEmailWithClient(client, {
@@ -280,7 +275,7 @@ export class ProjectNotificationsService {
       idempotencyKey: `${input.idempotencyKey}:email:${userId}`,
       correlationId: randomUUID(),
     });
-    return { delivered: preference.rows[0]?.enabled !== false };
+    return { delivered: inApp.send };
   }
 
   async queueScheduledEmail(input: OptionalEmail) {

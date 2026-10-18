@@ -168,7 +168,8 @@ integration("inbox status, closing messages and spam (real Postgres)", () => {
       await expect(admin.closing.update(actor, ids.workspaceId, { version: settings.version, afterHours: 4 })).rejects.toThrow(/changed/);
       await expect(admin.closing.update(actor, ids.workspaceId, { version: settings.version + 1, texts: { form: "Hi {{client}}" } })).rejects.toThrow("{{client}}");
       const saved = await admin.closing.settings(actor, ids.workspaceId) as { messages: Array<{ kind: string; text: string; custom: boolean; templateProblem: string | null }>; formLink: string };
-      expect(saved.messages.map((message) => [message.kind, message.custom, message.templateProblem])).toEqual([["received", true, null], ["form", true, null], ["closing", true, null]]);
+      // The firm's form text is now the kit's own wording (the guide's), so it reads as the standard text.
+      expect(saved.messages.map((message) => [message.kind, message.custom, message.templateProblem])).toEqual([["received", true, null], ["form", false, null], ["closing", true, null]]);
       expect(saved.formLink).toBe("https://palm.example.com/enquire");
 
       const staff = as(ids.salesAdmin);
@@ -250,7 +251,7 @@ integration("inbox status, closing messages and spam (real Postgres)", () => {
       } as never) as unknown as { leadId: string };
       const welcome = (await client.query("SELECT body_text, metadata FROM crm_messages WHERE conversation_id = $1 AND metadata->>'automatic' = 'crm.enquiry.created'", [conversationId])).rows;
       expect(welcome).toHaveLength(1);
-      expect(welcome[0].body_text).toBe("Thank you, Omar! Your enquiry is now with our team, and we will contact you shortly.");
+      expect(welcome[0].body_text).toBe("Thank you, Omar! Your enquiry is now with our team. An Account Manager will contact you shortly. – Inbox studio.");
       await client.query("UPDATE crm_conversations SET lead_id = $2 WHERE id = $1", [conversationId, created.leadId]);
       const thread = await staff.conversations.get(actor, ids.workspaceId, conversationId) as { version: number };
       expect(await staff.closing.send(actor, ids.workspaceId, conversationId, { version: thread.version, kind: "received" })).toMatchObject({ sent: false, messageId: null, status: "closed" });

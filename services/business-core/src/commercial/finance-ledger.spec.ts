@@ -4,7 +4,9 @@ import {
   bindFinanceContext,
   recordCreditNote,
   recordProviderSettlement,
+  manualReceiptTerms,
   reportManualReceipt,
+  returnManualReceipt,
   reverseProviderSettlement,
   upsertProviderInvoiceDocument,
   verifyReceipt,
@@ -143,6 +145,50 @@ describe("structured commercial finance ledger", () => {
       status: "finance_verified",
       verifiedBy: "Finance manager",
     });
+  });
+
+  it("asks how and when a manual receipt was paid, and keeps both on the receipt (§0.3 P0)", () => {
+    const now = "2026-10-17T08:00:00.000Z";
+    expect(manualReceiptTerms({ method: "cheque", receivedOn: "2026-10-16" }, now)).toEqual({ method: "cheque", receivedOn: "2026-10-16" });
+    // The firm's calendar can be a day ahead of UTC.
+    expect(manualReceiptTerms({ method: "bank", receivedOn: "2026-10-18" }, now).receivedOn).toBe("2026-10-18");
+    expect(() => manualReceiptTerms({ receivedOn: "2026-10-16" }, now)).toThrow(/how the client paid/);
+    expect(() => manualReceiptTerms({ method: "crypto", receivedOn: "2026-10-16" }, now)).toThrow(/how the client paid/);
+    expect(() => manualReceiptTerms({ method: "bank" }, now)).toThrow(/date the payment was received/);
+    expect(() => manualReceiptTerms({ method: "bank", receivedOn: "2026-02-30" }, now)).toThrow(/date the payment was received/);
+    expect(() => manualReceiptTerms({ method: "bank", receivedOn: "2026-10-19" }, now)).toThrow(/future/);
+    const data = emptyCommercial(), milestone = payment();
+    data.financeContext = bindFinanceContext(null, entity, "AED", at);
+    data.payments.push(milestone);
+    const receipt = reportManualReceipt(data, milestone, { reference: "CHQ-7", evidence: "Cheque 7", method: "cheque", receivedOn: "2026-10-16" }, "Sara", at, "user-sara");
+    expect(receipt).toMatchObject({ method: "cheque", receivedOn: "2026-10-16" });
+  });
+
+  it("returns a receipt the team recorded with a reason: kept as rejected, allocation reversed, the payment waits for a new one", () => {
+    const data = emptyCommercial(), milestone = payment();
+    data.financeContext = bindFinanceContext(null, entity, "AED", at);
+    data.payments.push(milestone);
+    const first = reportManualReceipt(data, milestone, { reference: "BANK-44", evidence: "Row 44", method: "bank", receivedOn: "2026-09-17" }, "Sara", at, "user-sara");
+    expect(commercialCommandPermission("return_payment")).toBe("commercial.finance.verify");
+    expect(() => returnManualReceipt(data, milestone, "Wrong amount", "Sara", at, "user-sara")).toThrow(/another finance-authorized person/i);
+    returnManualReceipt(data, milestone, "The bank shows 900, not 1,000", "Finance manager", at, "user-finance");
+    expect(first).toMatchObject({ status: "rejected", rejectionReason: "The bank shows 900, not 1,000", rejectedBy: "Finance manager", rejectedById: "user-finance" });
+    expect(data.allocations?.filter((allocation) => allocation.receiptId === first.id).every((allocation) => allocation.reversedAt === at)).toBe(true);
+    expect(milestone).toMatchObject({ status: "pending", proof: "", reference: "" });
+    expect(() => verifyReceipt(data, milestone, "Finance manager", at, "user-finance")).toThrow(/Record a manual receipt/);
+    expect(() => returnManualReceipt(data, milestone, "Again", "Finance manager", at, "user-finance")).toThrow(/no recorded receipt/);
+    // Recorded again with the right amount, it is verified as usual: the returned one stays in the history.
+    const second = reportManualReceipt(data, milestone, { reference: "BANK-45", evidence: "Row 45", method: "bank", receivedOn: "2026-09-18" }, "Sara", at, "user-sara");
+    verifyReceipt(data, milestone, "Finance manager", at, "user-finance");
+    expect(second.status).toBe("finance_verified");
+    expect(data.receipts?.map((receipt) => receipt.status)).toEqual(["rejected", "finance_verified"]);
+  });
+
+  it("never returns a provider's settlement (the provider reverses it)", () => {
+    const data = emptyCommercial(), milestone = payment();
+    data.financeContext = bindFinanceContext(null, entity, "AED", at);
+    data.payments.push(milestone);
+    expect(() => returnManualReceipt(data, milestone, "Wrong", "Finance manager", at, "user-finance")).toThrow(/no recorded receipt/);
   });
 
   it("keeps the separation rule by person: two people with the same name are still two people", () => {

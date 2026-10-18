@@ -18,17 +18,18 @@
 .strip > div { display: grid; align-content: start; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .strip dt { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .strip dt svg { flex: none; color: var(--wd-color-text-tertiary); }
-.strip > :global(.wd-editable) { align-content: start; gap: var(--wd-space-0-5); }
+.strip > :global(.wd-editable) { align-content: start; }
 .strip > :global(.wd-editable) > dt { font-size: var(--wd-text-xs); }
 .strip > :global(.wd-editable) > dd { min-block-size: var(--wd-control-sm); }
 .strip dd { display: flex; align-items: center; min-block-size: var(--wd-control-sm); margin: 0; min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
-.strip dd :global(.wd-button[data-variant="quiet"]) { min-block-size: var(--wd-control-sm); margin-inline-start: calc(-1 * var(--wd-space-1-5)); padding-inline: var(--wd-space-1-5); color: var(--wd-color-text); font-weight: var(--wd-weight-regular); }
+/* A value that opens a picker reads as the value: the shared button keeps its size, only its text lines up with the label. */
+.strip dd :global(.wd-button[data-variant="quiet"]) { margin-inline-start: calc(-1 * var(--wd-button-padding-compact)); color: var(--wd-color-text); font-weight: var(--wd-weight-regular); }
 .strip dd :global(.wd-field) { display: inline-grid; inline-size: auto; }
-.strip dd :global(.wd-select-button) { inline-size: auto; min-block-size: var(--wd-control-sm); block-size: var(--wd-control-sm); gap: var(--wd-space-1); margin-inline-start: calc(-1 * var(--wd-space-1-5)); padding-inline: var(--wd-space-1-5); border-color: transparent; background: transparent; box-shadow: none; }
+.strip dd :global(.wd-select-button) { inline-size: auto; margin-inline-start: calc(-1 * var(--wd-space-3)); border-color: transparent; background: transparent; box-shadow: none; }
 .strip dd :global(.wd-select-button:hover) { background: var(--wd-color-surface-hover); }
 
 /* The next step: its own card on the subtle surface, headed "Next step", so it never reads as history. */
-.now { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle);
+.now { display: grid; gap: var(--wd-card-gap); padding: var(--wd-card-pad); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle);
   box-shadow: 0 0 0 1px var(--wd-color-structural-divider); }
 .nowLabel { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 .nowHead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-4); }
@@ -46,7 +47,6 @@
 .activity { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; order: 3; }
 .panel { display: grid; gap: var(--wd-phi-3); }
 .side :global(.wd-tab-scroll) { position: sticky; z-index: 1; inset-block-start: 0; background: var(--wd-color-surface); }
-.side :global(.wd-tab-list) { gap: var(--wd-space-4); }
 
 /* Two columns once there is room: the work on the inline-start, the sidebar's tabs on the inline-end.
    In a frame of fixed height (a record modal) each column scrolls on its own; the sidebar's tab bar stays on top.

@@ -29,15 +29,15 @@ export function DocumentsSection({ project, api, format }: SectionProps) {
       <span className={styles.documentBody}>
         <span className={styles.cardTitle} dir="auto">{document.title}</span>
         <span className={styles.chips}>
-          <Badge>{kinds[document.kind]}</Badge>
+          <Badge hue="auto">{kinds[document.kind]}</Badge>
           {document.version ? <Badge>{t("V{number}", { number: document.version })}</Badge> : null}
           {document.changed ? <Badge tone="warning">{t("Changed")}</Badge> : null}
         </span>
         <span className={styles.cardNote}>{[document.group, format.date(document.date)].filter(Boolean).join(" · ")}</span>
       </span>
       <span className={styles.documentActions}>
-        <a className={styles.action} href={url} rel="noreferrer" target="_blank"><Eye aria-hidden="true" size={14} />{t("View")}</a>
-        <a className={styles.action} href={url} download><Download aria-hidden="true" size={14} />{t("Download")}</a>
+        <a className="wd-button" data-variant="quiet" data-size="compact" href={url} rel="noreferrer" target="_blank"><Eye aria-hidden="true" size={14} />{t("View")}</a>
+        <a className="wd-button" data-variant="quiet" data-size="compact" href={url} download><Download aria-hidden="true" size={14} />{t("Download")}</a>
       </span>
     </li>;
   })}</ul>;

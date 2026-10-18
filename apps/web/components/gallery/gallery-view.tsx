@@ -63,6 +63,7 @@ export function GalleryView({ content, imageUrl, submitTo, preview = false, loca
   const opened = browsable.find((item) => item.id === openId) ?? null;
   const price = (item: GalleryItem) => {
     if (!settings.showPrices || !item.priceFrom) return null;
+    // An indicative "from" price for the showcase (not an amount that reconciles), so whole units.
     const amount = new Intl.NumberFormat(locale, { style: "currency", currency: currency || "USD", maximumFractionDigits: 0 }).format(Number(item.priceFrom));
     return item.priceUnit ? t("From {amount} / {unit}", { amount, unit: item.priceUnit }) : t("From {amount}", { amount });
   };

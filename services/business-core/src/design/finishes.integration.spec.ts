@@ -89,7 +89,7 @@ integration("the finishes schedule, material log and samples (PLM-146, PLM-156, 
       await seedDefaultNotificationTemplates(client, workspaceId);
       await client.query("COMMIT");
     } finally { client.release(); }
-    if (options.design !== false) await asApp(workspaceId, people.ops.user, (client) => startJourney(client, workspaceId, caseId, people.ops.user));
+    if (options.design !== false) await asApp(workspaceId, people.ops.user, (client) => startJourney(client, workspaceId, caseId, people.ops.user, { flow: 2 }));
     return { workspaceId, caseId, quoteId, roomId, people };
   }
 

@@ -3,7 +3,7 @@
 import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CalendarClock, CircleDollarSign, Flag, TriangleAlert, UserRound, UserRoundCheck, Wallet } from "lucide-react";
+import { CalendarClock, CircleDollarSign, Flag, TriangleAlert, UserRound, UserRoundCheck, Wallet, Route } from "lucide-react";
 import {
   Badge, Button, Card, EditableField, EditableFieldList, EmptyState, FactRow, FormDialog, IconMenuButton, InlineNotice, KpiStrip, KpiTile, PersonName, SelectField, Skeleton, TextAreaField,
   type ActionItem,
@@ -15,7 +15,7 @@ import type { DefinitionPageData } from "@/lib/pre-project/definition";
 import type { JourneyView } from "@/lib/pre-project/design-workspace";
 import { caseHref, type PreProjectCase } from "@/lib/pre-project/types";
 import {
-  casePhases, casePhaseText, effectivePhase, caseFiles, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline,
+  casePhases, casePhaseText, effectivePhase, caseFiles, caseMoney, caseLifecycleStep, caseOverdue, casePosition, caseTeam, caseTimeline,
   type CaseCommand, type CaseNextStep, type Message,
 } from "@/lib/pre-project/case-record";
 import type { CommercialState } from "@/lib/commercial/types";
@@ -23,6 +23,7 @@ import { projectApi } from "@/lib/project-core/client";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import { valueEngineeringApi, type ValueEngineeringView } from "@/lib/value-engineering/client";
 import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, SectionTabs, SideSection, useSectionTabs } from "@/components/record/record-layout";
+import { JobNowBar } from "@/components/jobs/job-now-bar";
 import { FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
 import { useProjectFormat } from "@/components/project-core/format";
@@ -164,6 +165,7 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
       historySlot={<RecordHistory workspaceId={workspaceId} recordType="planning_case" recordId={record.id} />}
       busy={starting} onCommand={(id) => void command(id)} actions={<>{portal}{menu}</>} details={details} journeySlot={journeySlot}
       callsSlot={<ClientCallsSection workspaceId={workspaceId} caseId={record.id} />}
+      nowSlot={<JobNowBar workspaceId={workspaceId} record={{ type: "case", id: record.id }} />}
       assetHref={(assetId) => caseApi(workspaceId, record.id, `assets/${assetId}`)} />
     <FormDialog isOpen={Boolean(action)} title={action ? t(actionLabel[action]) : t("Case action")} onClose={closeAction} isDirty={Boolean(reason.trim())}
       submitLabel={action ? t(actionLabel[action]) : t("Save")} submitVariant={action === "cancel" ? "danger" : "primary"} isSubmitDisabled={action === "set_phase" && phase === record.phase}
@@ -175,11 +177,13 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
 }
 
 /** The case record itself, from data only: header, strip, next step, stages, activity and the sidebar. */
-export function CaseRecordView({ record, commercial, journey, project, valueEngineering = null, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, historySlot, assetHref }: {
+export function CaseRecordView({ record, commercial, journey, project, valueEngineering = null, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, nowSlot, historySlot, assetHref }: {
   record: PreProjectCase; commercial?: CommercialState | null; journey: JourneyView | null; project: ProjectDetail | null; members: Member[]; today: string;
   /** PLM-147: the job's value engineering (an open round is its step). */
   valueEngineering?: Pick<ValueEngineeringView, "open"> | null;
-  loading?: boolean; busy?: boolean; onCommand?: (command: CaseCommand) => void; actions?: ReactNode; details?: ReactNode; journeySlot?: ReactNode;
+  loading?: boolean; busy?: boolean; onCommand?: (command: CaseCommand) => void; actions?: ReactNode; details?: ReactNode; /** §0.3 P10: the job's step now (the shared Now bar), shown unless the case is held, cancelled or ready to start. */
+  nowSlot?: ReactNode;
+  journeySlot?: ReactNode;
   /** The recurring client update call (PLM-046), in the sidebar. */
   callsSlot?: ReactNode;
   /** The case's History (the shared component), in the sidebar. */
@@ -191,7 +195,7 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
   const sections = useSectionTabs("");
   const format = useProjectFormat();
   const input = useMemo(() => ({ record, commercial, journey, project, today, valueEngineering }), [record, commercial, journey, project, today, valueEngineering]);
-  const next = useMemo(() => caseNextStep(input), [input]);
+  const lifecycle = useMemo(() => caseLifecycleStep(input), [input]);
   const money = useMemo(() => caseMoney(commercial), [commercial]);
   const overdue = caseOverdue(input);
   const steps = caseTimeline(input);
@@ -262,7 +266,11 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
     : <EmptyState illustration={null} title={t("No files yet")} action={<Link className="wd-button" data-size="compact" data-variant="secondary" href={caseHref(record.id, new URLSearchParams(), "quotations")}>{t("Open quotations")}</Link>} />;
 
   return <RecordFrame tour="case-record">
-    <RecordHeader title={<h2>{record.title}</h2>} actions={actions} meta={<>
+    <RecordHeader title={<h2>{record.title}</h2>} actions={<>
+      {/* §0.3 P2: the whole job, enquiry to warranty, on its map. */}
+      <Link className="wd-button" data-size="compact" href={`/workspace/jobs/for/case/${record.id}`}><Route aria-hidden="true" size={14} />{t("Journey")}</Link>
+      {actions}
+    </>} meta={<>
       <span>{record.customerName}</span>
       {reference ? <span>{reference}</span> : null}
       {record.enquiryTypeName ? <span>{record.enquiryTypeName}</span> : null}
@@ -284,7 +292,8 @@ export function CaseRecordView({ record, commercial, journey, project, valueEngi
       { id: "files", label: t("Files"), panel: filesPanel },
     ]}
       next={<>
-        {loading ? <Skeleton lines={3} shape="facts" /> : <CaseNextStepCard next={next} busy={busy} onCommand={onCommand} />}
+        {/* §0.3 P10: the job's step now (its journey), plus the case's own state when it is held, cancelled or ready to start. */}
+        {loading ? <Skeleton lines={3} shape="facts" /> : lifecycle ? <CaseNextStepCard next={lifecycle} busy={busy} onCommand={onCommand} /> : nowSlot}
         {/* The long lists as sub-tabs under the next step (the design journey first while it runs), each in its card. */}
         <SectionTabs tab={sections.tab} onTabChange={sections.setTab} tabsRef={sections.ref} tabs={[
           ...(journeySlot ? [{ id: "design", label: t("Design"), panel: journeySlot }] : []),

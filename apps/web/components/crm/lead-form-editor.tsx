@@ -170,7 +170,7 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
               <Button variant="quiet" className={styles.cardSummary} isDisabled={busy} aria-expanded={isOpen} onPress={() => setOpen(isOpen ? "" : question.id)}>
                 <span className={styles.typeIcon} aria-hidden="true"><Icon size={15} /></span>
                 <span className={styles.cardLabel}>{name}</span>
-                <Badge className={styles.typeChip}>{typeLabel(question.type)}</Badge>
+                <Badge className={styles.typeChip} hue="auto">{typeLabel(question.type)}</Badge>
                 {question.required ? <Badge tone="info">{t("Required")}</Badge> : null}
               </Button>
               {system && <span className={styles.lock} title={t("Always on this form")}><LockKeyhole size={14} aria-hidden="true" /><span className="wd-visually-hidden">{t("Always on this form")}</span></span>}

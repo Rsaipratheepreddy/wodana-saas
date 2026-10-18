@@ -37,6 +37,7 @@ import { CatalogModule } from "./catalog/catalog.module";
 import { SourcingModule } from "./sourcing/sourcing.module";
 import { ProductSourcingModule } from "./product-sourcing/product-sourcing.module";
 import { JobsModule } from "./jobs/jobs.module";
+import { SetupModule } from "./setup/setup.module";
 import { WorkspaceSearchModule } from "./search/workspace-search.module";
 import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
 import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
@@ -68,6 +69,7 @@ import { ApprovalsModule } from "./approvals/approvals.controller";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { BookingModule } from "./booking/booking.module";
 import { GridSettingsModule } from "./grid-settings/grid-settings.module";
+import { EvidenceModule } from "./evidence/evidence.module";
 
 @Module({
   imports: [
@@ -89,7 +91,7 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     CrmPartiesModule,
     CrmIntakeModule,
     BookingModule,
-    GridSettingsModule,
+    GridSettingsModule, EvidenceModule,
     CrmLeadsModule,
     CrmActivitiesModule,
     CrmConversationsModule,
@@ -118,6 +120,7 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     SourcingModule,
     ProductSourcingModule,
     JobsModule,
+    SetupModule,
     WorkspaceSearchModule,
     AiSuggestionsModule,
     AiGatewayModule,

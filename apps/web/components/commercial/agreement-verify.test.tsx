@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
@@ -21,18 +21,24 @@ describe("verifying the signed agreement (M6)", () => {
   beforeEach(() => { vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }))); });
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it("verifies once the signed document is attached, with no written description", async () => {
+  it("verifies once the signed document is attached, with no written description, in a review of what was signed (§0.3 P0)", async () => {
     const run = vi.fn().mockResolvedValue(true);
     view(state({ files: [file] }), run);
-    const verify = screen.getByRole("button", { name: "Verify signed agreement" });
-    expect(verify).toBeEnabled();
-    await userEvent.click(verify);
+    const review = screen.getByRole("button", { name: "Review signed agreement" });
+    expect(review).toBeEnabled();
+    await userEvent.click(review);
+    // Nothing is verified until the review's own action.
+    expect(run).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("signed-agreement.png")).toBeVisible();
+    expect(within(dialog).getByText(/Accepted quotation V1/)).toBeVisible();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Verify signed agreement" }));
     expect(run).toHaveBeenCalledWith("execute_agreement");
   });
 
   it("says why it can't be verified before anything signed is on record", () => {
     view(state({ files: [] }));
-    expect(screen.getByRole("button", { name: "Verify signed agreement" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review signed agreement" })).toBeDisabled();
     expect(screen.getByText("Attach the signed agreement first.")).toBeVisible();
   });
 
@@ -46,6 +52,6 @@ describe("verifying the signed agreement (M6)", () => {
 
   it("still accepts a written description of the signed document", () => {
     view(state({ evidence: "Signed by both parties on 28 Sep" }));
-    expect(screen.getByRole("button", { name: "Verify signed agreement" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Review signed agreement" })).toBeEnabled();
   });
 });

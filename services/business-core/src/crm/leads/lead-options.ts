@@ -1,11 +1,15 @@
 import { UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 
-type Option = { id: string; label: string; flow?: string; color?: number };
+type Option = { id: string; label: string; flow?: string; color?: number; /** An enquiry type whose flow is furniture-only (it asks for the path A–E). */ furniture?: boolean };
 const options = (entries: [string, string][]): Option[] => entries.map(([id, label]) => ({ id, label }));
 export const UNRESOLVED_ENQUIRY_TYPE = "not_sure";
 /** The region choice for anywhere outside the workspace's listed regions. */
 export const REGION_OTHER = "other";
+/** Guide B: "client type can be TBC at intake": once a firm lists its client types, this choice is always offered with them. */
+export const CLIENT_TYPE_TBC: Option = { id: "tbc", label: "TBC" };
+const CLIENT_TYPE_PLACEHOLDERS = new Set(["tbc", "not_sure", "unknown", "to_be_confirmed"]);
+const withClientTypeTbc = (list: Option[]) => !list.length || list.some((option) => CLIENT_TYPE_PLACEHOLDERS.has(option.id)) ? list : [...list, CLIENT_TYPE_TBC];
 export function hasResolvedEnquiryType(value: string | null | undefined): boolean {
   return Boolean(value?.trim() && value.trim() !== UNRESOLVED_ENQUIRY_TYPE);
 }
@@ -29,7 +33,10 @@ export const DEFAULT_LEAD_OPTIONS = {
 
 export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
   const result = await client.query<{ code: string; options: Option[] }>(`SELECT taxonomy.code,
-    COALESCE(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', choice.code, 'label', choice.label, 'allowedRoles', choice.allowed_role_codes, 'flow', choice.flow, 'color', choice.color))
+    COALESCE(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', choice.code, 'label', choice.label, 'allowedRoles', choice.allowed_role_codes, 'flow', choice.flow, 'color', choice.color,
+      'furniture', CASE WHEN choice.flow IS NULL THEN NULL ELSE EXISTS (SELECT 1 FROM crm_flows flow
+        JOIN LATERAL (SELECT version.definition FROM crm_flow_versions version WHERE version.workspace_id = flow.workspace_id AND version.flow_id = flow.id ORDER BY version.version DESC LIMIT 1) latest ON true
+        WHERE flow.workspace_id = choice.workspace_id AND flow.code = choice.flow AND latest.definition->'branches' @> '[{"question":"subPath"}]'::jsonb) END))
       ORDER BY choice.position, choice.label) FILTER (WHERE choice.id IS NOT NULL), '[]'::jsonb) AS options
     FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options choice ON choice.taxonomy_id=taxonomy.id
       AND choice.workspace_id=taxonomy.workspace_id AND choice.status='active'
@@ -46,7 +53,9 @@ export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
     channels: Object.fromEntries(sources.map(source => [source.id, pick(`lead_channel_${source.id}`, DEFAULT_LEAD_OPTIONS.channels[source.id] ?? [])])),
     enquiryTypes: pick("enquiry_type", DEFAULT_LEAD_OPTIONS.enquiryTypes),
     budgetRanges: pick("budget_range", DEFAULT_LEAD_OPTIONS.budgetRanges),
-    customerTypes: pick("customer_type", []),
+    customerTypes: withClientTypeTbc(pick("customer_type", [])),
+    // §0.3 P0: what kind of place it is (a villa, an apartment, an office), the firm's own list.
+    projectTypes: pick("project_type", []),
     emirates: locationChoices,
     areas: Object.fromEntries(locationChoices.map(emirate => [emirate.id, pick(`lead_area_${emirate.id}`, [])])),
     referralBrokers: pick("referral_broker", []),
@@ -55,8 +64,8 @@ export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
 }
 
 export async function validateLeadOptions(client: PoolClient, workspaceId: string, input: {
- source?: string; channel?: string; serviceType?: string; details?: { budgetRange?: string; customerType?: string; emirate?: string };
-}, previous?: { serviceType?: string; details?: { budgetRange?: string; customerType?: string; emirate?: string } }, options: { requireEmirate?: boolean } = {}) {
+ source?: string; channel?: string; serviceType?: string; details?: { budgetRange?: string; customerType?: string; projectType?: string; emirate?: string };
+}, previous?: { serviceType?: string; details?: { budgetRange?: string; customerType?: string; projectType?: string; emirate?: string } }, options: { requireEmirate?: boolean } = {}) {
   const choices = await loadLeadOptions(client, workspaceId);
   const check = (value: string | undefined, entries: Option[], label: string, required = false) => {
     if ((required || value) && !entries.some(item => item.id === value)) throw new UnprocessableEntityException(`Select a valid ${label}`);
@@ -68,6 +77,7 @@ export async function validateLeadOptions(client: PoolClient, workspaceId: strin
   if (!previous || previous.serviceType !== input.serviceType) check(input.serviceType, choices.enquiryTypes, "enquiry type", true);
   if (!previous || previous.details?.budgetRange !== input.details?.budgetRange) check(input.details?.budgetRange, choices.budgetRanges, "budget range");
   if (!previous || previous.details?.customerType !== input.details?.customerType) check(input.details?.customerType, choices.customerTypes, "customer type");
+  if (!previous || previous.details?.projectType !== input.details?.projectType) check(input.details?.projectType, choices.projectTypes, "project type");
   // Regions are checked against the workspace's list (its own, or its country's); with no list the value is kept as typed.
   if (choices.emirates.length) check(input.details?.emirate, choices.emirates, "region", options.requireEmirate !== false);
 }

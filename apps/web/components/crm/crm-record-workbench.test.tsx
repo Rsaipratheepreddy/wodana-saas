@@ -239,7 +239,7 @@ describe("CRM opportunity workbench", () => {
     expect(await screen.findByRole("dialog", { name: "Furniture sub-path" })).toBeInTheDocument();
   });
 
-  it("edits the value in place and reassigns the owner with the opportunity's version", async () => {
+  it("shows the value read from the linked proposals (never typed here) and reassigns the owner with the opportunity's version", async () => {
     const record = { id: "opportunity-4", title: "Villa renovation", version: 7, status: "open", amount: "250000.00", currencyCode: "AED", ownerMembershipId: "m1", ownerName: "Dana", partyName: "Client",
       flow: { flow: "basic", toWon: [{ key: "paymentProof", label: "Payment proof attached" }], missing: [{ key: "paymentProof", label: "Payment proof attached" }], steps: [], proofs: [], done: 0, total: 2, next: { stageId: "won", name: "Won", step: "won" } } };
     vi.mocked(crmRequest).mockImplementation(async (_workspace, path, method) => {
@@ -250,15 +250,12 @@ describe("CRM opportunity workbench", () => {
     });
     const user = userEvent.setup();
     render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
-    await user.click(await screen.findByRole("button", { name: "Edit Value" }));
-    const value = screen.getByRole("textbox", { name: "Value" });
-    await user.clear(value);
-    await user.type(value, "275000{Enter}");
-    await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", `opportunities/${record.id}`, "PATCH", { version: 7, amount: 275000, currencyCode: "AED" }));
+    // Guide J: the value comes from the proposals linked to finance, so there is nothing to type here.
+    await screen.findByRole("button", { name: /^Dana\s*· Reassign$/ });
+    expect(screen.queryByRole("button", { name: "Edit Value" })).toBeNull();
     // The owner is a chip on the card's title row; it opens Reassign.
-    await user.click(await screen.findByRole("button", { name: /^Dana\s*· Reassign$/ }));
+    await user.click(screen.getByRole("button", { name: /^Dana\s*· Reassign$/ }));
     await user.click(within(await screen.findByRole("dialog", { name: "Reassign" })).getByRole("button", { name: /Omar/ }));
-    // The next change carries the version the last save returned.
-    await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", `opportunities/${record.id}`, "PATCH", { version: 8, ownerMembershipId: "m2" }));
+    await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", `opportunities/${record.id}`, "PATCH", { version: 7, ownerMembershipId: "m2" }));
   });
 });

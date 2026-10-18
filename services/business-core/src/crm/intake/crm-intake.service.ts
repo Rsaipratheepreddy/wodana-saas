@@ -45,10 +45,12 @@ import { recordClientMessageSkipped, sendClientEvent } from "../conversations/in
 import { loadSalesSettings, salesSchedule } from "../leads/sales-attention";
 import { addSlaMinutes } from "../leads/sla-schedule";
 import { memberRoleKeys } from "../../workspaces/role-vocabulary";
-import { teamMembersByRole, teamRolesByEnquiryType, teamRolesForType, writeLeadTeam } from "../leads/lead-team";
-import { loadRequirementRows, ProblemList, requirementContext, requirementProblems, rulesByType, type EnquiryFacts } from "../leads/enquiry-problems";
+import { teamMembersByRole, teamRolesByEnquiryType, teamRolesForType, writeLeadTeam, tellTaggedTeam } from "../leads/lead-team";
+import { loadRequirementRows, ProblemList, requirementContext, requirementProblems, rulesByType, storedFloorPlan, type EnquiryFacts } from "../leads/enquiry-problems";
+import { REQUIREMENT_ASSET_PREFIX } from "../leads/requirement-notes.service";
 import { canReadNotes, notesReader, redactNotes } from "../leads/internal-notes";
 import { contactKeys, flagPartySpam, spamContact } from "../spam/contact-spam";
+import { loadAreaSuggestions } from "./area-suggestions";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -74,19 +76,28 @@ export class CrmIntakeService {
         // PLM-096: the fields each enquiry type requires, and from which gate.
         requirements: rulesByType(await loadRequirementRows(client, workspaceId), options.enquiryTypes.map((type) => type.id)),
         roleKeys: await memberRoleKeys(client, workspaceId, actorUser.userId),
+        // Area / city suggestions per region: the areas already used on this workspace's enquiries (most used first), then the listed ones.
+        areaSuggestions: await loadAreaSuggestions(client, workspaceId, options.emirates, options.areas),
       };
     });
   }
 
   /** PLM-096: what the enquiry form must hold when it is created or saved, for its enquiry type (gate `create`). */
-  private async createProblems(client: PoolClient, workspaceId: string, input: Pick<CreateIntakeEventDto, "serviceType" | "summary" | "party" | "details" | "team">) {
+  private async createProblems(client: PoolClient, workspaceId: string, input: Pick<CreateIntakeEventDto, "serviceType" | "summary" | "party" | "details" | "team">, leadId: string | null = null) {
+    // §0.3 P0: an uploaded floor plan is one of this enquiry's own files (a new enquiry has none yet).
+    const plan = input.details?.floorPlan;
+    if (plan?.status === "uploaded" && plan.assetId && !(leadId && (await client.query(
+      `SELECT 1 FROM crm_lead_qualification_values WHERE workspace_id = $1 AND lead_id = $2 AND question_key = $3`,
+      [workspaceId, leadId, REQUIREMENT_ASSET_PREFIX + plan.assetId])).rowCount))
+      return [{ key: "floorPlan", label: "Choose the floor plan from this enquiry's files" }];
     const answered = new Set((input.team ?? []).filter((entry) => entry.membershipId || entry.notApplicable).map((entry) => entry.role));
     const details = (input.details ?? {}) as unknown as Record<string, unknown>;
     const text = (value: unknown) => typeof value === "string" ? value : null;
     const facts: EnquiryFacts = {
       serviceType: input.serviceType ?? null, summary: input.summary ?? null, email: text(input.party?.email),
       area: text(details.area) || text(details.location), address: text(input.party?.address), budgetRange: text(details.budgetRange), customerType: text(details.customerType),
-      targetCompletion: text(details.targetCompletion), team: answered, custom: new Set(),
+      targetCompletion: text(details.targetCompletion), projectType: text(details.projectType), floorPlan: storedFloorPlan(details.floorPlan),
+      team: answered, custom: new Set(),
     };
     const roles = await teamRolesForType(client, workspaceId, input.serviceType ?? null);
     return requirementProblems(facts, await requirementContext(client, workspaceId, input.serviceType ?? null, roles), "create");
@@ -104,7 +115,7 @@ export class CrmIntakeService {
         .when(!input.party?.mobile?.trim(), "mobile", "Enter a mobile number")
         .when(input.party?.email?.trim() && !/^\S+@\S+\.\S+$/.test(input.party.email.trim()), "email", "Enter a valid email")
         .addAll(staffPhoneProblems(input.party, workspaceCountry))
-        .addAll(await this.createProblems(client, workspaceId, input as never))
+        .addAll(await this.createProblems(client, workspaceId, input as never, leadId))
         .throwIfAny();
       const party = normalizeIntakePartyPhones(input.party, workspaceCountry);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
@@ -166,6 +177,7 @@ export class CrmIntakeService {
       }
       // PLM-100: the team tagged on the enquiry (a member per role, or Not applicable).
       const teamChanged = await writeLeadTeam(client, workspaceId, leadId, input.team, actorUser.userId);
+      await tellTaggedTeam(client, workspaceId, leadId, teamChanged, actorUser.userId);
       const result = await client.query(`UPDATE crm_leads SET version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING version`, [workspaceId, leadId]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user",
         action: "crm.lead.details_updated.v1", entityType: "crm_lead", entityId: leadId,
@@ -936,7 +948,7 @@ export class CrmIntakeService {
       [leadId, workspaceId, enquiryId, input.partyId],
     );
     // PLM-100: the team tagged at intake (a member or Not applicable per role) travels with the enquiry.
-    if (Array.isArray(original.team)) await writeLeadTeam(client, workspaceId, leadId, original.team, actorUserId);
+    if (Array.isArray(original.team)) await tellTaggedTeam(client, workspaceId, leadId, await writeLeadTeam(client, workspaceId, leadId, original.team, actorUserId), actorUserId);
     await ensureJobForSource(client, workspaceId, { type: "lead", id: leadId }, actorUserId);
     const reference = String(enquiry.rows[0]?.reference ?? "");
     const clientName = String(original.party?.displayName ?? "");

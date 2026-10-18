@@ -1,8 +1,7 @@
 "use client";
 
-import { FileText } from "lucide-react";
 import { useState } from "react";
-import { Button, TextAreaField } from "@/design-system";
+import { Button, ReviewFiles, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalDrawings } from "@/lib/client-portal/types";
@@ -34,13 +33,7 @@ export function DrawingsSheet({ drawings, caseId, api, format, channels, onDecid
     }} />;
   return <div className={styles.sheet}>
     <div className={styles.rowHead}><StateLabel state={drawings.status} canDecide={drawings.canDecide} /><span className={styles.muted}>{format.date(drawings.sentAt)}</span></div>
-    <ul className={styles.list}>
-      {drawings.files.map((file) => <li className={styles.item} key={file.id}>
-        <a className={styles.itemText} href={api.file("drawing", file.id)} rel="noreferrer" target="_blank">
-          <span className={styles.fileName}><FileText aria-hidden="true" size={16} /> {file.name}</span>
-        </a>
-      </li>)}
-    </ul>
+    <ReviewFiles label={t("Drawings")} files={drawings.files.map((file) => ({ id: file.id, name: file.name, href: api.file("drawing", file.id) }))} />
     {drawings.status !== "sent" && drawings.decidedOn ? <p className={styles.muted}>{t("{name} decided on {date}.", { name: drawings.decidedBy ?? "", date: format.date(drawings.decidedOn) })}</p> : null}
     {drawings.note && drawings.status !== "sent" ? <p className={styles.body}>{drawings.note}</p> : null}
     {drawings.canDecide ? <>

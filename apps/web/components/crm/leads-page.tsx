@@ -438,14 +438,14 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   ];
   const pendingLead = pendingMove ? items.find((lead) => lead.id === pendingMove.leadId) : undefined;
   const add = () => setCreateOpen(true);
-  // At most six lists; a count shows only on a list that asks for action (My day, New, Unassigned).
+  // At most six lists, each with its count (guide 6: New · Contacted · Come back to · Unassigned · All, with counts).
   const leadTabs: Array<{ id: EnquiryView; label: string; count?: number }> = [
     ...(serverData.currentMembershipId ? [{ id: "my_day" as const, label: t("My day"), count: viewCount("my_day") }] : []),
     { id: "new", label: t("New"), count: viewCount("new") },
-    { id: "contacted", label: t("Contacted") },
-    { id: "come_back", label: t("Come back to") },
+    { id: "contacted", label: t("Contacted"), count: viewCount("contacted") },
+    { id: "come_back", label: t("Come back to"), count: viewCount("come_back") },
     ...(seesTeam ? [{ id: "unassigned" as const, label: t("Unassigned"), count: viewCount("unassigned") }] : []),
-    { id: "all", label: t("All") },
+    { id: "all", label: t("All"), count: viewCount("all") },
   ];
   const checkOptions = [...(viewCount("review") ? [{ id: "review", label: t("Needs review") }] : []), ...(viewCount("duplicates") ? [{ id: "duplicates", label: t("Duplicates") }] : [])];
   const checkFilters: ToolbarFilter[] = checkOptions.length || check ? [{ id: "check", label: t("To check"), options: checkOptions, value: check,

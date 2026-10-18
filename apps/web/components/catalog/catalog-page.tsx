@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Plus } from "lucide-react";
 import {
-  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageShell, SelectField, TextAreaField, TextInput, useRememberedChoice,
+  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, InspectorSheet, MoreDetails, NoResultsState, PageShell, SelectField, TextAreaField, TextInput, useRememberedChoice, VisuallyHidden,
   type DataGridColumn,
   TypeChip,
 } from "@/design-system";
@@ -135,7 +135,7 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
     <div className={styles.layout}>
       <nav aria-label={t("Categories")} className={styles.tree}>
         {/* The page is Catalog already: the choice of catalog says its name only to screen readers. */}
-        {catalogs.length > 1 ? <SelectField aria-label={t("Catalog")} items={catalogs.map((entry) => ({ id: entry.id, label: entry.name }))} label={<span className="wd-visually-hidden">{t("Catalog")}</span>} onSelectionChange={(key) => { setCatalogId(String(key)); setCategoryId(null); }} selectedKey={catalogId} /> : null}
+        {catalogs.length > 1 ? <SelectField aria-label={t("Catalog")} items={catalogs.map((entry) => ({ id: entry.id, label: entry.name }))} label={<VisuallyHidden>{t("Catalog")}</VisuallyHidden>} onSelectionChange={(key) => { setCatalogId(String(key)); setCategoryId(null); }} selectedKey={catalogId} /> : null}
         <CatalogCategoryTree canManage={canManage} catalogId={catalogId} categories={structure?.categories ?? []} onChanged={() => void loadItems()} onSelect={setCategoryId}
           selectedId={categoryId} workspaceId={workspaceId} />
       </nav>

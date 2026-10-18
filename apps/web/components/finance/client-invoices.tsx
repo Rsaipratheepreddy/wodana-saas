@@ -3,7 +3,10 @@
 import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DataGrid, DateField, EmptyState, ErrorState, FormDialog, FormRow, InlineNotice, InspectorSheet, MoreDetails, NoResultsState, ListTabs, RecordName, Skeleton, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import {
+  Badge, Button, DataGrid, DateField, EditableFieldList, EmptyState, ErrorState, FactRow, FormDialog, FormRow, InlineNotice, InspectorSheet, MoreDetails, NoResultsState, ListTabs, ReasonDialog, RecordName,
+  Skeleton, TextAreaField, TextInput, type DataGridColumn, type StatusTone,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ReceivablesApi } from "@/lib/receivables/client";
 import type { ClientInvoice, InvoicePreview, InvoiceState, MilestoneToInvoice, PaymentReminder, ReceivablesState } from "@/lib/receivables/types";
@@ -24,11 +27,11 @@ function LastReminder({ reminder }: { reminder?: PaymentReminder | null }) {
 /** Where a client invoice stands: credited, paid, overdue, part paid or to be paid. */
 function InvoiceStatus({ invoice }: { invoice: ClientInvoice }) {
   const t = useT();
-  const [key, tone, label] = invoice.status === "credited" ? ["credited", "neutral", t("Credited")]
+  const [key, tone, label]: [string, StatusTone, string] = invoice.status === "credited" ? ["credited", "neutral", t("Credited")]
     : Number(invoice.balance) <= 0 ? ["paid", "success", t("Paid")]
     : invoice.overdue ? ["overdue", "danger", t("Overdue")]
     : Number(invoice.paid) > 0 ? ["part_paid", "info", t("Part paid")] : ["to_pay", "info", t("To be paid")];
-  return <span className={styles.status} data-tone={tone} data-state={key}>{label}</span>;
+  return <Badge tone={tone} data-state={key}>{label}</Badge>;
 }
 
 /** Tax invoices to clients: the projects' milestones still to invoice, and the invoices with where each stands. */
@@ -124,10 +127,10 @@ function IssueDialog({ api, milestone, onClose, onIssued }: { api: ReceivablesAp
     onSubmit={async () => { setError(""); onIssued((await api.issue({ id, caseId: milestone.caseId, paymentId: milestone.paymentId, issueDate, dueDate, customerTaxNumber: taxNumber.trim(), note: note.trim() })).invoice.id); }}>
     {!preview && !error ? <Skeleton lines={6} shape="facts" /> : <>
       {preview ? <>
-        <dl className={styles.facts}>
-          <div><dt>{t("From")}</dt><dd>{[preview.company.name, preview.company.taxNumber].filter(Boolean).join(" · ")}</dd></div>
-          <div><dt>{t("To")}</dt><dd>{[preview.customer.name, preview.customer.address].filter(Boolean).join(" · ")}</dd></div>
-        </dl>
+        <EditableFieldList>
+          <FactRow label={t("From")}>{[preview.company.name, preview.company.taxNumber].filter(Boolean).join(" · ")}</FactRow>
+          <FactRow label={t("To")}>{[preview.customer.name, preview.customer.address].filter(Boolean).join(" · ")}</FactRow>
+        </EditableFieldList>
         <ul className={styles.list}>{preview.lines.map((line, index) => <li key={index}>
           <span className={styles.nameCell}><span>{line.description}</span>
             <small>{t("{net} + tax {tax} at {rate}%", { net: money(line.net), tax: money(line.tax), rate: plain(line.rate) })}</small></span>
@@ -157,7 +160,6 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
   const [state, setState] = useState<InvoiceState | null>(null);
   const [error, setError] = useState("");
   const [crediting, setCrediting] = useState(false);
-  const [reason, setReason] = useState("");
   const load = useCallback(async () => {
     try { setState(await api.invoice(invoiceId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The invoice didn't load.")); }
   }, [api, invoiceId, t]);
@@ -165,20 +167,20 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
   const invoice = state?.invoice;
   const money = (value: string) => (invoice ? format.money(value, invoice.currency) : value);
   return <InspectorSheet isOpen size="lg" title={invoice ? `${invoice.number} · ${invoice.customerName}` : t("Client invoice")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={state?.canCredit ? <div className="wd-dialog-actions"><Button variant="quiet" onPress={() => { setReason(""); setCrediting(true); }}>{t("Credit invoice")}</Button></div> : null}>
+    footer={state?.canCredit ? <div className="wd-dialog-actions"><Button variant="quiet" onPress={() => setCrediting(true)}>{t("Credit invoice")}</Button></div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !invoice ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.headRow}><InvoiceStatus invoice={invoice} /><span className={styles.muted}>{`${invoice.projectReference} · ${invoice.milestoneTitle}`}</span></div>
       {invoice.status === "credited" ? <InlineNotice tone="info" message={t("Credited by {note} on {date}: {reason}", { note: invoice.creditNoteNumber ?? "", date: format.day(invoice.creditedOn),
         reason: invoice.creditReason ?? "" })} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("From")}</dt><dd>{[invoice.companyName, invoice.companyTaxNumber, invoice.companyAddress].filter(Boolean).join(" · ")}</dd></div>
-        <div><dt>{t("To")}</dt><dd>{[invoice.customerName, invoice.customerTaxNumber, invoice.customerAddress].filter(Boolean).join(" · ")}</dd></div>
-        <div><dt>{t("Invoice date")}</dt><dd>{format.day(invoice.issueDate)}</dd></div>
-        <div><dt>{t("Due")}</dt><dd className={invoice.overdue ? styles.lateText : undefined}>{format.day(invoice.dueDate)}</dd></div>
-        {invoice.status === "issued" ? <div><dt>{t("Paid")}</dt><dd className={styles.money}>{t("{paid} of {total}", { paid: money(invoice.paid), total: money(invoice.total) })}</dd></div> : null}
-        <div><dt>{t("Issued by")}</dt><dd>{invoice.issuedByName}</dd></div>
-        {invoice.note ? <div><dt>{t("Note")}</dt><dd>{invoice.note}</dd></div> : null}
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("From")}>{[invoice.companyName, invoice.companyTaxNumber, invoice.companyAddress].filter(Boolean).join(" · ")}</FactRow>
+        <FactRow label={t("To")}>{[invoice.customerName, invoice.customerTaxNumber, invoice.customerAddress].filter(Boolean).join(" · ")}</FactRow>
+        <FactRow label={t("Invoice date")}>{format.day(invoice.issueDate)}</FactRow>
+        <FactRow label={t("Due")}><span className={invoice.overdue ? styles.lateText : undefined}>{format.day(invoice.dueDate)}</span></FactRow>
+        {invoice.status === "issued" ? <FactRow label={t("Paid")}><span className={styles.money}>{t("{paid} of {total}", { paid: money(invoice.paid), total: money(invoice.total) })}</span></FactRow> : null}
+        <FactRow label={t("Issued by")}>{invoice.issuedByName}</FactRow>
+        {invoice.note ? <FactRow label={t("Note")}>{invoice.note}</FactRow> : null}
+      </EditableFieldList>
       <section className={styles.part} aria-label={t("Lines")}>
         <ul className={styles.list}>{state.lines.map((line) => <li key={line.id}>
           <span className={styles.nameCell}><span>{line.description}</span>
@@ -191,14 +193,12 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
         </dl>
       </section>
       <section className={styles.part} aria-label={t("History")}>
-        <h3>{t("History")}</h3>
+        <h3 className={styles.subhead}>{t("History")}</h3>
         <RecordHistory workspaceId={api.workspaceId} recordType="invoice" recordId={invoice.id} />
       </section>
     </div>}
-    {crediting && invoice ? <FormDialog size="md" title={t("Credit invoice")} onClose={() => setCrediting(false)} cancelLabel={t("Back")}
-      isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()} submitLabel={t("Credit invoice")} submitVariant="danger"
-      onSubmit={async () => { setState(await api.credit(invoice.id, invoice.version, reason.trim())); onChanged(); setCrediting(false); }}>
-      <TextAreaField label={t("Why it's credited")} description={t("The whole invoice is credited; the milestone can then be invoiced again.")} isRequired value={reason} onChange={setReason} />
-    </FormDialog> : null}
+    {crediting && invoice ? <ReasonDialog title={t("Credit invoice")} description={t("The whole invoice is credited; the milestone can then be invoiced again.")}
+      label={t("Why it's credited")} confirmLabel={t("Credit invoice")} confirmVariant="danger" onClose={() => setCrediting(false)}
+      onConfirm={async (reason) => { setState(await api.credit(invoice.id, invoice.version, reason)); onChanged(); }} /> : null}
   </InspectorSheet>;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { paymentMilestoneAmounts } from "@/lib/commercial/client";
-import { minorUnits, percentOf, sumExact, toMinor } from "./money-exact";
+import { minorUnits, percentOf, sumExact, taxInside, toMinor } from "./money-exact";
 
 describe("exact money in the currency's minor units", () => {
   it("knows each currency's places and rounds half away from zero from the decimal text", () => {
@@ -22,5 +22,12 @@ describe("exact money in the currency's minor units", () => {
     expect(paymentMilestoneAmounts(1234.567, [{ percent: 20 }, { percent: 30 }, { percent: 50 }], "KWD")).toEqual([246.913, 370.37, 617.284]);
     expect(paymentMilestoneAmounts(100_001, [{ percent: 30 }, { percent: 70 }], "JPY")).toEqual([30_000, 70_001]);
     expect(paymentMilestoneAmounts(100, [{ percent: 33.34 }, { percent: 33.33 }, { percent: 33.33 }], "AED")).toEqual([33.34, 33.33, 33.33]);
+  });
+
+  it("splits a tax-inclusive receipt into net and tax, adding back to the amount", () => {
+    expect(taxInside(10_500, 5, "AED")).toEqual({ net: 10_000, tax: 500 });
+    expect(taxInside("1000.00", 5, "AED")).toEqual({ net: 952.38, tax: 47.62 });
+    expect(taxInside(1000, 0, "AED")).toEqual({ net: 1000, tax: 0 });
+    expect(taxInside(11_800, 18, "INR")).toEqual({ net: 10_000, tax: 1800 });
   });
 });

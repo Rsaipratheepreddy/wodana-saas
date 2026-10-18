@@ -2,18 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, ListTabs, NoResultsState, Skeleton, TextAreaField, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
+import { Badge, Button, DataGrid, EditableFieldList, EmptyState, ErrorState, FactRow, Fieldset, FormNotSaved, InlineNotice, InspectorSheet, ListTabs, NoResultsState, QuantityInput, ReasonDialog, Skeleton, TextInput,
+  VisuallyHidden, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
-import type { TransferRow, TransferState, TransfersState, TransferStatus } from "@/lib/inventory/types";
+import type { TransferLine, TransferRow, TransferState, TransfersState, TransferStatus } from "@/lib/inventory/types";
 import { Cell, NextStep, ProjectFilterChip, ProjectLinks, operationsStyles as ops } from "../operations/ops";
 import { orderNumber } from "../factory/factory-labels";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
 import styles from "./inventory.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
+/** Quantities stay exact decimal text for the payload; the number field shows and commits them. */
+const asNumber = (value: string) => (value === "" ? Number.NaN : Number(value));
+const asText = (next: number) => (Number.isFinite(next) ? String(next) : "");
+const QUANTITY = { maximumFractionDigits: 4 };
 type View = "transit" | "arrived" | "all";
+/** The sheet has no pager: every line of the move shows on one page (at least the grid's usual page). */
+const PAGE = 25;
 
 /** A move's state as a word in its tone: in transit, arrived (short, or with goods refused), cancelled. */
 export function MoveStatus({ status, short, rejected = false }: { status: TransferStatus; short: boolean; rejected?: boolean }) {
@@ -113,6 +119,27 @@ export function MoveSheet({ api, transferId, onChanged, onClose, onOpenMove }: {
   });
   const transfer = state?.transfer;
   const made = Boolean(transfer?.workOrderId && !transfer.returnedFromId);
+  const setArrival = (line: TransferLine, patch: Partial<Arrival>) => setArrivals((current) => ({ ...current, [line.id]: { ...current[line.id], ...patch } }));
+  // What was sent and, while it's open here, what arrived and what's refused: one row a line.
+  const lineColumns: DataGridColumn<TransferLine>[] = [
+    { id: "item", header: t("Item"), size: 220, enableSorting: false, accessorFn: (line) => line.itemName, meta: { renderCell: (line) => <span className={styles.nameCell}><span>{line.itemName}</span>
+      <small>{[line.projectReference ?? t("Free stock"), !open ? line.lossReason : "",
+        !open && Number(line.rejected ?? 0) > 0 ? t("{quantity} refused: {reason}", { quantity: `${quantityText(line.rejected!)} ${line.unit}`.trim(), reason: line.rejectReason ?? "" }) : ""]
+        .filter(Boolean).join(" · ")}</small></span> } },
+    { id: "sent", header: t("Sent"), size: 110, enableSorting: false, accessorFn: (line) => Number(line.quantity), meta: { align: "end", renderCell: (line) =>
+      <span className={styles.number}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span> } },
+    { id: "arrived", header: t("Arrived"), size: 150, enableSorting: false, accessorFn: (line) => line.received ?? "", meta: { align: "end", renderCell: (line) => {
+      const arrival = arrivals[line.id];
+      return open && arrival ? <QuantityInput label={<VisuallyHidden>{t("Arrived of {item}", { item: line.itemName })}</VisuallyHidden>} unit={line.unit} minValue={0} formatOptions={QUANTITY}
+        value={asNumber(arrival.received)} onChange={(next) => setArrival(line, { received: asText(next) })} />
+        : <span className={styles.number}>{line.received === null ? "—" : `${quantityText(line.received)} ${line.unit}`.trim()}</span>;
+    } } },
+    ...(open ? [{ id: "refused", header: t("Refused"), size: 150, enableSorting: false, accessorFn: (line: TransferLine) => arrivals[line.id]?.refused ?? "", meta: { align: "end" as const, renderCell: (line: TransferLine) => {
+      const arrival = arrivals[line.id];
+      return arrival ? <QuantityInput label={<VisuallyHidden>{t("Refused of {item}", { item: line.itemName })}</VisuallyHidden>} unit={line.unit} minValue={0} formatOptions={QUANTITY}
+        value={asNumber(arrival.refused)} onChange={(next) => setArrival(line, { refused: asText(next) })} /> : null;
+    } } } satisfies DataGridColumn<TransferLine>] : []),
+  ];
   return <InspectorSheet isOpen size="lg" title={transfer ? t("Move {number}", { number: transfer.number }) : t("Move")} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={open ? <div className="wd-dialog-actions">
       {state?.canCancelThis && !(transfer?.returnedFromId && transfer.workOrderId) ? <Button variant="quiet" onPress={() => setCancelling(true)}>{t("Cancel move")}</Button> : null}<span className={styles.spacer} />
@@ -136,44 +163,31 @@ export function MoveSheet({ api, transferId, onChanged, onClose, onOpenMove }: {
       {transfer.returnedFromId && transfer.returnedFromNumber ? <InlineNotice tone="info" message={t("Brings back what was refused on move {number}.", { number: transfer.returnedFromNumber })} /> : null}
       {transfer.returnId && transfer.returnNumber ? <div><Button size="compact" variant="quiet" onPress={() => onOpenMove?.(transfer.returnId!)}>
         {t("Refused goods go back on move {number}", { number: transfer.returnNumber })}</Button></div> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Sent")}</dt><dd>{[format.day(transfer.sentOn), transfer.sentByName].join(" · ")}</dd></div>
-        {transfer.receivedOn ? <div><dt>{t("Arrived")}</dt><dd>{[format.day(transfer.receivedOn), transfer.receivedByName].join(" · ")}</dd></div> : null}
-        {transfer.note ? <div><dt>{t("Note")}</dt><dd>{transfer.note}</dd></div> : null}
-      </dl>
-      <div className={styles.lines} role="table" aria-label={t("Lines")} data-columns={open ? "4" : "3"}>
-        <div role="row" className={styles.lineHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Sent")}</span><span role="columnheader">{t("Arrived")}</span>
-          {open ? <span role="columnheader">{t("Refused")}</span> : null}</div>
-        {state.lines.map((line) => {
-          const arrival = arrivals[line.id];
-          return <div role="row" key={line.id} className={styles.line}>
-            <span role="cell" className={styles.nameCell}><span>{line.itemName}</span><small>{[line.projectReference ?? t("Free stock"), !open ? line.lossReason : "",
-              !open && Number(line.rejected ?? 0) > 0 ? t("{quantity} refused: {reason}", { quantity: `${quantityText(line.rejected!)} ${line.unit}`.trim(), reason: line.rejectReason ?? "" }) : ""]
-              .filter(Boolean).join(" · ")}</small></span>
-            <span role="cell" className={styles.number}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span>
-            <span role="cell" className={styles.number}>{open && arrival ? <TextInput aria-label={t("Arrived of {item}", { item: line.itemName })} label={null} inputMode="decimal" suffix={line.unit || undefined}
-              value={arrival.received} onChange={(value) => setArrivals({ ...arrivals, [line.id]: { ...arrival, received: numeric(value) } })} />
-              : line.received === null ? "—" : `${quantityText(line.received)} ${line.unit}`.trim()}</span>
-            {open && arrival ? <span role="cell"><TextInput aria-label={t("Refused of {item}", { item: line.itemName })} label={null} inputMode="decimal" placeholder="0"
-              value={arrival.refused} onChange={(value) => setArrivals({ ...arrivals, [line.id]: { ...arrival, refused: numeric(value) } })} /></span> : null}
-            {open && arrival && Number(arrival.received) < Number(line.quantity) ? <span className={styles.lineNote}><TextInput label={t("What happened to the rest")} isRequired value={arrival.reason}
-              onChange={(reason) => setArrivals({ ...arrivals, [line.id]: { ...arrival, reason } })} /></span> : null}
-            {open && arrival && Number(arrival.refused || 0) > 0 ? <span className={styles.lineNote}><TextInput label={t("Why {item} is refused", { item: line.itemName })} isRequired value={arrival.refuseReason}
-              onChange={(refuseReason) => setArrivals({ ...arrivals, [line.id]: { ...arrival, refuseReason } })} /></span> : null}
-            {open && arrival && Number(arrival.refused || 0) > Number(arrival.received || 0) ? <span className={styles.lineNote}>
-              <InlineNotice tone="error" message={t("More of {item} is refused than arrived.", { item: line.itemName })} /></span> : null}
-          </div>;
-        })}
-      </div>
+      <EditableFieldList>
+        <FactRow label={t("Sent")}>{[format.day(transfer.sentOn), transfer.sentByName].join(" · ")}</FactRow>
+        {transfer.receivedOn ? <FactRow label={t("Arrived")}>{[format.day(transfer.receivedOn), transfer.receivedByName].join(" · ")}</FactRow> : null}
+        {transfer.note ? <FactRow label={t("Note")}>{transfer.note}</FactRow> : null}
+      </EditableFieldList>
+      <DataGrid<TransferLine> ariaLabel={t("Lines")} data={state.lines} getRowId={(line) => line.id} columns={lineColumns} pageSize={Math.max(PAGE, state.lines.length)}
+        showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} wrapText />
+      {/* What a line's arrival needs besides its numbers: why some is missing, why some is refused (one block a line, under the lines). */}
+      {open ? state.lines.map((line) => {
+        const arrival = arrivals[line.id];
+        if (!arrival) return null;
+        const short = Number(arrival.received) < Number(line.quantity);
+        const refused = Number(arrival.refused || 0) > 0;
+        const tooMany = Number(arrival.refused || 0) > Number(arrival.received || 0);
+        if (!short && !refused && !tooMany) return null;
+        return <Fieldset key={line.id} legend={line.itemName}>
+          {short ? <TextInput label={t("What happened to the rest")} isRequired value={arrival.reason} onChange={(reason) => setArrival(line, { reason })} /> : null}
+          {refused ? <TextInput label={t("Why {item} is refused", { item: line.itemName })} isRequired value={arrival.refuseReason}
+            onChange={(refuseReason) => setArrival(line, { refuseReason })} /> : null}
+          {tooMany ? <InlineNotice tone="error" message={t("More of {item} is refused than arrived.", { item: line.itemName })} /> : null}
+        </Fieldset>;
+      }) : null}
     </div>}
-    {cancelling ? <CancelMove onClose={() => setCancelling(false)} onSave={async (reason) => { if (await run("cancel", { reason })) setCancelling(false); }} /> : null}
+    {cancelling ? <ReasonDialog title={t("Cancel move")} label={t("Why it's cancelled")} confirmLabel={t("Cancel move")} onClose={() => setCancelling(false)}
+      onConfirm={async (reason) => { if (!(await run("cancel", { reason }))) throw new FormNotSaved(); }} /> : null}
   </InspectorSheet>;
 }
 
-function CancelMove({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
-  const t = useT();
-  const [reason, setReason] = useState("");
-  return <FormDialog size="md" title={t("Cancel move")} onClose={onClose} cancelLabel={t("Back")} isSubmitDisabled={!reason.trim()} submitLabel={t("Cancel move")} onSubmit={async () => { await onSave(reason.trim()); }}>
-    <TextAreaField label={t("Why it's cancelled")} isRequired value={reason} onChange={setReason} />
-  </FormDialog>;
-}

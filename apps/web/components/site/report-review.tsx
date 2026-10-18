@@ -3,7 +3,7 @@
 import { RecordHistory } from "../history/record-history";
 import { useCallback, useEffect, useState } from "react";
 import { Download, Sparkles, Star } from "lucide-react";
-import { Badge, Button, Checkbox, ControlledModalDialog, EditableField, EditableFieldList, ErrorState, FactRow, IconButton, InlineNotice, MoreDetails, Skeleton, Switch, TextAreaField } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, EditableField, EditableFieldList, ErrorState, FactRow, FormNotSaved, IconButton, InlineNotice, MoreDetails, ReasonDialog, Skeleton, Switch, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { SiteApi } from "@/lib/site/client";
 import type { ClientView, SiteReport, SiteState } from "@/lib/site/types";
@@ -165,17 +165,7 @@ export function ReportReview({ api, state, reportId, onState, onClose, onReject 
         {sent && report.reactions && (report.reactions.like || report.reactions.love) ? <p className={styles.muted}>{reactionLine(report, t)}</p> : null}
       </section>
     </div>
-    {returning ? <ReturnDialog onClose={() => setReturning(false)} onSave={async (note) => { if ((await run("return", { note }, "done")) === true) setReturning(false); }} /> : null}
-  </ControlledModalDialog>;
-}
-
-function ReturnDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Return to supervisor")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Return")}</Button></div>}>
-    <TextAreaField label={t("What to change")} isRequired value={note} onChange={setNote} autoFocus />
+    {returning ? <ReasonDialog title={t("Return to supervisor")} label={t("What to change")} confirmLabel={t("Return")} onClose={() => setReturning(false)}
+      onConfirm={async (note) => { if ((await run("return", { note }, "done")) !== true) throw new FormNotSaved(); }} /> : null}
   </ControlledModalDialog>;
 }

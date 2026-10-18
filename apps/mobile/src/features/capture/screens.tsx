@@ -8,7 +8,7 @@ import { key, useT } from '../../core/i18n';
 import { choosePhotos, MediaPermissionError, openSettings, takePhoto, type LocalPhoto } from '../../core/media';
 import { useOutbox } from '../../core/outbox';
 import { useSession } from '../../core/session';
-import { OptionSheet, SegmentedControl, TextField } from '../../ui/fields';
+import { OptionSheet, SegmentedControl, SelectField, TextField } from '../../ui/fields';
 import { Empty, ListRow, ListScreen, Screen, Section } from '../../ui/layout';
 import { PhotoGrid } from '../../ui/photos';
 import { Button, Row, Text } from '../../ui/primitives';
@@ -18,7 +18,8 @@ import { useToast } from '../../ui/toast';
 import { useProjects } from '../projects/api';
 import type { ReportPhotosPayload } from '../projects/outbox';
 import { useCases } from '../survey/api';
-import type { ObservationPayload } from '../survey/outbox';
+import { useCaseRooms } from '../survey/rooms';
+import { itemsIn, photoNoteCapture } from './capture-model';
 import { photoHandoff } from './handoff';
 import { useMarkup } from './use-markup';
 
@@ -29,7 +30,8 @@ const DESTINATION: Record<Destination, { label: string; icon: typeof Camera }> =
 
 /**
  * A site photo in under a minute: the camera opens straight away, draw on it if needed, then say where it
- * goes (today's report, a new snag, or a planning case's survey). Saved on the phone first.
+ * goes (today's report, a new snag, or a planning case's survey, by room and item). Saved on the phone first and
+ * sent when there is a connection; the rooms known on the phone can be chosen offline.
  */
 export function PhotoCaptureScreen() {
   const t = useT();
@@ -49,6 +51,11 @@ export function PhotoCaptureScreen() {
   const [picking, setPicking] = useState(false);
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [entryId, setEntryId] = useState<string | null>(null);
+  const rooms = useCaseRooms(destination === 'survey' ? target : null);
+  const roomItems = itemsIn(rooms.snapshot, roomId);
+  useEffect(() => { setRoomId(null); setEntryId(null); }, [target, destination]);
   const projects = useProjects();
   const cases = useCases('');
   const shoot = async () => {
@@ -86,8 +93,14 @@ export function PhotoCaptureScreen() {
         const payload: ReportPhotosPayload = { projectId: target, newReportId: Crypto.randomUUID(), photoIds: photos.map((photo) => photo.id) };
         await outbox.enqueue({ id: Crypto.randomUUID(), kind: 'site.report-photos', title: t('Site photos · {name}', { name: targetLabel ?? '' }), scope: `project:${target}`, payload }, files);
       } else {
-        const payload: ObservationPayload = { caseId: target, photoIds: photos.map((photo) => photo.id), record: { id: Crypto.randomUUID(), title: (title.trim() || t('Site photo')).slice(0, 240), note: note.slice(0, 6000), roomId: null, category: 'condition' } };
-        await outbox.enqueue({ id: Crypto.randomUUID(), kind: 'survey.photo', title: t('Photo note · {name}', { name: targetLabel ?? '' }), scope: `case:${target}`, payload }, files);
+        const room = rooms.snapshot?.rooms.find((entry) => entry.id === roomId);
+        const item = roomItems.find((entry) => entry.id === entryId);
+        const capture = photoNoteCapture({
+          operationId: Crypto.randomUUID(), recordId: Crypto.randomUUID(), caseId: target, photos: photos.map((photo) => ({ id: photo.id, uri: photo.uri, name: photo.name, type: photo.type })),
+          title: title.trim() || [room?.name, item?.title].filter(Boolean).join(' · ') || t('Site photo'), note, roomId, entryId,
+          listTitle: t('Photo note · {name}', { name: [targetLabel, room?.name].filter(Boolean).join(' · ') }),
+        });
+        await outbox.enqueue(capture.item, capture.files);
       }
       toast.success(t('Photos saved'));
       router.back();
@@ -109,6 +122,12 @@ export function PhotoCaptureScreen() {
     <Section>
       <ListRow first icon={destination === 'survey' ? Ruler : FolderKanban} title={targetLabel ?? (destination === 'survey' ? t('Choose a case') : t('Choose a project'))} onPress={() => setPicking(true)} />
     </Section>
+    {destination === 'survey' && target ? <>
+      <SelectField label={t('Room')} value={roomId} onChange={(value) => { setRoomId(value); setEntryId(null); }} allowClear placeholder={rooms.snapshot?.rooms.length ? t('Choose a room') : t('No room')}
+        options={(rooms.snapshot?.rooms ?? []).map((room) => ({ value: room.id, label: room.name }))} disabled={!rooms.snapshot?.rooms.length} />
+      {roomItems.length ? <SelectField label={t('Item')} value={entryId} onChange={setEntryId} allowClear placeholder={t('The whole room')}
+        options={roomItems.map((item) => ({ value: item.id, label: item.title }))} /> : null}
+    </> : null}
     {destination === 'survey' ? <>
       <TextField label={t('What it shows')} value={title} onChangeText={setTitle} maxLength={240} placeholder={t('e.g. Damp patch by the window')} />
       <TextField label={t('Note')} value={note} onChangeText={setNote} multiline maxLength={6000} placeholder={t('Optional')} />

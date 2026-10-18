@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_REQUIREMENTS, isRequirableKey, ProblemList, requiredBy, requirementProblems, rulesByType, throwProblems,
+  DEFAULT_REQUIREMENTS, floorPlanReady, isRequirableKey, ProblemList, requiredBy, requirementProblems, rulesByType, storedFloorPlan, throwProblems,
   type EnquiryFacts, type RequirementContext,
 } from "./enquiry-problems";
 
 const facts = (change: Partial<EnquiryFacts> = {}): EnquiryFacts => ({
-  serviceType: "full_id", email: "a@b.example", area: "Marina", address: "Villa 4", budgetRange: "not_sure", customerType: "individual", summary: "Kitchen",
+  serviceType: "full_id", email: "a@b.example", area: "Marina", address: "Villa 4", budgetRange: "mid", customerType: "individual", summary: "Kitchen",
   team: new Set(["designer"]), custom: new Set(), customLabels: new Map(), ...change,
 });
 const context = (rules: RequirementContext["rules"], change: Partial<RequirementContext> = {}): RequirementContext => ({
-  rules, hidden: new Set(), hasBudgetRanges: true, hasCustomerTypes: true, teamRoles: ["designer"], ...change,
+  rules, hidden: new Set(), hasBudgetRanges: true, hasCustomerTypes: true, hasProjectTypes: true, teamRoles: ["designer"], ...change,
 });
 
 describe("one error box for every problem (PLM-092)", () => {
@@ -43,6 +43,9 @@ describe("required fields per enquiry type (PLM-096)", () => {
     // At creation only what the type requires from the start, and Not sure yet is allowed.
     expect(requirementProblems(empty, context(rules), "create").map((item) => item.key)).toEqual(["address"]);
     expect(requirementProblems(facts(), context(rules), "convert")).toEqual([]);
+    // Guide D: "Not sure yet" is an intake answer only.
+    expect(requirementProblems(facts({ budgetRange: "not_sure" }), context(rules), "create")).toEqual([]);
+    expect(requirementProblems(facts({ budgetRange: "not_sure" }), context(rules), "convert").map((item) => item.key)).toEqual(["budgetRange"]);
   });
 
   it("never asks for a hidden field, a list the workspace does not keep, or a team role the type does not ask for", () => {
@@ -70,5 +73,29 @@ describe("required fields per enquiry type (PLM-096)", () => {
   it("accepts only product fields, team roles and the workspace's own fields as keys", () => {
     for (const key of ["email", "area", "address", "budgetRange", "customerType", "summary", "team:designer", "cf:00000000-0000-4000-8000-000000000001"]) expect(isRequirableKey(key)).toBe(true);
     for (const key of ["displayName", "mobile", "emirate", "team:plumber", "cf:x", "internalNotes"]) expect(isRequirableKey(key)).toBe(false);
+  });
+
+  it("asks for the floor plan and project type before converting when the firm requires them (§0.3 P0)", () => {
+    const rules = { floorPlan: "convert", projectType: "convert", budgetRange: "convert" } as const;
+    const blank = facts({ budgetRange: null, projectType: null, floorPlan: null });
+    expect(requirementProblems(blank, context(rules), "convert").map((item) => item.key)).toEqual(["budgetRange", "projectType", "floorPlan"]);
+    // Each floor plan answer counts only with what it needs: the file, or the size estimate.
+    expect(floorPlanReady({ status: "uploaded" })).toBe(false);
+    expect(floorPlanReady({ status: "uploaded", assetId: "00000000-0000-4000-8000-000000000002" })).toBe(true);
+    expect(floorPlanReady({ status: "not_available", builtUpArea: " " })).toBe(false);
+    expect(floorPlanReady({ status: "not_available", builtUpArea: "2–3 bedroom villa" })).toBe(true);
+    expect(floorPlanReady({ status: "not_required" })).toBe(true);
+    const ready = facts({ projectType: "villa", floorPlan: { status: "not_available", builtUpArea: "4,500 sq ft" } });
+    expect(requirementProblems(ready, context(rules), "convert")).toEqual([]);
+    // A firm without a project type list is never asked for one; anything else stored is no answer.
+    expect(requirementProblems(facts({ projectType: null, floorPlan: { status: "not_required" } }), context(rules, { hasProjectTypes: false }), "convert")).toEqual([]);
+    expect(storedFloorPlan({ status: "maybe" })).toBeNull();
+    expect(storedFloorPlan({ status: "uploaded", assetId: 7 })).toEqual({ status: "uploaded", assetId: null, builtUpArea: null, plotSize: null });
+    expect(storedFloorPlan({ status: "not_available", builtUpArea: "5 BHK", plotSize: "10,000 sq ft" })).toMatchObject({ plotSize: "10,000 sq ft" });
+    // Guide D: "Not required" is for a furniture-only enquiry; any other type gives the plan or a size estimate.
+    const notNeeded = facts({ projectType: "villa", floorPlan: { status: "not_required" } });
+    expect(requirementProblems(notNeeded, context(rules, { furnitureType: true }), "convert")).toEqual([]);
+    expect(requirementProblems(notNeeded, context(rules, { furnitureType: false }), "convert").map((item) => item.key)).toEqual(["floorPlan"]);
+    expect(isRequirableKey("floorPlan") && isRequirableKey("projectType")).toBe(true);
   });
 });

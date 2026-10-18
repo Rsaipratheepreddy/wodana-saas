@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
+import { noticeDecision } from "../notifications/notice-choices";
 import { processQuoteExpiry } from "../commercial/quote-expiry";
 import { resolveQuietChats } from "../crm/conversations/inbox/quiet-chats";
 import { escalateWaitingApprovals } from "../approvals/approval-engine";
@@ -134,8 +135,7 @@ export class ProjectRemindersService {
   }
 
   private async createDecisionReminders(client: Tenant) {
-    const result = await client.query(
-      `WITH due AS (
+    const due = `WITH due AS (
         SELECT commercial.workspace_id, commercial.case_id, request,
           membership.user_id,
           (now() AT TIME ZONE workspace.default_timezone)::date::text AS today
@@ -160,30 +160,31 @@ export class ProjectRemindersService {
               AND policy.status='active'
               AND policy.channels ? 'in_app'
           )
-      )
+      )`;
+    // Each person's choices for this notice in the app (notice-choices.ts): who switched it off, who is in quiet hours.
+    const people = (await client.query<{ workspaceId: string; userId: string }>(`${due} SELECT DISTINCT workspace_id AS "workspaceId", user_id AS "userId" FROM due`)).rows ?? [];
+    const off: string[] = [];
+    const silent: string[] = [];
+    for (const person of people) {
+      const inApp = await noticeDecision(client, { workspaceId: person.workspaceId, userId: person.userId, eventType: "commercial.decision.reminder", channel: "in_app" });
+      if (!inApp.send) off.push(person.userId); else if (inApp.silent) silent.push(person.userId);
+    }
+    const result = await client.query(
+      `${due}
       INSERT INTO notifications(
         workspace_id,recipient_type,recipient_id,channel,event_type,status,
-        subject,body,deep_link,idempotency_key,correlation_id,delivered_at
+        subject,body,deep_link,idempotency_key,correlation_id,delivered_at,silent
       )
       SELECT workspace_id,'user',user_id,'in_app','commercial.decision.reminder','delivered',
         'Client decision due · '||(request->>'title'),
         (request->'decisionRequest'->'target'->>'label')||' · Due '||(request->>'dueDate'),
         '/workspace/pre-projects/cases/'||case_id||'/variations?request='||(request->>'id'),
         'decision-reminder:'||case_id||':'||(request->>'id')||':'||today,
-        gen_random_uuid(),now()
+        gen_random_uuid(),now(),user_id = ANY($2::uuid[])
       FROM due
-      WHERE coalesce((
-        SELECT preference.enabled FROM notification_preferences preference
-        WHERE preference.workspace_id=due.workspace_id
-          AND preference.recipient_type='user'
-          AND preference.recipient_id=due.user_id
-          AND preference.channel='in_app'
-          AND preference.event_type IN ('commercial.decision.reminder','commercial.*','*')
-        ORDER BY CASE preference.event_type
-          WHEN 'commercial.decision.reminder' THEN 0 WHEN 'commercial.*' THEN 1 ELSE 2 END
-        LIMIT 1
-      ),true)
+      WHERE NOT (user_id = ANY($1::uuid[]))
       ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
+      [off, silent],
     );
     return result.rowCount ?? 0;
   }

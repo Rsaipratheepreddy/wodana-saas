@@ -101,7 +101,7 @@ function Attention({ overview }: { overview: Overview }) {
         <span className={styles.listMain}><span>{item.label}</span>{item.detail ? <small>{item.detail}</small> : null}</span>
         <Link className="wd-button" data-size="compact" data-variant="secondary" href={item.href}>{item.action}</Link>
       </li>)}
-    </ul> : <p className={`${styles.list} ${styles.quiet}`}>{t("Nothing needs you")}</p>}
+    </ul> : <EmptyState illustration={null} title={t("Nothing needs you")} />}
   </section>;
 }
 
@@ -124,6 +124,6 @@ function Recent({ overview }: { overview: Overview }) {
         </span>
         <span className={styles.listEnd}>{format.money(journal.total)}</span>
       </li>)}
-    </ul> : <p className={`${styles.list} ${styles.quiet}`}>{t("Journals appear here as invoices, payments and bills are recorded")}</p>}
+    </ul> : <EmptyState illustration={null} title={t("Journals appear here as invoices, payments and bills are recorded")} />}
   </section>;
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { seedDefaultNotificationTemplates } from "../../notifications/default-templates";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { CrmIntakeService } from "../intake/crm-intake.service";
@@ -20,7 +21,9 @@ const DESIGN_FLOW = { schema: 1, columns: ["qualified", "qualification", "propos
   { key: "intro_meeting", name: "Hold the intro meeting", role: "sales", check: "intro_meeting_completed", column: "qualification" },
   { key: "payment_proof", name: "Attach the payment proof", role: "sales", check: "payment_proof_attached", column: "won" },
 ] };
-const SHOWROOM_FLOW = { ...DESIGN_FLOW, steps: [DESIGN_FLOW.steps[0], { key: "quote", name: "Prepare the quotation", role: "sales", check: "quote_exists", column: "proposal" }, DESIGN_FLOW.steps[2]] };
+// A furniture-only flow asks which furniture path the job takes (that is what makes "floor plan not required" valid).
+const SHOWROOM_FLOW = { ...DESIGN_FLOW, steps: [DESIGN_FLOW.steps[0], { key: "quote", name: "Prepare the quotation", role: "sales", check: "quote_exists", column: "proposal" }, DESIGN_FLOW.steps[2]],
+  branches: [{ key: "path", question: "subPath", after: DESIGN_FLOW.steps[0].key, answers: [] }] };
 
 type Ids = {
   workspaceId: string; otherWorkspaceId: string; pipelineId: string;
@@ -48,10 +51,12 @@ integration("P2 enquiry: required fields, team, notes, duplicates (real Postgres
   async function seedWorkspace(client: PoolClient, workspaceId: string, owner: string) {
     await client.query("INSERT INTO workspaces(id,name,slug,default_currency,default_locale,created_by) VALUES($1,'P2 studio',$2,'AED','en-AE',$3)", [workspaceId, `p2-${workspaceId.slice(0, 8)}`, owner]);
     const types = randomUUID(), regions = randomUUID();
-    await client.query("INSERT INTO crm_taxonomies(id,workspace_id,code,name) VALUES($1,$3,'enquiry_type','Enquiry types'),($2,$3,'emirate','Regions')", [types, regions, workspaceId]);
+    const budgets = randomUUID();
+    await client.query("INSERT INTO crm_taxonomies(id,workspace_id,code,name) VALUES($1,$3,'enquiry_type','Enquiry types'),($2,$3,'emirate','Regions'),($4,$3,'budget_range','Budget ranges')",
+      [types, regions, workspaceId, budgets]);
     await client.query(`INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position,flow) VALUES
       ($1,$2,'full_id','Full interior design',1,'design'),($1,$2,'furniture','Furniture only',2,'showroom'),($1,$2,'not_sure','Not sure yet',3,NULL),
-      ($1,$3,'dubai','Dubai',1,NULL)`, [workspaceId, types, regions]);
+      ($1,$3,'dubai','Dubai',1,NULL),($1,$4,'not_sure','Not sure yet',1,NULL),($1,$4,'mid','Mid range',2,NULL)`, [workspaceId, types, regions, budgets]);
     for (const [code, definition] of [["design", DESIGN_FLOW], ["showroom", SHOWROOM_FLOW]] as const) {
       const flowId = randomUUID();
       await client.query("INSERT INTO crm_flows(id,workspace_id,code,name) VALUES($1,$2,$3,$3)", [flowId, workspaceId, code]);
@@ -73,13 +78,14 @@ integration("P2 enquiry: required fields, team, notes, duplicates (real Postgres
       await client.query("SET LOCAL session_replication_role = replica"); // fixtures only: skip provisioning triggers
       await seedWorkspace(client, workspaceId, admin);
       await seedWorkspace(client, otherWorkspaceId, admin);
+      await seedDefaultNotificationTemplates(client, workspaceId);
       await client.query(`INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$5,$6,'active'),($2,$5,$7,'active'),($3,$5,$8,'active'),($4,$5,$9,'active')`,
         [adminMember, salesMember, sales2Member, designerMember, workspaceId, admin, sales, sales2, designer]);
       await client.query("INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$4,'administrator','Administrator',true),($2,$4,'sales','Account managers',false),($3,$4,'designer','Designers',false)", [adminRole, salesRole, designerRole, workspaceId]);
       await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions", [workspaceId, adminRole]);
       await client.query(`INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code = ANY($3::text[])`,
-        [workspaceId, salesRole, ["crm.leads.view", "crm.leads.manage", "crm.parties.view", "crm.parties.manage", "crm.opportunities.view", "crm.opportunities.manage", "crm.opportunities.transition", "crm.activities.view", "crm.activities.manage"]]);
-      await client.query(`INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code = ANY($3::text[])`, [workspaceId, designerRole, ["crm.leads.view"]]);
+        [workspaceId, salesRole, ["crm.leads.view", "crm.leads.view_all", "crm.leads.manage", "crm.parties.view", "crm.parties.manage", "crm.opportunities.view", "crm.opportunities.manage", "crm.opportunities.transition", "crm.activities.view", "crm.activities.manage"]]);
+      await client.query(`INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code = ANY($3::text[])`, [workspaceId, designerRole, ["crm.leads.view", "crm.leads.view_all"]]);
       await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3),($1,$4,$5),($1,$6,$5),($1,$7,$8)",
         [workspaceId, adminMember, adminRole, salesMember, salesRole, sales2Member, designerMember, designerRole]);
       await client.query("INSERT INTO crm_pipelines(id,workspace_id,code,name,is_default) VALUES($1,$2,'sales','Sales',true)", [pipelineId, workspaceId]);
@@ -210,11 +216,71 @@ integration("P2 enquiry: required fields, team, notes, duplicates (real Postgres
       const furniture = await create(staff, ids, { serviceType: "furniture", mobile: "+971502223344", name: "Noor Saleh" });
       await expect(convert(client, staff, ids, furniture.leadId)).resolves.toMatchObject({ leadId: furniture.leadId });
 
-      await edit(client, staff, lead.leadId, ids, { party: { email: "layla@example.com", address: "Villa 4, Street 9" }, details: { budgetRange: "not_sure" }, team: [{ role: "designer", membershipId: ids.designerMember }] });
+      await edit(client, staff, lead.leadId, ids, { party: { email: "layla@example.com", address: "Villa 4, Street 9" }, details: { budgetRange: "mid" }, team: [{ role: "designer", membershipId: ids.designerMember }] });
+      // §0.3 P0: the designer tagged on the enquiry is told, in the app and by email.
+      const told = await client.query("SELECT channel, subject, deep_link FROM notifications WHERE workspace_id = $1 AND recipient_id = $2 AND event_type = 'crm.team.tagged' ORDER BY channel", [ids.workspaceId, ids.designer]);
+      expect(told.rows.map((row) => row.channel)).toEqual(["email", "in_app"]);
+      expect(told.rows[1]).toMatchObject({ subject: expect.stringMatching(/^You're on .+ as Designer · Layla Haddad$/), deep_link: `/workspace/crm/leads?lead=${lead.leadId}` });
       const opportunity = await convert(client, staff, ids, lead.leadId);
       const team = await client.query("SELECT membership_id, role FROM crm_opportunity_team WHERE opportunity_id = $1", [opportunity.id]);
       expect(team.rows).toEqual([{ membership_id: ids.designerMember, role: "designer" }]);
       expect((await client.query("SELECT membership_id FROM crm_opportunity_designer WHERE opportunity_id = $1", [opportunity.id])).rows[0].membership_id).toBe(ids.designerMember);
+    });
+  });
+
+  it("§0.3 P0: converting asks for the floor plan and project type; no plan yet adds a task to get it before the site visit", async () => {
+    await scenario(async (client, ids, as) => {
+      const admin = as(ids.admin), staff = as(ids.sales);
+      await client.query("SET LOCAL session_replication_role = replica");
+      const projectTypes = randomUUID();
+      await client.query("INSERT INTO crm_taxonomies(id,workspace_id,code,name) VALUES($1,$2,'project_type','Project types')", [projectTypes, ids.workspaceId]);
+      await client.query("INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position) VALUES($1,$2,'villa','Villa',0),($1,$2,'apartment','Apartment',1)", [ids.workspaceId, projectTypes]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      for (const key of ["floorPlan", "projectType"]) await require(admin, ids, key, "full_id", "convert");
+      const lead = await create(staff, ids);
+      const refused = await problemsOf(convert(client, staff, ids, lead.leadId));
+      expect(refused.response?.missing?.map((item) => item.key)).toEqual(["projectType", "floorPlan"]);
+      // An uploaded plan is one of this enquiry's own files; an unknown project type is refused.
+      expect((await problemsOf(edit(client, staff, lead.leadId, ids, { details: { floorPlan: { status: "uploaded", assetId: randomUUID() } } }))).response?.missing?.map((item) => item.key)).toEqual(["floorPlan"]);
+      await expect(edit(client, staff, lead.leadId, ids, { details: { projectType: "castle" } })).rejects.toThrow("Select a valid project type");
+      // Not available yet needs the size estimate.
+      await edit(client, staff, lead.leadId, ids, { details: { projectType: "villa", floorPlan: { status: "not_available" } } });
+      expect((await problemsOf(convert(client, staff, ids, lead.leadId))).response?.missing?.map((item) => item.key)).toEqual(["floorPlan"]);
+      await edit(client, staff, lead.leadId, ids, { details: { projectType: "villa", floorPlan: { status: "not_available", builtUpArea: "4 bedroom villa" } } });
+      const opportunity = await convert(client, staff, ids, lead.leadId);
+      const tasks = await client.query("SELECT title, description, owner_membership_id FROM crm_activities WHERE opportunity_id = $1 AND title = 'Get the floor plan before the site visit'", [opportunity.id]);
+      expect(tasks.rows).toEqual([{ title: "Get the floor plan before the site visit", description: "Estimate given: 4 bedroom villa", owner_membership_id: ids.salesMember }]);
+      // Not needed (a furniture-only enquiry: a floor plan is not needed there) converts without a task.
+      const second = await create(staff, ids, { serviceType: "furniture", mobile: "+971503334455", name: "Rania Odeh" });
+      await edit(client, staff, second.leadId, ids, { serviceType: "furniture", party: { displayName: "Rania Odeh", mobile: "+971503334455" }, details: { projectType: "apartment", floorPlan: { status: "not_required" } } });
+      const other = await convert(client, staff, ids, second.leadId);
+      expect((await client.query("SELECT 1 FROM crm_activities WHERE opportunity_id = $1 AND title = 'Get the floor plan before the site visit'", [other.id])).rowCount).toBe(0);
+    });
+  });
+
+  it("§0.3 P0 (guide C): a seat without 'see every enquiry' sees only its own enquiries and opportunities; whoever assigns sees all", async () => {
+    await scenario(async (client, ids, as) => {
+      const mine = await create(as(ids.sales), ids, { owner: ids.salesMember });
+      const theirs = await create(as(ids.admin), ids, { owner: ids.sales2Member, mobile: "+971505556677", name: "Huda Karim" });
+      // The account manager seat: the sales role without crm.leads.view_all.
+      await client.query("DELETE FROM role_permissions WHERE workspace_id = $1 AND permission_id = (SELECT id FROM permissions WHERE code = 'crm.leads.view_all')", [ids.workspaceId]);
+      const listed = async (userId: string) => ((await as(userId).leads.list(actor, ids.workspaceId, { limit: 50 } as never)) as { data: Array<{ id: string }> }).data.map((row) => row.id);
+      expect(await listed(ids.sales)).toEqual([mine.leadId]);
+      expect(await listed(ids.sales2)).toEqual([theirs.leadId]);
+      await expect(as(ids.sales).leads.get(actor, ids.workspaceId, theirs.leadId)).rejects.toThrow("Enquiry not found");
+      // Tagged on someone else's enquiry: it is theirs to see too.
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO crm_lead_team(workspace_id,lead_id,role_code,membership_id,set_by) VALUES($1,$2,'designer',$3,$4)", [ids.workspaceId, theirs.leadId, ids.salesMember, ids.admin]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      expect((await listed(ids.sales)).sort()).toEqual([mine.leadId, theirs.leadId].sort());
+      // The administrator (who assigns) sees both.
+      expect((await listed(ids.admin)).sort()).toEqual([mine.leadId, theirs.leadId].sort());
+      // Opportunities follow the same rule.
+      const opportunity = await convert(client, as(ids.sales), ids, mine.leadId);
+      const opportunities = async (userId: string) => ((await as(userId).opportunities.list(actor, ids.workspaceId, { limit: 50 } as never)) as { data: Array<{ id: string }> }).data.map((row) => row.id);
+      expect(await opportunities(ids.sales)).toEqual([opportunity.id]);
+      expect(await opportunities(ids.sales2)).toEqual([]);
+      await expect(as(ids.sales2).opportunities.get(actor, ids.workspaceId, String(opportunity.id))).rejects.toThrow("Opportunity not found");
     });
   });
 

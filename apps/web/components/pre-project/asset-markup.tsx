@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Button} from '@/design-system';
+import { Button, InlineNotice } from '@/design-system';
 import {caseApi,caseRequest,type CaseAsset} from '@/lib/pre-project/content';
 import {CaseModal} from './case-controls';
 import styles from './case-content.module.css';
@@ -23,7 +23,7 @@ export function AssetMarkup({workspaceId,caseId,asset,onClose,onSaved,assetUrl,u
  const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error(t('Could not create the marked copy.'))),'image/png'));
  onSaved(await uploadFile(new File([blob],`${asset.name.replace(/\.[^.]+$/,'')} marked.png`,{type:'image/png'}),saveId));
  }else onSaved(await caseRequest<CaseAsset>(workspaceId,caseId,`assets/${original}/markup`,'POST',{id:saveId,strokes}));}catch(e){setError(e instanceof Error?e.message:t('Could not save. Your drawing is still here.'));}finally{setBusy(false);}}}>{t('Save marked copy')}</Button>}>
- {error&&<p role="alert" className={styles.error}>{error}</p>}
+ {error&&<InlineNotice tone="error" message={error}/>}
  <div className={view.tools}><div aria-label={t('Pen colour')} className={view.pens}>{pens.map(([hex,label])=><Button key={hex} className={view.penButton} size="compact" variant="quiet" aria-label={t(label)} aria-pressed={color===hex} isDisabled={busy} onPress={()=>setColor(hex)}><span className={view.pen} style={{backgroundColor:hex}}/></Button>)}</div><Button size="compact" isDisabled={busy} onPress={()=>setWidth(w=>w===.004?.009:.004)}>{t(width===.004?'Thin pen':'Thick pen')}</Button><Button size="compact" isDisabled={busy||!strokes.length} onPress={()=>setStrokes(s=>s.slice(0,-1))}>{t('Undo')}</Button><Button size="compact" isDisabled={busy||!strokes.length} onPress={()=>setStrokes([])}>{t('Clear')}</Button></div>
  {!ready?<p>{t('Opening photo…')}</p>:<div className={view.canvas} style={{maxWidth:`min(100%, ${58*size.width/size.height}vh)`}}>
  {/* Authenticated project preview, shared by both capture clients. */}

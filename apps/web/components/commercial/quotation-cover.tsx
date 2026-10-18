@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useDesignSystem } from "@/design-system";
+import { SelectField, useDesignSystem } from "@/design-system";
 import type { Quote, PortalBrand } from "@/lib/commercial/types";
 import { quoteCurrencyChoices } from "@/lib/commercial/client";
 import type { CSSProperties } from "react";
@@ -174,18 +174,16 @@ export function QuotationCover({
           )}
         </label>
         {onChange && (
-          <label>
+          <div>
             <span className={s.label}>{t("Currency")}</span>
-            <select
+            <SelectField
               aria-label={t("Quotation currency")}
-              value={quote.currency}
-              onChange={(e) => onChange({ currency: e.target.value })}
-            >
-              {quoteCurrencyChoices(workspaceCurrency).map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </label>
+              label={<span className="wd-visually-hidden">{t("Quotation currency")}</span>}
+              items={quoteCurrencyChoices(workspaceCurrency).map((c) => ({ id: c, label: c }))}
+              selectedKey={quote.currency}
+              onSelectionChange={(key) => key !== null && onChange({ currency: String(key) })}
+            />
+          </div>
         )}
       </footer>
     </section>

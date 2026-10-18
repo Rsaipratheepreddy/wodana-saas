@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { registerPushButtons } from '../features/shell/push-buttons';
 import { useLanguage, useT } from '../core/i18n';
 import { deviceLocale, devicePermission } from '../features/shell/push-model';
 import { installationId, pushProjectId, pushSupported } from '../features/shell/push-registration';
@@ -49,12 +50,14 @@ export function useClientPush() {
     const projectId = pushProjectId();
     if (!projectId) return;
     if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('work', { name: channelName, importance: Notifications.AndroidImportance.HIGH });
+    // The buttons the firm's pushes show (Open, Review, Pay now).
+    await registerPushButtons(t).catch(() => undefined);
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await client.registerDevice({
       requestId: client.newId(), installationId: await installationId(), platform: Platform.OS as 'ios' | 'android', token,
       locale: deviceLocale(Intl.DateTimeFormat().resolvedOptions().locale, deviceLocale(region ?? language)), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     });
-  }, [client, channelName, region, language]);
+  }, [client, channelName, region, language, t]);
 
   /** Works out the step and, with consent and the phone's permission, (re)registers; `ask` shows the phone's prompt. */
   const run = useCallback((ask: boolean) => {

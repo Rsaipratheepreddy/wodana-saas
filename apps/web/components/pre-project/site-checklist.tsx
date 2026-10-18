@@ -65,10 +65,12 @@ export function ChecklistFields({ checklist, groups, drafts, onDraft, onApplies,
         {applies ? items.map((item) => {
           const draft = drafts[item.key] ?? { answer: "", status: null };
           const by = item.answeredByName && isAnswered(item) ? t("Answered by {name}", { name: item.answeredByName }) : undefined;
+          // Required questions block completing the visit; the rest are optional (marked by the firm in Setup).
           if (item.kind !== "check") return <TextAreaField key={item.key} label={item.question} maxLength={2000} value={draft.answer} isDisabled={checksOnly}
+            isRequired={item.required === true} validationBehavior="aria"
             onChange={(answer) => onDraft(item.key, { ...draft, answer })} description={by} />;
           return <div key={item.key} className={styles.check} data-pending={draft.status === "pending" || undefined}>
-            <p className={styles.question}>{item.question}</p>
+            <p className={styles.question}>{item.question}{item.required ? <> <Badge tone="neutral">{t("Required")}</Badge></> : null}</p>
             <SegmentedControl label={item.question} value={draft.status ?? ""}
               onChange={(next) => onDraft(item.key, { ...draft, status: draft.status === next ? null : next as CheckStatus })}
               options={(Object.keys(CHECK_STATUS_LABEL) as CheckStatus[]).map((status) => ({ id: status, label: t(CHECK_STATUS_LABEL[status]) }))} />

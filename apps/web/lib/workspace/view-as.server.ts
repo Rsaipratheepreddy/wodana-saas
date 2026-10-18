@@ -22,7 +22,8 @@ async function read<T>(path: string): Promise<T | null> {
 /** What People and Roles need to offer "View as" / "Preview as": the permission, MFA and the notice setting. */
 export async function getViewAsReadiness(profile: AuthProfile): Promise<ViewAsReadiness> {
   const membership = profile.memberships[0];
-  const canViewAs = Boolean(membership?.allowedPermissions?.includes(VIEW_AS_PERMISSION)) && !profile.viewAs;
+  // Only the owner views as someone else (the server refuses anyone else, whatever their role was granted).
+  const canViewAs = Boolean(membership?.allowedPermissions?.includes(VIEW_AS_PERMISSION)) && Boolean(membership?.roles?.includes("owner")) && !profile.viewAs;
   if (!membership || !canViewAs) return { canViewAs: false, mfaEnabled: false, settings: null };
   const [mfa, settings] = await Promise.all([
     read<{ enabled?: boolean }>(`/security/mfa/status?workspaceId=${membership.workspaceId}`),

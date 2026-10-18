@@ -11,6 +11,7 @@ import { DefinitionSheet } from "./decisions/definition-sheet";
 import { DesignSheet } from "./decisions/design-sheet";
 import { HandoverSheet } from "./decisions/handover-sheet";
 import { DrawingsSheet } from "./decisions/drawings-sheet";
+import { ItemDrawingsSheet } from "./decisions/item-drawings-sheet";
 import { MaterialsSheet } from "./decisions/materials-sheet";
 import { QuestionSheet } from "./decisions/question-sheet";
 import { QuoteSheet } from "./decisions/quote-sheet";
@@ -31,6 +32,7 @@ import { SectionNav, type NavItem, type PortalPage } from "./section-nav";
 import { DecisionsSection } from "./sections/decisions-section";
 import { DocumentsSection } from "./sections/documents-section";
 import { HomeSection } from "./sections/home-section";
+import { PortalNow } from "./sections/portal-now";
 import { MessagesSection } from "./sections/messages-section";
 import { MeetingsSection } from "./sections/meetings-section";
 import { MeetingNotes } from "./forms/meeting-notes";
@@ -47,7 +49,7 @@ const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: 
   boq: BoqSection, documents: DocumentsSection, warranty: WarrantySection, meetings: MeetingsSection, messages: MessagesSection } as const;
 /** The order the client reads them in: where it stands, what to decide, the ideas and designs, then money, the bill of quantities, papers, cover, meeting notes and talk. */
 const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "designs", "payments", "boq", "documents", "warranty", "meetings", "messages"];
-const DECISION_STEPS = ["quote", "design", "definition", "materials", "drawings", "handover", "request", "change", "presentation", "choice"];
+const DECISION_STEPS = ["quote", "design", "definition", "materials", "drawings", "item_drawings", "handover", "request", "change", "presentation", "choice"];
 /** The side column opens from a small laptop up; below it the profile is a card above the sections. */
 const WIDE = "(min-width: 64rem)";
 
@@ -110,7 +112,7 @@ export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: 
   const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t, open }) : null;
   const nav = !project.paused && shown.length > 1
     ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout={wide ? "list" : "tabs"} /> : null;
-  const modal = dialog ? <ControlledModalDialog isOpen onOpenChange={(isOpen) => { if (!isOpen) setTarget(null); }} size={target?.kind === "quote" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
+  const modal = dialog ? <ControlledModalDialog isOpen onOpenChange={(isOpen) => { if (!isOpen) setTarget(null); }} size={target?.kind === "quote" || target?.kind === "design-file" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
     {dialog.body}
   </ControlledModalDialog> : null;
   // Wide: a dashboard, like the team's own Wodana. The sidebar holds the brand, the project and its sections; the
@@ -134,6 +136,7 @@ export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: 
           description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
           <h2 className="wd-visually-hidden" id="portal-view-title">{labels.sections[current]}</h2>
           {notice ? <InlineNotice tone="success" message={notice} /> : null}
+          {current === "overview" && project.journey ? <PortalNow journey={project.journey} project={project} format={format} /> : null}
           {current === "overview" ? <div className={styles.summary}><ProfileDetails project={project} site={site} format={format} today={view.today} go={go} api={api} reload={reload} /></div> : null}
           <section aria-labelledby="portal-view-title" className={styles.view}><Section {...props} /></section>
         </>}
@@ -183,6 +186,8 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
     return { title: t("Material list · R{number}", { number: decisions.materials.number }), body: <MaterialsSheet list={decisions.materials} onDecided={decided} {...common} /> };
   if (target.kind === "drawings" && decisions?.drawings)
     return { title: t("Drawings · R{number}", { number: decisions.drawings.number }), body: <DrawingsSheet drawings={decisions.drawings} onDecided={decided} {...common} /> };
+  if (target.kind === "item_drawings" && decisions?.itemDrawings)
+    return { title: t("Shop drawings"), body: <ItemDrawingsSheet drawings={decisions.itemDrawings} onDecided={decided} {...common} /> };
   if (target.kind === "handover") {
     const pack = decisions?.handovers.find((item) => item.id === target.id);
     return pack ? { title: `${pack.title} · R${pack.revision}`, body: <HandoverSheet pack={pack} onDecided={decided} {...common} /> } : null;

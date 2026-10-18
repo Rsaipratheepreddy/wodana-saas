@@ -10,7 +10,6 @@
 .seatMeter[data-full] { color: var(--wd-color-warning); font-weight: var(--wd-weight-semibold); }
 .inviteComposerFooter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-flow-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .inviteComposerActions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-flow-2); }
-.composerError { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 .liveStatus { margin: var(--wd-flow-3) 0; color: var(--wd-color-success); font-size: var(--wd-text-sm); }
 .selectionBar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-flow-3); padding-block: var(--wd-flow-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .selectionBar strong { color: var(--wd-color-text); font-variant-numeric: tabular-nums; }

@@ -7,9 +7,10 @@ import { FURNITURE_PATHS } from "@/lib/crm/opportunity-flow";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 
-export type WonArea = "planning" | "production" | "supply" | "delivery";
-export const WON_AREAS: WonArea[] = ["planning", "production", "supply", "delivery"];
-export const WON_AREA_LABEL: Record<WonArea, MessageKey> = { planning: tKey("Planning"), production: tKey("Production"), supply: tKey("Supply"), delivery: tKey("Delivery") };
+export type WonArea = "planning" | "production" | "supply" | "delivery" | "selection";
+export const WON_AREAS: WonArea[] = ["planning", "production", "supply", "delivery", "selection"];
+export const WON_AREA_LABEL: Record<WonArea, MessageKey> = { planning: tKey("Planning"), production: tKey("Production"), supply: tKey("Supply"), delivery: tKey("Delivery"),
+  selection: tKey("Material selection") };
 export type WonAreasRule = { furniturePath: string | null; areas: WonArea[]; version: number };
 export type WonAreasView = { flowId: string; areas: WonArea[]; furniturePaths: string[]; rules: WonAreasRule[] };
 

@@ -43,10 +43,12 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     stub(view({ canManage: true, ledger: { state: "open", lockProblem: "Waiting for the client's confirmation: Oak", materials: 2, waiting: 1, lock: null },
       stages: [stage({ stage: "concepts", status: "done", completedAt: "2031-04-01T10:00:00Z", outcome: "chosen", note: "Client's choice: Warm minimal" }),
         stage({ stage: "renders", label: "3D renders", status: "locked" }),
-        stage({ stage: "material_selection", label: "Material selection", status: "active", dueAt: "2031-04-09T10:00:00Z", clientDueAt: "2031-04-20T10:00:00Z", revisions: { used: 3, included: 2, chargeable: true } })] }));
+        stage({ stage: "material_selection", label: "Material selection", status: "active", dueAt: "2031-04-09T10:00:00Z", clientDueAt: "2031-04-20T10:00:00Z", revisions: { used: 3, included: 2, chargeable: true, waiting: true, extra: { revision: 3, changeRequestId: "cr1", reference: "CR-004", status: "draft", projectId: null, state: "waiting" } } })] }));
     renderJourney();
     expect(await screen.findByText("Client's choice: Warm minimal")).toBeInTheDocument();
-    expect(screen.getByText("Revision 3 · chargeable")).toBeInTheDocument();
+    expect(screen.getByText("Revision 2 of 2 used")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for the extra revision to be agreed")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "CR-004" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c1/variations?change=cr1");
     expect(screen.getByText("2 materials · 1 waiting for the client")).toBeInTheDocument();
     expect(screen.getByText("Client deadline 20 Apr")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm material list" })).toBeDisabled();

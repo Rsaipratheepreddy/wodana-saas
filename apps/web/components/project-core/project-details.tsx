@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Avatar, EditableField, Progress } from "@/design-system";
+import { Avatar, Button, EditableField, Progress } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Priority, ProjectDetail } from "@/lib/project-core/types";
 import { projectPercent } from "@/lib/project-core/project-record";
@@ -65,7 +65,7 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd, comp
       {detail.drawings?.factorySlot || detail.factorySlot ? <div><dt>{t("Factory slot")}</dt><dd>
         {detail.factorySlot ? format.short(detail.factorySlot.date) : <span className={styles.muted}>{t("Not booked")}</span>}
         {detail.factorySlot?.note ? <small>{detail.factorySlot.note}</small> : null}
-        {detail.canBookSlot ? <button type="button" className={styles.panelAction} onClick={() => onDialog("factory_slot")}>{detail.factorySlot ? t("Change") : t("Book the factory slot")}</button> : null}
+        {detail.canBookSlot ? <Button size="compact" variant="quiet" onPress={() => onDialog("factory_slot")}>{detail.factorySlot ? t("Change") : t("Book the factory slot")}</Button> : null}
       </dd></div> : null}
       {project.templateName ? <div><dt>{t("Route")}</dt><dd>{project.templateName}</dd></div> : null}
       <div><dt>{t("Planning")}</dt><dd><Link className={styles.detailLink} href={`/workspace/pre-projects/cases/${project.caseId}/overview`}>{project.opportunityReference ?? t("Open")}</Link></dd></div>
@@ -73,7 +73,7 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd, comp
     {compact ? null : <section className={styles.detailTeam} aria-label={t("Team")}>
       <div className={styles.detailHeading}>
         <h2>{t("Team")}</h2>
-        {manage ? <button type="button" className={styles.panelAction} onClick={() => onDialog("team")}>{t("Edit")}</button> : null}
+        {manage ? <Button size="compact" variant="quiet" onPress={() => onDialog("team")}>{t("Edit")}</Button> : null}
       </div>
       <ul>
         {named.map(([id, person]) => <li key={id}>

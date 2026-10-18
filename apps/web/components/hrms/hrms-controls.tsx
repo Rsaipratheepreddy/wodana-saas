@@ -3,7 +3,7 @@
 
 import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { IconButton } from "@/design-system";
+import { EditableFieldList, FactRow, IconButton } from "@/design-system";
 import styles from "./hrms.module.css";
 
 /** A month or a year, stepped back and forth: "‹ September 2026 ›". */
@@ -19,7 +19,7 @@ export function PeriodStepper({ label, previousLabel, nextLabel, onPrevious, onN
 
 /** Label and value pairs of a record. */
 export function Facts({ items }: { items: Array<[string, ReactNode] | false | null | undefined> }) {
-  return <dl className={styles.facts}>{items.filter((item): item is [string, ReactNode] => Boolean(item)).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
+  return <EditableFieldList>{items.filter((item): item is [string, ReactNode] => Boolean(item)).map(([label, value]) => <FactRow key={label} label={label}>{value}</FactRow>)}</EditableFieldList>;
 }
 
 /** An attendance photo, opening full size. */

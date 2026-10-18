@@ -85,14 +85,17 @@ export function IconButton({ icon: Icon, label, onPress, tone = 'default', badge
 }
 
 export type ChipTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'action';
-/** A status in one or two words; colour supports the words, never replaces them. */
-export function Chip({ label, tone = 'neutral', icon: Icon, onPress, selected }: { label: string; tone?: ChipTone; icon?: LucideIcon; onPress?: () => void; selected?: boolean }) {
+/** A category's calm hue (the web's Badge hue): blue, purple or teal from the data palette, never a state colour. */
+export type ChipHue = 1 | 2 | 6;
+/** A status in one or two words; colour supports the words, never replaces them. A category (a job's chapter) takes a `hue` instead of a tone. */
+export function Chip({ label, tone = 'neutral', hue, icon: Icon, onPress, selected }: { label: string; tone?: ChipTone; hue?: ChipHue; icon?: LucideIcon; onPress?: () => void; selected?: boolean }) {
   const { colors, space, radius, font, size } = useTheme();
   const palette: Record<ChipTone, [string, string]> = {
     neutral: [colors.surfaceMuted, colors.textSecondary], info: [colors.infoSubtle, colors.info], success: [colors.successSubtle, colors.success],
     warning: [colors.warningSubtle, colors.warning], danger: [colors.dangerSubtle, colors.danger], action: [colors.actionPrimarySubtle, colors.actionPrimary],
   };
-  const [bg, fg] = selected ? [colors.actionPrimary, colors.actionOnPrimary] : palette[tone];
+  const hued: [string, string] | null = hue ? [colors[`viz-${hue}Soft`], colors[`viz-${hue}`]] : null;
+  const [bg, fg] = selected ? [colors.actionPrimary, colors.actionOnPrimary] : hued ?? palette[tone];
   const body = <>
     {Icon ? <Icon color={fg} size={12} strokeWidth={2.2} /> : null}
     <Text style={{ color: fg, fontFamily: font.medium, fontSize: size.xs, lineHeight: 16 }} numberOfLines={1}>{label}</Text>

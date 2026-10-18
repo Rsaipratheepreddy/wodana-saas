@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { noticeDecision } from "../notifications/notice-choices";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
@@ -670,16 +671,19 @@ export class ProjectScheduleService {
       [ctx.workspaceId, resource.members, ctx.membershipId],
     );
     for (const recipient of recipients.rows) {
+      // The person's choices for project notices in the app (notice-choices.ts).
+      const inApp = await noticeDecision(ctx.client, { workspaceId: ctx.workspaceId, userId: recipient.user_id, eventType: "project.booking.changed", channel: "in_app" });
+      if (!inApp.send) continue;
       await ctx.client.query(
         `INSERT INTO notifications(
            workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,
-           deep_link,idempotency_key,correlation_id,delivered_at
-         ) VALUES($1,'user',$2,'in_app','project.booking.changed','delivered',$3,$4,$5,$6,$7,now())
+           deep_link,idempotency_key,correlation_id,delivered_at,silent
+         ) VALUES($1,'user',$2,'in_app','project.booking.changed','delivered',$3,$4,$5,$6,$7,now(),$8)
          ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
         [ctx.workspaceId, recipient.user_id, task.title,
           `${project.name} · booking ${status} · ${resource.name}`,
           `/workspace/projects/${project.id}/plan-teams?record=${encodeURIComponent(task.id)}`,
-          `project-booking:${requestId}:${recipient.id}`, randomUUID()],
+          `project-booking:${requestId}:${recipient.id}`, randomUUID(), inApp.silent],
       );
     }
   }

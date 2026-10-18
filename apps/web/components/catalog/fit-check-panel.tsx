@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { Badge, Button, EmptyState, ErrorState, FormDialog, IconButton, SelectField, Skeleton, TextAreaField, TextInput, type StatusTone } from "@/design-system";
+import { Badge, Button, EmptyState, ErrorState, FormDialog, IconButton, MeasurementInput, ReasonDialog, SelectField, Skeleton, TextInput, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { fromMm, sourcingApi, SourcingRequestError, type AccessKind, type AccessPoint, type FitStatus, type ItemFit } from "@/lib/workspace/product-sourcing";
 import styles from "./product-sourcing.module.css";
@@ -93,6 +93,9 @@ export function AccessPointsEditor({ workspaceId, caseId, canEdit, onChanged, on
     setEditing(null); await load(); onChanged?.();
   };
   const set = (key: keyof PointDraft) => (value: string) => setEditing((current) => (current ? { ...current, [key]: value } : current));
+  // A clear size in the point's unit; empty when not measured.
+  const measure = (key: (typeof SIZE_KEYS)[number]) => ({ minValue: 0, formatOptions: { maximumFractionDigits: 2 }, unit: editing?.unit,
+    value: editing?.[key] ? Number(editing[key]) : Number.NaN, onChange: (next: number) => set(key)(Number.isFinite(next) ? String(next) : "") });
   const routes = [...new Set(points.map((point) => point.route))];
   return <div className={styles.panel}>
     {canEdit && points.length ? <div className={styles.actions}><Button onPress={() => setEditing(blank())} size="compact"><Plus aria-hidden="true" size={14} />{t("Add access point")}</Button></div> : null}
@@ -112,14 +115,14 @@ export function AccessPointsEditor({ workspaceId, caseId, canEdit, onChanged, on
         <TextInput isRequired label={t("Name")} maxLength={120} onChange={set("label")} value={editing.label} />
         <SelectField items={(Object.keys(kinds) as AccessKind[]).map((kind) => ({ id: kind, label: kinds[kind] }))} label={t("Type")} onSelectionChange={(key) => set("kind")(String(key))} selectedKey={editing.kind} />
         <TextInput isRequired label={t("Route")} maxLength={60} onChange={set("route")} value={editing.route} />
-        <TextInput dir="ltr" label={t("Clear width")} maxLength={12} onChange={set("width")} value={editing.width} />
-        <TextInput dir="ltr" label={t("Clear height")} maxLength={12} onChange={set("height")} value={editing.height} />
+        <MeasurementInput label={t("Clear width")} {...measure("width")} />
+        <MeasurementInput label={t("Clear height")} {...measure("height")} />
         <SelectField items={UNITS.map((unit) => ({ id: unit, label: unit }))} label={t("Unit")} onSelectionChange={(key) => set("unit")(String(key))} selectedKey={editing.unit} />
-        {editing.kind === "corridor" || editing.kind === "stair" ? <TextInput dir="ltr" label={t("Width after the turn")} maxLength={12} onChange={set("turnWidth")} value={editing.turnWidth} /> : null}
+        {editing.kind === "corridor" || editing.kind === "stair" ? <MeasurementInput label={t("Width after the turn")} {...measure("turnWidth")} /> : null}
         {editing.kind === "lift" ? <>
-          <TextInput dir="ltr" label={t("Cabin width")} maxLength={12} onChange={set("cabinWidth")} value={editing.cabinWidth} />
-          <TextInput dir="ltr" label={t("Cabin depth")} maxLength={12} onChange={set("cabinDepth")} value={editing.cabinDepth} />
-          <TextInput dir="ltr" label={t("Cabin height")} maxLength={12} onChange={set("cabinHeight")} value={editing.cabinHeight} />
+          <MeasurementInput label={t("Cabin width")} {...measure("cabinWidth")} />
+          <MeasurementInput label={t("Cabin depth")} {...measure("cabinDepth")} />
+          <MeasurementInput label={t("Cabin height")} {...measure("cabinHeight")} />
         </> : null}
       </div> : null}
     </FormDialog>
@@ -135,7 +138,6 @@ export function FitCheckList({ workspaceId, caseId, itemIds, unit = "cm", canOve
   const [fits, setFits] = useState<ItemFit[] | null>(null);
   const [error, setError] = useState("");
   const [overriding, setOverriding] = useState<{ fit: ItemFit; id: string } | null>(null);
-  const [reason, setReason] = useState("");
   const key = itemIds.join(",");
   const load = useCallback(() => (key ? sourcingApi<{ items: ItemFit[] }>(workspaceId, `cases/${caseId}/fit-checks`, { body: { itemIds: key.split(",") } }) : Promise.resolve({ items: [] }))
     .then((next) => { setFits(next.items); setError(""); }).catch((reason) => setError(reason instanceof Error ? reason.message : "")), [workspaceId, caseId, key]);
@@ -144,11 +146,12 @@ export function FitCheckList({ workspaceId, caseId, itemIds, unit = "cm", canOve
   if (!fits) return <Skeleton lines={3} />;
   if (!fits.length) return <EmptyState title={t("No items to check")} />;
   const why = (fit: ItemFit) => fit.result.reason === "no_access_points" ? t("Measure the site's doors, lifts and stairs") : fit.result.reason === "item_size_missing" ? t("Add the item's size") : null;
-  const override = async () => {
+  const override = async (reason: string) => {
     if (!overriding) return;
-    await sourcingApi(workspaceId, `cases/${caseId}/fit-checks/overrides`, { body: { id: overriding.id, itemId: overriding.fit.itemId, inputsHash: overriding.fit.inputsHash, reason: reason.trim(), context } })
+    if (reason.length < 3) throw new Error(t("At least {count} characters", { count: 3 }));
+    await sourcingApi(workspaceId, `cases/${caseId}/fit-checks/overrides`, { body: { id: overriding.id, itemId: overriding.fit.itemId, inputsHash: overriding.fit.inputsHash, reason, context } })
       .catch(async (cause) => { if (cause instanceof SourcingRequestError && cause.status === 409) await load(); throw cause; });
-    setOverriding(null); setReason(""); await load();
+    setOverriding(null); await load();
   };
   return <div className={styles.panel}>
     <ul className={styles.points}>{fits.map((fit) => <li className={styles.point} key={fit.itemId}>
@@ -163,8 +166,7 @@ export function FitCheckList({ workspaceId, caseId, itemIds, unit = "cm", canOve
       </div>
       {fit.blocksOrdering && canOverride ? <Button onPress={() => setOverriding({ fit, id: crypto.randomUUID() })} size="compact">{t("Override")}</Button> : <span />}
     </li>)}</ul>
-    <FormDialog isDirty={Boolean(reason.trim())} isOpen={Boolean(overriding)} isSubmitDisabled={reason.trim().length < 3} onClose={() => { setOverriding(null); setReason(""); }} onSubmit={override} submitLabel={t("Override")} title={t("Override the fit check")}>
-      <TextAreaField isRequired label={t("Reason")} maxLength={500} onChange={setReason} value={reason} />
-    </FormDialog>
+    {overriding ? <ReasonDialog key={overriding.id} title={t("Override the fit check")} label={t("Reason")} maxLength={500} confirmLabel={t("Override")} onClose={() => setOverriding(null)}
+      onConfirm={override} /> : null}
   </div>;
 }

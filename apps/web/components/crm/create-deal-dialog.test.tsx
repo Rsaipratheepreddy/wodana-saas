@@ -19,17 +19,15 @@ it("prepares the standard sales flow only when converting an enquiry, without se
   expect(screen.queryByRole("button", { name: /Sales pipeline/ })).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([, init]) => init.method === "POST")).toHaveLength(0);
   expect(screen.queryByRole("textbox", { name: "Currency" })).not.toBeInTheDocument();
-  // The value waits under More details, in the workspace's currency.
-  await userEvent.setup().click(screen.getByRole("button", { name: "More details" }));
-  expect(screen.getByText("AED")).toBeInTheDocument();
-  await userEvent.setup().type(screen.getByRole("textbox", { name: "Estimated value" }), "45000");
+  // Guide J: the value is never typed here; it comes from the proposals linked to finance.
+  expect(screen.queryByRole("textbox", { name: "Estimated value" })).not.toBeInTheDocument();
   await userEvent.setup().click(screen.getByRole("button", { name: "Convert to opportunity" }));
   await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());
   const writes = fetchMock.mock.calls.filter(([, init]) => init.method === "POST");
   expect(writes).toHaveLength(2);
   expect(writes[0][0]).toContain("/pipelines?");
   expect(JSON.parse(String(writes[0][1].body)).stages.map((stage: {name:string}) => stage.name)).toEqual(["New Opportunity", "Qualified", "Proposal", "Negotiation", "Won", "Lost"]);
-  expect(JSON.parse(String(writes[1][1].body))).toMatchObject({ amount: 45000, currencyCode: "AED" });
+  expect(JSON.parse(String(writes[1][1].body))).not.toHaveProperty("amount");
   expect(writes[1][0]).toContain(`/leads/${data.items[0].id}/qualify`);
 });
 
@@ -84,8 +82,6 @@ it("lets the enquiry's own owner convert it when the team list is hidden from th
   data.defaultCurrency = undefined;
   render(<WorkspaceRegionProvider currency="AED"><CreateDealDialog lead={lead} initialData={data} onClose={vi.fn()} onCreated={onCreated} /></WorkspaceRegionProvider>);
   expect(screen.queryByText("A sales owner is needed")).not.toBeInTheDocument();
-  await userEvent.setup().click(screen.getByRole("button", { name: "More details" }));
-  expect(screen.getByRole("textbox", { name: "Estimated value" }).closest(".wd-field")).toHaveTextContent("AED");
   expect(screen.getAllByText("Sara Sales").length).toBeGreaterThan(0);
   await userEvent.setup().click(screen.getByRole("button", { name: "Convert to opportunity" }));
   await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());

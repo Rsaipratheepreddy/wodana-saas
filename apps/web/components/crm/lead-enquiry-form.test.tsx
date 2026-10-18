@@ -85,11 +85,38 @@ it("types the place when the region is Other", async () => {
   const { user, onSaved, body } = setup();
   await completeRequired(user);
   await choose(user, /Emirate/, "Other");
-  await user.type(screen.getByRole("textbox", { name: /Area \/ city/ }), "Muscat, Oman");
+  await user.type(screen.getByRole("combobox", { name: /Area \/ city/ }), "Muscat, Oman");
   await choose(user, /Owner/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   expect(body().details).toMatchObject({ emirate: "other", area: "Muscat, Oman" });
+}, 15_000);
+
+it("suggests the region's areas as they are typed, saves a listed one by its id and still takes any other place", async () => {
+  const { user, onSaved, body } = setup(undefined, (data) => { data.leadOptions = { ...data.leadOptions!, areaSuggestions: { dubai: ["Business Bay", "Dubai Marina"] } }; });
+  await completeRequired(user);
+  const area = screen.getByRole("combobox", { name: /Area \/ city/ });
+  await user.type(area, "mar");
+  expect(screen.getByRole("option", { name: "Dubai Marina" })).toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "Business Bay" })).toBeNull();
+  await user.click(screen.getByRole("option", { name: "Dubai Marina" }));
+  expect(area).toHaveValue("Dubai Marina");
+  await choose(user, /Owner/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body().details).toMatchObject({ emirate: "dubai", area: "marina" });
+}, 15_000);
+
+it("keeps a typed area that is not suggested", async () => {
+  const { user, onSaved, body } = setup(undefined, (data) => { data.leadOptions = { ...data.leadOptions!, areaSuggestions: { dubai: ["Business Bay", "Dubai Marina"] } }; });
+  await completeRequired(user);
+  await user.type(screen.getByRole("combobox", { name: /Area \/ city/ }), "Al Quoz");
+  await user.tab();
+  expect(screen.getByRole("combobox", { name: /Area \/ city/ })).toHaveValue("Al Quoz");
+  await choose(user, /Owner/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body().details).toMatchObject({ emirate: "dubai", area: "Al Quoz" });
 }, 15_000);
 
 const match: ClientMatch = { partyId: "party-1", name: "Asha Rao", mobile: "+971501234567", email: "asha@example.com", leadId: "lead-9", reference: "E-0123", status: "qualified", receivedAt: "2026-05-01T08:00:00.000Z", open: false, ownerName: "Ali" };
@@ -263,7 +290,7 @@ it("doesn't ask for a region when the workspace lists none", async () => {
   await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
   await user.type(screen.getByLabelText(/Customer name/), "No region");
   await choose(user, /^Choose source|^Source/, "Company");
-  await user.type(screen.getByRole("textbox", { name: /Area \/ city/ }), "Anywhere");
+  await user.type(screen.getByRole("combobox", { name: /Area \/ city/ }), "Anywhere");
   await choose(user, /Owner/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());

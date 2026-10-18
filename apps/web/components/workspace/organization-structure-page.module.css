@@ -25,7 +25,6 @@
 .memberChoices :global(.wd-checkbox) > span:last-child { display: grid; }
 .memberChoices strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
 .memberChoices small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.historyStatus { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .historyList { display: grid; padding: 0; margin: 0; border-block: 1px solid var(--wd-color-structural-divider); list-style: none; }
 .historyList > li { display: grid; justify-items: start; gap: var(--wd-flow-2); padding-block: var(--wd-flow-3); }
 .historyList > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }

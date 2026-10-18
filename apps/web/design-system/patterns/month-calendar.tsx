@@ -103,8 +103,8 @@ export function MonthCalendar({ month, events, today, selected, onSelect, onMont
         >
           <span className="wd-month-date">{Number(day.slice(8))}</span>
           <span className="wd-month-chips">
-            {list.slice(0, maxPerDay).map((event) => <span className="wd-month-chip" data-continues={event.date !== day || undefined} data-tone={event.tone ?? "neutral"} key={event.id} title={event.title}>{event.title}</span>)}
-            {list.length > maxPerDay ? <span className="wd-month-more">{t("+{count} more", { count: list.length - maxPerDay })}</span> : null}
+            {list.slice(0, maxPerDay).map((event) => <span className="wd-event-chip wd-month-chip" data-continues={event.date !== day || undefined} data-tone={event.tone ?? "neutral"} key={event.id} title={event.title}>{event.title}</span>)}
+            {list.length > maxPerDay ? <span className="wd-event-more">{t("+{count} more", { count: list.length - maxPerDay })}</span> : null}
           </span>
         </button>;
       })}

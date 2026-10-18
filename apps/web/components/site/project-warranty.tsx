@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
-import { Button, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput, FormDialog, FormSection, TypeChip } from "@/design-system";
+import { Badge, Button, DateField, EmptyState, ErrorState, FormDialog, FormSection, InlineNotice, ReviewFiles, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { createVariation } from "@/lib/project-core/variations";
 import { siteApi, warrantySettingsApi } from "@/lib/site/client";
 import type { Supply, WarrantyClaim, WarrantyItem, WarrantySettings, WarrantyState } from "@/lib/site/types";
 import { useProjectFormat } from "../project-core/format";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import { evidenceFiles, type EvidenceFile } from "@/lib/evidence/evidence";
 import styles from "./site.module.css";
 
 type Decision = "covered" | "not_covered" | "chargeable";
@@ -74,7 +76,7 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
           <strong>{t("Claim {number}", { number: claim.number })}</strong>
           <TypeChip>{channels[claim.channel]}</TypeChip>
           <span className={styles.muted}>{[format.day(claim.raisedOn), claim.raisedByName, claim.lineTitle].filter(Boolean).join(" · ")}</span>
-          <span className={styles.status} data-status={claim.status === "open" ? "submitted" : claim.status === "covered" ? "approved" : "returned"}>{statusLabel[claim.status]}</span>
+          <Badge tone={claim.status === "open" ? "info" : claim.status === "covered" ? "success" : "warning"}>{statusLabel[claim.status]}</Badge>
           <span className={styles.spacer} />
           {claim.status === "open" && state.canManage ? <Button size="compact" onPress={() => setDialog({ kind: "decide", claim })}>{t("Decide")}</Button> : null}
         </div>
@@ -97,17 +99,17 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
       </li>)}</ul>
     </section> : null}
 
-    {dialog?.kind === "claim" ? <ClaimDialog state={state} channels={channels} onClose={() => setDialog(null)}
+    {dialog?.kind === "claim" ? <ClaimDialog workspaceId={workspaceId} state={state} channels={channels} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("record_claim", { id: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
-    {dialog?.kind === "decide" ? <DecideDialog claim={dialog.claim} item={state.items.find((item) => item.lineId === dialog.claim.lineId) ?? null} onClose={() => setDialog(null)}
+    {dialog?.kind === "decide" ? <DecideDialog workspaceId={workspaceId} claim={dialog.claim} item={state.items.find((item) => item.lineId === dialog.claim.lineId) ?? null} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("decide_claim", { claimId: dialog.claim.id, version: dialog.claim.version, ...input })) setDialog(null); }} /> : null}
     {dialog?.kind === "months" ? <MonthsDialog item={dialog.item} onClose={() => setDialog(null)}
       onSave={async (months, reason) => { if (await run("set_months", { lineId: dialog.item.lineId, months, reason })) setDialog(null); }} /> : null}
   </div>;
 }
 
-function ClaimDialog({ state, channels, onClose, onSave }: {
-  state: WarrantyState; channels: Record<WarrantyClaim["channel"], string>; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
+function ClaimDialog({ workspaceId, state, channels, onClose, onSave }: {
+  workspaceId: string; state: WarrantyState; channels: Record<WarrantyClaim["channel"], string>; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
 }) {
   const t = useT();
   const [raisedOn, setRaisedOn] = useState(state.today);
@@ -116,7 +118,9 @@ function ClaimDialog({ state, channels, onClose, onSave }: {
   const [description, setDescription] = useState("");
   const [lineId, setLineId] = useState("");
   const [areaId, setAreaId] = useState("");
-  return <FormDialog size="md" title={t("Record a claim")} onClose={onClose} isSubmitDisabled={!name.trim() || !description.trim()} submitLabel={t("Save")} onSubmit={async () => { await onSave({ raisedOn, raisedByName: name.trim(), channel, description: description.trim(), boqLineId: lineId || null, areaId: areaId || null });
+  const [files, setFiles] = useState<EvidenceFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  return <FormDialog size="md" title={t("Record a claim")} onClose={onClose} isSubmitDisabled={!name.trim() || !description.trim() || uploading} submitLabel={t("Save")} onSubmit={async () => { await onSave({ raisedOn, raisedByName: name.trim(), channel, description: description.trim(), evidenceFileIds: files.map((file) => file.id), boqLineId: lineId || null, areaId: areaId || null });
       }}>
       <FormSection title={t("Raised")}>
         <DateField label={t("Day")} isRequired value={parseDate(raisedOn)} onChange={(value) => setRaisedOn(value ? value.toString() : state.today)} />
@@ -130,12 +134,13 @@ function ClaimDialog({ state, channels, onClose, onSave }: {
           items={state.lines.map((line) => ({ id: line.id, label: line.title }))} />
         {state.areas.length ? <SelectField label={t("Area")} placeholder={t("Choose")} selectedKey={areaId} onSelectionChange={(key) => setAreaId(key ? String(key) : "")}
           items={state.areas.map((area) => ({ id: area.id, label: area.name }))} /> : null}
+        <EvidenceField workspaceId={workspaceId} kind="warranty_claim" label={t("Photos of the problem")} value={files} onChange={setFiles} onBusy={setUploading} />
       </FormSection>
   </FormDialog>;
 }
 
 /** Covered becomes a warranty snag (outside its item's cover only with why); not covered or chargeable say why. */
-function DecideDialog({ claim, item, onClose, onSave }: { claim: WarrantyClaim; item: WarrantyItem | null; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
+function DecideDialog({ workspaceId, claim, item, onClose, onSave }: { workspaceId: string; claim: WarrantyClaim; item: WarrantyItem | null; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
   const t = useT();
   const format = useProjectFormat();
   const inside = Boolean(item && item.months > 0 && item.startsOn <= claim.raisedOn && claim.raisedOn <= item.endsOn);
@@ -144,6 +149,9 @@ function DecideDialog({ claim, item, onClose, onSave }: { claim: WarrantyClaim; 
   const [note, setNote] = useState("");
   const needsNote = decision !== "covered" || !inside;
   return <FormDialog size="md" title={t("Claim {number}", { number: claim.number })} onClose={onClose} isSubmitDisabled={needsNote && !note.trim()} submitLabel={t("Save")} onSubmit={async () => { await onSave({ decision, note: note.trim(), severity }); }}>
+      {/* §0.3 P0: the claim and its photos beside the decision. */}
+      <p className={styles.muted} dir="auto">{claim.description}</p>
+      <ReviewFiles label={t("Photos of the problem")} files={evidenceFiles(workspaceId, claim.files)} />
       <span className={styles.muted}>{item ? item.months === 0 ? t("{item} isn't covered.", { item: item.title })
         : t("{item} is covered from {from} to {to}.", { item: item.title, from: format.day(item.startsOn), to: format.day(item.endsOn) }) : t("No item chosen.")}</span>
       <SegmentedControl label={t("Decision")} value={decision} onChange={(value) => setDecision(value as Decision)}

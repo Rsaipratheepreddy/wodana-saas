@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Badge, Button, EditableField, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, StageTracker, Tabs, type WorkflowStage } from "@/design-system";
+import { ApprovalStamp, Badge, Button, EditableField, EditableFieldList, EmptyState, ErrorState, FactRow, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, ReviewDialog, Skeleton, StageTracker, StateChip, Tabs,
+  type WorkflowStage } from "@/design-system";
+import { evidenceFiles } from "@/lib/evidence/evidence";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { InspectionSnag, InspectionStageKind, ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
@@ -21,7 +23,7 @@ import styles from "./factory.module.css";
 
 /** The "no payment stage" choice of the payment field. */
 const NO_PAYMENT = "none";
-type Dialog = "schedule" | "drawing" | "revise" | "quantity" | "report" | "check" | "hold" | "cancel" | "short_close" | "send_out" | "dispatch" | { refuse: string } | null;
+type Dialog = "schedule" | "drawing" | "revise" | "quantity" | "report" | "check" | "hold" | "cancel" | "short_close" | "send_out" | "dispatch" | { review: string } | null;
 /** An action a list asks the opened work order to start with (its row's Next button). */
 export type WorkOrderIntent = "report" | "check" | "dispatch" | "drawing" | null;
 type Tab = "work" | "output" | "site" | "checklists" | "history";
@@ -206,7 +208,7 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
     : act === "use_drawing" ? <Button variant="primary" onPress={() => setDialog("revise")}>{t("Use the new drawing")}</Button>
     : act === "decide_drawing" ? <Button variant="primary" isLoading={busy} onPress={() => void run("resume")}>{t("Go on with the new drawing")}</Button>
     // One report waiting: approve it here; more: open them to decide each.
-    : act === "approve" ? <Button variant="primary" isLoading={busy} onPress={() => { if (approvable.length === 1) void run("decide_report", { reportId: approvable[0].id, decision: "approve" }); else setTab("output"); }}>
+    : act === "approve" ? <Button variant="primary" isLoading={busy} onPress={() => { if (approvable.length === 1) setDialog({ review: approvable[0].id }); else setTab("output"); }}>
       {t("Approve output")}</Button>
     : act === "check" ? <Button variant="primary" onPress={() => setDialog("check")}>{t("Check quality")}</Button>
     : act === "report" ? <Button variant="primary" onPress={() => setDialog("report")}>{t("Report output")}</Button>
@@ -248,8 +250,8 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         {check.passed ? null : fix(check)}
       </li>)}</ul>
     </Section> : null}
-    <dl className={styles.facts}>
-      <div><dt>{t("Makes")}</dt><dd>{[unit(order.quantity), order.packageName, order.specification].filter(Boolean).join(" · ")}</dd></div>
+    <EditableFieldList>
+      <FactRow label={t("Makes")}>{[unit(order.quantity), order.packageName, order.specification].filter(Boolean).join(" · ")}</FactRow>
       <EditableField canEdit={schedulable} display={order.workcenterName || undefined} items={state.workcenters.filter((center) => center.active || center.id === order.workcenterId).map((center) => ({ id: center.id, label: center.name }))}
         kind="select" label={t("Workcenter")} onReload={() => void load()} onSave={(workcenterId) => update({ workcenterId: workcenterId || null })} value={order.workcenterId ?? ""} />
       <EditableField canEdit={schedulable} display={order.plannedStart ? format.day(order.plannedStart) : undefined} kind="date" label={t("Start")} onReload={() => void load()}
@@ -262,27 +264,29 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         display={payments.find((payment) => payment.id === order.readyPaymentId)?.title} items={[{ id: NO_PAYMENT, label: t("None") }, ...payments.map((payment) => ({ id: payment.id,
           label: payment.status === "pending" ? payment.title : t("{title} (paid)", { title: payment.title }) }))]} onReload={() => void load()}
         onSave={(paymentId) => save("link_payment", { paymentId: paymentId === NO_PAYMENT ? null : paymentId })} value={order.readyPaymentId ?? ""} /> : null}
-      {reminder ? <div><dt>{t("Payment reminder")}</dt><dd>{reminder.outcome === "sent"
-        ? t("Sent to the client on {date}", { date: format.day(reminder.on) }) : t("Not sent: {reason}", { reason: reminderReason(reminder.outcome) })}
+      {reminder ? <FactRow label={t("Payment reminder")}>{reminder.outcome === "sent"
+        ? <StateChip state="done" label={t("Sent to the client on {date}", { date: format.day(reminder.on) })} />
+        : <StateChip state="not_applicable" label={t("Not sent: {reason}", { reason: reminderReason(reminder.outcome) })} />}
         {reminder.reason === "before_ready" && reminder.plannedReadyOn ? <small>{t("Ahead of the planned ready date {date}", { date: format.day(reminder.plannedReadyOn) })}</small>
-          : reminder.reason === "all_ready" ? <small>{t("Everything tied to this payment was ready")}</small> : null}</dd></div> : null}
-      {order.batchName ? <div><dt>{t("Batch")}</dt><dd>{t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName })}</dd></div> : null}
-      {state.requirements && state.requirements.state !== "not_needed" ? <div><dt>{t("Materials & labour")}</dt><dd>
+          : reminder.reason === "all_ready" ? <small>{t("Everything tied to this payment was ready")}</small> : null}</FactRow> : null}
+      {order.batchName ? <FactRow label={t("Batch")}>{t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName })}</FactRow> : null}
+      {state.requirements && state.requirements.state !== "not_needed" ? <FactRow label={t("Materials & labour")}>
         <Badge tone={state.requirements.settled ? "success" : state.requirements.state === "pending" ? "warning" : "danger"}>{requirementWords[state.requirements.state]}</Badge>
         <Link className={ops.projectLink} href={`/workspace/projects/${order.projectId}/scope?view=technical`}>{t("Open the technical handover")}</Link>
-      </dd></div> : null}
-      <div><dt>{t("Drawing")}</dt><dd>
-        <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })
-          : state.drawing?.source === "project" && state.drawing.project ? t("Drawings R{number}, approved by {name} on {date}", { number: state.drawing.project.number,
-            name: state.drawing.project.decidedByName ?? "", date: state.drawing.project.decidedOn ? format.day(state.drawing.project.decidedOn) : "" })
-          : state.drawing?.source === "catalogue" ? t("The catalogue drawing") : t("Not approved yet")}</span>
+      </FactRow> : null}
+      {/* Which drawing it's made to, and who approved it when: an approval stamp, not a sentence. */}
+      <FactRow label={t("Drawing")} action={state.canManage && ["planned", "on_hold"].includes(order.status) && !failing.some((check) => check.key === "drawing")
+        ? <Button size="compact" variant="quiet" onPress={() => setDialog(order.status === "on_hold" && order.drawingApprovedAt ? "revise" : "drawing")}>
+          {order.drawingApprovedAt ? t("Change") : t("Record approval")}</Button> : null}>
+        {order.drawingApprovedAt ? <><span>{order.drawingRef}</span><ApprovalStamp approvedBy={order.drawingApprovedByName ?? ""} date={format.when(order.drawingApprovedAt)} /></>
+          : state.drawing?.source === "project" && state.drawing.project ? <><span>{t("R{number}", { number: state.drawing.project.number })}</span>
+            <ApprovalStamp approvedBy={state.drawing.project.decidedByName ?? ""} date={state.drawing.project.decidedOn ? format.day(state.drawing.project.decidedOn) : ""} /></>
+          : state.drawing?.source === "catalogue" ? <span>{t("The catalogue drawing")}</span> : <StateChip state="missing" label={t("Not approved yet")} />}
         {order.drawingNewer ? <Badge tone="warning">{t("R{number} is newer", { number: order.drawingNewer })}</Badge> : null}
-        {state.canManage && ["planned", "on_hold"].includes(order.status) && !failing.some((check) => check.key === "drawing") ? <Button size="compact" variant="quiet" onPress={() => setDialog(order.status === "on_hold" && order.drawingApprovedAt ? "revise" : "drawing")}>
-          {order.drawingApprovedAt ? t("Change") : t("Record approval")}</Button> : null}
-      </dd></div>
+      </FactRow>
       {schedulable || order.notes ? <EditableField canEdit={schedulable} kind="multiline" label={t("Notes")} maxLength={2000} onReload={() => void load()}
         onSave={(notes) => update({ notes })} value={order.notes ?? ""} /> : null}
-    </dl>
+    </EditableFieldList>
     <WorkOrderMaterials state={state} run={run} busy={busy} />
     {state.operations.length ? <Section title={t("Done outside")}>
       <ul className={ops.list}>{state.operations.map((operation) => <li key={operation.id}>
@@ -294,29 +298,30 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
   </div>;
 
   const outputPanel = !state || !order ? null : <div className={styles.sheet}>
-    <dl className={styles.facts}>
-      <div><dt>{t("Ready")}</dt><dd>
+    <EditableFieldList>
+      <FactRow label={t("Ready")}>
         <span>{t("{ready} of {quantity}", { ready: quantityText(order.passed) || "0", quantity: unit(order.quantity) })}</span>
         {Number(order.toCheck) ? <Badge tone="warning">{t("{quantity} to check", { quantity: unit(order.toCheck) })}</Badge> : null}
-        {Number(order.scrapped) ? <span className={styles.muted}>{t("{quantity} scrapped", { quantity: unit(order.scrapped) })}</span> : null}
-        {Number(order.left) && order.status !== "planned" ? <span className={styles.muted}>{t("{quantity} still to make", { quantity: unit(order.left) })}</span> : null}
-      </dd></div>
+        {Number(order.scrapped) ? <Badge tone="danger">{t("{quantity} scrapped", { quantity: unit(order.scrapped) })}</Badge> : null}
+        {Number(order.left) && order.status !== "planned" ? <Badge>{t("{quantity} still to make", { quantity: unit(order.left) })}</Badge> : null}
+      </FactRow>
       {order.status === "ready" ? <EditableField canEdit={Boolean(state.canManage || state.canApprove)} kind="date" label={t("Ready on")} display={order.readyOn ? format.day(order.readyOn) : undefined}
         onReload={() => void load()} onSave={(readyOn) => save("set_ready_date", { readyOn })} validate={(value) => value ? null : t("Choose the day it was ready.")} value={order.readyOn ?? ""} /> : null}
-    </dl>
+    </EditableFieldList>
     <Section title={t("Reports")}>
       {state.reports.length ? <ul className={ops.list}>{state.reports.map((report) => <li key={report.id}>
         <Cell title={[Number(report.good) ? t("{quantity} made", { quantity: unit(report.good) }) : "",
             Number(report.scrap) ? t("{quantity} scrapped: {reason}", { quantity: unit(report.scrap), reason: report.scrapReason }) : "",
             report.hours ? t("{hours} hours", { hours: quantityText(report.hours) }) : ""].filter(Boolean).join(" · ")}
-          meta={[report.reportedByName, format.when(report.reportedAt), report.note,
-            report.status === "approved" ? t("Approved by {name}", { name: report.decidedByName ?? "" }) : report.status === "refused" ? t("Refused by {name}: {note}", { name: report.decidedByName ?? "", note: report.decisionNote }) : ""]
-            .filter(Boolean).join(" · ")} tone={report.status === "refused" ? "danger" : undefined} />
-        {report.status === "pending" ? state.canApprove && report.reportedBy !== state.me ? <span className={styles.filters}>
-          <Button size="compact" variant="primary" isLoading={busy} onPress={() => void run("decide_report", { reportId: report.id, decision: "approve" })}>{t("Approve")}</Button>
-          <Button size="compact" variant="quiet" onPress={() => setDialog({ refuse: report.id })}>{t("Refuse")}</Button>
-        </span> : <Badge tone="warning">{t("Waiting for approval")}</Badge> : null}
-      </li>)}</ul> : <p className={ops.empty}>{t("Nothing reported yet.")}</p>}
+          meta={[report.reportedByName, format.when(report.reportedAt), report.note].filter(Boolean).join(" · ")} tone={report.status === "refused" ? "danger" : undefined}>
+          {report.status === "refused" ? <small>{t("Refused by {name}: {note}", { name: report.decidedByName ?? "", note: report.decisionNote })}</small> : null}
+        </Cell>
+        {report.status === "pending" ? state.canApprove && report.reportedBy !== state.me
+          ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => setDialog({ review: report.id })}>{t("Review")}</Button>
+          : <Badge tone="warning">{t("Waiting for approval")}</Badge>
+          : report.status === "approved" ? <StateChip state="done" label={t("Approved by {name}", { name: report.decidedByName ?? "" })} />
+          : report.status === "refused" ? <StateChip state="rejected" label={t("Refused")} /> : null}
+      </li>)}</ul> : <EmptyState illustration={null} title={t("Nothing reported yet.")} />}
     </Section>
     {state.checks.length ? <Section title={t("Quality checks")}>
       <ul className={ops.list}>{state.checks.map((check) => <li key={check.id}>
@@ -347,7 +352,8 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
 
   const sitePanel = !state || !order ? null : <div className={styles.sheet}>
     <Section title={t("At the factory")} action={canSend ? <Button size="compact" onPress={() => setDialog("dispatch")}>{t("Send to site")}</Button> : null}>
-      <p className={ops.empty}>{Number(state.atFactory) > 0 ? t("{quantity} ready to go", { quantity: unit(state.atFactory) }) : t("Nothing waiting at the factory.")}</p>
+      {Number(state.atFactory) > 0 ? <p className={ops.empty}>{t("{quantity} ready to go", { quantity: unit(state.atFactory) })}</p>
+        : <EmptyState illustration={null} title={t("Nothing waiting at the factory.")} />}
     </Section>
     <Section title={t("Trips to site")}>
       {state.dispatches.length ? <ul className={ops.list}>{state.dispatches.map((trip) => <li key={trip.id}>
@@ -360,7 +366,7 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         <Badge tone={trip.status === "in_transit" ? "info" : trip.status === "cancelled" ? "neutral" : Number(trip.rejected) || trip.short ? "warning" : "success"}>
           {trip.status === "in_transit" ? t("On its way") : trip.status === "cancelled" ? t("Cancelled") : Number(trip.rejected) ? t("Partly refused")
             : trip.short ? t("Arrived short: {quantity}", { quantity: unit(trip.received ?? "0") }) : t("Arrived")}</Badge>
-      </li>)}</ul> : <p className={ops.empty}>{t("Nothing sent to site yet.")}</p>}
+      </li>)}</ul> : <EmptyState illustration={null} title={t("Nothing sent to site yet.")} />}
     </Section>
   </div>;
 
@@ -401,11 +407,27 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
 
     {state && order && dialog === "schedule" ? <ScheduleDialog state={state} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("update", input)) setDialog(null); }} /> : null}
-    {state && order && dialog === "drawing" ? <DrawingDialog state={state} onClose={() => setDialog(null)}
+    {state && order && dialog === "drawing" ? <DrawingDialog workspaceId={api.workspaceId} state={state} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("approve_drawing", input)) setDialog(null); }} /> : null}
-    {state && order && dialog === "revise" ? <DrawingDialog state={state} revise onClose={() => setDialog(null)}
+    {state && order && dialog === "revise" ? <DrawingDialog workspaceId={api.workspaceId} state={state} revise onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("revise_drawing", input)) setDialog(null); }} /> : null}
-    {state && order && dialog === "report" ? <ReportDialog unit={order.unit} left={order.left} onClose={() => setDialog(null)}
+    {/* §0.3 P0: output is approved or refused in a review of what was reported, with its photo, never one click. */}
+    {state && order && dialog && typeof dialog === "object" ? (() => {
+      const report = state.reports.find((item) => item.id === dialog.review);
+      if (!report) return null;
+      return <ReviewDialog title={t("Approve output")} description={order.title} confirmLabel={t("Approve")} rejectLabel={t("Refuse")} onClose={() => setDialog(null)}
+        facts={[
+          { label: t("Made"), value: unit(report.good) },
+          ...(Number(report.scrap) ? [{ label: t("Scrapped"), value: `${unit(report.scrap)} · ${report.scrapReason}` }] : []),
+          ...(report.hours ? [{ label: t("Hours worked"), value: quantityText(report.hours) }] : []),
+          { label: t("Reported by"), value: `${report.reportedByName} · ${format.when(report.reportedAt)}` },
+          ...(report.note ? [{ label: t("Note"), value: report.note }] : []),
+        ]}
+        files={evidenceFiles(api.workspaceId, report.files)}
+        onConfirm={async () => { if (!(await run("decide_report", { reportId: report.id, decision: "approve" }))) throw new FormNotSaved(); setDialog(null); }}
+        onReject={async (note) => { if (!(await run("decide_report", { reportId: report.id, decision: "refuse", note }))) throw new FormNotSaved(); setDialog(null); }} />;
+    })() : null}
+    {state && order && dialog === "report" ? <ReportDialog workspaceId={api.workspaceId} unit={order.unit} left={order.left} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("report", { id: crypto.randomUUID(), ...input })) { setDialog(null); setTab("output"); } }} /> : null}
     {state && order && dialog === "check" ? <CheckDialog unit={order.unit} waiting={order.toCheck} onClose={() => setDialog(null)}
       onSave={async (input, photo) => { const checkId = crypto.randomUUID(); if (await run("check", { id: checkId, ...input })) { if (photo) await addCheckPhoto(checkId, photo); setDialog(null); setTab("output"); } }} /> : null}
@@ -417,12 +439,10 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
     {state && order && dialog === "dispatch" ? <DispatchDialog unit={order.unit} available={state.atFactory} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("dispatch", { id: crypto.randomUUID(), ...input })) { setDialog(null); setTab("site"); } }} /> : null}
     {dialog === "hold" ? <TextDialog title={t("Put on hold")} label={t("Why")} action={t("Put on hold")} onClose={() => setDialog(null)}
-      onSave={async (reason) => { if (await run("hold", { reason })) setDialog(null); }} /> : null}
+      onSave={async (reason) => { if (!(await run("hold", { reason }))) throw new FormNotSaved(); }} /> : null}
     {dialog === "cancel" ? <TextDialog title={t("Cancel work order")} label={t("Why it's cancelled")} action={t("Cancel work order")} onClose={() => setDialog(null)}
-      onSave={async (reason) => { if (await run("cancel", { reason })) setDialog(null); }} /> : null}
+      onSave={async (reason) => { if (!(await run("cancel", { reason }))) throw new FormNotSaved(); }} /> : null}
     {dialog === "short_close" ? <TextDialog title={t("Close short")} label={t("Why the rest won't be made")} action={t("Close short")} onClose={() => setDialog(null)}
-      onSave={async (reason) => { if (await run("short_close", { reason })) setDialog(null); }} /> : null}
-    {dialog && typeof dialog === "object" ? <TextDialog title={t("Refuse the report")} label={t("Why it's refused")} action={t("Refuse")} onClose={() => setDialog(null)}
-      onSave={async (note) => { if (await run("decide_report", { reportId: dialog.refuse, decision: "refuse", note })) setDialog(null); }} /> : null}
+      onSave={async (reason) => { if (!(await run("short_close", { reason }))) throw new FormNotSaved(); }} /> : null}
   </InspectorSheet>;
 }

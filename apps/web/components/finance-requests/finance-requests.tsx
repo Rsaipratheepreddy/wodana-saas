@@ -59,7 +59,7 @@ export function FinanceRequests({ workspaceId, openId, onOpen, raising, onRaised
       <span>{row.requesterName}</span><small>{format.when(row.createdAt)}</small></span> } },
     { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.total), size: 150, meta: { align: "end", renderCell: (row) => <span className={styles.money}>{amount(row)}</span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 180, meta: { renderCell: (row) => <span className={styles.nameCell}>
-      <RequestStatusLabel status={row.status} />{flag(row) ? <small>{flag(row)}</small> : null}</span> } },
+      <span><RequestStatusLabel status={row.status} /></span>{flag(row) ? <small>{flag(row)}</small> : null}</span> } },
   ];
 
   if (error && !board) return <ErrorState description={error} onRetry={() => void load()} />;

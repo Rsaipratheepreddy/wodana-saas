@@ -49,3 +49,11 @@ export function percentOf(total: number | string, percent: number, currency?: st
 export function sumExact(values: Array<number | string>, currency?: string | null) {
   return fromMinor(values.reduce<number>((sum, value) => sum + toMinor(value, currency), 0), currency);
 }
+
+/** The tax inside a tax-inclusive amount at a rate (up to two decimals), and what is left net, exact in minor units. */
+export function taxInside(amount: number | string, ratePercent: number, currency?: string | null) {
+  const basisPoints = Math.round(ratePercent * 100);
+  const gross = toMinor(amount, currency);
+  const tax = basisPoints > 0 ? divRound(gross * basisPoints, 10_000 + basisPoints) : 0;
+  return { net: fromMinor(gross - tax, currency), tax: fromMinor(tax, currency) };
+}

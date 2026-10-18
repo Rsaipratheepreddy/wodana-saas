@@ -57,8 +57,9 @@ class DeliveryJob(BaseModel):
     # A chat reply goes from the number the client wrote to (none: the workspace's default number).
     connection_id: Optional[UUID] = Field(default=None, alias="connectionId")
     media: Optional[DeliveryMedia] = None
-    # An approval a phone can decide from its lock screen (X-2): its buttons and the row to decide.
-    push_category: Optional[Literal["approval", "approval_send"]] = Field(
+    # The buttons a push shows: an approval a phone can decide from its lock screen (X-2, with the row to
+    # decide), or the one action the firm chose for the moment (Open, Review, Reply or Pay).
+    push_category: Optional[Literal["approval", "approval_send", "open", "review", "reply", "pay"]] = Field(
         default=None, alias="pushCategory"
     )
     approval: Optional[PushApproval] = None

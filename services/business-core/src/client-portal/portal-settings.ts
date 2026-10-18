@@ -28,6 +28,8 @@ export type PortalSettings = {
   welcomeTitle: string;
   welcomeText: string;
   support: { phone: string; email: string; whatsapp: string };
+  /** The firm's online catalogue (its shop), linked from the portal; blank when it has none. */
+  catalogueUrl: string;
 };
 
 /** What a project is, for the sections that show only for some kinds of job: its enquiry type's code and its order path. */
@@ -40,11 +42,12 @@ const COLUMNS = `workspace_id AS "workspaceId", slug, enabled, version, show_pro
   show_documents AS documents, show_warranty AS warranty, show_messages AS messages, show_moodboard AS moodboard, show_meetings AS meetings, show_designs AS designs,
   show_boq AS boq, boq_enquiry_types AS "boqEnquiryTypes", progress_stage_names AS "stageNames", progress_dates AS dates,
   progress_updates AS updates, progress_photos AS photos, show_invoice_amounts AS "invoiceAmounts", welcome_title AS "welcomeTitle",
-  welcome_text AS "welcomeText", support_phone AS "supportPhone", support_email AS "supportEmail", support_whatsapp AS "supportWhatsapp"`;
+  welcome_text AS "welcomeText", support_phone AS "supportPhone", support_email AS "supportEmail", support_whatsapp AS "supportWhatsapp",
+  catalogue_url AS "catalogueUrl"`;
 
 type Row = Record<Section, boolean> & {
   workspaceId: string; slug: string; enabled: boolean; version: number; stageNames: boolean; dates: boolean; updates: boolean; photos: boolean;
-  invoiceAmounts: boolean; boqEnquiryTypes: string[] | null; welcomeTitle: string; welcomeText: string; supportPhone: string; supportEmail: string; supportWhatsapp: string;
+  invoiceAmounts: boolean; boqEnquiryTypes: string[] | null; welcomeTitle: string; welcomeText: string; supportPhone: string; supportEmail: string; supportWhatsapp: string; catalogueUrl: string;
 };
 
 function fromRow(row: Row): PortalSettings {
@@ -53,7 +56,7 @@ function fromRow(row: Row): PortalSettings {
     sections: Object.fromEntries(SECTIONS.map((section) => [section, row[section]])) as Sections,
     progress: { stageNames: row.stageNames, dates: row.dates, updates: row.updates, photos: row.photos },
     invoiceAmounts: row.invoiceAmounts, boqEnquiryTypes: row.boqEnquiryTypes ?? [], welcomeTitle: row.welcomeTitle, welcomeText: row.welcomeText,
-    support: { phone: row.supportPhone, email: row.supportEmail, whatsapp: row.supportWhatsapp },
+    support: { phone: row.supportPhone, email: row.supportEmail, whatsapp: row.supportWhatsapp }, catalogueUrl: row.catalogueUrl ?? "",
   };
 }
 
@@ -66,7 +69,7 @@ export async function readPortalSettings(db: Db, workspaceId: string): Promise<P
     workspaceId, slug: workspace?.slug ?? "", enabled: false, version: 0,
     sections: Object.fromEntries(SECTIONS.map((section) => [section, !DEFAULT_OFF.has(section)])) as Sections,
     progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, boqEnquiryTypes: [],
-    welcomeTitle: "", welcomeText: "", support: { phone: "", email: "", whatsapp: "" },
+    welcomeTitle: "", welcomeText: "", support: { phone: "", email: "", whatsapp: "" }, catalogueUrl: "",
   };
 }
 
@@ -97,6 +100,16 @@ export function optionalPhone(value: unknown, label: string) {
   if (!raw) return "";
   if (!E164.test(raw)) throw new BadRequestException(`${label}: use the international format, e.g. +12025550123.`);
   return raw;
+}
+
+/** A link clients open: blank, or a full https:// address. */
+export function optionalLink(value: unknown, label: string) {
+  const raw = line(value, 500, label);
+  if (!raw) return "";
+  let url: URL;
+  try { url = new URL(raw); } catch { throw new BadRequestException(`${label}: use a full link starting with https://`); }
+  if (url.protocol !== "https:" || !url.hostname.includes(".")) throw new BadRequestException(`${label}: use a full link starting with https://`);
+  return url.toString();
 }
 
 export function optionalEmail(value: unknown, label: string) {
@@ -132,12 +145,13 @@ export async function savePortalSettings(db: Db, workspaceId: string, userId: st
       email: support.email === undefined ? current.support.email : optionalEmail(support.email, "Support email"),
       whatsapp: support.whatsapp === undefined ? current.support.whatsapp : optionalPhone(support.whatsapp, "Support WhatsApp"),
     },
+    catalogueUrl: body.catalogueUrl === undefined ? current.catalogueUrl : optionalLink(body.catalogueUrl, "Online catalogue"),
   };
   await db.query(
     `INSERT INTO client_portal_settings (workspace_id, slug, enabled, version, show_progress, show_decisions, show_payments, show_documents, show_warranty, show_messages, show_moodboard,
        progress_stage_names, progress_dates, progress_updates, progress_photos, show_invoice_amounts, welcome_title, welcome_text, support_phone, support_email, support_whatsapp,
-       updated_by, updated_at, show_meetings, show_designs, show_boq, boq_enquiry_types)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $22, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now(), $23, $24, $25, $26::text[])
+       updated_by, updated_at, show_meetings, show_designs, show_boq, boq_enquiry_types, catalogue_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $22, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now(), $23, $24, $25, $26::text[], $27)
      ON CONFLICT (workspace_id) DO UPDATE SET enabled = EXCLUDED.enabled, version = EXCLUDED.version, show_progress = EXCLUDED.show_progress,
        show_decisions = EXCLUDED.show_decisions, show_payments = EXCLUDED.show_payments, show_documents = EXCLUDED.show_documents,
        show_warranty = EXCLUDED.show_warranty, show_messages = EXCLUDED.show_messages, show_moodboard = EXCLUDED.show_moodboard, show_meetings = EXCLUDED.show_meetings, show_designs = EXCLUDED.show_designs,
@@ -145,11 +159,11 @@ export async function savePortalSettings(db: Db, workspaceId: string, userId: st
        progress_dates = EXCLUDED.progress_dates, progress_updates = EXCLUDED.progress_updates, progress_photos = EXCLUDED.progress_photos,
        show_invoice_amounts = EXCLUDED.show_invoice_amounts, welcome_title = EXCLUDED.welcome_title, welcome_text = EXCLUDED.welcome_text,
        support_phone = EXCLUDED.support_phone, support_email = EXCLUDED.support_email, support_whatsapp = EXCLUDED.support_whatsapp,
-       updated_by = EXCLUDED.updated_by, updated_at = now()`,
+       catalogue_url = EXCLUDED.catalogue_url, updated_by = EXCLUDED.updated_by, updated_at = now()`,
     [workspaceId, current.slug, next.enabled, current.version + 1, next.sections.progress, next.sections.decisions, next.sections.payments, next.sections.documents,
       next.sections.warranty, next.sections.messages, next.progress.stageNames, next.progress.dates, next.progress.updates, next.progress.photos, next.invoiceAmounts,
       next.welcomeTitle, next.welcomeText, next.support.phone, next.support.email, next.support.whatsapp, userId, next.sections.moodboard, next.sections.meetings, next.sections.designs,
-      next.sections.boq, next.boqEnquiryTypes]);
+      next.sections.boq, next.boqEnquiryTypes, next.catalogueUrl]);
   if (current.enabled && !next.enabled)
     await db.query(`UPDATE client_portal_sessions SET revoked_at = now(), revoked_reason = 'portal_off' WHERE workspace_id = $1 AND revoked_at IS NULL`, [workspaceId]);
   return { before: current, after: { ...next, version: current.version + 1 } };

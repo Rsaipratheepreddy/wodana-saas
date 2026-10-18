@@ -14,7 +14,7 @@ async function handle(request: Request, { params }: { params: Promise<{ token: s
   const { token, action = [] } = await params;
   const step = action.join("/");
   const read = request.method === "GET" && (step === "" || step === "document");
-  const write = request.method === "POST" && step === "sign";
+  const write = request.method === "POST" && (step === "sign" || step === "code" || step === "code/verify");
   if (!TOKEN.test(token) || (!read && !write)) return NextResponse.json({ message: t("This signing link isn't valid.") }, { status: 404 });
   if (write && !isSameOrigin(request)) return NextResponse.json({ message: t("Open the signing link to continue.") }, { status: 403 });
   const copy = new URL(request.url).searchParams.get("copy") === "signed" ? "?copy=signed" : "";

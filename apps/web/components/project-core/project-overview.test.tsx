@@ -122,7 +122,8 @@ describe("project overview, each fact once", () => {
     expect(within(screen.getByLabelText("Where the project stands")).getAllByText("Permit collection")).toHaveLength(1);
     const card = screen.getByRole("heading", { level: 3, name: "Collect the building permit" }).closest("section")!;
     // The card is headed as the next step, apart from the history.
-    expect(within(card).getByText("Next step")).toBeInTheDocument();
+    // §0.3 P10: the job's step now is the Now bar above; this card is the stage's own checks.
+    expect(within(card).getByText("This stage")).toBeInTheDocument();
     expect(card).not.toHaveTextContent(/6 of 9|Permit collection|not named/);
     expect(within(card).getByRole("button", { name: "Record the building permit" })).toBeInTheDocument();
     // The same action isn't offered again in the sidebar.

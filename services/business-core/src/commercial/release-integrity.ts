@@ -31,6 +31,14 @@ export function isOperationalEvidence(
 }
 
 /** The signed agreement is on record: an uploaded signed document, or a written description of it. */
+/**
+ * Whether an agreement's signed evidence is live, not a demonstration. Its reference is numbered by the system from
+ * the company's code (§0.3 P0), so only what people wrote is read: a company coded "DEMO" is still a live company.
+ */
+export function agreementEvidenceOperational(agreement: Pick<Agreement, "evidenceKind" | "evidence">) {
+  return isOperationalEvidence({ evidenceKind: agreement.evidenceKind, evidence: agreement.evidence });
+}
+
 export function agreementHasSignedEvidence(agreement: Pick<Agreement, "evidence" | "files"> | null | undefined) {
   return Boolean(agreement && (agreement.evidence?.trim() || agreement.files?.length));
 }
@@ -39,7 +47,7 @@ export function agreementIsOperational(agreement: Agreement | null | undefined) 
   return Boolean(
     agreement?.status === "executed" &&
       agreementHasSignedEvidence(agreement) &&
-      isOperationalEvidence(agreement),
+      agreementEvidenceOperational(agreement!),
   );
 }
 
@@ -324,4 +332,29 @@ export function commercialReleaseReady(data: CommercialData | null | undefined) 
   )
     return false;
   return true;
+}
+
+/** What the owner's deal checklist checks, in words for the error that lists what's missing. */
+export const DEAL_CHECK_LABELS: Record<keyof ReturnType<typeof dealChecklist>, string> = {
+  agreement: "the signed agreement verified against the accepted quotation",
+  documents: "the signed agreement document",
+  payment: "proof of payment or a Finance-verified receipt",
+  boq: "the priced quotation lines",
+  margin: "the deal's figures",
+  materials: "every client material decision",
+};
+
+/**
+ * The deal checklist read from the records, never ticked by hand (§0.3 P0). The margin is shown to the owner from the
+ * deal's own figures and never blocks; the design-fee round has no priced BOQ.
+ */
+export function dealChecklist(data: CommercialData, quote: Quote, proofUrl: string | undefined) {
+  return {
+    agreement: agreementIsOperational(data.agreement) && agreementMatchesAcceptedQuote(data.agreement, quote),
+    documents: agreementHasSignedEvidence(data.agreement),
+    payment: dealPaymentProofReady(data, proofUrl, quote.id),
+    boq: quote.round === "design" || quote.lines.length > 0,
+    margin: true,
+    materials: data.servicePath ? true : materialApprovalsComplete(quote, data.materialApprovals),
+  };
 }

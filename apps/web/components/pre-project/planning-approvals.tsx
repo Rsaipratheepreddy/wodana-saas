@@ -71,7 +71,7 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
           {id:"status",header:t("Status"),size:190,accessorFn:row => row.status,meta:{renderCell:item => <Badge tone={statusTone(item)} data-tour={item.type === "Quotations" ? "approval-quote-status" : undefined}>{item.status}</Badge>}},
           {id:"action",header:t("Action"),size:150,enableSorting:false,enableColumnFilter:false,meta:{interactive:true,renderCell:item => <Link className={s.open} aria-label={t("Review {title} {version}", { title: item.title, version: item.version })} href={href(item.id)}>{t(item.ready ? "Review & send" : "Review")}</Link>}},
         ]}
-        footerActions={<Link className={s.open} href={`${root}/execution-release`}>{t("Release readiness")} →</Link>}
+        footerActions={<Link className={s.open} href={`${root}/deal-file`}>{t("Deal File")} →</Link>}
       />
     </>}
   </PageShell></div>;

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, Circle, CircleDot, Minus } from "lucide-react";
-import { Button, Checkbox, ConfirmationDialog, FormDialog, IconMenuButton, InlineNotice, TextAreaField } from "@/design-system";
+import { Button, Checkbox, ConfirmationDialog, FormDialog, IconMenuButton, InlineNotice, ReasonDialog as SharedReasonDialog, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { CloseOut, EvaluatedCheck, ProjectDetail, ProjectOverview, ProjectStage } from "@/lib/project-core/types";
@@ -129,7 +129,7 @@ export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, runn
     : check.kind === "factory_slot_booked" || check.kind === "installation_scheduled" || check.kind === "permit_collected" ? null
     : check.kind === "goods_delivered" ? <Link href={`/workspace/inventory?project=${projectId}`}>{t("Open stock")}</Link>
     : check.kind === "installation_done" ? <Link href={`${projectHref}/site`}>{t("Open the site")}</Link>
-    : <button type="button" className={styles.linkButton} onClick={onTeam}>{t("Name someone")}</button>;
+    : <Button size="compact" variant="quiet" onPress={onTeam}>{t("Name someone")}</Button>;
   return <li data-passed={check.passed || undefined} data-auto>
     <span className={styles.autoMark} aria-hidden="true">{check.passed ? <Check size={13} strokeWidth={2.5} /> : null}</span>
     <span>{text}</span>
@@ -163,12 +163,10 @@ export function CloseOutList({ api, projectId }: { api: ProjectApi; projectId: s
   </div>;
 }
 
+/** Skipping or going back a stage needs the reason: the shared reason dialog, saved with Save. */
 export function ReasonDialog({ title, label, onClose, onSave }: { title: string; label: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
-  const [text, setText] = useState("");
-  return <FormDialog size="md" title={title} onClose={onClose} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()} submitLabel={t("Save")} onSubmit={() => onSave(text.trim())}>
-    <TextAreaField label={label} isRequired value={text} onChange={setText} />
-  </FormDialog>;
+  return <SharedReasonDialog title={title} label={label} confirmLabel={t("Save")} onClose={onClose} onConfirm={onSave} />;
 }
 
 /** Finishing a stage moves the project on, so it asks first and says what comes next. */

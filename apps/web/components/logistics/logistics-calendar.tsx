@@ -185,7 +185,7 @@ export function BookingSheet({ workspaceId, entry, canBook, today, onClose, onEd
       <Button variant="primary" onPress={() => onEdit(subjectOf(logistics))}>{t("Edit booking")}</Button>
     </div> : undefined}>
     <div className={styles.details}>
-      <div className={styles.badges}><Badge tone="neutral">{t(KIND_LABEL[entry.kind as LogisticsKind] ?? "Booking")}</Badge>{entry.overdue ? <Badge tone="danger">{t("Overdue")}</Badge> : null}
+      <div className={styles.badges}><Badge hue="auto">{t(KIND_LABEL[entry.kind as LogisticsKind] ?? "Booking")}</Badge>{entry.overdue ? <Badge tone="danger">{t("Overdue")}</Badge> : null}
         {permitMissing(entry) ? <Badge tone="danger">{t("No building permit")}</Badge> : null}</div>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       <FactList facts={[

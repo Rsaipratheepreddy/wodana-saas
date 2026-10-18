@@ -1433,3 +1433,6 @@
 .status.status:is([data-state="submitted"],[data-state="review"],[data-state="pending_qc"],[data-state="awaiting_inspection"],[data-state="on_hold"],[data-state="open"]) { --chip-ink:#906b30; }
 .status.status:is([data-state="completed"],[data-state="approved"],[data-state="accepted"],[data-state="passed"],[data-state="received"],[data-state="closed"],[data-state="paid"]) { --chip-ink:#4d735c; }
 .status.status:is([data-state="blocked"],[data-state="returned"],[data-state="rejected"],[data-state="cancelled"],[data-state="rework"],[data-state="failed"]) { --chip-ink:#a45d50; }
+
+/* The column is tinted; its cards are the plain surface so each one stands apart. */
+.boardColumn :global(.wd-card) { background: var(--wd-color-surface); }

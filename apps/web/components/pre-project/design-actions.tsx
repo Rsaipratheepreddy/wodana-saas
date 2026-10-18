@@ -8,6 +8,8 @@ import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type CaseRoom, type DesignOptions } from "@/lib/pre-project/content";
 import { DESIGN_STATUS_LABEL, DELIVERABLE_STAGES, designStatusTone, latestOf } from "@/lib/pre-project/design-workspace";
 import { RoomField } from "./room-manager";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import type { EvidenceFile } from "@/lib/evidence/evidence";
 import styles from "./design-workspace.module.css";
 
 type Mode = null | "review" | "send_back" | "present" | "client_approved" | "client_changes" | "details";
@@ -25,6 +27,9 @@ export function DesignActions({ data, design, options, onUpdate, onRoomAdded }: 
   const latest = latestOf(design);
   const [mode, setMode] = useState<Mode>(null);
   const [note, setNote] = useState("");
+  // §0.3 P0: a client decision taken down by staff comes with what it came in (a signed page, an email, a message).
+  const [decisionFiles, setDecisionFiles] = useState<EvidenceFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [reviewer, setReviewer] = useState<string | null>(options.reviewers.length === 1 ? options.reviewers[0].id : null);
   const [confirmed, setConfirmed] = useState(false);
   const [dueOn, setDueOn] = useState<CalendarDate>(() => today(timeZone).add({ days: 7 }));
@@ -134,8 +139,10 @@ export function DesignActions({ data, design, options, onUpdate, onRoomAdded }: 
       <SelectField label={t("How")} items={SOURCES.map((item) => ({ ...item, label: t(item.label) }))} selectedKey={source} onSelectionChange={(key) => key && setSource(String(key))} />
       <DateField label={t("When")} value={decidedOn} maxValue={today(timeZone)} onChange={(value) => value && setDecidedOn(value as CalendarDate)} />
       <TextAreaField isRequired label={mode === "client_approved" ? t("What the client approved") : t("What the client wants changed")} value={note} onChange={setNote} />
-      <div className={styles.actionRow}><Button size="compact" onPress={() => setMode(null)} isDisabled={busy}>{t("Cancel")}</Button><Button size="compact" variant="primary" isLoading={busy} isDisabled={!clientName.trim() || !note.trim()}
-        onPress={() => void send(mode === "client_approved" ? "approved" : "changes_requested", { decisionBy: clientName.trim(), decisionSource: source, decisionAt: decisionAt() })}>{t("Record decision")}</Button></div>
+      <EvidenceField workspaceId={data.workspaceId} kind="design_decision" isRequired={mode === "client_approved"} label={t("The client's decision (photo or PDF)")} value={decisionFiles} onChange={setDecisionFiles} onBusy={setUploading} />
+      <div className={styles.actionRow}><Button size="compact" onPress={() => setMode(null)} isDisabled={busy}>{t("Cancel")}</Button><Button size="compact" variant="primary" isLoading={busy}
+        isDisabled={!clientName.trim() || !note.trim() || uploading || (mode === "client_approved" && !decisionFiles.length)}
+        onPress={() => void send(mode === "client_approved" ? "approved" : "changes_requested", { decisionBy: clientName.trim(), decisionSource: source, decisionAt: decisionAt(), evidenceFileIds: decisionFiles.map((file) => file.id) })}>{t("Record decision")}</Button></div>
     </div> : null}
   </section>;
 }

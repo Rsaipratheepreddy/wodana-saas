@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { Button, EmailInput, ErrorState, FormDialog, FormSection, InlineNotice, InspectorSheet, Skeleton, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Button, EmailInput, EmptyState, ErrorState, FormDialog, FormSection, InlineNotice, InspectorSheet, NumericInput, Skeleton, Switch, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FinanceRequestsApi } from "@/lib/finance-requests/client";
 import type { PaymentMethod, RequestSettingsState } from "@/lib/finance-requests/types";
@@ -44,7 +44,7 @@ export function RequestSettings({ api, onClose }: { api: FinanceRequestsApi; onC
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       <EmailInput label={t("Finance inbox")} description={t("Every request is emailed here. Leave it empty to send none.")} isReadOnly={!canManage} maxLength={320} value={inbox} onChange={setInbox} />
       <Switch isSelected={stage} isDisabled={!canManage} onChange={setStage}>{t("Raise the invoice request when a payment stage is due")}</Switch>
-      <p className={styles.muted}>{t("Approval amounts and approvers are in Settings → Approvals.")}</p>
+      <InlineNotice tone="info" message={t("Approval amounts and approvers are in Settings → Approvals.")} />
       <section className={styles.part}>
         <h3 className={styles.subhead}>{t("Payment methods")}</h3>
         {state.methods.length ? <ul className={styles.list}>{state.methods.map((method) => <li key={method.id}>
@@ -52,7 +52,7 @@ export function RequestSettings({ api, onClose }: { api: FinanceRequestsApi; onC
             {method.refundDays || method.refundGuidance ? <small>{[method.refundDays ? t("Refund in {days} days", { days: method.refundDays }) : null, method.refundGuidance || null]
               .filter(Boolean).join(" · ")}</small> : null}</span>
           {canManage ? <Button size="compact" variant="quiet" onPress={() => setEditing(method)}>{t("Edit")}</Button> : null}</li>)}</ul>
-          : <p className={styles.muted}>{t("No payment methods yet.")}</p>}
+          : <EmptyState illustration={null} title={t("No payment methods yet.")} />}
         {canManage ? <div><Button size="compact" variant="quiet" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("Add payment method")}</Button></div> : null}
       </section>
     </div>}
@@ -73,8 +73,9 @@ function MethodDialog({ api, method, onClose, onSaved }: { api: FinanceRequestsA
     secondaryAction={method ? <Button variant="quiet" intent="write" onPress={async () => onSaved(await api.saveSettings("archive_method", { id, version: method.version }))}>{t("Archive")}</Button> : undefined}>
     <FormSection>
       <TextInput label={t("Name")} isRequired maxLength={80} value={label} onChange={setLabel} />
-      <TextInput label={t("Refund days")} description={t("How long a refund this way usually takes after approval. Leave it empty to show no date.")} inputMode="numeric"
-        maxLength={3} value={days} onChange={(value) => setDays(value.replace(/\D/g, ""))} />
+      <NumericInput label={t("Refund days")} description={t("How long a refund this way usually takes after approval. Leave it empty to show no date.")}
+        minValue={0} maxValue={999} formatOptions={{ maximumFractionDigits: 0 }} value={days === "" ? Number.NaN : Number(days)}
+        onChange={(next) => setDays(Number.isFinite(next) ? String(next) : "")} />
       <TextAreaField label={t("Refund guidance")} description={t("Shown to whoever asks for a refund paid this way.")} maxLength={1000} value={guidance} onChange={setGuidance} />
       <Switch isSelected={bank} onChange={setBank}>{t("A refund needs the client's bank details")}</Switch>
     </FormSection>

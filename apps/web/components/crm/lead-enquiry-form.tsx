@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Callout, DateField, FillWithWoddy, FormDialog, FormNotSaved, FormSection, MoreDetails, PersonNameField, personNameError, readSaveProblems, SelectField, TextInput, TextAreaField, useFormDraft, type SaveProblem } from "@/design-system";
+import { Button, Callout, ComboboxField, DateField, FillWithWoddy, FormDialog, FormNotSaved, FormSection, MoreDetails, PersonNameField, personNameError, readSaveProblems, SelectField, TextInput, TextAreaField, useFormDraft, type SaveProblem } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { normalizePersonName } from "@wodana/contracts/person-name";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
-import { sourceAllowedFor, TEAM_NOT_APPLICABLE, teamRoleChoices, type EnquiryDetails, type LeadContact, type LeadOptions, type LeadTeamEntry } from "@/lib/crm/lead-options";
+import { floorPlanReady, sourceAllowedFor, TEAM_NOT_APPLICABLE, teamRoleChoices, type EnquiryDetails, type LeadContact, type LeadOptions, type LeadTeamEntry } from "@/lib/crm/lead-options";
 import { problemText, requiredBy, teamRoleLabel } from "@/lib/crm/enquiry-requirements";
 import { countryForPhone, phoneCountry, phoneProblem, phoneProblemText, toE164 } from "@/lib/crm/phone";
 import { findContactMatches, type ClientMatch } from "@/lib/crm/client-match";
 import { CrmPhoneField } from "./crm-phone-field";
 import { ClientMatchList } from "./client-match-list";
+import { EnquiryFloorPlanField } from "./enquiry-floor-plan-field";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 import { enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
 import { changedValues, EnquiryCustomInputs, saveLeadFields, type CustomValues } from "./enquiry-custom-inputs";
@@ -38,7 +39,7 @@ const ROUTING = "automatic";
 const UNASSIGNED = "unassigned";
 const EMAIL = /^\S+@\S+\.\S+$/;
 /** Fields that sit under More details. */
-const IN_MORE_DETAILS = new Set(["email", "budgetRange", "summary", "phone", "address", "company", "jobPosition", "website", "campaign", "targetCompletion"]);
+const IN_MORE_DETAILS = new Set(["email", "budgetRange", "floorPlan", "summary", "phone", "address", "company", "jobPosition", "website", "campaign", "targetCompletion"]);
 const quiet = { mobile: () => "x", phone: () => "x", chooseCountry: "x" };
 
 type Identity = { kind: "existing"; partyId: string; name: string } | { kind: "new" } | null;
@@ -101,10 +102,12 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   // PLM-096: what this enquiry type requires from the start.
   const needed = (key: string) => requiredBy(options, serviceType, key, "create");
   const [summary, setSummary] = useState(existing?.summary ?? prefill?.summary ?? "");
-  const [details, setDetails] = useState<EnquiryDetails>(existing?.details ?? {});
-  const areaOptions = options?.areas?.[details.emirate ?? ""] ?? [];
-  const [customAreaSelected, setCustomAreaSelected] = useState(() => Boolean(existing?.details?.area && !(options?.areas?.[existing.details.emirate ?? ""] ?? []).some(item => item.id === existing.details?.area)));
-  const areaChoice = customAreaSelected ? "other" : details.area ?? "";
+  // Area / city takes any typed place and suggests the region's areas: the ones used here most first, then the listed ones.
+  // An area from the workspace's own list is saved by its id, as before, and shows by its name.
+  const listedAreas = (region?: string) => options?.areas?.[region ?? ""] ?? [];
+  const [details, setDetails] = useState<EnquiryDetails>(() => existing?.details?.area
+    ? { ...existing.details, area: listedAreas(existing.details.emirate).find(item => item.id === existing.details?.area)?.label ?? existing.details.area } : existing?.details ?? {});
+  const areaItems = (options?.areaSuggestions?.[details.emirate ?? ""] ?? listedAreas(details.emirate).map(item => item.label)).map(name => ({ id: name, label: name }));
   // No silent default: the person says where it came from. A chat already says it (e.g. WhatsApp), so its enquiry starts there.
   const chatSource = prefill?.channel ? (options?.sources.find(s => s.id === "company" && options.channels[s.id]?.some(c => c.id === prefill.channel))
     ?? options?.sources.find(s => options.channels[s.id]?.some(c => c.id === prefill.channel)))?.id : undefined;
@@ -216,7 +219,6 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     if (contact.phone?.trim()) { const wrong = phoneProblem(contact.phone, contact.phoneCountryCode ?? "", phoneMessages, { mobile: false, locale: initialData.defaultLocale }); if (wrong) add("phone", wrong); }
     if (!serviceType) add("serviceType", t("Select an enquiry type"));
     if (hasRegions && !details.emirate?.trim()) add("emirate", t("Select the {area}.", { area: regionWord.toLowerCase() }));
-    if (details.emirate !== "other" && customAreaSelected && !details.area?.trim()) add("area", t("Enter the area name."));
     if (!source) add("source", t("Choose where this enquiry came from."));
     else if (!channel) add("channel", t("Choose the channel for this source."));
     if (options?.customerTypes.length && shown("customerType") && !details.customerType) add("customerType", t("Choose the client type."));
@@ -227,6 +229,8 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     if (needed("area") && shown("area") && !details.area?.trim()) add("area", t("Enter the area"));
     if (needed("address") && !contact.address?.trim()) add("address", t("Enter the address"));
     if (needed("budgetRange") && shown("budgetRange") && options?.budgetRanges.length && !details.budgetRange) add("budgetRange", t("Choose the budget range"));
+    if (needed("projectType") && shown("projectType") && options?.projectTypes?.length && !details.projectType) add("projectType", t("Choose the project type"));
+    if (needed("floorPlan") && shown("floorPlan") && !floorPlanReady(details.floorPlan)) add("floorPlan", t("Add the floor plan, give a size estimate, or mark it not required"));
     if (needed("summary") && shown("summary") && !summary.trim()) add("summary", t("Describe the project"));
     if (needed("targetCompletion") && !details.targetCompletion) add("targetCompletion", t("Enter the client's target completion date"));
     for (const role of teamRoles) if (needed(`team:${role}`) && !team[role]) add(`team:${role}`, t("Tag the {role}, or choose Not applicable", { role: teamRoleLabel(role, t).toLocaleLowerCase() }));
@@ -241,6 +245,8 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     if (key === "area") return Boolean(details.area?.trim());
     if (key === "budgetRange") return Boolean(details.budgetRange);
     if (key === "customerType") return Boolean(details.customerType);
+    if (key === "projectType") return Boolean(details.projectType);
+    if (key === "floorPlan") return floorPlanReady(details.floorPlan);
     if (key === "summary") return Boolean(summary.trim());
     if (key === "targetCompletion") return Boolean(details.targetCompletion);
     if (key.startsWith("team:")) return Boolean(team[key.slice(5)]);
@@ -256,7 +262,14 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
     // A problem in More details opens it, so its link in the box reaches the field.
     if (mine.some(item => IN_MORE_DETAILS.has(item.key))) setMore(true);
     if (mine.length) throw new FormNotSaved();
-    const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "targetCompletion", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
+    const enquiryDetails: Record<string, unknown> = Object.fromEntries(["emirate", "area", "location", "customerType", "projectType", "budgetRange", "targetCompletion", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
+    const typedArea = details.area?.trim() ?? "";
+    enquiryDetails.area = listedAreas(details.emirate).find(item => item.label.toLocaleLowerCase() === typedArea.toLocaleLowerCase())?.id ?? typedArea;
+    // The floor plan keeps only what its answer needs (a file when uploaded, the size when given).
+    const plan = details.floorPlan;
+    if (plan?.status) enquiryDetails.floorPlan = { status: plan.status, ...(plan.status === "uploaded" && plan.assetId ? { assetId: plan.assetId } : {}),
+      ...(plan.status !== "not_required" && plan.builtUpArea?.trim() ? { builtUpArea: plan.builtUpArea.trim() } : {}),
+      ...(plan.status !== "not_required" && plan.plotSize?.trim() ? { plotSize: plan.plotSize.trim() } : {}) };
     const referralChanged = Boolean(existing) && JSON.stringify(referralBody()) !== JSON.stringify(existing?.referral ? { ...(existing.referral.name ? { name: existing.referral.name } : {}), ...(existing.referral.contact ? { contact: existing.referral.contact } : {}), ...(existing.referral.membershipId ? { membershipId: existing.referral.membershipId } : {}), ...(existing.referral.option ? { option: existing.referral.option } : {}) } : undefined);
     const assignment = owner === ROUTING ? { mode: "automatic" } : owner === UNASSIGNED ? { mode: "unassigned" } : { mode: "manual", ownerMembershipId: owner, ...(queueId ? { queueId } : {}) };
     // A typed name is saved trimmed, with one space between words.
@@ -289,13 +302,13 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   const locked = Boolean(savedId);
   // An edit's unsaved work stays on this device per enquiry and version. A new enquiry always opens empty: closing it
   // (after asking, when something was typed) or creating it leaves nothing behind for the next one.
-  const snapshot = { contact, serviceType, summary, details, customAreaSelected, source, channel, referral, owner, queueId, customValues, team };
+  const snapshot = { contact, serviceType, summary, details, source, channel, referral, owner, queueId, customValues, team };
   const [start] = useState(() => JSON.stringify(snapshot));
   const dirty = !savedId && JSON.stringify(snapshot) !== start;
   const draft = useFormDraft(savedId || !existing ? null : `${initialData.workspaceId}/crm/enquiry/${existing.id}@${existing.version}`, snapshot, {
     isDirty: dirty,
     restore: (saved) => {
-      setContact(saved.contact); setServiceType(saved.serviceType); setSummary(saved.summary); setDetails(saved.details); setCustomAreaSelected(saved.customAreaSelected);
+      setContact(saved.contact); setServiceType(saved.serviceType); setSummary(saved.summary); setDetails(saved.details);
       setSource(saved.source); setChannel(saved.channel); setReferral(saved.referral); setOwnerChoice(saved.owner); setQueue(saved.queueId); setCustomValues(saved.customValues); setTeam(saved.team ?? {});
       if (saved.owner !== snapshot.owner) ownerTouched.current = true;
     },
@@ -312,14 +325,10 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
       ...(found.email ? { email: found.email } : {}), ...(found.company ? { company: found.company } : {}), ...(found.jobPosition ? { jobPosition: found.jobPosition } : {}),
       ...(found.website ? { website: found.website } : {}), ...(found.address ? { address: found.address } : {}) }));
     if (found.summary) setSummary(found.summary);
-    if (found.area) {
-      const option = areaOptions.find((item) => item.label.toLocaleLowerCase() === found.area.toLocaleLowerCase());
-      if (option) setDetails((current) => ({ ...current, area: option.id }));
-      else { setCustomAreaSelected(areaOptions.length > 0); setDetails((current) => ({ ...current, area: found.area })); }
-    }
+    if (found.area) setDetails((current) => ({ ...current, area: found.area }));
     if (found.email || found.phone || found.company || found.jobPosition || found.website || found.address || found.summary) setMore(true);
   };
-  const moreFilled = [contact.email, details.budgetRange, details.targetCompletion, summary, contact.company, contact.jobPosition, contact.phone, contact.website, contact.address, details.campaign, details.internalNotes].filter(Boolean).length;
+  const moreFilled = [contact.email, details.budgetRange, details.floorPlan?.status, details.targetCompletion, summary, contact.company, contact.jobPosition, contact.phone, contact.website, contact.address, details.campaign, details.internalNotes].filter(Boolean).length;
   const notesShown = existing?.notesVisible !== false;
   return <FormDialog draft={existing ? draft : undefined} errorTitle={initialProblems?.length && !attempted ? t("Before converting") : t("Enquiry not saved")} isDirty={dirty} isSubmitDisabled={!options} onClose={onClose} onSubmit={save} validation="caller"
     problems={problems.map(item => ({ ...item, text: problemText(item, t, { regionLabel: regionWord }) }))}
@@ -355,18 +364,19 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
           : referralKind === "internal" ? <SelectField isRequired label={t("Referred by")} placeholder={t("Choose referrer")} items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={referral.membershipId || null} onSelectionChange={key => setReferral(current => ({ ...current, membershipId: String(key ?? "") }))} />
           : referralKind ? <SelectField isRequired label={t("Referred by")} placeholder={t("Choose referrer")} items={withExisting(referralKind === "broker" ? options?.referralBrokers : options?.referralPartners, existing?.referral?.option ?? "")} selectedKey={referral.option || null} onSelectionChange={key => setReferral(current => ({ ...current, option: String(key ?? "") }))} />
           : null}
-        {hasRegions ? <SelectField label={translateKnown(t, areaLabel)} isRequired placeholder={t("Choose {area}", { area: regionWord.toLocaleLowerCase() })} items={withExisting(options?.emirates, existing?.details?.emirate ?? "")} selectedKey={details.emirate || null} onSelectionChange={key => { setCustomAreaSelected(false); setDetails(previous => ({ ...previous, emirate: String(key ?? ""), area: "" })); }} {...mark("emirate")} /> : null}
-          {shown("area") ? details.emirate === "other" || !areaOptions.length
-            ? <TextInput label={t("Area / city")} isRequired={needed("area")} value={details.area ?? ""} onChange={setDetail("area")} {...mark("area")} />
-            : <SelectField label={t("Area")} isRequired={needed("area")} placeholder={t("Choose area")} items={[{ id: "", label: t("Not specified") }, ...areaOptions, { id: "other", label: t("Other area") }]} selectedKey={areaChoice} onSelectionChange={key => { setCustomAreaSelected(key === "other"); setDetail("area")(key === "other" ? "" : String(key ?? "")); }} {...(customAreaSelected ? {} : mark("area"))} /> : null}
-        {customAreaSelected && shown("area") ? <TextInput isRequired label={t("Area name")} value={details.area ?? ""} onChange={setDetail("area")} {...mark("area")} /> : null}
+        {hasRegions ? <SelectField label={translateKnown(t, areaLabel)} isRequired placeholder={t("Choose {area}", { area: regionWord.toLocaleLowerCase() })} items={withExisting(options?.emirates, existing?.details?.emirate ?? "")} selectedKey={details.emirate || null} onSelectionChange={key => { setDetails(previous => ({ ...previous, emirate: String(key ?? ""), area: "" })); }} {...mark("emirate")} /> : null}
+          {shown("area") ? <ComboboxField label={t("Area / city")} isRequired={needed("area")} allowsCustomValue items={areaItems} inputValue={details.area ?? ""} onInputChange={setDetail("area")} {...mark("area")} /> : null}
         {shown("customerType") && Boolean(options?.customerTypes.length || existing?.details?.customerType) && <SelectField label={t("Client type")} isRequired={Boolean(options?.customerTypes.length)} placeholder={t("Choose client type")} items={withExisting(options?.customerTypes, existing?.details?.customerType ?? "")} selectedKey={details.customerType || null} onSelectionChange={key => setDetail("customerType")(String(key ?? ""))} {...mark("customerType")} />}
+        {shown("projectType") && Boolean(options?.projectTypes?.length || existing?.details?.projectType) && <SelectField label={t("Project type")} isRequired={needed("projectType")} placeholder={t("Choose project type")} items={withExisting(options?.projectTypes, existing?.details?.projectType ?? "")} selectedKey={details.projectType || null} onSelectionChange={key => setDetail("projectType")(String(key ?? ""))} {...mark("projectType")} />}
         {!existing ? <SelectField label={t("Owner")} isRequired placeholder={t("Choose owner")} items={ownerItems} selectedKey={owner || null} onSelectionChange={key => { ownerTouched.current = true; setOwnerChoice(String(key ?? "")); }} {...mark("owner")} /> : null}
         </FormSection>
 
         <MoreDetails filled={moreFilled} isOpen={more} onOpenChange={setMore}>
           {shown("email") ? <TextInput label={t("Email")} inputType="email" isRequired={needed("email")} value={contact.email ?? ""} onChange={set("email")} {...mark("email")} /> : null}
           {shown("budgetRange") ? <SelectField label={t("Budget range")} isRequired={needed("budgetRange")} items={[{ id: "", label: t("Not provided") }, ...withExisting(options?.budgetRanges, existing?.details?.budgetRange ?? "")]} selectedKey={details.budgetRange ?? ""} onSelectionChange={key => setDetail("budgetRange")(String(key ?? ""))} {...mark("budgetRange")} /> : null}
+          {shown("floorPlan") ? <EnquiryFloorPlanField workspaceId={initialData.workspaceId} leadId={existing?.id} value={details.floorPlan} isRequired={needed("floorPlan")}
+            allowNotNeeded={Boolean(options?.enquiryTypes.find((item) => item.id === serviceType)?.furniture)}
+            errorMessage={problem("floorPlan")} onChange={(floorPlan) => setDetails(previous => ({ ...previous, floorPlan }))} /> : null}
           {shown("summary") ? <TextAreaField label={t("Project description")} isRequired={needed("summary")} value={summary} onChange={setSummary} placeholder={t("What would the customer like to do?")} {...mark("summary")} /> : null}
           {/* PLM-155: Sales collect the client's target date; the design team and Production say what is possible. */}
           <div data-problem-key="targetCompletion"><DateField label={t("Target completion")} isRequired={needed("targetCompletion")} value={/^\d{4}-\d{2}-\d{2}$/.test(details.targetCompletion ?? "") ? parseDate(details.targetCompletion!) : null}

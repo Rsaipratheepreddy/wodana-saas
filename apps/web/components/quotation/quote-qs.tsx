@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, FormDialog, FormNotSaved, SelectField, TextAreaField } from "@/design-system";
+import { Badge, Button, FormDialog, FormNotSaved, ReasonDialog, SelectField, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { proposalApi, type QsReason, type QsState } from "@/lib/proposals/client";
@@ -56,7 +56,8 @@ export function QsActions({ workspaceId, caseId, quoteId, qs, onChanged, onError
   const [busy, setBusy] = useState(false);
   const why = qsReasonText(qs.reason, t);
   const reason = why ? <span className={styles.waiting}>{why}</span> : null;
-  if (!qs.required && !qs.review) return reason;
+  // Not needed: one quiet chip in the header; the firm's rule that decided it is its tooltip.
+  if (!qs.required && !qs.review) return why ? <Badge title={why}>{t("No QS review")}</Badge> : null;
   const holder = qs.review?.assigneeName ?? t("the QS");
   const confirm = async () => {
     setBusy(true); onError("");
@@ -110,8 +111,5 @@ function SendToQsDialog({ people, current, onClose, onSend }: { people: QsState[
 
 function ReturnToSalesDialog({ onClose, onReturn }: { onClose: () => void; onReturn: (note: string) => Promise<void> }) {
   const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog title={t("Return for changes")} onClose={onClose} submitLabel={t("Return")} isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()} onSubmit={() => onReturn(note.trim())}>
-    <TextAreaField label={t("What needs to change")} isRequired maxLength={2000} value={note} onChange={setNote} />
-  </FormDialog>;
+  return <ReasonDialog title={t("Return for changes")} label={t("What needs to change")} confirmLabel={t("Return")} maxLength={2000} onClose={onClose} onConfirm={onReturn} />;
 }

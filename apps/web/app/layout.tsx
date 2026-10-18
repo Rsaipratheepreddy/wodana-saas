@@ -22,7 +22,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html
       className={fontVariables}
-      data-density="comfortable"
+      data-density="compact"
       data-theme="light"
       dir={languageDirection(language)}
       lang={language}

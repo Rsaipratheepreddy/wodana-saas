@@ -25,7 +25,6 @@
 .row a, .link { color: var(--wd-color-link); font-size: var(--wd-text-sm); text-decoration: none; }
 .row a:hover, .link:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
 .stack { display: grid; gap: var(--wd-space-3); }
-.empty { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .message { padding: var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
 .message[data-direction="outbound"] { margin-inline-start: var(--wd-space-8); }
 .message small { display: block; margin-block-end: var(--wd-space-1); font-size: var(--wd-text-2xs); color: var(--wd-color-text-tertiary); }

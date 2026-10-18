@@ -126,7 +126,7 @@ function Holidays({ api, calendar, onChanged }: { api: HrmsApi; calendar: HrmsCa
       <span className={styles.grow}><span>{holiday.name}</span><small>{[format.range(holiday.startsOn, holiday.endsOn), format.days(holiday.days)].join(" · ")}</small></span>
       <Button size="compact" variant="quiet" aria-label={t("Edit {name}", { name: holiday.name })} onPress={() => setEditing(holiday)}>{t("Edit")}</Button>
       <Button size="compact" variant="quiet" aria-label={t("Remove {name}", { name: holiday.name })} onPress={() => setRemoving(holiday)}>{t("Remove")}</Button>
-    </li>)}</ul> : <p className={styles.muted}>{t("No holidays yet")}</p>}
+    </li>)}</ul> : <EmptyState illustration={null} title={t("No holidays yet")} />}
     <div><Button size="compact" onPress={() => setEditing("new")}>{t("Add holiday")}</Button></div>
     {editing ? <HolidayDialog api={api} calendarId={calendar.id} holiday={editing === "new" ? null : editing} onClose={() => setEditing(null)}
       onSaved={() => { setEditing(null); onChanged(); }} /> : null}

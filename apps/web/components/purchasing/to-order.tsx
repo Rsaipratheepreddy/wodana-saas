@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Button, EmptyState, ErrorState, GroupedTable, ListTabs, NoAccessState, NoResultsState, SearchInput, Skeleton, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Button, ButtonGroup, EmptyState, ErrorState, GroupedTable, ListTabs, NoAccessState, NoResultsState, SearchInput, Skeleton, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { inventoryApi } from "@/lib/inventory/client";
 import { restockQuantity } from "@/lib/inventory/levels";
@@ -10,7 +10,7 @@ import { readableCode } from "@/lib/workspace/catalog-v2";
 import type { ReorderPoint } from "@/lib/inventory/types";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { Need, NeedsState } from "@/lib/purchasing/types";
-import { Cell, DueText, ProjectFilterChip, projectHref } from "../operations/ops";
+import { Cell, DueText, ProjectFilterChip, operationsStyles as ops, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { AskPricesDialog } from "./ask-prices-dialog";
 import { BulkOrderDialog } from "./bulk-order-dialog";
@@ -82,12 +82,12 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const openOrder = (needs: Need[]) => setOrdering({ needs, restock: [] });
   const next = (need: Need) => {
     if (!canBuy) return null;
-    if (need.blocked === "client_payment") return <Link className={styles.rowLink} href={projectHref(need.projectId, "money")}>{t("Open payments")}</Link>;
+    if (need.blocked === "client_payment") return <Link className={ops.projectLink} href={projectHref(need.projectId, "money")}>{t("Open payments")}</Link>;
     // PLM-148: the client signs the samples and data sheets on the job's finishes.
-    if (need.blocked === "client_signature") return <Link className={styles.rowLink} href={`${projectHref(need.projectId, "scope")}?view=finishes`}>{t("Get the signatures")}</Link>;
+    if (need.blocked === "client_signature") return <Link className={ops.projectLink} href={`${projectHref(need.projectId, "scope")}?view=finishes`}>{t("Get the signatures")}</Link>;
     // PLM-163: the BOQ is approved on the project's Scope tab.
-    if (need.blocked === "boq_approval") return <Link className={styles.rowLink} href={projectHref(need.projectId, "scope")}>{t("Get the BOQ approved")}</Link>;
-    if (need.blocked) return <Link className={styles.rowLink} href={projectHref(need.projectId, "scope")}>{t("Get sign-off")}</Link>;
+    if (need.blocked === "boq_approval") return <Link className={ops.projectLink} href={projectHref(need.projectId, "scope")}>{t("Get the BOQ approved")}</Link>;
+    if (need.blocked) return <Link className={ops.projectLink} href={projectHref(need.projectId, "scope")}>{t("Get sign-off")}</Link>;
     if (over(need)) return <Button size="compact" variant="quiet" onPress={onOrders}>{t("Open orders")}</Button>;
     if (onHold(need)) return <Button size="compact" aria-label={t("Order {name} anyway", { name: need.title })} onPress={() => openOrder([need])}>{t("Order anyway")}</Button>;
     if (orderable(need)) return <Button size="compact" aria-label={t("Order {name}", { name: need.title })} onPress={() => openOrder([need])}>{t("Order")}</Button>;
@@ -182,11 +182,12 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
     {selected.size ? <div className={styles.selectionBar} role="region" aria-label={t("Selected lines")}>
       <span className={styles.muted}>{t("{count} selected", { count: selected.size })}</span>
       <Button size="compact" variant="quiet" onPress={() => setSelected(new Set())}>{t("Clear")}</Button>
-      <span className={styles.selectionActions}>
+      <span className={styles.spacer} />
+      <ButtonGroup>
         <Button size="compact" onPress={() => setAsking(true)}>{t("Ask for prices")}</Button>
         <Button size="compact" onPress={() => setBulk(true)}>{t("Orders by supplier")}</Button>
         <Button size="compact" variant="primary" onPress={() => openOrder(chosen)}>{t("Create order")}</Button>
-      </span>
+      </ButtonGroup>
     </div> : null}
     {asking ? <AskPricesDialog api={api} needs={chosen} onClose={() => setAsking(false)} onCreated={(requestId) => { setAsking(false); setSelected(new Set()); onAsked(requestId); }} /> : null}
     {bulk ? <BulkOrderDialog api={api} needs={chosen} onClose={() => setBulk(false)} onCreated={() => { setBulk(false); setSelected(new Set()); onOrders(); }} /> : null}

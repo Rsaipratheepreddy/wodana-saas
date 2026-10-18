@@ -6,13 +6,14 @@ import { STARTER_FLOWS, starterFlow } from "./starter-flows";
 /** Nothing done yet. */
 const empty = (): CheckFacts => ({
   enquiryTypeResolved: true, clientTypeResolved: false, clientType: null, clientEmail: false, propertyLocation: false, floorPlanOrArea: false, budgetBand: null,
-  contactLogged: false, introCompleted: false, discoveryMissing: [], furniturePath: null, feasibilityConfirmed: false, packageCode: null, siteVisitRecorded: false,
+  contactLogged: false, introCompleted: false, qualificationProceed: false, targetCompletionSet: false, discoveryMissing: [], furniturePath: null, feasibilityConfirmed: false, packageCode: null, siteVisitRecorded: false,
   quotationExists: false, qsApproved: false, quoteSent: false, quoteAccepted: false, clientApprovedOnSpot: false, paymentProof: false, paymentVerified: false,
   dealApproved: false, designStagesDone: [], materialListSignedOff: false,
 });
-/** Everything the r30 gates read is done. */
+/** Everything the r30 gates read is done, and the intro outcome and target date of §0.3 P0. */
 const complete = (): CheckFacts => ({
   ...empty(), clientTypeResolved: true, clientType: "end_user", clientEmail: true, propertyLocation: true, floorPlanOrArea: true, introCompleted: true,
+  qualificationProceed: true, targetCompletionSet: true,
   furniturePath: "take_home_now", quotationExists: true, paymentProof: true,
 });
 const def = (code: string) => STARTER_FLOWS[code].definition;
@@ -28,12 +29,12 @@ const columnNeeds = (flow: string, column: string, facts: CheckFacts) =>
 describe("flow interpreter on the starter flows (plan §5a)", () => {
   const table: Array<[string, string, string[]]> = [
     ["design", "qualified", ["clientEmail", "propertyLocation", "floorPlanOrArea"]],
-    ["design", "qualification", ["introMeeting", "clientType"]],
+    ["design", "qualification", ["introMeeting", "clientType", "qualificationOutcome", "targetCompletion"]],
     ["design", "proposal", []],
     ["design", "negotiation", []],
     ["design", "won", ["paymentProof"]],
     ["fit_out", "qualified", ["clientEmail", "propertyLocation", "floorPlanOrArea"]],
-    ["fit_out", "qualification", ["introMeeting", "clientType"]],
+    ["fit_out", "qualification", ["introMeeting", "clientType", "qualificationOutcome", "targetCompletion"]],
     ["fit_out", "won", ["paymentProof"]],
     ["furniture", "qualified", []],
     ["furniture", "qualification", ["furniturePath", "clientType"]],

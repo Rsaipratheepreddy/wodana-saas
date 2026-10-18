@@ -51,7 +51,7 @@ export type DesignSystemProviderProps = Omit<HTMLAttributes<HTMLDivElement>, "di
 
 const DEFAULT_SETTINGS: DesignSystemSettings = {
   theme: "light",
-  density: "comfortable",
+  density: "compact",
   locale: "en",
   regionLocale: "en",
   direction: "ltr",

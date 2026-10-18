@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, ListTabs, NoResultsState, RecordName, TextInput, type DataGridColumn } from "@/design-system";
+import {
+  ApprovalStamp, Button, DataGrid, EditableFieldList, EmptyState, ErrorState, FactRow, InlineNotice, InspectorSheet, ListTabs, NoResultsState, RecordName, ReviewFiles, TextInput, type DataGridColumn,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pettyCashApi, type PettyCashApi } from "@/lib/petty-cash/client";
 import type { PettyCashClaim, PettyCashPayables } from "@/lib/petty-cash/types";
@@ -67,18 +69,18 @@ function ReimburseSheet({ api, claim, canReimburse, onChanged, onClose }: {
       }}>{t("Reimburse")}</Button></div> : null}>
     <div className={styles.sheet}>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Status")}</dt><dd><ClaimStatusLabel status={claim.status} /></dd></div>
-        <div><dt>{t("Amount")}</dt><dd className={styles.money}>{format.money(claim.amount, claim.currency)}</dd></div>
-        <div><dt>{t("What for")}</dt><dd>{claim.description}</dd></div>
-        <div><dt>{t("Project")}</dt><dd>{`${claim.projectReference} · ${claim.projectName}`}</dd></div>
-        <div><dt>{t("Spent on")}</dt><dd>{format.day(claim.spentOn)}</dd></div>
-        <div><dt>{t("Kind")}</dt><dd>{categories[claim.category]}</dd></div>
-        <div><dt>{t("Approved by")}</dt><dd>{claim.decidedByName}</dd></div>
-        <div><dt>{t("Receipt")}</dt><dd>{claim.receiptName ? <a href={api.receiptUrl(claim.id)} target="_blank" rel="noreferrer">{claim.receiptName}</a>
-          : <span className={styles.muted}>{t("None: {reason}", { reason: claim.noReceiptReason })}</span>}</dd></div>
-        {claim.reimbursedAt ? <div><dt>{t("Reimbursed")}</dt><dd>{[format.when(claim.reimbursedAt), claim.reimbursedByName, claim.reimbursementReference].filter(Boolean).join(" · ")}</dd></div> : null}
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("Status")}><ClaimStatusLabel status={claim.status} /></FactRow>
+        <FactRow label={t("Amount")}><span className={styles.money}>{format.money(claim.amount, claim.currency)}</span></FactRow>
+        <FactRow label={t("What for")}>{claim.description}</FactRow>
+        <FactRow label={t("Project")}>{`${claim.projectReference} · ${claim.projectName}`}</FactRow>
+        <FactRow label={t("Spent on")}>{format.day(claim.spentOn)}</FactRow>
+        <FactRow label={t("Kind")}>{categories[claim.category]}</FactRow>
+        {claim.reimbursedAt ? <FactRow label={t("Reimbursed")}>{[format.when(claim.reimbursedAt), claim.reimbursedByName, claim.reimbursementReference].filter(Boolean).join(" · ")}</FactRow> : null}
+      </EditableFieldList>
+      {claim.decidedByName ? <div><ApprovalStamp approvedBy={claim.decidedByName} date={claim.decidedAt ? format.when(claim.decidedAt) : "—"} /></div> : null}
+      <ReviewFiles label={t("Receipt")} files={claim.receiptName ? [{ id: claim.id, name: claim.receiptName, href: api.receiptUrl(claim.id) }] : []}
+        empty={<span className={styles.muted}>{t("None: {reason}", { reason: claim.noReceiptReason })}</span>} />
       {paying ? <TextInput label={t("Reference")} value={reference} onChange={setReference} /> : null}
     </div>
   </InspectorSheet>;

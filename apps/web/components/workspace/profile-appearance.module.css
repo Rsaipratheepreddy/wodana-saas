@@ -1,4 +1,3 @@
-.fileInput { display: none; }
 .muted { margin: var(--wd-space-2) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr)); gap: var(--wd-space-2); padding-block: var(--wd-space-3); }
 .option { position: relative; display: grid; aspect-ratio: 1; place-items: center; border: 0; border-radius: var(--wd-radius-round); padding: 0; overflow: visible; background: var(--wd-color-surface-muted); color: var(--wd-color-text); cursor: pointer; transition: box-shadow 120ms ease; }

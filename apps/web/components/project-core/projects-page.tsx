@@ -8,7 +8,9 @@ import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState,
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectRow, ReadyCase } from "@/lib/project-core/types";
-import { effectiveHealth, nextStepText } from "@/lib/project-core/next-step";
+import { effectiveHealth } from "@/lib/project-core/next-step";
+import { useJobNow } from "@/lib/jobs/job-now";
+import { translateKnown } from "@/lib/i18n/keys";
 import { useProjectFormat, useStatusLabel } from "./format";
 import { StartProjectDialog } from "./start-project-dialog";
 import styles from "./project-core.module.css";
@@ -55,6 +57,8 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
     return !query || [row.name, row.reference, row.clientName, row.lead ?? ""].some((value) => value.toLocaleLowerCase().includes(query));
   }), [rows, filter, search, health, format]);
 
+  const projectRecords = useMemo(() => (rows ?? []).map((row) => ({ type: "project" as const, id: row.id })), [rows]);
+  const jobNow = useJobNow(workspaceId, projectRecords);
   const columns = useMemo<DataGridColumn<ProjectRow>[]>(() => [
     { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference} ${row.clientName}`, size: 260, meta: { primary: true, interactive: true, renderCell: (row) =>
       <RecordName detail={[row.clientName, row.reference].filter(Boolean).join(" · ")} title={<Link className={styles.open} data-tour="project-open" href={`/workspace/projects/${row.id}`}>{row.name}</Link>} /> } },
@@ -65,8 +69,11 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
     } } },
     { id: "stage", header: t("Stage"), accessorFn: (row) => row.stage?.name ?? "", size: 170, meta: { renderCell: (row) => row.stage
       ? <RecordName title={row.stage.name} detail={t("{position} of {count}", { position: row.stage.position, count: row.stage.count })} /> : null } },
-    { id: "next", header: t("Next step"), accessorFn: (row) => (row.next ? nextStepText(t, row.next) : ""), size: 230, meta: { priority: "medium", renderCell: (row) => row.status === "active" && row.next
-      ? <RecordName title={nextStepText(t, row.next)} detail={row.next.owner} /> : null } },
+    // §0.3 P10: the job's step now (its journey), the same words as the job page.
+    { id: "next", header: t("Next step"), accessorFn: (row) => { const job = jobNow.lookup("project", row.id); return job?.now ? translateKnown(t, job.now.label) : ""; }, size: 230, meta: { priority: "medium", renderCell: (row) => {
+      const job = jobNow.lookup("project", row.id);
+      return row.status === "active" && job?.now ? <RecordName title={translateKnown(t, job.now.label)} detail={job.now.owner ?? undefined} /> : null;
+    } } },
     { id: "attention", header: t("Needs a look"), accessorFn: (row) => (row.attention?.late ?? 0) * 1000 + (row.attention?.blocked ?? 0), size: 130, meta: { priority: "low", renderCell: (row) => {
       const parts = [row.attention?.late ? t("{count} late", { count: row.attention.late }) : "", row.attention?.blocked ? t("{count} blocked", { count: row.attention.blocked }) : ""].filter(Boolean);
       return row.status === "active" && parts.length ? <Link className={styles.attention} data-late={row.attention?.late ? true : undefined}
@@ -76,7 +83,7 @@ export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { wor
       const until = row.status === "active" ? format.until(row.promiseDate) : null;
       return row.promiseDate ? <span className={styles.dateCell}>{format.day(row.promiseDate)}{until ? <small data-late={until.late || undefined}>{until.text}</small> : null}</span> : null;
     } } },
-  ], [t, format, status]);
+  ], [t, format, status, jobNow.lookup]);
 
   const action = canStart ? <Button variant="primary" onPress={() => setPicking(true)}><Play aria-hidden="true" size={15} />{t("Start project")}</Button> : null;
   const tabs = <ListTabs label={t("Show")} value={filter} onChange={(value) => { setFilter(value); if (value !== "open") setHealth(null); }}

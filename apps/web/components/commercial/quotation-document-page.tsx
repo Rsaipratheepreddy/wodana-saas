@@ -10,7 +10,7 @@ import d from "./quotation-studio.module.css";
 import {isReferenceLayout,referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translatorFor, type Translate } from "@/lib/i18n/keys";
-import { formatDate, useDesignSystem } from "@/design-system";
+import { Button, formatDate, useDesignSystem } from "@/design-system";
 
 export type DocumentPage = {
   id: string;
@@ -114,10 +114,10 @@ export function QuotationDocumentPage({
                 {t(page.lines?.length === 1 ? "{count} item · {currency}" : "{count} items · {currency}", { count: page.lines?.length ?? 0, currency: quote.currency })}
               </span>
               {!preview && (
-                <button onClick={() => onAdd(page.lines?.[0]?.room ?? "General")}>
+                <Button size="compact" onPress={() => onAdd(page.lines?.[0]?.room ?? "General")}>
                   <Plus size={13} />
                   {t("Add item")}
-                </button>
+                </Button>
               )}
             </div>
             <table className={`${d.documentTable} ${d.itemsTable}`}>
@@ -153,14 +153,14 @@ export function QuotationDocumentPage({
                       {preview ? (
                         <strong>{line.title}</strong>
                       ) : (
-                        <button
+                        <Button size="compact"
                           className={d.documentItem}
                           aria-label={t("Edit {title}", { title: line.title })}
-                          onClick={() => onSelect(line.id)}
+                          onPress={() => onSelect(line.id)}
                         >
                           <strong>{line.title}</strong>
                           <Pencil size={12} />
-                        </button>
+                        </Button>
                       )}
                       {line.optional ? <small>{t(selectedOptionIds.has(line.id) ? "Selected option · included in accepted total" : "Option · not included in total")}</small> : null}
                       {line.variant ? <small>{line.variant}</small> : null}
@@ -183,14 +183,14 @@ export function QuotationDocumentPage({
                         {quotationDescription(line) || t("As specified")}
                       </div>
                       {!preview && (
-                        <button
+                        <Button size="compact"
                           className={d.editMaterial}
                           aria-label={t("Edit material for {title}", { title: line.title })}
-                          onClick={() => onSelect(line.id, true)}
+                          onPress={() => onSelect(line.id, true)}
                         >
                           <Pencil size={11} />
                           {t("Edit materials")}
-                        </button>
+                        </Button>
                       )}
                     </td>
                     <td>

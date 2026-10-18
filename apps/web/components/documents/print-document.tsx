@@ -36,7 +36,7 @@ export type DocumentParty = { label: string; name: string; lines?: Array<string 
  * letterhead (else the brand), the document's name, number, state and dates at the inline end, the parties, the
  * content, the business's footer and "Powered by Wodana". `fileName` names the saved PDF ("PO-0012 Supplier").
  */
-export function PrintDocument({ kind, number, state, facts = [], parties = [], aside, letterhead, brand, fileName, label, actions, children }: {
+export function PrintDocument({ kind, number, state, facts = [], parties = [], aside, letterhead, brand, fileName, label, actions, preview = false, children }: {
   /** The document's name: "Purchase order", "Tax invoice". */
   kind: string;
   number?: string | null;
@@ -54,15 +54,18 @@ export function PrintDocument({ kind, number, state, facts = [], parties = [], a
   label?: string;
   /** More buttons beside "Print or save as PDF". */
   actions?: ReactNode;
+  /** A preview inside another page (Setup): no print button, the page keeps its own title. */
+  preview?: boolean;
   children: ReactNode;
 }) {
   const t = useT();
   const identity = useWorkspaceIdentity();
   const shown = brand ?? identity ?? { name: "" };
-  useDocumentTitle(fileName);
-  return <main className={styles.page}>
-    <PrintPageRules />
-    <div className={styles.toolbar}>{actions}<Button variant="primary" onPress={() => window.print()}>{t("Print or save as PDF")}</Button></div>
+  useDocumentTitle(preview ? null : fileName);
+  const Root = preview ? "div" : "main";
+  return <Root className={styles.page} data-preview={preview || undefined}>
+    {preview ? null : <PrintPageRules />}
+    {preview ? null : <div className={styles.toolbar}>{actions}<Button variant="primary" onPress={() => window.print()}>{t("Print or save as PDF")}</Button></div>}
     <article className={styles.sheet} aria-label={label ?? [kind, number].filter(Boolean).join(" ")}>
       <header className={styles.header}>
         <div className={styles.issuer}>
@@ -90,7 +93,7 @@ export function PrintDocument({ kind, number, state, facts = [], parties = [], a
         <p className={styles.powered}>{t("Powered by Wodana")}</p>
       </footer>
     </article>
-  </main>;
+  </Root>;
 }
 
 /** The totals under a document's lines, at the inline end; the emphasised row (the total, the balance) stands out. */

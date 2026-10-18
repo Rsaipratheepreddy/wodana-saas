@@ -83,6 +83,7 @@ export const clientPortalSettings = pgTable("client_portal_settings", {
   supportPhone: varchar("support_phone", { length: 20 }).notNull().default(""),
   supportEmail: varchar("support_email", { length: 254 }).notNull().default(""),
   supportWhatsapp: varchar("support_whatsapp", { length: 20 }).notNull().default(""),
+  catalogueUrl: varchar("catalogue_url", { length: 500 }).notNull().default(""),
   updatedBy: uuid("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

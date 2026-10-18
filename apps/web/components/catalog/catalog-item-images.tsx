@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
-import { Button, IconButton, InlineNotice } from "@/design-system";
+import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
+import { EmptyState, FileUploader, IconButton, InlineNotice, Spinner } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogImageUrl } from "@/lib/quotation/client";
 import styles from "./catalog-page.module.css";
@@ -15,7 +15,6 @@ export function CatalogItemImages({ workspaceId, itemId, canManage }: { workspac
   const [images, setImages] = useState<Image[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
   const url = (path: string) => `/api/catalog-images/${path}?${new URLSearchParams({ workspaceId })}`;
   const load = () => fetch(url(`items/${itemId}`), { cache: "no-store" }).then((response) => response.json()).then((data: { images?: Image[] }) => setImages(data.images ?? [])).catch(() => setError(t("Pictures didn't load.")));
   useEffect(() => {
@@ -24,10 +23,10 @@ export function CatalogItemImages({ workspaceId, itemId, canManage }: { workspac
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, itemId]);
-  const upload = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const upload = async (files: File[]) => {
+    if (!files.length) return;
     setBusy(true); setError("");
-    for (const file of [...files].slice(0, 12)) {
+    for (const file of files.slice(0, 12)) {
       const body = new FormData(); body.append("file", file);
       const response = await fetch(url(`items/${itemId}/${crypto.randomUUID()}`), { method: "POST", body });
       if (!response.ok) { const data = await response.json().catch(() => null); setError(data?.message ?? t("Could not upload the picture.")); break; }
@@ -46,11 +45,9 @@ export function CatalogItemImages({ workspaceId, itemId, canManage }: { workspac
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={catalogImageUrl(workspaceId, image.id, image.hasPreview)} alt={image.name} />
       {index === 0 ? <small>{t("Main picture")}</small> : null}
-      {canManage ? <IconButton aria-label={t("Remove {name}", { name: image.name })} size="compact" variant="quiet" onPress={() => void remove(image.id)}><Trash2 aria-hidden="true" size={14} /></IconButton> : null}
-    </li>)}</ul> : images ? <p className={styles.muted}>{t("No pictures yet.")}</p> : null}
-    {canManage ? <>
-      <Button size="compact" isLoading={busy} onPress={() => input.current?.click()}><ImagePlus aria-hidden="true" size={14} />{t("Add pictures")}</Button>
-      <input ref={input} type="file" accept="image/*" multiple hidden onChange={(event) => { void upload(event.target.files); event.target.value = ""; }} />
-    </> : null}
+      {canManage ? <span className={styles.remove}><IconButton aria-label={t("Remove {name}", { name: image.name })} size="compact" variant="quiet" onPress={() => void remove(image.id)}><Trash2 aria-hidden="true" size={14} /></IconButton></span> : null}
+    </li>)}</ul> : images ? <EmptyState illustration={null} title={t("No pictures yet.")} /> : null}
+    {canManage ? busy ? <Spinner label={t("Uploading…")} />
+      : <FileUploader accept="image/*" appearance="button" label={t("Add pictures")} onFiles={(files) => void upload(files)} /> : null}
   </div>;
 }

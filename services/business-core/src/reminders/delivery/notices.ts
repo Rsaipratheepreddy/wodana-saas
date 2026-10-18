@@ -42,6 +42,8 @@ export type NoticeInput = {
   critical: boolean;
   stepId: string | null;
   fallbackOf?: string | null;
+  /** An in-app notice that lands during the person's quiet hours (no sound, no pop-up). */
+  silent?: boolean;
 };
 
 /** Writes one notice (idempotent on its key) and wakes the worker for one due now. Null when the key was used. */
@@ -52,13 +54,13 @@ export async function insertNotice(db: Db, input: NoticeInput): Promise<string |
   const later = !inApp && input.scheduledFor.getTime() > input.now.getTime();
   const row = (await db.query<{ id: string; correlationId: string }>(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status, scheduled_for, subject, body,
-       deep_link, idempotency_key, correlation_id, delivered_at, critical, reminder_step_id, fallback_of)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::notification_status, $8, $9, $10, $11, $12, gen_random_uuid(), $13, $14, $15, $16)
+       deep_link, idempotency_key, correlation_id, delivered_at, critical, reminder_step_id, fallback_of, silent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::notification_status, $8, $9, $10, $11, $12, gen_random_uuid(), $13, $14, $15, $16, $17)
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, input.template.id, input.recipientType, input.recipientId, input.channel, input.eventType,
       inApp ? "delivered" : later ? "scheduled" : "pending", inApp ? input.now : input.scheduledFor, subject, body, input.deepLink,
-      input.idempotencyKey.slice(0, 160), inApp ? input.now : null, input.critical, input.stepId, input.fallbackOf ?? null])).rows[0];
+      input.idempotencyKey.slice(0, 160), inApp ? input.now : null, input.critical, input.stepId, input.fallbackOf ?? null, inApp && input.silent === true])).rows[0];
   if (!row) return null;
   if (!inApp && !later) await wakeDelivery(db, input.workspaceId, row.id, row.correlationId, input.channel);
   return row.id;

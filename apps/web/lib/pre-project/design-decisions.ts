@@ -6,14 +6,19 @@ export type PresentationOption = {
   versionId: string | null; versionNumber: number | null; mimeType: string | null; hasPreview: boolean;
 };
 export type Presentation = {
-  id: string; stage: "concepts" | "space_planning" | "material_selection" | "renders"; round: number;
+  id: string; stage: "moodboards" | "concepts" | "space_planning" | "material_selection" | "renders"; round: number;
   status: "draft" | "presented" | "chosen" | "changes_requested" | "withdrawn"; chargeable: boolean;
   presentedAt: string | null; presentedByName: string | null; chosenOptionId: string | null; decidedAt: string | null; decidedByName: string | null;
   decisionSource: string | null; decisionNote: string | null; fromPortal: boolean; version: number; options: PresentationOption[];
   /** PLM-145: approved by the package's reviewer before the client sees it. */
   reviewedAt?: string | null; reviewedByName?: string | null;
 };
-export type Revisions = { used: number; included: number; chargeable: boolean };
+/** PLM-049/051: the extra revision beyond a step's free ones and its change request (none while it isn't drafted). */
+export type ExtraRevision = {
+  revision: number; changeRequestId: string | null; reference: string | null; status: string | null; projectId: string | null; state: "waiting" | "agreed" | "declined";
+};
+/** A step's revisions: changes the client asked for against the package's free ones, and the extra revision it waits for. */
+export type Revisions = { used: number; included: number; chargeable: boolean; waiting?: boolean; extra?: ExtraRevision | null };
 export type PresentationsView = {
   presentations: Presentation[]; revisions: Record<string, Revisions> | null;
   /** PLM-145: rounds wait for the package's reviewer (its role), and whether this person is one. */
@@ -51,7 +56,8 @@ export type LedgerView = {
   approval?: { id: string; status: string; version: number; waitingFor: string[]; requestedBy: { userId: string; name: string } } | null;
 };
 
-export const LEDGER_SOURCES = ["showroom", "meeting", "site", "whatsapp", "email", "phone", "portal"] as const;
+// Guide step 2: during design nothing is decided on WhatsApp (older entries may still name it, so its label stays).
+export const LEDGER_SOURCES = ["showroom", "meeting", "site", "email", "phone", "portal"] as const;
 export const SOURCE_LABEL: Record<string, MessageKey> = {
   showroom: tKey("Showroom"), meeting: tKey("Meeting"), site: tKey("Site"), whatsapp: tKey("WhatsApp"), email: tKey("Email"), phone: tKey("Phone"), portal: tKey("Client portal"),
 };
@@ -59,7 +65,7 @@ export const CONFIRMATION_METHODS = ["signed_document", "email", "in_person", "p
 export const METHOD_LABEL: Record<string, MessageKey> = {
   portal: tKey("Client portal"), signed_document: tKey("Signed document"), email: tKey("Email"), in_person: tKey("In person"), phone: tKey("Phone"), message: tKey("Message"),
 };
-export const DECISION_SOURCES = ["meeting", "whatsapp", "email", "phone"] as const;
+export const DECISION_SOURCES = ["meeting", "email", "phone"] as const;
 
 export const LEDGER_STATE_LABEL: Record<LedgerState, MessageKey> = {
   empty: tKey("No choices yet"), open: tKey("Not signed off"), locked: tKey("Signed off"), changes_pending: tKey("Changes waiting"),
@@ -97,11 +103,25 @@ export function signedAmount(value: string): string | null {
   return trimmed.startsWith("-") ? trimmed : `+${trimmed}`;
 }
 
-/** The revision counter wording: "Revision 1 of 2", or "Revision 3 · chargeable" beyond the package's included revisions (PLM-049/051). */
+/** The free-revision counter: "Revision 2 of 2 used" (the free ones the client asked for, from the records; PLM-049/051). */
 export function revisionDetail(revisions: Revisions | null | undefined): { key: MessageKey; values?: Record<string, number> } | null {
-  if (!revisions || !revisions.used) return null;
-  if (revisions.chargeable) return { key: tKey("Revision {used} · chargeable"), values: { used: revisions.used } };
-  return { key: tKey("Revision {used} of {included}"), values: { used: revisions.used, included: revisions.included } };
+  if (!revisions || !revisions.used || !revisions.included) return null;
+  return { key: tKey("Revision {used} of {included} used"), values: { used: Math.min(revisions.used, revisions.included), included: revisions.included } };
+}
+
+/** Beyond the free revisions: the extra revision's state, in the tone it reads with. */
+export function extraRevisionDetail(revisions: Revisions | null | undefined): { key: MessageKey; tone: "warning" | "success" | "danger" } | null {
+  const extra = revisions?.chargeable ? revisions.extra : null;
+  if (!extra) return null;
+  if (extra.state === "agreed") return { key: tKey("Extra revision agreed"), tone: "success" };
+  if (extra.state === "declined") return { key: tKey("Extra revision declined"), tone: "danger" };
+  return { key: tKey("Waiting for the extra revision to be agreed"), tone: "warning" };
+}
+
+/** Where the extra revision's change request opens: on the started project, else on the planning record. */
+export function extraRevisionHref(caseId: string, extra: ExtraRevision | null | undefined) {
+  if (!extra?.changeRequestId) return null;
+  return extra.projectId ? `/workspace/projects/${extra.projectId}/changes/${extra.changeRequestId}` : `/workspace/pre-projects/cases/${caseId}/variations?change=${extra.changeRequestId}`;
 }
 
 export const PRESENTATION_STATUS_LABEL: Record<Presentation["status"], MessageKey> = {

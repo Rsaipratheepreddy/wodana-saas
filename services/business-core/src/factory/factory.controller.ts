@@ -71,6 +71,14 @@ export class FactoryController {
     return this.factory.uploadCheckPhoto(actor, workspaceId, orderId, checkId, photoId, file);
   }
 
+  @Get("orders/:orderId/drawings/:versionId")
+  async drawing(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Param("versionId", ParseUUIDPipe) versionId: string, @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const file = await this.factory.drawingFile(actor, workspaceId, orderId, versionId, preview === "1");
+    response.setHeader("Cache-Control", "private, no-store");
+    return sendMedia(file, request, response);
+  }
+
   @Get("photos/:photoId")
   async photo(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("photoId", ParseUUIDPipe) photoId: string, @Query("preview") preview: string,
     @Req() request: Request, @Res({ passthrough: true }) response: Response) {

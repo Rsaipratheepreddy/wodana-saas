@@ -65,8 +65,8 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
         return <li key={`${check.code}-${check.lineId ?? index}`} data-tone={check.tone}>
           {check.lineId && onFocusLine ? <button type="button" className={styles.checkLink} onClick={() => onFocusLine(check.lineId!)}>{text}</button>
             : check.requirementId && requirementHref ? <Link className={styles.checkLink} href={requirementHref(check.requirementId)}>{text}</Link> : <span>{text}</span>}
-          {check.code === "Add the payment milestones" && onPayments ? <button type="button" className={styles.fixLink} onClick={onPayments}>{t("Open payments")}</button>
-            : !check.lineId && onFix && AI_FIXABLE.has(check.code) ? <button type="button" className={styles.fixLink} onClick={() => onFix(text)}><Sparkles aria-hidden="true" size={12} />{t("Fix with AI")}</button> : null}
+          {check.code === "Add the payment milestones" && onPayments ? <Button size="compact" variant="quiet" onPress={onPayments}>{t("Open payments")}</Button>
+            : !check.lineId && onFix && AI_FIXABLE.has(check.code) ? <Button size="compact" variant="quiet" onPress={() => onFix(text)}><Sparkles aria-hidden="true" size={14} />{t("Fix with AI")}</Button> : null}
         </li>;
       })}</ul>
     </section> : null}

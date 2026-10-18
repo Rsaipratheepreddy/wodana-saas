@@ -357,6 +357,8 @@ export type MaterialDecision = { itemId: string; decision: "approved" | "rejecte
 export type MaterialItem = {
   id: string; position: number; catalogItemId: string | null; name: string; code: string; specification: string; supplier: string;
   quantity: string | null; unit: string; note: string; boqLineIds: string[]; version: number;
+  /** Guide step 17: brand, colour, size, finish and the sample photo (a case file). */
+  brand?: string; colour?: string; size?: string; finish?: string; samplePhotoAssetId?: string | null;
   /** False for materials the client doesn't choose; they don't wait for sign-off. */
   clientChoice: boolean;
   usedIn: Array<{ id: string; title: string; areaName: string | null }>; decision: MaterialDecision | null;
@@ -368,10 +370,14 @@ export type MaterialItem = {
 export type MaterialRevision = {
   id: string; number: number; status: "sent" | "signed_off" | "changes_requested"; sentAt: string; sentByName: string | null;
   decidedAt: string | null; decidedBy: string | null; method: string | null; note: string;
+  /** The file the client's decision came in, when staff recorded it. */
+  decisionFiles?: Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>;
 };
 export type MaterialsState = {
   state: "draft" | "sent" | "signed_off" | "changes_requested" | "changed";
   items: MaterialItem[]; revisions: MaterialRevision[]; version: number; canEdit: boolean;
+  /** The project's planning case (where its files are kept), and what the list still misses before technical can start. */
+  caseId?: string | null; missingForTechnical?: string[];
   /** PLM-159: the QS's confirmation of the list (null: never), whether the ordering gate asks for it, and whether this person is the QS. */
   qsConfirmation?: { confirmedAt: string; confirmedByName: string | null; current: boolean } | null; qsGate?: boolean; canConfirmQs?: boolean;
 };

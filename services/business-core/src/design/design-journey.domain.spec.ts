@@ -8,9 +8,20 @@ describe("design journey (PLM-047..053)", () => {
   });
   it("runs the order of 13 Oct 2026: kick-off after inspiration, renders after the concept, samples after the renders (PLM-140–144)", () => {
     // Bespoke and Creative Director: renders; space planning folds into the concept (the layout to scale is in every package).
-    expect(journeyStages({ includesSpacePlanning: true, includesRenders: true })).toEqual(["inspiration", "kickoff", "concepts", "renders", "samples", "approval"]);
+    expect(journeyStages({ includesSpacePlanning: true, includesRenders: true }, 2)).toEqual(["inspiration", "kickoff", "concepts", "renders", "samples", "approval"]);
     // Concept package: no renders, so samples follow the concept straight away.
-    expect(journeyStages({ includesSpacePlanning: false, includesRenders: false })).toEqual(["inspiration", "kickoff", "concepts", "samples", "approval"]);
+    expect(journeyStages({ includesSpacePlanning: false, includesRenders: false }, 2)).toEqual(["inspiration", "kickoff", "concepts", "samples", "approval"]);
+  });
+  it("runs the guide's order (16 Oct 2026): mood boards, space planning, concept, renders, material selection and an optional final render only where they apply", () => {
+    // Bespoke / Creative Director on a production job: everything, the final render last before the approval.
+    expect(journeyStages({ includesSpacePlanning: true, includesRenders: true, materialSelection: true })).toEqual(
+      ["inspiration", "kickoff", "moodboards", "space_planning", "concepts", "renders", "samples", "final_render", "approval"]);
+    // Full ID (no material selection): ends at the concept or the renders, then the approval.
+    expect(journeyStages({ includesSpacePlanning: true, includesRenders: true, materialSelection: false })).toEqual(
+      ["inspiration", "kickoff", "moodboards", "space_planning", "concepts", "renders", "approval"]);
+    // Concept package on a production job: space planning for every package; no renders, so no final render.
+    expect(journeyStages({ includesSpacePlanning: false, includesRenders: false, materialSelection: true })).toEqual(
+      ["inspiration", "kickoff", "moodboards", "space_planning", "concepts", "samples", "approval"]);
   });
   it("moves to the next stage in order", () => {
     const old = journeyStages({ includesSpacePlanning: false, includesRenders: true }, 1);
@@ -92,7 +103,7 @@ describe("design flow after Won (PLM-049/050/051/053/128, PLM-081)", () => {
   });
 });
 
-import { developmentWindowDays, groupSiteQuestions, kickoffProblem, renderSignOffProblem, requiredSiteQuestions, samplesProblem, scopeMatches } from "./design-journey.domain";
+import { askedSiteQuestions, developmentWindowDays, groupSiteQuestions, kickoffProblem, renderSignOffProblem, requiredSiteQuestions, samplesProblem, scopeMatches } from "./design-journey.domain";
 import { workingDeadline } from "../project-core/work-calendar";
 
 describe("the design order of 13 Oct 2026 (PLM-140–144, PLM-154)", () => {
@@ -176,11 +187,11 @@ describe("the design order of 13 Oct 2026 (PLM-140–144, PLM-154)", () => {
     expect(groups.map((group) => [group.scope, group.matches, group.required, group.questions.map((question) => question.key)])).toEqual([
       [null, true, true, ["access"]], ["Kitchen", true, true, ["family", "back"]], ["Bedrooms", false, false, ["bed-size"]],
     ]);
-    expect(requiredSiteQuestions(questions, ["Main kitchen"]).map((question) => question.key)).toEqual(["access", "family", "back"]);
+    expect(askedSiteQuestions(questions, ["Main kitchen"]).map((question) => question.key)).toEqual(["access", "family", "back"]);
     // No rooms yet, or none matching: only the general questions are asked until the designer switches a checklist on.
-    expect(requiredSiteQuestions(questions, []).map((question) => question.key)).toEqual(["access"]);
-    expect(requiredSiteQuestions(questions, ["Garage"]).map((question) => question.key)).toEqual(["access"]);
-    expect(requiredSiteQuestions(questions, [], { chosen: new Map([["bedrooms", true]]) }).map((question) => question.key)).toEqual(["access", "bed-size"]);
+    expect(askedSiteQuestions(questions, []).map((question) => question.key)).toEqual(["access"]);
+    expect(askedSiteQuestions(questions, ["Garage"]).map((question) => question.key)).toEqual(["access"]);
+    expect(askedSiteQuestions(questions, [], { chosen: new Map([["bedrooms", true]]) }).map((question) => question.key)).toEqual(["access", "bed-size"]);
     // An old list without scopes is one group, asked in full.
     expect(groupSiteQuestions(DEFAULT_SITE_VISIT_QUESTIONS, ["Kitchen"]).map((group) => [group.scope, group.questions.length])).toEqual([[null, 7]]);
     expect(normaliseSiteQuestions([{ key: "k", question: "Q?", scope: "  Kitchen  " }, { key: "g", question: "G?", scope: "" }])).toEqual([{ key: "k", question: "Q?", scope: "Kitchen" }, { key: "g", question: "G?" }]);
@@ -238,14 +249,33 @@ describe("question sections and joinery checklists (Palm discovery, 12 Oct 2026)
     // The designer adds the TV wall and drops the release record on this job.
     const chosen = groupSiteQuestions(list, ["Kitchen"], { scopes, chosen: new Map([["tv and media walls", true], ["factory release", false]]) });
     expect(chosen.filter((group) => group.scope && group.applies).map((group) => [group.scope, group.chosen])).toEqual([["Kitchens and islands", null], ["TV and media walls", true]]);
-    expect(requiredSiteQuestions(list, ["Kitchen"], { scopes, chosen: new Map([["kitchens and islands", false]]) }).map((question) => question.key))
+    expect(askedSiteQuestions(list, ["Kitchen"], { scopes, chosen: new Map([["kitchens and islands", false]]) }).map((question) => question.key))
       .toEqual(["core.01", "core.02", "core.06", "release.01"]);
     // Nothing on the job matches a checklist yet (no rooms): the general questions and the every-job checklist only.
-    expect(requiredSiteQuestions(list, [], { scopes }).length).toBe(4);
+    expect(askedSiteQuestions(list, [], { scopes }).length).toBe(4);
+  });
+
+  it("blocks the visit only on questions the firm marked required; the rest are asked, not enforced (§0.3 P0)", () => {
+    const questions = [
+      { key: "access", question: "How do we get in?", required: true },
+      { key: "notes", question: "Anything else?" },
+      { key: "family", question: "Family size?", scope: "Kitchen", required: true },
+      { key: "back", question: "Back kitchen?", scope: "Kitchen" },
+    ];
+    expect(askedSiteQuestions(questions, ["Kitchen"]).map((question) => question.key)).toEqual(["access", "notes", "family", "back"]);
+    expect(requiredSiteQuestions(questions, ["Kitchen"]).map((question) => question.key)).toEqual(["access", "family"]);
+    // A checklist that doesn't apply never blocks, even with required questions.
+    expect(requiredSiteQuestions(questions, ["Bedroom"]).map((question) => question.key)).toEqual(["access"]);
+    expect(siteChecklistProblem(requiredSiteQuestions(questions, ["Kitchen"]), ["access", "family"])).toBeNull();
+    // The starting list is optional: an unanswered default question never blocks a visit.
+    expect(requiredSiteQuestions(DEFAULT_SITE_VISIT_QUESTIONS, ["Kitchen"])).toEqual([]);
+    // The flag survives storage only when it is true.
+    expect(normaliseSiteQuestions([{ key: "a", question: "A?", required: true }, { key: "b", question: "B?", required: false }]))
+      .toEqual([{ key: "a", question: "A?", required: true }, { key: "b", question: "B?" }]);
   });
 
   it("needs every line marked to complete the visit; a pending line counts and is an open item", () => {
-    const required = requiredSiteQuestions(list, ["Kitchen"], { scopes });
+    const required = askedSiteQuestions(list, ["Kitchen"], { scopes });
     expect(siteChecklistProblem(required, ["core.01", "core.02", "core.06"])).toBe("Mark the 2 checks left");
     expect(siteChecklistProblem(required, ["core.01", "core.02", "kitchen.01"])).toBe("Answer the last site visit question and mark the last check");
     expect(siteChecklistProblem(required, ["core.01", "kitchen.01", "release.01"])).toBe("Answer the 2 site visit questions left");

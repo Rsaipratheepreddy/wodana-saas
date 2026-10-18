@@ -40,18 +40,20 @@ describe("deciding in the row", () => {
       { ...base, kind: "order", group: "orders", id: id(1), title: "PO-1", decide: { approve: "approve", other: "return", approveNeedsNote: false } },
       { ...base, kind: "output", group: "factory", id: id(2), parentId: id(9), title: "WO-1", decide: { approve: "approve", other: "reject", approveNeedsNote: false } },
       { ...base, kind: "quote_review", group: "quotes", id: id(3), parentId: id(8), title: "Q-1", decide: { approve: "qs_approve", other: "return", approveNeedsNote: false } },
-      { ...base, kind: "receipt", group: "payments", id: id(4), parentId: id(8), title: "Advance", decide: { approve: "verify_payment", other: null, approveNeedsNote: false } },
+      { ...base, kind: "receipt", group: "payments", id: id(4), parentId: id(8), title: "Advance", decide: { approve: "verify_payment", other: "return", approveNeedsNote: false } },
     );
     const { instance, calls } = service();
     await instance.decide({} as never, "w", { kind: "order", id: id(1), decision: "return", note: "Wrong supplier" });
     await instance.decide({} as never, "w", { kind: "output", id: id(2), decision: "reject", note: "Scratched" });
     await instance.decide({} as never, "w", { kind: "quote_review", id: id(3), decision: "approve" });
     await instance.decide({} as never, "w", { kind: "receipt", id: id(4), decision: "approve" });
+    await instance.decide({} as never, "w", { kind: "receipt", id: id(4), decision: "return", note: "Proof is unreadable" });
     expect(calls).toEqual([
       ["orders", [{}, "w", id(1), { action: "return", version: 4, note: "Wrong supplier" }]],
       ["factory", [{}, "w", id(9), { action: "decide_report", reportId: id(2), decision: "refuse", version: 4, note: "Scratched" }]],
       ["commercial", [{}, "w", id(8), { action: "qs_approve", revision: 4, quoteId: id(3) }]],
       ["commercial", [{}, "w", id(8), { action: "verify_payment", revision: 4, paymentId: id(4) }]],
+      ["commercial", [{}, "w", id(8), { action: "return_payment", revision: 4, paymentId: id(4), note: "Proof is unreadable" }]],
     ]);
   });
 

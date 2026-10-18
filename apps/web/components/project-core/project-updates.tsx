@@ -50,7 +50,7 @@ export function ProjectUpdates({ detail, run, workspaceId, projectId }: { detail
     {feed.length ? <ol className={styles.feed} aria-label={t("Updates")}>
       {feed.map((update) => <li key={update.id}>
         {update.kind === "client_update" ? <span><Badge tone="info">{t("Client update")}</Badge></span>
-          : <span className={styles.status} data-tone={update.health === "on_track" ? "ok" : update.health === "at_risk" ? "risk" : "off"}>{labels[update.health]}</span>}
+          : <span><Badge tone={update.health === "on_track" ? "success" : update.health === "at_risk" ? "warning" : "danger"}>{labels[update.health]}</Badge></span>}
         <span className={styles.feedText}>{update.note || <span className={styles.muted}>{t("No note")}</span>}</span>
         {update.photoIds?.length && photos ? <span className={styles.feedShare}><SavedPhotos photos={update.photoIds.map((id, index) => ({ id, name: t("Photo {number}", { number: index + 1 }), byName: update.byName, at: update.at }))}
           url={photos.photoUrl} /></span> : null}

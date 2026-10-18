@@ -38,7 +38,7 @@ export function ClientMessagesSection({ workspaceId, canManage, templates }: { w
         items={codes.map((code) => ({ id: code, label: code }))} selectedKey={original.templateCode} onSelectionChange={(key) => key && key !== original.templateCode && void save(original, { templateCode: String(key) })} />
       : original.templateCode ?? "" },
     { accessorKey: "channel", header: t("Sends by"), size: 190, cell: ({ row: { original } }) => <span className={styles.name}>
-      {original.channel === "whatsapp" ? <Badge tone="success">WhatsApp</Badge> : original.channel === "email" ? <Badge tone="neutral">{t("Email")}</Badge> : <Badge tone="neutral">{t("Not sent")}</Badge>}
+      {original.channel === "whatsapp" ? <Badge hue={6}>WhatsApp</Badge> : original.channel === "email" ? <Badge hue={1}>{t("Email")}</Badge> : <Badge tone="neutral">{t("Not sent")}</Badge>}
       {original.enabled && original.channel !== "whatsapp" ? <small>{!data?.connected ? t("WhatsApp isn't connected") : !original.template ? t("No template yet") : original.template.providerStatus === "rejected" ? t("Template rejected by Meta") : original.template.providerStatus === "paused" ? t("Template paused by Meta") : t("Waiting for Meta approval")}</small> : null}
     </span> },
     { accessorKey: "enabled", header: t("On"), size: 90, enableSorting: false, cell: ({ row: { original } }) => <Switch aria-label={t(CLIENT_EVENT_LABELS[original.event] ?? "Client message")} isDisabled={!canManage || saving === original.event} isSelected={original.enabled} onChange={(value) => void save(original, { enabled: value })} /> },

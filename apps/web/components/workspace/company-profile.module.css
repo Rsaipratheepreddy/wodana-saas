@@ -3,7 +3,6 @@
 .page { inline-size: min(100%, var(--wd-workspace-page-width, 76rem)); min-block-size: 100%; margin-inline: auto; padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem); }
 .liveStatus { display: flex; align-items: center; gap: var(--wd-space-1-5); padding-block: var(--wd-space-3); color: var(--wd-color-success); font-size: var(--wd-text-sm); }
 
-.fileInput { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .permissionNote { margin: var(--wd-space-5) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
 .logoFormActions { display: flex; align-items: center; gap: var(--wd-space-3); }
@@ -37,7 +36,6 @@
 .requestList { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-2); }
 .requestRow { min-inline-size: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); padding-block: var(--wd-workspace-row-padding, .875rem); }
 .legalEntityForm, .organizationRequestForm, .terminologyForm { display: grid; gap: var(--wd-space-3); }
-.historyStatus { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .revisionList { display: grid; padding: 0; margin: 0; border-block: 1px solid var(--wd-color-structural-divider); list-style: none; }
 .revisionList > li { display: grid; gap: var(--wd-space-1-5); padding-block: var(--wd-workspace-row-padding, .875rem); }
 .revisionList > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }

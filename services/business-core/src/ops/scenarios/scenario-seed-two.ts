@@ -138,7 +138,8 @@ export class ScenarioSeedTwo extends ScenarioSeed {
         const payment = ((data.payments ?? []) as Any[]).find((row) => row.sourceQuoteId === quote.id && row.requiredForRelease);
         if (!payment) throw new Skip("the design agreement has no payment due on signing");
         if (payment.status === "pending") await this.advance("design fee payment reported", false, () => this.commercialCommand(caseId, salesAdmin, "report_payment_receipt",
-          { paymentId: payment.id, reference: `TRF-${reference}`, evidence: "Bank transfer confirmation on file.", evidenceKind: "operational" }));
+          { paymentId: payment.id, reference: `TRF-${reference}`, evidence: "Bank transfer confirmation on file.", evidenceKind: "operational",
+            method: "bank", receivedOn: new Date().toISOString().slice(0, 10) }));
         data = await this.commercialData(caseId);
         if (((data.payments ?? []) as Any[]).find((row) => row.id === payment.id)?.status !== "verified")
           await this.advance("design fee payment verified by Finance", false, () => this.tryAs(finance, (actor) => this.commercialCommand(caseId, actor, "verify_payment", { paymentId: payment.id })));

@@ -5,9 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  Button, DataGrid, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormNotSaved, FormSection, InlineNotice, InspectorSheet, MoneyField, NoResultsState, SelectField, TextAreaField, TextInput,
-  type DataGridColumn,
-  TypeChip,
+  ApprovalRow, Button, DataGrid, DateField, EditableFieldList, EmptyState, ErrorState, FactRow, FileUploader, FormDialog, FormSection, InlineNotice, InspectorSheet, MoneyField, NoResultsState,
+  ReviewDialog, ReviewFiles, SelectField, TextInput, TypeChip, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pettyCashApi, type PettyCashApi } from "@/lib/petty-cash/client";
@@ -73,50 +72,56 @@ function ClaimSheet({ api, projectId, state, claim, onChanged, onEdit, onClose }
   const categories = useCategoryLabels();
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-  const run = async (action: "submit" | "approve" | "reject", input: Record<string, unknown> = {}) => {
+  const [reviewing, setReviewing] = useState(false);
+  /** Runs one change; throws why it wasn't saved (the review shows it). */
+  const change = async (action: "submit" | "approve" | "reject", input: Record<string, unknown> = {}) => {
     setBusy(true); setNotice("");
-    try { onChanged(await api.command(projectId, action, { claimId: claim.id, version: claim.version, ...input })); setBusy(false); return true; }
-    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); return false; }
+    try { onChanged(await api.command(projectId, action, { claimId: claim.id, version: claim.version, ...input })); }
+    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); throw cause; }
+    finally { setBusy(false); }
   };
+  const run = (action: "submit") => change(action).then(() => true, () => false);
   const mine = claim.claimedBy === state.me;
   const deciding = state.canApprove && !mine && claim.status === "submitted";
   const drafting = mine && claim.status === "draft" && state.canClaim;
+  const receipt = claim.receiptName ? [{ id: claim.id, name: claim.receiptName, href: api.receiptUrl(claim.id) }] : [];
   return <InspectorSheet isOpen size="md" title={`${claim.reference} · ${claim.claimedByName}`} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={deciding || drafting ? <div className="wd-dialog-actions"><span className={styles.spacer} />
       {drafting ? <><Button onPress={onEdit}>{t("Edit")}</Button>
         <Button variant="primary" isLoading={busy} onPress={() => void run("submit")}>{t("Submit")}</Button></> : null}
-      {deciding ? <><Button onPress={() => setRejecting(true)}>{t("Reject")}</Button>
-        <Button variant="primary" isLoading={busy} onPress={() => void run("approve")}>{t("Approve")}</Button></> : null}
+      {/* §0.3 P0: a claim is approved or rejected in a review of what was spent and its receipt, never one click. */}
+      {deciding ? <Button variant="primary" onPress={() => { setNotice(""); setReviewing(true); }}>{t("Review")}</Button> : null}
     </div> : null}>
     <div className={styles.sheet}>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Status")}</dt><dd><ClaimStatusLabel status={claim.status} />
-          {claim.decidedByName ? <span className={styles.muted}>{claim.status === "rejected" ? t("Rejected by {name}: {note}", { name: claim.decidedByName, note: claim.decisionNote })
-            : t("Approved by {name}", { name: claim.decidedByName })}</span> : null}</dd></div>
-        <div><dt>{t("What for")}</dt><dd>{claim.description}</dd></div>
-        <div><dt>{t("Amount")}</dt><dd className={styles.money}>{format.money(claim.amount, claim.currency)}</dd></div>
-        <div><dt>{t("Spent on")}</dt><dd>{format.day(claim.spentOn)}</dd></div>
-        <div><dt>{t("Kind")}</dt><dd>{categories[claim.category]}</dd></div>
-        <div><dt>{t("Package")}</dt><dd>{claim.packageName ?? t("Not in a package")}</dd></div>
-        <div><dt>{t("Receipt")}</dt><dd>{claim.receiptName ? <a href={api.receiptUrl(claim.id)} target="_blank" rel="noreferrer">{claim.receiptName}</a>
-          : <span className={styles.muted}>{claim.noReceiptReason ? t("None: {reason}", { reason: claim.noReceiptReason }) : t("None yet")}</span>}</dd></div>
-        {claim.reimbursedAt ? <div><dt>{t("Reimbursed")}</dt><dd>{[format.when(claim.reimbursedAt), claim.reimbursedByName, claim.reimbursementReference].filter(Boolean).join(" · ")}</dd></div> : null}
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("Status")}><ClaimStatusLabel status={claim.status} /></FactRow>
+        <FactRow label={t("What for")}>{claim.description}</FactRow>
+        <FactRow label={t("Amount")}><span className={styles.money}>{format.money(claim.amount, claim.currency)}</span></FactRow>
+        <FactRow label={t("Spent on")}>{format.day(claim.spentOn)}</FactRow>
+        <FactRow label={t("Kind")}>{categories[claim.category]}</FactRow>
+        <FactRow label={t("Package")}>{claim.packageName ?? t("Not in a package")}</FactRow>
+        {claim.reimbursedAt ? <FactRow label={t("Reimbursed")}>{[format.when(claim.reimbursedAt), claim.reimbursedByName, claim.reimbursementReference].filter(Boolean).join(" · ")}</FactRow> : null}
+      </EditableFieldList>
+      {claim.decidedByName ? <ApprovalRow state={claim.status === "rejected" ? "rejected" : "approved"} label={claim.decidedByName}
+        description={[claim.decidedAt ? format.when(claim.decidedAt) : "", claim.decisionNote].filter(Boolean).join(" · ") || undefined} /> : null}
+      <ReviewFiles label={t("Receipt")} files={receipt}
+        empty={<span className={styles.muted}>{claim.noReceiptReason ? t("None: {reason}", { reason: claim.noReceiptReason }) : t("None yet")}</span>} />
     </div>
-    {rejecting ? <RejectDialog reference={claim.reference} error={notice} onClose={() => { setRejecting(false); setNotice(""); }}
-      onSave={async (note) => { if (!(await run("reject", { note }))) throw new FormNotSaved(); setRejecting(false); }} /> : null}
+    {reviewing ? <ReviewDialog title={t("Review")} description={`${claim.reference} · ${claim.claimedByName}`} confirmLabel={t("Approve")} rejectLabel={t("Reject")}
+      onClose={() => setReviewing(false)}
+      facts={[
+        { label: t("Amount"), value: format.money(claim.amount, claim.currency) },
+        { label: t("What for"), value: claim.description },
+        { label: t("Spent on"), value: format.day(claim.spentOn) },
+        { label: t("Kind"), value: categories[claim.category] },
+        { label: t("Package"), value: claim.packageName ?? t("Not in a package") },
+        ...(!claim.receiptName && claim.noReceiptReason ? [{ label: t("Receipt"), value: t("None: {reason}", { reason: claim.noReceiptReason }) }] : []),
+      ]}
+      files={receipt}
+      onConfirm={async (note) => { await change("approve", note ? { note } : {}); setReviewing(false); }}
+      onReject={async (note) => { await change("reject", { note }); setReviewing(false); }} /> : null}
   </InspectorSheet>;
-}
-
-function RejectDialog({ reference, error, onClose, onSave }: { reference: string; error: string; onClose: () => void; onSave: (note: string) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={t("Reject {claim}", { claim: reference })} onClose={onClose} cancelLabel={t("Back")} error={error || undefined}
-    isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()} submitLabel={t("Reject")} submitVariant="danger" onSubmit={() => onSave(note.trim())}>
-    <TextAreaField label={t("Why it's rejected")} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
 }
 
 /** A claim as its claimant writes it: saved as a draft, or submitted with its receipt (or why there's none). */

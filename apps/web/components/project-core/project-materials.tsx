@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Send, Sparkles } from "lucide-react";
 import {
-  Button, EmptyState, FormDialog, FormSection, ErrorState, GroupedTable, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, Skeleton, Switch, TextAreaField, TextInput,
-  type GroupedTableColumn,
+  Badge, Button, EmptyState, ErrorState, FileUploader, FormDialog, FormSection, GroupedTable, InlineNotice, InspectorSheet, MultiSelectField, ReviewFiles, SegmentedControl, SelectField, Skeleton, Switch, TextAreaField, TextInput, type GroupedTableColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { MaterialItem, MaterialsState, ScopeLine } from "@/lib/project-core/types";
 import { LineStatusLabel } from "../purchasing/order-labels";
 import { useProjectFormat } from "./format";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import { evidenceFiles, type EvidenceFile } from "@/lib/evidence/evidence";
+import { caseApi, caseRequest } from "@/lib/pre-project/content";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
@@ -68,7 +70,7 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
     { id: "spec", label: t("Finish"), width: "20%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.specification}</span> },
     { id: "used", label: t("For"), width: "22%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.usedIn.map((line) => line.title).join(", ")}</span> },
     { id: "decision", label: t("Client"), width: "18%", render: (item) => !item.clientChoice ? <span className={styles.muted}>{t("No client choice")}</span> : item.decision
-      ? <span className={styles.lineCell}><span className={styles.status} data-tone={item.decision.decision === "approved" ? "ok" : "off"}>{item.decision.decision === "approved" ? t("Approved") : t("Rejected")}</span>
+      ? <span className={styles.lineCell}><span><Badge tone={item.decision.decision === "approved" ? "success" : "danger"}>{item.decision.decision === "approved" ? t("Approved") : t("Rejected")}</Badge></span>
           {item.decision.note ? <small>{item.decision.note}</small> : null}</span>
       : <span className={styles.muted}>{locked ? t("Waiting") : "—"}</span> },
     // PLM-072: where each material has got to, as Purchasing works it out from orders, deliveries and site reports.
@@ -81,7 +83,8 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
     : qs ? t("Changed since the QS confirmed it on {date}", { date: format.when(qs.confirmedAt) }) : data.qsGate ? t("Not confirmed by the QS yet") : "";
   return <div className={styles.changes}>
     <div className={styles.scopeToolbar}>
-      <span className={styles.materialStatus} data-state={data.state}>{status}</span>
+      <Badge tone={data.state === "signed_off" ? "success" : data.state === "changes_requested" || data.state === "changed" ? "warning" : "neutral"}>{status}</Badge>
+      {latest?.decisionFiles?.length && (data.state === "signed_off" || data.state === "changes_requested") ? <ReviewFiles label={t("The client's decision")} files={evidenceFiles(workspaceId, latest.decisionFiles)} /> : null}
       {data.canConfirmQs && data.items.length && !qs?.current ? <Button size="compact" onPress={() => void run("confirm_material_list")}>{t("Confirm material list (QS)")}</Button> : null}
       {data.canEdit ? <div className={styles.toolbarActions}>
         {!locked ? <>
@@ -102,8 +105,8 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
           sections={[{ id: "all", label: t("{count} materials", { count: data.items.length }), rows: data.items, emptyMessage: "" }]}
           onRowAction={data.canEdit ? setEditing : undefined} />
       : <EmptyState illustration={null} title={t("No materials yet")} description={t("List every material and finish the client signs off before ordering.")} />}
-    {editing ? <MaterialSheet item={editing === "new" ? null : editing} lines={lines} run={run} locked={locked} onClose={() => setEditing(null)} /> : null}
-    {deciding ? <DecisionDialog data={data} run={run} onClose={() => setDeciding(false)} /> : null}
+    {editing ? <MaterialSheet workspaceId={workspaceId} caseId={data.caseId ?? null} item={editing === "new" ? null : editing} lines={lines} run={run} locked={locked} onClose={() => setEditing(null)} /> : null}
+    {deciding ? <DecisionDialog workspaceId={workspaceId} data={data} run={run} onClose={() => setDeciding(false)} /> : null}
   </div>;
 }
 
@@ -111,23 +114,28 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
  * A material: what it is, who supplies it, what it's for. While the list is with the client it reads only; the team's
  * product details for the technical team (PLM-055) can be added at any time and never undo a sign-off.
  */
-function MaterialSheet({ item, lines, run, locked, onClose }: { item: MaterialItem | null; lines: ScopeLine[]; run: Run; locked: boolean; onClose: () => void }) {
+function MaterialSheet({ workspaceId, caseId, item, lines, run, locked, onClose }: { workspaceId: string; caseId: string | null; item: MaterialItem | null; lines: ScopeLine[]; run: Run; locked: boolean; onClose: () => void }) {
   const t = useT();
   const format = useProjectFormat();
   const [form, setForm] = useState({ name: item?.name ?? "", code: item?.code ?? "", specification: item?.specification ?? "", supplier: item?.supplier ?? "",
-    quantity: item?.quantity ? String(Number(item.quantity)) : "", unit: item?.unit ?? "", note: item?.note ?? "" });
+    quantity: item?.quantity ? String(Number(item.quantity)) : "", unit: item?.unit ?? "", note: item?.note ?? "",
+    brand: item?.brand ?? "", colour: item?.colour ?? "", size: item?.size ?? "", finish: item?.finish ?? "" });
+  // Guide step 17: the sample photo, kept as a file of the project's case.
+  const [photo, setPhoto] = useState<string | null>(item?.samplePhotoAssetId ?? null);
+  const [photoError, setPhotoError] = useState("");
   const [clientChoice, setClientChoice] = useState(item?.clientChoice ?? true);
   const [used, setUsed] = useState<Set<string>>(new Set(item?.boqLineIds ?? []));
   const [details, setDetails] = useState(item?.teamNote ?? "");
   const [busy, setBusy] = useState(false);
   const set = (key: keyof typeof form) => (value: string) => setForm({ ...form, [key]: value });
   const original = { name: item?.name ?? "", code: item?.code ?? "", specification: item?.specification ?? "", supplier: item?.supplier ?? "",
-    quantity: item?.quantity ? String(Number(item.quantity)) : "", unit: item?.unit ?? "", note: item?.note ?? "" };
-  const changed = !item || JSON.stringify(form) !== JSON.stringify(original) || clientChoice !== item.clientChoice
+    quantity: item?.quantity ? String(Number(item.quantity)) : "", unit: item?.unit ?? "", note: item?.note ?? "",
+    brand: item?.brand ?? "", colour: item?.colour ?? "", size: item?.size ?? "", finish: item?.finish ?? "" };
+  const changed = !item || JSON.stringify(form) !== JSON.stringify(original) || clientChoice !== item.clientChoice || photo !== (item.samplePhotoAssetId ?? null)
     || JSON.stringify([...used].sort()) !== JSON.stringify([...item.boqLineIds].sort());
   const save = async () => {
     setBusy(true);
-    let saved = locked || !changed || await run("save_material", { id: item?.id, ...form, quantity: form.quantity || null, boqLineIds: [...used], clientChoice });
+    let saved = locked || !changed || await run("save_material", { id: item?.id, ...form, quantity: form.quantity || null, boqLineIds: [...used], clientChoice, samplePhotoAssetId: photo });
     if (saved && item && details.trim() !== (item.teamNote ?? "")) saved = await run("set_material_details", { itemId: item.id, note: details.trim() });
     if (saved) onClose();
     setBusy(false);
@@ -144,6 +152,25 @@ function MaterialSheet({ item, lines, run, locked, onClose }: { item: MaterialIt
         <TextInput label={t("Name")} isRequired isReadOnly={locked} value={form.name} onChange={set("name")} />
         <TextInput label={t("Finish or specification")} isReadOnly={locked} value={form.specification} onChange={set("specification")} />
         <TextInput label={t("Code")} isReadOnly={locked} value={form.code} onChange={set("code")} />
+      </FormSection>
+      <FormSection title={t("Details")}>
+        <div className={styles.quantityUnit}>
+          <TextInput label={t("Brand")} isReadOnly={locked} value={form.brand} onChange={set("brand")} />
+          <TextInput label={t("Colour")} isReadOnly={locked} value={form.colour} onChange={set("colour")} />
+        </div>
+        <div className={styles.quantityUnit}>
+          <TextInput label={t("Size")} isReadOnly={locked} value={form.size} onChange={set("size")} />
+          <TextInput label={t("Finish")} isReadOnly={locked} value={form.finish} onChange={set("finish")} />
+        </div>
+        {caseId ? <>
+          {photo ? <ReviewFiles label={t("Sample photo")} files={[{ id: photo, name: t("Sample photo"), href: caseApi(workspaceId, caseId, `assets/${photo}`), previewHref: caseApi(workspaceId, caseId, `assets/${photo}?preview=1`) }]}
+            onRemove={locked ? undefined : () => setPhoto(null)} /> : null}
+          {!locked ? <FileUploader appearance="button" accept="image/*" label={photo ? t("Replace the sample photo") : t("Add a sample photo")} multiple={false}
+            onFiles={async (files) => { const file = files[0]; if (!file) return; setPhotoError("");
+              try { const body = new FormData(); body.set("file", file); const asset = await caseRequest<{ id: string }>(workspaceId, caseId, `finishes/assets/${crypto.randomUUID()}`, "POST", body); setPhoto(asset.id); }
+              catch (cause) { setPhotoError(cause instanceof Error ? cause.message : t("The file could not be uploaded.")); } }} /> : null}
+          {photoError ? <InlineNotice tone="error" message={photoError} /> : null}
+        </> : null}
       </FormSection>
       <FormSection title={t("Supply")}>
         <TextInput label={t("Supplier")} isReadOnly={locked} value={form.supplier} onChange={set("supplier")} />
@@ -167,17 +194,21 @@ function MaterialSheet({ item, lines, run, locked, onClose }: { item: MaterialIt
 }
 
 /** The client's decision on the revision they have: approve or reject each material (saying what they want instead). */
-function DecisionDialog({ data, run, onClose }: { data: MaterialsState; run: Run; onClose: () => void }) {
+function DecisionDialog({ workspaceId, data, run, onClose }: { workspaceId: string; data: MaterialsState; run: Run; onClose: () => void }) {
   const t = useT();
   const [decisions, setDecisions] = useState<Record<string, { decision: "approved" | "rejected"; note: string }>>(
     () => Object.fromEntries(data.items.map((item) => [item.id, { decision: "approved" as const, note: "" }])));
   const [decidedBy, setDecidedBy] = useState("");
   const [method, setMethod] = useState<string>("signed_document");
   const [note, setNote] = useState("");
-  const valid = decidedBy.trim() && Object.values(decisions).every((entry) => entry.decision === "approved" || entry.note.trim());
+  // §0.3 P0: the signed list or the client's email goes with the decision staff take down.
+  const [files, setFiles] = useState<EvidenceFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRequired = method === "signed_document" || method === "email";
+  const valid = decidedBy.trim() && Object.values(decisions).every((entry) => entry.decision === "approved" || entry.note.trim()) && !uploading && (!fileRequired || files.length > 0);
   return <FormDialog size="lg" title={t("Record the client's decision")} onClose={onClose} isDirty={Boolean(decidedBy.trim() || note.trim())} isSubmitDisabled={!valid} submitLabel={t("Save")}
     onSubmit={async () => {
-      await run("record_materials_decision", { decidedBy: decidedBy.trim(), method, note: note.trim(),
+      await run("record_materials_decision", { decidedBy: decidedBy.trim(), method, note: note.trim(), evidenceFileIds: files.map((file) => file.id),
         decisions: Object.entries(decisions).map(([itemId, entry]) => ({ itemId, decision: entry.decision, note: entry.note.trim() })) }, { inDialog: true });
       onClose();
     }}>
@@ -196,6 +227,7 @@ function DecisionDialog({ data, run, onClose }: { data: MaterialsState; run: Run
       <FormSection title={t("Client decision")}>
         <TextInput label={t("Decided by")} isRequired maxLength={160} value={decidedBy} onChange={setDecidedBy} />
         <SelectField label={t("How")} isRequired selectedKey={method} onSelectionChange={(key) => setMethod(String(key))} items={METHODS.map(([id, label]) => ({ id, label: t(label as never) }))} />
+        <EvidenceField workspaceId={workspaceId} kind="material_decision" isRequired={fileRequired} label={fileRequired ? t("The signed form or email") : undefined} value={files} onChange={setFiles} onBusy={setUploading} />
         <TextAreaField label={t("Note")} value={note} onChange={setNote} />
       </FormSection>
   </FormDialog>;

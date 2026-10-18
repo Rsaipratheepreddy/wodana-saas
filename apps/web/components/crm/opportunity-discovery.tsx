@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { LocateFixed } from "lucide-react";
-import { Button, DateField, FileUploader, InlineNotice, InspectorSheet, MoneyField, NumericInput, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, DateField, EmptyState, FileUploader, InlineNotice, InspectorSheet, MoneyField, NumericInput, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
 import { OpenInMaps } from "@/components/ui/site-location";
 import { isShortMapLink, parseMapLink, validCoordinates } from "@/lib/geo/map-link";
 import { useCurrentPosition } from "@/lib/geo/use-current-position";
@@ -224,9 +224,8 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
         </> : null}
         {group === "package" ? <>
           {offered.length
-            ? <SelectField items={offered.map((item) => ({ id: item.id, label: item.name }))} label={t("Package")} onSelectionChange={(key) => set("designPackageId")(String(key ?? ""))} placeholder={t("Choose a package")} selectedKey={draft.designPackageId || null} />
-            : <p className={styles.empty}>{t("No design packages are offered yet.")}</p>}
-          {pkg?.unitDefinition ? <p className={styles.empty}>{pkg.unitDefinition}</p> : null}
+            ? <SelectField description={pkg?.unitDefinition || undefined} items={offered.map((item) => ({ id: item.id, label: item.name }))} label={t("Package")} onSelectionChange={(key) => set("designPackageId")(String(key ?? ""))} placeholder={t("Choose a package")} selectedKey={draft.designPackageId || null} />
+            : <EmptyState illustration={null} title={t("No design packages are offered yet.")} />}
           {pkg?.rateFrom ? <>
             <MoneyField currency={pkg.currency} description={t("Above {rate}, it is approved before the fee uses it.", { rate: formatMoney(pkg.rate, pkg.currency, locale) })} label={t("Agreed rate")} min="0"
               onChange={(next) => set("designRate")(decimal(next))} value={draft.designRate} />

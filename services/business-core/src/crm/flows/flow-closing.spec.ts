@@ -8,7 +8,7 @@ describe("PLM-102 closing events per enquiry type (configuration)", () => {
     for (const template of FLOW_TEMPLATES) expect(TEMPLATE_CLOSING[template.key], template.key).toBeDefined();
     for (const code of Object.keys(STARTER_FLOWS)) expect(TEMPLATE_CLOSING[code], code).toBeDefined();
     expect(TEMPLATE_CLOSING.furniture_all_paths.paths).toEqual({
-      take_home_now: "collected", in_stock_delivery: "delivered", supplier_order: "collected_or_delivered", core_collection_factory: "delivered", bespoke: "delivered",
+      take_home_now: "collected", in_stock_delivery: "delivered", supplier_order: "delivered", core_collection_factory: "delivered", bespoke: "delivered",
     });
     expect(TEMPLATE_CLOSING.design_concept.default).toBe("design_handover");
     expect(TEMPLATE_CLOSING.design_and_furniture.default).toBe("all_produced_delivered_installed");
@@ -28,7 +28,8 @@ describe("PLM-102 closing events per enquiry type (configuration)", () => {
   it("takes the path's own rule, else the flow's", () => {
     const rules = closingRows(TEMPLATE_CLOSING.furniture).map((row) => ({ ...row, version: 1 }));
     expect(closingEventFor(rules, "take_home_now")).toBe("collected");
-    expect(closingEventFor(rules, "supplier_order")).toBe("collected_or_delivered");
+    // Guide J: a supplier order (Furniture C) closes on delivery.
+    expect(closingEventFor(rules, "supplier_order")).toBe("delivered");
     expect(closingEventFor(rules, null)).toBe("delivered");
     expect(closingEventFor([], "bespoke")).toBeNull();
   });

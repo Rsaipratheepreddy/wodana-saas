@@ -18,8 +18,12 @@ export const DEFAULT_DESIGN_TEAM: DesignTeamConfig = {
   material_coordinator: "material_coordinator", technicalLeadRoleCode: "technical_lead",
 };
 
-/** The slots the allocation step asks the Account Manager (or the reviewer) for, once the fee is paid. */
+/**
+ * The slots the allocation step asks the Account Manager (or the reviewer) for, once the fee is paid. Guide step 1: the
+ * Visualiser too when the package has renders, and the Material Coordinator on jobs with a material selection.
+ */
 export const ALLOCATION_SLOTS: readonly TeamSlot[] = ["lead_designer", "junior_designer", "sales_admin"];
+export type AllocationJob = { renders: boolean; materialSelection: boolean };
 /** Slots of designers: changing who holds one after it was allocated needs a reason (kept in the history). */
 export const DESIGNER_SLOTS: readonly TeamSlot[] = ["lead_designer", "junior_designer"];
 
@@ -31,7 +35,7 @@ export type Setter = "account_manager" | "reviewer" | "lead_designer" | "technic
  */
 export function slotSetters(slot: TeamSlot, reviewed: boolean): Setter[] {
   if (slot === "lead_designer") return reviewed ? ["reviewer"] : ["account_manager"];
-  if (slot === "visualiser") return ["lead_designer"];
+  if (slot === "visualiser") return ["account_manager", "lead_designer"];
   if (slot === "draftsman") return ["technical_lead"];
   if (slot === "material_coordinator") return ["account_manager", "lead_designer"];
   return ["account_manager"];
@@ -53,11 +57,12 @@ export function designerPairProblem(lead: string | null | undefined, junior: str
 }
 
 /** The slots the allocation needs on this workspace: those it configures (a slot set to no role isn't asked). */
-export const allocationSlots = (config: DesignTeamConfig) => ALLOCATION_SLOTS.filter((slot) => Boolean(config[slot]));
+export const allocationSlots = (config: DesignTeamConfig, job?: AllocationJob) =>
+  [...ALLOCATION_SLOTS, ...(job?.renders ? ["visualiser" as const] : []), ...(job?.materialSelection ? ["material_coordinator" as const] : [])].filter((slot) => Boolean(config[slot]));
 
 /** What the allocation still misses: each configured slot needs a person, or (all but the lead) "not needed on this job". */
-export function allocationMissing(config: DesignTeamConfig, team: Map<string, { membershipId: string | null; notApplicable: boolean }>) {
-  return allocationSlots(config).filter((slot) => {
+export function allocationMissing(config: DesignTeamConfig, team: Map<string, { membershipId: string | null; notApplicable: boolean }>, job?: AllocationJob) {
+  return allocationSlots(config, job).filter((slot) => {
     const choice = team.get(config[slot]!);
     if (!choice) return true;
     return slot === "lead_designer" ? !choice.membershipId : !choice.membershipId && !choice.notApplicable;

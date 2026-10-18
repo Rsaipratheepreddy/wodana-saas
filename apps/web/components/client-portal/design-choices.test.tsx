@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type { PortalApi } from "@/lib/client-portal/client";
-import type { PortalDesignChoices, PortalDesignThread } from "@/lib/client-portal/types";
+import type { PortalChange, PortalDesignChoices, PortalDesignThread } from "@/lib/client-portal/types";
 import { DesignComments } from "./decisions/design-comments";
 import { DesignChoices } from "./sections/design-choices";
 import type { PortalFormat } from "./portal-format";
@@ -35,6 +35,25 @@ describe("the client's design choices in the portal (plan §6.7a)", () => {
     fireEvent.click(choose);
     await waitFor(() => expect(api.command).toHaveBeenCalledWith(expect.any(String), { action: "presentation_choice", caseId: "c1", presentationId: "p1", version: 3, decision: "choose", optionId: "o2" }));
     expect(reload).toHaveBeenCalled();
+  });
+
+  it("says further changes are paid once the free revisions are used, and lists the extra revision's change once sent", async () => {
+    const extra: PortalChange = { id: "cr4", reference: "CR-004", title: "Extra revision: Concepts", description: "Lighter floors", status: "waiting", raisedByClient: false, mine: false,
+      createdAt: "2031-04-03T10:00:00Z", sharedAt: "2031-04-04T10:00:00Z", currency: "AED", priceImpact: "1500.00", timeImpactDays: 0, handoverBefore: null, handoverAfter: null, designImpact: "",
+      lines: [], decidedAt: null, decidedBy: null, method: null, declineNote: null, version: 2, signed: false, canDecide: true };
+    const opened = vi.fn();
+    const { rerender } = render(<DesignSystemProvider><DesignChoices caseId="c1" choices={choices} api={portalApi()} format={format} onChanged={vi.fn()} /></DesignSystemProvider>);
+    expect(screen.queryByText("Further changes are a paid change.")).not.toBeInTheDocument();
+    const paid: PortalDesignChoices = { ...choices, presentations: [{ ...choices.presentations[0], paidChanges: true }], extraRevisions: [{ stage: "concepts", label: "Concepts", changeId: "cr4" }] };
+    rerender(<DesignSystemProvider><DesignChoices caseId="c1" choices={paid} api={portalApi()} format={format} onChanged={vi.fn()} changes={[extra]} onOpenChange={opened} /></DesignSystemProvider>);
+    expect(screen.getByText("Further changes are a paid change.")).toBeInTheDocument();
+    const row = within(screen.getByRole("list", { name: "Extra revisions" })).getByRole("button", { name: /CR-004 · Extra revision: Concepts/ });
+    expect(row).toHaveTextContent("+AED 1500.00");
+    fireEvent.click(row);
+    expect(opened).toHaveBeenCalledWith("cr4");
+    // A change not sent to the client isn't in their list, so nothing is shown for it.
+    rerender(<DesignSystemProvider><DesignChoices caseId="c1" choices={paid} api={portalApi()} format={format} onChanged={vi.fn()} changes={[]} onOpenChange={opened} /></DesignSystemProvider>);
+    expect(screen.queryByRole("list", { name: "Extra revisions" })).not.toBeInTheDocument();
   });
 
   it("confirms a changed choice, and declines one only with what the client wants instead", async () => {

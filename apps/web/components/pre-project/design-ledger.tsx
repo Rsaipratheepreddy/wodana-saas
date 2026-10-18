@@ -5,12 +5,11 @@ import Link from "next/link";
 import { FileText, Plus } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
-  Badge, Button, ComboboxField, DateField, EmptyState, ErrorState, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, NumericInput, RecordTable, SegmentedControl,
-  SelectField, Skeleton, TextAreaField, TextInput, formatDecimal, formatMoney, useDesignSystem, type DataGridColumn,
+  Badge, Button, ComboboxField, DateField, EmptyState, ErrorState, formatDecimal, formatMoney, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, NumericInput, RecordTable, ReviewFiles, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { zonedToday } from "@/lib/crm/zoned-time";
-import { caseRequest, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
+import { caseApi, caseRequest, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
 import {
   clientStatus, CONFIRMATION_METHODS, LEDGER_SOURCES, LEDGER_STATE_LABEL, ledgerStateTone, lineTotal, METHOD_LABEL, signedAmount, SOURCE_LABEL,
   type LedgerEntry, type LedgerVersion, type LedgerView,
@@ -339,7 +338,8 @@ function EntryForm({ workspaceId, caseId, rooms, currency, entry, categories, ma
         <SelectField isRequired label={t("Source")} items={LEDGER_SOURCES.filter((source) => source !== "portal").map((source) => ({ id: source, label: t(SOURCE_LABEL[source]) }))} selectedKey={draft.source} onSelectionChange={(key) => set("source")(String(key))} />
         <DateField isRequired label={t("Said on")} maxValue={parseDate(today)} value={draft.saidOn ? parseDate(draft.saidOn) : null} onChange={(date) => set("saidOn")(date?.toString() ?? "")} />
       </FormRow>
-      {draft.evidence ? <p className={styles.muted}>{t("Evidence: {name}", { name: draft.evidence.name })}</p>
+      {draft.evidence ? <ReviewFiles label={t("Attach evidence")} onRemove={() => set("evidence")(null)} files={[{ id: draft.evidence.id, name: draft.evidence.name, href: caseApi(workspaceId, caseId, `assets/${draft.evidence.id}?view=1`),
+        previewHref: draft.evidence.hasPreview ? caseApi(workspaceId, caseId, `assets/${draft.evidence.id}?preview=1`) : null }]} />
         : <AssetUpload workspaceId={workspaceId} caseId={caseId} multiple={false} label={t("Attach evidence")} onBusy={setUploading} onError={setError} onUploaded={(asset) => set("evidence")(asset)} />}
       <TextInput label={t("Evidence note")} maxLength={2000} value={draft.evidenceNote} onChange={set("evidenceNote")} />
       <TextAreaField label={t("Note")} maxLength={2000} value={draft.note} onChange={set("note")} />

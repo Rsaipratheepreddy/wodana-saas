@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
-import { Button, ErrorState, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
+import { Button, EditableFieldList, ErrorState, FactRow, InlineNotice, MeasurementInput, SelectField, Skeleton, TextLink } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { SourcingRequestError, sourcingApi, type ClipField, type ItemSource } from "@/lib/workspace/product-sourcing";
 import { ProvenanceNote } from "./product-clip-dialog";
@@ -64,7 +64,8 @@ function SizeEditor({ workspaceId, itemId, canManage, data, notes, error, onErro
   return <div className={styles.panel}>
     {error ? <InlineNotice message={error} tone="error" /> : null}
     <div className={styles.sizeGrid} role="group" aria-label={t("Size")}>
-      {SIZE_KEYS.map((key) => <TextInput dir="ltr" isReadOnly={!canManage} key={key} label={labels[key]} maxLength={12} onChange={(value) => setDraft({ ...draft, [key]: value })} value={draft[key]} />)}
+      {SIZE_KEYS.map((key) => <MeasurementInput isReadOnly={!canManage} key={key} label={labels[key]} minValue={0} formatOptions={{ maximumFractionDigits: 2 }} unit={draft.unit}
+        onChange={(next) => setDraft({ ...draft, [key]: Number.isFinite(next) ? String(next) : "" })} value={draft[key] ? Number(draft[key]) : Number.NaN} />)}
       <SelectField isDisabled={!canManage} items={UNITS.map((unit) => ({ id: unit, label: unit }))} label={t("Unit")} onSelectionChange={(key) => setDraft({ ...draft, unit: String(key) })} selectedKey={draft.unit} />
     </div>
     {notes}
@@ -77,11 +78,9 @@ export function CatalogItemProvenance({ source }: { source: NonNullable<ItemSour
   const t = useT();
   const shown: Partial<Record<ClipField, string>> = { name: t("Name"), price: t("Price"), finish: t("Finish"), material: t("Material"), colour: t("Colour"), lead_time_days: t("Lead time (days)") };
   return <div className={styles.panel}>
-    <p className={styles.source}><span dir="ltr">{source.host}</span><a href={source.finalUrl} rel="noopener noreferrer nofollow" target="_blank"><ExternalLink aria-hidden="true" data-directional="true" size={12} /> {t("Supplier page")}</a></p>
-    <dl className={styles.facts}>{source.fields.filter((row) => shown[row.field] && row.finalValue).map((row) => <div key={row.field}>
-      <dt>{shown[row.field]}</dt>
-      <dd dir="auto">{row.finalValue}</dd>
-      <ProvenanceNote row={row} />
-    </div>)}</dl>
+    <p className={styles.source}><span dir="ltr">{source.host}</span><TextLink href={source.finalUrl} rel="noopener noreferrer nofollow" target="_blank"><ExternalLink aria-hidden="true" data-directional="true" size={12} /> {t("Supplier page")}</TextLink></p>
+    <EditableFieldList layout="stacked">{source.fields.filter((row) => shown[row.field] && row.finalValue).map((row) => <FactRow key={row.field} label={shown[row.field]!}>
+      <bdi dir="auto">{row.finalValue}</bdi> <ProvenanceNote row={row} />
+    </FactRow>)}</EditableFieldList>
   </div>;
 }

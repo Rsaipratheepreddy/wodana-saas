@@ -3,7 +3,7 @@ import type { PoolClient } from "pg";
 import { recordAudit } from "../../../audit/record-audit";
 import { readProjectAccess } from "../../../client-portal/portal-settings";
 import { firstName, normalizeTemplateParameter, renderTemplate, TEMPLATE_SOURCE_NAMES, templatePlaceholders, type TemplateVariableSource } from "./inbox-rules";
-import { CLOSING_TEMPLATE_CODES, closingFieldsOf, readClosingSettings, renderClosing } from "./closing-messages";
+import { CLOSING_TEMPLATE_CODES, closingCompany, closingFieldsOf, readClosingSettings, renderClosing } from "./closing-messages";
 import { resolveTemplateSources, type TemplateContext } from "./template-variables";
 import { starterForEvent, startersForEvent, type StarterEvent } from "./whatsapp-starter-pack";
 import { clientDailyGate } from "../../../reminders/delivery/client-gate";
@@ -146,9 +146,9 @@ async function welcomeInWindow(db: Db, workspaceId: string, partyId: string) {
     `SELECT 1 FROM crm_conversations WHERE workspace_id = $1 AND party_id = $2 AND channel = 'whatsapp' AND last_inbound_at > now() - interval '24 hours' LIMIT 1`, [workspaceId, partyId]);
   if (!open.rowCount) return null;
   const text = (await readClosingSettings(db, workspaceId)).texts.received;
-  if (closingFieldsOf(text).some((field) => field !== "name")) return null;
+  if (closingFieldsOf(text).some((field) => field !== "name" && field !== "company")) return null;
   const party = (await db.query<{ name: string | null }>(`SELECT display_name AS name FROM crm_parties WHERE workspace_id = $1 AND id = $2`, [workspaceId, partyId])).rows[0];
-  return renderClosing(text, { name: firstName(party?.name) }) || null;
+  return renderClosing(text, { name: firstName(party?.name), company: await closingCompany(db, workspaceId) }) || null;
 }
 
 /** A template's {{n}} values from the event's record, by the firm's mapping; the first missing one is named. */

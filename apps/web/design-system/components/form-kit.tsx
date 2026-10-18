@@ -213,6 +213,8 @@ function DialogFooter(props: Omit<Parameters<typeof FormFooter>[0], "onCancel">)
 export type FormDialogProps = {
   /** Defaults to open: most callers render the dialog only while it is open. */
   isOpen?: boolean;
+  /** An icon beside the title (see ControlledModalDialog). */
+  icon?: ReactNode;
   onClose: () => void;
   title: string;
   description?: ReactNode;
@@ -267,7 +269,7 @@ const FIRST_FIELD = "input:not([type=hidden]):not([disabled]):not([aria-hidden=t
  */
 export function FormDialog({
   autoFocus = true, cancelLabel, children, closeOnSuccess = false, conflict, description, draft, error, errorTitle, fieldMarkers, formClassName, formId: formIdProp,
-  hideSubmit, problemActions, problems, validation = "browser", isDirty = false, isDismissable, isOpen = true, isSubmitDisabled, isSubmitting: externalBusy = false, lead, onClose, onSubmit, secondaryAction, size, submitLabel, submitVariant, title,
+  hideSubmit, icon, problemActions, problems, validation = "browser", isDirty = false, isDismissable, isOpen = true, isSubmitDisabled, isSubmitting: externalBusy = false, lead, onClose, onSubmit, secondaryAction, size, submitLabel, submitVariant, title,
 }: FormDialogProps) {
   const t = useT();
   const generated = useId();
@@ -313,7 +315,7 @@ export function FormDialog({
   };
 
   const closeNow = (open: boolean) => { if (!open) onClose(); };
-  return <ControlledModalDialog description={description} footer={<DialogFooter cancelLabel={cancelLabel} formId={formId} hideSubmit={hideSubmit} isSubmitDisabled={isSubmitDisabled || conflicted} isSubmitting={submitting} secondary={secondaryAction} submitLabel={submitLabel} submitVariant={submitVariant} />}
+  return <ControlledModalDialog description={description} icon={icon} footer={<DialogFooter cancelLabel={cancelLabel} formId={formId} hideSubmit={hideSubmit} isSubmitDisabled={isSubmitDisabled || conflicted} isSubmitting={submitting} secondary={secondaryAction} submitLabel={submitLabel} submitVariant={submitVariant} />}
     isDirty={isDirty && !submitting} isDismissable={isDismissable ?? !submitting} isOpen={isOpen} keepsDraft={Boolean(draft)} onKeyDown={(event) => submitOnModEnter(event, form.current)} onOpenChange={closeNow} size={size} title={title}>
     <Form className={formClassName} errorSummary={validation === "browser"} fieldMarkers={fieldMarkers} id={formId} noValidate={validation === "caller" || undefined} onSubmit={(event) => void submit(event)} ref={form}>
       {draft?.restored ? <DraftNotice onDiscard={draft.discard} /> : null}

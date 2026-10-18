@@ -36,6 +36,8 @@ export function versionProblem(input: LedgerVersionInput, now = new Date()) {
   if (input.unitPrice && !MONEY.test(input.unitPrice)) return "Price must be an amount with at most two decimals";
   if (input.timeImpactDays !== null && input.timeImpactDays !== undefined && (!Number.isInteger(input.timeImpactDays) || Math.abs(input.timeImpactDays) > 365)) return "Time impact is a whole number of days within a year";
   if (!LEDGER_SOURCES.includes(input.source as LedgerSource)) return "Say where the choice came from";
+  // Guide step 2: during design every decision comes through the portal, a meeting, an email or a call, never WhatsApp.
+  if (input.source === "whatsapp") return "During design, choices come through the portal, not WhatsApp";
   if (!input.saidAt || Number.isNaN(Date.parse(input.saidAt))) return "Say when the choice was made";
   if (Date.parse(input.saidAt) > now.getTime() + 5 * 60_000) return "The choice can't be dated in the future";
   return originProblem(input);

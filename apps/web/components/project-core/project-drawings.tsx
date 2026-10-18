@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Send, Trash2 } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
-  Badge, Button, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormSection, GroupedTable, IconButton, InlineNotice, NumericInput, SegmentedControl, SelectField, Skeleton,
-  TextAreaField, TextInput, type GroupedTableColumn,
+  ActivityFeed, Badge, Button, DateField, EditableFieldList, EmptyState, ErrorState, FactRow, FileUploader, FormDialog, FormSection, GroupedTable, IconButton, InlineNotice, NumericInput, ReviewDialog, ReviewFiles,
+  SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, TypeChip, type ActivityItem, type GroupedTableColumn, type ReviewFile,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
@@ -114,7 +114,7 @@ export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: 
     {deciding ? <DrawingNeedDialog item={deciding} onClose={() => setDeciding(null)} onSave={async (needed, reason) => {
       await command("set_drawing_need", { lineId: deciding.lineId, needed, reason }, true); setDeciding(null);
     }} /> : null}
-    {dialog === "check" && latest ? <SiteCheckDialog revision={latest} design={design} onClose={() => setDialog(null)}
+    {dialog === "check" && latest ? <SiteCheckDialog revision={latest} design={design} files={latest.files.map((file) => ({ id: file.id, name: file.name, href: api.drawingUrl(projectId, file.id) }))} onClose={() => setDialog(null)}
       onSave={async (result, note) => { await command("check_drawings", { revisionId: latest.id, result, note }, true); setDialog(null); }} /> : null}
     {dialog === "measure" && measure ? <MeasureDialog unit={measure.unit} units={measure.units} today={format.today()} onClose={() => setDialog(null)}
       onSave={async (input, files) => {
@@ -134,22 +134,21 @@ export function ProjectDrawings({ workspaceId, projectId, version, onChanged }: 
   </div>;
 }
 
-/** Where the latest revision stands: its site check and the client's decision, with who and when. */
+/** Where the latest revision stands, as its approval trail: the check, sending it, and the client's decision, each with who and when. */
 function RevisionFacts({ revision }: { revision: DrawingRevision }) {
   const t = useT();
   const format = useProjectFormat();
-  const rows = [
-    revision.siteCheck ? { key: "check", label: revision.checkKind === "design" ? t("Design check") : t("Site check"), value: revision.siteCheck === "ok" ? t("OK") : t("Changes needed"),
-      meta: [revision.siteCheckNote, revision.siteCheckedByName, format.when(revision.siteCheckedAt)].filter(Boolean).join(" · ") } : null,
-    revision.sentAt ? { key: "sent", label: t("Sent to the client"), value: format.when(revision.sentAt), meta: revision.sentByName ?? "" } : null,
-    revision.decidedOn ? { key: "decision", label: t("Client's decision"), value: revision.status === "approved" ? t("Approved") : t("Changes asked"),
-      meta: [revision.decidedByName, format.day(revision.decidedOn), revision.decisionVia === "portal" ? t("In the client portal") : revision.decisionRecordedByName
-        ? t("Recorded by {name}", { name: revision.decisionRecordedByName }) : "", revision.decisionNote].filter(Boolean).join(" · ") } : null,
-  ].filter((row): row is { key: string; label: string; value: string; meta: string } => Boolean(row));
-  if (!rows.length) return null;
-  return <dl className={styles.detailList}>
-    {rows.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.value}{row.meta ? <small>{row.meta}</small> : null}</dd></div>)}
-  </dl>;
+  const items: ActivityItem[] = [
+    ...(revision.siteCheck ? [{ id: "check", kind: "approval" as const, actor: revision.siteCheckedByName ?? "", action: revision.checkKind === "design" ? t("Design check") : t("Site check"),
+      status: revision.siteCheck === "ok" ? { label: t("OK"), tone: "success" as const } : { label: t("Changes needed"), tone: "warning" as const },
+      detail: revision.siteCheckNote || undefined, occurredAt: format.when(revision.siteCheckedAt) }] : []),
+    ...(revision.sentAt ? [{ id: "sent", kind: "change" as const, actor: revision.sentByName ?? "", action: t("Sent to the client"), occurredAt: format.when(revision.sentAt) }] : []),
+    ...(revision.decidedOn ? [{ id: "decision", kind: "approval" as const, actor: revision.decidedByName ?? "", action: t("Client's decision"),
+      status: revision.status === "approved" ? { label: t("Approved"), tone: "success" as const } : { label: t("Changes asked"), tone: "warning" as const },
+      detail: revision.decisionNote || undefined, occurredAt: format.day(revision.decidedOn),
+      meta: [revision.decisionVia === "portal" ? t("In the client portal") : revision.decisionRecordedByName ? t("Recorded by {name}", { name: revision.decisionRecordedByName }) : ""].filter(Boolean) }] : []),
+  ];
+  return items.length ? <ActivityFeed items={items} /> : null;
 }
 
 /** PLM-149: the latest technical site measure: when and by whom, its dimensions, notes and photos. */
@@ -163,12 +162,11 @@ function MeasureFacts({ measure, earlier, fileUrl }: { measure: TechnicalMeasure
     { id: "value", label: t("Size"), width: "25%", align: "end", render: (line) => `${format.number(line.value)} ${units[line.unit]}` },
   ];
   return <>
-    <dl className={styles.detailList}>
-      <div><dt>{t("Technical site measure")}</dt><dd>{format.day(measure.measuredOn)}<small>{[measure.byName, earlier ? t("{count} earlier", { count: earlier }) : ""].filter(Boolean).join(" · ")}</small></dd></div>
-      {measure.note ? <div><dt>{t("Notes")}</dt><dd>{measure.note}</dd></div> : null}
-      {measure.files.length ? <div><dt>{t("Photos and files")}</dt><dd>{measure.files.map((file) =>
-        <a key={file.id} className={styles.detailLink} href={fileUrl(file.id)} target="_blank" rel="noreferrer">{file.name}</a>)}</dd></div> : null}
-    </dl>
+    <EditableFieldList>
+      <FactRow label={t("Technical site measure")}>{[format.day(measure.measuredOn), measure.byName, earlier ? t("{count} earlier", { count: earlier }) : ""].filter(Boolean).join(" · ")}</FactRow>
+      {measure.note ? <FactRow label={t("Notes")}>{measure.note}</FactRow> : null}
+    </EditableFieldList>
+    {measure.files.length ? <ReviewFiles label={t("Photos and files")} files={measure.files.map((file) => ({ id: file.id, name: file.name, href: fileUrl(file.id) }))} /> : null}
     <GroupedTable<MeasureLine & { id: string }> ariaLabel={t("Technical site measure")} columns={columns} selectable={false} getRowId={(line) => line.id} getRowLabel={(line) => line.label}
       sections={[{ id: measure.id, label: t("Final site dimensions"), rows: measure.lines.map((line, index) => ({ ...line, id: `${measure.id}:${index}` })), emptyMessage: t("No dimensions yet.") }]} />
   </>;
@@ -222,21 +220,16 @@ function MeasureDialog({ unit, units, today, onClose, onSave }: {
       </div>
       <TextAreaField label={t("Notes")} maxLength={4000} value={note} onChange={setNote} />
       <FileUploader accept={ACCEPT} label={t("Photos and files")} onFiles={(added) => setFiles((current) => [...current, ...added].slice(0, 30))} />
-      {files.length ? <small className={styles.muted}>{files.map((file) => file.name).join(", ")}</small> : null}
     </FormSection>
   </FormDialog>;
 }
 
-function SiteCheckDialog({ revision, design, onClose, onSave }: { revision: DrawingRevision; design: boolean; onClose: () => void; onSave: (result: "ok" | "changes", note: string) => Promise<void> }) {
+/** The site (or design) check opens the revision's drawings; passing it is one choice, changes need what to change. */
+function SiteCheckDialog({ revision, design, files, onClose, onSave }: { revision: DrawingRevision; design: boolean; files: ReviewFile[]; onClose: () => void; onSave: (result: "ok" | "changes", note: string) => Promise<void> }) {
   const t = useT();
-  const [result, setResult] = useState<"ok" | "changes">("ok");
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={design ? t("Design check for R{number}", { number: revision.number }) : t("Site check for R{number}", { number: revision.number })} onClose={onClose} isDirty={Boolean(note.trim())}
-    isSubmitDisabled={result === "changes" && !note.trim()} submitLabel={t("Save")} onSubmit={() => onSave(result, note.trim())}>
-    <SegmentedControl label={t("Result")} value={result} onChange={(value) => setResult(value as "ok" | "changes")}
-      options={[{ id: "ok", label: t("OK") }, { id: "changes", label: t("Changes needed") }]} />
-    <TextAreaField label={result === "changes" ? t("What needs changing") : t("Note")} isRequired={result === "changes"} maxLength={1000} value={note} onChange={setNote} />
-  </FormDialog>;
+  return <ReviewDialog title={design ? t("Design check for R{number}", { number: revision.number }) : t("Site check for R{number}", { number: revision.number })} files={files}
+    confirmLabel={design ? t("Matches the design") : t("Site check passed")} returnLabel={t("Changes needed")}
+    onConfirm={(note) => onSave("ok", note)} onReturn={(reason) => onSave("changes", reason)} onClose={onClose} />;
 }
 
 function ClientDecisionDialog({ revision, today, onClose, onSave }: {
@@ -285,12 +278,12 @@ function DrawingItems({ items, approved, canDecide, onDecide }: { items: Drawing
     { id: "item", label: t("Item"), width: "40%", render: (item) => <span className={styles.lineCell}><span>{item.title}</span>{item.area ? <small>{item.area}</small> : null}</span> },
     { id: "drawings", label: t("Drawings"), width: "35%", render: (item) => <span className={styles.lineCell}>
       <span><Badge tone={item.needed && approved === null ? "warning" : "success"}>{!item.needed ? t("Not needed") : approved === null ? t("Needed") : t("Approved R{number}", { number: approved })}</Badge></span>
-      <small>{item.override ? [item.override.reason, item.override.byName].filter(Boolean).join(" · ") : reasons[item.rule.reason]}</small>
+      {item.override ? <small>{[item.override.reason, item.override.byName].filter(Boolean).join(" · ")}</small> : <span><TypeChip>{reasons[item.rule.reason]}</TypeChip></span>}
     </span> },
     { id: "catalogue", label: t("Catalogue drawing"), width: canDecide ? "15%" : "25%", mobileHidden: true, render: (item) => item.catalogDrawingUrl
       ? <a className={styles.detailLink} href={item.catalogDrawingUrl} target="_blank" rel="noreferrer">{item.catalogName ?? t("Open the drawing")}</a> : <span className={styles.muted}>—</span> },
     ...(canDecide ? [{ id: "action", label: "", width: "10%", align: "end" as const, render: (item: DrawingItem) =>
-      <Button size="compact" variant="quiet" onPress={() => onDecide(item)}>{t("Change")}</Button> }] : []),
+      <Button size="compact" onPress={() => onDecide(item)}>{t("Change")}</Button> }] : []),
   ];
   return <GroupedTable<DrawingItem> ariaLabel={t("Items")} columns={columns} selectable={false} getRowId={(item) => item.lineId} getRowLabel={(item) => item.title}
     onRowAction={canDecide ? (item) => onDecide(item) : undefined}

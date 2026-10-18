@@ -37,7 +37,7 @@ describe("CRM lead qualification presentation", () => {
     });
     const access = {
       withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })),
-      hasPermission: vi.fn().mockResolvedValue(false),
+      hasPermission: vi.fn(async (_client: unknown, _workspace: string, _user: string, code: string) => code === "crm.leads.view_all"),
     };
     const service = new CrmLeadsService({} as never, access as never, {} as never, {} as never);
 
@@ -86,7 +86,7 @@ describe("CRM lead qualification presentation", () => {
     });
     const access = {
       withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })),
-      hasPermission: vi.fn().mockResolvedValue(false),
+      hasPermission: vi.fn(async (_client: unknown, _workspace: string, _user: string, code: string) => code === "crm.leads.view_all"),
     };
     const service = new CrmLeadsService({} as never, access as never, {} as never, {} as never);
 
@@ -112,7 +112,7 @@ describe("CRM lead qualification presentation", () => {
       if (/workspace_sales_settings|crm_lead_team|crm_taxonomy_options|AND user_id = \$2 AND status = 'active' LIMIT 1/.test(sql)) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query: ${sql}`);
     });
-    const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })), hasPermission: vi.fn().mockResolvedValue(false) };
+    const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })), hasPermission: vi.fn(async (_client: unknown, _workspace: string, _user: string, code: string) => code === "crm.leads.view_all") };
     const service = new CrmLeadsService({} as never, access as never, {} as never, {} as never);
     const result = await service.get({} as never, "workspace", "lead");
     expect(result).toMatchObject({ ownerMembershipId: "membership", ownerName: "Sara Sales" });

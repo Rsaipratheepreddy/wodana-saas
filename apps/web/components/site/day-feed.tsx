@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, EmptyState, SelectField, Switch } from "@/design-system";
+import { Badge, Button, EmptyState, InlineNotice, SelectField, Switch } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { SiteApi } from "@/lib/site/client";
 import type { DayCard as DayCardData, DayFeed as DayFeedData, DayReport } from "@/lib/site/types";
@@ -105,7 +105,7 @@ export function DayFeed({ api, projectId, feed, startedOn, me, canReport, canApp
         {canReport ? <Button size="compact" variant="quiet" onPress={() => onAdd(entry.day)}>{t("Add report")}</Button> : null}
       </li>)}</ol>
       : <EmptyState illustration={null} title={t("No days match")} action={<Button onPress={() => setFilters(NO_FILTERS)}>{t("Clear filters")}</Button>} />}
-    {problem ? <p className={styles.problem} role="alert">{problem}</p> : null}
+    {problem ? <InlineNotice tone="error" message={problem} /> : null}
     {more ? <Button className={styles.earlier} variant="quiet" isLoading={loading} onPress={() => void loadEarlier()}>{t("Earlier days")}</Button> : null}
   </div>;
 }

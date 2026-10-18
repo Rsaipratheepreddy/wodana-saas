@@ -376,7 +376,12 @@
     "unassignAfterWorkingDay": true
   },
   "enquiryRequirements": [
-    { "_note": "PLM-096 / PLM-155: location and the client's target completion before the Intro (plot size and floor plan are already required to book it).", "field": "area", "requiredAt": "book_intro" },
+    { "_note": "Guide D (convert gate): email, full address, floor plan or a size estimate (Not needed for furniture), project type and budget range before converting; the client's target completion before the Intro (PLM-096 / PLM-155).", "field": "email", "requiredAt": "convert" },
+    { "field": "area", "requiredAt": "convert" },
+    { "field": "address", "requiredAt": "convert" },
+    { "field": "floorPlan", "requiredAt": "convert" },
+    { "field": "projectType", "requiredAt": "convert" },
+    { "field": "budgetRange", "requiredAt": "convert" },
     { "field": "targetCompletion", "requiredAt": "book_intro" }
   ]
 }

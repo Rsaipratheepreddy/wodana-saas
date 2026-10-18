@@ -2,6 +2,8 @@ import { NotFoundException } from "@nestjs/common";
 import { PDFDocument, rgb } from "pdf-lib";
 import type { PoolClient } from "pg";
 import { effectivePortalBrand } from "../commercial/effective-brand";
+import { loadLeadOptions } from "../crm/leads/lead-options";
+import { consultationQuestions } from "../crm/opportunities/consultation-questions";
 import { PdfText, cleanText, type TextWeight } from "./pdf-text";
 
 type Db = Pick<PoolClient, "query">;
@@ -10,6 +12,8 @@ export type IntroFacts = {
   brand: { name: string; accent: string | null };
   title: string; reference: string | null; clientName: string; enquiryType: string | null; clientType: string | null;
   location: string | null; area: string | null; areaUnit: string | null; spaces: number | null; clientEmail: string | null; floorPlan: boolean;
+  /** Guide E: the enquiry's requirement fields on the page too (labels as the firm's lists name them). */
+  budgetRange?: string | null; projectType?: string | null; targetCompletion?: string | null; summary?: string | null; floorPlanEstimate?: string | null;
   answers: Array<{ label: string; value: string }>;
 };
 
@@ -31,10 +35,12 @@ export function answerText(value: unknown, options?: Array<{ id: string; label: 
 /** PLM-106: the opportunity's facts and discovery answers, as the intro deck's page 3 shows them. */
 export async function introFacts(db: Db, workspaceId: string, opportunityId: string): Promise<IntroFacts> {
   const row = (await db.query<{ title: string; reference: string | null; clientName: string | null; enquiryType: string | null; clientType: string | null;
-    area: string | null; areaUnit: string | null; spaces: number | null; location: string | null; clientEmail: string | null; floorPlan: boolean }>(
+    area: string | null; areaUnit: string | null; spaces: number | null; location: string | null; clientEmail: string | null; floorPlan: boolean;
+    budgetRange: string | null; projectType: string | null; targetCompletion: string | null; summary: string | null; enquiryPlan: { status?: string; builtUpArea?: string; assetId?: string } | null }>(
     `SELECT opportunity.title, opportunity.reference, party.display_name AS "clientName", enquiry.service_type AS "enquiryType", enquiry.details->>'customerType' AS "clientType",
             discovery.area::text AS area, discovery.area_unit AS "areaUnit", discovery.spaces, discovery.property_location AS location, discovery.client_email AS "clientEmail",
-            discovery.floor_plan_asset_id IS NOT NULL AS "floorPlan"
+            discovery.floor_plan_asset_id IS NOT NULL AS "floorPlan", enquiry.details->>'budgetRange' AS "budgetRange", enquiry.details->>'projectType' AS "projectType",
+            enquiry.details->>'targetCompletion' AS "targetCompletion", enquiry.summary, enquiry.details->'floorPlan' AS "enquiryPlan"
        FROM crm_opportunities opportunity
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
        LEFT JOIN crm_leads lead ON lead.workspace_id = opportunity.workspace_id AND lead.id = opportunity.lead_id
@@ -42,25 +48,19 @@ export async function introFacts(db: Db, workspaceId: string, opportunityId: str
        LEFT JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = opportunity.workspace_id AND discovery.opportunity_id = opportunity.id
       WHERE opportunity.workspace_id = $1 AND opportunity.id = $2`, [workspaceId, opportunityId])).rows[0];
   if (!row) throw new NotFoundException("Opportunity not found.");
-  const questions = (await db.query<{ key: string; label: string; configuration: { options?: unknown } | null }>(
-    `SELECT question.key, question.label, question.configuration FROM crm_qualification_forms form
-       JOIN crm_qualification_questions question ON question.workspace_id = form.workspace_id AND question.form_id = form.id
-      WHERE form.workspace_id = $1 AND form.purpose = 'discovery' AND form.status = 'active' AND (form.service_type IS NULL OR form.service_type = $2)
-      ORDER BY (form.service_type IS NULL), question.position`, [workspaceId, row.enquiryType])).rows
-    .filter((question, index, all) => all.findIndex((other) => other.key === question.key) === index);
+  const questions = await consultationQuestions(db, workspaceId, row.enquiryType);
   const values = new Map((await db.query<{ key: string; value: unknown }>(
     `SELECT question_key AS key, value FROM crm_opportunity_discovery_values WHERE workspace_id = $1 AND opportunity_id = $2`, [workspaceId, opportunityId])).rows.map((item) => [item.key, item.value]));
   const brand = await effectivePortalBrand(db, workspaceId);
+  const lists = await loadLeadOptions(db as PoolClient, workspaceId);
+  const labelOf = (list: Array<{ id: string; label: string }>, id: string | null) => (id ? list.find((option) => option.id === id)?.label ?? humanise(id) : null);
   return {
+    budgetRange: labelOf(lists.budgetRanges, row.budgetRange), projectType: labelOf(lists.projectTypes, row.projectType), targetCompletion: row.targetCompletion,
+    summary: row.summary, floorPlanEstimate: row.enquiryPlan?.status === "not_available" ? row.enquiryPlan.builtUpArea ?? null : null,
     brand: { name: brand.name, accent: brand.primaryColor ?? null },
     title: row.title, reference: row.reference, clientName: row.clientName ?? row.title, enquiryType: row.enquiryType, clientType: row.clientType,
     location: row.location, area: row.area, areaUnit: row.areaUnit, spaces: row.spaces, clientEmail: row.clientEmail, floorPlan: row.floorPlan,
-    answers: questions.map((question) => {
-      const options = Array.isArray(question.configuration?.options)
-        ? (question.configuration!.options as unknown[]).map((option) => (typeof option === "string" ? { id: option, label: option } : option as { id: string; label: string }))
-        : undefined;
-      return { label: question.label, value: answerText(values.get(question.key), options) };
-    }).filter((answer) => answer.value),
+    answers: questions.map((question) => ({ label: question.label, value: answerText(values.get(question.key), question.options) })).filter((answer) => answer.value),
   };
 }
 
@@ -90,8 +90,12 @@ export async function introPagePdf(facts: IntroFacts): Promise<Uint8Array> {
     ["Location", facts.location ?? ""],
     ["Area", facts.area ? `${facts.area} ${facts.areaUnit === "sqm" ? "m²" : "sq ft"}` : ""],
     ["Spaces", facts.spaces ? String(facts.spaces) : ""],
-    ["Floor plan", facts.floorPlan ? "Received" : "Not yet"],
+    ["Floor plan", facts.floorPlan ? "Received" : facts.floorPlanEstimate ? `Estimate: ${facts.floorPlanEstimate}` : "Not yet"],
+    ["Project type", facts.projectType ?? ""],
+    ["Budget", facts.budgetRange ?? ""],
+    ["Target date", facts.targetCompletion ?? ""],
     ["Email", facts.clientEmail ?? ""],
+    ["Description", facts.summary ?? ""],
   ];
   let y = 384;
   for (const [label, value] of rows) {

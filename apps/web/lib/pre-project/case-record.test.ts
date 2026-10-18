@@ -3,7 +3,7 @@ import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import type { JourneyView } from "./design-workspace";
 import type { PreProjectCase } from "./types";
-import { caseActivity, caseListStep, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline, effectivePhase } from "./case-record";
+import { caseActivity, caseLifecycleStep, caseMoney, caseOverdue, casePosition, caseTeam, caseTimeline, effectivePhase } from "./case-record";
 
 const record: PreProjectCase = {
   id: "c1", title: "Villa 12", description: null, status: "active", customerId: "p1", customerName: "Dana Demo", opportunityId: "o1", opportunityStatus: "won",
@@ -21,67 +21,22 @@ const executed = { quoteId: "q1", reference: "AGR-1", terms: "", evidence: "", s
 const payment = (patch: Record<string, unknown>) => ({ id: "pay1", title: "Advance on signing", amount: 36970.5, dueDate: "", requiredForRelease: true, status: "pending" as const, proof: "", reference: "", ...patch });
 const today = "2026-10-06";
 
-describe("the case's next step", () => {
-  it("follows the phase until a quotation exists", () => {
-    expect(caseNextStep({ record, today })).toMatchObject({ title: { key: "Capture the requirements" }, owner: "Olivia", action: { label: { key: "Open requirements" }, href: "/workspace/pre-projects/cases/c1/requirements" } });
+describe("the case's own state beside the job's step now (§0.3 P10)", () => {
+  it("adds nothing while the case runs: the job's journey says what's next", () => {
+    expect(caseLifecycleStep({ record })).toBeNull();
+    expect(caseLifecycleStep({ record: { ...record, status: "released", projectId: "p1" }, journey: { journey: null, stages: [], canStart: true, startsAs: "design", timezone: "UTC" } })).toBeNull();
   });
 
   it("puts a hold or a cancellation first, with its reason and the one way back", () => {
-    expect(caseNextStep({ record: { ...record, status: "on_hold", holdReason: "Client travelling" }, today })).toMatchObject({ title: { key: "On hold" }, why: { text: "Client travelling" }, action: { command: "resume" } });
-    expect(caseNextStep({ record: { ...record, status: "cancelled", cancellationReason: "Lost", canManageLifecycle: false }, today })).toMatchObject({ title: { key: "Planning cancelled" }, action: null });
+    expect(caseLifecycleStep({ record: { ...record, status: "on_hold", holdReason: "Client travelling" } })).toMatchObject({ title: { key: "On hold" }, why: { text: "Client travelling" }, action: { command: "resume" } });
+    expect(caseLifecycleStep({ record: { ...record, status: "cancelled", cancellationReason: "Lost", canManageLifecycle: false } })).toMatchObject({ title: { key: "Planning cancelled" }, action: null });
   });
 
-  it("follows the quotation: finish, review, send, wait for the client (overdue once it lapses), revise", () => {
-    const step = (status: Quote["status"]) => caseNextStep({ record, commercial: commercial({ quotes: [quote({ status })] }), today });
-    expect(step("draft").title).toEqual({ key: "Finish quotation {quote}", values: { quote: "Q-1" } });
-    expect(step("internal_review").title.key).toBe("Review quotation {quote}");
-    expect(step("internal_approved").title.key).toBe("Send quotation {quote} to the client");
-    expect(step("issued")).toMatchObject({ title: { key: "Waiting for the client's decision" }, due: "2026-10-10", overdue: false });
-    expect(caseNextStep({ record, commercial: commercial({ quotes: [quote({ status: "issued", validUntil: "2026-10-01" })] }), today }).overdue).toBe(true);
-    expect(step("changes_requested")).toMatchObject({ title: { key: "Revise quotation {quote}" }, status: "attention" });
-  });
-
-  it("after acceptance: the agreement, then each payment in due order, then the release", () => {
-    const accepted = [quote({ status: "accepted", decidedAt: "2026-09-29T18:01:28Z" })];
-    expect(caseNextStep({ record, commercial: commercial({ quotes: accepted }), today }).title.key).toBe("Sign the agreement");
-    const payments = [payment({ id: "pay2", title: "Before production", dueDate: "2026-11-01" }), payment({ dueDate: "2026-10-01" })];
-    expect(caseNextStep({ record, commercial: commercial({ quotes: accepted, agreement: executed, payments }), today }))
-      .toMatchObject({ title: { key: "Collect {title}", values: { title: "Advance on signing" } }, overdue: true, action: { href: "/workspace/pre-projects/cases/c1/payment-plan?payment=pay1" } });
-    expect(caseNextStep({ record, commercial: commercial({ quotes: accepted, agreement: executed, payments: [payment({ status: "proof_submitted" })] }), today }).title.key).toBe("Verify {title}");
-    expect(caseNextStep({ record, commercial: commercial({ quotes: accepted, agreement: executed, payments: [payment({ status: "verified" })] }), today }).title.key).toBe("Release to production");
-  });
-
-  it("leads with the design stage being worked on, its owner and its deadline", () => {
-    const journey: JourneyView = { journey: { packageName: "Full design", includedRevisions: 2 }, timezone: "Asia/Dubai", stages: [
-      { stage: "inspiration", label: "Inspiration", status: "done", ownerName: "Noor", dueAt: null, completedAt: "2026-10-01T10:00:00Z", version: 1, overdue: false },
-      { stage: "concepts", label: "Concepts", status: "active", ownerName: "Noor", dueAt: "2026-10-04T10:00:00Z", completedAt: null, version: 1, overdue: true, progress: { total: 3, approved: 1, pending: 2 } },
-    ] };
-    expect(caseNextStep({ record: { ...record, phase: "design" }, journey, today })).toMatchObject({
-      title: { key: "Concepts" }, why: { key: "{approved} of {total} approved" }, owner: "Noor", overdue: true, action: { href: "/workspace/pre-projects/cases/c1/designs?stage=concepts" },
-    });
-    expect(caseNextStep({ record, journey: { journey: null, stages: [], canStart: true, startsAs: "design", timezone: "UTC" }, today })).toMatchObject({ action: { command: "start_journey" } });
-  });
-
-  it("PLM-147: an open value engineering round is the step, led by the lead designer, until the client decides", () => {
-    const round = (patch: Record<string, unknown>) => ({ open: { status: "open", step: "agree_options", quoteId: "q1", qsName: "Quinn QS", lead: { membershipId: "m2", name: "Dina", fallback: false }, ...patch } as never });
-    const quotes = commercial({ quotes: [quote({ status: "draft" })] });
-    expect(caseNextStep({ record: { ...record, phase: "price" }, commercial: quotes, valueEngineering: round({}), today })).toMatchObject({
-      title: { key: "Value engineering" }, why: { key: "Agree the savings with {name}", values: { name: "Quinn QS" } }, owner: "Dina",
-      action: { label: { key: "Open quotation" }, href: "/workspace/pre-projects/cases/c1/quotations?quote=q1" },
-    });
-    expect(caseNextStep({ record, commercial: quotes, valueEngineering: round({ step: "present_options" }), today }).why).toEqual({ key: "Present the options to the client" });
-    expect(caseNextStep({ record, commercial: quotes, valueEngineering: round({ step: "client_decision" }), today }).why).toEqual({ key: "Waiting for the client's decision" });
-    // No round open: the quotation's own step.
-    expect(caseNextStep({ record, commercial: quotes, valueEngineering: { open: null }, today }).title.key).toBe("Finish quotation {quote}");
-  });
-
-  it("after the release, points to the project and its own next step", () => {
-    const project = { project: { id: "p1", reference: "PRJ-0003", status: "active", promiseDate: "2026-10-19" }, stages: [{ id: "s", position: 5, name: "Delivery and installation", status: "current" }],
-      next: { text: "Everything delivered and installed", owner: null }, team: [] } as unknown as ProjectDetail;
-    expect(caseNextStep({ record: { ...record, status: "released", projectId: "p1" }, project, today })).toMatchObject({
-      title: { key: "Everything delivered and installed" }, action: { href: "/workspace/projects/p1" }, due: "2026-10-19",
-    });
-    expect(caseNextStep({ record: { ...record, status: "released", projectId: "p1" }, project: { ...project, project: { ...project.project, status: "completed" } } as ProjectDetail, today }).title.key).toBe("Project completed");
+  it("offers to start the design (or the site visit) once it can start", () => {
+    expect(caseLifecycleStep({ record, journey: { journey: null, stages: [], canStart: true, startsAs: "design", timezone: "UTC" } })).toMatchObject({ action: { command: "start_journey", label: { key: "Start design" } } });
+    expect(caseLifecycleStep({ record, journey: { journey: null, stages: [], canStart: true, startsAs: "site_and_materials", timezone: "UTC" } })).toMatchObject({ title: { key: "Start the site visit" } });
+    const running: JourneyView = { journey: { packageName: "Full design", includedRevisions: 2 }, timezone: "UTC", stages: [] };
+    expect(caseLifecycleStep({ record, journey: running })).toBeNull();
   });
 });
 
@@ -102,7 +57,6 @@ describe("the case's strip, money and timeline", () => {
     expect(caseTimeline({ record, commercial: paid, today }).map((step) => [step.id, step.state])).toEqual([
       ["discover", "done"], ["define", "done"], ["design", "current"], ["price", "upcoming"], ["agree", "upcoming"], ["release", "upcoming"],
     ]);
-    expect(caseNextStep({ record, commercial: paid, today }).title.key).toBe("Present the design");
     // Before it is accepted, the design fee doesn't move the case; the main quotation then prices it as usual.
     expect(effectivePhase(record, commercial({ quotes: [{ ...designFee, status: "issued" }] }))).toBe("discover");
     const main = commercial({ quotes: [designFee, quote({ id: "main", number: 2, round: "main", status: "issued" })] });
@@ -120,9 +74,6 @@ describe("the case's strip, money and timeline", () => {
     expect(caseTimeline({ record: approved, commercial: estimate, today }).map((step) => [step.id, step.state, step.doneAt ?? null])).toEqual([
       ["discover", "done", null], ["define", "done", null], ["design", "done", "2026-10-09"], ["price", "current", null], ["agree", "upcoming", null], ["release", "upcoming", null],
     ]);
-    expect(caseNextStep({ record: approved, commercial: estimate, today }).title).toEqual({ key: "Finish quotation {quote}", values: { quote: "Q-2" } });
-    expect(caseListStep(approved, { data: { quotes: [{ id: "fee", number: 1, kind: "quotation", round: "design", status: "accepted" }, { id: "main", number: 2, kind: "quotation", round: "main", status: "draft" }], agreement: null } }))
-      .toEqual({ stage: "Quotation", next: { key: "Finish quotation {quote}", values: { quote: "Q-2" } } });
     // Before the approval, the paid design fee keeps the case in design whichever quotation came last.
     expect(effectivePhase(record, estimate)).toBe("design");
   });
@@ -132,20 +83,6 @@ describe("the case's strip, money and timeline", () => {
     const paid = commercial({ quotes: [designFee], agreement: { ...executed, quoteId: "fee", acceptedTotal: 12000 }, payments: [payment({ status: "verified" })] });
     const complete = { ...record, designApprovedOn: "2026-10-09", designComplete: true };
     expect(effectivePhase(complete, paid)).toBe("design");
-    expect(caseNextStep({ record: complete, commercial: paid, today })).toMatchObject({ title: { key: "Design complete" }, status: "done", action: null });
-    expect(caseListStep(complete, { data: { quotes: [{ id: "fee", number: 1, kind: "quotation", round: "design", status: "accepted" }], agreement: null } }).next).toEqual({ key: "Design complete" });
-  });
-
-  it("gives the Planning list the overview's reading: a sent quotation waits for the client, an approved one is to send", () => {
-    const facts = (status: string) => ({ data: { quotes: [{ id: "q1", number: 1, kind: "quotation", round: "main" as const, status }], agreement: null }, quoteReferences: { q1: "PLM-QUO-2026-00001" } });
-    expect(caseListStep({ phase: "price" }, facts("issued"))).toEqual({ stage: "Quotation", next: { key: "Waiting for the client's decision" } });
-    expect(caseListStep({ phase: "discover" }, facts("internal_approved"))).toEqual({ stage: "Quotation", next: { key: "Send quotation {quote} to the client", values: { quote: "PLM-QUO-2026-00001" } } });
-    expect(caseListStep({ phase: "price" })).toEqual({ stage: "Quotation", next: { key: "Send the quotation" } });
-  });
-
-  it("names a sent quotation by the number it was issued under", () => {
-    const sent = { ...commercial({ quotes: [quote({ status: "issued" })] }), quoteReferences: { q1: "PLM-QUO-2026-00001" } };
-    expect(caseNextStep({ record, commercial: sent, today }).why).toEqual({ key: "Quotation {quote} is with the client", values: { quote: "PLM-QUO-2026-00001" } });
   });
 
   it("adds money exactly: agreed, paid (verified only) and outstanding", () => {
@@ -195,22 +132,20 @@ describe("a case on its path's own line (PLM-121/126)", () => {
   it("goes straight to the quotation: no site visit, no design, no requirements stage", () => {
     expect(effectivePhase(stock)).toBe("price");
     expect(casePosition(stock)).toEqual({ position: 1, count: 3 });
-    const next = caseNextStep({ record: stock, journey: unstarted, today });
-    expect(next).toMatchObject({ title: { key: "Send the quotation" }, action: { label: { key: "Open quotations" }, href: "/workspace/pre-projects/cases/c1/quotations" } });
-    expect(JSON.stringify(next)).not.toMatch(/site visit|measuring/i);
+    // Nothing to start: no site visit or design on this path (the job's journey goes to the quotation).
+    expect(caseLifecycleStep({ record: stock, journey: unstarted })).toBeNull();
   });
 
   it("names its stages from the path and releases to fulfilment", () => {
     expect(caseTimeline({ record: stock, today }).map((step) => step.label.key)).toEqual(["Quotation", "Agreement", "Ready for fulfilment"]);
     const accepted = [quote({ status: "accepted", decidedAt: "2026-09-29T18:01:28Z" })];
-    expect(caseNextStep({ record: stock, commercial: commercial({ quotes: accepted, agreement: executed, payments: [payment({ status: "verified" })] }), today }).title.key).toBe("Release to fulfilment");
     expect(effectivePhase(stock, commercial({ quotes: accepted, agreement: executed }))).toBe("release");
   });
 
   it("calls the design phase the site visit when the path asks for a visit but no design", () => {
     const measured = { ...stock, plan: { ...stock.plan, phases: ["design", "price", "agree", "release"] as PreProjectCase["phase"][], siteVisit: true, release: "production" as const } };
     expect(caseTimeline({ record: measured, today }).map((step) => step.label.key)).toEqual(["Site visit", "Quotation", "Agreement", "Ready for production"]);
-    expect(caseNextStep({ record: measured, journey: unstarted, today })).toMatchObject({ title: { key: "Start the site visit" }, action: { command: "start_journey" } });
+    expect(caseLifecycleStep({ record: measured, journey: unstarted })).toMatchObject({ title: { key: "Start the site visit" }, action: { command: "start_journey" } });
   });
 
   it("keeps every phase for a case without a path plan", () => {

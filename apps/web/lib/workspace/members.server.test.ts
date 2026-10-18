@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const memberGrant = vi.hoisted(() => ({ permissions: ["module.roles.read"] as string[] }));
+const memberGrant = vi.hoisted(() => ({ permissions: ["module.roles.read"] as string[], roles: ["role_viewer"] as string[] }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: "test-token" }) }) }));
@@ -11,7 +11,7 @@ vi.mock("@/lib/auth/server", () => ({
   getAuthenticatedProfile: async () => ({
     id: "user-1",
     displayName: "Role viewer",
-    memberships: [{ workspaceId: "workspace", roles: ["role_viewer"], allowedPermissions: memberGrant.permissions }],
+    memberships: [{ workspaceId: "workspace", roles: memberGrant.roles, allowedPermissions: memberGrant.permissions }],
   }),
 }));
 
@@ -21,6 +21,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   memberGrant.permissions = ["module.roles.read"];
+  memberGrant.roles = ["role_viewer"];
 });
 
 describe("People page data", () => {
@@ -55,9 +56,13 @@ describe("People page data", () => {
     ]);
   });
 
-  it("offers View as to someone with the permission, with their MFA state and the notice setting", async () => {
+  it("offers View as only to the owner, with their MFA state and the notice setting", async () => {
     vi.stubEnv("E2E_AUTH_BYPASS", "false");
     memberGrant.permissions = ["workspace.members.manage", "workspace.view_as"];
+    memberGrant.roles = ["administrator"];
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+    expect((await getMembersPageData()).viewAs).toMatchObject({ canViewAs: false });
+    memberGrant.roles = ["owner"];
     const fetchMock = vi.fn(async (path: string) => new Response(path.startsWith("/security/mfa/status")
       ? JSON.stringify({ enabled: true })
       : path.endsWith("/view-as/settings") ? JSON.stringify({ notifySubject: false, version: 2 }) : "[]", { status: 200 }));
@@ -65,7 +70,7 @@ describe("People page data", () => {
 
     const result = await getMembersPageData();
 
-    expect(result.viewAs).toEqual({ canViewAs: true, mfaEnabled: true, settings: { notifySubject: false, version: 2 }, viewerIsOwner: false });
+    expect(result.viewAs).toEqual({ canViewAs: true, mfaEnabled: true, settings: { notifySubject: false, version: 2 }, viewerIsOwner: true });
     expect(fetchMock.mock.calls.map(([path]) => path)).toContain("/security/mfa/status?workspaceId=workspace");
   });
 });

@@ -192,7 +192,7 @@ function AuditEventDialog({ event, onClose }: { event: AuditEvent | null; onClos
         <div><dt>{t("Source")}</dt><dd><Badge tone={sourceTone(event.source)}>{sourceLabel(event.source, t)}</Badge></dd></div>
         <div><dt>{t("Correlation ID")}</dt><dd><code>{event.correlationId}</code></dd></div>
       </dl>
-      <section className={styles.changedFields}><strong>{t("Changed fields")}</strong><div>{fields.length ? fields.map((field) => <Badge key={field}>{humanize(field)}</Badge>) : <span>{t("No field-level changes recorded.")}</span>}</div></section>
+      <section className={styles.changedFields}><strong>{t("Changed fields")}</strong><div>{fields.length ? fields.map((field) => <Badge key={field} hue="auto">{humanize(field)}</Badge>) : <span>{t("No field-level changes recorded.")}</span>}</div></section>
       <div className={styles.changeGrid}>
         <section><strong>{t("Before")}</strong><pre>{event.before ? JSON.stringify(event.before, null, 2) : t("No previous value")}</pre></section>
         <section><strong>{t("After")}</strong><pre>{event.after ? JSON.stringify(event.after, null, 2) : t("No resulting value")}</pre></section>

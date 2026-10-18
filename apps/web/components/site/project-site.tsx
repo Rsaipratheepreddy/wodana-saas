@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Download, Plus } from "lucide-react";
 import Link from "next/link";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DateRangeField, ErrorState, FormDialog, InlineNotice, SegmentedControl, Skeleton, TextAreaField } from "@/design-system";
+import { Button, ControlledModalDialog, DateRangeField, ErrorState, FormDialog, FormNotSaved, InlineNotice, ReasonDialog, SegmentedControl, Skeleton, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -18,9 +18,10 @@ import { ClientIssues, useClientIssues } from "./client-issues";
 import { DailyCapture } from "./daily-capture";
 import { DayFeed } from "./day-feed";
 import { ReportReview } from "./report-review";
+import { ItemDeliveries } from "./item-delivery";
 import styles from "./site.module.css";
 
-type SiteView = "reports" | "crew-days" | "deliveries" | "access" | "issues";
+type SiteView = "reports" | "crew-days" | "deliveries" | "items" | "access" | "issues";
 
 /**
  * A project's site: whether site work is running, and its daily progress — a timeline of each day's report (draft,
@@ -35,7 +36,7 @@ export function ProjectSite({ workspaceId, projectId, projectName = "", showDeli
   const params = useSearchParams();
   const linkedDay = params?.get("crewDay") ?? null;
   const linkedIssue = params?.get("issue") ?? null;
-  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : linkedIssue ? "issues" : params?.get("view") === "deliveries" && showDeliveries ? "deliveries" : "reports");
+  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : linkedIssue ? "issues" : params?.get("view") === "deliveries" && showDeliveries ? "deliveries" : params?.get("view") === "items" ? "items" : "reports");
   const issues = useClientIssues(workspaceId, projectId);
   const format = useProjectFormat();
   const api = useMemo(() => siteApi(workspaceId, projectId), [workspaceId, projectId]);
@@ -74,12 +75,17 @@ export function ProjectSite({ workspaceId, projectId, projectName = "", showDeli
     options={[{ id: "reports", label: t("Daily progress") }, { id: "crew-days", label: t("Crew days") },
       // What's on its way to site, received where it arrives.
       ...(onTeam && showDeliveries ? [{ id: "deliveries", label: t("Deliveries") }] : []),
+      // Each item delivered (and installed) with its photos on site.
+      ...(onTeam ? [{ id: "items", label: t("Items on site") }] : []),
       // Who may be on site: only for whoever can see that list (the project's managers and site supervisors, and HR).
       ...(onTeam && state.canSeeSiteAccess !== false ? [{ id: "access", label: t("Access") }] : []),
       // Only once the client has reported something (or a notice links here).
       ...(issues.data?.issues.length || view === "issues" ? [{ id: "issues", label: t("Client issues"), count: issues.toTriage || undefined }] : [])]} />;
   if (view === "crew-days") return <div className={styles.site}>
     <ProjectCrewDays workspaceId={workspaceId} projectId={projectId} openId={linkedDay} switcher={switcher} me={state.me} onTeam={onTeam} />
+  </div>;
+  if (view === "items") return <div className={styles.site}>
+    <ItemDeliveries workspaceId={workspaceId} projectId={projectId} switcher={switcher} />
   </div>;
   if (view === "deliveries") return <div className={styles.site}>
     <ProjectArrivals workspaceId={workspaceId} projectId={projectId} switcher={switcher} />
@@ -131,8 +137,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "", showDeli
       onReject={(report, lineId, title) => setRejecting({ report, lineId, title })} /> : null}
     {finishing && state.installationOwed ? <FinishSiteDialog owed={state.installationOwed} canSignOff={Boolean(state.canSignOffOwed)} paymentsHref={`/workspace/projects/${projectId}/money?view=client`}
       onClose={() => setFinishing(false)} onSubmit={async (owedReason) => { setState(await api.command("finish_site", { on: state.today, owedReason })); setFinishing(false); }} /> : null}
-    {rejecting ? <ReasonDialog title={t("{item} not accepted", { item: rejecting.title })} label={t("What isn't right")} action={t("Raise a snag")} onClose={() => setRejecting(null)}
-      onSave={async (reason) => { if (await run("reject_installation", { reportId: rejecting.report.id, lineId: rejecting.lineId, reason })) setRejecting(null); }} /> : null}
+    {rejecting ? <ReasonDialog title={t("{item} not accepted", { item: rejecting.title })} label={t("What isn't right")} confirmLabel={t("Raise a snag")} onClose={() => setRejecting(null)}
+      onConfirm={async (reason) => { if (!(await run("reject_installation", { reportId: rejecting.report.id, lineId: rejecting.lineId, reason }))) throw new FormNotSaved(); }} /> : null}
   </div>;
 }
 
@@ -146,18 +152,6 @@ function ProgressReportDialog({ today, startedOn, onClose, onOpen }: { today: st
     <DateRangeField label={t("Period")} value={{ start: parseDate(range.from), end: parseDate(range.to) }} maxValue={parseDate(today)}
       onChange={(value) => { if (value) setRange({ from: value.start.toString(), to: value.end.toString() }); }} />
   </FormDialog>;
-}
-
-/** Why something isn't right: one required line of text, then the action. */
-function ReasonDialog({ title, label, action, onClose, onSave }: { title: string; label: string; action: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
-  const t = useT();
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{action}</Button></div>}>
-    <TextAreaField label={label} isRequired value={reason} onChange={setReason} autoFocus />
-  </ControlledModalDialog>;
 }
 
 /**

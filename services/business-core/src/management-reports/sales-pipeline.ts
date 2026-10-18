@@ -194,6 +194,33 @@ SELECT ${FACT_COLUMNS} FROM (
    WHERE lc.status = 'disqualified' AND lc.opportunity_id IS NULL AND lc.closed_at >= p.from_at AND lc.closed_at < p.to_at
 ) facts ORDER BY at DESC`;
 
+/**
+ * Guide K: Proposal 2 withdrawn: deals whose client withdrew from the main quotation, confirmed in the period, with
+ * the reason given. Their own list: neither Lost nor counted as Won (the design deal completes at design handover).
+ */
+const WITHDRAWN_SQL = `WITH ${P}, ${OPPORTUNITIES}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT oc.opportunity_id::text AS id, 'opportunity' AS kind, oc.case_id::text AS parent_id, oc.reference, oc.title, oc.client, oc.owner, oc.am::text AS owner_id,
+         proposal.withdrawal_decided_at AS at, NULL::text AS amount, NULL::text AS measure, NULLIF(btrim(proposal.withdrawal_reason), '') AS detail,
+         jsonb_build_object('period', '1', 'reason', COALESCE(lower(NULLIF(btrim(proposal.withdrawal_reason), '')), 'none')) AS dims
+    FROM oc CROSS JOIN p
+    JOIN crm_opportunity_proposals proposal ON proposal.workspace_id = p.ws AND proposal.opportunity_id = oc.opportunity_id AND proposal.kind = 'main'
+   WHERE proposal.withdrawal_status = 'confirmed' AND proposal.withdrawal_decided_at >= p.from_at AND proposal.withdrawal_decided_at < p.to_at AND ${OPPORTUNITY_ENTITY}
+) facts ORDER BY at DESC`;
+
+const withdrawnQ2: KpiSpec = {
+  code: "withdrawn_q2",
+  compare: "lower",
+  facts: (ctx) => readFacts(ctx, WITHDRAWN_SQL),
+  build: (ctx, facts) => {
+    const groups = groupBy(facts, "reason", (fact) => fact.detail ?? "", ctx.places).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    return {
+      code: "withdrawn_q2", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+      chart: { type: "bars", dimension: "reason", unit: "count", items: groups.map((group) => ({ key: group.key, label: group.label, value: String(group.count), count: group.count })) },
+    };
+  },
+};
+
 const notInterested: KpiSpec = {
   code: "not_interested",
   facts: (ctx) => readFacts(ctx, NOT_INTERESTED_SQL),
@@ -333,6 +360,6 @@ const attention: KpiSpec = {
   build: (_ctx, facts) => ({ code: "sales_attention", unit: "count", value: String(facts.length), count: facts.length, targetable: false, chart: { type: "list", bucket: "period=1" } }),
 };
 
-export const SALES_PIPELINE: KpiSpec[] = [attention, stuck, newLeads, conversion, pipeline, wonByAccountManager, lost, notInterested, repeatKpi("duplicates", "duplicate"),
+export const SALES_PIPELINE: KpiSpec[] = [attention, stuck, newLeads, conversion, pipeline, wonByAccountManager, lost, withdrawnQ2, notInterested, repeatKpi("duplicates", "duplicate"),
   repeatKpi("returning_customers", "returning"), followUps, quotesExpiring];
 

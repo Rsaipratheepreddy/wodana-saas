@@ -31,7 +31,7 @@ export function PaymentRuns({ api, state, error, openId, creating, onReload, onO
     { id: "total", header: t("Total"), accessorFn: (row) => row.totals.map((total) => `${total.currency} ${total.amount}`).join(" "), size: 200, meta: { align: "end", renderCell: (row) =>
       <span className={styles.nameCell}>{row.totals.map((total) => <span key={total.currency} className={styles.money}>{format.money(total.amount, total.currency)}</span>)}</span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 170, meta: { renderCell: (row) => <span className={styles.nameCell}>
-      <RunStatusLabel status={row.status} />{row.status === "draft" && row.returnNote ? <small>{t("Sent back: {note}", { note: row.returnNote })}</small> : null}</span> } },
+      <span><RunStatusLabel status={row.status} /></span>{row.status === "draft" && row.returnNote ? <small>{t("Sent back: {note}", { note: row.returnNote })}</small> : null}</span> } },
   ], [t, format]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   return <>

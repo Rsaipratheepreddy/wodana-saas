@@ -24,7 +24,8 @@ export type DesignTeamRoles = {
  * PLM-154: a site visit question, grouped by its scope (none for the general ones). A general question can sit under a
  * section (a heading, never matched to rooms); `kind: "check"` is a checklist line marked confirmed, pending or not applicable.
  */
-export type SiteQuestion = { key: string; question: string; scope?: string | null; section?: string | null; kind?: "answer" | "check" | null };
+/** `required`: must be answered before the visit completes; questions are optional unless the firm marks them. */
+export type SiteQuestion = { key: string; question: string; scope?: string | null; section?: string | null; kind?: "answer" | "check" | null; required?: boolean };
 /** A checklist's match words (rooms, areas and quotation lines that make it apply to a job), or every job. */
 export type ChecklistScope = { scope: string; match: string[]; everyJob?: boolean };
 /** At most this many questions on the list (general questions and checklist lines). */

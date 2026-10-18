@@ -143,7 +143,7 @@ export function SampleRequests({ api, caseId }: { api: FactoryApi; caseId: strin
           {mine ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "cancel", sample })}>{t("Withdraw")}</Button> : null}
         </span>
       </li>;
-    })}</ul> : <p className={styles.muted}>{t("No samples asked for yet.")}</p>}
+    })}</ul> : <EmptyState illustration={null} title={t("No samples asked for yet.")} />}
     {asking ? <RequestSampleDialog state={state} onClose={() => setAsking(false)} onSave={async (input) => {
       setState(await api.requestSample({ ...input, caseId }));
       setAsking(false);

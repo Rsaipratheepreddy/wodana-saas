@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { bindEvidence, evidenceFor, evidenceIds } from "../evidence/decision-evidence";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { canonicalHash } from "../crm/shared/crm-types";
@@ -9,6 +10,8 @@ type Db = Pick<PoolClient, "query">;
 export type MaterialItem = {
   id: string; position: number; catalogItemId: string | null; name: string; code: string; specification: string; supplier: string;
   quantity: string | null; unit: string; note: string; boqLineIds: string[]; version: number;
+  /** Guide step 17: what the Material Coordinator fills in for each material, with its sample photo (a case file). */
+  brand?: string; colour?: string; size?: string; finish?: string; samplePhotoAssetId?: string | null;
   /** False for materials the client doesn't choose (cement, screws): they don't wait for the client's sign-off. */
   clientChoice: boolean;
   /** PLM-055: product details for the technical team, with who added them and when. Internal: not part of what the client signs. */
@@ -25,6 +28,7 @@ async function readItems(db: Db, workspaceId: string, projectId: string): Promis
   return (await db.query<MaterialItem>(
     `SELECT item.id, item.position, item.catalog_item_id AS "catalogItemId", item.name, item.code, item.specification, item.supplier, item.quantity::text AS quantity, item.unit, item.note,
             item.boq_line_ids AS "boqLineIds", item.version, item.client_choice AS "clientChoice",
+            item.brand, item.colour, item.size, item.finish, item.sample_photo_asset_id AS "samplePhotoAssetId",
             item.team_note AS "teamNote", writer.display_name AS "teamNoteByName", item.team_note_at AS "teamNoteAt"
        FROM project_material_items item LEFT JOIN users writer ON writer.id = item.team_note_by
       WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.position, lower(item.name)`, [workspaceId, projectId])).rows;
@@ -118,8 +122,10 @@ export async function readMaterials(db: Db, workspaceId: string, projectId: stri
   const changed = Boolean(latest) && canonicalHash(signable(items)) !== latest.contentHash;
   // One word for where the list stands.
   const state = !latest ? "draft" : latest.status === "sent" ? "sent" : changed ? "changed" : latest.status;
+  const caseId = (await db.query<{ caseId: string | null }>(`SELECT case_id AS "caseId" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0]?.caseId ?? null;
   return {
-    state, revisions: revisions.map(({ contentHash, ...revision }) => { void contentHash; return revision; }),
+    caseId, missingForTechnical: await materialListMissing(db, workspaceId, projectId),
+    state, revisions: await withDecisionFiles(db, workspaceId, revisions.map(({ contentHash, ...revision }) => { void contentHash; return revision; })),
     items: items.map((item) => ({ ...item, usedIn: item.boqLineIds.map((id) => lines.get(id)).filter(Boolean),
       decision: latest && latest.status !== "sent" && !changed ? decisions.find((entry) => entry.itemId === item.id) ?? null : null })),
   };
@@ -225,6 +231,12 @@ export async function saveMaterial(db: Db, workspaceId: string, projectId: strin
   }
   const unit = text("unit", "Unit", 40);
   const fields = [name, text("code", "Code", 80), text("specification", "Finish or specification", 1000), text("supplier", "Supplier", 200), quantity, unit, text("note", "Note", 2000), lineIds];
+  // Guide step 17: the details the Material Coordinator fills in, and the sample photo (a file of the project's case).
+  const details = [text("brand", "Brand", 160), text("colour", "Colour", 80), text("size", "Size", 80), text("finish", "Finish", 120)];
+  const photo = typeof input.samplePhotoAssetId === "string" && input.samplePhotoAssetId ? input.samplePhotoAssetId : null;
+  if (photo && !(await db.query(`SELECT 1 FROM pre_project_brief_assets asset JOIN delivery_projects project ON project.workspace_id = asset.workspace_id AND project.case_id = asset.case_id
+      WHERE asset.workspace_id = $1 AND project.id = $2 AND asset.id = $3::uuid`, [workspaceId, projectId, photo])).rowCount)
+    throw new BadRequestException("Choose a photo from this project's files.");
   if (typeof input.id === "string") {
     const current = (await db.query<{ unit: string; clientChoice: boolean }>(`SELECT unit, client_choice AS "clientChoice" FROM project_material_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
       [workspaceId, projectId, input.id])).rows[0];
@@ -235,14 +247,17 @@ export async function saveMaterial(db: Db, workspaceId: string, projectId: strin
     const clientChoice = typeof input.clientChoice === "boolean" ? input.clientChoice : current.clientChoice;
     await db.query(
       `UPDATE project_material_items SET name = $4, code = $5, specification = $6, supplier = $7, quantity = $8, unit = $9, note = $10, boq_line_ids = $11, client_choice = $12,
-              version = version + 1, updated_at = now() WHERE workspace_id = $1 AND project_id = $2 AND id = $3`, [workspaceId, projectId, input.id, ...fields, clientChoice]);
+              brand = $13, colour = $14, size = $15, finish = $16, sample_photo_asset_id = CASE WHEN $18::boolean THEN $17::uuid ELSE sample_photo_asset_id END,
+              version = version + 1, updated_at = now() WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
+      [workspaceId, projectId, input.id, ...fields, clientChoice, ...details, photo, input.samplePhotoAssetId !== undefined]);
     return input.id;
   }
   const id = randomUUID();
   const position = (await db.query<{ next: number }>(`SELECT coalesce(max(position) + 1, 0)::int AS next FROM project_material_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows[0].next;
   await db.query(
-    `INSERT INTO project_material_items (id, workspace_id, project_id, position, name, code, specification, supplier, quantity, unit, note, boq_line_ids, client_choice)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, [id, workspaceId, projectId, position, ...fields, input.clientChoice !== false]);
+    `INSERT INTO project_material_items (id, workspace_id, project_id, position, name, code, specification, supplier, quantity, unit, note, boq_line_ids, client_choice,
+       brand, colour, size, finish, sample_photo_asset_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`, [id, workspaceId, projectId, position, ...fields, input.clientChoice !== false, ...details, photo]);
   return id;
 }
 
@@ -331,8 +346,32 @@ export async function recordMaterialDecision(db: Db, workspaceId: string, projec
             decided_by_grant_id = $8
       WHERE workspace_id = $1 AND id = $2`,
     [workspaceId, revision.id, signedOff ? "signed_off" : "changes_requested", decidedBy, portal ? "portal" : input.method, portal ? null : actorUserId, note, portal?.grantId ?? null]);
+  // §0.3 P0: a decision staff take down comes with what it came in (the signed list, an email).
+  if (!portal && actorUserId) await bindEvidence(db, workspaceId, actorUserId, "material_decision", revision.id, evidenceIds(input.evidenceFileIds));
   if (signedOff)
     for (const lineId of new Set(snapshot.flatMap((item) => item.boqLineIds)))
       await event(db, workspaceId, projectId, lineId, "signed_off", { revision: `R${revision.number}`, by: decidedBy }, null, actorUserId);
   return { number: revision.number, signedOff, note: signedOff ? note : decisions.filter((entry) => entry.decision === "rejected").map((entry) => entry.note).join("; ") };
+}
+
+/** Each revision with the file its client decision came in, when staff recorded it. */
+async function withDecisionFiles<T extends { id: string }>(db: Db, workspaceId: string, revisions: T[]) {
+  const files = await evidenceFor(db, workspaceId, "material_decision", revisions.map((revision) => revision.id));
+  return revisions.map((revision) => ({ ...revision, decisionFiles: files.get(revision.id) ?? [] }));
+}
+
+/**
+ * Guide step 17 / N: technical work can't start until the Material List is complete: every material has its brand,
+ * code, colour, size, finish, supplier and sample photo. Returns what is missing, per material (empty when complete).
+ */
+export async function materialListMissing(db: Db, workspaceId: string, projectId: string) {
+  const items = await readItems(db, workspaceId, projectId);
+  if (!items.length) return ["the material list"];
+  const missing: string[] = [];
+  for (const item of items) {
+    const gaps = [!item.brand?.trim() && "brand", !item.code.trim() && "code", !item.colour?.trim() && "colour", !item.size?.trim() && "size",
+      !item.finish?.trim() && "finish", !item.supplier.trim() && "supplier", !item.samplePhotoAssetId && "sample photo"].filter(Boolean);
+    if (gaps.length) missing.push(`${item.name} (${gaps.join(", ")})`);
+  }
+  return missing;
 }

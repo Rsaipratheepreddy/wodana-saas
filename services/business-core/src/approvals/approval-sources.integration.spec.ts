@@ -112,9 +112,15 @@ integration("waiting for you, across modules", () => {
       await client.query("INSERT INTO commercial_cases(workspace_id,case_id,content) VALUES($1,$2,'{}'::jsonb)", [ids.workspaceId, caseId]);
       await client.query(`INSERT INTO commercial_receipts(workspace_id,case_id,id,sort_order,payment_id,legal_entity_id,currency,amount,source,status,reference)
         VALUES($1,$2,'r1',0,'p1','le','AED',5000,'manual','reported','TT-1')`, [ids.workspaceId, caseId]);
+      // The proof the team attached when recording it.
+      await client.query(`INSERT INTO decision_evidence_files(workspace_id,kind,subject_id,storage_key,file_name,mime_type,byte_size,sha256,has_preview,uploaded_by)
+        VALUES($1,'receipt','r1','k','transfer.pdf','application/pdf',10,$2,false,$3)`, [ids.workspaceId, "a".repeat(64), ids.approver]);
       await client.query("SET LOCAL session_replication_role = origin");
       const finance = await waitingFor(client, context(ids, ids.approver, ["commercial.finance.verify"]));
-      expect(finance.rows).toEqual([expect.objectContaining({ kind: "receipt", project: expect.objectContaining({ id: ids.projectId, reference: "P-12", name: "Villa 12" }) })]);
+      expect(finance.rows).toEqual([expect.objectContaining({ kind: "receipt", project: expect.objectContaining({ id: ids.projectId, reference: "P-12", name: "Villa 12" }),
+        // A receipt the team recorded is verified or returned with a reason, in the review, with its proof beside it.
+        decide: { approve: "verify_payment", other: "return", approveNeedsNote: false },
+        files: [expect.objectContaining({ store: "evidence", owner: caseId, name: "transfer.pdf", preview: false })] })]);
     });
   });
 
@@ -193,6 +199,8 @@ integration("waiting for you, across modules", () => {
       const approvals = new ApprovalsService(access as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, designs);
       const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "Noor Reviewer" } as never;
       expect((await approvals.mine(actor, ids.workspaceId)).rows.filter((row) => row.kind === "design_review").map((row) => row.id).sort()).toEqual([approved, returned].sort());
+      // The review shows the file under review.
+      expect((await approvals.mine(actor, ids.workspaceId)).rows.find((row) => row.id === approved)?.files).toEqual([expect.objectContaining({ store: "case_asset", owner: caseId })]);
 
       await expect(approvals.decide(actor, ids.workspaceId, { kind: "design_review", id: returned, decision: "return", note: "" })).rejects.toThrow(/Describe the changes/);
       await approvals.decide(actor, ids.workspaceId, { kind: "design_review", id: approved, decision: "approve" });

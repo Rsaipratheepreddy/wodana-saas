@@ -12,6 +12,7 @@ import { captureApprovedDesignBaseline } from "../projects/project-design-contro
 import { DesignDecisionsService } from "./design-decisions.service";
 import { DesignJourneyService } from "./design-journey.service";
 import { startJourney } from "./design-journey.store";
+import { decideChange, readChanges } from "../change-requests/change-request.store";
 import { ledgerProcurementProblem, readLedger } from "./design-ledger.store";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Every service call runs as the app
@@ -77,7 +78,7 @@ integration("design decisions: presentations and the materials ledger (plan §6.
       await client.query("COMMIT");
     } finally { client.release(); }
     workspaces.push(ids.workspaceId);
-    await asApp(ids.workspaceId, ids.opsUser, (client) => startJourney(client, ids.workspaceId, ids.caseId, ids.opsUser));
+    await asApp(ids.workspaceId, ids.opsUser, (client) => startJourney(client, ids.workspaceId, ids.caseId, ids.opsUser, { flow: 2 }));
     return ids;
   }
 
@@ -126,7 +127,7 @@ integration("design decisions: presentations and the materials ledger (plan §6.
     await expect(decisions.addEntry(actor, ids.workspaceId, ids.caseId, { ...oak, title: "Walnut" })).rejects.toBeInstanceOf(ConflictException);
     // A change is a new version against the entry's version; a stale one is refused.
     const entryVersion = added.entries[0].version;
-    const changed = await decisions.addVersion(actor, ids.workspaceId, ids.caseId, oak.id, { ...entry(), versionId: randomUUID(), unitPrice: "95.50", entryVersion, source: "whatsapp" });
+    const changed = await decisions.addVersion(actor, ids.workspaceId, ids.caseId, oak.id, { ...entry(), versionId: randomUUID(), unitPrice: "95.50", entryVersion, source: "email" });
     expect(changed.entries[0].versions.map((version) => [version.number, version.status, version.priceImpact])).toEqual([[2, "proposed", "193.75"], [1, "superseded", "1000.00"]]);
     await expect(decisions.addVersion(actor, ids.workspaceId, ids.caseId, oak.id, { ...entry(), versionId: randomUUID(), entryVersion })).rejects.toThrow(/another window/);
     // History is immutable in the database too.
@@ -220,7 +221,7 @@ integration("design decisions: presentations and the materials ledger (plan §6.
     // E5-1: a change after the lock is a new version with its impact; Sales hear it; procurement keeps the locked version.
     ledger = await decisions.ledger(actor, ids.workspaceId, ids.caseId);
     const oakNow = ledger.entries.find((item) => item.id === oak.id)!;
-    ledger = await decisions.addVersion(actor, ids.workspaceId, ids.caseId, oak.id, { ...entry(), versionId: randomUUID(), title: "Smoked oak veneer", unitPrice: "100", timeImpactDays: 4, entryVersion: oakNow.version, source: "whatsapp" });
+    ledger = await decisions.addVersion(actor, ids.workspaceId, ids.caseId, oak.id, { ...entry(), versionId: randomUUID(), title: "Smoked oak veneer", unitPrice: "100", timeImpactDays: 4, entryVersion: oakNow.version, source: "email" });
     const pending = ledger.entries.find((item) => item.id === oak.id)!;
     expect(ledger.state).toBe("changes_pending");
     expect(pending.locked).toMatchObject({ number: 1 });
@@ -268,6 +269,14 @@ integration("design decisions: presentations and the materials ledger (plan §6.
     expect(answered.every((row) => row.eventType === "design.client_changes" && row.subject.endsWith("wants changes to Concepts") && row.body === "Lighter floors")).toBe(true);
     for (let number = 2; number <= 4; number += 1) {
       const next = { id: randomUUID(), stage: "concepts", options: [{ id: randomUUID(), title: `Warm minimal ${number}`, linkUrl: "https://www.canva.com/design/warm2" }] };
+      if (number === 4) {
+        // PLM-049/051: the third ask went beyond the 2 free revisions: a draft change waits to be priced and agreed first.
+        await expect(decisions.createPresentation(actor, ids.workspaceId, ids.caseId, next)).rejects.toThrow("Waiting for the extra revision to be agreed");
+        const draft = (await asApp(ids.workspaceId, ids.opsUser, (client) => readChanges(client, ids.workspaceId, ids.caseId)))[0];
+        expect(draft).toMatchObject({ title: "Extra revision: Concepts", status: "draft", priceImpact: "0.00" });
+        await asApp(ids.workspaceId, ids.opsUser, (client) => client.query(`UPDATE change_requests SET status = 'with_client' WHERE workspace_id = $1 AND id = $2`, [ids.workspaceId, draft.id]));
+        await asApp(ids.workspaceId, ids.opsUser, (client) => decideChange(client, ids.workspaceId, ids.caseId, draft.id, { decision: "approve", method: "portal", name: "Maya Client", grantId: ids.grantId }));
+      }
       await decisions.createPresentation(actor, ids.workspaceId, ids.caseId, next);
       view = await decisions.present(actor, ids.workspaceId, ids.caseId, next.id, { version: 1 });
       const shown = view.presentations.find((item) => item.id === next.id)!;
@@ -280,9 +289,10 @@ integration("design decisions: presentations and the materials ledger (plan §6.
         await expect(run((ctx) => presentationChoice(ctx, { ...choose, decision: "changes", note: "No" }))).rejects.toThrow(/changed|already decided/);
       }
     }
-    expect(view.revisions?.concepts).toEqual({ used: 3, included: 2, chargeable: true });
+    expect(view.revisions?.concepts).toMatchObject({ used: 3, included: 2, chargeable: true, waiting: false, extra: { revision: 3, state: "agreed" } });
+    // The lead designer and the Account Manager heard of the extra revision when its change was drafted (not again when it was shown).
     const extra = (await asApp(ids.workspaceId, ids.opsUser, (client) => client.query(`SELECT recipient_id FROM notifications WHERE workspace_id = $1 AND event_type = 'design.extra_revision' AND channel = 'in_app'`, [ids.workspaceId]))).rows;
-    expect(extra.map((row) => row.recipient_id).sort()).toEqual([ids.amUser, ids.adminUser].sort());
+    expect(extra.map((row) => row.recipient_id).sort()).toEqual([ids.amUser, ids.designerUser].sort());
     // The client's choice completes the concept (no site measure open); samples are next (the Concept package has no renders).
     const after = await journey.get(actor, ids.workspaceId, ids.caseId);
     expect(after.stages.map((stage) => [stage.stage, stage.status])).toEqual([["inspiration", "done"], ["kickoff", "done"], ["concepts", "done"], ["samples", "active"], ["approval", "locked"]]);

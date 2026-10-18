@@ -41,6 +41,7 @@ export class DesignActivityDto {
  @IsOptional() @IsUUID() reviewerId?:string|null;
  @IsOptional() @IsIn(["email","meeting","phone","document"]) decisionSource?:string;
  @IsOptional() @IsISO8601() decisionAt?:string;
+ @IsOptional() @IsArray() @ArrayMaxSize(10) @IsUUID('all',{each:true}) evidenceFileIds?:string[];
  @IsOptional() @IsISO8601() reviewExpiresAt?:string;
  @IsOptional() @IsBoolean() contextConfirmed?:boolean;
 }

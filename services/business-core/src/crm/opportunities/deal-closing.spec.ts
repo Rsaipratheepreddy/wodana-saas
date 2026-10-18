@@ -17,12 +17,16 @@ describe("PLM-102 Deal Closed is computed from records", () => {
     expect(closingState("completion_handover", { ...none, handoverAcceptedAt: "2026-12-01T00:00:00.000Z" }).closed).toBe(true);
   });
 
-  it("closes ID & Furniture only when everything is produced, delivered and installed", () => {
-    const delivered = { ...none, deliveredAt: "2026-11-01T00:00:00.000Z", installedAt: "2026-11-02T00:00:00.000Z" };
+  it("closes ID & Furniture once everything is produced and delivered or installed; the signed handover too when there was site work (guide J)", () => {
+    const delivered = { ...none, deliveredAt: "2026-11-01T00:00:00.000Z" };
     expect(closingState("all_produced_delivered_installed", { ...delivered, workOrders: { total: 3, open: 1, lastReadyAt: "2026-10-30T00:00:00.000Z" } }).closed).toBe(false);
     const done = closingState("all_produced_delivered_installed", { ...delivered, workOrders: { total: 3, open: 0, lastReadyAt: "2026-10-30T00:00:00.000Z" } });
-    expect(done).toMatchObject({ closed: true, closedAt: "2026-11-02T00:00:00.000Z" });
-    expect(done.checks.map((check) => check.key)).toEqual(["produced", "delivered", "installed"]);
+    expect(done).toMatchObject({ closed: true, closedAt: "2026-11-01T00:00:00.000Z" });
+    expect(done.checks.map((check) => check.key)).toEqual(["produced", "delivered"]);
+    // Installed on site: the handover form is signed before it closes.
+    const site = { ...delivered, installedAt: "2026-10-31T00:00:00.000Z", siteWork: true, workOrders: { total: 3, open: 0, lastReadyAt: "2026-10-30T00:00:00.000Z" } };
+    expect(closingState("all_produced_delivered_installed", site)).toMatchObject({ closed: false });
+    expect(closingState("all_produced_delivered_installed", { ...site, handoverAcceptedAt: "2026-11-03T00:00:00.000Z" })).toMatchObject({ closed: true, closedAt: "2026-11-03T00:00:00.000Z" });
   });
 
   it("is never closed without a closing event", () => {

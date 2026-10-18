@@ -114,7 +114,7 @@ function PersonSheet({ api, boot, person, people, onClose, onSaved, onOpenDocume
       </EditableFieldList>
       {person.enabled !== false ? <section className={styles.part} aria-label={t("Leave in {year}", { year: format.year(year) })}>
         <h3 className={styles.subhead}>{t("Leave in {year}", { year: format.year(year) })}</h3>
-        {!balances ? <Skeleton lines={2} /> : !balances.length ? <p className={styles.muted}>{t("No kinds of leave are set up yet.")}</p>
+        {!balances ? <Skeleton lines={2} /> : !balances.length ? <EmptyState illustration={null} title={t("No kinds of leave are set up yet.")} />
           : <ul className={styles.list}>{balances.map((row) => <li key={row.leaveTypeId}>
             <span className={styles.grow}><span>{row.leaveTypeName}</span>
               <small>{[t("{count} used", { count: format.number(row.used) }), row.pending ? t("{count} pending", { count: format.number(row.pending) }) : "",

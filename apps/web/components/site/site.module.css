@@ -12,10 +12,6 @@
 /* The one a notice linked to. */
 .report[data-selected] { padding-inline: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-action-primary-subtle); }
 .reportHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-2); font-size: var(--wd-text-sm); }
-.status { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
-.status[data-status="submitted"] { color: var(--wd-color-info); }
-.status[data-status="approved"] { color: var(--wd-color-success); }
-.status[data-status="returned"] { color: var(--wd-color-warning); }
 .facts { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-sm); }
 .alert { color: var(--wd-color-danger); }
 .actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }

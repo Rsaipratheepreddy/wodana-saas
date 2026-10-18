@@ -7,6 +7,10 @@ import type { DeliverTo, LineStatus, OrderStatus, RejectKind, ShipmentStatus } f
 
 /** "12.0000" → "12": a stored quantity as people write it. */
 export const quantityText = (value: string | null) => (value === null ? "" : value.includes(".") ? value.replace(/\.?0+$/, "") : value);
+/** A decimal kept as text, handed to a number field ("" is an empty field). */
+export const fieldNumber = (text: string) => (text === "" ? Number.NaN : Number(text));
+/** What a number field gives back, as the text the form keeps ("" when it's emptied). */
+export const fieldText = (value: number) => (Number.isFinite(value) ? String(value) : "");
 
 export const OPEN_ORDERS: OrderStatus[] = ["draft", "pending_approval", "approved", "sent", "confirmed", "partly_received", "received"];
 

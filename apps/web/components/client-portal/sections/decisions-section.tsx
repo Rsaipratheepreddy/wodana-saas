@@ -1,12 +1,12 @@
 "use client";
 
-import { ChevronRight, PenLine } from "lucide-react";
+import { PenLine } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button, EmptyState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
 import type { PortalTarget, SectionProps } from "./section-types";
+import { DecisionRow } from "./decision-row";
 import { DesignChoices } from "./design-choices";
 
 type Row = { key: string; target: PortalTarget; title: string; meta: string; state: string; waiting: boolean };
@@ -16,6 +16,9 @@ export function DecisionsSection({ project, format, open, api, reload }: Section
   const t = useT();
   const decisions = project.decisions;
   if (!decisions) return null;
+  // PLM-049/051: an extra revision's change request is listed with the design choices, not again under Changes.
+  const besideDesigns = new Set(project.choices && (project.choices.presentations.length || project.choices.choices.length)
+    ? (project.choices.extraRevisions ?? []).map((extra) => extra.changeId) : []);
   const rows: Array<{ group: string; rows: Row[] }> = [
     { group: t("Quotations"), rows: decisions.quotes.map((quote) => ({ key: quote.id, target: { kind: "quote" as const, id: quote.id }, title: `${quote.title} · V${quote.number}`,
       meta: [quote.kind === "variation" ? t("Variation") : "", format.money(quote.decision?.acceptedTotal ?? quote.total, quote.currency)].filter(Boolean).join(" · "),
@@ -30,10 +33,17 @@ export function DecisionsSection({ project, format, open, api, reload }: Section
       state: decisions.materials.status, waiting: decisions.materials.canDecide }] : [] },
     { group: t("Drawings"), rows: decisions.drawings ? [{ key: decisions.drawings.id, target: { kind: "drawings" as const, id: decisions.drawings.id },
       title: t("Drawings · R{number}", { number: decisions.drawings.number }), meta: format.date(decisions.drawings.sentAt), state: decisions.drawings.status, waiting: decisions.drawings.canDecide }] : [] },
+    // Shop drawings per item: one row for the set, waiting while any item waits for the client's signature.
+    { group: t("Shop drawings"), rows: decisions.itemDrawings?.items.length ? [{ key: "item-drawings", target: { kind: "item_drawings" as const, id: "items" },
+      title: t("{count} items", { count: decisions.itemDrawings.items.length }), meta: decisions.itemDrawings.canSign
+        ? t("{count} to sign", { count: decisions.itemDrawings.items.filter((item) => item.canSign).length })
+        : t("{count} signed", { count: decisions.itemDrawings.items.filter((item) => item.status === "signed").length }),
+      state: decisions.itemDrawings.canSign ? "sent" : decisions.itemDrawings.items.every((item) => item.status === "signed") ? "approved" : "changes_requested",
+      waiting: decisions.itemDrawings.canSign }] : [] },
     { group: t("Handover"), rows: decisions.handovers.map((pack) => ({ key: pack.id, target: { kind: "handover" as const, id: pack.id }, title: `${pack.title} · R${pack.revision}`,
       meta: format.date(pack.issuedAt), state: pack.status, waiting: pack.canDecide })) },
     // Change requests (R11): sent to the client to approve, or asked for by them (with the team until assessed).
-    { group: t("Changes"), rows: (project.changes ?? []).map((change) => ({ key: change.id, target: { kind: "change" as const, id: change.id }, title: `${change.reference} · ${change.title}`,
+    { group: t("Changes"), rows: (project.changes ?? []).filter((change) => !besideDesigns.has(change.id)).map((change) => ({ key: change.id, target: { kind: "change" as const, id: change.id }, title: `${change.reference} · ${change.title}`,
       meta: change.priceImpact !== null && change.currency ? `${change.priceImpact.startsWith("-") ? "" : "+"}${format.money(change.priceImpact, change.currency)}` : "",
       state: change.status, waiting: change.canDecide })) },
     { group: t("Questions"), rows: decisions.requests.map((question) => ({ key: question.id, target: { kind: "request" as const, id: question.id }, title: question.title,
@@ -42,17 +52,15 @@ export function DecisionsSection({ project, format, open, api, reload }: Section
   ].filter((group) => group.rows.length);
   // Concepts to choose from and materials and design choices to confirm (plan §6.7a) come first.
   const choices = project.choices && (project.choices.presentations.length || project.choices.choices.length)
-    ? <DesignChoices caseId={project.id} choices={project.choices} api={api} format={format} onChanged={reload} /> : null;
+    ? <DesignChoices caseId={project.id} choices={project.choices} api={api} format={format} onChanged={reload} changes={project.changes ?? []}
+      onOpenChange={(id) => open({ kind: "change", id })} /> : null;
   const ask = project.role === "approver" && project.changes ? <div className={styles.groupHead}><span />
     <Button size="compact" variant="quiet" onPress={() => open({ kind: "raise-change" })}><PenLine aria-hidden="true" size={16} />{t("Ask for a change")}</Button></div> : null;
   if (!rows.length) return <>{ask}{choices ?? <EmptyState illustration="done" title={t("Nothing to decide yet")} description={t("When your team sends you something to decide, it will be here.")} />}</>;
   const waiting = rows.flatMap((group) => group.rows.filter((row) => row.waiting));
   const list = (items: Row[], label: string): ReactNode => <ul aria-label={label} className={styles.list}>{items.map((row) => <li key={row.key}>
-    <button className={`${styles.item} ${styles.itemButton}`} data-tour={row.target.kind === "quote" ? "portal-quote" : row.target.kind === "materials" ? "portal-materials" : undefined}
-      data-tour-safe type="button" onClick={() => open(row.target)}>
-      <span className={styles.itemText}><span className={styles.itemTitle}>{row.title}</span>{row.meta ? <span className={styles.itemMeta}>{row.meta}</span> : null}</span>
-      <span className={styles.itemEnd}><StateLabel state={row.state} canDecide={row.waiting} /><ChevronRight aria-hidden="true" size={18} /></span>
-    </button>
+    <DecisionRow title={row.title} meta={row.meta} state={row.state} waiting={row.waiting} onOpen={() => open(row.target)}
+      data-tour={row.target.kind === "quote" ? "portal-quote" : row.target.kind === "materials" ? "portal-materials" : undefined} />
   </li>)}</ul>;
   return <div className={styles.section} data-tour="portal-decisions">
     {ask}

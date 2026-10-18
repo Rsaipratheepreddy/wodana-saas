@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HrmsBootstrap, HrmsCrew, HrmsCrewState, HrmsPerson, HrmsWorker } from "@wodana/contracts";
 import {
-  Badge, Button, ComboboxField, DataGrid, EmptyState, ErrorState, FormRow, FormSection, InlineNotice, InspectorSheet, NoAccessState, NoResultsState, PhoneField, ListTabs, SelectField, Switch,
+  Badge, Button, ComboboxField, DataGrid, EmptyState, ErrorState, FormRow, FormSection, InlineNotice, InspectorSheet, MoneyField, NoAccessState, NoResultsState, PhoneField, ListTabs, SelectField, Switch,
   TextInput, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -23,7 +23,6 @@ export type CrewsOpen = { crew: string | null; worker: string | null };
 type Option = { id: string; label: string; description?: string };
 
 const RATE = /^\d{1,14}(\.\d{1,4})?$/;
-const decimal = (value: string) => value.replace(/[^\d.]/g, "");
 const money = (locale: string, value: string, currency: string) => {
   try { return new Intl.NumberFormat(locale, { style: "currency", currency }).format(Number(value)); } catch { return `${currency} ${value}`; }
 };
@@ -191,7 +190,7 @@ function CrewSheet({ api, workspaceId, state, crew, manage, onClose, onSaved }: 
         {workers.length ? <ul className={styles.list}>{workers.map((worker) => <li key={worker.id}>
           <span className={styles.grow}><span>{worker.name}</span><small>{[worker.workerCode, worker.trade].filter(Boolean).join(" · ")}</small></span>
           {worker.active ? null : <Badge tone="neutral">{t("Inactive")}</Badge>}
-        </li>)}</ul> : <p className={styles.muted}>{t("No workers in this crew")}</p>}
+        </li>)}</ul> : <EmptyState illustration={null} title={t("No workers in this crew")} />}
       </section> : null}
     </div>
   </InspectorSheet>;
@@ -249,8 +248,7 @@ function WorkerSheet({ api, workspaceId, state, worker, manage, onClose, onSaved
         </FormSection>
         <FormSection title={t("Pay")}>
           <FormRow>
-            <TextInput label={t("Day rate")} inputMode="decimal" suffix={draft.dayRate ? draft.currency : undefined} placeholder={t("Trade rate")} value={draft.dayRate}
-              onChange={(value) => set("dayRate")(decimal(value))} isInvalid={badRate} errorMessage={badRate ? t("Up to four decimal places.") : undefined} />
+            <MoneyField label={t("Day rate")} currency={draft.currency || undefined} min="0" max="99999999999999.9999" placeholder={t("Trade rate")} value={draft.dayRate} onChange={set("dayRate")} />
             <SelectField label={t("Currency")} isRequired={Boolean(draft.dayRate)} isDisabled={!draft.dayRate} selectedKey={draft.currency || null} items={currencies}
               onSelectionChange={(key) => set("currency")(key ? String(key) : "")} />
           </FormRow>

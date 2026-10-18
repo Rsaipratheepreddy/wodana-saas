@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { GripVertical, ImagePlus, Plus, Sigma, X } from "lucide-react";
+import { GripVertical, ImagePlus, Plus, Sigma } from "lucide-react";
 import { Avatar, Badge, IconMenuButton, useDesignSystem } from "@/design-system";
+import { MaterialChip, materialParts } from "./material-chips";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { LINE_KIND_LABEL, money, plain } from "@/lib/quotation/format";
 import type { BuilderLine, CatalogHit, QuoteColumn, QuotePerson, QuoteThread } from "@/lib/quotation/types";
@@ -174,10 +175,7 @@ function MaterialCell({ value, options, disabled, onCommit }: { value: string; o
     if (fresh.length) save([...parts, ...fresh]);
   };
   return <div className={styles.materials}>
-    {parts.map((part, index) => <span key={part} className={styles.tag} data-tone={toneOf(part)}>
-      {part}
-      {disabled ? null : <button type="button" aria-label={t("Remove {name}", { name: part })} onClick={() => save(parts.filter((_, at) => at !== index))}><X aria-hidden="true" size={11} /></button>}
-    </span>)}
+    {materialParts(parts.join(" / ")).map((part, index) => <MaterialChip key={part.text} part={part} onRemove={disabled ? undefined : () => save(parts.filter((_, at) => at !== index))} />)}
     {disabled ? null : <span ref={field} className={styles.tagPicker}>
       <input aria-label={t("Material")} role="combobox" aria-expanded={open && suggestions.length > 0} aria-controls={listId} aria-autocomplete="list"
         aria-activedescendant={open && suggestions[active] ? `${listId}-${active}` : undefined}
@@ -194,7 +192,7 @@ function MaterialCell({ value, options, disabled, onCommit }: { value: string; o
         {suggestions.map((name, index) => <li key={name} id={`${listId}-${index}`} role="option" aria-selected={index === active}
           onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActive(index)} onClick={() => add(name === NEW_MATERIAL ? text : name)}>
           {name === NEW_MATERIAL ? <span className={styles.customHit}><Plus aria-hidden="true" size={13} />{t("Add “{name}”", { name: text.trim() })}</span>
-            : <span className={styles.tag} data-tone={toneOf(name)}>{name}</span>}
+            : materialParts(name).map((part) => <MaterialChip key={part.text} part={part} />)}
         </li>)}
       </FloatingList> : null}
     </span>}
@@ -235,8 +233,6 @@ function FloatingList({ anchor, id, label, className, onClose, children }: { anc
 const NEW_MATERIAL = "\u0000new";
 const splitMaterials = (value: string) => value.split("/").map((part) => part.trim()).filter(Boolean);
 /** A stable tint per material, so the same material looks the same on every line. */
-const TAG_TONES = ["info", "success", "warning", "brand", "neutral"] as const;
-const toneOf = (name: string) => TAG_TONES[[...name.toLowerCase()].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 997, 7) % TAG_TONES.length];
 
 /** A cell that edits in place: commits on Enter or leaving the cell, Escape puts the value back. */
 function CellInput({ label, value, disabled, numeric, allowEmpty, placeholder, onCommit }: { label: string; value: string; disabled?: boolean; numeric?: boolean; allowEmpty?: boolean; placeholder?: string; onCommit: (value: string) => void }) {

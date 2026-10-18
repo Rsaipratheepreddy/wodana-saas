@@ -1,7 +1,7 @@
 "use client";
 import { RecordHistory } from "../history/record-history";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 import { useWoddyRecord } from "@/components/crm/woddy-chat";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -9,7 +9,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { QuotationList } from "./quotation-list";
 import { SERVICE_PATHS } from "@/lib/commercial/service-paths";
-import { History, Plus } from "lucide-react";
+import { Banknote, Coins, History, ListOrdered, Percent, Plus, Receipt, Wallet } from "lucide-react";
 import {
   Button,
   ControlledModalDialog,
@@ -17,7 +17,9 @@ import {
   FormNotSaved,
   DesignSystemProvider,
   IconButton,
+  InlineNotice,
   PageShell,
+  ReviewDialog,
   SelectField,
   useConfirmationDialog,
   useDesignSystem, EmptyState, formatDate
@@ -31,11 +33,13 @@ import {
   commercialPath,
   jsonRequest,
   money,
+  quoteTotals,
   statusLabel,
 } from "@/lib/commercial/client";
 import { ClientContacts } from "@/components/client-portal/client-contacts";
 import { ChangeRequestsPanel } from "@/components/change-requests/change-requests-panel";
 import { ScopeImport } from "./scope-import";
+import { CommercialStatus } from "./commercial-status";
 import { PreProjectSectionLoading } from "../pre-project/section-loading";
 import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
 import { QuotationEditor } from "./quotation-editor";
@@ -45,7 +49,7 @@ import {
   AgreementPayments,
   ApprovalRelease,
 } from "./commercial-workflows";
-import { PreExecutionFlow } from "./pre-execution-flow";
+import { DealPath } from "./deal-path";
 import { QuotationBuilderPreview } from "./quotation-builder-preview";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
@@ -64,9 +68,10 @@ const labels: Record<string, MessageKey> = {
   quotations: tKey("Quotes"),
   contracts: tKey("Agreement"),
   "payment-plan": tKey("Payments"),
-  variations: tKey("Change requests"),
+  variations: tKey("Changes"),
   approvals: tKey("Approvals"),
-  "execution-release": tKey("Release readiness"),
+  "deal-file": tKey("Deal File"),
+  "execution-release": tKey("Release"),
 };
 export function CommercialPage({
   initial,
@@ -266,23 +271,21 @@ export function CommercialPage({
   }
   const quotePage = ["boq", "quotations"].includes(section),
     root = `/workspace/pre-projects/cases/${state.caseId}`,
-    showReadinessFlow = ["approvals", "execution-release"].includes(section);
+    // Guide J: the deal path on every Deal view (agreement, payments, Deal File, release).
+    // (the Agreement view shows it itself, with its step's action beside the next step).
+    showDealPath = ["payment-plan", "deal-file", "execution-release"].includes(section);
   return (
     <DesignSystemProvider {...design} className={colors.theme}>
       <SectionPage nested={reviewOnly} title={t(labels[section] ?? labels.quotations)}>
       <section
         className={`${s.page} ${s.inShell} ${reviewOnly ? s.reviewPage : ""} ${section === "quotations" && !quotationId ? s.quotationTablePage : ""} ${!reviewOnly && section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
       >
-        {showReadinessFlow && !embedded && (!state.data.servicePath || state.data.servicePath.scope.mainQuotation) ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
+        {showDealPath && !embedded ? <DealPath state={state} section={section} root={root} /> : null}
         {error && (
-          <p role="alert" className={s.error}>
-            {error}
-          </p>
+          <InlineNotice tone="error" message={error} />
         )}
         {notice && !(section === "quotations" && quotationId) && (
-          <p role="status" className={s.muted}>
-            {notice}
-          </p>
+          <InlineNotice message={notice} />
         )}
         {quotationList && state.servicePathEnabled && !state.data.quotes.length && (
           <section className={s.flowChooser} aria-label={t("Enquiry service path")}>
@@ -327,9 +330,7 @@ export function CommercialPage({
                     onSelectionChange={(key) => choose(String(key))}
                     isDisabled={busy}
                   />
-                  {section !== "quotations" ? <span className={s.status} data-status={draft.status}>
-                    {statusLabel[draft.status]}
-                  </span> : null}
+                  {section !== "quotations" ? <CommercialStatus status={draft.status}>{statusLabel[draft.status]}</CommercialStatus> : null}
                   {draft.qsEstimate && <span className={s.muted}>{t("QS checked ·")}{" "}{draft.qsEstimate.reviewedBy}</span>}
                   {dirty ? (
                     <span className={s.muted}>{t("Unsaved edits")}</span>
@@ -362,7 +363,9 @@ export function CommercialPage({
                   </IconButton>
                   {draft.issuedAt && (
                     <a
-                      className={s.button}
+                      className="wd-button"
+                      data-size="compact"
+                      data-variant="secondary"
                       href={`/quotation/${state.caseId}?quote=${draft.id}${draft.hash ? `&snapshot=${draft.hash}` : ""}`}
                       target="_blank"
                       rel="noreferrer"
@@ -410,7 +413,7 @@ export function CommercialPage({
                       size="compact"
                       variant="primary"
                       isDisabled={busy}
-                      onPress={() => void run("qs_approve")}
+                      onPress={() => setDialog("qs_approve")}
                     >
                       {t("Approve QS estimate")}</Button>
                   )}
@@ -419,7 +422,7 @@ export function CommercialPage({
                       size="compact"
                       variant="primary"
                       isDisabled={busy}
-                      onPress={() => void run("approve")}
+                      onPress={() => setDialog("approve")}
                     >
                       {t("Approve pricing")}</Button>
                   )}
@@ -442,7 +445,7 @@ export function CommercialPage({
                       {t("Withdraw")}</Button>
                   )}
                   {state.canEdit && draft.status === "accepted" && (
-                    <Link className={s.primary} href={`${root}/variations`}>
+                    <Link className="wd-button" data-size="compact" data-variant="primary" href={`${root}/variations`}>
                       {t("Request a change")}</Link>
                   )}
                   {state.canEdit &&
@@ -471,7 +474,7 @@ export function CommercialPage({
               />
               <QuotationsReadonlyNote quote={draft} />
               </>}
-              {reviewOnly ? <><Link className={s.button} href={quoteHref(draft.id)}>{t("Open quotation editor →")}</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={{ ...draft, letterhead: draft.letterhead ?? state.portalLetterhead ?? null }} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
+              {reviewOnly ? <><Link className="wd-button" data-size="compact" data-variant="secondary" href={quoteHref(draft.id)}>{t("Open quotation editor →")}</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={{ ...draft, letterhead: draft.letterhead ?? state.portalLetterhead ?? null }} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
                 disabled={busy}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
               >
@@ -518,7 +521,7 @@ export function CommercialPage({
             error={error}
           />
         ) : (
-          <ApprovalRelease initialView="owner" state={state} run={run} busy={busy} root={root} sectionHref={projectId ? part => projectPlanningHref(part === "contracts" || part === "payment-plan" ? "agreement" : part === "designs" ? "design" : part === "variations" ? "change-requests" : part === "execution-release" ? "approvals" : part) : undefined} />
+          <ApprovalRelease initialView={section === "execution-release" ? "release" : "owner"} key={section} state={state} run={run} busy={busy} root={root} sectionHref={projectId ? part => projectPlanningHref(part === "contracts" || part === "payment-plan" ? "agreement" : part === "designs" ? "design" : part === "variations" ? "change-requests" : part === "execution-release" ? "approvals" : part) : undefined} />
         )}
         {draft&&<ScopeImport workspaceId={state.workspaceId} caseId={state.caseId} quote={draft} open={dialog==="scope"} onClose={()=>setDialog("")} busy={busy} run={run}/>}
         <ControlledModalDialog
@@ -556,6 +559,22 @@ export function CommercialPage({
           <h3>{t("History")}</h3>
           <RecordHistory workspaceId={state.workspaceId} recordType="quotation" recordId={state.caseId} />
         </ControlledModalDialog>
+        {/* §0.3 P0: approving the pricing (QS or the approver) is a review of the figures, never one click. */}
+        {(dialog === "qs_approve" || dialog === "approve") && draft ? (() => {
+          const totals = quoteTotals(draft);
+          const taxLabel = t("{label} ({rate}%)", { label: translateKnown(t, draft.cover?.taxLabel || "Tax"), rate: draft.taxRate });
+          return <ReviewDialog title={dialog === "qs_approve" ? t("Approve QS estimate") : t("Approve pricing")} description={`V${draft.number}`}
+            confirmLabel={dialog === "qs_approve" ? t("Approve QS estimate") : t("Approve pricing")} blocked={error || undefined} onClose={() => setDialog("")}
+            facts={[
+              { icon: <ListOrdered />, label: t("Lines"), value: String(draft.lines.filter((line) => !line.optional).length) },
+              { icon: <Banknote />, label: t("Net"), value: money(totals.net, draft.currency) },
+              { icon: <Receipt />, label: taxLabel, value: money(totals.tax, draft.currency) },
+              { icon: <Wallet />, label: t("Total"), value: money(totals.total, draft.currency) },
+              ...(state.canViewCosts ? [{ icon: <Coins />, label: t("Internal cost"), value: money(totals.cost, draft.currency) },
+                { icon: <Percent />, label: t("Margin"), value: totals.margin === null ? t("Cost missing") : `${totals.margin.toFixed(1)}%` }] : []),
+            ]}
+            onConfirm={async () => { if (!(await run(dialog))) throw new FormNotSaved(); }} />;
+        })() : null}
         <FormDialog
           isOpen={dialog === "issue"}
           onClose={() => setDialog("")}

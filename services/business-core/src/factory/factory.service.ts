@@ -1,4 +1,6 @@
 import { variationHolds } from "../change-requests/variation-holds";
+import { suppliesSignedOff } from "../project-core/project-item-supplies";
+import { bindEvidence, evidenceFor, evidenceIds, type EvidenceFile } from "../evidence/decision-evidence";
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -324,6 +326,8 @@ export class FactoryService {
         await client.query(`INSERT INTO factory_commands (workspace_id, command_id, entity_id, action, actor_id) VALUES ($1, $2, $3, 'report', $4)`, [workspaceId, recordId, orderId, user.userId]);
         await client.query(`INSERT INTO work_order_reports (id, workspace_id, work_order_id, good, scrap, scrap_reason, note, reported_by, hours, workcenter_id)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [recordId, workspaceId, orderId, good, scrap, scrapReason, text(body.note, 1000), user.userId, hours, order.workcenterId]);
+        // §0.3 P0: a photo of what was made, read by whoever approves the output.
+        await bindEvidence(client, workspaceId, user.userId, "factory_output", recordId!, evidenceIds(body.evidenceFileIds));
         await set(`notes = notes`);
         notices.push({ code: "factory.report_waiting", users: (await this.holders(client, workspaceId, ["factory.approve"])).filter((id) => id !== user.userId),
           note: `${plain(good)} ${order.unit} made${Dec.of(scrap).cmp(0) > 0 ? `, ${plain(scrap)} scrapped` : ""}`.replace("  ", " "), key: `report:${recordId}` });
@@ -500,7 +504,7 @@ export class FactoryService {
     return this.access.withPermission(actor, workspaceId, "workspace.settings.manage", async (client, user) => {
       const current = await ensureFactorySettings(client, workspaceId);
       if (body.version !== current.version) throw new ConflictException("Someone else changed these settings. Reload to see their changes.");
-      const flag = (key: "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck" | "requireTechnicalHandover" | "requireFactoryRequirements" | "requireQs") =>
+      const flag = (key: "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck" | "requireTechnicalHandover" | "requireFactoryRequirements" | "requireQs" | "requireSuppliesSignoff") =>
         (body[key] === undefined ? current[key] : body[key] === true);
       // PLM-063: the production steps the firm keeps, in its own words, and its internal production target.
       const steps = body.productionSteps === undefined ? normaliseProductionSteps(current.productionSteps) : parseProductionSteps(body.productionSteps);
@@ -514,10 +518,10 @@ export class FactoryService {
       await client.query(`UPDATE workspace_factory_settings SET require_drawing = $2, require_payment = $3, require_materials = $4, require_check = $5, production_steps = $7::jsonb,
         production_weeks = $8, balance_reminder_days = $9, inspections_enabled = $10, inspection_stages = $11::jsonb, inspection_work_packages = $12::uuid[], inspector_role = $13,
         director_role = $14, director_packages = $15::varchar[], inspection_days = $16, require_technical_handover = $17, require_factory_requirements = $18, require_qs = $19,
-        version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
+        require_supplies_signoff = $20, version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId, JSON.stringify(steps), weeks, reminderDays,
           inspections.enabled, JSON.stringify(inspections.stages), inspections.workPackageIds, inspections.inspectorRole, inspections.directorRole, inspections.directorPackages, inspections.days,
-          flag("requireTechnicalHandover"), flag("requireFactoryRequirements"), flag("requireQs")]);
+          flag("requireTechnicalHandover"), flag("requireFactoryRequirements"), flag("requireQs"), flag("requireSuppliesSignoff")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return this.settingsView(client, workspaceId, user.userId);
     });
@@ -576,6 +580,29 @@ export class FactoryService {
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "work_order.check_photo_added", entityType: "work_order", entityId: orderId, after: { checkId, photoId: id } });
       }
       return this.detail(client, workspaceId, orderId, user.userId);
+    });
+  }
+
+  /**
+   * §0.3 P0: an approved drawing of a work order's project (or its preview), for someone who can see the factory, so
+   * the drawing a work order is made to is checked against the file itself. Only approved revisions of that project open.
+   */
+  drawingFile(actor: RequestActor, workspaceId: string, orderId: string, versionId: string, preview: boolean) {
+    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client) => {
+      const row = (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string; name: string }>(
+        `SELECT asset.object_key AS "objectKey", asset.preview_key AS "previewKey", asset.mime_type AS "mimeType", asset.original_name AS name
+           FROM work_orders work_order
+           JOIN delivery_projects project ON project.workspace_id = work_order.workspace_id AND project.id = work_order.project_id
+           JOIN pre_project_design_versions version ON version.workspace_id = project.workspace_id AND version.case_id = project.case_id AND version.id = $3
+                AND version.status IN ('approved', 'internal_approved')
+           JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.case_id = version.case_id AND asset.id = version.asset_id
+          WHERE work_order.workspace_id = $1 AND work_order.id = $2`, [workspaceId, uuid(orderId, "Work order"), uuid(versionId, "Drawing")])).rows[0];
+      if (!row || !this.storage) throw new NotFoundException("Drawing not found.");
+      if (preview && !row.previewKey) throw new NotFoundException("Preview not available.");
+      const key = preview ? row.previewKey! : row.objectKey;
+      const stored = await this.storage.read(key).catch(() => null);
+      if (!stored) throw new NotFoundException("Drawing not found.");
+      return { body: stored.body, contentType: preview ? "image/webp" : row.mimeType };
     });
   }
 
@@ -692,6 +719,8 @@ export class FactoryService {
       }
       if (settings.requireQs) checks.push({ key: "qs", passed: project ? await qsApproved(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the quotation hasn't passed its QS step" });
     }
+    // Guide step 21: the item's supplies signed off by procurement (its material list, signed drawing and price passed first).
+    if (settings.requireSuppliesSignoff) checks.push({ key: "supplies", passed: await suppliesSignedOff(client, workspaceId, order.boqLineId), missing: "procurement hasn't signed off its supplies" });
     checks.push({ key: "schedule", passed: Boolean(order.workcenterId && order.plannedStart && order.plannedEnd), missing: "it has no workcenter or dates" });
     return checks;
   }
@@ -904,10 +933,12 @@ export class FactoryService {
     return { ...row, reference: `${row.title} R${row.number}`.slice(0, 200) };
   }
 
-  /** The project's designs with an approved revision: the latest approved revision of each. */
+  /** The project's designs with an approved revision: the latest approved revision of each, with its file. */
   private async approvedDesigns(client: Db, workspaceId: string, projectId: string) {
-    return (await client.query<{ designId: string; versionId: string; title: string; number: number; documentType: string }>(
-      `SELECT DISTINCT ON (design.id) design.id AS "designId", version.id AS "versionId", design.title, version.number, design.document_type AS "documentType"
+    return (await client.query<{ designId: string; versionId: string; title: string; number: number; documentType: string; fileName: string | null; hasPreview: boolean }>(
+      `SELECT DISTINCT ON (design.id) design.id AS "designId", version.id AS "versionId", design.title, version.number, design.document_type AS "documentType",
+              (SELECT asset.original_name FROM pre_project_brief_assets asset WHERE asset.workspace_id = version.workspace_id AND asset.case_id = version.case_id AND asset.id = version.asset_id) AS "fileName",
+              coalesce((SELECT asset.preview_key IS NOT NULL FROM pre_project_brief_assets asset WHERE asset.workspace_id = version.workspace_id AND asset.case_id = version.case_id AND asset.id = version.asset_id), false) AS "hasPreview"
          FROM pre_project_designs design
          JOIN pre_project_design_versions version ON version.workspace_id = design.workspace_id AND version.design_id = design.id AND version.status IN ('approved', 'internal_approved')
          JOIN delivery_projects project ON project.workspace_id = design.workspace_id AND project.case_id = design.case_id AND project.id = $2
@@ -944,7 +975,10 @@ export class FactoryService {
               report.reported_by AS "reportedBy", reporter.display_name AS "reportedByName", report.reported_at AS "reportedAt", decider.display_name AS "decidedByName",
               report.decision_note AS "decisionNote"
          FROM work_order_reports report JOIN users reporter ON reporter.id = report.reported_by LEFT JOIN users decider ON decider.id = report.decided_by
-        WHERE report.workspace_id = $1 AND report.work_order_id = $2 ORDER BY report.reported_at`, [workspaceId, orderId])).rows;
+        WHERE report.workspace_id = $1 AND report.work_order_id = $2 ORDER BY report.reported_at`, [workspaceId, orderId])).rows
+      .map((report) => ({ ...report, files: [] as EvidenceFile[] }));
+    const reportFiles = await evidenceFor(client, workspaceId, "factory_output", reports.map((report) => report.id));
+    for (const report of reports) report.files = reportFiles.get(report.id) ?? [];
     const checks = (await client.query<{ id: string; passed: string; failed: string; failReason: string; note: string; checkedByName: string; checkedAt: string; photoId: string | null }>(
       `SELECT checked.id, checked.passed::text AS passed, checked.failed::text AS failed, checked.fail_reason AS "failReason", checked.note, person.display_name AS "checkedByName",
               checked.checked_at AS "checkedAt", photo.id AS "photoId"

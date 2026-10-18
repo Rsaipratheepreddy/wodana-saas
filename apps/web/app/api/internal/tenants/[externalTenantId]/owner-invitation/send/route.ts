@@ -2,7 +2,7 @@ import { internalJsonResponse } from "@/lib/internal/proxy";
 import { invalidRequest, isSameOrigin } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 
-export async function POST(request: Request, context: { params: Promise<{ externalTenantId: string }> }) {
+export async function POST(request: Request, context: RouteContext<"/api/internal/tenants/[externalTenantId]/owner-invitation/send">) {
   const t = await getServerT();
   if (!isSameOrigin(request)) return invalidRequest(t("The request origin is not allowed."));
   const { externalTenantId } = await context.params;

@@ -1,62 +1,44 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type Translate } from "@/lib/i18n/keys";
 import { useEffect, useState } from "react";
-import {
-  Archive,
-  ArrowDown,
-  ArrowUp,
-  GripVertical,
-  History,
-  Plus,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
+import { Archive, History, Plus, RotateCcw } from "lucide-react";
 import {
   Badge,
   Button,
   Callout,
-  Checkbox,
   ConfirmationDialog,
   ControlledModalDialog,
-  DataGrid,
-  type DataGridColumn,
-  IconButton,
+  EmptyState,
+  formatDate,
   InspectorSheet,
-  NumericInput,
   TextInput,
   useDesignSystem,
-  VisuallyHidden,
 } from "@/design-system";
 import type { PaymentTerm, PaymentTemplate, Quote } from "@/lib/commercial/types";
-import {
-  commercialPath,
-  jsonRequest,
-  money,
-  paymentMilestoneAmounts,
-  quoteTotals,
-} from "@/lib/commercial/client";
+import { commercialPath, jsonRequest, quoteTotals } from "@/lib/commercial/client";
 import type { WorkspaceConfigurationRevision } from "@/lib/workspace/company-profile";
+import { PaymentMilestonesEditor } from "./payment-milestones-editor";
 import s from "./commercial.module.css";
 
-const newMilestone = (): PaymentTerm => ({
-  id: crypto.randomUUID(),
-  title: "New milestone",
-  percent: 0,
-  trigger: "",
-  requiredForRelease: false,
-  requiredForProduction: false,
-});
-
-function starterTemplate(): PaymentTemplate {
+function starterTemplate(t: Translate): PaymentTemplate {
+  const milestone = (title: string, percent: number, trigger: string, requiredForRelease = false): PaymentTerm => ({
+    id: crypto.randomUUID(),
+    title,
+    percent,
+    trigger,
+    requiredForRelease,
+    requiredForProduction: false,
+  });
   return {
     id: crypto.randomUUID(),
     name: "",
     version: 0,
     milestones: [
-      { ...newMilestone(), title: "Advance", percent: 50, trigger: "On signing the agreement", requiredForRelease: true },
-      { ...newMilestone(), title: "Before installation", percent: 40, trigger: "Before site installation" },
-      { ...newMilestone(), title: "Handover", percent: 10, trigger: "On completed handover" },
+      milestone(t("Advance"), 50, t(tKey("On signing the agreement")), true),
+      milestone(t("Before installation"), 40, t(tKey("Before site installation"))),
+      milestone(t("Handover"), 10, t(tKey("On completed handover"))),
     ],
   };
 }
@@ -73,6 +55,7 @@ export function PaymentScheduleEditor({
   readOnly: boolean;
 }) {
   const t = useT();
+  const region = useDesignSystem();
   const [templates, setTemplates] = useState<PaymentTemplate[]>([]);
   const [library, setLibrary] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -94,7 +77,7 @@ export function PaymentScheduleEditor({
       );
       setTemplates(result.items);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Payment schedules could not be loaded.");
+      setError(failure instanceof Error ? failure.message : t(tKey("Payment schedules could not be loaded.")));
     }
   }
 
@@ -105,12 +88,12 @@ export function PaymentScheduleEditor({
         if (active) setTemplates(result.items);
       })
       .catch((failure: unknown) => {
-        if (active) setError(failure instanceof Error ? failure.message : "Payment schedules could not be loaded.");
+        if (active) setError(failure instanceof Error ? failure.message : t(tKey("Payment schedules could not be loaded.")));
       });
     return () => {
       active = false;
     };
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   const apply = (template: PaymentTemplate) => {
     onChange({
@@ -133,7 +116,7 @@ export function PaymentScheduleEditor({
         ),
       );
     } catch (failure) {
-      setHistoryError(failure instanceof Error ? failure.message : "Schedule history could not be loaded.");
+      setHistoryError(failure instanceof Error ? failure.message : t(tKey("Schedule history could not be loaded.")));
     }
   };
 
@@ -151,7 +134,7 @@ export function PaymentScheduleEditor({
       setArchiveTarget(null);
       await load();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Schedule could not be archived.");
+      setError(failure instanceof Error ? failure.message : t(tKey("Schedule could not be archived.")));
       setArchiveTarget(null);
     } finally {
       setBusy(false);
@@ -173,7 +156,7 @@ export function PaymentScheduleEditor({
       await load();
       apply(restored);
     } catch (failure) {
-      setHistoryError(failure instanceof Error ? failure.message : "Schedule revision could not be restored.");
+      setHistoryError(failure instanceof Error ? failure.message : t(tKey("Schedule revision could not be restored.")));
       setRollbackTarget(null);
     } finally {
       setBusy(false);
@@ -231,24 +214,15 @@ export function PaymentScheduleEditor({
         </p>
       ) : null}
 
-      {!terms.length ? (
-        <p className={s.notice}>{t("Choose a reusable schedule or add milestones. Percentages must total 100% before review.")}</p>
-      ) : (
-        <MilestoneRows
-          currency={quote.currency}
-          onChange={(rows) => onChange({ ...quote, paymentTerms: rows })}
-          readOnly={readOnly}
-          rows={terms}
-          total={total}
-        />
-      )}
-
-      {!readOnly ? (
-        <div className={s.actions}>
-          <Button onPress={() => onChange({ ...quote, paymentTerms: [...terms, newMilestone()] })} size="compact">
-            <Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>
-        </div>
-      ) : null}
+      <PaymentMilestonesEditor
+        ariaLabel={t("Payment schedule")}
+        currency={quote.currency}
+        emptyDescription={t("Choose a reusable schedule or add milestones. Percentages must total 100% before review.")}
+        milestones={terms}
+        onChange={(rows) => onChange({ ...quote, paymentTerms: rows })}
+        readOnly={readOnly}
+        total={total}
+      />
 
       <ControlledModalDialog
         isOpen={library}
@@ -281,7 +255,7 @@ export function PaymentScheduleEditor({
             </div>
           ))}
 
-          <Button onPress={() => { setEdit(starterTemplate()); setTemplateName(""); }}>
+          <Button onPress={() => { setEdit(starterTemplate(t)); setTemplateName(""); }}>
             <Plus aria-hidden="true" size={14} />{t("Create schedule")}</Button>
 
           {edit ? (
@@ -292,10 +266,13 @@ export function PaymentScheduleEditor({
                 placeholder={t("e.g. Residential · 50 / 40 / 10")}
                 value={templateName}
               />
-              <MilestoneRows onChange={(rows) => setEdit({ ...edit, milestones: rows })} readOnly={false} rows={edit.milestones} />
+              <PaymentMilestonesEditor
+                ariaLabel={t("Payment schedule")}
+                milestones={edit.milestones}
+                onChange={(rows) => setEdit({ ...edit, milestones: rows })}
+                readOnly={false}
+              />
               <div className={s.actions}>
-                <Button onPress={() => setEdit({ ...edit, milestones: [...edit.milestones, newMilestone()] })} size="compact">
-                  <Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>
                 <Button
                   isDisabled={busy || !templateName.trim()}
                   isLoading={busy}
@@ -312,7 +289,7 @@ export function PaymentScheduleEditor({
                       apply(saved);
                       setEdit(null);
                     } catch (failure) {
-                      setError(failure instanceof Error ? failure.message : "Schedule could not be saved.");
+                      setError(failure instanceof Error ? failure.message : t("The schedule could not be saved."));
                     } finally {
                       setBusy(false);
                     }
@@ -331,19 +308,21 @@ export function PaymentScheduleEditor({
         isOpen={Boolean(historyTemplate)}
         onOpenChange={(open) => { if (!open && !busy) setHistoryTemplate(null); }}
         size="sm"
-        title={historyTemplate ? `${historyTemplate.name} history` : "Schedule history"}
+        title={historyTemplate ? t("{name} history", { name: historyTemplate.name }) : t(tKey("Schedule history"))}
       >
         {historyError ? <Callout title={t("Schedule history unavailable")} tone="danger">{historyError}</Callout> : null}
-        {!historyError && !revisions.length ? <p className={s.muted}>{t("No saved changes yet.")}</p> : null}
+        {!historyError && !revisions.length ? <EmptyState illustration={null} title={t("No saved changes yet.")} /> : null}
         {revisions.length ? (
           <ol className={s.history}>
             {revisions.map((revision, index) => (
               <li key={revision.id}>
                 <div className={s.header}>
                   <div>
-                    <strong>{t("Revision")}{" "}{revision.revisionNumber}</strong>
+                    <strong>{t("Revision {number}", { number: revision.revisionNumber })}</strong>
                     <p className={s.muted}>
-                      {new Date(revision.createdAt).toLocaleString()} · {revision.changes.length} {t("changed")}{" "}{revision.changes.length === 1 ? "field" : "fields"}
+                      {formatDate(revision.createdAt, region, { dateStyle: "medium", timeStyle: "short" })}
+                      {" · "}
+                      {t(revision.changes.length === 1 ? "{count} changed field" : "{count} changed fields", { count: revision.changes.length })}
                     </p>
                   </div>
                   {index === 0 ? (
@@ -360,16 +339,16 @@ export function PaymentScheduleEditor({
       </InspectorSheet>
 
       <ConfirmationDialog
-        body="It will stop appearing in schedule selection. Existing quotations and revision history stay unchanged."
-        confirmLabel={busy ? "Archiving…" : "Archive schedule"}
+        body={t(tKey("It will stop appearing in schedule selection. Existing quotations and revision history stay unchanged."))}
+        confirmLabel={busy ? t("Archiving…") : t(tKey("Archive schedule"))}
         isOpen={Boolean(archiveTarget)}
         onConfirm={() => void archiveTemplate()}
         onOpenChange={(open) => { if (!open && !busy) setArchiveTarget(null); }}
         title={t("Archive this payment schedule?")}
       />
       <ConfirmationDialog
-        body="The selected milestones become the current schedule. The current version remains in history."
-        confirmLabel={busy ? "Restoring…" : "Restore revision"}
+        body={t(tKey("The selected milestones become the current schedule. The current version remains in history."))}
+        confirmLabel={busy ? t("Restoring…") : t("Restore revision")}
         isOpen={Boolean(rollbackTarget)}
         onConfirm={() => void rollback()}
         onOpenChange={(open) => { if (!open && !busy) setRollbackTarget(null); }}
@@ -377,156 +356,4 @@ export function PaymentScheduleEditor({
       />
     </section>
   );
-}
-
-function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
-  rows: PaymentTerm[];
-  onChange: (rows: PaymentTerm[]) => void;
-  readOnly: boolean;
-  total?: number;
-  currency?: string;
-}) {
-  const t = useT();
-  const region = useDesignSystem();
-  const [drag, setDrag] = useState<string | null>(null);
-
-  function move(id: string, to: number) {
-    const next = [...rows];
-    const index = next.findIndex((row) => row.id === id);
-    if (index < 0 || to < 0 || to >= next.length) return;
-    const [item] = next.splice(index, 1);
-    next.splice(to, 0, item);
-    onChange(next);
-  }
-
-  const patch = (id: string, value: Partial<PaymentTerm>) =>
-    onChange(rows.map((row) => (row.id === id ? { ...row, ...value } : row)));
-
-  const columns: DataGridColumn<PaymentTerm>[] = [
-    ...(!readOnly ? [{
-      id: "order",
-      header: "Order",
-      size: 130,
-      enableSorting: false,
-      enableColumnFilter: false,
-      meta: { renderCell: (row: PaymentTerm) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        return <div className={s.rowAction}>
-          <span
-            draggable
-            onDragEnd={() => setDrag(null)}
-            onDragStart={(event) => { setDrag(row.id); event.dataTransfer.setData("text/plain", row.id); }}
-            title={t("Drag to reorder")}
-          ><GripVertical aria-hidden="true" size={16} /></span>
-          <IconButton aria-label={t("Move {name} up", { name: row.title })} isDisabled={index === 0} onPress={() => move(row.id, index - 1)} size="compact"><ArrowUp aria-hidden="true" size={13} /></IconButton>
-          <IconButton aria-label={t("Move {name} down", { name: row.title })} isDisabled={index === rows.length - 1} onPress={() => move(row.id, index + 1)} size="compact"><ArrowDown aria-hidden="true" size={13} /></IconButton>
-        </div>;
-      } },
-    }] : []),
-    {
-      id: "title",
-      header: "Milestone / trigger",
-      size: 300,
-      accessorFn: (row) => `${row.title} ${row.trigger}`,
-      meta: { renderCell: (row: PaymentTerm) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        return readOnly ? <>{row.title}<small className={s.detail}>{row.trigger}</small></> : (
-          <div className={s.paymentFields}>
-            <TextInput label={<VisuallyHidden>{t("Milestone {number} title", { number: index + 1 })}</VisuallyHidden>} onChange={(value) => patch(row.id, { title: value })} value={row.title} />
-            <TextInput label={<VisuallyHidden>{t("Milestone {number} trigger", { number: index + 1 })}</VisuallyHidden>} onChange={(value) => patch(row.id, { trigger: value })} placeholder={t("When is it due?")} value={row.trigger} />
-          </div>
-        );
-      } },
-    },
-    {
-      id: "percent",
-      header: "Percentage",
-      size: 140,
-      accessorFn: (row) => row.percent,
-      meta: { renderCell: (row: PaymentTerm) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        return readOnly ? `${row.percent}%` : (
-          <NumericInput
-            label={<VisuallyHidden>{t("Milestone {number} percentage", { number: index + 1 })}</VisuallyHidden>}
-            maxValue={100}
-            minValue={0.01}
-            onChange={(value) => patch(row.id, { percent: value })}
-            step={0.01}
-            suffix="%"
-            value={row.percent}
-          />
-        );
-      } },
-    },
-    ...(total !== undefined ? [{
-      id: "amount",
-      header: "Amount",
-      size: 160,
-      accessorFn: (row: PaymentTerm) => paymentMilestoneAmounts(total, rows, currency ?? region.currency)[rows.findIndex((item) => item.id === row.id)],
-      meta: { renderCell: (row: PaymentTerm) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        return money(paymentMilestoneAmounts(total, rows, currency ?? region.currency)[index], currency ?? region.currency, region.locale);
-      } },
-    }] : []),
-    {
-      id: "release",
-      header: "Before release",
-      size: 140,
-      accessorFn: (row) => row.requiredForRelease ? "Required" : "Optional",
-      meta: { renderCell: (row: PaymentTerm) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        return readOnly ? (row.requiredForRelease ? "Required" : "—") : (
-          <Checkbox aria-label={`Milestone ${index + 1} required before release`} isSelected={row.requiredForRelease} onChange={(selected) => patch(row.id, { requiredForRelease: selected })} />
-        );
-      } },
-    },
-    {
-      id: "production",
-      header: "Before production",
-      size: 165,
-      accessorFn: (row) => row.requiredForProduction ? "Required" : "Optional",
-      meta: { renderCell: (row: PaymentTerm) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        return readOnly ? (row.requiredForProduction ? "Required" : "—") : (
-          <Checkbox aria-label={`Milestone ${index + 1} required before production`} isSelected={row.requiredForProduction === true} onChange={(selected) => patch(row.id, { requiredForProduction: selected })} />
-        );
-      } },
-    },
-    ...(!readOnly ? [{
-      id: "action",
-      header: "Action",
-      size: 90,
-      enableSorting: false,
-      enableColumnFilter: false,
-      meta: { renderCell: (row: PaymentTerm) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        return <IconButton aria-label={`Remove milestone ${index + 1}`} onPress={() => onChange(rows.filter((milestone) => milestone.id !== row.id))} size="compact"><Trash2 aria-hidden="true" size={14} /></IconButton>;
-      } },
-    }] : []),
-  ];
-
-  return <>
-    <DataGrid
-      ariaLabel="Payment schedule"
-      columns={columns}
-      data={rows}
-      exportFileName="payment-schedule.csv"
-      getRowDragHandlers={(row) => ({
-        onDragOver: (event) => { if (drag) event.preventDefault(); },
-        onDrop: (event) => {
-          if (!drag) return;
-          event.preventDefault();
-          move(drag, rows.findIndex((item) => item.id === row.id));
-          setDrag(null);
-        },
-      })}
-      getRowId={(row) => row.id}
-      pinFirstColumn={false}
-      searchLabel="Search payment schedule"
-      selectable={false}
-    />
-    <p className={s.muted}>
-      {t("Total: {percent}% · Drag milestones or use the arrow buttons to reorder.", { percent: rows.reduce((sum, row) => sum + row.percent, 0).toFixed(2) })}
-    </p>
-  </>;
 }

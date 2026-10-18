@@ -3,11 +3,11 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { CheckCircle2, Trash2 } from "lucide-react";
 import {
-  Button, Callout, ComboboxField, ConfirmationDialog, ControlledModalDialog,
-  DesignSystemProvider, SelectField, SettingsPage, SettingsRow, SettingsSection, TextInput, ValidationSummary, useDesignSystem, FormDialog, FormSection } from "@/design-system";
+  Button, Callout, ComboboxField, ConfirmationDialog,
+  DesignSystemProvider, FileUploader, SelectField, SettingsPage, SettingsRow, SettingsSection, Spinner, TextInput, ValidationSummary, useDesignSystem, FormDialog, FormSection } from "@/design-system";
 import type { Translate } from "@/lib/i18n/keys";
 import {
   type CompanyAddress, type CompanyProfileData, type CompanyProfileUpdate, type LegalEntityRecord,
@@ -26,6 +26,8 @@ type ProfileForm = {
   defaultLocale: string; defaultTimezone: string; unitSystem: string; weekStartsOn: string;
 };
 type FormErrors = Partial<Record<keyof ProfileForm, string>>;
+/** The brand images the upload service accepts (the handlers check the same list). */
+const BRAND_IMAGE_TYPES = "image/png,image/jpeg,image/webp";
 type UploadSession = { assetId: string; uploadMode: "signed" | "application"; uploadUrl: string | null; uploadHeaders: Record<string, string> };
 
 function valueFromAddress(address: CompanyAddress, key: keyof CompanyAddress): string {
@@ -129,8 +131,6 @@ export function CompanyProfile({
   const t = useT();
   const { locale } = useDesignSystem();
   const router = useRouter();
-  const fileInput = useRef<HTMLInputElement>(null);
-  const backgroundInput = useRef<HTMLInputElement>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [data, setData] = useState(initialData);
   const entity = data.legalEntities[0];
@@ -259,8 +259,7 @@ export function CompanyProfile({
     finally { setIsSaving(false); }
   };
 
-  const uploadLogo = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; event.target.value = "";
+  const uploadLogo = async (file: File | undefined) => {
     if (!file || isUploadingLogo) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) { setLogoError(t("Choose a PNG, JPEG, or WebP image.")); return; }
     if (file.size > 5 * 1024 * 1024) { setLogoError(t("Logo must be 5 MB or smaller.")); return; }
@@ -297,8 +296,7 @@ export function CompanyProfile({
   };
 
   // The sign-in background: the same short-lived upload as the logo, then verified and activated by the server.
-  const uploadBackground = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; event.target.value = "";
+  const uploadBackground = async (file: File | undefined) => {
     if (!file || isUploadingBackground) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) { setLogoError(t("Choose a PNG, JPEG, or WebP image.")); return; }
     if (file.size > 10 * 1024 * 1024) { setLogoError(t("Sign-in background must be 10 MB or smaller.")); return; }
@@ -346,14 +344,16 @@ export function CompanyProfile({
               <span className={styles.logoThumb} data-has-logo={data.branding.logoUrl ? true : undefined} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>
                 {data.branding.logoUrl ? <Image alt={t("{name} logo", { name: data.workspace.name })} height={32} src={data.branding.logoUrl} unoptimized width={32} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}
               </span>
-              {canManage ? <Button isLoading={isUploadingLogo} onPress={() => fileInput.current?.click()} size="compact" variant="quiet">{data.branding.logoUrl ? t("Replace") : t("Upload logo")}</Button> : null}
+              {canManage ? <FileUploader accept={BRAND_IMAGE_TYPES} appearance="button" label={data.branding.logoUrl ? t("Replace logo") : t("Upload logo")} multiple={false} onFiles={(files) => void uploadLogo(files[0])} /> : null}
+              {isUploadingLogo ? <Spinner label={t("Uploading…")} /> : null}
               {canManage && data.branding.logoUrl ? <Button isDisabled={isUploadingLogo} onPress={() => setRemoveLogoOpen(true)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
             </SettingsRow>
             <SettingsRow hint={t("PNG, JPG or WebP · 10 MB")} label={t("Sign-in background")}>
               {data.branding.loginBackgroundUrl
                 ? <span className={styles.backgroundThumb}><Image alt={t("Sign-in background")} height={40} src={data.branding.loginBackgroundUrl} unoptimized width={64} /></span>
                 : <span className={styles.backgroundDefault}>{t("Default")}</span>}
-              {canManage ? <Button isLoading={isUploadingBackground} onPress={() => backgroundInput.current?.click()} size="compact" variant="quiet">{data.branding.loginBackgroundUrl ? t("Replace") : t("Upload background")}</Button> : null}
+              {canManage ? <FileUploader accept={BRAND_IMAGE_TYPES} appearance="button" label={data.branding.loginBackgroundUrl ? t("Replace image") : t("Upload background")} multiple={false} onFiles={(files) => void uploadBackground(files[0])} /> : null}
+              {isUploadingBackground ? <Spinner label={t("Uploading…")} /> : null}
               {canManage && data.branding.loginBackgroundUrl ? <Button isDisabled={isUploadingBackground} onPress={() => setRemoveBackgroundOpen(true)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
             </SettingsRow>
             <SettingsRow label={t("Company name")}>{data.workspace.name}</SettingsRow>
@@ -369,8 +369,6 @@ export function CompanyProfile({
               />
             </SettingsRow>
             <SettingsRow hint={t("AI suggests; nothing changes until someone accepts.")} label={t("AI assistance")}><AiAssistanceSetting bare canManage={canManage} workspaceId={data.workspace.id} /></SettingsRow>
-            <input accept="image/png,image/jpeg,image/webp" aria-label={t("Choose company logo")} className={styles.fileInput} onChange={uploadLogo} ref={fileInput} type="file" />
-            <input accept="image/png,image/jpeg,image/webp" aria-label={t("Choose sign-in background")} className={styles.fileInput} onChange={uploadBackground} ref={backgroundInput} type="file" />
           </SettingsSection>
 
           <SettingsSection id="legal-details" title={t("Legal & tax")}>
@@ -405,7 +403,7 @@ export function CompanyProfile({
           {saveError ? <Callout title={t("Could not save changes")} tone="danger">{saveError}</Callout> : null}
           {logoError ? <Callout title={t("Could not update logo")} tone="danger">{logoError}</Callout> : null}
           <FormSection>
-            <div className={styles.logoFormActions}><div className={styles.logoFormPreview} data-has-logo={data.branding.logoUrl ? true : undefined} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>{data.branding.logoUrl ? <Image alt={t("{name} logo", { name: data.workspace.name })} height={56} src={data.branding.logoUrl} unoptimized width={56} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}</div><Button isDisabled={isUploadingLogo} isLoading={isUploadingLogo} onPress={() => fileInput.current?.click()}>{t("Upload logo")}</Button>{data.branding.logoUrl ? <Button isDisabled={isUploadingLogo} onPress={() => setRemoveLogoOpen(true)} variant="quiet"><Trash2 aria-hidden="true" size={15} />{t("Remove")}</Button> : null}</div>
+            <div className={styles.logoFormActions}><div className={styles.logoFormPreview} data-has-logo={data.branding.logoUrl ? true : undefined} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>{data.branding.logoUrl ? <Image alt={t("{name} logo", { name: data.workspace.name })} height={56} src={data.branding.logoUrl} unoptimized width={56} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}</div><FileUploader accept={BRAND_IMAGE_TYPES} appearance="button" label={t("Upload logo")} multiple={false} onFiles={(files) => void uploadLogo(files[0])} />{isUploadingLogo ? <Spinner label={t("Uploading…")} /> : null}{data.branding.logoUrl ? <Button isDisabled={isUploadingLogo} onPress={() => setRemoveLogoOpen(true)} variant="quiet"><Trash2 aria-hidden="true" size={15} />{t("Remove")}</Button> : null}</div>
             <TextInput autoFocus errorMessage={errors.name} isInvalid={Boolean(errors.name)} isRequired label={t("Company name")} onChange={(value) => updateField("name", value)} value={form.name} />
           </FormSection>
           <FormSection title={t("Legal & tax")}>
@@ -430,8 +428,8 @@ export function CompanyProfile({
           </FormSection>
 </FormDialog> : null}
       <ConfirmationDialog body={t("Your edits have not been saved. Discard them and close the editor?")} confirmLabel={t("Discard changes")} cancelLabel={t("Keep editing")} isOpen={discardOpen} onConfirm={discardChanges} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} />
-      <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isRemovingLogo} onPress={() => setRemoveLogoOpen(false)}>{t("Keep logo")}</Button><Button isLoading={isRemovingLogo} onPress={removeLogo} variant="danger">{t("Remove logo")}</Button></div>} isOpen={removeLogoOpen} onOpenChange={setRemoveLogoOpen} title={t("Remove company logo?")}>{t("The initials fallback will replace the logo on the workspace and tenant sign-in screen.")}</ControlledModalDialog>
-      <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isRemovingBackground} onPress={() => setRemoveBackgroundOpen(false)}>{t("Keep background")}</Button><Button isLoading={isRemovingBackground} onPress={removeBackground} variant="danger">{t("Remove background")}</Button></div>} isOpen={removeBackgroundOpen} onOpenChange={setRemoveBackgroundOpen} title={t("Remove sign-in background?")}>{t("The sign-in screen will show the default image.")}</ControlledModalDialog>
+      <ConfirmationDialog body={t("The initials fallback will replace the logo on the workspace and tenant sign-in screen.")} cancelLabel={t("Keep logo")} confirmLabel={t("Remove logo")} isConfirming={isRemovingLogo} isOpen={removeLogoOpen} onConfirm={() => void removeLogo()} onOpenChange={setRemoveLogoOpen} title={t("Remove company logo?")} />
+      <ConfirmationDialog body={t("The sign-in screen will show the default image.")} cancelLabel={t("Keep background")} confirmLabel={t("Remove background")} isConfirming={isRemovingBackground} isOpen={removeBackgroundOpen} onConfirm={() => void removeBackground()} onOpenChange={setRemoveBackgroundOpen} title={t("Remove sign-in background?")} />
     </DesignSystemProvider>
   );
 }

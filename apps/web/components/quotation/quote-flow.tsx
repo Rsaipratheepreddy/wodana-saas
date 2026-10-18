@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { type CalendarDate, parseDate, today } from "@internationalized/date";
-import { Button, Checkbox, DataGrid, type DataGridColumn, DateField, EmptyState, FieldCaption, FileUploader, FormDialog, FormRow, FormSection, IconButton, InlineNotice, PercentageInput, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, VisuallyHidden } from "@/design-system";
+import { Button, Checkbox, DataGrid, type DataGridColumn, DateField, EmptyState, FieldCaption, FileUploader, FormDialog, FormRow, FormSection, IconButton, InlineNotice, PercentageInput, ReasonDialog, SelectField, Tag, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, VisuallyHidden } from "@/design-system";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
@@ -127,7 +127,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
         setSending(null);
       }} /> : null}
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
-    {returning ? <ReturnDialog busy={busy === "return"} onClose={() => setReturning(false)}
+    {returning ? <ReturnDialog onClose={() => setReturning(false)}
       onSave={async (note) => { await run("return", [["return", { note }]]); setReturning(false); }} /> : null}
     {extending ? <ExtendValidityDialog current={state.quote.validUntil} busy={busy === "extend"} onClose={() => setExtending(false)}
       onSave={async (validUntil) => { await run("extend", [["extend_validity", { validUntil }]]); setExtending(false); }} /> : null}
@@ -137,13 +137,9 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
 }
 
 /** The reviewer says what needs to change; the preparer reads it in the notice and the case history. */
-function ReturnDialog({ onClose, onSave, busy }: { onClose: () => void; onSave: (note: string) => Promise<void>; busy: boolean }) {
+function ReturnDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog title={t("Return for changes")} onClose={onClose} isSubmitting={busy} isDirty={Boolean(note.trim())}
-    isSubmitDisabled={!note.trim()} submitLabel={t("Return")} onSubmit={() => onSave(note.trim())}>
-    <TextAreaField label={t("What needs to change")} isRequired value={note} onChange={setNote} maxLength={3000} />
-  </FormDialog>;
+  return <ReasonDialog title={t("Return for changes")} label={t("What needs to change")} confirmLabel={t("Return")} maxLength={3000} onClose={onClose} onConfirm={onSave} />;
 }
 
 /** Same content, a new date: the client is told it's open again (Q-7). */
@@ -216,7 +212,7 @@ function DecisionDialog({ state, workspaceId, caseId, onClose, onSave, busy }: {
     <TextAreaField label={decision === "accept" ? t("Note") : t("What they asked for")} isRequired={decision !== "accept"} value={note} onChange={setNote} />
     <div className={styles.evidence} role="group" aria-labelledby={evidenceLabel}>
       <FieldCaption id={evidenceLabel} isRequired={evidenceRequired}>{t("Evidence")}</FieldCaption>
-      {evidence ? <div className={styles.evidenceFile}><span>{evidence.name}</span><Button size="compact" variant="quiet" onPress={() => setEvidence(null)}>{t("Remove")}</Button></div>
+      {evidence ? <div><Tag onRemove={() => setEvidence(null)}>{evidence.name}</Tag></div>
         : uploading ? <InlineNotice message={t("Uploading…")} />
         : <FileUploader accept={EVIDENCE_TYPES} appearance="button" label={t("Attach the signed copy, email or message")} multiple={false} onFiles={(files) => void attach(files[0])} />}
       {uploadError ? <InlineNotice tone="error" message={uploadError} /> : null}

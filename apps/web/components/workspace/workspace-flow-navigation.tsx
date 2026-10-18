@@ -63,19 +63,19 @@ function useFlowBar(module: WorkspaceModuleDefinition, pathname: string): FlowBa
       query.delete("review");
       return caseHref(recordRoute.id, query, section);
     };
-    const areaLabels: Record<string, string> = { overview: t("Overview"), requirements: t("Requirements"), site: t("Site"), moodboard: t("Moodboard"), design: t("Design"), quotes: t("Quotes"), agreement: t("Agreement") };
+    const areaLabels: Record<string, string> = { overview: t("Overview"), requirements: t("Requirements"), site: t("Site"), moodboard: t("Moodboard"), design: t("Design"), quotes: t("Quotes"), agreement: t("Deal") };
     const viewLabels: Record<string, string> = {
-      "client-portal": t("Client access"), "execution-release": t("Release readiness"), requirements: t("Requirements"), measurements: t("Measurements"),
+      "client-portal": t("Client access"), "deal-file": t("Deal File"), "execution-release": t("Release"), requirements: t("Requirements"), measurements: t("Measurements"),
       "site-layouts": t("Photos & plans"), site: t("Visits"), inspiration: t("Moodboard"), definition: t("Scope sign-off"), quotations: t("Quotes"),
-      contracts: t("Agreement"), "payment-plan": t("Payments"), approvals: t("Approvals"), variations: t("Change requests"),
+      contracts: t("Agreement"), "payment-plan": t("Payments"), approvals: t("Approvals"), variations: t("Changes"),
     };
     const views = area.id === "overview" ? [] : area.sections;
     // The areas the case's path uses (PLM-121/126): no Site, Moodboard or Design for an order that has none. The open area always shows.
     const areas = planningAreasFor(selected?.record.id === recordRoute.id ? selected.record.plan : undefined, area.id);
     const activeView = views.length > 1 ? views.find((tab) => tab.id === activeSection) : undefined;
-    // One tab row: the areas at the start, the open area's views as a segmented switch at its end.
+    // The areas as one tab row; the open area's views on their own row under it (never squeezed beside the areas).
     return { names: [areaLabels[area.id], activeView ? viewLabels[activeView.id] ?? t(activeView.label as never) : ""], bar: <div className={styles.flowHeader} data-module="crm" data-navigation="chips">
-      <div className={styles.flowTabRow}>
+      <div className={styles.flowTabRow} data-stacked="">
         <nav aria-label={t("Planning sections")} className={styles.flowTabs}>
           <div className={styles.flowTabScroll}>{areas.map(item => <Link key={item.id} href={href(item.section)} className={styles.salesTab} data-tour={`case-tab-${item.id}`} aria-current={item === area ? "page" : undefined}><span>{areaLabels[item.id]}</span></Link>)}</div>
         </nav>

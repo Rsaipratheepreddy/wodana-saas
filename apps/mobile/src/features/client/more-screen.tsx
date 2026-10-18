@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Linking, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { Bell, FileSignature, FileText, Globe, LogOut, Mail, MessageCircle, Phone, ShieldCheck } from 'lucide-react-native';
+import { Bell, FileSignature, FileText, Globe, LogOut, Mail, MessageCircle, Phone, ShieldCheck, ShoppingBag } from 'lucide-react-native';
 import { telLink, mailLink, whatsappLink } from '../../core/contact';
 import { languages, useLanguage, useT, type AppLanguage } from '../../core/i18n';
 import { usePortal, useProject } from '../../portal/provider';
@@ -63,6 +63,10 @@ export function ClientMoreScreen() {
           onChange={(next) => { if (next) void language.setLanguage(next as AppLanguage); }} />
       </View>
     </Section>
+
+    {site?.catalogueUrl ? <Section>
+      <ListRow first icon={ShoppingBag} title={t('Our catalogue')} onPress={() => { void Linking.openURL(site.catalogueUrl!).catch(() => undefined); }} />
+    </Section> : null}
 
     {support && (support.phone || support.email || support.whatsapp) ? <Section title={t('Contact your project team')}>
       {support.phone ? <ListRow first icon={Phone} title={support.phone} onPress={() => { const link = telLink(support.phone); if (link) void Linking.openURL(link).catch(() => undefined); }} /> : null}

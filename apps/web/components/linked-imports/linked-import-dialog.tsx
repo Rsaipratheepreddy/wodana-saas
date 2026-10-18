@@ -345,7 +345,7 @@ function LinkCard({ link, detail, t, canManage, target, busy, locale, isExpanded
     <header>
       <FileSpreadsheet aria-hidden="true" size={16} />
       <strong>{link.name}</strong>
-      <Badge tone="neutral">{google ? t("Google Sheet") : t("Uploaded file")}</Badge>
+      <Badge hue={google ? 6 : 1}>{google ? t("Google Sheet") : t("Uploaded file")}</Badge>
       {status}
     </header>
     {last ? <p className={styles.muted}>{t("Last import {time}", { time: formatRelativeTime(last.at, { locale }) })}{last.trigger === "manual" && last.byName ? ` · ${last.byName}` : ""}

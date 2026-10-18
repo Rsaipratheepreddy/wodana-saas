@@ -104,6 +104,9 @@ export function appRouteFor(link: string | null | undefined): string | null {
     }
     case 'approvals':
       return '/approvals';
+    // A job (its journey) and the Jobs list.
+    case 'jobs':
+      return id(rest[0]) ? `/jobs/${rest[0]}` : '/jobs';
     // My day (the digest and reminder notices), with its chip.
     case 'my-day': {
       const urgency = url.searchParams.get('urgency');

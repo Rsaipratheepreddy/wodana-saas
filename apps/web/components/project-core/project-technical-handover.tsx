@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import {
-  Badge, Button, EmptyState, ErrorState, FormDialog, IconButton, InlineNotice, InspectorSheet, RecordTable, SelectField, Skeleton, TextAreaField, TextInput, type DataGridColumn,
+  Badge, Button, EmptyState, ErrorState, FormDialog, FormNotSaved, IconButton, InlineNotice, InspectorSheet, ReasonDialog, RecordTable, ReviewDialog, SelectField, Skeleton, TextAreaField, TextInput, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
@@ -46,7 +46,7 @@ export function ProjectTechnicalHandover({ workspaceId, projectId, version, run 
   const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
   const [pack, setPack] = useState<TechnicalHandover | null>(null);
   const [error, setError] = useState("");
-  const [dialog, setDialog] = useState<"hand_over" | { waive: { row: HandoverRow; item: HandoverItem } } | null>(null);
+  const [dialog, setDialog] = useState<"hand_over" | "accept" | { waive: { row: HandoverRow; item: HandoverItem } } | null>(null);
   const [line, setLine] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
@@ -103,16 +103,27 @@ export function ProjectTechnicalHandover({ workspaceId, projectId, version, run 
       </div>
       <div className={styles.toolbarActions}>
         {pack.canHandOver ? <Button size="compact" variant={pack.status === "draft" ? "primary" : "secondary"} onPress={() => setDialog("hand_over")}>{pack.status === "draft" ? t("Hand over to technical") : t("Hand over again")}</Button> : null}
-        {pack.canAccept ? <Button size="compact" variant="primary" isLoading={busy} isDisabled={pack.missing > 0} onPress={() => void act("accept_technical_handover", { handoverVersion: pack.version })}>{t("Accept handover")}</Button> : null}
+        {/* §0.3 P0: accepted in a review of the pack (every line and what it has), never one click. */}
+        {pack.canAccept ? <Button size="compact" variant="primary" isLoading={busy} isDisabled={pack.missing > 0} onPress={() => setDialog("accept")}>{t("Review handover")}</Button> : null}
       </div>
     </div>
     {pack.canAccept && pack.missing > 0 ? <InlineNotice tone="info" message={t("The pack can't be accepted while items are missing. Fill them, or mark them not applicable with a reason.")} /> : null}
     <RecordTable<HandoverRow> ariaLabel={t("Technical handover")} columns={columns} data={pack.rows} getRowId={(row) => row.lineId} onRowAction={(row) => setLine(row.lineId)}
       emptyContent={<EmptyState illustration={null} title={t("No items")} />} />
 
+    {dialog === "accept" ? <ReviewDialog title={t("Accept handover")} confirmLabel={t("Accept handover")} onClose={() => setDialog(null)}
+      facts={[
+        ...(pack.handedOver ? [{ label: t("Handed over by"), value: `${pack.handedOver.byName ?? ""} · ${format.when(pack.handedOver.at)}` }] : []),
+        ...(pack.handedOver?.note ? [{ label: t("Note for the technical team"), value: pack.handedOver.note }] : []),
+        { label: t("Items"), value: String(pack.rows.length) },
+      ]}
+      checks={{ label: t("Technical handover"), items: pack.rows.map((row) => ({ id: row.lineId, label: row.title, done: !row.missing.length,
+        detail: [row.areaName, row.missing.length ? t("{count} missing", { count: row.missing.length }) : null].filter(Boolean).join(" · ") || undefined })) }}
+      onConfirm={async () => { if (!(await act("accept_technical_handover", { handoverVersion: pack.version }))) throw new FormNotSaved(); setDialog(null); }} /> : null}
     {dialog === "hand_over" ? <HandOverDialog onClose={() => setDialog(null)} onSave={async (note) => { if (await act("hand_over_technical", { note, handoverVersion: pack.version })) setDialog(null); }} /> : null}
-    {dialog && typeof dialog === "object" ? <WaiveDialog item={words.column[dialog.waive.item]} title={dialog.waive.row.title} onClose={() => setDialog(null)}
-      onSave={async (reason) => { if (await act("waive_handover_item", { lineId: dialog.waive.row.lineId, item: dialog.waive.item, reason })) setDialog(null); }} /> : null}
+    {dialog && typeof dialog === "object" ? <ReasonDialog title={t("{item} not applicable for {title}", { item: words.column[dialog.waive.item], title: dialog.waive.row.title })} label={t("Why it doesn't apply")}
+      confirmLabel={t("Save")} onClose={() => setDialog(null)}
+      onConfirm={async (reason) => { if (!(await act("waive_handover_item", { lineId: dialog.waive.row.lineId, item: dialog.waive.item, reason }))) throw new FormNotSaved(); }} /> : null}
     {selected ? <RequirementsSheet row={selected} pack={pack} busy={busy} act={act} onClose={() => setLine(null)} /> : null}
   </div>;
 }
@@ -123,16 +134,6 @@ function HandOverDialog({ onClose, onSave }: { onClose: () => void; onSave: (not
   const [note, setNote] = useState("");
   return <FormDialog size="md" title={t("Hand over to technical")} onClose={onClose} isDirty={Boolean(note.trim())} submitLabel={t("Hand over")} onSubmit={() => void onSave(note.trim())}>
     <TextAreaField label={t("Note for the technical team")} value={note} onChange={setNote} />
-  </FormDialog>;
-}
-
-/** Marking a checklist item not applicable on one line needs the reason. */
-function WaiveDialog({ item, title, onClose, onSave }: { item: string; title: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
-  const t = useT();
-  const [reason, setReason] = useState("");
-  return <FormDialog size="md" title={t("{item} not applicable for {title}", { item, title })} onClose={onClose} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()} submitLabel={t("Save")}
-    onSubmit={() => void onSave(reason.trim())}>
-    <TextAreaField label={t("Why it doesn't apply")} isRequired value={reason} onChange={setReason} />
   </FormDialog>;
 }
 

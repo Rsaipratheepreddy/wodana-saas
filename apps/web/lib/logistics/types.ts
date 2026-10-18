@@ -20,6 +20,8 @@ export type LogisticsOptions = {
   deals: Array<{ id: string; label: string; deliveryOn: string | null; plannedPermitId: string | null; permitRequired: boolean }>;
   workOrders: Array<{ id: string; projectId: string; label: string; start: string | null; end: string | null; status: string }>;
   workers: Worker[]; crews: CrewOption[]; vehicles: Vehicle[]; permitTypes: string[]; canBook: boolean; canAddPeople: boolean; permitWarningDays: number;
+  /** People with a login: one of them goes on each delivery or installation visit (guide step 24). */
+  members?: Array<{ id: string; name: string }>;
 };
 
 export type PermitFact = { id: string; status: "planned" | "collected" | "cancelled"; validFrom: string | null; validTo: string | null; collectOn: string | null };
@@ -29,6 +31,8 @@ export type Clash = { kind: "person" | "vehicle"; id: string; name: string; key:
 export type Booking = Crew & {
   kind: LogisticsKind; projectId: string | null; opportunityId: string | null; workOrderId: string | null; permitId: string | null; project: string; start: string | null; end: string | null;
   assignmentId: string | null; permit: { required: boolean; permits: PermitFact[] }; canBook: boolean; canClear: boolean; warnings?: Clash[];
+  /** The person with a login on a delivery or installation visit (the project manager unless someone else is chosen). */
+  siteMemberId?: string | null;
 };
 
 /** A project's (or work order's) booking, or a deal's delivery when the order has no project. */

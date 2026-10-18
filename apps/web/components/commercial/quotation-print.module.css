@@ -4,11 +4,11 @@
 .document { display: grid; gap: var(--wd-space-3); inline-size: 100%; max-inline-size: var(--wd-content-wide); margin-inline: auto; }
 .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
 .muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
-.status { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
-.status[data-status="accepted"] { color: var(--wd-color-success); }
-.status[data-status="issued"] { color: var(--wd-color-warning); }
+.status { display: inline-flex; }
 
 @media print {
   .actions { display: none; }
   .page { padding: 0; }
+  /* The client's own state ("Waiting for you") belongs to the screen, never to the printed or signed copy. */
+  .status { display: none; }
 }

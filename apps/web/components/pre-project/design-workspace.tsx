@@ -5,8 +5,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, CircleCheck, CircleDashed, Folder, Plus, Upload } from "lucide-react";
 import { parseDate } from "@internationalized/date";
-import { Badge, Button, DateField, EmptyState, FormSection, InlineNotice, PillTabs, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
+import { Badge, Button, DateField, EmptyState, FileUploader, FormSection, InlineNotice, PillTabs, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { translateKnown } from "@/lib/i18n/keys";
 import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type CaseRoom, type DesignOptions } from "@/lib/pre-project/content";
 import { mergeDesigns } from "@/lib/pre-project/design-workflow";
 import { DESIGN_STATUS_LABEL, designStatusTone, isDeliverableStage, latestOf, nextStep, STAGE_DOCUMENT_TYPE, stageDetail, type JourneyStageKey, type JourneyView } from "@/lib/pre-project/design-workspace";
@@ -14,7 +15,8 @@ import { AssetUpload, CaseModal } from "./case-controls";
 import { DesignLedger } from "./design-ledger";
 import { FinishesSchedule } from "../finishes/finishes-schedule";
 import { DesignPresentations } from "./design-presentations";
-import { METHOD_LABEL, revisionDetail } from "@/lib/pre-project/design-decisions";
+import { METHOD_LABEL } from "@/lib/pre-project/design-decisions";
+import { RevisionChips } from "./revision-chips";
 import { DesignActions } from "./design-actions";
 import { FileCover } from "./design-file-preview";
 import { DesignViewer } from "./design-viewer";
@@ -91,6 +93,10 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const unstaged = current.filter((design) => !isDeliverableStage(design.stage));
   const shown: Tab = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
   const stageView = stages.find((stage) => stage.stage === shown);
+  // Concepts (and renders on the newer flow) are worked through presentations: that block carries the stage's empty state.
+  const presenting = (shown === "moodboards" || shown === "concepts" || (shown === "renders" && Number(journey?.journey?.flowVersion) >= 2)) && Boolean(journey?.journey);
+  const stageChip = stageView && shown !== "other" ? <Badge tone={stageView.status === "done" ? "success" : stageView.overdue && stageView.status === "active" ? "danger" : stageView.status === "active" ? "info" : "neutral"}>
+    {(() => { const detail = stageDetail(stageView); return t(detail.key as never, detail.values); })()}</Badge> : null;
   const inStage = shown === "other" ? unstaged : shown === "ledger" || shown === "finishes" ? [] : current.filter((design) => design.stage === shown);
   const roomName = (id: string | null) => id ? data.rooms.find((room) => room.id === id)?.name ?? t("Room") : t("General");
   const groups = [...new Set(inStage.map((design) => design.roomId ?? NO_ROOM))]
@@ -120,10 +126,15 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   if (!journey) return <Skeleton lines={6} shape="rows" />;
 
   return <section className={styles.page} aria-label={t("Design")}>
-    {!journey.journey ? <div className={styles.notStarted}>
-      <EmptyState illustration="calendar" title={t("Design hasn't started")} description={t("It starts when the design fee is paid.")}
+    {/* One message, matching the case: why the stages can't start yet, or the one action that starts them; files already
+        shared stay listed under a compact line, never under a "hasn't started" page. */}
+    {!journey.journey ? (current.length ? <div className={styles.notStartedBar}>
+      <span>{journey.startBlocker ? translateKnown(t, journey.startBlocker) : t("The design stages haven't started")}</span>
+      {journey.canStart ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void stageAction("design-journey/start", {})}>{t("Start design")}</Button> : null}
+    </div> : <div className={styles.notStarted}>
+      <EmptyState illustration="calendar" title={t("Design hasn't started")} description={journey.startBlocker ? translateKnown(t, journey.startBlocker) : journey.canStart ? t("Start the design stages when the team is ready.") : t("The design stages start from the paid design deal.")}
         action={journey.canStart ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void stageAction("design-journey/start", {})}>{t("Start design")}</Button> : undefined} />
-    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as Tab); setFolder(null); }}
+    </div>) : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as Tab); setFolder(null); }}
       items={[...stages.map((stage) => ({ id: stage.stage, label: t(stage.label as never), done: stage.status === "done" })), ...(unstaged.length ? [{ id: "other", label: t("Other") }] : []),
         { id: "ledger", label: t("Materials & decisions") }, { id: "finishes", label: t("Finishes") }, { id: "history", label: t("History") }]} />}
 
@@ -134,20 +145,20 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
     : shown === "finishes" ? <FinishesSchedule source={{ kind: "case", workspaceId, caseId }} rooms={data.rooms} onAddMaterials={() => setPicked("ledger")} />
     : shown === "approval" ? <SignOff data={data} designs={current} journey={journey} canReview={review.canRecordClient} busy={busy}
       onSignOff={(input) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, ...input })} /> : <>
-      {(shown === "concepts" || (shown === "renders" && journey.journey?.flowVersion === 2)) && journey.journey ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage={shown} designs={designs} canEdit={data.canEdit}
-        canRecordClient={review.canRecordClient} onChanged={() => void loadJourney()} /> : null}
-      <div className={styles.toolbar}>
-        {stageView && shown !== "other" ? <span className={styles.stageNote} data-overdue={stageView.overdue && stageView.status === "active" || undefined}>{(() => { const detail = stageDetail(stageView); return t(detail.key as never, detail.values); })()}</span> : null}
-        {stageView && shown !== "other" && shown !== "concepts" ? (() => { const revision = revisionDetail(stageView.revisions); return revision ? <Badge tone={stageView.revisions?.chargeable ? "warning" : "neutral"}>{t(revision.key, revision.values)}</Badge> : null; })() : null}
+      {presenting ? <DesignPresentations workspaceId={workspaceId} caseId={caseId} stage={shown} designs={designs} canEdit={data.canEdit}
+        canRecordClient={review.canRecordClient} onChanged={() => void loadJourney()} status={inStage.length ? undefined : stageChip} /> : null}
+      {presenting && !inStage.length ? null : <div className={styles.toolbar}>
+        {stageChip}
+        {stageView && shown !== "other" && !presenting ? <RevisionChips revisions={stageView.revisions} workspaceId={workspaceId} caseId={caseId} stage={shown} canEdit={data.canEdit} onChanged={() => void loadJourney()} /> : null}
         {openGroup ? <nav className={styles.crumbs} aria-label={t("Folders")}><button type="button" onClick={() => setFolder(null)}>{t("All rooms")}</button><ChevronRight aria-hidden="true" size={14} /><span aria-current="page">{openGroup.name}</span></nav>
           : groups.length > 1 ? <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as "folders" | "all")} options={[{ id: "folders", label: t("Rooms") }, { id: "all", label: t("All files") }]} /> : null}
         <span className={styles.spacer} />
         {review.canReview && stageView?.status === "active" && isDeliverableStage(shown) && !inStage.length ? <Button size="compact" onPress={() => setSkipping(true)}>{t("Not needed")}</Button> : null}
-        {data.canEdit && shown !== "other" ? <Button size="compact" variant="primary" onPress={() => setUploading(true)}><Upload aria-hidden="true" size={14} />{t("Upload")}</Button> : null}
-      </div>
-      {!inStage.length ? <EmptyState illustration="upload" title={shown === "other" ? t("No other files") : t("Nothing here yet")}
+        {data.canEdit && shown !== "other" && (inStage.length || !presenting) ? <Button size="compact" variant={presenting ? "secondary" : "primary"} onPress={() => setUploading(true)}><Upload aria-hidden="true" size={14} />{t("Upload")}</Button> : null}
+      </div>}
+      {!inStage.length && presenting ? null : !inStage.length ? <EmptyState illustration="upload" title={shown === "other" ? t("No other files") : t("Nothing here yet")}
         description={shown === "other" ? undefined : t("Upload this stage's drawings room by room.")}
-        action={data.canEdit && shown !== "other" ? <Button size="compact" variant="primary" onPress={() => setUploading(true)}><Plus aria-hidden="true" size={14} />{t("Upload")}</Button> : undefined} />
+        action={undefined} />
         : foldered && !openGroup ? <ul className={styles.cards} aria-label={t("Rooms")}>{groups.map((group) => {
             const approved = group.items.filter((design) => latestOf(design)?.status === "approved").length;
             return <li key={group.key}><button type="button" className={styles.card} onClick={() => setFolder(group.key)}>
@@ -261,7 +272,7 @@ function UploadSheet({ data, stage, roomId, onRoomAdded, onClose, onUploaded }: 
   const [files, setFiles] = useState<Pending[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const add = (list: FileList | null) => setFiles((current) => [...current, ...[...(list ?? [])].filter((file) => file.type.startsWith("image/") || file.type === "application/pdf").map((file) => ({ key: crypto.randomUUID(), file, title: file.name.replace(/\.[^.]+$/, "").slice(0, 240), documentType: STAGE_DOCUMENT_TYPE[stage] ?? "Other" }))].slice(0, 20));
+  const add = (list: File[]) => setFiles((current) => [...current, ...list.filter((file) => file.type.startsWith("image/") || file.type === "application/pdf").map((file) => ({ key: crypto.randomUUID(), file, title: file.name.replace(/\.[^.]+$/, "").slice(0, 240), documentType: STAGE_DOCUMENT_TYPE[stage] ?? "Other" }))].slice(0, 20));
   const save = async () => {
     if (!files.length) { setError(t("Choose at least one image or PDF.")); return; }
     if (files.some((file) => !file.title.trim())) { setError(t("Give every file a title.")); return; }
@@ -282,10 +293,7 @@ function UploadSheet({ data, stage, roomId, onRoomAdded, onClose, onUploaded }: 
     <div className={styles.uploadForm}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       <RoomField data={data} value={room} onChange={(item) => setRoom(item.id)} onRoomAdded={onRoomAdded} />
-      <label className={styles.drop}>
-        <input type="file" multiple accept="image/*,application/pdf" onChange={(event) => { add(event.target.files); event.target.value = ""; }} />
-        <Upload aria-hidden="true" size={18} /><span>{t("Choose images or PDFs")}</span>
-      </label>
+      <FileUploader appearance="button" accept="image/*,application/pdf" label={t("Choose images or PDFs")} onFiles={add} />
       {files.length ? <ul className={styles.pending}>{files.map((pending) => <li key={pending.key}>
         <TextInput label={<VisuallyHidden>{t("Title of {name}", { name: pending.file.name })}</VisuallyHidden>} value={pending.title} maxLength={240} onChange={(title) => setFiles((current) => current.map((item) => item.key === pending.key ? { ...item, title } : item))} />
         <Button size="compact" variant="quiet" aria-label={t("Remove {name}", { name: pending.title })} onPress={() => setFiles((current) => current.filter((item) => item.key !== pending.key))}>{t("Remove")}</Button>

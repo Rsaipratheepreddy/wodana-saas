@@ -36,6 +36,7 @@ const sectionPhase: Record<string, CasePhase> = {
   "payment-plan": "agree",
   variations: "agree",
   approvals: "release",
+  "deal-file": "release",
   "execution-release": "release",
   "client-portal": "release",
 };

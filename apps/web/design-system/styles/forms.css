@@ -47,15 +47,15 @@
 .wd-form-summary li button { color: var(--wd-color-text); }
 .wd-form-summary li button:hover, .wd-text-button:hover { text-decoration-color: currentColor; }
 .wd-form-summary li button:focus-visible, .wd-text-button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-2xs); }
-.wd-form-banner-actions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-inline-start: auto; }
+.wd-form-banner-actions { display: flex; flex-wrap: wrap; gap: var(--wd-action-gap); margin-inline-start: auto; }
 
 .wd-draft-notice { display: flex; align-items: center; gap: var(--wd-space-1-5); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); animation: wd-fade-up var(--wd-duration-base) var(--wd-ease-out) both; }
 .wd-draft-notice > svg { flex: none; color: var(--wd-color-icon-subtle); }
 
 /* ── Footer: other actions at the start, Cancel then the primary action at the end ─────────────────────── */
-.wd-form-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-3); }
+.wd-form-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-action-gap); }
 .wd-form-footer > .wd-dialog-actions { margin-inline-start: auto; }
-.wd-form-footer-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.wd-form-footer-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-action-gap); }
 @media (max-width: 640px) {
   .wd-form-footer > .wd-dialog-actions { flex: 1 1 100%; }
 }
@@ -92,7 +92,7 @@
 }
 .wd-fill-woddy > header { display: flex; align-items: center; gap: var(--wd-space-2); }
 .wd-fill-woddy > header > strong { flex: 1; font-size: var(--wd-text-sm); }
-.wd-fill-woddy-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.wd-fill-woddy-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-action-gap); }
 .wd-fill-woddy-actions > :first-child { margin-inline-end: auto; }
 .wd-fill-woddy-file { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
 .wd-fill-woddy-problem { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
@@ -109,6 +109,13 @@
 .wd-editable { display: grid; grid-template-columns: minmax(6rem, 36%) minmax(0, 1fr); align-items: start; gap: var(--wd-space-3); min-inline-size: 0; }
 /* Stacked (label above value) inside a narrow panel: the list or its host says data-layout="stacked". */
 [data-layout="stacked"] > .wd-editable, .wd-editable-list[data-layout="stacked"] .wd-editable { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-1); }
+/* A stacked list reads as organized rows: a small label over its value, a hairline between facts (no loose text). */
+.wd-editable-list[data-layout="stacked"] { gap: 0; }
+.wd-editable-list[data-layout="stacked"] > .wd-editable { gap: var(--wd-space-0-5); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.wd-editable-list[data-layout="stacked"] > .wd-editable:first-child { padding-block-start: 0; }
+.wd-editable-list[data-layout="stacked"] > .wd-editable:last-child { padding-block-end: 0; border-block-end: 0; }
+.wd-editable-list[data-layout="stacked"] > .wd-editable > .wd-editable-label { font-size: var(--wd-text-xs); }
+.wd-editable-list[data-layout="stacked"] > .wd-editable[data-readonly] > .wd-editable-cell { font-weight: var(--wd-weight-medium); }
 /* Typography yields to the host's fact list (:where has no weight); layout does not. */
 :where(.wd-editable > .wd-editable-label) { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 :where(.wd-editable > .wd-editable-cell) { color: var(--wd-color-text); font-size: var(--wd-text-sm); }

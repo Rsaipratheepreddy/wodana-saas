@@ -10,6 +10,7 @@ import type { ProjectApi } from "@/lib/project-core/client";
 import type { BlockerKey, HealthReason, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
 import { projectPeople, projectStrip, projectTimeline, stageLateDays, type ProjectStep } from "@/lib/project-core/project-record";
 import { nextStepText } from "@/lib/project-core/next-step";
+import { JobNowBar } from "../jobs/job-now-bar";
 import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, SectionTabs, SideSection, useSectionTabs } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { LinkedRecords } from "@/components/record/linked-records";
@@ -231,6 +232,8 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
         { id: "files", label: t("Files"), panel: <RecordPanel><FileList label={t("Files")} items={files} /></RecordPanel> },
       ]}
         next={<>
+          {/* §0.3 P10: the job's step now (its journey), then this stage's own checks. */}
+          <JobNowBar workspaceId={api.workspaceId} record={{ type: "project", id: projectId }} />
           <ProjectNextStep api={api} detail={detail} overview={overview} next={next} run={run} onTeam={onTeam} />
           {attention}
           {/* The long lists as sub-tabs, so the overview stays about one screen; each in its card (the tab names it). */}
@@ -284,7 +287,7 @@ function ProjectNextStep({ api, detail, overview, next, run, onTeam }: {
   const firstOpen = current.checks.find((check) => !check.passed);
   const last = detail.stages.at(-1);
   return <>
-    <NextStepCard tour="project-next" status={late ? "attention" : undefined}
+    <NextStepCard tour="project-next" status={late ? "attention" : undefined} label={t("This stage")}
       title={nextStepText(t, detail.next)}
       meta={<>
         {owner ? <PersonChip id={current.owner?.membershipId ?? `owner-${owner}`} name={owner} /> : detail.next.kind === "payment_verified" ? <span className={styles.muted}>{t("Finance")}</span> : null}

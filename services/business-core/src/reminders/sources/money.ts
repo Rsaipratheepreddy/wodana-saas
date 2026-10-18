@@ -104,11 +104,13 @@ export const invoiceOverdueSource: ReminderSource = {
     const issued = (await readInvoices(db, workspaceId)).filter((invoice) => invoice.status === "issued" && invoice.dueDate < clock.today && invoice.dueDate >= addDays(clock.today, -120));
     const overdue = (await withBalances(db, workspaceId, issued, clock.today)).filter((invoice) => invoice.overdue).slice(0, limit);
     const finance = await readPermissionHolders(db, workspaceId, ["receivables.manage"]);
-    const managers = await managersByProject(db, workspaceId, overdue.map((invoice) => invoice.projectId));
+    const managers = await managersByProject(db, workspaceId, overdue.flatMap((invoice) => (invoice.projectId ? [invoice.projectId] : [])));
     return overdue.map((invoice): DueItem => {
-      const owner = managers.get(invoice.projectId)?.[0] ?? finance[0] ?? null;
+      // An invoice before any project (the design fee) goes to Finance and belongs to the job through its case.
+      const owner = (invoice.projectId ? managers.get(invoice.projectId)?.[0] : undefined) ?? finance[0] ?? null;
       return {
-        key: `invoice:${invoice.id}`, sourceType: "client_invoice", sourceId: invoice.id, jobSource: { type: "project", id: invoice.projectId },
+        key: `invoice:${invoice.id}`, sourceType: "client_invoice", sourceId: invoice.id,
+        jobSource: invoice.projectId ? { type: "project", id: invoice.projectId } : { type: "case", id: invoice.caseId },
         projectId: invoice.projectId, caseId: invoice.caseId, partyId: null, ownerMembershipId: owner, ccMembershipIds: finance.filter((id) => id !== owner),
         dueAt: dayStart(invoice.dueDate, clock), title: moneyTitle(invoice.number, invoice.customerName),
         context: [invoice.customerName, money(invoice.currency, invoice.balance)].filter(Boolean).join(" · "),

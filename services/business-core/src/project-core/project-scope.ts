@@ -288,12 +288,26 @@ export async function lineHistory(db: Db, workspaceId: string, projectId: string
       WHERE event.workspace_id = $1 AND event.line_id = $2 ORDER BY event.at, event.id`, [workspaceId, lineId])).rows;
 }
 
+/** A signed item whose quantity changed: its drawing opens for a new version, the signed one kept. Nothing when it isn't signed. */
+export async function reopenSignedDrawing(db: Db, workspaceId: string, projectId: string, lineId: string, detail: { variation: string; quantity: string }, sealId: string | null, actorUserId: string | null) {
+  const reopened = (await db.query<{ signedQuantity: string }>(
+    `UPDATE project_item_drawings SET status = 'waiting', locked_at = NULL, version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND project_id = $2 AND line_id = $3 AND status = 'signed' RETURNING locked_quantity::text AS "signedQuantity"`,
+    [workspaceId, projectId, lineId])).rows[0];
+  if (reopened) await event(db, workspaceId, projectId, lineId, "drawing_reopened", { ...detail, signedQuantity: reopened.signedQuantity }, sealId, actorUserId);
+  return Boolean(reopened);
+}
+
 export type VariationLine = SealedLine & { changeOp: "add" | "omit" | "move" | null; boqLineId: string | null; fromAreaId?: string | null };
 
 /**
  * Applies a sealed variation to the live BOQ, line by line: a removal reduces (or removes) its BOQ
  * line by exactly what it credits; a move sends the line to its new area (and adds the labour, if
  * priced); anything else is new scope. Every change goes into the line's history.
+ *
+ * A signed item stays signed to what the client signed: when a variation changes its quantity, its shop drawing
+ * opens for a new version (the signed one stays in its history with its signature), and the item waits for that
+ * version to be checked and signed before it moves on. Never a quantity that no signed drawing shows.
  */
 export async function applyVariation(db: Db, workspaceId: string, projectId: string, seal: { id: string; label: string }, lines: VariationLine[], actorUserId: string) {
   const areaNames = new Map((await db.query<{ id: string; name: string }>(
@@ -331,6 +345,7 @@ export async function applyVariation(db: Db, workspaceId: string, projectId: str
       await db.query(`UPDATE project_boq_lines SET quantity = $3, net = $4, status = $5, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, current.id, left.toString(), left.isZero() ? "0" : net.toString(), left.isZero() ? "omitted" : "active"]);
       await event(db, workspaceId, projectId, current.id, left.isZero() ? "omitted" : "reduced", { variation: seal.label, quantity: line.quantity, left: left.toString() }, seal.id, actorUserId);
+      if (!left.isZero()) await reopenSignedDrawing(db, workspaceId, projectId, current.id, { variation: seal.label, quantity: left.toString() }, seal.id, actorUserId);
     } else if (line.changeOp === "move") {
       const current = await boqLine(line.boqLineId, line.title);
       await db.query(`UPDATE project_boq_lines SET area_id = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, current.id, line.areaId]);

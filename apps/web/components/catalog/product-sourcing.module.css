@@ -21,9 +21,6 @@
 .field { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
 .provenance { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: start; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
 .provenance[data-source="ai"] { color: var(--wd-color-info); }
-.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); margin: 0; }
-.facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
-.facts dd { margin: var(--wd-space-0-5) 0 0; font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
 .panel { display: grid; gap: var(--wd-space-4); }
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
 
@@ -49,7 +46,7 @@
 .override { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
 @media (max-width: 48rem) {
-  .review, .facts, .pointForm { grid-template-columns: minmax(0, 1fr); }
+  .review, .pointForm { grid-template-columns: minmax(0, 1fr); }
   .sizeRow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pictures { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .card { grid-template-columns: 4.5rem minmax(0, 1fr); }

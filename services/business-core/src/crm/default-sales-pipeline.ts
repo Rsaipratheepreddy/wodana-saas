@@ -23,12 +23,14 @@ export const DEFAULT_SALES_PIPELINE: SalesPipelineTemplate = {
   name: "Sales",
   stages: [
     { code: "qualified", name: "New Opportunity", position: 1, probability: 20, forecastCategory: "pipeline", entryRequirements: { owner: true, nextAction: true } },
+    // §0.3 P0: booking the intro moves the opportunity here (crm/opportunities/intro-meeting.service.ts).
+    { code: "intro_booked", name: "Intro booked", position: 2, probability: 25, forecastCategory: "pipeline", entryRequirements: {} },
     // What each column needs comes from the enquiry type's flow (crm/opportunities/flow-gates.ts).
-    { code: "qualification", name: "Qualified", position: 2, probability: 35, forecastCategory: "pipeline", entryRequirements: {} },
-    { code: "proposal", name: "Proposal", position: 3, probability: 50, forecastCategory: "best_case", entryRequirements: {} },
-    { code: "negotiation", name: "Negotiation", position: 4, probability: 75, forecastCategory: "commit", entryRequirements: {} },
-    { code: "won", name: "Won", position: 5, probability: 100, forecastCategory: "closed", entryRequirements: {} },
-    { code: "lost", name: "Lost", position: 6, probability: 0, forecastCategory: "closed", entryRequirements: {} },
+    { code: "qualification", name: "Qualified", position: 3, probability: 35, forecastCategory: "pipeline", entryRequirements: {} },
+    { code: "proposal", name: "Proposal", position: 4, probability: 50, forecastCategory: "best_case", entryRequirements: {} },
+    { code: "negotiation", name: "Negotiation", position: 5, probability: 75, forecastCategory: "commit", entryRequirements: {} },
+    { code: "won", name: "Won", position: 6, probability: 100, forecastCategory: "closed", entryRequirements: {} },
+    { code: "lost", name: "Lost", position: 7, probability: 0, forecastCategory: "closed", entryRequirements: {} },
   ],
 };
 

@@ -316,7 +316,7 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, day =
               onChange={(note) => set({ tasks: { ...draft.tasks, [task.id]: { ...chosen, note } } })} /> : null}
           </li>;
         })}
-      </ul> : <p className={styles.muted}>{t("Nothing is planned for today on the plan.")}</p>}
+      </ul> : <InlineNotice tone="info" message={t("Nothing is planned for today on the plan.")} />}
     </FormSection>
 
     <FormSection title={t("Photos")}>

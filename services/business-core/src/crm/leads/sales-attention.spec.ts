@@ -25,8 +25,10 @@ describe("sales attention helpers", () => {
   });
 
   it("tells each person once per event on each channel it uses", async () => {
-    const query = vi.fn(async (sql: string) => {
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
       if (sql.includes("FROM notification_templates")) return { rows: [{ id: "template", subject: "{{reference}}", body: "Hi" }], rowCount: 1 };
+      // Each person's notice choices: push on, with a phone.
+      if (sql.includes("FROM notification_channel_choices")) return { rows: (params[1] as string[]).map((userId) => ({ userId, pushSwitch: true, pushDevice: true, workspacePush: true })), rowCount: 1 };
       if (sql.includes("FROM notification_preferences")) return { rows: [{ enabled: true }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     });

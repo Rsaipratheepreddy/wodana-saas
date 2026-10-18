@@ -11,7 +11,8 @@ import { CrmMessageReceiptService } from "./crm-message-receipt.service";
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName, stableHash } from "../shared/crm-types";
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, SimulateWhatsAppDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
-import { applyConversationChange, mapConversation, recordChatEvent } from "./inbox/inbox-commands";
+import { applyConversationChange, mapConversation, mayReopen, recordChatEvent, reopenSql } from "./inbox/inbox-commands";
+import { conversationUnread, markConversationRead, unreadSql } from "./inbox/inbox-reads";
 import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
 import { cancelScheduledOnReply } from "./inbox/scheduled-cancel";
 import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
@@ -83,9 +84,10 @@ export class CrmConversationsService {
       if (query.cursor && (!cursor || (sort === "waiting" && !/^-?\d+(\.\d+)?$/.test(cursor.value)))) throw new BadRequestException("Invalid page cursor");
       // Who may see what (plan §5b): own chats, the team's, or every chat. Every list view stays inside it.
       const viewer = await this.viewer(client, workspaceId, actorUser.userId);
-      const values: unknown[] = [workspaceId, viewer.membershipId];
+      // $3 and $4: who reads (unread is per person) and whether they manage the inbox (who may reopen a resolved chat).
+      const values: unknown[] = [workspaceId, viewer.membershipId, actorUser.userId, viewer.scope === "manage"];
       const clauses = ["conversation.workspace_id = $1", visibleSql(viewer, "$2")];
-      const view = viewSql(query.view, "$2");
+      const view = query.view === "unread" ? unreadSql("$3") : viewSql(query.view, "$2");
       if (view) clauses.push(view);
       for (const [column, value] of [["party_id", query.partyId], ["lead_id", query.leadId], ["owner_membership_id", query.ownerMembershipId], ["channel", query.channel], ["connection_id", query.connectionId]] as const) {
         if (value) { values.push(value); clauses.push(`conversation.${column} = $${values.length}`); }
@@ -110,7 +112,8 @@ export class CrmConversationsService {
                 conversation.status, conversation.owner_membership_id AS "ownerMembershipId", ${MEMBER_NAME("owner_user")} AS "ownerName",
                 conversation.last_message_at AS "lastMessageAt", conversation.last_inbound_at AS "lastInboundAt",
                 conversation.waiting_since AS "waitingSince", conversation.snoozed_until AS "snoozedUntil", conversation.closing_due_at AS "closingDueAt",
-                conversation.unread_count AS "unreadCount", conversation.version, ${CONVERSATION_LABELS_SQL} AS labels,
+                conversation.unread_count AS "unreadCount", ${unreadSql("$3")} AS unread, ${reopenSql("$3", "$2", "$4")} AS "canReopen",
+                conversation.version, ${CONVERSATION_LABELS_SQL} AS labels,
                 message.id AS "lastMessageId", message.direction AS "lastMessageDirection",
                 COALESCE(message.body_text, message.metadata->>'fileName') AS "lastMessageText", message.metadata->>'messageType' AS "lastMessageKind",
                 message.status AS "lastMessageStatus", conversation.connection_id AS "connectionId", ${JOB_SQL()} AS job, ${WAITING_KEY}::text AS "sortKey"
@@ -180,6 +183,10 @@ export class CrmConversationsService {
       );
       const canSend = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.send");
       const canManage = await this.hasAny(client, workspaceId, actorUser.userId, INBOX_MANAGE);
+      // Reopen is the resolver's or an inbox manager's; unread is this person's own (opening the chat marks it read).
+      const canReopen = conversation.status === "closed" && canSend
+        && mayReopen(conversation, { userId: actorUser.userId, membershipId: await this.viewerMembership(client, workspaceId, actorUser.userId), manager: canManage });
+      const unread = await conversationUnread(client, workspaceId, conversationId, actorUser.userId);
       const job = (await client.query<{ job: Record<string, unknown> | null }>(`SELECT ${JOB_SQL()} AS job FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND conversation.id = $2`, [workspaceId, conversationId])).rows[0]?.job ?? null;
       // The number replies go from: the one the client last wrote to, else the workspace's default number.
       const connection = await client.query<{ connectionId: string; number: string | null; accountName: string | null; health: Record<string, unknown> | null }>(
@@ -211,7 +218,7 @@ export class CrmConversationsService {
       const canUnmarkSpam = await this.access.hasPermission(client, workspaceId, actorUser.userId, UNMARK_SPAM);
       return {
         closing: { dueAt: closing.dueAt?.toISOString() ?? null, problem: closing.problem, afterHours: closing.settings.afterHours, canClose },
-        canUnmarkSpam,
+        canUnmarkSpam, canReopen, unread,
         // A demonstration chat (Inbox › Simulate a client message) behaves as connected; nothing reaches Meta.
         ...mapConversation(conversation), canSend, whatsappConnected: Boolean(connection.rowCount) || isDemoThread(conversation),
         demo: isDemoThread(conversation),
@@ -309,8 +316,9 @@ export class CrmConversationsService {
   updateConversation(actor: RequestActor, workspaceId: string, conversationId: string, input: UpdateConversationDto) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.send", async (client, actorUser) => {
       const before = await this.requireVisibleConversation(client, workspaceId, conversationId, actorUser.userId, true);
+      const reopener = { membershipId: await this.viewerMembership(client, workspaceId, actorUser.userId), manager: await this.hasAny(client, workspaceId, actorUser.userId, INBOX_MANAGE) };
       const { after } = await applyConversationChange(client, this.events, {
-        workspaceId, before, actorUserId: actorUser.userId, method: "manual", expectedVersion: input.version,
+        workspaceId, before, actorUserId: actorUser.userId, method: "manual", expectedVersion: input.version, reopener,
         change: { status: input.status as "open" | "unresolved" | "snoozed" | "closed" | undefined, snoozedUntil: input.snoozedUntil, ownerMembershipId: input.ownerMembershipId, leadId: input.leadId, subject: input.subject },
       });
       return after;
@@ -323,12 +331,17 @@ export class CrmConversationsService {
       this.insertMessage(client, workspaceId, conversationId, input, null, "integration"));
   }
 
+  /**
+   * Opening a chat reads it: read for this person from now (the Unread view), the chat's shared counter cleared and the
+   * person's notices about it read. Anyone who may open the chat may read it, including a job's team. Safe to repeat.
+   */
   markRead(actor: RequestActor, workspaceId: string, conversationId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, INBOX_READ, async (client, actorUser) => {
       await this.requireVisibleConversation(client, workspaceId, conversationId, actorUser.userId, true);
+      await markConversationRead(client, workspaceId, conversationId, actorUser.userId);
       await client.query(`UPDATE crm_conversations SET unread_count = 0, version = version + 1 WHERE id = $1 AND workspace_id = $2 AND unread_count <> 0`, [conversationId, workspaceId]);
       await readChatNotices(client, workspaceId, conversationId, actorUser.userId);
-      return { conversationId, unreadCount: 0 };
+      return { conversationId, unreadCount: 0, unread: false };
     });
   }
 
@@ -921,6 +934,7 @@ export class CrmConversationsService {
          status = CASE WHEN $1 = 'inbound' THEN (CASE WHEN $4::boolean THEN 'spam' ELSE 'open' END) ELSE status END,
          snoozed_until = CASE WHEN $1 = 'inbound' THEN NULL ELSE snoozed_until END,
          resolved_at = CASE WHEN $1 = 'inbound' THEN NULL ELSE resolved_at END,
+         resolved_by = CASE WHEN $1 = 'inbound' THEN NULL ELSE resolved_by END,
          last_inbound_at = CASE WHEN $1 = 'inbound' THEN now() ELSE last_inbound_at END,
          waiting_since = CASE WHEN $1 = 'inbound' AND $4::boolean THEN NULL WHEN $1 = 'inbound' THEN COALESCE(waiting_since, now()) WHEN $1 = 'outbound' THEN NULL ELSE waiting_since END,
          closing_due_at = CASE WHEN $1 = 'inbound' THEN NULL WHEN $5::timestamptz IS NOT NULL THEN $5::timestamptz ELSE closing_due_at END,

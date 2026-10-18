@@ -1,15 +1,17 @@
 "use client";
 import { RecordHistory } from "../history/record-history";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { KIT_COMMISSION_LABELS, KIT_COMMISSION_TYPES, useCommissionTypes, type CommissionType } from "@/lib/setup/commissions";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
 import { ClientCredits } from "./client-credits";
 import { PaymentInvoice } from "./payment-invoice";
 import { AgreementFiles } from "./agreement-files";
+import { AssetFiles } from "../pre-project/case-controls";
 import { useEffect, useState } from "react";
-import { parseDate } from "@internationalized/date";
+import { parseDate, today } from "@internationalized/date";
 import Link from "next/link";
 import Image from "next/image";
-import { Check, Circle, Plus, X } from "lucide-react";
+import { Banknote, FileCheck2, PenLine, Percent, Plus, Receipt, ScrollText, StickyNote, UserRound, X } from "lucide-react";
 import {
   AmountList,
   Card,
@@ -37,7 +39,8 @@ import {
   MoreDetails,
   NumericInput,
   PercentageInput,
-  PillTabs,
+  ReviewDialog,
+  ReviewFiles,
   SelectField,
   StateChip,
   TextAreaField,
@@ -45,14 +48,14 @@ import {
   useDesignSystem,
   formatDate,
 } from "@/design-system";
-import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/lib/commercial/client";
-import { smallestAmount, sumExact } from "@/lib/money-exact";
+import { CommercialStatus } from "./commercial-status";
+import { acceptedQuoteTotals, acceptedQuoteValue, money, paymentMethodLabel, statusLabel } from "@/lib/commercial/client";
+import { smallestAmount, sumExact, taxInside } from "@/lib/money-exact";
 import {
   activeDeliveryQuote,
   agreementHasSignedEvidence,
   agreementIsOperational,
   agreementMatchesAcceptedQuote,
-  commercialReleaseInputsReady,
   dealPaymentProofReady,
   financeGatePaymentsReady,
   materialApprovalsComplete,
@@ -61,13 +64,15 @@ import {
   quoteHasVerifiedReceipt,
   requestBlocksRelease,
 } from "@/lib/commercial/release";
-import type { CommercialState, ChangeRequest, ControlledChangeKind, MaterialApproval } from "@/lib/commercial/types";
+import { MANUAL_PAYMENT_METHODS, type CommercialState, type ChangeRequest, type ControlledChangeKind, type ManualPaymentMethod, type MaterialApproval } from "@/lib/commercial/types";
 import { availableContractLines, changeKinds } from "@/lib/commercial/change-cases";
 import { decisionPolicySummary } from "@/lib/commercial/decision-requests";
 import { ControlledChangeCase } from "./controlled-change-case";
 import { ClientReportCell, ClientReportDialog, useClientPaymentReports } from "./client-payment-reports";
 import { ClientFiles } from "@/components/client-activity/client-files";
-import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import { evidenceFiles, type EvidenceFile } from "@/lib/evidence/evidence";
+import { caseApi, caseRequest, type CaseAsset } from "@/lib/pre-project/content";
 import { SeenByClient, useClientThreads } from "@/components/client-activity/client-threads";
 import { DealApprovalSteps, DealClosing, DealMoney, DealRequirements, DealTeam, dealPaidShare, dealRequirementCount, dealRiskText } from "./deal-file-insight";
 import { NextStepCard, SectionTabs, SideSection, useSectionTabs } from "@/components/record/record-layout";
@@ -75,6 +80,10 @@ import { FactList, PersonChip } from "@/components/record/record-parts";
 import ds from "./deal-file-insight.module.css";
 import { LinkedRecords } from "@/components/record/linked-records";
 import s from "./commercial.module.css";
+import { DealPath } from "./deal-path";
+import { PaymentProofDialog } from "../crm/opportunity-flow";
+import { StartProjectDialog } from "../project-core/start-project-dialog";
+import { crmRequest } from "@/lib/crm/client";
 import tableStyles from "../workspace/workspace.module.css";
 type Props = {
   state: CommercialState;
@@ -83,7 +92,7 @@ type Props = {
   error?: string;
 };
 /** A commission line as it is typed: the value is exact decimal text until it is sent. */
-type CommissionDraft = { recipientName: string; type: "sales" | "designer" | "referral"; basis: "amount" | "percent"; value: string };
+type CommissionDraft = { recipientName: string; type: string; basis: "amount" | "percent"; value: string };
 type CommissionLine = { recipientName: string; type: CommissionDraft["type"]; basis: CommissionDraft["basis"]; value: number };
 const newCommissionLine = (): CommissionDraft => ({ recipientName: "", type: "sales", basis: "amount", value: "" });
 const draftOf = ({ recipientName, type, basis, value }: CommissionLine): CommissionDraft => ({ recipientName, type, basis, value: value ? String(value) : "" });
@@ -91,20 +100,6 @@ const sent = (line: CommissionDraft): CommissionLine => ({ ...line, value: Numbe
 const commissionReady = (line: CommissionDraft) => Boolean(line.recipientName.trim()) && Number(line.value || 0) > 0;
 /** A row nobody filled in: it isn't a commission and isn't sent (a deal may have none). */
 const commissionBlank = (line: CommissionDraft) => !line.recipientName.trim() && !Number(line.value || 0);
-const commissionTypes = [
-  { id: "sales", label: tKey("Sales") },
-  // The stored type stays "designer"; only the label reads "Designer fee".
-  { id: "designer", label: tKey("Designer fee") },
-  { id: "referral", label: tKey("Referral") },
-] as const;
-const checklistLabel: Record<string, string> = {
-  agreement: tKey("Agreement"),
-  boq: tKey("BOQ"),
-  documents: tKey("Documents"),
-  margin: tKey("Margin"),
-  materials: tKey("Materials"),
-  payment: tKey("Payment"),
-};
 const requestStatuses = ["open", "under_review", "awaiting_decision", "resolved", "declined", "withdrawn"] as const;
 const dateValue = (value: string) => { try { return value ? parseDate(value.slice(0, 10)) : null; } catch { return null; } };
 const blankDecision = { title: "", detail: "", targetKey: "", dueDate: "", firstChoice: "Approve", secondChoice: "Request changes", remindersEnabled: true, email: false, whatsapp: false, escalationMinutes: 1440 };
@@ -185,11 +180,11 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
         <EmptyState title={t("No change requests yet")} description={t("Client changes and your team’s clarifications appear here, each with an owner and a resolution.")} />
       ) : (
         <div className={tableStyles.recordTablePanel}><DataGrid selectable={false} compactToolbar ariaLabel={t("Change requests")} data={state.data.requests} getRowId={row => row.id} searchLabel={t("Search change requests")} exportFileName="change-requests.csv" onRowAction={r => setSelected(r.id)} columns={[
-          { id: "title", header: t("Request"), size: 320, accessorFn: (r) => `CR-${String(r.number).padStart(3, "0")} ${r.title}`, cell: ({ row: { original: r } }) => <button type="button" className={s.requestButton} onClick={() => setSelected(r.id)}><span className={s.muted}>{t("CR-")}{String(r.number).padStart(3, "0")} · </span>{r.title}</button> },
+          { id: "title", header: t("Request"), size: 320, accessorFn: (r) => `CR-${String(r.number).padStart(3, "0")} ${r.title}`, cell: ({ row: { original: r } }) => <Button size="compact" variant="quiet" className={s.requestButton} onPress={() => setSelected(r.id)}><span className={s.muted}>{t("CR-")}{String(r.number).padStart(3, "0")} · </span>{r.title}</Button> },
           { id: "from", header: t("From"), size: 170, accessorFn: (r) => raiser(r)?.name ?? "", cell: ({ row: { original: r } }) => <>{raiser(r)?.name ?? "—"}</> },
           { id: "owner", header: t("Owner"), size: 180, accessorFn: (r) => r.owner || t("Unassigned"), cell: ({ row: { original: r } }) => <>{r.owner || t("Unassigned")}</> },
           { id: "due", header: t("Due"), size: 140, accessorFn: (r) => r.dueDate, cell: ({ row: { original: r } }) => <>{r.dueDate || "—"}</> },
-          { id: "status", header: t("Status"), size: 160, accessorFn: (r) => translateKnown(t, statusLabel[r.status] ?? r.status), cell: ({ row: { original: r } }) => <span className={s.status} data-status={r.status}>{translateKnown(t, statusLabel[r.status] ?? r.status)}</span> },
+          { id: "status", header: t("Status"), size: 160, accessorFn: (r) => translateKnown(t, statusLabel[r.status] ?? r.status), cell: ({ row: { original: r } }) => <CommercialStatus status={r.status}>{translateKnown(t, statusLabel[r.status] ?? r.status)}</CommercialStatus> },
         ]} /></div>
       )}
       <FormDialog
@@ -373,7 +368,18 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
     [payment, setPayment] = useState<PaymentDraft | null>(null),
     [verify, setVerify] = useState(""),
     [reference, setReference] = useState(""),
-    [receiptEvidence, setReceiptEvidence] = useState("");
+    [receiptEvidence, setReceiptEvidence] = useState(""),
+    [receiptFiles, setReceiptFiles] = useState<EvidenceFile[]>([]),
+    [receiptUploading, setReceiptUploading] = useState(false),
+    [receiptMethod, setReceiptMethod] = useState<ManualPaymentMethod>("bank"),
+    [receivedOn, setReceivedOn] = useState(""),
+    [reviewAgreement, setReviewAgreement] = useState(false);
+  const todayHere = today(timeZone);
+  // A new receipt starts as a bank transfer received today; one recorded from the client's report takes its date.
+  const openReceipt = (paymentId: string, ref: string, paidOn = "") => {
+    setVerify(paymentId); setReference(ref); setReceiptEvidence(""); setReceiptFiles([]); setReceiptMethod("bank");
+    setReceivedOn(paidOn && paidOn <= todayHere.toString() ? paidOn.slice(0, 10) : todayHere.toString());
+  };
   // Agreement and Payments are separate routes; follow the route's view.
   const [viewFor, setViewFor] = useState(initialView);
   if (viewFor !== initialView) { setViewFor(initialView); setTab(initialView); }
@@ -388,7 +394,9 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
   const receiptOf = (paymentId: string) => state.data.receipts?.find((receipt) => receipt.paymentId === paymentId && receipt.status !== "rejected");
   const receiptPayment = state.data.payments.find((item) => item.id === verify),
     activeReceipt = receiptPayment ? receiptOf(receiptPayment.id) : undefined,
-    verifying = receiptPayment?.status === "proof_submitted";
+    verifying = receiptPayment?.status === "proof_submitted",
+    // A receipt the team recorded can go back with a reason; a provider's settlement is reversed by the provider.
+    canSendBack = verifying && activeReceipt?.source === "manual";
   const paymentCurrency = accepted?.currency ?? state.currency ?? workspaceCurrency;
   const agreementChanged = agreement.reference !== savedAgreement.reference || agreement.terms !== savedAgreement.terms || agreement.evidence !== savedAgreement.evidence;
   // Why the signed agreement can't be verified yet: unsaved edits, or nothing signed on record (a file or its description).
@@ -401,41 +409,41 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
           action={<Link className="wd-button" data-size="compact" data-variant="primary" href={`/workspace/pre-projects/cases/${state.caseId}/quotations`}>{t("Open quotations")}</Link>} />
       ) : tab === "agreement" ? (
         <div className={s.agreementPanel}>
-          <p className={s.detail}>
-            {t("Accepted quotation V")}{accepted.number} ·{" "}
-            {money(accepted.clientDecision?.acceptedTotal ?? accepted.total, accepted.currency)}{accepted.decidedBy ? ` · ${accepted.decidedBy}` : ""}
-            {accepted.clientDecision?.selectedOptionLineIds.length ? ` · ${t("{count} selected options", { count: accepted.clientDecision.selectedOptionLineIds.length })}` : ""}
-          </p>
+          {/* Guide J: the deal path, with this step's one action beside its next step. */}
+          <DealPath state={state} root={`/workspace/pre-projects/cases/${state.caseId}`} action={!a && state.canEdit
+            ? <Button size="compact" variant="primary" isDisabled={busy} isLoading={busy} onPress={() => void run("agreement", { ...agreement, quoteId: accepted.id })}>{t("Prepare agreement")}</Button>
+            : a && a.status !== "executed" && state.canApprove
+              // Waits for the signed copy (attached right below, which says so).
+              ? <Button size="compact" variant="primary" isDisabled={busy || Boolean(verifyBlocker)} onPress={() => setReviewAgreement(true)}>{t("Review signed agreement")}</Button> : undefined} />
+          <div className={s.agreementFacts} aria-label={t("Accepted quotation")}>
+            <Badge>{t("Q-{number}", { number: accepted.number })}</Badge>
+            <Badge>{money(accepted.clientDecision?.acceptedTotal ?? accepted.total, accepted.currency)}</Badge>
+            {accepted.decidedBy ? <Badge>{accepted.decidedBy}</Badge> : null}
+            {accepted.clientDecision?.selectedOptionLineIds.length ? <Badge>{t("{count} selected options", { count: accepted.clientDecision.selectedOptionLineIds.length })}</Badge> : null}
+            {a?.reference ? <Badge tone="info">{a.reference}</Badge> : null}
+          </div>
           {a?.status === "executed" ? <dl className={s.agreementReadout}>
             <div><dt>{t("Agreement reference")}</dt><dd>{a.reference}</dd></div>
             <div><dt>{t("Agreed terms")}</dt><dd>{a.terms}</dd></div>
             <div><dt>{t("Signing details")}</dt><dd>{a.evidence}</dd></div>
-          </dl> : <Form className={s.agreementForm} onSubmit={(event) => { event.preventDefault(); void run("agreement", { ...agreement, quoteId: accepted.id }); }}>
-            <TextInput isRequired isDisabled={!state.canEdit || busy} label={t("Agreement reference")} maxLength={200} value={agreement.reference}
-              onChange={reference => setAgreement({ ...agreement, reference })} placeholder={t("e.g. AGR-2026-014")} />
-            <TextAreaField isDisabled={!state.canEdit || busy} label={t("Agreed terms")} value={agreement.terms}
-              onChange={terms => setAgreement({ ...agreement, terms })} />
-            <TextAreaField isDisabled={!state.canEdit || busy} label={t("Signed document evidence")} value={agreement.evidence}
-              onChange={evidence => setAgreement({ ...agreement, evidence })}
-              description={t("Document reference, signers and date.")} />
-            {state.canEdit ? <div className={s.formActions}><Button type="submit" variant="primary" isDisabled={busy || (Boolean(a) && !agreementChanged)} isLoading={busy}>{t("Save agreement")}</Button></div> : null}
+          </dl> : !a ? null : <Form className={s.agreementForm} onSubmit={(event) => { event.preventDefault(); void run("agreement", { ...agreement, quoteId: accepted.id }); }}>
+            {/* The terms come from the quotation; the signing notes are optional (the signed copy is the evidence). */}
+            <MoreDetails filled={[agreement.terms, agreement.evidence].filter((value) => value?.trim()).length}>
+              <TextAreaField isDisabled={!state.canEdit || busy} label={t("Agreed terms")} value={agreement.terms}
+                onChange={terms => setAgreement({ ...agreement, terms })} />
+              <TextAreaField isDisabled={!state.canEdit || busy} label={t("Signing notes")} value={agreement.evidence}
+                onChange={evidence => setAgreement({ ...agreement, evidence })}
+                description={t("Document reference, signers and date.")} />
+              {state.canEdit && agreementChanged ? <div className={s.formActions}><Button type="submit" size="compact" isDisabled={busy} isLoading={busy}>{t("Save")}</Button></div> : null}
+            </MoreDetails>
           </Form>}
-          <AgreementFiles state={state} run={run} busy={busy} />
+          {a ? <AgreementFiles state={state} run={run} busy={busy} /> : null}
           {a?.status === "executed" ? (
             <p className={s.notice}>
               {t("Signed agreement verified by")}{" "}<strong>{a.executedBy}</strong> ·{" "}
               {a.executedAt ? <time dateTime={a.executedAt}>{formatDate(a.executedAt, { locale, timeZone })}</time> : null}
             </p>
-          ) : (
-            a &&
-            state.canApprove && (
-              <div className={s.formActions}>
-                {verifyBlocker ? <span className={s.muted} role="status">{verifyBlocker}</span> : null}
-                <Button variant="primary" isDisabled={busy || Boolean(verifyBlocker)}
-                  onPress={() => void run("execute_agreement")}>{t("Verify signed agreement")}</Button>
-              </div>
-            )
-          )}
+          ) : a && state.canApprove && verifyBlocker ? <p className={s.muted} role="status">{verifyBlocker}</p> : null}
         </div>
       ) : (
         <>
@@ -462,7 +470,7 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
             </> },
             { id: "due", header: t("Due"), size: 130, accessorFn: (p) => p.dueDate || p.trigger || t("To schedule"), cell: ({ row: { original: p } }) => <>{p.dueDate || p.trigger || t("To schedule")}</> },
             { id: "amount", header: t("Amount"), size: 120, accessorFn: (p) => p.amount, cell: ({ row: { original: p } }) => <>{money(p.amount, accepted.currency)}</> },
-            { id: "status", header: t("Status"), size: 120, accessorFn: (p) => translateKnown(t, statusLabel[p.status] ?? p.status), cell: ({ row: { original: p } }) => <span className={s.status} data-status={p.status}>{translateKnown(t, statusLabel[p.status] ?? p.status)}</span> },
+            { id: "status", header: t("Status"), size: 120, accessorFn: (p) => translateKnown(t, statusLabel[p.status] ?? p.status), cell: ({ row: { original: p } }) => <CommercialStatus status={p.status}>{translateKnown(t, statusLabel[p.status] ?? p.status)}</CommercialStatus> },
             { id: "receipt", header: t("Receipt status"), size: 190, accessorFn: (p) => receiptOf(p.id)?.status ?? "request_only", cell: ({ row: { original: p } }) => <>{receiptLabel(receiptOf(p.id)?.status)}</> },
             { id: "reference", header: t("Accounting reference"), size: 200, accessorFn: (p) => p.reference, cell: ({ row: { original: p } }) => <>
               {p.reference || "—"}
@@ -487,7 +495,7 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
                   </Button>
                 )}
                 {state.canEdit && p.status !== "verified" && !receipt && !p.invoice && (
-                  <Button size="compact" onPress={() => { setVerify(p.id); setReference(p.reference); setReceiptEvidence(""); }}>{t("Record receipt")}</Button>
+                  <Button size="compact" onPress={() => openReceipt(p.id, p.reference)}>{t("Record receipt")}</Button>
                 )}
                 {state.canVerifyFinance && p.status === "proof_submitted" && Boolean(receipt) && (
                   <Button size="compact" onPress={() => setVerify(p.id)}>{t("Finance verify")}</Button>
@@ -499,11 +507,21 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
       {tab === "payments" && (
         <ClientCredits state={state} run={run} busy={busy} />
       )}
+      {/* §0.3 P0: verifying the signed agreement is a review of what was signed, never one click. */}
+      {reviewAgreement && a && accepted ? <ReviewDialog title={t("Verify signed agreement")} description={a.reference || undefined} confirmLabel={t("Verify signed agreement")}
+        blocked={verifyBlocker || undefined} onClose={() => setReviewAgreement(false)}
+        facts={[
+          { icon: <FileCheck2 />, label: t("Accepted quotation"), value: `${t("Accepted quotation V")}${accepted.number} · ${money(accepted.clientDecision?.acceptedTotal ?? accepted.total, accepted.currency)}` },
+          { icon: <ScrollText />, label: t("Agreed terms"), value: a.terms || "—" },
+          { icon: <PenLine />, label: t("Signing details"), value: a.evidence || "—" },
+        ]}
+        evidence={<AssetFiles workspaceId={state.workspaceId} caseId={state.caseId} assets={a.files ?? []} />}
+        onConfirm={async () => { if (!(await run("execute_agreement"))) throw new FormNotSaved(); setReviewAgreement(false); }} /> : null}
       {reportPayment && reportsFor(reportPayment.id).length ? <ClientReportDialog milestone={reportPayment.title} reports={reportsFor(reportPayment.id)} client={client}
         currency={state.data.quotes.find((q) => q.id === reportPayment.sourceQuoteId)?.currency ?? accepted?.currency ?? state.currency ?? workspaceCurrency}
         milestoneAmount={reportPayment.amount} hasReceipt={Boolean(receiptOf(reportPayment.id))}
         canRecordReceipt={state.canEdit && reportPayment.status !== "verified" && !reportPayment.invoice}
-        onRecordReceipt={(report) => { setReportFor(null); setAfterReceipt(reportPayment.id); setVerify(reportPayment.id); setReference(report.reference || reportPayment.reference); setReceiptEvidence(""); }}
+        onRecordReceipt={(report) => { setReportFor(null); setAfterReceipt(reportPayment.id); openReceipt(reportPayment.id, report.reference || reportPayment.reference, report.paidOn); }}
         onClose={() => setReportFor(null)} /> : null}
       {payment ? <FormDialog
         onClose={() => setPayment(null)}
@@ -531,42 +549,96 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
           <TextInput label={t("Invoice reference")} maxLength={240} value={payment.reference} onChange={reference => setPayment({ ...payment, reference })} />
         </MoreDetails>
       </FormDialog> : null}
-      <FormDialog
-        isOpen={Boolean(verify)}
+      {/* §0.3 P0: verifying a receipt is a review: the amounts, the proof beside it, then confirm or send it back. */}
+      {verify && verifying ? <ReviewDialog
+        title={t("Finance verification")}
+        description={activeReceipt?.source === "provider" ? t("Confirm the provider settlement against the finance record.") : t("Confirm the reported receipt against the finance record.")}
+        evidence={receiptPayment && activeReceipt && accepted ? <ReceiptReview receipt={activeReceipt} milestone={receiptPayment.title} quote={accepted} /> : null}
+        files={activeReceipt ? [...evidenceFiles(state.workspaceId, state.receiptFiles?.[activeReceipt.id]),
+          ...reportsFor(activeReceipt.paymentId).flatMap((report) => report.files.map((file) => ({ id: `${report.id}:${file.id}`, name: file.name,
+            href: client.fileUrl(file.id), previewHref: file.hasPreview ? client.fileUrl(file.id, true) : null })))] : undefined}
+        confirmLabel={t("Verify receipt")}
+        returnLabel={canSendBack ? t("Send back") : undefined}
+        onReturn={canSendBack ? async (note) => {
+          if (!(await run("return_payment", { paymentId: verify, note }))) throw new FormNotSaved();
+          setVerify(""); setAfterReceipt(null);
+        } : undefined}
+        onConfirm={async () => {
+          if (!(await run("verify_payment", { paymentId: verify }))) throw new FormNotSaved();
+          setVerify("");
+          if (afterReceipt) { setReportFor(afterReceipt); setAfterReceipt(null); }
+        }}
         onClose={() => { setVerify(""); setAfterReceipt(null); }}
-        title={verifying ? t("Finance verification") : t("Record payment receipt")}
+      /> : null}
+      <FormDialog
+        isOpen={Boolean(verify) && !verifying}
+        onClose={() => { setVerify(""); setAfterReceipt(null); }}
+        title={t("Record payment receipt")}
         error={error || undefined}
         isSubmitting={busy}
-        isDirty={!verifying && Boolean(receiptEvidence.trim())}
-        submitLabel={verifying ? t("Verify receipt") : t("Record receipt")}
-        lead={verifying ? <p className={s.detail}>{activeReceipt?.source === "provider" ? t("Confirm the provider settlement against the finance record.") : t("Confirm the reported receipt against the finance record.")}</p> : null}
+        isDirty={Boolean(receiptEvidence.trim() || receiptFiles.length)}
+        isSubmitDisabled={receiptUploading || !receiptFiles.length}
+        submitLabel={t("Record receipt")}
         onSubmit={async () => {
-          if (!(await run(verifying ? "verify_payment" : "report_payment_receipt", { paymentId: verify, reference, evidence: receiptEvidence }))) throw new FormNotSaved();
+          if (!(await run("report_payment_receipt", { paymentId: verify, reference, evidence: receiptEvidence, evidenceFileIds: receiptFiles.map((file) => file.id), method: receiptMethod, receivedOn }))) throw new FormNotSaved();
           setVerify("");
           // Recorded from the client's report: back to it, to mark it recorded.
           if (afterReceipt) { setReportFor(afterReceipt); setAfterReceipt(null); }
         }}
       >
-        {!verifying && <>
-          <TextInput isRequired maxLength={240} label={t("Receipt / transaction reference")} value={reference} onChange={setReference} />
-          <TextAreaField isRequired label={t("Receipt evidence")} value={receiptEvidence} onChange={setReceiptEvidence} />
-        </>}
+        <FormRow>
+          <SelectField isRequired label={t("Payment method")} selectedKey={receiptMethod}
+            items={MANUAL_PAYMENT_METHODS.map((method) => ({ id: method, label: translateKnown(t, paymentMethodLabel[method]) }))}
+            onSelectionChange={(key) => setReceiptMethod(String(key ?? "bank") as ManualPaymentMethod)} />
+          <DateField label={t("Received on")} isRequired maxValue={todayHere} value={dateValue(receivedOn)}
+            onChange={(date) => setReceivedOn(date?.toString() ?? "")} />
+        </FormRow>
+        <TextInput isRequired maxLength={240} label={t("Receipt / transaction reference")} value={reference} onChange={setReference} />
+        <EvidenceField workspaceId={state.workspaceId} kind="receipt" isRequired label={t("Proof of payment")} value={receiptFiles} onChange={setReceiptFiles} onBusy={setReceiptUploading} />
+        <TextAreaField label={t("Note")} maxLength={3000} value={receiptEvidence} onChange={setReceiptEvidence} />
       </FormDialog>
     </>
   );
 }
 
-/** One commission line: who, what kind, and an amount or a share. */
-function CommissionFields({ currency, index, line, onChange, onRemove, fixedRecipient }: { currency: string; index: number; line: CommissionDraft; onChange: (next: Partial<CommissionDraft>) => void; onRemove?: () => void; fixedRecipient?: boolean }) {
+/**
+ * What Finance checks before verifying a receipt (§0.3 P0): the amount split into net and tax at the accepted
+ * quotation's rate, how and when it was paid, and who recorded it. Read only; Verify is the dialog's action.
+ */
+function ReceiptReview({ receipt, milestone, quote }: { receipt: NonNullable<CommercialState["data"]["receipts"]>[number]; milestone: string; quote: CommercialState["data"]["quotes"][number] }) {
   const t = useT();
-  const title = fixedRecipient ? `${line.recipientName} · ${translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type)}` : t("Commission {number}", { number: index + 1 });
+  const { locale, timeZone } = useDesignSystem();
+  const split = taxInside(receipt.amount, quote.taxRate, receipt.currency);
+  const taxLabel = t("{label} ({rate}%)", { label: translateKnown(t, quote.cover?.taxLabel || "Tax"), rate: quote.taxRate });
+  return <>
+    <AmountList label={milestone} rows={[
+      { id: "net", label: t("Net"), amount: money(split.net, receipt.currency, locale) },
+      { id: "tax", label: taxLabel, amount: money(split.tax, receipt.currency, locale) },
+      { id: "total", label: t("Total"), amount: <strong>{money(receipt.amount, receipt.currency, locale)}</strong> },
+    ]} />
+    <dl className={s.agreementReadout}>
+      <div><dt>{t("Payment method")}</dt><dd>{receipt.method ? translateKnown(t, paymentMethodLabel[receipt.method]) : receipt.provider ?? "—"}</dd></div>
+      <div><dt>{t("Received on")}</dt><dd>{receipt.receivedOn ? formatDate(receipt.receivedOn, { locale, timeZone }) : "—"}</dd></div>
+      <div><dt>{t("Receipt / transaction reference")}</dt><dd>{receipt.reference || "—"}</dd></div>
+      <div><dt>{t("Receipt evidence")}</dt><dd>{receipt.evidence || "—"}</dd></div>
+      <div><dt>{t("Recorded by")}</dt><dd>{receipt.reportedBy} · {formatDate(receipt.reportedAt, { locale, timeZone })}</dd></div>
+    </dl>
+  </>;
+}
+
+/** One commission line: who, what kind, and an amount or a share. */
+function CommissionFields({ types, currency, index, line, onChange, onRemove, fixedRecipient }: { types: CommissionType[]; currency: string; index: number; line: CommissionDraft; onChange: (next: Partial<CommissionDraft>) => void; onRemove?: () => void; fixedRecipient?: boolean }) {
+  const t = useT();
+  const kind = (code: string) => KIT_COMMISSION_LABELS[code] && types.find((type) => type.code === code)?.label === KIT_COMMISSION_TYPES.find((type) => type.code === code)?.label
+    ? t(KIT_COMMISSION_LABELS[code]) : types.find((type) => type.code === code)?.label ?? code;
+  const title = fixedRecipient ? `${line.recipientName} · ${kind(line.type)}` : t("Commission {number}", { number: index + 1 });
   // An untouched row is optional; once it's being filled in, it needs a recipient and a value.
   const required = Boolean(fixedRecipient) || !commissionBlank(line);
   return <FormSection title={<span className={s.commissionTitle}>{title}{onRemove ? <IconButton aria-label={t("Remove commission {number}", { number: index + 1 })} onPress={onRemove}><X size={14} /></IconButton> : null}</span>}>
     {fixedRecipient ? null : <>
       <TextInput isRequired={required} label={t("Recipient")} maxLength={160} value={line.recipientName} onChange={(recipientName) => onChange({ recipientName })} />
-      <SelectField isRequired={required} label={t("Type")} items={commissionTypes.map((type) => ({ id: type.id, label: t(type.label) }))} selectedKey={line.type}
-        onSelectionChange={(key) => onChange({ type: String(key ?? "sales") as CommissionDraft["type"] })} />
+      <SelectField isRequired={required} label={t("Type")} items={types.map((type) => ({ id: type.code, label: kind(type.code) }))} selectedKey={line.type}
+        onSelectionChange={(key) => onChange({ type: String(key ?? types[0]?.code ?? "sales") })} />
     </>}
     {/* The amount and what it is counted in (the currency, or a percentage) stay side by side. */}
     <FormRow>
@@ -588,33 +660,25 @@ export function ApprovalRelease({
   initialView = "owner",
 }: Props & { root: string; sectionHref?: (section: string) => string; initialView?: string }) {
   const t = useT();
+  // §0.3 P3: the firm's own commission types (Setup → Commissions).
+  const commissionKinds = useCommissionTypes(state.workspaceId);
   const { locale, timeZone } = useDesignSystem();
   const day = (value: string) => <time dateTime={value}>{formatDate(value, { locale, timeZone })}</time>;
   // A line without a cost leaves the margin unknown: never a false 100%.
   const marginText = (margin: number | null) => (margin === null ? t("Cost missing") : `${margin.toFixed(1)}%`);
   const [tab, setTab] = useState<string>(initialView),
-    [note, setNote] = useState(""),
-    // Finance's note and the approver's remarks are separate: one never pre-fills the other.
+    // Finance's note and the approver's remarks are separate: one never pre-fills the other (the owner's is in the review).
     [decisionNote, setDecisionNote] = useState(""),
-    [ownerNote, setOwnerNote] = useState(""),
+    [ownerReviewOpen, setOwnerReviewOpen] = useState(false),
+    [proofOpen, setProofOpen] = useState(false),
+    [starting, setStarting] = useState(false),
     [commissionLines, setCommissionLines] = useState<CommissionDraft[]>(state.data.ownerReview?.commissionLines?.map(draftOf) ?? [newCommissionLine()]),
     [financeDraft, setFinanceDraft] = useState<{ key: string; lines: CommissionDraft[] }>({ key: "", lines: [] }),
-    [paymentProofUrl, setPaymentProofUrl] = useState(state.data.ownerReview?.paymentProofUrl ?? ""),
-    [proofTouched, setProofTouched] = useState(false),
+    [paymentProofUrl] = useState(state.data.ownerReview?.paymentProofUrl ?? ""),
     [paymentVerification, setPaymentVerification] = useState<{ key: string; value: boolean }>({ key: "", value: false }),
     [approver, setApprover] = useState(""),
     [materialDraft, setMaterialDraft] = useState<MaterialApproval | null>(null),
-    [photoProblem, setPhotoProblem] = useState(""),
-    [checklist, setChecklist] = useState(
-      state.data.ownerReview?.checklist ?? {
-        agreement: false,
-        boq: false,
-        documents: false,
-        margin: false,
-        materials: false,
-        payment: false,
-      },
-    );
+    [photoProblem, setPhotoProblem] = useState("");
   // The Deal File's long lists (requirements, approvals, history) as sub-tabs; a KPI tile opens its tab.
   const sections = useSectionTabs("requirements");
   const d = state.data,
@@ -632,21 +696,25 @@ export function ApprovalRelease({
     const next = current.map((line, i) => i === index ? { ...line, ...update } : line);
     if (finance) setFinanceDraft({ key: reviewKey, lines: next }); else setCommissionLines(next);
   };
-  const checklistKeys = Object.keys(checklist).filter(key => !d.servicePath || key !== "materials");
-  // Why Send to Finance can't be pressed yet (the opportunity's Won state has its own notice above the form).
-  const unfinishedCommission = commissionLines.findIndex((line) => !commissionBlank(line) && !commissionReady(line));
   // A receipt Finance already verified in Wodana is the proof; a link given anyway must be HTTPS.
   const receiptVerified = Boolean(accepted && quoteHasVerifiedReceipt(d, accepted.id));
   // PLM-122: the payment proof attached on the opportunity (it made the deal Won) is the Deal File's proof.
   const attachedProof = state.paymentProofId && state.opportunityId ? `/api/workspace/crm/opportunity-proofs/${state.opportunityId}/${state.paymentProofId}?workspaceId=${encodeURIComponent(state.workspaceId)}` : "";
   const proofProblem = paymentProofProblem(paymentProofUrl, receiptVerified || Boolean(attachedProof));
+  // The deal checklist is read from the records, never ticked (§0.3 P0); the owner's approval waits for every line.
+  const dealChecks = accepted ? [
+    { id: "agreement", label: tKey("Signed agreement verified"), done: agreementIsOperational(d.agreement) && agreementMatchesAcceptedQuote(d.agreement, accepted) },
+    { id: "documents", label: tKey("Signed agreement on file"), done: agreementHasSignedEvidence(d.agreement) },
+    { id: "payment", label: tKey("Payment proof"), done: Boolean(attachedProof) || receiptVerified || Boolean(d.ownerReview?.paymentProofUrl ?? paymentProofUrl.trim()) },
+    { id: "boq", label: tKey("Priced quotation lines"), done: accepted.round === "design" || accepted.lines.length > 0 },
+    ...(d.servicePath ? [] : [{ id: "materials", label: tKey("Client material decisions"), done: materialApprovalsComplete(accepted, d.materialApprovals) }]),
+  ] : [];
+  const dealChecksMissing = dealChecks.some((check) => !check.done);
   // When Sales sent no commission lines, Finance adds them (PLM-122).
   const financeAddsLines = !submittedCommissions.length;
   const insecureProof = t("Use a secure HTTPS proof-of-payment link.");
-  const sendBlocker = unfinishedCommission >= 0 ? t("Finish commission {number} or remove it.", { number: unfinishedCommission + 1 })
-    : proofProblem === "missing" ? t("Add a proof-of-payment link.")
-    : proofProblem === "insecure" ? insecureProof
-    : !note.trim() ? t("Write the submission note.") : "";
+  // Opening the Deal File by hand needs only the proof (the opportunity's, or a payment Finance verified); Finance adds commissions.
+  const sendBlocker = proofProblem === "missing" ? t("Attach the payment proof first.") : proofProblem === "insecure" ? insecureProof : "";
   const checks = [
     { label: tKey("Client accepted the quotation"), done: Boolean(deliveryQuote), href: "quotations" },
     {
@@ -680,13 +748,13 @@ export function ApprovalRelease({
         d.dealFile?.quoteId === deliveryQuote?.id &&
         Boolean(deliveryQuote && dealPaymentProofReady(d, d.dealFile?.paymentProofUrl, deliveryQuote.id)) &&
         Array.isArray(d.dealFile?.commissionLines),
-      href: "execution-release",
+      href: "deal-file",
       view: "owner",
     },
     {
       label: tKey("Material selections approved or not applicable"),
       done: Boolean(deliveryQuote && (d.servicePath ? materialListSignedOff(d, deliveryQuote) : materialApprovalsComplete(deliveryQuote, d.materialApprovals))),
-      href: "execution-release",
+      href: "deal-file",
       view: "materials",
     },
     {
@@ -720,6 +788,16 @@ export function ApprovalRelease({
   const commission = !accepted ? [] : review?.status === "pending_approval" ? review.finalCommissionLines ?? []
     : d.dealFile?.quoteId === accepted.id ? d.dealFile.commissionLines ?? [] : [];
   const commissionTotal = sumExact(commission.map((line) => line.amount), accepted?.currency);
+  // The client's payments on the accepted quotation, as recorded (Finance checks the method and the day against the bank).
+  const dealReceipts = accepted ? (d.receipts ?? []).filter((receipt) => receipt.status !== "rejected" && d.payments.some((payment) => payment.id === receipt.paymentId && payment.sourceQuoteId === accepted.id)) : [];
+  // §0.3 P0: the files the Deal File rests on, beside every check of it: the payment proof, the receipts' proofs and the signed agreement.
+  const dealFiles = [
+    ...(attachedProof ? [{ id: "proof", name: t("Payment proof"), href: attachedProof, previewHref: null }] : []),
+    ...(!attachedProof && (review?.paymentProofUrl || paymentProofUrl) ? [{ id: "proof-link", name: t("Payment proof"), href: review?.paymentProofUrl || paymentProofUrl, previewHref: null }] : []),
+    ...dealReceipts.flatMap((receipt) => evidenceFiles(state.workspaceId, state.receiptFiles?.[receipt.id])),
+    ...(d.agreement?.quoteId === accepted?.id ? (d.agreement?.files ?? []).map((asset) => ({ id: asset.id, name: asset.name,
+      href: caseApi(state.workspaceId, state.caseId, `assets/${asset.id}`), previewHref: asset.hasPreview ? caseApi(state.workspaceId, state.caseId, `assets/${asset.id}?preview=1`) : null })) : []),
+  ];
   const costRows = accepted && totals && state.canViewCosts ? [{ id: "cost", label: t("Internal cost"), amount: money(totals.cost, accepted.currency, locale) }] : [];
   const riskText = insight ? dealRiskText(t, insight) : null;
   const riskLine = riskText ? <span className={ds.risks}>{riskText}</span> : null;
@@ -733,8 +811,17 @@ export function ApprovalRelease({
   const stepCard = !accepted ? null : review?.status === "pending_finance" ? <NextStepCard id="deal-next" title={t("Finance verification")} why={t("Submitted by {name}", { name: review.submittedBy })}
     meta={<>{waitingFor(state.stepHolders?.verifyPayment ?? [])}{stepOf(2)}</>}>
     <Form className={ds.stepForm} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void run("review_deal_finance", { decision: "confirm", note: decisionNote, paymentVerified, commissionLines: editableFinanceLines.map(sent) }); }}>
-      {review.paymentProofUrl ? <a href={review.paymentProofUrl} target="_blank" rel="noopener noreferrer">{t("Open payment proof ↗")}</a> : null}
-      {editableFinanceLines.map((line, index) => <CommissionFields key={`${line.type}-${index}`} fixedRecipient={!financeAddsLines} currency={accepted.currency} index={index} line={line} onChange={(update) => updateCommission(index, update, true)}
+      <ReviewFiles files={dealFiles} />
+      {/* §0.3 P0: what Finance checks: the accepted value split into net and tax, and how and when the client paid. */}
+      {totals ? <AmountList label={t("Accepted quotation")} rows={[
+        { id: "net", label: t("Net"), amount: money(totals.net, accepted.currency, locale) },
+        { id: "tax", label: t("{label} ({rate}%)", { label: translateKnown(t, accepted.cover?.taxLabel || "Tax"), rate: accepted.taxRate }), amount: money(totals.tax, accepted.currency, locale) },
+        { id: "total", label: t("Total"), amount: <strong>{money(acceptedQuoteValue(accepted), accepted.currency, locale)}</strong> },
+        ...dealReceipts.map((receipt) => ({ id: receipt.id, label: receipt.method ? translateKnown(t, paymentMethodLabel[receipt.method]) : t("Payment"),
+          detail: [receipt.receivedOn ? formatDate(receipt.receivedOn, { locale, timeZone }) : null, receipt.reference].filter(Boolean).join(" · "),
+          amount: money(receipt.amount, receipt.currency, locale) })),
+      ]} /> : null}
+      {editableFinanceLines.map((line, index) => <CommissionFields types={commissionKinds} key={`${line.type}-${index}`} fixedRecipient={!financeAddsLines} currency={accepted.currency} index={index} line={line} onChange={(update) => updateCommission(index, update, true)}
         onRemove={financeAddsLines ? () => setFinanceDraft({ key: reviewKey, lines: editableFinanceLines.filter((_, i) => i !== index) }) : undefined} />)}
       {financeAddsLines && editableFinanceLines.length < 3 ? <div><Button size="compact" variant="quiet" onPress={() => setFinanceDraft({ key: reviewKey, lines: [...editableFinanceLines, newCommissionLine()] })}><Plus size={14} />{t("Add recipient")}</Button></div> : null}
       <Checkbox isSelected={paymentVerified} onChange={(value) => setPaymentVerification({ key: reviewKey, value })}>{review.paymentProofUrl ? t("I verified the linked proof of payment") : t("I verified the payment receipt")}</Checkbox>
@@ -748,51 +835,58 @@ export function ApprovalRelease({
     meta={<>{waitingFor(state.dealApproval?.status === "pending" ? state.dealApproval.waitingFor : state.stepHolders?.approveDeal ?? [])}{stepOf(3)}</>}>
     <div className={ds.stepForm}>
       <div className={ds.checklist}>
-        <h4 className={ds.subhead}>{t("Owner checklist")}</h4>
-        <CheckList layout="inline" label={t("Owner checklist")} items={Object.entries(review.checklist).filter(([key]) => !d.servicePath || key !== "materials")
-          .map(([key, done]) => ({ id: key, label: translateKnown(t, checklistLabel[key] ?? key), done }))} />
+        <h4 className={ds.subhead}>{t("Read from the records")}</h4>
+        <CheckList layout="inline" label={t("Read from the records")} items={dealChecks.map((check) => ({ id: check.id, label: translateKnown(t, check.label), done: check.done }))} />
       </div>
       {!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals) && <p className={ds.stepNote}>{t("Complete every client material decision before creating the Deal File.")}</p>}
-      {canDecide ? <>
-        <TextAreaField label={t("Decision remarks")} value={ownerNote} onChange={setOwnerNote} placeholder={t("Required when returning or rejecting.")} />
-        <div className={ds.stepActions}>
-          <Button variant="danger" isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "reject", note: ownerNote })}>{t("Reject")}</Button>
-          <Button isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: ownerNote })}>{t("Return for correction")}</Button>
-          <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(review.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: ownerNote })}>{t("Approve Deal File")}</Button>
-        </div>
-      </> : null}
+      {/* §0.3 P0: the owner decides in a review of the Deal File (figures, checks read from the records), never one click. */}
+      {canDecide ? <div className={ds.stepActions}>
+        <Button variant="primary" isDisabled={busy} onPress={() => setOwnerReviewOpen(true)}>{t("Review Deal File")}</Button>
+      </div> : null}
+      {ownerReviewOpen ? <ReviewDialog title={t("Owner approval")} description={state.customerName} confirmLabel={t("Approve Deal File")} returnLabel={t("Return for correction")} rejectLabel={t("Reject")}
+        onClose={() => setOwnerReviewOpen(false)}
+        facts={[
+          { icon: <FileCheck2 />, label: t("Accepted quotation"), value: `${t("Accepted quotation V")}${accepted.number} · ${money(acceptedQuoteValue(accepted), accepted.currency, locale)}` },
+          ...(totals ? [{ icon: <Banknote />, label: t("Net"), value: money(totals.net, accepted.currency, locale) }, { icon: <Receipt />, label: t("{label} ({rate}%)", { label: translateKnown(t, accepted.cover?.taxLabel || "Tax"), rate: accepted.taxRate }), value: money(totals.tax, accepted.currency, locale) }] : []),
+          { icon: <UserRound />, label: t("Submitted by"), value: review.submittedBy },
+          ...(review.financeNote ? [{ icon: <StickyNote />, label: t("Finance note"), value: review.financeNote }] : []),
+          ...(commission.length ? [{ icon: <Percent />, label: t("Commission"), value: money(Number(commissionTotal), accepted.currency, locale) }] : []),
+        ]}
+        files={dealFiles}
+        checks={{ label: t("Read from the records"), items: dealChecks.map((check) => ({ id: check.id, label: translateKnown(t, check.label), done: check.done })) }}
+        onConfirm={async (remark) => { if (!(await run("decide_owner_review", { decision: "approve", note: remark }))) throw new FormNotSaved(); setOwnerReviewOpen(false); }}
+        onReturn={async (remark) => { if (!(await run("decide_owner_review", { decision: "return", note: remark }))) throw new FormNotSaved(); setOwnerReviewOpen(false); }}
+        onReject={async (remark) => { if (!(await run("decide_owner_review", { decision: "reject", note: remark }))) throw new FormNotSaved(); setOwnerReviewOpen(false); }} /> : null}
     </div>
-  </NextStepCard> : d.dealFile?.quoteId !== accepted.id ? <NextStepCard id="deal-next" title={t("Submit Deal File")} why={riskLine} meta={stepOf(1)}>
-    <Form className={ds.stepForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.filter((line) => !commissionBlank(line)).map(sent), paymentProofUrl, checklist, note }); }}>
-      {/* The remark of whoever returned it (the owner, or Finance): that is what Sales has to fix. */}
-      {review && <p className={ds.stepNote}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[review.status] ?? review.status)}. {review.decisionNote ?? review.financeNote}</p>}
-      {state.opportunityStatus !== "won" && <p className={ds.stepNote}>{t("Attach the payment proof on the opportunity first: that wins it and opens this Deal File.")}</p>}
-      {attachedProof ? <a href={attachedProof} target="_blank" rel="noopener noreferrer">{t("Payment proof attached on the opportunity ↗")}</a> : null}
-      {/* A payment Finance verified (with its uploaded receipt) is the proof: no link is asked for then. */}
-      {!attachedProof && receiptVerified ? <p className={s.muted}>{t("Payment verified by Finance")}</p> : null}
-      {attachedProof || receiptVerified ? null : <TextInput isRequired inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} onBlur={() => setProofTouched(true)} placeholder={t("https://…")}
-        isInvalid={proofTouched && proofProblem === "insecure"} errorMessage={proofProblem === "insecure" ? insecureProof : undefined} />}
-      {commissionLines.map((line, index) => <CommissionFields key={index} currency={accepted.currency} index={index} line={line}
-        onChange={(update) => updateCommission(index, update)}
-        onRemove={() => setCommissionLines(commissionLines.filter((_, i) => i !== index))} />)}
-      {commissionLines.length < 3 && <div><Button size="compact" variant="quiet" onPress={() => setCommissionLines([...commissionLines, newCommissionLine()])}><Plus size={14} />{t("Add recipient")}</Button></div>}
-      <FormSection title={t("Checklist")}>
-        <div className={s.checkGrid}>{checklistKeys.map(key => <Checkbox key={key} isSelected={checklist[key as keyof typeof checklist]} onChange={(done) => setChecklist({ ...checklist, [key]: done })}>{translateKnown(t, checklistLabel[key] ?? key)}</Checkbox>)}</div>
+  </NextStepCard> : d.dealFile?.quoteId !== accepted.id ? <NextStepCard id="deal-next" title={t("Deal File")} why={riskLine} meta={stepOf(1)}>
+    {/* Guide J: the Deal File opens by itself once the payment proof is attached (and the agreement verified). This step
+        only offers what is missing, right here: the proof, or opening it by hand; Finance adds the commissions. */}
+    <div className={ds.stepForm}>
+      {review ? <p className={ds.stepNote}>{t("Returned:")}{" "}{review.decisionNote ?? review.financeNote}</p> : null}
+      <div className={s.agreementFacts}>
+        {attachedProof ? <a className="wd-badge" data-tone="success" href={attachedProof} target="_blank" rel="noopener noreferrer">{t("Payment proof attached")}</a>
+          : receiptVerified ? <Badge tone="success">{t("Payment verified by Finance")}</Badge> : <Badge>{t("No payment proof yet")}</Badge>}
+        <Badge tone={agreementIsOperational(d.agreement) && d.agreement?.quoteId === accepted.id ? "success" : "neutral"}>
+          {agreementIsOperational(d.agreement) && d.agreement?.quoteId === accepted.id ? t("Agreement verified") : t("Agreement not verified yet")}</Badge>
+      </div>
+      <FormSection title={t("Read from the records")}>
+        <CheckList layout="inline" label={t("Read from the records")} items={dealChecks.map((check) => ({ id: check.id, label: translateKnown(t, check.label), done: check.done }))} />
       </FormSection>
-      <TextAreaField isRequired label={t("Submission note")} value={note} onChange={setNote} placeholder={t("Summarize payment evidence, pricing decision and any conditions.")} />
-      {state.canEdit && <div className={ds.stepActions}>
-        {sendBlocker ? <span role="status">{sendBlocker}</span> : null}
-        <Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || state.opportunityStatus !== "won" || Boolean(sendBlocker)}>{t("Send to Finance")}</Button>
-      </div>}
-    </Form>
+      {state.canEdit ? <div className={ds.stepActions}>
+        {state.opportunityStatus !== "won" && state.opportunityId
+          ? <Button variant="primary" onPress={() => setProofOpen(true)}>{t("Attach payment proof")}</Button>
+          : <Button variant="primary" isLoading={busy} isDisabled={busy || Boolean(sendBlocker)}
+            onPress={() => void run("submit_owner_review", { commissionLines: [], note: review ? t("Sent again after the correction") : t("Opened by hand") })}>{review ? t("Send again") : t("Open Deal File")}</Button>}
+        {sendBlocker && state.opportunityStatus === "won" ? <span className={s.muted} role="status">{sendBlocker}</span> : null}
+      </div> : null}
+      {proofOpen && state.opportunityId ? <PaymentProofDialog workspaceId={state.workspaceId} opportunityId={state.opportunityId}
+        proposal={accepted.round === "design" ? "design" : "main"}
+        loadVersion={async () => Number((await crmRequest<{ version?: number }>(state.workspaceId, `opportunities/${state.opportunityId}`)).version ?? 1)}
+        onClose={() => setProofOpen(false)} onWon={() => { window.location.reload(); }} onBlocked={() => setProofOpen(false)} /> : null}
+    </div>
   </NextStepCard> : <NextStepCard id="deal-next" status="done" title={t("Deal File approved")} why={riskLine} />;
   return (
     <>
-      <PillTabs ariaLabel={t("Approval views")} tour="deal-approvals" selectedKey={tab} onSelectionChange={setTab} items={[
-        { id: "owner", label: t("Internal approval") },
-        { id: "materials", label: t("Material approvals") },
-        { id: "history", label: t("History") },
-      ]} />
       {tab === "owner" ? (
         !accepted ? (
           <EmptyState illustration="locked" title={t("Client acceptance comes first")} description={t("Issue the reviewed quotation and wait for the client approver.")}
@@ -824,6 +918,8 @@ export function ApprovalRelease({
                 ...(insight ? [{ id: "requirements", label: t("Requirements"), panel: <DealRequirements insight={insight} /> }] : []),
                 ...(showApprovalSteps && state.dealApproval ? [{ id: "approvals", label: t("Approvals"), panel: <Card><DealApprovalSteps approval={state.dealApproval} /></Card> }] : []),
                 ...(d.dealFile ? [{ id: "history", label: t("History"), panel: <Card><RecordHistory workspaceId={state.workspaceId} recordType="deal_file" recordId={d.dealFile.id} /></Card> }] : []),
+                // The client's material decisions (a deal without a material list signs them here).
+                ...(!d.servicePath || (d.materialApprovals ?? []).length ? [{ id: "materials", label: t("Material decisions"), panel: <Button size="compact" variant="quiet" onPress={() => setTab("materials")}>{t("Open material decisions")}</Button> }] : []),
               ]} />
             </div>
             <div className={ds.column}>
@@ -840,7 +936,7 @@ export function ApprovalRelease({
               {commission.length ? <SideSection id="deal-commission" title={t("Commission")}>
                 <AmountList label={t("Commission")} rows={commission.map((line, index) => ({ id: `${line.type}-${index}`,
                   label: <PersonChip id={`commission-${line.recipientName}`} name={line.recipientName} />,
-                  detail: translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type), amount: money(line.amount, accepted.currency, locale) }))}
+                  detail: KIT_COMMISSION_LABELS[line.type] && !commissionKinds.some((type) => type.code === line.type && type.label !== KIT_COMMISSION_TYPES.find((kit) => kit.code === line.type)?.label) ? t(KIT_COMMISSION_LABELS[line.type]) : commissionKinds.find((type) => type.code === line.type)?.label ?? line.type, amount: money(line.amount, accepted.currency, locale) }))}
                   total={commission.length > 1 ? { label: t("Total"), amount: money(commissionTotal, accepted.currency, locale) } : undefined} />
               </SideSection> : null}
               {insight ? <DealClosing insight={insight} /> : null}
@@ -852,11 +948,12 @@ export function ApprovalRelease({
         </div>
       ) : tab === "materials" ? (
         <>
+          <div><Button size="compact" variant="quiet" onPress={() => setTab("owner")}>{t("Back to the Deal File")}</Button></div>
           <div className={s.header}><h2>{t("Client material selections")}</h2>{state.canEdit && <Button size="compact" isDisabled={busy || !accepted || (Boolean(d.servicePath) && d.dealFile?.quoteId !== accepted.id)} onPress={() => void run("sync_material_approvals")}>{t("Prepare from quotation")}</Button>}</div>
           {(d.materialApprovals ?? []).filter(item => item.quoteId === accepted?.id).map(item => <div className={s.materialRow} key={item.id}>
             {item.photo ? <Image src={item.photo} alt="" width={64} height={64} unoptimized /> : <span className={s.materialThumb}>{t("No photo")}</span>}
             <div><strong>{item.name}</strong><span>{item.room} · {item.item}</span><small>{[item.brand, item.code].filter(Boolean).join(" · ") || item.specification}</small>{item.decisionNote && <small>{t("Client remark:")}{" "}{item.decisionNote}</small>}</div>
-            <span className={s.status} data-status={item.status}>{translateKnown(t, statusLabel[item.status] ?? item.status.replaceAll("_", " "))}</span>
+            <CommercialStatus status={item.status}>{translateKnown(t, statusLabel[item.status] ?? item.status.replaceAll("_", " "))}</CommercialStatus>
             {state.canEdit && ["proposed", "rejected"].includes(item.status) && <Button size="compact" onPress={() => { setPhotoProblem(""); setMaterialDraft({ ...item }); }}>{t("Edit")}</Button>}
             {state.canEdit && item.status === "proposed" && <Button size="compact" variant="primary" isDisabled={busy || !approver} onPress={() => void run("submit_material_approval", { materialApprovalId: item.id, approverId: approver })}>{t("Send to client")}</Button>}
           </div>)}
@@ -874,57 +971,31 @@ export function ApprovalRelease({
             <MoreDetails filled={(materialDraft.note ? 1 : 0) + (materialDraft.photo ? 1 : 0)}>
               <TextAreaField label={t("Internal note")} value={materialDraft.note} onChange={note => setMaterialDraft({ ...materialDraft, note })} />
               <FileUploader accept="image/png,image/jpeg,image/webp" appearance="button" label={t("Sample photo")} multiple={false} onFiles={(files) => readPhoto(files[0])} />
-              {photoProblem ? <p className={s.error} role="alert">{photoProblem}</p> : <small className={s.detail}>{t("PNG, JPEG or WebP · up to 180 KB.")}</small>}
+              {photoProblem ? <InlineNotice tone="error" message={photoProblem} /> : <small className={s.detail}>{t("PNG, JPEG or WebP · up to 180 KB.")}</small>}
             </MoreDetails>
           </FormDialog> : null}
         </>
       ) : tab === "release" ? (
         d.servicePath && !d.servicePath.scope.mainQuotation ? <EmptyState illustration="done" title={t("Design-only project")} description={t("This path ends with the approved design. Procurement and production don’t apply.")}
           action={<Link className="wd-button" data-size="compact" data-variant="primary" href={sectionHref?.("designs") ?? `${root}/designs`}>{t("Open design")}</Link>} /> : <>
-          <ul className={s.checkList}>
+          {/* Guide §16–21: what the work waits for, each with its state and where to finish it; the one action starts the project. */}
+          <ul className={s.releaseChecks}>
             {checks.map((c) => (
-              <li key={c.label} data-done={c.done}>
-                {c.done ? <Check aria-hidden="true" size={14} /> : <Circle aria-hidden="true" size={14} />}
+              <li key={c.label}>
+                <Badge tone={c.done ? "success" : "neutral"}>{c.done ? t("Done") : t("Waiting")}</Badge>
                 <span>{t(c.label)}</span>
-                {c.view ? <Button size="compact" variant="quiet" onPress={() => setTab(c.view)}>{t("Review →")}</Button> : <Link href={sectionHref?.(c.href) ?? `${root}/${c.href}`}>{t("Review →")}</Link>}
+                {!c.done ? <Link className="wd-button" data-size="compact" data-variant="quiet" href={sectionHref?.(c.view === "materials" || c.view === "owner" ? "deal-file" : c.href) ?? `${root}/${c.view ? "deal-file" : c.href}`}>{t("Open")}</Link> : null}
               </li>
             ))}
           </ul>
-          {d.release ? (
-            <p className={s.notice}>
-              {t("Readiness recorded by")}{" "}{d.release.by} {t("on")}{" "}
-              {day(d.release.at)}.<br />
-              {d.release.note}
-              {d.release.projectId && (
-                <>
-                  <br />
-                  <Link href={`/workspace/projects/${d.release.projectId}/overview`}>{t("Open project →")}</Link>
-                </>
-              )}
-            </p>
-          ) : (
-            <Form className={s.agreementForm} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void run("release", { note }); }}>
-              <TextAreaField isRequired label={t("Technical approvals, released scope and any conditions")} value={note} onChange={setNote}
-                placeholder={t("Reference the approved drawings, scope and site checks. Record any authorized conditions.")} />
-              {state.canRelease && (!d.servicePath || d.servicePath.scope.mainQuotation) && (
-                <div className={s.formActions}>
-                  <Button type="submit" variant="primary" isLoading={busy}
-                    isDisabled={
-                      busy ||
-                      state.opportunityStatus !== "won" ||
-                      !commercialReleaseInputsReady(d) ||
-                      ((!d.servicePath || d.servicePath.scope.design) &&
-                        (!state.releaseReadiness ||
-                         state.releaseReadiness.designsRequired === 0 ||
-                         state.releaseReadiness.designsApproved !== state.releaseReadiness.designsRequired)) ||
-                      !note.trim()
-                    }>
-                    {d.servicePath ? t("Release to procurement") : t("Release & open project")}
-                  </Button>
-                </div>
-              )}
-            </Form>
-          )}
+          {d.release?.projectId ? <div className={s.releaseAction}>
+            <Badge tone="success">{t("Project started")}</Badge>
+            <Link className="wd-button" data-size="compact" data-variant="primary" href={`/workspace/projects/${d.release.projectId}/overview`}>{t("Open project")}</Link>
+          </div> : state.canRelease ? <div className={s.releaseAction}>
+            <span className={s.muted}>{checks.every((c) => c.done) ? t("Everything is ready: start the project to release the work.") : t("The project starts once every check is done.")}</span>
+            <Button variant="primary" isDisabled={busy || !checks.every((c) => c.done)} onPress={() => setStarting(true)}>{t("Start project")}</Button>
+          </div> : null}
+          {starting ? <StartProjectDialog workspaceId={state.workspaceId} caseId={state.caseId} onClose={() => setStarting(false)} /> : null}
         </>
       ) : (
         <ul className={s.history}>

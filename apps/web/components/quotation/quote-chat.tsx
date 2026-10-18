@@ -122,14 +122,14 @@ export function QuoteChat({ state, api, workspaceId, onApply, contextLine, onCle
     <form className={styles.composer} onSubmit={(event) => { event.preventDefault(); send(); }}>
       {contextLine ? <span className={styles.context}>
         <span>{t("About: {name}", { name: contextLine.title || t("Untitled line") })}</span>
-        <button type="button" aria-label={t("Stop pointing at this line")} onClick={onClearContext}><X aria-hidden="true" size={12} /></button>
+        <IconButton size="compact" aria-label={t("Stop pointing at this line")} onPress={onClearContext}><X aria-hidden="true" size={12} /></IconButton>
       </span> : null}
       <textarea ref={inputRef} aria-label={t("Ask the assistant")} rows={2} maxLength={1000} value={text} disabled={busy}
         placeholder={contextLine ? t("Change this line, e.g. “make it 3.2 m” or “use walnut veneer”") : t("e.g. “Kitchen: base cabinets 4.5 m, quartz worktop, 6 LED spots”")}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} />
       <div className={styles.composerFoot}>
-        {turns.length && !busy ? <button type="button" className={styles.reset} onClick={() => setTurns([])}><RotateCcw aria-hidden="true" size={12} />{t("New chat")}</button> : <small>{t("Prices come from your catalog")}</small>}
+        {turns.length && !busy ? <Button size="compact" variant="quiet" onPress={() => setTurns([])}><RotateCcw aria-hidden="true" size={14} />{t("New chat")}</Button> : <small>{t("Prices come from your catalog")}</small>}
         <IconButton type="submit" aria-label={t("Send")} size="compact" variant="primary" isDisabled={!text.trim() || busy} isLoading={busy}><ArrowUp aria-hidden="true" size={15} /></IconButton>
       </div>
     </form>
@@ -151,7 +151,7 @@ function AnswerView({ turn, state, onPick, onApply, onDiscard, onUndo, onFocusLi
     {proposal.changes.length ? <section className={styles.changes} data-state={turn.state} aria-label={t("Suggested changes")}>
       <header>
         <strong>{proposal.changes.length === 1 ? t("1 change") : t("{count} changes", { count: proposal.changes.length })}</strong>
-        {turn.state === "ready" ? <button type="button" onClick={() => onPick(all ? new Set() : new Set(proposal.changes.map((change) => change.key)))}>{all ? t("Select none") : t("Select all")}</button> : null}
+        {turn.state === "ready" ? <Button size="compact" variant="quiet" onPress={() => onPick(all ? new Set() : new Set(proposal.changes.map((change) => change.key)))}>{all ? t("Select none") : t("Select all")}</Button> : null}
       </header>
       <ul>{proposal.changes.map((change) => <li key={change.key} data-action={change.action}>
         {turn.state === "ready" ? <Checkbox aria-label={t("Include this change")} isSelected={picked.has(change.key)}

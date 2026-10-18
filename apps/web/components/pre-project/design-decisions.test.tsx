@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type { CaseDesign } from "@/lib/pre-project/content";
-import { lineTotal, revisionDetail, signedAmount, type LedgerEntry, type LedgerVersion, type LedgerView, type PresentationsView } from "@/lib/pre-project/design-decisions";
+import { extraRevisionDetail, extraRevisionHref, lineTotal, revisionDetail, signedAmount, type LedgerEntry, type LedgerVersion, type LedgerView, type PresentationsView } from "@/lib/pre-project/design-decisions";
 import { openSiteVisit, type JourneyStageView, type JourneyView } from "@/lib/pre-project/design-workspace";
 import { DesignLedger } from "./design-ledger";
 import { DesignPresentations } from "./design-presentations";
@@ -22,9 +22,18 @@ describe("money and counters on the design flow", () => {
     expect(signedAmount("193.75")).toBe("+193.75");
     expect(signedAmount("-200.00")).toBe("-200.00");
     expect(signedAmount("0.00")).toBeNull();
-    expect(revisionDetail({ used: 1, included: 2, chargeable: false })).toEqual({ key: "Revision {used} of {included}", values: { used: 1, included: 2 } });
-    expect(revisionDetail({ used: 3, included: 2, chargeable: true })).toEqual({ key: "Revision {used} · chargeable", values: { used: 3 } });
+    expect(revisionDetail({ used: 1, included: 2, chargeable: false })).toEqual({ key: "Revision {used} of {included} used", values: { used: 1, included: 2 } });
+    expect(revisionDetail({ used: 3, included: 2, chargeable: true })).toEqual({ key: "Revision {used} of {included} used", values: { used: 2, included: 2 } });
     expect(revisionDetail({ used: 0, included: 2, chargeable: false })).toBeNull();
+    // PLM-049/051: beyond the free revisions, the extra revision's change request and whether the step waits for it.
+    const extra = { revision: 3, changeRequestId: "cr1", reference: "CR-004", status: "draft", projectId: null, state: "waiting" as const };
+    expect(extraRevisionDetail({ used: 2, included: 2, chargeable: false, extra: null })).toBeNull();
+    expect(extraRevisionDetail({ used: 3, included: 2, chargeable: true, waiting: true, extra })).toEqual({ key: "Waiting for the extra revision to be agreed", tone: "warning" });
+    expect(extraRevisionDetail({ used: 3, included: 2, chargeable: true, extra: { ...extra, state: "agreed" } })).toEqual({ key: "Extra revision agreed", tone: "success" });
+    expect(extraRevisionDetail({ used: 3, included: 2, chargeable: true, extra: { ...extra, state: "declined" } })).toEqual({ key: "Extra revision declined", tone: "danger" });
+    expect(extraRevisionHref("c1", extra)).toBe("/workspace/pre-projects/cases/c1/variations?change=cr1");
+    expect(extraRevisionHref("c1", { ...extra, projectId: "p1" })).toBe("/workspace/projects/p1/changes/cr1");
+    expect(extraRevisionHref("c1", { ...extra, changeRequestId: null })).toBeNull();
   });
 });
 
@@ -194,7 +203,8 @@ describe("the site visit's access step (R5 fit check)", () => {
 
 describe("concept presentations (PLM-049/051)", () => {
   const designs = [{ id: "d1", title: "Living board", stage: "concepts", archivedAt: null, versions: [{ id: "v1", number: 1, asset: { id: "a1", name: "living.png", mimeType: "image/png", byteSize: 1, hasPreview: true } }] }] as unknown as CaseDesign[];
-  const presented: PresentationsView = { revisions: { concepts: { used: 3, included: 2, chargeable: true } }, presentations: [{ id: "p4", stage: "concepts", round: 4, status: "presented", chargeable: true, presentedAt: "2031-04-01T10:00:00Z",
+  const presented: PresentationsView = { revisions: { concepts: { used: 3, included: 2, chargeable: true, waiting: false,
+    extra: { revision: 3, changeRequestId: "cr1", reference: "CR-004", status: "approved", projectId: null, state: "agreed" } } }, presentations: [{ id: "p4", stage: "concepts", round: 4, status: "presented", chargeable: true, presentedAt: "2031-04-01T10:00:00Z",
     presentedByName: "Dana", chosenOptionId: null, decidedAt: null, decidedByName: null, decisionSource: null, decisionNote: null, fromPortal: false, version: 2,
     options: [{ id: "o1", position: 0, title: "Warm minimal", note: "", linkUrl: "https://www.canva.com/design/warm", designId: null, designTitle: null, versionId: null, versionNumber: null, mimeType: null, hasPreview: false },
       { id: "o2", position: 1, title: "Living board", note: "", linkUrl: null, designId: "d1", designTitle: "Living board", versionId: "v1", versionNumber: 1, mimeType: "image/png", hasPreview: true }] }] };
@@ -203,7 +213,9 @@ describe("concept presentations (PLM-049/051)", () => {
     const fetcher = vi.fn(async (url: string) => json(url.includes("/decision") ? { ...presented, presentations: [{ ...presented.presentations[0], status: "chosen", chosenOptionId: "o2" }] } : presented));
     vi.stubGlobal("fetch", fetcher);
     render(<DesignSystemProvider><DesignPresentations workspaceId="w" caseId="c1" stage="concepts" designs={designs} canEdit canRecordClient clientName="Maya" /></DesignSystemProvider>);
-    expect(await screen.findByText("Revision 3 · chargeable")).toBeInTheDocument();
+    expect(await screen.findByText("Revision 2 of 2 used")).toBeInTheDocument();
+    expect(screen.getByText("Extra revision agreed")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "CR-004" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c1/variations?change=cr1");
     expect(screen.getByText("Chargeable")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Open in Canva/ })).toHaveAttribute("href", "https://www.canva.com/design/warm");
     expect(screen.queryByRole("button", { name: "New revision" })).not.toBeInTheDocument();
@@ -212,6 +224,24 @@ describe("concept presentations (PLM-049/051)", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(body(fetcher, "/decision")).toMatchObject({ version: 2, decision: "chosen", optionId: "o1", source: "meeting", decidedBy: "Maya" }));
     expect(await screen.findByText("Client's choice")).toBeInTheDocument();
+  });
+
+  it("waits for the extra revision's change before the next round, and drafts it again once the client declined it", async () => {
+    const asked = { ...presented.presentations[0], id: "p3", round: 3, status: "changes_requested" as const, decisionNote: "Lighter floors" };
+    const waiting = (state: "waiting" | "declined", changeRequestId: string | null): PresentationsView => ({ presentations: [asked],
+      revisions: { concepts: { used: 3, included: 2, chargeable: true, waiting: true, extra: { revision: 3, changeRequestId, reference: changeRequestId ? "CR-004" : null, status: state === "declined" ? "declined" : "draft", projectId: null, state } } } });
+    let drafted = false;
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => { if (init?.method === "POST") drafted = true; return json(drafted ? waiting("waiting", "cr2") : waiting("declined", "cr1")); });
+    vi.stubGlobal("fetch", fetcher);
+    render(<DesignSystemProvider><DesignPresentations workspaceId="w" caseId="c1" stage="concepts" designs={designs} canEdit canRecordClient /></DesignSystemProvider>);
+    expect(await screen.findByText("Extra revision declined")).toBeInTheDocument();
+    expect(screen.getByText("Revision 2 of 2 used")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New revision" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Draft again" }));
+    await waitFor(() => expect(body(fetcher, "design-presentations/extra-revision")).toEqual({ stage: "concepts" }));
+    expect(await screen.findByText("Waiting for the extra revision to be agreed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Draft again" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New revision" })).not.toBeInTheDocument();
   });
 
   it("prepares a new presentation from Canva links, with stable ids for a safe retry", async () => {

@@ -15,7 +15,8 @@ import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessage
 import { readAutoReplyScopes, workspaceHours } from "./inbox/auto-replies";
 import { AUTO_REPLY_FIELDS, unknownAutoReplyFields, validTimeZone } from "./inbox/auto-reply-rules";
 import { INBOX_MEMBERS_SQL } from "./inbox/inbox-assignment";
-import { applyConversationChange, recordChatEvent, type ConversationChange } from "./inbox/inbox-commands";
+import { applyConversationChange, mayReopen, recordChatEvent, REOPEN_REFUSED, type ConversationChange } from "./inbox/inbox-commands";
+import { unreadSql } from "./inbox/inbox-reads";
 import { inboxLink, noticeAssigned, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { ENQUIRY_STAGES, placeholdersAreContiguous, stageFilterSql, TEMPLATE_VARIABLE_SOURCES, templatePlaceholders } from "./inbox/inbox-rules";
@@ -75,21 +76,23 @@ export class CrmInboxService {
   }
 
   /**
-   * The chips' counts inside the person's scope (plan §5b): Unassigned, Mine, Team (everyone's assigned chats I
-   * may see), the Snoozed and Closed totals, and the scope itself so the inbox shows only the chips it can fill.
+   * The chips' counts inside the person's scope (plan §5b): Open ("all"), Unread (open chats with a client message
+   * this person hasn't opened yet), Unassigned, Mine, Team (everyone's assigned chats I may see), the Snoozed and
+   * Closed totals, and the scope itself so the inbox shows only the chips it can fill.
    */
   summary(actor: RequestActor, workspaceId: string, stage?: string) {
     return this.access.withAnyPermission(actor, workspaceId, INBOX_READ, async (client, actorUser) => {
       const me = await this.membership(client, workspaceId, actorUser.userId);
       const viewer = await this.viewer(client, workspaceId, actorUser.userId);
       const scope = viewer.scope;
-      const values: unknown[] = [workspaceId, me];
+      const values: unknown[] = [workspaceId, me, actorUser.userId];
       // The counts follow the stage filter, so each view says how many of its chats are at those stages.
       const stageSql = stage ? stageFilterSql(stage.split(",").slice(0, 30), (value) => { values.push(value); return `$${values.length}`; }) : null;
       const result = await client.query<Row>(
         `SELECT count(*) FILTER (WHERE status IN ('open', 'unresolved') AND owner_membership_id = $2)::int AS mine,
                 count(*) FILTER (WHERE status IN ('open', 'unresolved') AND owner_membership_id IS NULL)::int AS unassigned,
                 count(*) FILTER (WHERE status IN ('open', 'unresolved') AND owner_membership_id IS NOT NULL)::int AS team,
+                count(*) FILTER (WHERE status IN ('open', 'unresolved') AND ${unreadSql("$3")})::int AS unread,
                 count(*) FILTER (WHERE status IN ('open', 'unresolved'))::int AS "all",
                 count(*) FILTER (WHERE status = 'unresolved')::int AS unresolved,
                 count(*) FILTER (WHERE status = 'snoozed')::int AS snoozed,
@@ -156,6 +159,9 @@ export class CrmInboxService {
       if ((input.action === "label" || input.action === "unlabel") && !input.labelId) throw new UnprocessableEntityException("Choose a label");
       if (input.action === "label") await this.requireActiveLabel(client, workspaceId, input.labelId!);
       if (input.action === "assign" && input.ownerMembershipId === undefined) throw new UnprocessableEntityException("Choose who takes these chats");
+      // A resolved chat is reopened (or snoozed) only by whoever resolved it or an inbox manager: all of them, or none.
+      const reopener = { membershipId: await this.membership(client, workspaceId, actorUser.userId), manager: viewer.scope === "manage" };
+      if ((input.action === "reopen" || input.action === "snooze") && found.rows.some((chat) => !mayReopen(chat, { userId: actorUser.userId, ...reopener }))) throw new ForbiddenException(REOPEN_REFUSED);
       let changed = 0;
       for (const before of found.rows) {
         // A spam chat keeps its state (only "Not spam" moves it); its labels and owner can still change.
@@ -167,7 +173,7 @@ export class CrmInboxService {
         const change: ConversationChange = input.action === "assign" ? { ownerMembershipId: input.ownerMembershipId ?? null }
           : input.action === "resolve" ? { status: "closed" } : input.action === "reopen" ? { status: "open" }
           : { status: "snoozed", snoozedUntil: input.snoozedUntil };
-        const result = await applyConversationChange(client, this.events, { workspaceId, before, change, actorUserId: actorUser.userId, method: "bulk" });
+        const result = await applyConversationChange(client, this.events, { workspaceId, before, change, actorUserId: actorUser.userId, method: "bulk", reopener });
         if (result.changed) changed += 1;
       }
       return { action: input.action, requested: ids.length, changed, unchanged: ids.length - changed };

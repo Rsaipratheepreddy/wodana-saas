@@ -64,6 +64,8 @@ type ControlledModalDialogProps = {
   children: ReactNode;
   className?: string;
   description?: ReactNode;
+  /** An icon beside the title, in a soft chip (what the dialog is about: a review, a payment, a document). */
+  icon?: ReactNode;
   footer?: ReactNode;
   hideTitle?: boolean;
   isDismissable?: boolean;
@@ -109,7 +111,7 @@ function unlockPageScroll() {
   document.documentElement.style.overflow = "";
 }
 
-export function ControlledModalDialog({ children, className, description, footer, hideTitle = false, isDirty = false, isDismissable = true, isOpen, keepsDraft = false, onKeyDown, onOpenChange, size = "md", title }: ControlledModalDialogProps) {
+export function ControlledModalDialog({ children, className, description, footer, hideTitle = false, icon, isDirty = false, isDismissable = true, isOpen, keepsDraft = false, onKeyDown, onOpenChange, size = "md", title }: ControlledModalDialogProps) {
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
@@ -130,7 +132,7 @@ export function ControlledModalDialog({ children, className, description, footer
     return () => element.removeEventListener("keydown", keyDown);
   }, [isOpen]);
   return <DialogCloseContext.Provider value={requestClose}>
-    <ModalOverlay key={portalKey(portalContainer)} {...portalTheme} dir={direction} className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className={["wd-modal", className].filter(Boolean).join(" ")} data-size={size}><Dialog className="wd-dialog" aria-label={title} ref={dialog}>{() => <><header className={hideTitle ? "wd-dialog-minimal-header" : undefined}>{hideTitle ? null : <div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div>}<IconButton aria-label={t("Close dialog")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>
+    <ModalOverlay key={portalKey(portalContainer)} {...portalTheme} dir={direction} className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className={["wd-modal", className].filter(Boolean).join(" ")} data-size={size}><Dialog className="wd-dialog" aria-label={title} ref={dialog}>{() => <><header className={hideTitle ? "wd-dialog-minimal-header" : undefined}>{hideTitle ? null : <div className="wd-dialog-title" data-icon={icon ? "" : undefined}>{icon ? <span aria-hidden="true" className="wd-dialog-icon">{icon}</span> : null}<div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div></div>}<IconButton aria-label={t("Close dialog")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>
     {isDirty || confirming ? <ConfirmationDialog isOpen={confirming} onOpenChange={setConfirming}
       title={keepsDraft ? t("Close this form?") : t("Discard unsaved changes?")}
       body={keepsDraft ? t("Your changes stay here as a draft until you save or discard them.") : t("Your saved records will stay as they are. Unsaved changes will be discarded.")}

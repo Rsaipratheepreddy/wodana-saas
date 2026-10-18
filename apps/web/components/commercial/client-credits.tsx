@@ -1,7 +1,9 @@
 "use client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
-import { Button, DataGrid, FormDialog, FormNotSaved, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Button, DataGrid, FormDialog, FormNotSaved, ReviewFiles, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import { evidenceFiles, type EvidenceFile } from "@/lib/evidence/evidence";
 import type { CommercialState } from "@/lib/commercial/types";
 import { money } from "@/lib/commercial/client";
 import s from "./commercial.module.css";
@@ -18,7 +20,10 @@ export function ClientCredits({
   const { locale } = useDesignSystem();
   const [id, setId] = useState(""),
     [reference, setReference] = useState(""),
-    [evidence, setEvidence] = useState("");
+    [evidence, setEvidence] = useState(""),
+    [files, setFiles] = useState<EvidenceFile[]>([]),
+    [uploading, setUploading] = useState(false),
+    [viewing, setViewing] = useState("");
   if (!state.data.credits?.length) return null;
   return (
     <section className={s.form}>
@@ -35,22 +40,26 @@ export function ClientCredits({
                 </>;}},
 {id:"action",header:t("Action"),size:200,enableSorting:false,enableColumnFilter:false,cell:({row:{original:c}})=>{return <>
                   {c.status === "pending" && state.canVerifyFinance && (
-                    <Button size="compact" isDisabled={busy} onPress={() => { setId(c.id); setReference(""); setEvidence(""); }}>
+                    <Button size="compact" isDisabled={busy} onPress={() => { setId(c.id); setReference(""); setEvidence(""); setFiles([]); }}>
                       {t("Verify credit / refund")}</Button>
                   )}
+                  {c.status === "verified" ? <Button size="compact" variant="quiet" onPress={() => setViewing(viewing === c.id ? "" : c.id)}>{t("Proof")}</Button> : null}
                 </>;}}]}/>
       <FormDialog
         isOpen={Boolean(id)}
         onClose={() => setId("")}
         title={t("Verify client credit")}
         isSubmitting={busy}
-        isDirty={Boolean(reference.trim() || evidence.trim())}
+        isDirty={Boolean(reference.trim() || evidence.trim() || files.length)}
+        isSubmitDisabled={uploading || !files.length}
         submitLabel={t("Record verified credit")}
-        onSubmit={async () => { if (!(await run("verify_credit", { creditId: id, reference, evidence }))) throw new FormNotSaved(); setId(""); }}
+        onSubmit={async () => { if (!(await run("verify_credit", { creditId: id, reference, evidence, evidenceFileIds: files.map((file) => file.id) }))) throw new FormNotSaved(); setId(""); }}
       >
         <TextInput isRequired maxLength={240} label={t("Accounting credit note / refund reference")} value={reference} onChange={setReference} />
-        <TextAreaField isRequired label={t("Verified application or refund evidence")} value={evidence} onChange={setEvidence} />
+        <EvidenceField workspaceId={state.workspaceId} kind="client_credit" isRequired label={t("Credit note or refund proof")} value={files} onChange={setFiles} onBusy={setUploading} />
+        <TextAreaField label={t("Note")} maxLength={3000} value={evidence} onChange={setEvidence} />
       </FormDialog>
+      {viewing ? <ReviewFiles files={evidenceFiles(state.workspaceId, state.creditFiles?.[viewing])} /> : null}
     </section>
   );
 }

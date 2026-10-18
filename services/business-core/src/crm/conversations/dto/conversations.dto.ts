@@ -7,8 +7,8 @@ export class ListConversationsQueryDto {
   @IsOptional() @Matches(/^(open|unresolved|snoozed|closed|spam)(,(open|unresolved|snoozed|closed|spam)){0,4}$/) status?: string;
   /** "due": only chats whose "Closing the chat" message is due (no reply for the firm's quiet working hours). */
   @IsOptional() @IsIn(["due"]) closing?: string;
-  /** Mine, Unassigned, Team (people who share a queue with me) or All. */
-  @IsOptional() @IsIn(["mine", "unassigned", "team", "all"]) view?: string;
+  /** Mine, Unassigned, Team (people who share a queue with me), Unread (a client message I haven't opened yet) or All. */
+  @IsOptional() @IsIn(["mine", "unassigned", "team", "unread", "all"]) view?: string;
   @IsOptional() @IsUUID() labelId?: string;
   /** Longest-waiting first (the default for Open) or most recent first. */
   @IsOptional() @IsIn(["waiting", "recent"]) sort?: string;

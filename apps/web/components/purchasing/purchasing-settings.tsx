@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, SelectField, EmptyState, InlineNotice, SaveBar, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
+import { Button, SelectField, EmptyState, InlineNotice, MoneyField, NumericInput, PercentageInput, SaveBar, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { purchasingApi } from "@/lib/purchasing/client";
 import type { PurchasingSettings } from "@/lib/purchasing/types";
-import { quantityText } from "./order-labels";
+import { fieldNumber, fieldText, quantityText } from "./order-labels";
 
 /** Settings → Purchasing: from what amount an order needs approval, what must be true before one is placed, and how deliveries are received. */
 export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string }) {
@@ -61,8 +61,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
         <Switch aria-label={t("Every order")} isDisabled={readOnly} isSelected={form.always} onChange={(always) => setForm({ ...form, always })} />
       </SettingsRow> : null}
       {form.approval && !form.always ? <SettingsRow label={t("From this amount")} hint={t("Orders in another currency always need approval.")}>
-        <TextInput aria-label={t("From this amount")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix={data.currency ?? undefined} value={form.threshold}
-          onChange={(value) => setForm({ ...form, threshold: value.replace(/[^\d.]/g, "") })} />
+        <MoneyField aria-label={t("From this amount")} label={null} isReadOnly={readOnly} currency={data.currency ?? undefined} min="0" value={form.threshold}
+          onChange={(threshold) => setForm({ ...form, threshold })} />
       </SettingsRow> : null}
     </SettingsSection>
     <SettingsSection id="before" title={t("Before an order is placed")}>
@@ -92,8 +92,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
         <Switch aria-label={t("Material list confirmed by the QS")} isDisabled={readOnly} isSelected={form.materialList} onChange={(materialList) => setForm({ ...form, materialList })} />
       </SettingsRow>
       <SettingsRow label={t("Order ahead")} hint={t("Days before it's needed that something is ordered, when the supplier's lead time isn't known.")}>
-        <TextInput aria-label={t("Order ahead")} label={null} isReadOnly={readOnly} inputMode="numeric" suffix={t("days")} value={form.ahead}
-          onChange={(value) => setForm({ ...form, ahead: value.replace(/\D/g, "").slice(0, 3) })} />
+        <NumericInput aria-label={t("Order ahead")} label={null} isReadOnly={readOnly} suffix={t("days")} minValue={0} maxValue={999} formatOptions={{ maximumFractionDigits: 0 }}
+          value={fieldNumber(form.ahead)} onChange={(value) => setForm({ ...form, ahead: fieldText(value) })} />
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="money" title={t("Project money")}>
@@ -111,14 +111,14 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
         <Switch aria-label={t("Photo of site deliveries")} isDisabled={readOnly} isSelected={form.sitePhoto} onChange={(sitePhoto) => setForm({ ...form, sitePhoto })} />
       </SettingsRow>
       <SettingsRow label={t("Over-delivery allowed")} hint={t("How much more than ordered can be received on a line.")}>
-        <TextInput aria-label={t("Over-delivery allowed")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix="%" value={form.tolerance}
-          onChange={(value) => setForm({ ...form, tolerance: value.replace(/[^\d.]/g, "") })} />
+        <PercentageInput aria-label={t("Over-delivery allowed")} label={null} isReadOnly={readOnly} formatOptions={{ maximumFractionDigits: 2 }}
+          value={fieldNumber(form.tolerance)} onChange={(value) => setForm({ ...form, tolerance: fieldText(value) })} />
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="invoices" title={t("Supplier invoices")}>
       <SettingsRow label={t("Price difference allowed")} hint={t("How far above the ordered price an invoice can be before it's held for approval.")}>
-        <TextInput aria-label={t("Price difference allowed")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix="%" value={form.invoiceTolerance}
-          onChange={(value) => setForm({ ...form, invoiceTolerance: value.replace(/[^\d.]/g, "") })} />
+        <PercentageInput aria-label={t("Price difference allowed")} label={null} isReadOnly={readOnly} formatOptions={{ maximumFractionDigits: 2 }}
+          value={fieldNumber(form.invoiceTolerance)} onChange={(value) => setForm({ ...form, invoiceTolerance: fieldText(value) })} />
       </SettingsRow>
       <SettingsRow label={t("Pay through approved runs")} hint={t("Invoices are paid only in a payment run someone else approved. Advances on orders are still recorded directly.")}>
         <Switch aria-label={t("Pay through approved runs")} isDisabled={readOnly} isSelected={form.runs} onChange={(runs) => setForm({ ...form, runs })} />
@@ -126,8 +126,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     </SettingsSection>
     <SettingsSection id="stock" title={t("Stock")}>
       <SettingsRow label={t("Corrections needing approval")} hint={t("A stock count that changes more than this value waits for someone else. Empty: none do.")}>
-        <TextInput aria-label={t("Corrections needing approval")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix={data.currency ?? undefined} value={form.adjustLimit}
-          onChange={(value) => setForm({ ...form, adjustLimit: value.replace(/[^\d.]/g, "") })} />
+        <MoneyField aria-label={t("Corrections needing approval")} label={null} isReadOnly={readOnly} currency={data.currency ?? undefined} min="0" value={form.adjustLimit}
+          onChange={(adjustLimit) => setForm({ ...form, adjustLimit })} />
       </SettingsRow>
     </SettingsSection>
     {readOnly ? null : <SaveBar isDirty={JSON.stringify(form) !== baseline} isSaving={busy} saved={justSaved} onDiscard={() => { setForm(JSON.parse(baseline)); setError(""); }} onSave={() => void save()}

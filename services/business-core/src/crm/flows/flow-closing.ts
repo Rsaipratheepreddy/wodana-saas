@@ -8,8 +8,8 @@ type Db = Pick<PoolClient, "query">;
  * PLM-102: what closes a deal, per enquiry type's flow and furniture path. Configuration rows
  * (crm_flow_closing_rules); Deal Closed itself is computed from the records these events name, never typed.
  *   collected                         the client collected it (Furniture A: same day, at handover)
- *   delivered                         delivered, with proof of delivery (Furniture B, D, E)
- *   collected_or_delivered            either (Furniture C, ordered from a supplier)
+ *   delivered                         delivered, with proof of delivery (Furniture B–E)
+ *   collected_or_delivered            either (a firm's choice for goods the client may also pick up)
  *   design_handover                   the client's design approval is recorded (Full ID)
  *   all_produced_delivered_installed  every work order produced, then delivered and installed (ID & Furniture)
  *   completion_handover               the signed completion and handover is accepted (Fit-out)
@@ -22,7 +22,7 @@ export type FlowClosing = { default: ClosingEvent | null; paths?: Partial<Record
 
 const FURNITURE: FlowClosing = {
   default: "delivered",
-  paths: { take_home_now: "collected", in_stock_delivery: "delivered", supplier_order: "collected_or_delivered", core_collection_factory: "delivered", bespoke: "delivered" },
+  paths: { take_home_now: "collected", in_stock_delivery: "delivered", supplier_order: "delivered", core_collection_factory: "delivered", bespoke: "delivered" },
 };
 
 /**
@@ -39,7 +39,7 @@ export const TEMPLATE_CLOSING: Record<string, FlowClosing> = {
   furniture_all_paths: FURNITURE,
   furniture_take_home: { default: "collected" },
   furniture_in_stock_delivery: { default: "delivered" },
-  furniture_supplier_order: { default: "collected_or_delivered" },
+  furniture_supplier_order: { default: "delivered" },
   furniture_core_collection: { default: "delivered" },
   furniture_bespoke: { default: "delivered" },
   design_concept: { default: "design_handover" },

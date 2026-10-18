@@ -31,10 +31,15 @@ export function splitMilestone(amount: string, pricing: { total: string; taxes: 
   }).filter((group) => !Dec.of(group.total).isZero());
 }
 
-/** A project's payment milestone as the deal keeps it, with the sealed quotation it belongs to. */
+/**
+ * A payment milestone as the deal keeps it: one of a started project's sealed quotations, or of an accepted design
+ * quotation (the design fee, invoiced before any project; §0.3 P8). Without a project, the job's reference names it.
+ */
 export type Milestone = {
-  projectId: string; projectReference: string; projectName: string; caseId: string; paymentId: string; title: string; amount: string; currency: string | null;
+  projectId: string | null; projectReference: string; projectName: string; caseId: string; paymentId: string; title: string; amount: string; currency: string | null;
   dueDate: string | null; legalEntityId: string | null; quoteId: string; clientName: string; invoiceId: string | null; invoiceNumber: string | null;
+  /** Its quotation is sealed into the project (the tax split comes from the seal); else from the accepted design quotation. */
+  sealed: boolean;
 };
 
 /** Milestones of started projects whose quotation is sealed into the project (baseline or variation), with their live invoice. */
@@ -45,35 +50,46 @@ export async function readMilestones(db: Db, workspaceId: string, filter: { proj
   if (filter.caseId) { values.push(filter.caseId); where.push(`payment.case_id = $${values.length}`); }
   if (filter.paymentId) { values.push(filter.paymentId); where.push(`payment.id = $${values.length}`); }
   return (await db.query<Milestone>(
-    `SELECT project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName", payment.case_id AS "caseId", payment.id AS "paymentId",
-            payment.title, payment.amount::text AS amount, coalesce(nullif(payment.currency, ''), seal.currency) AS currency, payment.due_date::text AS "dueDate",
+    `SELECT project.id AS "projectId", coalesce(project.reference, job.reference, '') AS "projectReference",
+            coalesce(project.name, opportunity.title) AS "projectName", payment.case_id AS "caseId", payment.id AS "paymentId",
+            payment.title, payment.amount::text AS amount, coalesce(nullif(payment.currency, ''), seal.currency, trim(quote.currency)) AS currency, payment.due_date::text AS "dueDate",
             nullif(payment.legal_entity_id, '') AS "legalEntityId", payment.source_quote_id AS "quoteId", coalesce(party.display_name, opportunity.title) AS "clientName",
-            invoice.id AS "invoiceId", invoice.number AS "invoiceNumber"
+            invoice.id AS "invoiceId", invoice.number AS "invoiceNumber", seal.quote_id IS NOT NULL AS sealed
        FROM commercial_payments payment
-       JOIN delivery_projects project ON project.workspace_id = payment.workspace_id AND project.case_id = payment.case_id AND project.started_at IS NOT NULL
-       JOIN project_scope_seals seal ON seal.workspace_id = project.workspace_id AND seal.project_id = project.id AND seal.quote_id = payment.source_quote_id
-       JOIN pre_project_cases pre_case ON pre_case.workspace_id = project.workspace_id AND pre_case.id = project.case_id
+       JOIN commercial_quotes quote ON quote.workspace_id = payment.workspace_id AND quote.case_id = payment.case_id AND quote.id = payment.source_quote_id
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = payment.workspace_id AND pre_case.id = payment.case_id
        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN delivery_projects project ON project.workspace_id = payment.workspace_id AND project.case_id = payment.case_id AND project.started_at IS NOT NULL
+       LEFT JOIN project_scope_seals seal ON seal.workspace_id = project.workspace_id AND seal.project_id = project.id AND seal.quote_id = payment.source_quote_id
+       LEFT JOIN job_identity_links job_link ON job_link.workspace_id = payment.workspace_id AND job_link.record_type = 'case' AND job_link.record_id = payment.case_id::text
+                                           AND job_link.status = 'active'
+       LEFT JOIN job_identities job ON job.workspace_id = job_link.workspace_id AND job.id = job_link.job_id
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
        LEFT JOIN client_invoices invoice ON invoice.workspace_id = payment.workspace_id AND invoice.case_id = payment.case_id AND invoice.payment_id = payment.id AND invoice.status = 'issued'
       WHERE ${where.join(" AND ")}
-      ORDER BY payment.due_date NULLS LAST, project.reference, payment.sort_order`, values)).rows;
+        -- A sealed quotation's milestones, or the accepted design quotation's (the design fee) with or without a project.
+        AND (seal.quote_id IS NOT NULL OR (quote.round = 'design' AND quote.status = 'accepted'))
+      ORDER BY payment.due_date NULLS LAST, coalesce(project.reference, job.reference), payment.sort_order`, values)).rows;
 }
 
 export type ClientInvoice = {
-  id: string; legalEntityId: string; projectId: string; projectReference: string; caseId: string; paymentId: string; number: string; issueDate: string; dueDate: string;
+  id: string; legalEntityId: string; projectId: string | null; projectReference: string; caseId: string; paymentId: string; number: string; issueDate: string; dueDate: string;
   currency: string; net: string; tax: string; total: string; milestoneTitle: string; customerName: string; customerAddress: string; customerTaxNumber: string;
   companyName: string; companyAddress: string; companyTaxNumber: string; note: string; status: "issued" | "credited"; issuedByName: string; issuedAt: string; version: number;
   creditNoteId: string | null; creditNoteNumber: string | null; creditReason: string | null; creditedOn: string | null;
 };
 
-export async function readInvoices(db: Db, workspaceId: string, filter: { id?: string; projectId?: string } = {}): Promise<ClientInvoice[]> {
+export async function readInvoices(db: Db, workspaceId: string, filter: { id?: string; projectId?: string; caseId?: string } = {}): Promise<ClientInvoice[]> {
   const values: unknown[] = [workspaceId];
   const where = ["invoice.workspace_id = $1"];
   if (filter.id) { values.push(filter.id); where.push(`invoice.id = $${values.length}`); }
   if (filter.projectId) { values.push(filter.projectId); where.push(`invoice.project_id = $${values.length}`); }
+  if (filter.caseId) { values.push(filter.caseId); where.push(`invoice.case_id = $${values.length}`); }
   return (await db.query<ClientInvoice>(
-    `SELECT invoice.id, invoice.legal_entity_id AS "legalEntityId", invoice.project_id AS "projectId", project.reference AS "projectReference", invoice.case_id AS "caseId",
+    `SELECT invoice.id, invoice.legal_entity_id AS "legalEntityId", invoice.project_id AS "projectId",
+            coalesce(project.reference, (SELECT job.reference FROM job_identity_links link JOIN job_identities job ON job.workspace_id = link.workspace_id AND job.id = link.job_id
+                                          WHERE link.workspace_id = invoice.workspace_id AND link.record_type = 'case' AND link.record_id = invoice.case_id::text AND link.status = 'active' LIMIT 1), '')
+              AS "projectReference", invoice.case_id AS "caseId",
             invoice.payment_id AS "paymentId", invoice.number, invoice.issue_date::text AS "issueDate", invoice.due_date::text AS "dueDate", invoice.currency,
             invoice.net::text AS net, invoice.tax::text AS tax, invoice.total::text AS total, invoice.milestone_title AS "milestoneTitle", invoice.customer_name AS "customerName",
             invoice.customer_address AS "customerAddress", invoice.customer_tax_number AS "customerTaxNumber", invoice.company_name AS "companyName",
@@ -81,7 +97,7 @@ export async function readInvoices(db: Db, workspaceId: string, filter: { id?: s
             invoice.issued_at AS "issuedAt", invoice.version, credit.id AS "creditNoteId", credit.number AS "creditNoteNumber", credit.reason AS "creditReason",
             credit.issue_date::text AS "creditedOn"
        FROM client_invoices invoice
-       JOIN delivery_projects project ON project.workspace_id = invoice.workspace_id AND project.id = invoice.project_id
+       LEFT JOIN delivery_projects project ON project.workspace_id = invoice.workspace_id AND project.id = invoice.project_id
        JOIN users issuer ON issuer.id = invoice.issued_by
        LEFT JOIN client_credit_notes credit ON credit.workspace_id = invoice.workspace_id AND credit.invoice_id = invoice.id
       WHERE ${where.join(" AND ")} ORDER BY invoice.issue_date DESC, invoice.number DESC LIMIT 1000`, values)).rows;

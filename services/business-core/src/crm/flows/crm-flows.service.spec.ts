@@ -32,7 +32,7 @@ describe("creating a flow", () => {
     const access = { withPermission: (_actor: unknown, _workspace: string, permission: string, work: () => unknown) => { expect(permission).toBe("crm.settings.manage"); return work(); } } as never;
     const { data } = await new CrmFlowsService(access).templates({} as never, "w");
     expect(data.length).toBeGreaterThan(10);
-    expect(data.find((template) => template.key === "fit_out_joinery")).toMatchObject({ group: "Fit-out", stepCount: 11, suggestedEnquiryTypes: ["Joinery only", "Renovation / fit-out"] });
+    expect(data.find((template) => template.key === "fit_out_joinery")).toMatchObject({ group: "Fit-out", stepCount: 13, suggestedEnquiryTypes: ["Joinery only", "Renovation / fit-out"] });
     expect(Object.keys(data[0]).sort()).toEqual(["definition", "description", "group", "key", "name", "stepCount", "suggestedEnquiryTypes"]);
   });
 });

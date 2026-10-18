@@ -237,6 +237,13 @@
   --wd-duration-base: 180ms;
   --wd-duration-slow: 240ms;
 
+  /* One padding scale for every surface (§0.3 UI pass): cards, tiles and the next-step card read the same on every screen. */
+  --wd-card-pad: var(--wd-space-3);
+  --wd-card-gap: var(--wd-space-2-5);
+  --wd-tile-pad-block: var(--wd-space-2-5);
+  --wd-tile-pad-inline: var(--wd-space-3);
+  --wd-page-side: var(--wd-phi-3);
+
   /* Sizing and layout contracts. */
   --wd-control-xs: 1.75rem;
   --wd-control-sm: 2rem;
@@ -244,13 +251,26 @@
   --wd-control-lg: 2.5rem;
   --wd-control-compact: var(--wd-control-sm);
   --wd-control-standard: var(--wd-control-md);
-  /* Shared action sizing; feature screens should use Button sizes, not local px values. */
+  /* One control scale, three sizes: compact (28px), standard (32px) and large (40px). A Button, IconButton, input,
+     select, search or date field of the same size has the same height; a button's padding, icon and icon gap come
+     from its size. Screens pick a size; they never set a height, padding or gap on a shared control. */
   --wd-button-height-compact: var(--wd-control-xs);
   --wd-button-height-standard: var(--wd-control-sm);
   --wd-button-height-large: 2.5rem;
   --wd-button-padding-compact: var(--wd-space-2);
   --wd-button-padding-standard: var(--wd-space-3);
   --wd-button-padding-large: var(--wd-space-4);
+  --wd-button-gap-compact: var(--wd-space-1-5);
+  --wd-button-gap-standard: var(--wd-space-2);
+  --wd-button-gap-large: var(--wd-space-2);
+  --wd-button-icon-size: 0.875rem;
+  /* Fields are large (the form height) unless the field, or the toolbar it sits in, picks another size. */
+  --wd-field-height: var(--wd-button-height-large);
+  /* The one gap between actions side by side: button groups, dialog and form footers, page-header actions,
+     toolbars and settings rows. */
+  --wd-action-gap: var(--wd-space-2);
+  /* The smallest touch target: on a phone, a dialog's actions and a list's options are at least this tall. */
+  --wd-touch-target: 2.75rem;
   --wd-auth-control-height: 2.75rem;
   --wd-auth-control-radius: var(--wd-radius-md);
   --wd-auth-panel-width: 25rem;

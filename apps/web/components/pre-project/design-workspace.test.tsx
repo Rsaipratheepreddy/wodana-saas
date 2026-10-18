@@ -145,18 +145,24 @@ describe("design review actions", () => {
     mountActions(design("F", "concepts", "r1", "draft"), {}, false);
     expect(screen.queryByRole("button", { name: "Send for review" })).not.toBeInTheDocument();
   });
-  it("records a client decision with who, how and what, and requires them", async () => {
-    const fetcher = serve(design("D", "concepts", "r1", "approved"));
+  it("records a client decision with who, how, what and the file it came in, and requires them", async () => {
+    const signed = { id: "11111111-1111-4111-8111-111111111111", name: "approval.pdf", mimeType: "application/pdf", hasPreview: false, uploadedAt: "2026-09-27T12:30:00Z" };
+    const fetcher = vi.fn(async (url: string, _init?: RequestInit) => ({ ok: true, json: async () => url.startsWith("/api/workspace/evidence") ? signed : design("D", "concepts", "r1", "approved") }));
+    vi.stubGlobal("fetch", fetcher);
     mountActions(design("D", "concepts", "r1", "client_review"));
     fireEvent.click(screen.getByRole("button", { name: "Client approved" }));
     const record = screen.getByRole("button", { name: "Record decision" });
     expect(record).toBeDisabled();
     fireEvent.change(screen.getByRole("textbox", { name: /Client/ }), { target: { value: "Maya" } });
     fireEvent.change(screen.getByRole("textbox", { name: /What the client approved/ }), { target: { value: "Approved the island version" } });
+    // An approval comes with what it came in (a signed page, an email).
+    expect(record).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Add a photo or PDF"), { target: { files: [new File(["%PDF-"], "approval.pdf", { type: "application/pdf" })] } });
+    await screen.findByRole("link", { name: "Open approval.pdf" });
     fireEvent.click(record);
-    await waitFor(() => expect(fetcher).toHaveBeenCalled());
-    const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
-    expect(body).toMatchObject({ action: "approved", decisionBy: "Maya", decisionSource: "meeting", note: "Approved the island version" });
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("/activity"))).toBe(true));
+    const body = JSON.parse(String(fetcher.mock.calls.find(([url]) => String(url).includes("/activity"))![1]?.body));
+    expect(body).toMatchObject({ action: "approved", decisionBy: "Maya", decisionSource: "meeting", note: "Approved the island version", evidenceFileIds: [signed.id] });
     expect(Date.parse(body.decisionAt)).toBeLessThanOrEqual(Date.now());
   });
   it("warns that an extra client round is chargeable and asks for the agreement", () => {

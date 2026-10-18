@@ -30,4 +30,6 @@ export type {
   DealFile,
   MaterialApproval,
   ClientMaterialApproval,
+  ManualPaymentMethod,
 } from "../../../../services/business-core/src/commercial/commercial.types";
+export { MANUAL_PAYMENT_METHODS } from "../../../../services/business-core/src/commercial/commercial.types";

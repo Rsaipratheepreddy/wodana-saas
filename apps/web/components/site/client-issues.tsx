@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Button, EmptyState, SegmentedControl, SelectField, TextAreaField, FormDialog } from "@/design-system";
+import { Badge, Button, EmptyState, FormDialog, SegmentedControl, SelectField, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { PortalError, staffPortalApi } from "@/lib/client-portal/client";
 import type { StaffIssue } from "@/lib/client-portal/types";
@@ -47,7 +47,7 @@ export function ClientIssues({ projectId, client, switcher, openId }: { projectI
   if (target) { setLinked(null); if (canTriage && target.status === "to_triage") setTriaging(target); }
   useEffect(() => { if (openId) document.getElementById(`issue-${openId}`)?.scrollIntoView?.({ block: "center" }); }, [openId, client.data]);
   const statusLabel = { to_triage: t("To triage"), accepted: t("Accepted"), declined: t("Declined") };
-  const tone = { to_triage: "submitted", accepted: "approved", declined: "returned" } as const;
+  const tone = { to_triage: "info", accepted: "success", declined: "warning" } as const;
   const severity: Record<Severity, string> = { minor: t("Minor"), major: t("Major"), critical: t("Critical") };
 
   return <>
@@ -58,7 +58,7 @@ export function ClientIssues({ projectId, client, switcher, openId }: { projectI
           <div className={styles.reportHead}>
             <strong>{t("Issue {number}", { number: issue.number })}</strong>
             <span className={styles.muted}>{[format.day(issue.raisedOn), issue.by, issue.area].filter(Boolean).join(" · ")}</span>
-            <span className={styles.status} data-status={tone[issue.status]}>{statusLabel[issue.status]}</span>
+            <Badge tone={tone[issue.status]}>{statusLabel[issue.status]}</Badge>
             <span className={styles.spacer} />
             {issue.status === "to_triage" && canTriage ? <Button size="compact" onPress={() => setTriaging(issue)}>{t("Triage")}</Button> : null}
           </div>

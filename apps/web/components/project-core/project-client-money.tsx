@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Badge, Button, DataGrid, FormDialog, EmptyState, ErrorState, InlineNotice, Skeleton, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
-import { commercialPath, jsonRequest } from "@/lib/commercial/client";
+import { parseDate } from "@internationalized/date";
+import { Badge, Button, DataGrid, DateField, FormDialog, FormRow, EmptyState, ErrorState, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { commercialPath, jsonRequest, paymentMethodLabel } from "@/lib/commercial/client";
+import { translateKnown } from "@/lib/i18n/keys";
+import { MANUAL_PAYMENT_METHODS, type ManualPaymentMethod } from "@/lib/commercial/types";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import { addExact } from "@/lib/purchasing/amounts";
 import type { Milestone, Milestones, MilestoneState } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import type { EvidenceFile } from "@/lib/evidence/evidence";
 import styles from "./project-money.module.css";
 
 /**
@@ -81,19 +86,35 @@ export function ProjectClientMoney({ workspaceId, projectId, switcher }: { works
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
     <DataGrid<Milestone> ariaLabel={t("Payment milestones")} columns={columns} data={state.milestones} getRowId={(row) => row.id} rowNumbers={false} wrapText toolbarLeading={switcher}
       emptyContent={<EmptyState title={t("No payment milestones")} description={t("They come from the accepted quotation's payment terms.")} />} />
-    {recording ? <ReceiptDialog milestone={recording} onClose={() => setRecording(null)}
-      onSave={async (reference, evidence) => { if (await command("report_payment_receipt", { paymentId: recording.id, reference, evidence }, true)) setRecording(null); }} /> : null}
+    {recording ? <ReceiptDialog workspaceId={workspaceId} milestone={recording} onClose={() => setRecording(null)}
+      onSave={async (receipt) => { if (await command("report_payment_receipt", { paymentId: recording.id, ...receipt }, true)) setRecording(null); }} /> : null}
   </div>;
 }
 
-function ReceiptDialog({ milestone, onClose, onSave }: { milestone: Milestone; onClose: () => void; onSave: (reference: string, evidence: string) => Promise<void> }) {
+type ReceiptInput = { reference: string; evidence: string; evidenceFileIds: string[]; method: ManualPaymentMethod; receivedOn: string };
+
+function ReceiptDialog({ workspaceId, milestone, onClose, onSave }: { workspaceId: string; milestone: Milestone; onClose: () => void; onSave: (receipt: ReceiptInput) => Promise<void> }) {
   const t = useT();
   const format = useProjectFormat();
   const [reference, setReference] = useState("");
   const [evidence, setEvidence] = useState("");
+  // §0.3 P0: the proof of payment is a photo or PDF Finance sees when verifying it.
+  const [files, setFiles] = useState<EvidenceFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [method, setMethod] = useState<ManualPaymentMethod>("bank");
+  const [receivedOn, setReceivedOn] = useState(format.today());
   return <FormDialog size="md" title={t("Record receipt")} description={`${milestone.title} · ${format.money(milestone.amount, milestone.currency)}`} onClose={onClose}
-    isDirty={Boolean(reference.trim() || evidence.trim())} submitLabel={t("Save")} onSubmit={() => onSave(reference.trim(), evidence.trim())}>
+    isDirty={Boolean(reference.trim() || evidence.trim() || files.length)} submitLabel={t("Save")} isSubmitDisabled={uploading || !files.length}
+    onSubmit={() => onSave({ reference: reference.trim(), evidence: evidence.trim(), evidenceFileIds: files.map((file) => file.id), method, receivedOn })}>
+    <FormRow>
+      <SelectField isRequired label={t("Payment method")} selectedKey={method}
+        items={MANUAL_PAYMENT_METHODS.map((id) => ({ id, label: translateKnown(t, paymentMethodLabel[id]) }))}
+        onSelectionChange={(key) => setMethod(String(key ?? "bank") as ManualPaymentMethod)} />
+      <DateField label={t("Received on")} isRequired maxValue={parseDate(format.today())} value={receivedOn ? parseDate(receivedOn) : null}
+        onChange={(date) => setReceivedOn(date?.toString() ?? "")} />
+    </FormRow>
     <TextInput label={t("Bank or cheque reference")} isRequired maxLength={240} value={reference} onChange={setReference} />
-    <TextAreaField label={t("Receipt evidence")} isRequired value={evidence} onChange={setEvidence} />
+    <EvidenceField workspaceId={workspaceId} kind="receipt" isRequired label={t("Proof of payment")} value={files} onChange={setFiles} onBusy={setUploading} />
+    <TextAreaField label={t("Note")} maxLength={3000} value={evidence} onChange={setEvidence} />
   </FormDialog>;
 }

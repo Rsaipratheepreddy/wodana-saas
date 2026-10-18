@@ -41,12 +41,14 @@ describe("Project form dialogs", () => {
     saveAtTheEnd(dialog, "Save");
   });
 
-  it("edits a material in Supply and Usage sections, quantity beside its unit", async () => {
+  it("edits a material in Details, Supply and Usage sections, quantity beside its unit", async () => {
     respond({ state: "draft", items: [], revisions: [], version: 1, canEdit: true });
     render(<DesignSystemProvider><ProjectMaterials workspaceId="w" projectId="p1" version={1} run={vi.fn()} lines={[]} /></DesignSystemProvider>);
     await userEvent.click(await screen.findByRole("button", { name: "Add material" }));
     const sheet = await screen.findByRole("dialog", { name: "New material" });
-    expect(sectionTitles(sheet)).toEqual(["Supply", "Usage"]);
+    // Details holds brand, colour, size and finish (and the sample photo once the material is on a case).
+    expect(sectionTitles(sheet)).toEqual(["Details", "Supply", "Usage"]);
+    for (const name of ["Brand", "Colour", "Size", "Finish"]) expect(within(sheet).getByRole("textbox", { name })).toBeInTheDocument();
     expect(rows(sheet)).toBe(0);
     expect(within(sheet).getByRole("textbox", { name: "Quantity" }).closest("[class*=quantityUnit]")).toContainElement(within(sheet).getByRole("textbox", { name: "Unit" }));
     saveAtTheEnd(sheet, "Save");

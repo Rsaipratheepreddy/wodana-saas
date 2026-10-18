@@ -21,8 +21,13 @@ import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
 import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } from "./proposal-kit";
 import { MARKUP_DISCLOSURES, type MarkupDisclosure } from "../proposals/markup-disclosure";
 import { QS_FIELDS, touchesQsFields } from "../proposals/qs-review.domain";
+import { estimateReference } from "../commercial/case-quote-facts";
+import { leadDesigner } from "../design/design-journey.store";
+import { guardQuoteTerms } from "./locked-terms";
+import { pricingSheetFill } from "./pricing-sheet";
 import { QS_ITEM_TYPES, QS_SCOPES, qsRequirement, quoteReviewAction, type QsItemType, type QsScope } from "../proposals/qs-requirement";
 import { linkQuoteLine, materialEditor, quoteFinishes, quoteSpecification } from "../design/finishes.store";
+import { ensureSettings } from "../project-core/project-core.store";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -36,6 +41,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export type QuotationSettings = {
   defaultView: "area" | "trade" | "area_trade"; pricesIncludeTax: boolean; rounding: "line" | "document";
   defaultMarkupPercent: string; marginFloorPercent: string | null; discountApprovalPercent: string | null;
+  /** Guide M: the role that approves a discount above the threshold (null: anyone who approves quotes). */
+  discountApproverRole?: string | null;
   validityDays: number; internalReview: boolean; priceBookId: string | null;
   /** Days after a quote or design reaches the client when they and the case owner are reminded (Q-8). */
   decisionReminderDays: number[];
@@ -61,12 +68,14 @@ export type QuotationSettings = {
   qsVariationThreshold: string | null;
   /** PLM-147: the free value engineering rounds per job; past them a round is chargeable. Null: no limit. */
   valueEngineeringFreeRounds: number | null;
+  /** §0.3 P8: the job-team roles whose holder on the job gives a quotation its manager approval; empty: anyone who approves quotes. */
+  approvalTeamRoles: string[];
   version: number;
 };
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
-  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null,
-  markupDisclosure: "all_inclusive", qsReview: false, qsReviewScope: "all", qsReviewItemTypes: [], signingLinkDays: 14, introDeckUrl: null, qsVariations: "rules", qsVariationThreshold: null, valueEngineeringFreeRounds: null, version: 0,
+  discountApprovalPercent: null, discountApproverRole: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null,
+  markupDisclosure: "all_inclusive", qsReview: false, qsReviewScope: "all", qsReviewItemTypes: [], signingLinkDays: 14, introDeckUrl: null, qsVariations: "rules", qsVariationThreshold: null, valueEngineeringFreeRounds: null, approvalTeamRoles: [], version: 0,
 };
 
 type LineRow = {
@@ -108,6 +117,8 @@ export class QuotationBuilderService {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => ({
       settings: await readSettings(client, workspaceId),
       workPackages: await workPackages(client, workspaceId, true),
+      // §0.3 P8: the job-team roles the firm can name as who gives manager approval.
+      teamRoles: (await ensureSettings(client, workspaceId)).roles.map((role) => ({ id: role.key, label: role.label })),
       priceBooks: (await client.query(`SELECT id, name, currency, status FROM price_books WHERE workspace_id = $1 AND status <> 'expired' ORDER BY name`, [workspaceId])).rows,
       paymentTemplates: (await client.query(`SELECT id, name FROM commercial_payment_templates WHERE workspace_id = $1 AND status = 'active' ORDER BY name`, [workspaceId])).rows,
       canManage: await this.anyPermission(client, workspaceId, user.userId, SETTINGS),
@@ -125,6 +136,11 @@ export class QuotationBuilderService {
       if (input.defaultMarkupPercent !== undefined) next.defaultMarkupPercent = decimal(input.defaultMarkupPercent, "Markup", { max: "1000" })!;
       if (input.marginFloorPercent !== undefined) next.marginFloorPercent = decimal(input.marginFloorPercent, "Margin floor", { max: "99.99", nullable: true });
       if (input.discountApprovalPercent !== undefined) next.discountApprovalPercent = decimal(input.discountApprovalPercent, "Discount approval", { max: "100", nullable: true });
+      if (input.discountApproverRole !== undefined) {
+        const role = input.discountApproverRole === null || input.discountApproverRole === "" ? null : String(input.discountApproverRole);
+        if (role !== null && !/^[a-z][a-z0-9_]{1,59}$/.test(role)) throw new BadRequestException("Choose the role that approves discounts.");
+        next.discountApproverRole = role;
+      }
       if (input.validityDays !== undefined) {
         const days = Number(input.validityDays);
         if (!Number.isInteger(days) || days < 1 || days > 365) throw new BadRequestException("Validity is 1 to 365 days.");
@@ -171,6 +187,11 @@ export class QuotationBuilderService {
         if (rounds !== null && (!Number.isInteger(rounds) || rounds < 0 || rounds > 50)) throw new BadRequestException("Free value engineering rounds are 0 to 50, or blank for no limit.");
         next.valueEngineeringFreeRounds = rounds;
       }
+      if (input.approvalTeamRoles !== undefined) {
+        if (!Array.isArray(input.approvalTeamRoles) || input.approvalTeamRoles.length > 10 || input.approvalTeamRoles.some((role) => typeof role !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(role)))
+          throw new BadRequestException("Choose team roles from the list.");
+        next.approvalTeamRoles = [...new Set(input.approvalTeamRoles as string[])];
+      }
       if (input.priceBookId !== undefined) {
         next.priceBookId = input.priceBookId === null ? null : uuid(input.priceBookId, "Price book");
         if (next.priceBookId && !(await client.query(`SELECT 1 FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.priceBookId])).rowCount)
@@ -193,7 +214,8 @@ export class QuotationBuilderService {
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
           next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays, next.defaultPaymentTemplateId,
           next.markupDisclosure, next.qsReview, next.signingLinkDays, next.introDeckUrl, next.qsReviewScope, next.qsReviewItemTypes, next.qsVariations, next.qsVariationThreshold]);
-      await client.query(`UPDATE workspace_quotation_settings SET value_engineering_free_rounds = $2 WHERE workspace_id = $1`, [workspaceId, next.valueEngineeringFreeRounds]);
+      await client.query(`UPDATE workspace_quotation_settings SET value_engineering_free_rounds = $2, approval_team_roles = $3::varchar(64)[], discount_approver_role = $4 WHERE workspace_id = $1`,
+        [workspaceId, next.valueEngineeringFreeRounds, next.approvalTeamRoles, next.discountApproverRole ?? null]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -426,6 +448,9 @@ export class QuotationBuilderService {
           next = { ...next, boqLineId: current.boqLineId, fromAreaId: current.fromAreaId, changeOp: "move" };
           if (!next.areaId || next.areaId === next.fromAreaId) throw new BadRequestException("Choose a different area to move it to.");
         } else if (!current && quote.kind === "variation") next.changeOp = "add";
+        // Guide step 12: a new line, a catalogue pick or a newly linked requirement takes its L / H / D, materials and picture from the job.
+        if (next.changeOp !== "omit" && next.changeOp !== "move" && (!current || kind === "catalog" || (next.scopeId && next.scopeId !== current.scopeId)))
+          next = await fillFromJob(client, workspaceId, caseId, next, fields);
         await this.saveLine(client, workspaceId, caseId, quoteId, next, current, areas, decimals, userId);
         changed.push(id);
       } else if (kind === "finish") {
@@ -521,11 +546,14 @@ export class QuotationBuilderService {
    */
   setProposal(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: Record<string, unknown>) {
     return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
-      await this.editable(client, workspaceId, caseId, quoteId, user.userId);
+      const { quote: current } = await this.editable(client, workspaceId, caseId, quoteId, user.userId);
       const change: Record<string, unknown> = {};
       if (input.presentation !== undefined) change.presentation = parseQuotePresentation(input.presentation);
       if (input.cover !== undefined) change.cover = parseCover(input.cover);
-      if (input.terms !== undefined) change.terms = domainText(input.terms, 10000);
+      if (input.terms !== undefined) {
+        change.terms = domainText(input.terms, 10000);
+        await guardQuoteTerms(client, { workspaceId, caseId, userId: user.userId, quote: current, previous: typeof current.detail.terms === "string" ? current.detail.terms : "", next: String(change.terms) });
+      }
       if (input.inclusions !== undefined) change.inclusions = domainText(input.inclusions, 6000);
       if (input.exclusions !== undefined) change.exclusions = domainText(input.exclusions, 6000);
       if (!Object.keys(change).length) throw new BadRequestException("Nothing to save.");
@@ -820,13 +848,22 @@ export class QuotationBuilderService {
     // The QS estimate step only where the firm's QS rules require it for this quotation (the same answer as the inbox's).
     const reviewAction = await quoteReviewAction(client, workspaceId, caseId, { id: quoteId, kind: quote.kind }, Boolean(commercial?.servicePath));
     const qsReview = reviewAction === "qs_approve";
-    const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft", kind: quote.kind });
+    const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft", kind: quote.kind, round: quote.round });
+    const reference = (await client.query<{ reference: string }>(`SELECT reference FROM quotation_references WHERE workspace_id = $1 AND case_id = $2 AND family_id = $3`,
+      [workspaceId, caseId, quote.familyId ?? quote.id])).rows[0]?.reference ?? null;
     return {
       quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision,
         // The quotation number the family got when first sent (or null before).
-        reference: (await client.query<{ reference: string }>(`SELECT reference FROM quotation_references WHERE workspace_id = $1 AND case_id = $2 AND family_id = $3`,
-          [workspaceId, caseId, quote.familyId ?? quote.id])).rows[0]?.reference ?? null,
+        reference, estimateReference: reference && quote.kind === "quotation" && quote.round !== "design"
+          ? estimateReference(reference, family.filter((item) => item.number < quote.number).length) : null,
         paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
+        // Guide M cover: the QS who priced it and the job's lead designer.
+        estimator: ((quote.detail.qsEstimate as { reviewedBy?: string } | undefined)?.reviewedBy) ?? null,
+        designer: await (async () => {
+          const membership = await leadDesigner(client, workspaceId, caseId);
+          return membership ? (await client.query<{ name: string }>(`SELECT coalesce(person.display_name, person.primary_email) AS name FROM workspace_memberships member JOIN users person ON person.id = member.user_id
+            WHERE member.workspace_id = $1 AND member.id = $2`, [workspaceId, membership])).rows[0]?.name ?? null : null;
+        })(),
         clientDecision: decision ? { decision: decision.decision, decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, note: decision.note ?? "", method: decision.method ?? null, recordedBy: decision.recordedBy ?? null, evidence: decision.evidence ?? null } : null },
       family,
       flow: { internalReview: settings.internalReview, reviewAction,
@@ -914,11 +951,12 @@ export class QuotationBuilderService {
 export async function readSettings(db: Db, workspaceId: string): Promise<QuotationSettings> {
   const row = (await db.query<QuotationSettings>(
     `SELECT default_view AS "defaultView", prices_include_tax AS "pricesIncludeTax", rounding, default_markup_percent::text AS "defaultMarkupPercent",
-            margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", validity_days AS "validityDays",
+            margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", discount_approver_role AS "discountApproverRole", validity_days AS "validityDays",
             internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", default_payment_template_id AS "defaultPaymentTemplateId",
             markup_disclosure AS "markupDisclosure", qs_review AS "qsReview", signing_link_days AS "signingLinkDays", intro_deck_url AS "introDeckUrl",
             qs_review_scope AS "qsReviewScope", qs_review_item_types::text[] AS "qsReviewItemTypes", qs_variations AS "qsVariations",
-            qs_variation_threshold::text AS "qsVariationThreshold", value_engineering_free_rounds AS "valueEngineeringFreeRounds", version
+            qs_variation_threshold::text AS "qsVariationThreshold", value_engineering_free_rounds AS "valueEngineeringFreeRounds",
+            approval_team_roles::text[] AS "approvalTeamRoles", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }
@@ -1186,6 +1224,18 @@ function decimal(value: unknown, label: string, options: { max: string; nullable
   return parsed.toString();
 }
 
+/** The pricing request sheet's fill (guide step 12), only where the line has none of its own and the person didn't send it. */
+async function fillFromJob<T extends LineRow>(client: Db, workspaceId: string, caseId: string, line: T, fields: Record<string, unknown>): Promise<T> {
+  const fill = await pricingSheetFill(client, workspaceId, caseId, { scopeId: line.scopeId, areaId: line.areaId, catalogItemId: line.catalogItemId });
+  const sent = (name: string) => Object.prototype.hasOwnProperty.call(fields, name);
+  let next = line;
+  if (fill.size && !line.length && !line.width && !line.height && !["length", "width", "height"].some(sent))
+    next = { ...next, length: fill.size.length, width: fill.size.width, height: fill.size.height, dimensionUnit: fill.size.unit };
+  if (fill.material && !line.material.trim() && !sent("material")) next = { ...next, material: fill.material };
+  if (fill.imageAssetId && !line.imageAssetId && !line.catalogImageId && !sent("imageAssetId")) next = { ...next, imageAssetId: fill.imageAssetId };
+  return next;
+}
+
 /** A check about one line names it (`lineId`); one about undecided requirements names the first to decide (`requirementId`). */
 export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; requirementId?: string; tone: "danger" | "warning" };
 
@@ -1197,6 +1247,7 @@ export type QuoteCheck = { code: string; values?: Record<string, string>; lineId
 async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
   lines: LineRow[]; components: ComponentRow[]; decimals: number; pricing: ReturnType<typeof priceQuote>; settings: QuotationSettings; canViewCosts: boolean; paymentTerms: unknown[]; draft: boolean;
   kind?: string;
+  round?: string | null;
 }): Promise<QuoteCheck[]> {
   const checks: QuoteCheck[] = [];
   for (const line of input.lines) {
@@ -1207,6 +1258,11 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
     if (line.formula && lineQuantity({ ...measurements, formula: line.formula, quantity: line.quantity }).error) checks.push({ code: "{name}: the formula doesn't work out", values: name, lineId: line.id, tone: "danger" });
     if (line.pricingMode === "build_up" && !buildUp(input.components.filter((part) => part.lineId === line.id), measurements, line.markupPercent, input.decimals).complete)
       checks.push({ code: "{name}: some parts have no price", values: name, lineId: line.id, tone: "warning" });
+    // Guide step 12, the pricing request sheet: every item carries its L / H / D and the materials requested.
+    if (input.kind === "quotation" && input.round !== "design" && line.kind === "item" && line.changeOp !== "omit") {
+      if (!line.length && !line.width && !line.height) checks.push({ code: "{name} has no size (L / H / D)", values: name, lineId: line.id, tone: "warning" });
+      if (!line.material.trim()) checks.push({ code: "{name} has no materials", values: name, lineId: line.id, tone: "warning" });
+    }
   }
   const designed = (await db.query<{ name: string }>(
     `SELECT DISTINCT room.name FROM pre_project_designs design JOIN pre_project_rooms room ON room.workspace_id = design.workspace_id AND room.id = design.room_id
@@ -1225,7 +1281,8 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
     checks.push({ code: "The discount is above {percent}% and needs approval", values: { percent: approvalAt }, tone: "warning" });
   if (input.draft && input.lines.length && !input.paymentTerms.length) checks.push({ code: "Add the payment milestones", tone: "warning" });
   // Requirement trace: nothing is sent while a requirement is undecided; an included one should have a line.
-  if (input.kind === "quotation") {
+  // The design-fee proposal is sent after the intro, before requirements are decided (§0.3 P0).
+  if (input.kind === "quotation" && input.round !== "design") {
     const requirements = await caseRequirements(db, workspaceId, caseId);
     const undecided = requirements.filter((item) => item.status === "undecided");
     // The check opens the first one to decide, so deciding is one click away.

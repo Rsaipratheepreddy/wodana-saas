@@ -9,7 +9,7 @@ import { CLOSE_CHATS, CrmConversationsService } from "./crm-conversations.servic
 import { UpdateClosingMessagesDto } from "./dto/inbox.dto";
 import { approvedTemplate, clientMessageRule } from "./inbox/client-messages";
 import {
-  CLOSING_FIELDS, CLOSING_KINDS, CLOSING_NAMES, CLOSING_STATE, CLOSING_TEMPLATE_CODES, closingFacts, closingFieldsOf, closingTemplate, DEFAULT_CLOSING_AFTER_HOURS,
+  CLOSING_FIELDS, CLOSING_KINDS, CLOSING_NAMES, CLOSING_STATE, CLOSING_TEMPLATE_CODES, closingCompany, closingFacts, closingFieldsOf, closingTemplate, DEFAULT_CLOSING_AFTER_HOURS,
   DEFAULT_CLOSING_TEXTS, readClosingSettings, renderClosing, unknownClosingFields, type ClosingKind,
 } from "./inbox/closing-messages";
 import { applyConversationChange, recordChatEvent } from "./inbox/inbox-commands";
@@ -55,7 +55,7 @@ export class CrmClosingMessagesService {
         if (text === null) continue;
         if (!text) throw new UnprocessableEntityException("Write the message, or use the standard wording");
         const unknown = unknownClosingFields(text);
-        if (unknown.length) throw new UnprocessableEntityException(`Closing messages can fill {{name}} and {{form_link}}, not {{${unknown[0]}}}`);
+        if (unknown.length) throw new UnprocessableEntityException(`Closing messages can fill {{name}}, {{form_link}} and {{company}}, not {{${unknown[0]}}}`);
       }
       const same = CLOSING_KINDS.every((kind) => next[kind] === (current.custom[kind] ? current.texts[kind] : null)) && next.formUrl === current.formUrl && next.afterHours === current.afterHours;
       if (same) return this.read(client, workspaceId, actorUser.userId);
@@ -104,7 +104,7 @@ export class CrmClosingMessagesService {
       const party = (await client.query<{ name: string | null }>(`SELECT display_name AS name FROM crm_parties WHERE workspace_id = $1 AND id = $2`, [workspaceId, chat.party_id])).rows[0];
       const formLink = closingFieldsOf(text).includes("form_link") ? await closingFormLink(client, workspaceId, this.config) : null;
       if (closingFieldsOf(text).includes("form_link") && !formLink) throw new UnprocessableEntityException("Add the enquiry form link in Settings › Inbox › Closing messages.");
-      const body = renderClosing(text, { name: firstName(party?.name), form_link: formLink });
+      const body = renderClosing(text, { name: firstName(party?.name), form_link: formLink, company: await closingCompany(client, workspaceId) });
 
       // "We have everything" already went automatically when the chat's enquiry was created: it isn't sent twice.
       const leadId = (chat.lead_id as string | null) ?? (chat.job_kind === "enquiry" ? chat.job_id as string : null);

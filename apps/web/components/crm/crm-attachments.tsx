@@ -52,7 +52,7 @@ export function CrmAttachments({ initialData }: { initialData: LeadsPageData }) 
       return <a className={styles.fileLink} href={`/api/workspace/requirement-notes/lead/${leadId}/${file.noteId}/assets/${file.id}?workspaceId=${encodeURIComponent(initialData.workspaceId)}`} target="_blank" rel="noopener noreferrer"><span className={styles.fileIcon} data-type={fileType(file)}><Icon size={18} aria-hidden="true" /></span><span className={styles.fileName}>{file.name}</span><ArrowUpRight size={13} aria-hidden="true" /></a>;
     } },
     { accessorKey: "noteTitle", header: t("Requirement note"), size: 240, meta: { priority: "medium" } },
-    { id: "type", accessorFn: (file) => fileTypeLabel(file, t), header: t("Type"), size: 100, cell: ({ row }) => <Badge tone="neutral">{fileTypeLabel(row.original, t)}</Badge> },
+    { id: "type", accessorFn: (file) => fileTypeLabel(file, t), header: t("Type"), size: 100, cell: ({ row }) => <Badge hue="auto">{fileTypeLabel(row.original, t)}</Badge> },
     { accessorKey: "byteSize", header: t("Size"), size: 100, meta: { align: "end" }, cell: ({ row }) => <span className={styles.size}>{fileSize(row.original.byteSize)}</span> },
   ];
   const retry = () => setRevision(value => value + 1);

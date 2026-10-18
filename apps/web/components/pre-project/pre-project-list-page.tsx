@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { ArrowUpRight, BriefcaseBusiness, CheckCircle2, Coins, ListChecks, RefreshCw, UsersRound } from "lucide-react";
-import { Badge, Button, DataGrid, DesignSystemProvider, EmptyState, ErrorState, IconButton, ListTabs, OwnerCell, PageShell, RecordName, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, DesignSystemProvider, EmptyState, ErrorState, formatDate, IconButton, InlineNotice, ListTabs, OwnerCell, PageShell, RecordName, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { money } from "@/lib/commercial/client";
 import { casePhaseLabel, casePhases, casePriorityLabel, caseRiskLabel, caseStatusLabel, caseStatusTone, riskTone } from "./case-spine";
@@ -94,7 +94,7 @@ export function PreProjectListPage({ initialData, search, basePath = PRE_PROJECT
   return <DesignSystemProvider className={styles.qualifiedProvider} portalContainer={portal} ref={setPortal}>
     <PageShell aria-label={t(salesPreparation ? "Sales preparation workspace" : "Planning cases workspace")} title={t(salesPreparation ? "Sales preparation" : "Planning")}
       tabs={initialData.error ? undefined : <ListTabs label={t("Case lists")} value={view} onChange={setView} items={[{ id: "all", label: t("All") }, { id: "qualified", label: t("Ready to start"), count: inTab("qualified") }, { id: "active", label: t("In progress") }, { id: "on_hold", label: t("On hold") }, { id: "released", label: t("Released") }]} />}>
-      {startError ? <p role="alert" className={styles.hint}>{startError}</p> : null}
+      {startError ? <InlineNotice tone="error" message={startError} /> : null}
       {params.has("section") ? <p className={styles.hint}>{t("Select a planning to open this section.")}</p> : null}
       {initialData.error ? <ErrorState title={t("Preparation cases could not be loaded")} description={initialData.error} onRetry={() => router.refresh()} /> : <div aria-busy={pending}><DataGrid ariaLabel={t(salesPreparation ? "Sales preparation cases" : "Planning cases")} columns={columns} data={visibleItems} getRowId={record => record.id} rowNumbers={false} selectable={false} persistKey={salesPreparation ? "sales-preparation-cases" : "pre-project-cases"}
         searchLabel={t("Search cases")} searchValue={term} onSearchChange={value => setTerm(value.slice(0, 200))}

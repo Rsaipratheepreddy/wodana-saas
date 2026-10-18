@@ -21,17 +21,17 @@ const stock: CasePlan = { source: "path", phases: ["price", "agree", "release"],
 it("keeps one tab row: the open area's views sit at the end of the same row (L16)", () => {
   const view = nav("contracts");
   const areas = screen.getByRole("navigation", { name: "Planning sections" });
-  const views = screen.getByRole("navigation", { name: "Agreement views" });
+  const views = screen.getByRole("navigation", { name: "Deal views" });
   expect(views.parentElement).toBe(areas.parentElement);
   expect(view.container.querySelectorAll("nav")).toHaveLength(2);
-  expect(within(views).getAllByRole("link").map((link) => link.textContent)).toEqual(["Agreement", "Payments", "Approvals", "Release readiness", "Change requests"]);
+  expect(within(views).getAllByRole("link").map((link) => link.textContent)).toEqual(["Agreement", "Payments", "Deal File", "Release", "Changes", "Approvals"]);
 });
 
 it("shows no Site, Moodboard or Design tab for an order whose path has none (L12)", async () => {
   nav("quotations", stock);
   const areas = screen.getByRole("navigation", { name: "Planning sections" });
   expect(await within(areas).findAllByRole("link")).toHaveLength(4);
-  expect(within(areas).getAllByRole("link").map((link) => link.textContent)).toEqual(["Overview", "Requirements", "Quotes", "Agreement"]);
+  expect(within(areas).getAllByRole("link").map((link) => link.textContent)).toEqual(["Overview", "Requirements", "Quotes", "Deal"]);
 });
 
 it("keeps a site visit the path asks for, and always the open area", async () => {

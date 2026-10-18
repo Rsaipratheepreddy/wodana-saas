@@ -16,3 +16,17 @@ export async function dealFileReference(db: Db, workspaceId: string, legalEntity
      ON CONFLICT (legal_entity_id, document_type) DO NOTHING`, [workspaceId, legalEntityId]);
   return (await db.query<{ number: string }>(`SELECT allocate_document_number($1, $2, 'DEAL_FILE') AS number`, [workspaceId, legalEntityId])).rows[0].number;
 }
+
+/**
+ * An agreement's reference is the next number of its company's agreement numbering (CODE-AGR-{YYYY}-00001, gap-free),
+ * never typed (§0.3 P0). Without a company the case names it.
+ */
+export async function agreementReference(db: Db, workspaceId: string, legalEntityId: string | null, caseId: string, year: string) {
+  if (!legalEntityId) return `AGR-${year}-${caseId.slice(0, 8).toUpperCase()}`;
+  await db.query(
+    `INSERT INTO document_sequences (workspace_id, legal_entity_id, document_type, prefix, padding, reset_policy, next_number)
+     SELECT $1, entity.id, 'AGREEMENT', entity.code || '-AGR-{YYYY}-', 5, 'annual', 1 FROM legal_entities entity
+      WHERE entity.workspace_id = $1 AND entity.id = $2
+     ON CONFLICT (legal_entity_id, document_type) DO NOTHING`, [workspaceId, legalEntityId]);
+  return (await db.query<{ number: string }>(`SELECT allocate_document_number($1, $2, 'AGREEMENT') AS number`, [workspaceId, legalEntityId])).rows[0].number;
+}

@@ -5,11 +5,11 @@ import Link from "next/link";
 import { CalendarClock, CalendarPlus, Check, CheckCircle2, ListChecks, NotebookPen, PackageCheck, Play, UserPlus, Users } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
 import {
-  Badge, Button, Card, DateField, EmptyState, FormDialog, FormRow, InlineNotice, PersonName, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar,
+  Badge, Button, Card, DateField, EmptyState, FormDialog, FormRow, InlineNotice, PersonName, ReviewFiles, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
-import { revisionDetail } from "@/lib/pre-project/design-decisions";
+import { caseApi, caseRequest, type CaseAsset } from "@/lib/pre-project/content";
+import type { LedgerView } from "@/lib/pre-project/design-decisions";
 import { TASK_LABEL, TEAM_SLOT_LABEL, type JourneyStageView, type JourneyTaskView, type JourneyView as JourneyData, type SiteAnswerInput, type SiteChecklistGroup, type TeamSlotView } from "@/lib/pre-project/design-workspace";
 import { changedAnswers, ChecklistFields, checklistDrafts, checklistGroups } from "./site-checklist";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -17,13 +17,16 @@ import { factoryApi } from "@/lib/factory/client";
 import { SampleRequests } from "../factory/samples";
 import { MeetingMinutesSheet } from "../meetings/meeting-minutes";
 import { AssetUpload } from "./case-controls";
+import { RevisionChips } from "./revision-chips";
+import { initialAnswers, QuestionnaireFields, unansweredRequired } from "../setup/questionnaire-fields";
+import type { AnswerValue, QuestionnaireAnswers } from "@/lib/setup/questionnaires";
 import styles from "./design-journey.module.css";
 
 export type JourneyStage = JourneyStageView;
 export type JourneyView = JourneyData;
 type StageCode = JourneyStageView["stage"];
 type StageDialog = { kind: "close_inspiration" | "schedule" | "schedule_materials" | "schedule_home" | "not_required" | "confirm_materials" | "assign" | "schedule_kickoff" | "kickoff" | "deadline"
-  | "render_signoff" | "samples_collected" | "approve_samples" | "questions"; stage: JourneyStage };
+  | "render_signoff" | "samples_collected" | "approve_samples" | "questions" | "final_render"; stage: JourneyStage };
 type Dialog = StageDialog | { kind: "team"; slot: TeamSlotView } | { kind: "checklists"; version: number } | null;
 type Slots = { configured: boolean; slots: Array<{ start: string; end: string; date: string }>; timezone: string | null; durationMinutes: number | null; location: string | null };
 type Member = { id: string; displayName: string };
@@ -50,8 +53,8 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
   if (failure && !view) return <InlineNotice message={failure} tone="error" />;
   if (!view) return <Skeleton lines={4} shape="facts" />;
   const labels: Record<StageCode, string> = {
-    inspiration: t("Inspiration"), kickoff: t("Kick-off meeting"), site_visit: t("Site visit"), concepts: t("Concepts"), space_planning: t("Space planning"),
-    material_selection: t("Material selection"), renders: t("Renders"), samples: t("Samples"), approval: t("Design approval"),
+    inspiration: t("Inspiration"), kickoff: t("Kick-off meeting"), site_visit: t("Site visit"), moodboards: t("Mood boards"), concepts: t("Concepts"), space_planning: t("Space planning"),
+    material_selection: t("Material selection"), renders: t("Renders"), samples: t("Samples"), final_render: t("Final render"), approval: t("Design approval"),
   };
   const time = (iso: string, withDay = true) => { try { return new Intl.DateTimeFormat(locale, { timeZone: view.timezone, ...(withDay ? { weekday: "short", day: "numeric", month: "short" } : {}), hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return iso; } };
   const day = (iso: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone: view.timezone, day: "numeric", month: "short" }).format(new Date(iso)); } catch { return iso; } };
@@ -59,7 +62,10 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
   const keepFlags = (next: JourneyView): JourneyView => ({ ...next, canStart: view.canStart, canManage: view.canManage, canEdit: view.canEdit, canReview: view.canReview, canRecordClient: view.canRecordClient });
   const saved = (message: string, next: JourneyView) => { setDialog(null); setNotice(message); setFailure(""); setView(keepFlags(next)); };
   const siteAndMaterials = (view.journey?.kind ?? view.startsAs) === "site_and_materials";
-  const current = view.journey?.flowVersion === 2;
+  const current = (view.journey?.flowVersion ?? 0) >= 2;
+  // The guide's order (16 Oct 2026): the site measure sits with space planning; renders end with the client's approval in the portal.
+  const guide = view.journey?.flowVersion === 3;
+  const measureStage: StageCode = guide ? "space_planning" : "concepts";
   const post = (path: string, body: Record<string, unknown>) => caseRequest<JourneyView>(workspaceId, caseId, path, "POST", body);
   const start = async () => {
     setStarting(true); setFailure("");
@@ -125,7 +131,6 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
     </div> : null}
     {!view.journey ? <EmptyState illustration="calendar" title={siteAndMaterials ? t("Site visit hasn't started") : t("Design hasn't started")} description={siteAndMaterials ? t("Start it once the order needs measuring.") : t("Design starts once the design deposit is paid.")} /> : <ol className={styles.timeline}>
       {view.stages.map((stage) => {
-        const revision = revisionDetail(stage.revisions);
         const ended = stage.status === "done" ? outcomeLine(stage) : null;
         const meetingHeld = Boolean(stage.scheduledAt && new Date(stage.scheduledAt).getTime() < Date.now());
         return <li className={styles.step} data-status={stage.status} data-overdue={stage.overdue || undefined} key={stage.stage}>
@@ -135,7 +140,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
               <span className={styles.title}>{labels[stage.stage] ?? stage.label}</span>
               {stage.status === "done" && stage.completedAt ? <span className={styles.meta}>{day(stage.completedAt)}</span> : null}
               {stage.status === "active" ? (stage.dueAt ? <Badge tone={stage.overdue ? "danger" : "neutral"}>{stage.overdue ? t("Overdue") : `${t("Due")} ${time(stage.dueAt)}`}</Badge> : <Badge tone="info">{t("Now")}</Badge>) : null}
-              {stage.status === "active" && revision ? <Badge tone={stage.revisions?.chargeable ? "warning" : "neutral"}>{t(revision.key, revision.values)}</Badge> : null}
+              {stage.status === "active" ? <RevisionChips revisions={stage.revisions} workspaceId={workspaceId} caseId={caseId} stage={stage.stage} /> : null}
             </div>
             {ended ? <p className={styles.meta}><span>{ended}</span></p> : null}
             {stage.status === "active" ? <>
@@ -147,13 +152,14 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                 {(stage.stage === "material_selection" || stage.stage === "samples") && ledger ? <span>{t("{count} materials · {waiting} waiting for the client", { count: ledger.materials, waiting: ledger.waiting })}</span> : null}
                 {stage.stage === "samples" && ledger?.outsourcedWaiting ? <span>{t("{count} outsourced waiting for sign-off", { count: ledger.outsourcedWaiting })}</span> : null}
                 {stage.stage === "inspiration" && !stage.dueAt ? <span>{t("Timer starts with the first inspiration")}</span> : null}
-                {stage.stage === "concepts" && current ? taskLine(measure) : null}
+                {stage.stage === measureStage && current ? taskLine(measure) : null}
                 {stage.stage === "samples" ? taskLine(collection) : null}
                 {stage.stage === "approval" ? taskLine(finishesTask) : null}
                 {stage.stage === "renders" && current ? <>
                   {(["visualiser", "draftsman"] as const).map((key) => { const item = slot(key); return item ? <span key={key}>{slotLabel(item)}: {item.member?.name ?? t("Not tagged")}</span> : null; })}
                   {view.journey?.renderSignoffDueOn ? <span>{t("Client signs off by {date}", { date: calendarDay(view.journey.renderSignoffDueOn) })}</span> : null}
                 </> : null}
+                {stage.stage === "final_render" ? <span>{t("Only if the client asks for one")}</span> : null}
                 {view.canManage && stage.clientDueAt && !(stage.stage === "renders" && current) ? <span>{t("Client deadline {date}", { date: day(stage.clientDueAt) })}</span> : null}
               </p>
               <div className={styles.actions}>
@@ -167,11 +173,16 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                   <Button size="compact" variant="secondary" onPress={() => setDialog({ kind: "schedule", stage })}><CalendarPlus aria-hidden="true" size={13} />{stage.scheduledAt ? t("Reschedule") : t("Book visit")}</Button>
                   <Link className="wd-button" data-size="compact" data-variant="primary" href={`/workspace/pre-projects/cases/${caseId}/site`}><CheckCircle2 aria-hidden="true" size={13} />{t("Open the visit")}</Link>
                 </> : null}
-                {["concepts", "space_planning", "renders"].includes(stage.stage) ? <Link className="wd-button" data-size="compact" data-variant="secondary" href={designLink(stage.stage)}>{t("Open {stage}", { stage: labels[stage.stage] })}</Link> : null}
-                {stage.stage === "concepts" && current && measure?.status === "open" ? <Link className="wd-button" data-size="compact" data-variant="secondary" href={`/workspace/pre-projects/cases/${caseId}/site`}>{t("Open the visit")}</Link> : null}
+                {["moodboards", "concepts", "space_planning", "renders"].includes(stage.stage) ? <Link className="wd-button" data-size="compact" data-variant="secondary" href={designLink(stage.stage)}>{t("Open {stage}", { stage: labels[stage.stage] })}</Link> : null}
+                {stage.stage === measureStage && current && measure?.status === "open" ? <Link className="wd-button" data-size="compact" data-variant="secondary" href={`/workspace/pre-projects/cases/${caseId}/site`}>{t("Open the visit")}</Link> : null}
                 {(stage.stage === "concepts" || stage.stage === "renders") && current && view.canEdit ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "deadline", stage })}><CalendarClock aria-hidden="true" size={13} />{t("Set the due date")}</Button> : null}
-                {stage.stage === "renders" && current && view.canRecordClient ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "render_signoff", stage })}>{t("Record the render sign-off")}</Button> : null}
+                {stage.stage === "renders" && current && !guide && view.canRecordClient ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "render_signoff", stage })}>{t("Record the render sign-off")}</Button> : null}
                 {stage.stage === "renders" && !current && view.canReview && members.length ? <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "assign", stage })}><UserPlus aria-hidden="true" size={13} />{stage.ownerName ? t("Change Visualiser") : t("Assign Visualiser")}</Button> : null}
+                {/* Guide step 11: closed as not asked for, or once the client approved the updated render in the portal. */}
+                {stage.stage === "final_render" && view.canEdit ? <>
+                  <Link className="wd-button" data-size="compact" data-variant="secondary" href={designLink("renders")}>{t("Open {stage}", { stage: labels.renders })}</Link>
+                  <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "final_render", stage })}>{t("Close the final render")}</Button>
+                </> : null}
                 {stage.stage === "samples" && collection?.status === "open" ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "samples_collected", stage })}><PackageCheck aria-hidden="true" size={13} />{t("Samples collected")}</Button> : null}
                 {stage.stage === "samples" ? <>
                   {/* PLM-144: the sample meeting is at the showroom (the booking page's free slots, or a time picked by hand), or at the client's home if they ask. */}
@@ -215,7 +226,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
         { scope: group.scope, applies, version: group.choiceVersion ?? 0 }))) : undefined}
       onSubmit={async (answers) => saved(t("Answers saved."), await caseRequest<JourneyView>(workspaceId, caseId, "design-journey/site-visit/answers", "PUT",
         { version: dialog.kind === "checklists" ? dialog.version : dialog.stage.version, answers }))} /> : null}
-    {dialog?.kind === "kickoff" ? <KickoffDialog needsRenderDate={Boolean(view.journey?.includesRenders)} onClose={() => setDialog(null)}
+    {dialog?.kind === "kickoff" ? <KickoffDialog needsRenderDate={Boolean(view.journey?.includesRenders)} questionnaire={view.kickoffQuestions ?? null} onClose={() => setDialog(null)}
       onSubmit={async (value) => saved(t("Kick-off recorded. The concept and the site measure have started."), await post("design-journey/kickoff/complete", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "deadline" ? <DeadlineDialog title={dialog.stage.stage === "renders" ? t("Render due date") : t("Concept due date")} onClose={() => setDialog(null)}
       onSubmit={async (dueOn) => saved(t("Due date saved."), await post(`design-journey/stages/${dialog.stage.stage}/deadline`, { version: dialog.stage.version, dueOn }))} /> : null}
@@ -223,8 +234,12 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
       onSubmit={async (value) => saved(t("Render sign-off recorded. Samples have started."), await post("design-journey/renders/sign-off", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "samples_collected" && collection ? <FormNoteDialog title={t("Samples collected")} submitLabel={t("Record")} onClose={() => setDialog(null)}
       onSubmit={async (note) => saved(t("Samples recorded. The lead designer books the sample meeting."), await post("design-journey/samples/collected", { version: collection.version, note: note || null }))} /> : null}
-    {dialog?.kind === "approve_samples" ? <FormDialog title={t("Approve samples")} onClose={() => setDialog(null)} submitLabel={t("Approve")} onSubmit={async () => saved(t("Samples approved."), await post("design-journey/samples/approve", { version: dialog.stage.version }))}>
-      <p className={styles.muted}>{t("{count} materials, each confirmed by the client. The design approval is next.", { count: ledger?.materials ?? 0 })}</p>
+    {dialog?.kind === "final_render" ? <FinalRenderDialog onClose={() => setDialog(null)}
+      onSubmit={async (decision) => saved(decision === "approved" ? t("Final render approved.") : t("Final render closed: not asked for."),
+        await post("design-journey/final-render", { version: dialog.stage.version, decision }))} /> : null}
+    {dialog?.kind === "approve_samples" ? <FormDialog title={t("Approve samples")} description={t("{count} materials, each confirmed by the client. The design approval is next.", { count: ledger?.materials ?? 0 })}
+      onClose={() => setDialog(null)} submitLabel={t("Approve")} onSubmit={async () => saved(t("Samples approved."), await post("design-journey/samples/approve", { version: dialog.stage.version }))}>
+      <MaterialEvidence workspaceId={workspaceId} caseId={caseId} />
     </FormDialog> : null}
     {dialog?.kind === "schedule_home" ? <ScheduleVisitDialog title={t("Book sample meeting")} timezone={view.timezone} addressRequired onClose={() => setDialog(null)}
       onSubmit={async (value) => saved(t("Sample meeting booked. The design team has been invited."), await post("design-journey/material-selection/schedule", { version: dialog.stage.version, ...value, atClientHome: true }))} /> : null}
@@ -235,11 +250,12 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
         ? <ShowroomSlotDialog title={samples ? t("Book sample meeting") : t("Book material selection")} workspaceId={workspaceId} caseId={caseId} locale={locale} onClose={() => setDialog(null)} onSubmit={async (slotPicked, timezone) => saved(bookedMessage, await post("design-journey/material-selection/schedule", { version: dialog.stage.version, startsAt: slotPicked.start, endsAt: slotPicked.end, timezone }))} />
         : <ScheduleVisitDialog title={samples ? t("Book sample meeting") : t("Book material selection")} timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(bookedMessage, await post("design-journey/material-selection/schedule", { version: dialog.stage.version, ...value }))} />;
     })() : null}
-    {dialog?.kind === "confirm_materials" ? <FormDialog title={t("Confirm material list")} onClose={() => setDialog(null)} submitLabel={t("Confirm")} onSubmit={async () => saved(t("Material list confirmed."), await post("design-journey/material-selection/confirm", { version: dialog.stage.version }))}>
-      <p className={styles.muted}>{t("{count} materials, each confirmed by the client. The next stage opens straight away.", { count: ledger?.materials ?? 0 })}</p>
+    {dialog?.kind === "confirm_materials" ? <FormDialog title={t("Confirm material list")} description={t("{count} materials, each confirmed by the client. The next stage opens straight away.", { count: ledger?.materials ?? 0 })}
+      onClose={() => setDialog(null)} submitLabel={t("Confirm")} onSubmit={async () => saved(t("Material list confirmed."), await post("design-journey/material-selection/confirm", { version: dialog.stage.version }))}>
+      <MaterialEvidence workspaceId={workspaceId} caseId={caseId} />
     </FormDialog> : null}
-    {dialog?.kind === "not_required" ? <FormDialog title={t("Not required for this order")} onClose={() => setDialog(null)} submitLabel={t("Confirm")} onSubmit={async () => saved(t("Material selection recorded as not required."), await post("design-journey/material-selection/not-required", { version: dialog.stage.version }))}>
-      <p className={styles.muted}>{t("Recorded with your name and today's date.")}</p>
+    {dialog?.kind === "not_required" ? <FormDialog title={t("Not required for this order")} description={t("Recorded with your name and today's date.")} onClose={() => setDialog(null)} submitLabel={t("Confirm")} onSubmit={async () => saved(t("Material selection recorded as not required."), await post("design-journey/material-selection/not-required", { version: dialog.stage.version }))}>
+      {null}
     </FormDialog> : null}
     {dialog?.kind === "assign" ? <AssignDialog members={members} onClose={() => setDialog(null)} onSubmit={async (membershipId) => saved(t("Visualiser assigned."), await post(`design-journey/stages/${dialog.stage.stage}/assign`, { version: dialog.stage.version, membershipId }))} /> : null}
     </div>
@@ -306,15 +322,21 @@ function SiteQuestionsDialog({ view, checksOnly = false, onClose, onSubmit, onAp
 }
 
 /** PLM-140: the kick-off took place; the render sign-off date agreed with the client is recorded with it. */
-function KickoffDialog({ needsRenderDate, onClose, onSubmit }: { needsRenderDate: boolean; onClose: () => void; onSubmit: (value: { renderSignoffOn: string | null; note: string | null }) => Promise<unknown> }) {
+function KickoffDialog({ needsRenderDate, questionnaire, onClose, onSubmit }: { needsRenderDate: boolean; questionnaire: QuestionnaireAnswers | null; onClose: () => void;
+  onSubmit: (value: { renderSignoffOn: string | null; note: string | null; answers: Record<string, AnswerValue> }) => Promise<unknown> }) {
   const t = useT();
   const calendar = useWorkingCalendar();
   const [renderOn, setRenderOn] = useState("");
   const [note, setNote] = useState("");
+  // §0.3 P3: the firm's kick-off questions (Setup → Questionnaires), answered with the kick-off.
+  const [answers, setAnswers] = useState(() => initialAnswers(questionnaire));
+  const missing = unansweredRequired(questionnaire?.questions ?? [], answers);
   const tomorrow = calendar.nextWorkingDayFromToday();
-  return <FormDialog title={t("Record the kick-off")} onClose={onClose} isDirty={Boolean(renderOn || note.trim())} isSubmitDisabled={needsRenderDate && !renderOn} submitLabel={t("Record")}
-    onSubmit={() => onSubmit({ renderSignoffOn: needsRenderDate ? renderOn : null, note: note.trim() || null })}>
+  return <FormDialog title={t("Record the kick-off")} icon={<NotebookPen />} onClose={onClose} isDirty={Boolean(renderOn || note.trim()) || JSON.stringify(answers) !== JSON.stringify(initialAnswers(questionnaire))}
+    isSubmitDisabled={(needsRenderDate && !renderOn) || missing.length > 0} submitLabel={t("Record")}
+    onSubmit={() => onSubmit({ renderSignoffOn: needsRenderDate ? renderOn : null, note: note.trim() || null, answers })}>
     {needsRenderDate ? <DateField isRequired label={t("Render sign-off agreed for")} minValue={tomorrow} value={renderOn ? parseDate(renderOn) : null} onChange={(date) => setRenderOn(date?.toString() ?? "")} /> : null}
+    {questionnaire ? <QuestionnaireFields questions={questionnaire.questions} answers={answers} onChange={(key, value) => setAnswers((current) => ({ ...current, [key]: value }))} /> : null}
     <TextAreaField label={t("Note · optional")} maxLength={2000} onChange={setNote} value={note} />
   </FormDialog>;
 }
@@ -344,7 +366,8 @@ function RenderSignOffDialog({ workspaceId, caseId, onClose, onSubmit }: { works
     error={error || undefined} onSubmit={() => onSubmit({ signedOn, signer: signer.trim(), assetId: file!.id, note: null })}>
     <DateField isRequired label={t("Signed on")} maxValue={today} value={signedOn ? parseDate(signedOn) : null} onChange={(date) => setSignedOn(date?.toString() ?? "")} />
     <TextInput isRequired label={t("Signed by")} maxLength={200} value={signer} onChange={setSigner} />
-    {file ? <p className={styles.muted}>{t("Signed off: {name}", { name: file.name })}</p>
+    {file ? <ReviewFiles label={t("Attach the signed renders")} onRemove={() => setFile(null)} files={[{ id: file.id, name: file.name, href: caseApi(workspaceId, caseId, `assets/${file.id}?view=1`),
+      previewHref: file.hasPreview ? caseApi(workspaceId, caseId, `assets/${file.id}?preview=1`) : null }]} />
       : <AssetUpload workspaceId={workspaceId} caseId={caseId} multiple={false} label={t("Attach the signed renders")} onBusy={setUploading} onError={setError} onUploaded={setFile} />}
   </FormDialog>;
 }
@@ -403,3 +426,33 @@ export function ScheduleVisitDialog({ title, timezone, addressRequired = false, 
   </FormDialog>;
 }
 
+
+/**
+ * §0.3 P0: what an approval of the materials rests on, beside it: each material's sample photo and the file the
+ * client's confirmation came with (a signed page, an email), read from the materials list.
+ */
+function MaterialEvidence({ workspaceId, caseId }: { workspaceId: string; caseId: string }) {
+  const t = useT();
+  const [ledger, setLedger] = useState<LedgerView | null>(null);
+  useEffect(() => { caseRequest<LedgerView>(workspaceId, caseId, "design-ledger").then(setLedger).catch(() => setLedger(null)); }, [workspaceId, caseId]);
+  if (!ledger) return null;
+  const asset = (id: string, name: string) => ({ id, name, href: caseApi(workspaceId, caseId, `assets/${id}`), previewHref: caseApi(workspaceId, caseId, `assets/${id}?preview=1`) });
+  const files = ledger.entries.filter((entry) => entry.kind === "material" && !entry.archivedAt && entry.current).flatMap((entry) => {
+    const current = entry.current!;
+    return [
+      ...(current.samplePhotoAssetId ? [asset(current.samplePhotoAssetId, `${current.title} · ${current.samplePhotoName ?? t("Sample")}`)] : []),
+      ...(current.evidenceAssetId && current.evidenceAssetId !== current.samplePhotoAssetId ? [asset(current.evidenceAssetId, `${current.title} · ${current.evidenceName ?? t("Confirmation")}`)] : []),
+    ];
+  });
+  return <ReviewFiles label={t("Samples and confirmations")} files={files} />;
+}
+
+/** Guide step 11: the final render, only if the client asks for one: closed as not asked for, or approved by the client. */
+function FinalRenderDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (decision: "not_requested" | "approved") => Promise<void> }) {
+  const t = useT();
+  const [decision, setDecision] = useState<"not_requested" | "approved">("not_requested");
+  return <FormDialog size="md" title={t("Close the final render")} onClose={onClose} submitLabel={t("Save")} onSubmit={() => onSubmit(decision)}>
+    <SegmentedControl label={t("Outcome")} value={decision} onChange={(value) => setDecision(value as typeof decision)}
+      options={[{ id: "not_requested", label: t("Not asked for") }, { id: "approved", label: t("Client approved the updated render") }]} />
+  </FormDialog>;
+}

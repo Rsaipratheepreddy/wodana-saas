@@ -17,7 +17,7 @@ describe("PLM-164: linked records", () => {
     wrap(<LinkedRecords links={links} current="purchase_order" currentId="po1" />);
     expect(screen.getByRole("region", { name: "Linked records" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "V3 · Main quotation" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/quotations");
-    expect(screen.getByRole("link", { name: "DF-2026-7" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/execution-release");
+    expect(screen.getByRole("link", { name: "DF-2026-7" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/deal-file");
     expect(screen.getByRole("link", { name: "PRJ-0007" })).toHaveAttribute("href", "/workspace/projects/p1");
     // This order is named, not linked; the other opens in Purchasing, narrowed to the project.
     expect(screen.queryByRole("link", { name: "PO-0001" })).not.toBeInTheDocument();

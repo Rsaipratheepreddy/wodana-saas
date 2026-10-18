@@ -1,14 +1,16 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { decideLedgerChange, ledgerChangeApproval, requestLedgerChangeApproval } from "../change-requests/ledger-change-approval";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { STAGE_LABELS, stageRevisions, type JourneyStage } from "./design-journey.domain";
+import { STAGE_LABELS, type JourneyStage } from "./design-journey.domain";
 import { caseFacts, holdsRole, membersWithRole, tellMembers } from "./design-journey.store";
 import type { LedgerVersionInput } from "./design-ledger.domain";
 import { addEntry, addVersion, archiveEntry, decideVersion, ledgerCatalogChoices, readLedger } from "./design-ledger.store";
-import { createPresentation, decideRound, journeyReviewRole, presentedRounds, presentRound, readPresentations, reviewRound, roundReviewed, withdrawRound } from "./design-presentations.store";
+import { createPresentation, decideRound, journeyReviewRole, presentRound, readPresentations, reviewRound, roundReviewed, withdrawRound } from "./design-presentations.store";
+import { askedForChanges, readStepRevisions } from "./design-revisions.store";
+import { isDeliverableStage } from "./design-stage-sync";
 import { tellFinishChanged } from "./finishes.store";
 import { sampleChoices } from "./samples.store";
 
@@ -100,8 +102,23 @@ export class DesignDecisionsService {
     return this.clientDecision(actor, workspaceId, caseId, async (client, userId) => {
       const result = await decideRound(client, workspaceId, caseId, id, { ...input, userId });
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.presentation_decided.v1", entityType: "pre_project_case", entityId: caseId,
-        after: { id, decision: input.decision, optionId: input.optionId ?? null, source: input.source, decidedBy: input.decidedBy } });
+        after: { id, decision: input.decision, optionId: input.optionId ?? null, source: input.source, decidedBy: input.decidedBy, extra: "extra" in result ? result.extra : null } });
       return { ...await this.presentationView(client, workspaceId, caseId, userId), completed: result.completed ?? false };
+    });
+  }
+
+  /**
+   * PLM-049/051: the team drafts a step's extra revision itself: when it went beyond the free revisions without a draft,
+   * or to replace one the client declined or the team withdrew. Idempotent: an open draft is returned as it is.
+   */
+  draftExtraRevision(actor: RequestActor, workspaceId: string, caseId: string, input: { stage: string }) {
+    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
+      if (!isDeliverableStage(input.stage)) throw new BadRequestException("Choose a design stage.");
+      const outcome = await askedForChanges(client, workspaceId, caseId, input.stage, { userId }, { source: "team", redraft: true });
+      if (outcome.kind !== "extra") throw new ConflictException("This stage still has free revisions.");
+      await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.extra_revision_requested.v1", entityType: "pre_project_case", entityId: caseId,
+        after: { stage: input.stage, revision: outcome.revision, changeRequestId: outcome.changeRequestId, drafted: outcome.drafted } });
+      return this.presentationView(client, workspaceId, caseId, userId);
     });
   }
 
@@ -206,15 +223,13 @@ export class DesignDecisionsService {
   }
 
   private async presentationView(client: PoolClient, workspaceId: string, caseId: string, userId?: string) {
-    const journey = (await client.query<{ included: number; conceptOptionsMax: number | null }>(
-      `SELECT included_revisions AS included, concept_options_max AS "conceptOptionsMax" FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
-    const included = journey?.included ?? null;
-    const rounds = await presentedRounds(client, workspaceId, caseId);
+    const journey = (await client.query<{ conceptOptionsMax: number | null }>(
+      `SELECT concept_options_max AS "conceptOptionsMax" FROM design_journeys WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
     const reviewRole = await journeyReviewRole(client, workspaceId, caseId);
     return {
       presentations: await readPresentations(client, workspaceId, caseId),
-      revisions: included === null ? null : Object.fromEntries(["concepts", "space_planning", "material_selection", "renders"].map((stage) =>
-        [stage, stageRevisions(rounds.find((item) => item.stage === stage)?.rounds ?? 0, included)])),
+      /** PLM-049/051: per step, the changes asked against the package's free revisions and the extra revision's change. */
+      revisions: await readStepRevisions(client, workspaceId, caseId),
       /** PLM-145: whether rounds wait for the reviewer, and whether this person is one; PLM-142: how many concept options. */
       review: reviewRole ? { role: reviewRole, canReview: userId ? await this.reviews(client, workspaceId, caseId, userId) : false } : null,
       conceptOptionsMax: journey?.conceptOptionsMax ?? null,

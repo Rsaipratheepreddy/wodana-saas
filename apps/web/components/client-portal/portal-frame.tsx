@@ -36,6 +36,7 @@ export function PortalFrame({ site, children, onSignOut, bare = false }: { site:
         {whatsapp ? <a href={whatsapp} rel="noreferrer" target="_blank"><MessageCircle aria-hidden="true" size={14} /> {t("WhatsApp")}</a> : null}
         {site.support.email ? <a href={`mailto:${site.support.email}`}><Mail aria-hidden="true" size={14} /> <bdi dir="ltr">{site.support.email}</bdi></a> : null}
         {site.gallerySlug ? <a href={`/gallery/${site.gallerySlug}`} rel="noreferrer" target="_blank">{t("Our work")}</a> : null}
+        {site.catalogueUrl ? <a href={site.catalogueUrl} rel="noreferrer" target="_blank">{t("Our catalogue")}</a> : null}
       </div>
       <div className={styles.footerEnd}>
         <span className={styles.powered}>{t("Powered by Wodana")}</span>

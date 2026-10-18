@@ -6,7 +6,7 @@ import { PortalDocumentPrint } from "@/components/client-portal/portal-document-
 import { businessApiUrl } from "@/lib/auth/server";
 import { documentQuote, siteBrand } from "@/lib/client-portal/document-quote";
 import { loadSite, PORTAL_SLUG, portalCookie, siteMetadata } from "@/lib/client-portal/server";
-import type { PortalInvoiceDocument, PortalReceiptDocument, PortalView } from "@/lib/client-portal/types";
+import type { PortalInvoiceDocument, PortalQuote, PortalReceiptDocument, PortalSite, PortalView } from "@/lib/client-portal/types";
 import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
 import { translator } from "@/lib/i18n/messages";
 
@@ -20,15 +20,23 @@ export async function generateMetadata({ params, searchParams }: { params: Promi
 
 /**
  * A document from the portal, ready to print or save as PDF: a quotation exactly as issued (only the snapshot the
- * client opened), or one of the client's tax invoices or receipts.
+ * client opened), or one of the client's tax invoices or receipts. The proposal PDF is printed from this same page:
+ * the server opens it with a short-lived print link for one quotation snapshot, instead of the client's session.
  */
 export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ case?: string; quote?: string; snapshot?: string; invoice?: string; receipt?: string }>;
+  searchParams: Promise<{ case?: string; quote?: string; snapshot?: string; invoice?: string; receipt?: string; token?: string }>;
 }) {
   const { slug } = await params;
   const query = await searchParams;
   if (!PORTAL_SLUG.test(slug)) notFound();
+  if (query.token) {
+    if (query.token.length > 2000) notFound();
+    const response = await fetch(businessApiUrl(`/print/proposals/${encodeURIComponent(query.token)}`), { cache: "no-store" }).catch(() => null);
+    if (!response?.ok) notFound();
+    const printed = await response.json() as { quote: PortalQuote; customer: string; site: PortalSite };
+    return <div data-print-ready=""><QuotationPrint quote={documentQuote(printed.quote, printed.quote.brand ? undefined : siteBrand(printed.site))} customer={printed.customer} /></div>;
+  }
   const token = (await cookies()).get(portalCookie(slug))?.value;
   if (!token) redirect(`/portal/${slug}`);
   const headers = { authorization: `Bearer ${token}` };

@@ -37,7 +37,6 @@
 .delivery[data-status="read"] { color: var(--wd-color-info); }
 .delivery[data-status="failed"], .error { color: var(--wd-color-danger); }
 .error { margin: var(--wd-space-2) var(--wd-space-3); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
-.error :global(.wd-button) { color: inherit; text-decoration: underline; }
 .mediaPreview { display: grid; gap: var(--wd-space-1-5); color: inherit; text-decoration: none; }
 .mediaPreview img { inline-size: min(360px, 100%); block-size: auto; max-block-size: 260px; object-fit: cover; border-radius: var(--wd-radius-2xs); }
 .mediaPreview span, .mediaFile { display: flex; align-items: center; gap: var(--wd-space-1-5); color: var(--chat-accent); font-size: var(--wd-text-xs); }
@@ -55,8 +54,6 @@
 .empty svg { color: var(--chat-accent); }
 .empty :global(.wd-button) svg { color: currentColor; }
 .emptyMark { display: grid; place-items: center; inline-size: 64px; block-size: 64px; border-radius: var(--wd-radius-lg); background: var(--chat-soft); }
-.empty h2 { margin: 0; font-size: var(--wd-text-xl); color: var(--wd-color-text); font-weight: 500; }
-.empty p { font-size: var(--wd-text-sm); line-height: 1.6; max-inline-size: 380px; margin: 0; }
 /* On a phone the list is the whole page, so it carries the one empty state; on wider screens the conversation pane does. */
 .listEmpty { display: none; }
 .newChat { display: grid; gap: var(--wd-space-4); }
@@ -318,8 +315,11 @@ a.jobChip:hover { text-decoration: underline; text-underline-offset: 2px; }
 .threadItem:hover { background: var(--wd-color-surface-hover); }
 .threadCopy { gap: var(--wd-space-1); }
 .thread, .conversation { block-size: 100%; min-block-size: 0; }
-.threadHeading { flex-wrap: nowrap; min-block-size: 0; padding: var(--wd-space-2) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.threadHeading .headingIdentity { flex: 1 1 auto; min-inline-size: 0; }
+/* The client's name always keeps room: when the column is narrow the actions wrap to their own line, never over it. */
+.threadHeading { flex-wrap: wrap; align-items: center; min-block-size: 0; row-gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.threadHeading .headingIdentity { flex: 1 1 14rem; min-inline-size: 12rem; display: grid; gap: var(--wd-space-0-5); }
+.threadHeading .actions { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-1-5); margin-inline-start: auto; }
+.threadHeading .headingLabels { margin-block-start: var(--wd-space-0-5); }
 .headingIdentity h2 { margin: 0; font-size: var(--wd-text-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .messages { flex: 1; min-block-size: 0; margin: 0; border-radius: 0; padding: var(--wd-space-4) var(--wd-space-6); }
 .composer { margin: 0; padding: var(--wd-space-2) var(--wd-space-4) var(--wd-space-2); border-radius: 0; border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }

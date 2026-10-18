@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { CrmLeadsService } from "./crm-leads.service";
 
 function setup(ownerMembershipId: string | null, queueId: string | null, optedOut = false) {
-  const query = vi.fn(async (sql: string) => {
+  const query = vi.fn(async (sql: string, _params?: unknown[]) => {
     if (sql.includes('SELECT DISTINCT membership.user_id AS "userId"')) {
       const rows = ownerMembershipId ? [{ userId: "user-one" }] : [{ userId: "user-one" }, { userId: "user-two" }];
       return { rows, rowCount: rows.length };
     }
+    // The member switched sales notices off in the app and by email.
+    if (sql.includes("FROM notification_channel_choices")) return { rows: optedOut ? [{ userId: "user-one", groupSwitches: { in_app: false, email: false } }] : [], rowCount: optedOut ? 1 : 0 };
     if (sql.includes("FROM notification_preferences")) {
       return { rows: optedOut ? [{ enabled: false }] : [], rowCount: optedOut ? 1 : 0 };
     }

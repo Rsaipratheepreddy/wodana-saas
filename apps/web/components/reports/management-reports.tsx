@@ -26,6 +26,7 @@ import styles from "./management-reports.module.css";
 const KPI_LABELS: Record<string, MessageKey> = {
   sales_won: tKey("Sales won"), revenue_collected: tKey("Revenue collected"), deals_closed: tKey("Deals closed"), profit_margin: tKey("Profit margin"),
   new_leads: tKey("New enquiries"), conversion_funnel: tKey("Enquiry to won"), response_rate: tKey("Answered within target"), lost: tKey("Lost"),
+  withdrawn_q2: tKey("Proposal 2 withdrawn"), not_interested: tKey("Not interested"),
   package_mix: tKey("Design projects started"), designs_approved: tKey("Designs approved"), design_to_proposal2_days: tKey("Days to Proposal 2"),
   design_to_proposal2_rate: tKey("Moved on to furniture or joinery"),
   work_orders_made: tKey("Work orders made"), on_time_rate: tKey("Made on time"), work_orders_delivered: tKey("Delivered to site"), installations_done: tKey("Installations done"),

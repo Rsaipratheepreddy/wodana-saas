@@ -11,7 +11,8 @@ export const FLOW_DEFINITION_SCHEMA = 1;
 
 /** The check catalogue: product-defined, read from real records. New checks are added here, once, for every firm. */
 export const FLOW_CHECKS = [
-  "contact_logged", "details_complete", "intro_meeting_completed", "client_type_set", "sub_path_chosen", "feasibility_confirmed",
+  "contact_logged", "details_complete", "intro_meeting_completed", "client_type_set", "qualification_outcome_recorded", "target_completion_set",
+  "sub_path_chosen", "feasibility_confirmed",
   "package_chosen", "discovery_complete", "site_visit_recorded",
   "quote_exists", "qs_approved", "quote_sent", "client_accepted", "client_approved_on_spot", "payment_proof_attached", "payment_verified", "deal_approved",
   "design_stage_done", "material_list_signed_off",

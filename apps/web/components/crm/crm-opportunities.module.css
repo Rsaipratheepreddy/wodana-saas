@@ -29,6 +29,8 @@
 .cardStack { display:grid; grid-auto-rows:max-content; grid-template-columns:minmax(0, 1fr); align-content:start; gap:var(--wd-space-2); min-block-size:0; overflow-x:hidden; overflow-y:auto; padding:var(--wd-space-0-5); }
 /* Each card is the shared Card; the wrapper only carries dragging, and the title button opens the whole card. */
 .boardCard { position:relative; min-inline-size:0; }
+/* The column is tinted; its cards are the plain surface so each one stands apart. */
+.cardStack :global(.wd-card) { background:var(--wd-color-surface); }
 .boardCard[draggable="true"] { cursor:grab; }
 .boardCard[draggable="true"]:active { cursor:grabbing; }
 .boardCard[data-dragging] { opacity:.55; }
@@ -49,7 +51,6 @@
 .owner { display:flex; align-items:center; gap:var(--wd-space-1); min-inline-size:0; }
 .emptyColumn { display:grid; place-items:center; flex:1; margin:0; min-block-size:6rem; padding:var(--wd-space-3); color:var(--wd-color-text-tertiary); text-align:center; font-size:var(--wd-text-2xs); }
 .moveNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }
-.emptyNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); }
 
 @media (max-width:1000px) { .salesBoard { --board-track:minmax(13rem,1fr); } }
 /* A phone: Board and List show their icons (their names stay for screen readers), so the tools and the page's action share one line. */

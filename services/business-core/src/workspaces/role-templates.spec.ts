@@ -13,6 +13,9 @@ const seededPermissionCodes = new Set(
 );
 const kitMigration = readFileSync(resolve(migrationsDir, "0130_firm_kit_role_templates.sql"), "utf8");
 const operationsMigration = readFileSync(resolve(migrationsDir, "0152_operations_v2.sql"), "utf8");
+const seatsMigration = readFileSync(resolve(migrationsDir, "0378_design_firm_seats.sql"), "utf8");
+/** §0.3 P0: a design firm's sales and design seats (the interior studio kit's). */
+const SEAT_TEMPLATES = ["account_manager", "sales_admin", "designer", "creative_director", "visualiser", "material_coordinator", "technical_lead", "marketing"];
 const DELIVERY_TEMPLATES = ["buyer", "purchasing_approver", "storekeeper", "factory_lead", "qc_inspector"];
 const FINANCE_TEMPLATES = ["finance", "finance_approver"];
 /**
@@ -23,7 +26,7 @@ const ADDED_LATER = new Set(["finance_requests.raise", "finance_requests.manage"
 
 describe("firm kit role templates", () => {
   it("gives a firm the people it employs, each with a permission set the catalog knows", () => {
-    expect(ROLE_TEMPLATE_CODES).toEqual(["sales", "quantity_surveyor", "finance_reviewer", "operations_approver", "project_manager", "site_supervisor",
+    expect(ROLE_TEMPLATE_CODES).toEqual(["sales", ...SEAT_TEMPLATES, "quantity_surveyor", "finance_reviewer", "operations_approver", "project_manager", "site_supervisor",
       ...DELIVERY_TEMPLATES, ...FINANCE_TEMPLATES]);
     for (const template of ROLE_TEMPLATES) {
       expect(template.permissions.length).toBeGreaterThan(0);
@@ -58,9 +61,11 @@ describe("firm kit role templates", () => {
     expect(roleTemplatesFor(["site_supervisor"])[0].permissions).not.toContain("projects.manage");
   });
 
-  it("reads the kit's list, defaults to every template and refuses unknown codes", () => {
-    expect(parseRoleTemplateCodes(undefined)).toEqual([...ROLE_TEMPLATE_CODES]);
-    expect(parseRoleTemplateCodes(null)).toEqual([...ROLE_TEMPLATE_CODES]);
+  it("reads the kit's list, defaults to every template but the opt-in design seats, and refuses unknown codes", () => {
+    const everyDefault = ROLE_TEMPLATE_CODES.filter((code) => !SEAT_TEMPLATES.includes(code));
+    expect(parseRoleTemplateCodes(undefined)).toEqual(everyDefault);
+    expect(parseRoleTemplateCodes(null)).toEqual(everyDefault);
+    expect(parseRoleTemplateCodes(["account_manager", "designer"])).toEqual(["account_manager", "designer"]);
     expect(parseRoleTemplateCodes(["sales", "sales", "project_manager"])).toEqual(["sales", "project_manager"]);
     expect(roleTemplatesFor(["project_manager", "sales"]).map((template) => template.code)).toEqual(["sales", "project_manager"]);
     expect(() => parseRoleTemplateCodes(["sales", "receptionist"])).toThrow(BadRequestException);
@@ -112,7 +117,7 @@ describe("firm kit role templates", () => {
   });
 
   it("is what the kit migration hands every selectable kit", () => {
-    for (const code of ROLE_TEMPLATE_CODES) expect(`${kitMigration}\n${operationsMigration}`).toContain(`'${code}'`);
+    for (const code of ROLE_TEMPLATE_CODES) expect(`${kitMigration}\n${operationsMigration}\n${seatsMigration}`).toContain(`'${code}'`);
     expect(kitMigration).toMatch(/code = 'interior_studio'[\s\S]*NOT \(configuration \? 'roleTemplates'\)/);
     expect(kitMigration).not.toMatch(/interior_studio[^;]*site_supervisor/);
   });

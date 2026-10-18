@@ -1,9 +1,9 @@
 "use client";
 
+import { Badge } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Bill, PaymentMethod, RunStatus } from "@/lib/payables/types";
 import { subtractExact } from "@/lib/purchasing/amounts";
-import styles from "./finance.module.css";
 
 type Tone = "neutral" | "info" | "warning" | "success" | "danger";
 
@@ -25,7 +25,7 @@ export function BillStatusLabel({ bill, today }: { bill: Bill; today: string }) 
     draft: t("Draft"), held: t("Held"), cancelled: t("Cancelled"), paid: t("Paid"), overdue: t("Overdue"), part_paid: t("Part paid"), to_pay: t("To pay"), retention: t("Retention"),
   };
   const state = billState(bill, today);
-  return <span className={styles.status} data-tone={state.tone}>{labels[state.key]}</span>;
+  return <Badge tone={state.tone}>{labels[state.key]}</Badge>;
 }
 
 const RUN_TONES: Record<RunStatus, Tone> = { draft: "neutral", submitted: "warning", approved: "info", paid: "success", cancelled: "danger" };
@@ -33,7 +33,7 @@ const RUN_TONES: Record<RunStatus, Tone> = { draft: "neutral", submitted: "warni
 export function RunStatusLabel({ status }: { status: RunStatus }) {
   const t = useT();
   const labels: Record<RunStatus, string> = { draft: t("Draft"), submitted: t("Submitted"), approved: t("Approved"), paid: t("Paid"), cancelled: t("Cancelled") };
-  return <span className={styles.status} data-tone={RUN_TONES[status]}>{labels[status]}</span>;
+  return <Badge tone={RUN_TONES[status]}>{labels[status]}</Badge>;
 }
 
 export function useMethodLabels(): Record<PaymentMethod, string> {

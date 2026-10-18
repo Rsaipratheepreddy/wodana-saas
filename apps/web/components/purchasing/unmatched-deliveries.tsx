@@ -4,20 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
 import { Badge,
-  Button, DataGrid, DateField, FormDialog, FormSection, VisuallyHidden, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoResultsState, SelectField, Skeleton, TextAreaField, TextInput,
-  type DataGridColumn,
+  Button, DataGrid, DateField, EditableFieldList, FactRow, FormDialog, FormSection, VisuallyHidden, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoResultsState, NumericInput,
+  ReasonDialog, SelectField, Skeleton, TextInput, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { StockLocation, UnmatchedDelivery, UnmatchedState } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
 import { PhotoPicker, SavedPhotos } from "./delivery-photos";
-import { quantityText } from "./order-labels";
+import { fieldNumber, fieldText, quantityText } from "./order-labels";
 import { usePlaceLabel } from "./receive-dialog";
 import styles from "./purchasing.module.css";
 
-type Line = { description: string; quantity: string; unit: string };
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
+type Line = { key: string; description: string; quantity: string; unit: string };
+const blankLine = (): Line => ({ key: crypto.randomUUID(), description: "", quantity: "", unit: "" });
 const OTHER = "other";
 
 /** Goods that came without an order, the open ones first. A row opens them to match or send back. */
@@ -56,7 +56,7 @@ export function RecordUnmatchedDialog({ api, locations, onClose, onRecorded }: {
   const [receivedOn, setReceivedOn] = useState(format.today());
   const [note, setNote] = useState("");
   const [handedOverBy, setHandedOverBy] = useState("");
-  const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "", unit: "" }]);
+  const [lines, setLines] = useState<Line[]>(() => [blankLine()]);
   const [photos, setPhotos] = useState<File[]>([]);
   const photoIds = useMemo(() => photos.map(() => crypto.randomUUID()), [photos]);
   useEffect(() => {
@@ -66,7 +66,21 @@ export function RecordUnmatchedDialog({ api, locations, onClose, onRecorded }: {
   const filled = lines.filter((line) => line.description.trim() && Number(line.quantity) > 0);
   const known = vendorId && vendorId !== OTHER;
   const ready = Boolean(place) && filled.length > 0 && (known || supplierName.trim());
-  const setLine = (index: number, patch: Partial<Line>) => setLines(lines.map((line, item) => (item === index ? { ...line, ...patch } : line)));
+  const setLine = (key: string, patch: Partial<Line>) => setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  const number = (line: Line) => lines.findIndex((item) => item.key === line.key) + 1;
+  const hidden = (text: string) => <VisuallyHidden>{text}</VisuallyHidden>;
+  const columns: DataGridColumn<Line>[] = [
+    { id: "what", header: t("What arrived"), size: 260, accessorFn: (line) => line.description, meta: { renderCell: (line) =>
+      <TextInput label={hidden(t("What arrived, line {number}", { number: number(line) }))} maxLength={240} value={line.description} onChange={(description) => setLine(line.key, { description })} /> } },
+    { id: "quantity", header: t("Quantity"), size: 130, accessorFn: (line) => line.quantity, meta: { align: "end", renderCell: (line) =>
+      <NumericInput label={hidden(t("Quantity, line {number}", { number: number(line) }))} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+        value={fieldNumber(line.quantity)} onChange={(value) => setLine(line.key, { quantity: fieldText(value) })} /> } },
+    { id: "unit", header: t("Unit"), size: 110, accessorFn: (line) => line.unit, meta: { renderCell: (line) =>
+      <TextInput label={hidden(t("Unit, line {number}", { number: number(line) }))} maxLength={20} value={line.unit} onChange={(unit) => setLine(line.key, { unit })} /> } },
+    { id: "remove", header: "", size: 56, enableSorting: false, meta: { align: "end", renderCell: (line) => lines.length > 1
+      ? <IconButton aria-label={t("Remove line {number}", { number: number(line) })} size="compact" variant="quiet" onPress={() => setLines(lines.filter((item) => item.key !== line.key))}>
+        <X aria-hidden="true" size={14} /></IconButton> : null } },
+  ];
   const save = async () => {
     let saved = await api.recordUnmatched({ id, vendorId: known ? vendorId : null, supplierName: known ? "" : supplierName.trim(), place, receivedOn, deliveryNote: note.trim(),
       handedOverBy: handedOverBy.trim(), lines: filled.map((line) => ({ description: line.description.trim(), quantity: line.quantity, unit: line.unit.trim() })) });
@@ -84,14 +98,9 @@ export function RecordUnmatchedDialog({ api, locations, onClose, onRecorded }: {
         <TextInput label={t("Handed over by")} maxLength={160} value={handedOverBy} onChange={setHandedOverBy} />
       </FormSection>
       <FormSection title={t("What arrived")}>
-        <ul className={styles.draftLines} aria-label={t("What arrived")}>{lines.map((line, index) => <li key={index}>
-          <TextInput label={<VisuallyHidden>{t("What arrived, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={240} placeholder={t("What arrived")} value={line.description} onChange={(description) => setLine(index, { description })} />
-          <TextInput label={<VisuallyHidden>{t("Quantity, line {number}", { number: index + 1 })}</VisuallyHidden>} placeholder={t("Quantity")} inputMode="decimal" value={line.quantity} onChange={(value) => setLine(index, { quantity: numeric(value) })} />
-          <TextInput label={<VisuallyHidden>{t("Unit, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={20} placeholder={t("Unit")} value={line.unit} onChange={(unit) => setLine(index, { unit })} />
-          {lines.length > 1 ? <IconButton aria-label={t("Remove line {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setLines(lines.filter((_, item) => item !== index))}>
-            <X aria-hidden="true" size={14} /></IconButton> : <span />}
-        </li>)}</ul>
-        <div><Button size="compact" variant="quiet" onPress={() => setLines([...lines, { description: "", quantity: "", unit: "" }])}><Plus aria-hidden="true" size={14} />{t("Add line")}</Button></div>
+        <DataGrid ariaLabel={t("What arrived")} data={lines} getRowId={(line) => line.key} columns={columns}
+          showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} />
+        <div><Button size="compact" variant="quiet" onPress={() => setLines([...lines, blankLine()])}><Plus aria-hidden="true" size={14} />{t("Add line")}</Button></div>
       </FormSection>
       <FormSection title={t("Photos")}>
         <PhotoPicker files={photos} onChange={setPhotos} />
@@ -136,13 +145,13 @@ export function UnmatchedSheet({ api, deliveryId, onChanged, onClose, onOpenRece
       {delivery.status === "matched" && delivery.receiptId ? <InlineNotice tone="success" message={t("Matched by {name}; now delivery {number}.", { name: delivery.resolvedByName ?? "", number: delivery.receiptNumber ?? "" })} /> : null}
       {delivery.status === "returned" ? <InlineNotice tone="info" message={t("Sent back: {reason}", { reason: delivery.resolutionNote })} /> : null}
       {open && state.canBuy && !state.candidates.length ? <InlineNotice tone="info" message={t("No open order from this supplier is still waiting for goods.")} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("From")}</dt><dd>{delivery.supplierName}</dd></div>
-        <div><dt>{t("Arrived at")}</dt><dd>{delivery.locationName}</dd></div>
-        <div><dt>{t("Received")}</dt><dd>{[format.day(delivery.receivedOn), delivery.receivedByName].join(" · ")}</dd></div>
-        {delivery.deliveryNote ? <div><dt>{t("Delivery note")}</dt><dd>{delivery.deliveryNote}</dd></div> : null}
-        {delivery.handedOverBy ? <div><dt>{t("Handed over by")}</dt><dd>{delivery.handedOverBy}</dd></div> : null}
-      </dl>
+      <EditableFieldList>
+        <FactRow label={t("From")}>{delivery.supplierName}</FactRow>
+        <FactRow label={t("Arrived at")}>{delivery.locationName}</FactRow>
+        <FactRow label={t("Received")}>{[format.day(delivery.receivedOn), delivery.receivedByName].join(" · ")}</FactRow>
+        {delivery.deliveryNote ? <FactRow label={t("Delivery note")}>{delivery.deliveryNote}</FactRow> : null}
+        {delivery.handedOverBy ? <FactRow label={t("Handed over by")}>{delivery.handedOverBy}</FactRow> : null}
+      </EditableFieldList>
       <ul className={styles.receipts} aria-label={t("What arrived")}>{state.lines.map((line) => <li key={line.id}>
         <span className={styles.nameCell}><span>{line.description}</span></span><span className={styles.money}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span>
       </li>)}</ul>
@@ -159,10 +168,7 @@ export function UnmatchedSheet({ api, deliveryId, onChanged, onClose, onOpenRece
 
 function SendBackDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={t("Sent back")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()} submitLabel={t("Save")} onSubmit={() => onSave(note.trim())}>
-    <TextAreaField label={t("Why the goods went back")} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
+  return <ReasonDialog title={t("Sent back")} label={t("Why the goods went back")} confirmLabel={t("Save")} onConfirm={onSave} onClose={onClose} />;
 }
 
 /** Which order these goods belong to, and which of its lines each one is. */

@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
@@ -41,6 +42,7 @@ export class OpportunityFlowService {
     private readonly storage: BrandAssetStorageService,
     private readonly discovery: OpportunityDiscoveryService,
     private readonly ai: AiGatewayService,
+    @Optional() private readonly modules?: ModuleRef,
   ) {}
 
   update(actor: RequestActor, workspaceId: string, opportunityId: string, input: UpdateFlowInput) {
@@ -128,7 +130,21 @@ export class OpportunityFlowService {
     // AI proposes, people confirm: the stored proof is read into amount, date and reference; Finance confirms the
     // value. Without AI, or when the proof can't be read, it is kept as it is.
     const reading = await this.readProof(actor, workspaceId, opportunityId, String(attached.proof.id), attached.file);
+    // Guide J: the proof is the Deal File's trigger: it opens (to Finance) when the rest is already in place.
+    await this.openDealFile(actor, workspaceId, opportunityId);
     return { opportunity: attached.opportunity, proof: { ...attached.proof, reading } };
+  }
+
+  /** Opens the job's Deal File when its conditions are met; never blocks attaching the proof. */
+  private async openDealFile(actor: RequestActor, workspaceId: string, opportunityId: string) {
+    if (!this.modules) return;
+    try {
+      const caseId = await this.access.withPermission(actor, workspaceId, "crm.opportunities.view", async (client) => (await client.query<{ id: string }>(
+        `SELECT id::text FROM pre_project_cases WHERE workspace_id = $1 AND opportunity_id = $2 LIMIT 1`, [workspaceId, opportunityId])).rows[0]?.id ?? null);
+      if (!caseId) return;
+      const { CommercialService } = await import("../../commercial/commercial.service");
+      await this.modules.get(CommercialService, { strict: false }).openDealFile(actor, workspaceId, caseId);
+    } catch { /* The Deal File stays to open by hand from the case (Sales sees why). */ }
   }
 
   private async readProof(actor: RequestActor, workspaceId: string, opportunityId: string, proofId: string, file: { mimeType: string; body: Buffer }) {

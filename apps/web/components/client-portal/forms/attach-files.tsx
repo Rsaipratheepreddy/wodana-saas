@@ -1,8 +1,8 @@
 "use client";
 
-import { FileText, ImagePlus, Paperclip, RotateCcw, X } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Button, IconButton } from "@/design-system";
+import { Button, FileUploader, InlineNotice, ReviewFiles } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalFile } from "@/lib/client-portal/types";
@@ -19,7 +19,6 @@ export function AttachFiles({ caseId, api, onChange, onBusy, photosOnly = false,
   caseId: string; api: PortalApi; onChange: (ids: string[]) => void; onBusy?: (busy: boolean) => void; photosOnly?: boolean; max?: number; label?: string;
 }) {
   const t = useT();
-  const input = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
   const report = useRef({ onChange, onBusy });
   report.current = { onChange, onBusy };
@@ -43,7 +42,8 @@ export function AttachFiles({ caseId, api, onChange, onBusy, photosOnly = false,
   const add = (files: File[]) => {
     const room = Math.max(0, max - items.length);
     const next = files.slice(0, room).map((file): Item => {
-      const url = file.type.startsWith("image/") && typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : null;
+      // A local copy to open (and, for a photo, to show) while it uploads.
+      const url = typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : null;
       if (url) urls.current.push(url);
       return { key: commandId(), id: commandId(), file, url, status: "uploading", error: "" };
     });
@@ -52,25 +52,15 @@ export function AttachFiles({ caseId, api, onChange, onBusy, photosOnly = false,
   };
   const full = items.length >= max;
   const text = label ?? (photosOnly ? t("Add photos") : t("Add photos or PDFs"));
+  const adding = items.some((item) => item.status === "uploading");
   return <div className={styles.attach}>
-    <input accept={photosOnly ? "image/*" : "image/*,application/pdf"} aria-label={text} className="wd-visually-hidden" multiple ref={input} type="file"
-      onChange={(event) => { add(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
-    {items.length ? <ul className={styles.attachList}>{items.map((item) => <li className={styles.attachItem} data-status={item.status} key={item.key}>
-      {item.url
-        // eslint-disable-next-line @next/next/no-img-element -- a local preview of the file being added
-        ? <img alt="" className={styles.attachThumb} src={item.url} />
-        : <span className={styles.attachThumb}><FileText aria-hidden="true" size={18} /></span>}
-      <span className={styles.itemText}>
-        <span className={styles.attachName} dir="auto">{item.file.name}</span>
-        <span className={styles.itemMeta} role={item.status === "failed" ? "alert" : undefined}>
-          {item.status === "uploading" ? t("Adding…") : item.status === "failed" ? item.error : t("Added")}</span>
-      </span>
-      {item.status === "failed" ? <IconButton aria-label={t("Try {name} again", { name: item.file.name })} onPress={() => void send(item)}><RotateCcw aria-hidden="true" size={16} /></IconButton> : null}
-      <IconButton aria-label={t("Remove {name}", { name: item.file.name })} isDisabled={item.status === "uploading"}
-        onPress={() => setItems((current) => current.filter((entry) => entry.key !== item.key))}><X aria-hidden="true" size={16} /></IconButton>
-    </li>)}</ul> : null}
-    {full ? null : <div><Button size="compact" variant="secondary" onPress={() => input.current?.click()}>
-      {photosOnly ? <ImagePlus aria-hidden="true" size={16} /> : <Paperclip aria-hidden="true" size={16} />}{text}</Button></div>}
+    {items.length ? <ReviewFiles label={text} empty={null}
+      files={items.map((item) => ({ id: item.key, name: item.file.name, href: item.url ?? "#", previewHref: item.url && item.file.type.startsWith("image/") ? item.url : null }))}
+      onRemove={(key) => setItems((current) => current.filter((entry) => entry.key !== key || entry.status === "uploading"))} /> : null}
+    {adding ? <InlineNotice tone="info" message={t("Adding…")} /> : null}
+    {items.filter((item) => item.status === "failed").map((item) => <InlineNotice key={item.key} tone="error" title={item.file.name} message={item.error}
+      action={<Button size="compact" variant="quiet" onPress={() => void send(item)}><RotateCcw aria-hidden="true" size={14} />{t("Try {name} again", { name: item.file.name })}</Button>} />)}
+    {full ? null : <FileUploader appearance="button" accept={photosOnly ? "image/*" : "image/*,application/pdf"} label={text} onFiles={add} />}
   </div>;
 }
 
@@ -80,12 +70,5 @@ export function FileStrip({ files, api, kind = "asset" }: { files: Array<Pick<Po
   kind?: "asset" | "minutes" }) {
   const t = useT();
   if (!files.length) return null;
-  return <ul className={styles.fileStrip}>{files.map((file) => <li key={file.id}>
-    <a className={styles.fileTile} href={api.file(kind, file.id)} rel="noreferrer" target="_blank" title={file.name}>
-      {file.hasPreview
-        // eslint-disable-next-line @next/next/no-img-element -- a private file streamed through the signed-in portal route
-        ? <img alt={t("Photo: {name}", { name: file.name })} loading="lazy" src={api.file(kind, file.id, true)} />
-        : <><FileText aria-hidden="true" size={18} /><span dir="auto">{file.name}</span></>}
-    </a>
-  </li>)}</ul>;
+  return <ReviewFiles label={t("Photos and files")} files={files.map((file) => ({ id: file.id, name: file.name, href: api.file(kind, file.id), previewHref: file.hasPreview ? api.file(kind, file.id, true) : null }))} />;
 }

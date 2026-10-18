@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import {
-  Callout, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, Skeleton, StatementTable, type DataGridColumn, type StatementColumnHead, type StatementLine,
+  Button, Callout, DataGrid, EmptyState, FactTiles, ErrorState, InlineNotice, InspectorSheet, Skeleton, StatementTable, type DataGridColumn, type StatementColumnHead, type StatementLine,
 } from "@/design-system";
 import {
   AGEING_LABELS, ledgerPaths, type AgeingReport, type BalanceSheetReport, type GeneralLedgerReport, type LedgerApi, type LedgerScope, type StatementSection,
@@ -203,7 +203,7 @@ export function VatView({ report, scope, api }: { report: VatReport; scope: Ledg
     return [{ key: `${section}:head`, kind: "heading" as const, label: t(heading), values: [null, null, null] },
       ...boxes.map((box): StatementLine => ({
         key: box.box, kind: box.box === "14" ? "result" : box.computed ? "subtotal" : "line", depth: box.computed ? 0 : 1, code: box.box,
-        label: box.computed ? t(box.label) : <button type="button" className={styles.linkButton} onClick={() => setOpen(box)}>{t(box.label)}</button>,
+        label: box.computed ? t(box.label) : <Button size="compact" variant="quiet" onPress={() => setOpen(box)}>{t(box.label)}</Button>,
         ...figures(format, [box.amount, box.vat, box.adjustment]),
       }))];
   });
@@ -293,11 +293,11 @@ export function GeneralLedgerView({ report, scope }: { report: GeneralLedgerRepo
     moneyColumn<LedgerGridRow>("balance", t("Balance"), (row) => row.balance, format),
   ], [t, format, scope]);
   return <div className={styles.stack}>
-    <dl className={styles.summary}>
-      <div><dt>{t("Account")}</dt><dd>{report.account.code} {report.account.name}</dd></div>
-      <div><dt>{t("Opening")}</dt><dd>{format.money(report.opening)}</dd></div>
-      <div><dt>{t("Closing")}</dt><dd>{format.money(report.closing)}</dd></div>
-    </dl>
+    <FactTiles label={t("General ledger")} items={[
+      { id: "account", label: t("Account"), value: `${report.account.code} ${report.account.name}` },
+      { id: "opening", label: t("Opening"), value: format.money(report.opening) },
+      { id: "closing", label: t("Closing"), value: format.money(report.closing) },
+    ]} />
     <DataGrid<LedgerGridRow> rowNumbers={false} selectable={false} pageSize={2000} ariaLabel={t("General ledger")} columns={columns} data={rows} getRowId={(row) => row.lineId}
       exportFileName={`${report.entity.code}-general-ledger-${report.account.code}-${report.scope.from}-${report.scope.to}.csv`}
       emptyContent={<EmptyState title={t("No journals in this period")} />} />

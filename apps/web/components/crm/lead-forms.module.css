@@ -42,8 +42,8 @@
 .questionList { display: flex; flex-direction: column; gap: var(--wd-space-2); min-inline-size: 0; outline: none; }
 .questionList[data-drop-target] { outline: 2px dashed var(--wd-color-focus); outline-offset: var(--wd-space-1); border-radius: var(--wd-radius-md); }
 .questionList[data-focus-visible] { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-.card { min-inline-size: 0; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); outline: none; scroll-margin-block: var(--wd-space-20); transition: border-color var(--wd-duration-fast) var(--wd-ease-standard), box-shadow var(--wd-duration-fast) var(--wd-ease-standard); }
-.card:hover { border-color: var(--wd-color-border-strong); }
+.card { min-inline-size: 0; border: 0; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); color: var(--wd-color-text); outline: none; scroll-margin-block: var(--wd-space-20); transition: border-color var(--wd-duration-fast) var(--wd-ease-standard), box-shadow var(--wd-duration-fast) var(--wd-ease-standard); }
+.card:hover { background: var(--wd-color-surface-hover); }
 .card[data-focus-visible] { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .card[data-open] { border-color: var(--wd-color-action-primary); box-shadow: var(--wd-shadow-sm); }
 .card[data-dragging] { opacity: .45; }

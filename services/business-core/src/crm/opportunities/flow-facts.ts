@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { hasResolvedEnquiryType } from "../leads/lead-options";
+import { floorPlanReady, storedFloorPlan } from "../leads/enquiry-problems";
 import type { OpportunityDiscoveryService } from "./discovery.service";
 import { clientTypeDecided, type FurniturePath } from "./flow-gates";
 import { WON_COLUMN } from "../flows/flow-definition";
@@ -29,6 +30,7 @@ type FactsRow = {
   hasLead: boolean; enquiryType: string | null; enquiryTypeLabel: string | null; flow: string | null; flowVersionId: string | null; clientType: string | null;
   partyEmail: string | null; enquiryEmail: string | null; discoveryEmail: string | null; discoveryLocation: string | null; enquiryLocation: string | null; budgetRange: string | null;
   floorPlan: string | null; area: string | null; introStatus: string | null; introAt: Date | null; introBy: string | null; contactLogged: boolean;
+  enquiryFloorPlan: unknown; targetCompletion: string | null; qualificationOutcome: string | null; qualificationAt: Date | null; qualificationBy: string | null;
   packageCode: string | null;
   furniturePath: FurniturePath | null; feasibilityAt: Date | null; feasibilityBy: string | null; materialsChange: boolean;
   clientApprovedAt: Date | null; clientApprovedBy: string | null;
@@ -63,6 +65,9 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
             NULLIF(btrim(enquiry.details->'contact'->>'email'), '') AS "enquiryEmail", discovery.client_email AS "discoveryEmail", discovery.property_location AS "discoveryLocation", enquiry.details->>'location' AS "enquiryLocation",
             NULLIF(trim(enquiry.details->>'budgetRange'), '') AS "budgetRange",
             discovery.floor_plan_asset_id::text AS "floorPlan", discovery.area::text AS area, intro.status AS "introStatus",
+            enquiry.details->'floorPlan' AS "enquiryFloorPlan", NULLIF(btrim(enquiry.details->>'targetCompletion'), '') AS "targetCompletion",
+            opportunity.qualification_outcome AS "qualificationOutcome", opportunity.qualification_outcome_at AS "qualificationAt",
+            (SELECT account.display_name FROM users account WHERE account.id = opportunity.qualification_outcome_by) AS "qualificationBy",
             intro.completed_at AS "introAt", intro_owner.display_name AS "introBy",
             EXISTS (SELECT 1 FROM crm_activities contact WHERE contact.workspace_id = opportunity.workspace_id
                       AND (contact.opportunity_id = opportunity.id OR contact.party_id = opportunity.party_id OR contact.lead_id = opportunity.lead_id)
@@ -140,10 +145,13 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
     // The client's email carries over from the enquiry as its location does (a known client chosen on the form keeps the email typed there).
     clientEmail: Boolean(row.discoveryEmail || row.partyEmail || row.enquiryEmail),
     propertyLocation: Boolean(row.discoveryLocation?.trim() || row.enquiryLocation?.trim()),
-    floorPlanOrArea: Boolean(row.floorPlan || row.area),
+    // The floor plan answered before converting counts too (uploaded, or a size estimate).
+    floorPlanOrArea: Boolean(row.floorPlan || row.area || floorPlanReady(storedFloorPlan(row.enquiryFloorPlan))),
     budgetBand: row.budgetRange,
     contactLogged: row.contactLogged,
     introCompleted: row.introStatus === "completed",
+    qualificationProceed: row.qualificationOutcome === "proceed",
+    targetCompletionSet: Boolean(row.targetCompletion),
     discoveryMissing,
     furniturePath: row.furniturePath,
     feasibilityConfirmed: Boolean(row.feasibilityAt),
@@ -166,6 +174,7 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
     skippedSteps: await loadStepSkips(db, workspaceId, opportunityId),
     evidence: {
       intro_meeting_completed: { at: row.introAt, by: row.introBy },
+      qualification_outcome_recorded: { at: row.qualificationAt, by: row.qualificationBy },
       feasibility_confirmed: { at: row.feasibilityAt, by: row.feasibilityBy },
       client_approved_on_spot: { at: row.clientApprovedAt, by: row.clientApprovedBy },
       payment_proof_attached: { at: row.proofAt, by: row.proofBy },

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, MenuButton, NoResultsState, TextAreaField, type DataGridColumn, type ToolbarFilter, FormDialog } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, MenuButton, NoResultsState, ReviewDialog, type DataGridColumn, type ToolbarFilter, FormNotSaved } from "@/design-system";
+import { evidenceFiles } from "@/lib/evidence/evidence";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import { restockQuantity } from "@/lib/inventory/levels";
@@ -11,7 +12,7 @@ import { readableCode } from "@/lib/workspace/catalog-v2";
 /** A money amount that says something: set and not zero (a cost nobody entered is stored as zero). */
 const known = (value: string | null | undefined) => Boolean(value) && !/^-?0*(\.0+)?$/.test(String(value));
 import type { PendingAdjustment, ReorderPoint, StockRow, StockState, TransferState } from "@/lib/inventory/types";
-import { Cell, ProjectFilterChip, ProjectLinks } from "../operations/ops";
+import { Cell, ProjectFilterChip, ProjectLinks, operationsStyles as ops } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
 import { LinkedImportDialog } from "../linked-imports/linked-import-dialog";
@@ -41,7 +42,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
   const format = useProjectFormat();
   const [search, setSearch] = useState("");
   const [view, setView] = useState<StockView>(initialView);
-  const [refusing, setRefusing] = useState<PendingAdjustment | null>(null);
+  const [reviewing, setReviewing] = useState<PendingAdjustment | null>(null);
   const [notice, setNotice] = useState("");
   const [place, setPlace] = useState<string | null>(null);
   const [change, setChange] = useState<{ mode: ChangeMode; row: StockRow | null; itemId?: string } | null>(null);
@@ -129,7 +130,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
     { id: "state", header: t("Status"), accessorFn: (point) => (point.short ? 2 : point.low ? 1 : 0), size: 150, meta: { renderCell: (point) => point.short ? <Badge tone="danger">{t("Order now")}</Badge>
       : point.low ? <Badge tone="warning">{t("Coming")}</Badge> : <Badge tone="success">{t("Enough")}</Badge> } },
     { id: "next", header: t("Next"), accessorFn: () => "", size: 170, meta: { align: "end", renderCell: (point) => point.short
-      ? <Link className={styles.rowLink} href="/workspace/purchasing?view=restock">{t("Order {quantity}", { quantity: unit(restockQuantity(point), point.unit) })}</Link>
+      ? <Link className={ops.projectLink} href="/workspace/purchasing?view=restock">{t("Order {quantity}", { quantity: unit(restockQuantity(point), point.unit) })}</Link>
       : state?.canManage || state?.canAdjust ? <Button size="compact" variant="quiet" onPress={() => setReorder({ item: { itemId: point.itemId, itemName: point.itemName, unit: point.unit, locationId: point.locationId }, point })}>
         {t("Change")}</Button> : null } },
   ], [t, state]);
@@ -160,9 +161,8 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
             : t("Counted {counted} ({difference}), worth {value}: {reason} ({name})", { counted: `${quantityText(request.counted)} ${request.unit}`.trim(),
             difference: `${Number(request.difference) > 0 ? "+" : ""}${quantityText(request.difference)}`, value: format.money(request.value, state.currency),
             reason: request.reason, name: request.requestedByName })}</small></span>
-        {state.canAdjust && request.requestedBy !== state.me ? <span className={styles.filters}>
-          <Button size="compact" variant="primary" onPress={() => void decide(request, "approve")}>{t("Approve")}</Button>
-          <Button size="compact" variant="quiet" onPress={() => setRefusing(request)}>{t("Refuse")}</Button></span> : <small className={styles.muted}>{t("Someone else approves it.")}</small>}
+        {state.canAdjust && request.requestedBy !== state.me ? <Button size="compact" variant="primary" onPress={() => setReviewing(request)}>{t("Review")}</Button>
+          : <small className={styles.muted}>{t("Someone else approves it.")}</small>}
       </li>)}</ul>
     </section> : null}
     {view === "low" ? <DataGrid<ReorderPoint> ariaLabel={t("Low stock")} columns={lowColumns} data={[...points].sort((a, b) => Number(b.short) - Number(a.short) || Number(b.low) - Number(a.low))
@@ -179,17 +179,21 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
         : <EmptyState title={t("Nothing in stock")} description={t("Deliveries add stock where they arrive.")} />} /></>}
     {change && state ? <StockChangeDialog api={api} state={state} mode={change.mode} row={change.row} itemId={change.itemId} onClose={() => setChange(null)} onDone={(next) => { setChange(null); onChanged(next); }} /> : null}
     <LinkedImportDialog isOpen={importing} onClose={() => setImporting(false)} onImported={onReload} openLinkId={importLinkId} target="stock" workspaceId={workspaceId} />
-    {refusing ? <RefuseDialog onClose={() => setRefusing(null)} onSave={async (note) => { if (await decide(refusing, "reject", note)) setRefusing(null); }} /> : null}
+    {/* §0.3 P0: a correction is approved or refused in a review of the count and its sheet, never one click. */}
+    {reviewing && state ? <ReviewDialog title={t("Stock correction")} description={`${reviewing.itemName} · ${reviewing.locationName}`} confirmLabel={t("Approve")} rejectLabel={t("Refuse")}
+      onClose={() => setReviewing(null)}
+      facts={[
+        { label: t("Counted"), value: `${quantityText(reviewing.counted)} ${reviewing.unit}`.trim() },
+        { label: t("Difference"), value: `${Number(reviewing.difference) > 0 ? "+" : ""}${quantityText(reviewing.difference)}` },
+        ...(reviewing.value !== null ? [{ label: t("Worth"), value: format.money(reviewing.value, state.currency) }] : []),
+        { label: t("Why it's different"), value: reviewing.reason },
+        { label: t("Counted by"), value: reviewing.requestedByName },
+      ]}
+      files={evidenceFiles(workspaceId, state.adjustmentFiles?.[reviewing.id])}
+      onConfirm={async () => { if (!(await decide(reviewing, "approve"))) throw new FormNotSaved(); setReviewing(null); }}
+      onReject={async (note) => { if (!(await decide(reviewing, "reject", note))) throw new FormNotSaved(); setReviewing(null); }} /> : null}
     {moving && state ? <MoveDialog api={api} state={state} row={moving.row} onClose={() => setMoving(null)} onSent={(next) => { setMoving(null); onMoved(next); }} /> : null}
     {reorder && state ? <ReorderPointDialog api={api} state={state} item={reorder.item} point={reorder.point} suppliers={suppliers} onClose={() => setReorder(null)}
       onDone={(next) => { setReorder(null); onChanged(next); }} /> : null}
   </>;
-}
-
-function RefuseDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  return <FormDialog size="md" title={t("Refuse the correction")} onClose={onClose} cancelLabel={t("Back")} isSubmitDisabled={!note.trim()} submitLabel={t("Refuse")} onSubmit={async () => { await onSave(note.trim()); }}>
-    <TextAreaField label={t("Why it's refused")} isRequired value={note} onChange={setNote} />
-  </FormDialog>;
 }

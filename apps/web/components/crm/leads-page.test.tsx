@@ -142,9 +142,10 @@ describe("LeadsPage", () => {
     render(<LeadsPage initialData={data} />);
     const rows = () => within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row").length - 1;
     expect(rows()).toBe(6);
-    await user.click(screen.getByRole("button", { name: "Contacted" }));
+    // Each list says how many it holds.
+    await user.click(screen.getByRole("button", { name: /^Contacted\s*3$/ }));
     expect(rows()).toBe(3);
-    await user.click(screen.getByRole("button", { name: "Come back to" }));
+    await user.click(screen.getByRole("button", { name: /^Come back to\s*\d+$/ }));
     expect(screen.getByRole("button", { name: "Open Client 4" })).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "CRM enquiries" })).getByText("Come back later")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^New\s*1$/ }));
@@ -446,7 +447,7 @@ describe("LeadsPage", () => {
     expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Duplicates")).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Dup Client" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open Fresh Client" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("group", { name: "Enquiry lists" })).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(screen.getByRole("group", { name: "Enquiry lists" })).getByRole("button", { name: /^All\s*\d+$/ })).toHaveAttribute("aria-pressed", "true");
   }, 20_000);
 
   it("filters by source and resets to all leads", async () => {

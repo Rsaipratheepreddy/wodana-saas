@@ -1,3 +1,4 @@
+import { floorPlanReady, type FloorPlan } from "../leads/enquiry-problems";
 import { Dec } from "../../catalog-core/decimal";
 
 export type DiscoveryFacts = {
@@ -39,10 +40,12 @@ export function areaIn(area: string, from: "sqft" | "sqm", to: "sqft" | "sqm") {
 export function discoveryMissing(input: {
   facts: DiscoveryFacts | null; enquiryType: string | null; clientType: string | null; packagePricing?: "per_space" | "per_area" | "fixed" | null;
   questions: DiscoveryQuestion[]; answers: Record<string, unknown>;
+  /** The enquiry's own floor plan answer: an estimate given (the real plan follows before the site visit) or not required counts. */
+  enquiryFloorPlan?: FloorPlan | null;
 }): MissingItem[] {
   const facts = input.facts;
   const missing: MissingItem[] = [];
-  if (!facts?.floorPlanAssetId) missing.push({ key: "floorPlan", label: "Floor plan" });
+  if (!facts?.floorPlanAssetId && !floorPlanReady(input.enquiryFloorPlan)) missing.push({ key: "floorPlan", label: "Floor plan" });
   if (!facts?.area) missing.push({ key: "area", label: "Area" });
   if (!facts?.clientEmail) missing.push({ key: "clientEmail", label: "Client email" });
   if (!facts?.propertyLocation) missing.push({ key: "propertyLocation", label: "Property location" });

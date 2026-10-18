@@ -4,9 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, Eye, EyeOff, Heart, ImagePlus, LayoutTemplate, Link2, Maximize2, MessageCircle, StickyNote, ThumbsDown, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Eye, EyeOff, Heart, LayoutTemplate, Link2, Maximize2, MessageCircle, StickyNote, ThumbsDown, X } from "lucide-react";
 import { PlatformMark } from "@/components/brand/platform-mark";
-import { Avatar, Badge, Button, EmptyState, FormDialog, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Avatar, Badge, Button, chipHue, ControlledModalDialog, EmptyState, FileUploader, FormDialog, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { ClientFeedback, FeedbackSignals, feedbackFor, useClientBoard, type ClientBoard } from "@/components/client-activity/client-feedback";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isTypingTarget } from "@/lib/keyboard/typing-target";
@@ -42,7 +42,6 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
   const [adding, setAdding] = useState<"link" | "note" | "canva" | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const upload = useRef<HTMLInputElement>(null);
   const requirements = useMemo(() => initialData.entries.filter((entry) => entry.kind === "requirement" && !entry.archivedAt), [initialData.entries]);
   const requirementName = useMemo(() => new Map(requirements.map((entry) => [entry.id, entry.title])), [requirements]);
   const roomName = (entry: ScopeEntry) => caseRooms.find((item) => item.id === entry.roomId)?.name ?? entry.roomName ?? null;
@@ -99,8 +98,8 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
     void client.load();
     return saved;
   };
-  const uploadPhotos = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const uploadPhotos = async (files: File[]) => {
+    if (!files.length || busy) return;
     setBusy(true); setError("");
     const failed: string[] = [];
     for (const file of [...files]) {
@@ -113,7 +112,6 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
     }
     if (failed.length) setError(t("These could not be added: {files}. Add photos here; share videos as links.", { files: failed.join(", ") }));
     setBusy(false);
-    if (upload.current) upload.current.value = "";
   };
 
   const selectedEntry = entries.find((entry) => entry.id === selected) ?? null;
@@ -133,11 +131,10 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
         ...(toHide.length ? [{ id: "hide", label: t("Hide {count} from the portal", { count: toHide.length }) }] : []),
       ]} /> : null}
       {canEdit ? <div className={styles.addGroup} role="group" aria-label={t("Add to moodboard")}>
-        <Button size="compact" isLoading={busy} onPress={() => upload.current?.click()}><ImagePlus aria-hidden="true" size={14} />{t("Photos")}</Button>
+        <FileUploader appearance="button" accept="image/*" label={busy ? t("Uploading…") : t("Photos")} onFiles={(files) => void uploadPhotos(files)} />
         <Button size="compact" onPress={() => setAdding("link")}><Link2 aria-hidden="true" size={14} />{t("Link")}</Button>
         <Button size="compact" onPress={() => setAdding("canva")}><LayoutTemplate aria-hidden="true" size={14} />{t("Canva")}</Button>
         <Button size="compact" variant="primary" onPress={() => setAdding("note")}><StickyNote aria-hidden="true" size={14} />{t("Note")}</Button>
-        <input accept="image/*" aria-hidden="true" className={styles.hiddenInput} multiple onChange={(event) => void uploadPhotos(event.target.files)} ref={upload} tabIndex={-1} type="file" />
       </div> : null}
     </div>
     {error ? <InlineNotice message={error} tone="error" /> : null}
@@ -203,8 +200,8 @@ function PinCard({ workspaceId, entry, room, addedBy, requirementNames, assetUrl
       {kind === "note" ? <span className={styles.noteText}>{entry.note || entry.title}</span> : <strong className={styles.cardTitle}>{entry.title}</strong>}
       {kind !== "note" && entry.note ? <span className={styles.cardNote}>{entry.note}</span> : null}
       {requirementNames.length || room ? <span className={styles.tags}>
-        {room ? <span className={styles.tag} data-kind="room">{room}</span> : null}
-        {requirementNames.map((name) => <span className={styles.tag} data-kind="requirement" key={name}>{name}</span>)}
+        {room ? <span className={styles.tag} data-kind="room" data-hue={chipHue(room)}>{room}</span> : null}
+        {requirementNames.map((name) => <span className={styles.tag} data-kind="requirement" data-hue={chipHue(name)} key={name}>{name}</span>)}
       </span> : null}
     </button>
     <footer className={styles.cardFoot}>
@@ -326,10 +323,8 @@ function PhotoViewer({ entry, start, assetUrl, onClose }: { entry: ScopeEntry; s
   const t = useT();
   const photos = images(entry);
   const [index, setIndex] = useState(Math.min(start, photos.length - 1));
-  const close = useRef<HTMLButtonElement>(null);
   const step = (delta: number) => setIndex((current) => (current + delta + photos.length) % photos.length);
   useEffect(() => {
-    close.current?.focus();
     const key = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
       if (event.key === "Escape") onClose();
@@ -340,21 +335,19 @@ function PhotoViewer({ entry, start, assetUrl, onClose }: { entry: ScopeEntry; s
     return () => window.removeEventListener("keydown", key);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const photo = photos[index];
-  return <div className={styles.viewer} role="dialog" aria-modal="true" aria-label={entry.title} onClick={onClose}>
-    <div className={styles.viewerBar} onClick={(event) => event.stopPropagation()}>
-      <strong>{entry.title}</strong>
-      {photos.length > 1 ? <span>{index + 1} / {photos.length}</span> : null}
+  return <ControlledModalDialog isOpen size="xl" title={entry.title} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className={styles.viewerBar}>
+      {photos.length > 1 ? <>
+        <IconButton aria-label={t("Previous photo")} onPress={() => step(-1)}><ChevronLeft size={18} /></IconButton>
+        <span>{index + 1} / {photos.length}</span>
+        <IconButton aria-label={t("Next photo")} onPress={() => step(1)}><ChevronRight size={18} /></IconButton>
+      </> : null}
       <span className={styles.spacer} />
-      <a className={styles.viewerAction} href={assetUrl(photo, false)} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" size={14} />{t("Open original")}</a>
-      <button ref={close} type="button" className={styles.viewerClose} aria-label={t("Close")} onClick={onClose}><X size={18} /></button>
-    </div>
-    {/* eslint-disable-next-line @next/next/no-img-element -- full-size original, sized by the viewport */}
-    <img alt={photo.name} className={styles.viewerImage} onClick={(event) => event.stopPropagation()} src={assetUrl(photo, false)} />
-    {photos.length > 1 ? <>
-      <button type="button" className={styles.viewerNav} data-side="start" aria-label={t("Previous photo")} onClick={(event) => { event.stopPropagation(); step(-1); }}><ChevronLeft size={22} /></button>
-      <button type="button" className={styles.viewerNav} data-side="end" aria-label={t("Next photo")} onClick={(event) => { event.stopPropagation(); step(1); }}><ChevronRight size={22} /></button>
-    </> : null}
-  </div>;
+      <a className="wd-button" data-variant="secondary" data-size="compact" href={assetUrl(photo, false)} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" size={14} data-directional="true" />{t("Open original")}</a>
+    </div>}>
+    {/* eslint-disable-next-line @next/next/no-img-element -- full-size original, sized by the dialog */}
+    <img alt={photo.name} className={styles.viewerImage} src={assetUrl(photo, false)} />
+  </ControlledModalDialog>;
 }
 
 function AddPinDialog({ kind, onClose, onAdd }: { kind: "link" | "note"; onClose: () => void; onAdd: (draft: Partial<ScopeEntry>) => Promise<void> }) {

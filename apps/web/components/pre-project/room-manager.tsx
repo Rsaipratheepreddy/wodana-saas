@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, DoorOpen, Pencil, Plus } from "lucide-react";
-import { Badge, Button, InlineNotice, SearchInput, SelectField, TextInput } from "@/design-system";
+import { Badge, Button, EmptyState, InlineNotice, SearchInput, SelectField, Skeleton, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { caseRequest, saveCaseRoom, type CaseContent, type CaseRoom } from "@/lib/pre-project/content";
@@ -98,16 +98,16 @@ export function RoomManager({ data, onClose, onSave }: { data: CaseContent; onCl
             <Button size="compact" type="submit" variant="primary" isLoading={busy === room.id}>{t("Save")}</Button>
           </form> : <>
             <span className={styles.name}>{room.name}</span>
-            {room.catalogRecordId ? <Badge tone="neutral">{t("Catalog")}</Badge> : <Badge tone="info">{t("Custom")}</Badge>}
+            {room.catalogRecordId ? <Badge hue={6}>{t("Catalog")}</Badge> : <Badge hue={2}>{t("Custom")}</Badge>}
             {data.canEdit ? <Button aria-label={t("Rename {name}", { name: room.name })} size="compact" variant="quiet" onPress={() => { setError(""); setRenaming({ room, name: room.name }); }}><Pencil aria-hidden="true" size={13} /></Button> : null}
           </>}
-        </li>)}</ul> : <p className={styles.muted}>{t("No rooms yet.")}</p>}
+        </li>)}</ul> : <EmptyState illustration={null} title={t("No rooms yet.")} />}
       </section>
 
       {data.canEdit ? <section aria-label={t("Add rooms")}>
         <h3 className={styles.heading}>{t("Add rooms")}</h3>
         <SearchInput label={t("Find or type a room")} placeholder={t("Find or type a room")} value={search} onChange={setSearch} />
-        {catalog === null ? <p className={styles.muted}>{t("Loading your catalog rooms…")}</p>
+        {catalog === null ? <Skeleton lines={2} />
           : catalogRooms.length ? <>
             {suggestions.length ? <ul className={styles.chips} aria-label={t("Rooms from your catalog")}>
               {suggestions.map((room) => <li key={room.id}><button type="button" className={styles.chip} disabled={Boolean(busy)} title={room.catalogs.join(", ")} onClick={() => void addCatalog(room)}>
@@ -167,7 +167,7 @@ export function RoomPicker({ data, exclude = [], onClose, onPick, title }: { dat
       </section> : null}
       {data.canEdit ? <section aria-label={t("Rooms from your catalog")}>
         <h3 className={styles.heading}>{t("From your catalog")}</h3>
-        {catalog === null ? <p className={styles.muted}>{t("Loading your catalog rooms…")}</p>
+        {catalog === null ? <Skeleton lines={2} />
           : fromCatalog.length ? <ul className={styles.chips}>{fromCatalog.map((room) => chip(room.id, room.name, () => void create({ id: crypto.randomUUID(), version: 0, name: room.name, catalogRecordId: room.id }, room.id), room.catalogs.join(", ")))}</ul>
           : catalog.length ? <p className={styles.muted}>{query ? t("No catalog room matches.") : t("Every catalog room is already in this project.")}</p>
           : <>

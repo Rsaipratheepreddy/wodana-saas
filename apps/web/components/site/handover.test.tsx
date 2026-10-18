@@ -24,7 +24,8 @@ describe("handover", () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it("gathers documents in a draft pack and issues it", async () => {
-    const fetcher = mount(() => state());
+    const fetcher = mount(() => state({ checklists: { k1: { purpose: "handover", version: 1, answeredAt: null, answeredBy: null, answers: { meter_readings: null },
+      questions: [{ key: "meter_readings", label: "Meter readings at handover", kind: "text", required: true }] } } }));
     handover();
     const packs = await screen.findByRole("list", { name: "Handover packs" });
     expect(within(packs).getByText("R1 · Kitchen handover")).toBeInTheDocument();
@@ -33,7 +34,12 @@ describe("handover", () => {
     await userEvent.upload(within(packs).getByLabelText("Add a document"), new File(["%PDF"], "oven.pdf", { type: "application/pdf" }));
     await waitFor(() => expect(uploads(fetcher)).toEqual([expect.stringMatching(/\/handover\/k1\/documents\/[0-9a-f-]+\?workspaceId=w&kind=warranty&title=Oven\+manual$/)]));
     await userEvent.click(within(packs).getByRole("button", { name: "Issue" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "issue", packId: "k1", version: 2 }));
+    // §0.3 P3: issuing opens a dialog with the firm's handover checklist; a required question must be answered first.
+    const dialog = await screen.findByRole("dialog", { name: "Issue" });
+    expect(within(dialog).getByRole("button", { name: "Issue" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Meter readings/ }), "E 10432");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Issue" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "issue", packId: "k1", version: 2, answers: { meter_readings: "E 10432" } }));
   });
 
   it("issues a pack with stages or snags still open only after listing them and asking why", async () => {
@@ -48,11 +54,13 @@ describe("handover", () => {
     expect(posts(fetcher).some((body) => body.action === "issue")).toBe(false);
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Why hand over with work still open" }), "Client moves in Monday; snag fixed under warranty");
     await userEvent.click(within(dialog).getByRole("button", { name: "Issue anyway" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "issue", packId: "k1", version: 2, confirmOpen: true, openReason: "Client moves in Monday; snag fixed under warranty" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "issue", packId: "k1", version: 2, answers: {}, confirmOpen: true,
+      openReason: "Client moves in Monday; snag fixed under warranty" }));
   });
 
   it("records the client's acceptance with what's still outstanding, or a refusal with why", async () => {
-    const fetcher = mount(() => state({ packs: [pack({ status: "issued", issuedAt: "2026-09-26T10:00:00Z", contentHash: "b".repeat(64) })] }));
+    const signed = { id: "11111111-1111-4111-8111-111111111111", name: "handover-form.pdf", mimeType: "application/pdf", hasPreview: false, uploadedAt: "2026-09-27T12:30:00Z" };
+    const fetcher = mount((url) => (url.startsWith("/api/workspace/evidence") ? signed : state({ packs: [pack({ status: "issued", issuedAt: "2026-09-26T10:00:00Z", contentHash: "b".repeat(64) })] })));
     handover();
     await userEvent.click(await screen.findByRole("button", { name: "Record acceptance" }));
     let dialog = await screen.findByRole("dialog", { name: "Record acceptance" });
@@ -60,14 +68,22 @@ describe("handover", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Who decided for the client/ }), "Maya Rahman");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add an item" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Outstanding item" }), "Touch-up paint");
+    // A signed form is attached as the client's decision.
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.upload(within(dialog).getByLabelText("Add a photo or PDF"), new File(["%PDF-"], "handover-form.pdf", { type: "application/pdf" }));
+    await within(dialog).findByRole("link", { name: "Open handover-form.pdf" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "accept", packId: "k1", version: 2, decidedByName: "Maya Rahman", method: "signed_document", outstanding: ["Touch-up paint"] }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "accept", packId: "k1", version: 2, decidedByName: "Maya Rahman", method: "signed_document", outstanding: ["Touch-up paint"],
+      evidenceFileIds: [signed.id] }));
 
     await userEvent.click(screen.getByRole("button", { name: "Record refusal" }));
     dialog = await screen.findByRole("dialog", { name: "Record refusal" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Who decided for the client/ }), "Maya Rahman");
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why the client refused it/ }), "Doors misaligned");
+    // Told in person: no file is needed.
+    await userEvent.click(within(dialog).getByRole("button", { name: /How/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "In person" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "refuse", reason: "Doors misaligned" }));
   });

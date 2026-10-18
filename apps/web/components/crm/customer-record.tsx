@@ -106,7 +106,7 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
         <ActivityPanel title={t("Activity")} workspaceId={workspaceId} partyId={partyId} activities={activities} onChanged={saved} />
         <SideSection title={t("Timeline")}>
           {timelineAccess && (!timelineAccess.communications || !timelineAccess.activities) ? <Callout title={t("Timeline access is limited")} tone="warning">{t("Some communication or activity records are hidden by your role.")}</Callout> : null}
-          {timeline.length ? <ActivityFeed items={timeline} /> : <p className={styles.empty}>{t("No client communication yet")}</p>}
+          {timeline.length ? <ActivityFeed items={timeline} /> : <EmptyState illustration={null} title={t("No client communication yet")} />}
         </SideSection>
         <SideSection title={t("Conversations")}><RelatedRecords workspaceId={workspaceId} partyId={partyId} collection="conversations" /></SideSection>
       </>}
@@ -138,7 +138,7 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
         </RecordPanel> },
         { id: "opportunities", label: t("Opportunities & projects"), panel: <RecordPanel>
           <SideSection title={t("Opportunities")}><RelatedRecords workspaceId={workspaceId} partyId={partyId} collection="opportunities" /></SideSection>
-          <SideSection title={t("Enquiries")}><ResourceState {...enquiries} retry={enquiries.refresh} />{rows(enquiries.data).map((enquiry) => <div className={styles.row} key={enquiry.id}><div><strong>{String(enquiry.title)}</strong><small>{label(enquiry.leadStatus ?? enquiry.status)} · {dateText(enquiry.receivedAt)}</small></div>{enquiry.leadId ? <a className={styles.link} href={`/workspace/crm/leads?lead=${enquiry.leadId}`}>{t("Open enquiry")}</a> : null}</div>)}{enquiries.data && !rows(enquiries.data).length ? <p className={styles.empty}>{t("No enquiries yet")}</p> : null}</SideSection>
+          <SideSection title={t("Enquiries")}><ResourceState {...enquiries} retry={enquiries.refresh} />{rows(enquiries.data).map((enquiry) => <div className={styles.row} key={enquiry.id}><div><strong>{String(enquiry.title)}</strong><small>{label(enquiry.leadStatus ?? enquiry.status)} · {dateText(enquiry.receivedAt)}</small></div>{enquiry.leadId ? <a className={styles.link} href={`/workspace/crm/leads?lead=${enquiry.leadId}`}>{t("Open enquiry")}</a> : null}</div>)}{enquiries.data && !rows(enquiries.data).length ? <EmptyState illustration={null} title={t("No enquiries yet")} /> : null}</SideSection>
         </RecordPanel> },
         { id: "details", label: t("Details"), panel: <RecordPanel>
           <SideSection title={t("Contact")} action={<Button size="compact" variant="quiet" onPress={() => setAction({ title: t("Add contact"), path: `parties/${partyId}/contact-points`, fields: [{ key: "type", label: t("Type"), options: choice(["email", "phone"]), required: true }, { key: "value", label: t("Contact details"), required: true }, { key: "isPrimary", label: t("Primary"), type: "checkbox" }] })}><Plus aria-hidden="true" size={14} />{t("Add contact")}</Button>}>

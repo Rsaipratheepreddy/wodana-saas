@@ -81,6 +81,16 @@ describe("the shared document theme: every server-made document (render)", () =>
     expect(generated.at(-1)).toContain("AED 91,912.10");
   });
 
+  it("§0.3 P4: names the snapshot's version, the code the portal shows and the client's decision records", async () => {
+    const lines = [{ id: "l1", title: "Wardrobe", quantity: "1", unit: "nos", rate: "1000", unitCost: "0", description: "" }];
+    const pricing = priceQuote(lines.map((line) => ({ ...line, areaKey: "general", tradeKey: "none", taxRate: "5" })) as never, [], { currencyDecimals: 2, pricesIncludeTax: false, rounding: "line" });
+    const page = { brand: { name: "Studio", accent: null }, title: "Villa", reference: "Q-0100", revision: 2, issuedOn: "2026-10-12", validUntil: null,
+      client: { name: "Aisha Rahman", project: "Villa", address: null }, currency: "AED", decimals: 2, taxLabel: "VAT", locale: "en-AE",
+      presentation: presentForClient(lines as never, pricing, "all_inclusive", 2), groups: [{ name: "General", lineIds: ["l1"] }], paymentTerms: [] };
+    expect((await renderProposal([], { ...page, quoteHash: "3fa1a4d4e5b6c7d8" })).outline).toMatch(/3fa1a4d4\nVersion/);
+    expect((await renderProposal([], page)).outline).not.toMatch(/Version/);
+  });
+
   it("matches the change request's render", async () => {
     const samples = await renderSampleDocuments();
     const change = samples.find((sample) => sample.name.startsWith("SM-CR-"))!;

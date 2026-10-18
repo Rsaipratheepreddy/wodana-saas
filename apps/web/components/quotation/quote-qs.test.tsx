@@ -28,7 +28,7 @@ describe("the QS hand-off in the quote header (PLM-082/084)", () => {
     expect(screen.getByRole("button", { name: "Send to QS" })).toBeInTheDocument();
     rerender(<DesignSystemProvider><QsActions workspaceId="w" caseId="c" quoteId="q" qs={{ ...base, required: false, stage: "not_required", reason: { code: "design_fee" } }}
       onChanged={vi.fn()} onError={vi.fn()} /></DesignSystemProvider>);
-    expect(screen.getByText("QS review: not needed for a Design Fee proposal")).toBeInTheDocument();
+    expect(screen.getByTitle("QS review: not needed for a Design Fee proposal")).toHaveTextContent("No QS review");
     expect(screen.queryByRole("button", { name: "Send to QS" })).not.toBeInTheDocument();
     rerender(<DesignSystemProvider><QsActions workspaceId="w" caseId="c" quoteId="q" qs={{ ...base, required: false, stage: "not_required", reason: { code: "off" } }}
       onChanged={vi.fn()} onError={vi.fn()} /></DesignSystemProvider>);

@@ -17,7 +17,7 @@ import { LogisticsSettingsSections } from "../logistics/vehicles-settings";
 import { useInspectionLabels, useProductionStepLabel } from "./factory-labels";
 import styles from "./factory.module.css";
 
-type Flag = "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck" | "requireTechnicalHandover" | "requireFactoryRequirements" | "requireQs";
+type Flag = "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck" | "requireTechnicalHandover" | "requireFactoryRequirements" | "requireQs" | "requireSuppliesSignoff";
 type Draft = { id: string; name: string; hours: string; active: boolean; isNew: boolean; rate: string; rateFrom: string | null };
 
 /** A workcenter's rates, oldest first; the one in force on a day is set from the latest date on or before it. */
@@ -67,6 +67,7 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
       {row("requireDrawing", t("Drawing approved"), t("Someone records which drawing was approved."))}
       {row("requirePayment", t("Payment before production verified"), t("The payments the client agreed to make before production are verified."))}
       {row("requireMaterials", t("Materials in"), t("Everything the package needs has arrived or was given from stock."))}
+      {row("requireSuppliesSignoff", t("Supplies signed off"), t("Procurement signed off the item's supplies after its material list, signed drawing and price check."))}
     </SettingsSection>
     {/* PLM-174: the path E checks; they hold only on bespoke (made-to-order) jobs. */}
     <SettingsSection id="bespoke" title={t("Before a work order on a bespoke job is released")}>
@@ -164,7 +165,8 @@ function WorkcenterDialog({ draft, currency, current, onClose, onSave }: { draft
         try { await onSave(value); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
       }}>
       <TextInput label={t("Name")} isRequired value={value.name} onChange={(name) => setValue({ ...value, name })} />
-      <TextInput label={t("Hours a day")} inputMode="decimal" value={value.hours} onChange={(hours) => setValue({ ...value, hours: hours.replace(/[^\d.]/g, "") })} />
+      <NumericInput label={t("Hours a day")} suffix={t("h")} minValue={0} formatOptions={{ maximumFractionDigits: 2 }} value={value.hours === "" ? Number.NaN : Number(value.hours)}
+        onChange={(hours) => setValue({ ...value, hours: Number.isFinite(hours) ? String(hours) : "" })} />
       <MoneyField label={t("Hourly rate")} currency={currency} value={value.rate} onChange={(rate) => setValue({ ...value, rate })} />
       {changed ? <DateField label={t("From")} isRequired value={value.rateFrom ? parseDate(value.rateFrom) : null} onChange={(day) => setValue({ ...value, rateFrom: day ? day.toString() : null })} /> : null}
       {!draft.isNew ? <Switch isSelected={value.active} onChange={(active) => setValue({ ...value, active })}>{t("In use")}</Switch> : null}
@@ -249,7 +251,8 @@ function ProductionStepsDialog({ steps, weeks, onClose, onSave }: { steps: Produ
       <TextInput label={t("Name it")} placeholder={standard({ kind: row.kind, label: "" })} maxLength={40} isDisabled={!row.on} value={row.label}
         onChange={(label) => setRows(rows.map((item, at) => (at === index ? { ...item, label } : item)))} />
     </div>)}
-    <TextInput label={t("Production target in weeks")} inputMode="numeric" value={target} onChange={(value) => setTarget(value.replace(/[^\d]/g, ""))}
+    <NumericInput label={t("Production target in weeks")} minValue={0} formatOptions={{ maximumFractionDigits: 0 }} value={target === "" ? Number.NaN : Number(target)}
+      onChange={(value) => setTarget(Number.isFinite(value) ? String(value) : "")}
       isInvalid={!weeksValid} errorMessage={weeksValid ? undefined : t("From 1 to 52 weeks.")} />
   </FormDialog>;
 }

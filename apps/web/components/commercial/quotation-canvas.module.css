@@ -45,26 +45,6 @@
 .inspector > header strong { font-size: .75rem; font-weight: 600; }
 .pagesHeader { justify-content:center; padding-inline:.4rem; }
 .pagesHeader strong { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); }
-.pagesHeader button,
-.inspector > header button,
-.toolbar button,
-.inspector button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: .4rem;
-  border: 0;
-  border-radius: 6px;
-  padding: .48rem .62rem;
-  background: transparent;
-  color: var(--wd-color-text-secondary);
-  font: inherit;
-  font-size: .72rem;
-}
-.pagesHeader button:hover,
-.inspector > header button:hover,
-.toolbar button:hover,
-.inspector button:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
 .pageList {
   display: grid;
   align-content: start;
@@ -108,13 +88,8 @@
 .stage { display: flex; min-inline-size: 0; min-block-size: 0; flex-direction: column; }
 .toolbar { position: relative; background: var(--wd-color-surface); }
 .toolbar > div { display: flex; align-items: center; gap: .25rem; }
-.toolbar button { color: var(--wd-color-text); }
 .toolbar,
 .pagesHeader { min-block-size: 40px; padding-block: .4rem; }
-.toolbar .addItem,
-.inspector .editItems { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
-.toolbar .addItem:hover,
-.inspector .editItems:hover { background: var(--wd-color-action-primary-hover, var(--wd-color-action-primary)); color: var(--wd-color-action-on-primary); }
 .pageTools { position: relative; }
 .pagePopover {
   position: absolute;
@@ -184,14 +159,7 @@
   position: absolute;
   inset-block-start: -14px;
   inset-inline-end: -14px;
-  inline-size: 28px;
-  block-size: 28px;
-  display: grid;
-  place-items: center;
-  border: 1px solid #000;
-  border-radius: 50%;
-  background: #fff;
-  color: #000;
+  background: var(--wd-color-surface);
 }
 .colorTool { display: inline-flex; align-items: center; gap: .45rem; color: var(--wd-color-text-secondary); font-size: .72rem; }
 .colorTool input { inline-size: 28px; block-size: 26px; border: 0; padding: 0; background: none; }
@@ -231,13 +199,10 @@
 }
 .inspectorBody { display: grid; gap: 1rem; padding: 1rem; }
 .inspectorBody label { display: grid; gap: .4rem; color: var(--wd-color-text-secondary); font-size: .7rem; }
-.inspectorBody :is(input, textarea) { inline-size: 100%; border: 1px solid var(--wd-color-border-control); border-radius: 6px; padding: .6rem; background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; }
-.inspectorBody textarea { min-block-size: 105px; resize: vertical; }
-.inspectorBody input[type="color"] { block-size: 40px; padding: .2rem; }
+.inspectorBody input[type="color"] { inline-size: 100%; block-size: 40px; padding: .2rem; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); }
 .inspectorBody p { margin: 0; color: var(--wd-color-text-secondary); font-size: .72rem; line-height: 1.6; }
 .align { display: grid; grid-template-columns: repeat(3, 1fr); gap: .3rem; }
-.align button { border: 1px solid var(--wd-color-border-control); }
-.align button[aria-pressed="true"] { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.align [aria-pressed="true"] { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
 .deleteElement { margin: 0 1rem; }
 .previewStack { display: grid; gap: 1.25rem; justify-content: center; overflow: auto; background: var(--wd-color-workspace-canvas); padding: 1.25rem; }
 .staticPage {

@@ -27,7 +27,6 @@
 .priority { background:var(--wd-color-surface-muted); color:var(--wd-color-text-secondary); }
 .priority[data-priority=high] { background:var(--wd-color-warning-subtle); color:var(--wd-color-warning); }
 .priority[data-priority=urgent] { background:var(--wd-color-danger-subtle); color:var(--wd-color-danger); }
-.chipRow :global(.wd-badge) { min-block-size:20px; padding-inline:var(--wd-space-1-5); font-size:var(--wd-text-2xs); }
 .chipRow :global(.wd-badge[data-tone=neutral]) { background:var(--wd-color-surface-muted); color:var(--wd-color-text-secondary); }
 .chipRow :global(.wd-badge[data-tone=info]) { background:var(--wd-color-info-subtle); color:var(--wd-color-info); }
 .chipRow :global(.wd-badge[data-tone=warning]) { background:var(--wd-color-warning-subtle); color:var(--wd-color-warning); }
@@ -98,14 +97,16 @@
 .layoutSwitch { margin-inline-start:auto; }
 .toolbar > :global(.wd-search) { flex:0 1 260px; max-inline-size:320px; }
 .page > .toolbar > :global(.wd-search-field) { flex:1 1 170px; min-inline-size:130px; max-inline-size:260px; }
-.toolbar > :global(.wd-field) { gap:0; flex:0 0 142px; }
+.toolbar > :global(.wd-field) { flex:0 0 142px; }
 .toolbar > :global(.wd-field) > :global(.wd-field-label) { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); }
-.toolbar :is(:global(.wd-search-field),:global(.wd-select-button),:global(.wd-button)) { min-block-size:34px; block-size:34px; border-radius:var(--wd-radius-sm); font-size:var(--wd-text-xs); }
-.toolbar :is(:global(.wd-search-field),:global(.wd-select-button)) { border-radius:999px; background:var(--wd-color-surface); }
+.toolbar :is(:global(.wd-search-field),:global(.wd-select-button)) { background:var(--wd-color-surface); }
 .toolbar .filterMenu > summary { border-radius:999px; background:var(--wd-color-surface); }
 @media(max-width:640px){ .filterPanel { position:fixed; inset-inline:12px; inset-block-start:auto; inset-block-end:12px; inline-size:auto; grid-template-columns:1fr; max-block-size:70vh; overflow:auto; } .filterPanel .group { grid-column:auto; } .layoutSwitch { margin-inline-start:0; } .toolbarTrailing { margin-inline-start:0; flex-wrap:wrap; } }
-@media(min-width:641px) and (max-width:1100px){ .heading h2 { font-size:var(--wd-text-2xs); gap:var(--wd-space-0-5); } .heading i { flex-shrink:0; inline-size:6px; block-size:6px; } .heading { gap:var(--wd-space-0-5); padding-inline:var(--wd-space-1); } .heading > span { min-inline-size:18px; min-block-size:18px; padding-inline:var(--wd-space-0-5); font-size:var(--wd-text-2xs); } .column[data-empty=true] .heading > span { display:none; } .card { gap:var(--wd-space-1); padding:var(--wd-space-2); } .cardBody { gap:var(--wd-space-1); } .card strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; font-size:var(--wd-text-xs); line-height:1.3; } .chipRow { gap:var(--wd-space-0-5); } .chipRow :global(.wd-badge),.priority,.typeChip { min-block-size:18px; padding-inline:var(--wd-space-1); font-size:var(--wd-text-2xs); } .projectIdentity > b { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; } .locationChip,.resourceChip { padding:var(--wd-space-0-5) var(--wd-space-1); font-size:var(--wd-text-2xs); } .cardFooter { display:flex; flex-wrap:wrap; justify-content:space-between; gap:var(--wd-space-1); } .projectFooter { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--wd-space-0-5); } .projectFooter .due > span { display:none; } .due { font-size:var(--wd-text-2xs); } }
+@media(min-width:641px) and (max-width:1100px){ .heading h2 { font-size:var(--wd-text-2xs); gap:var(--wd-space-0-5); } .heading i { flex-shrink:0; inline-size:6px; block-size:6px; } .heading { gap:var(--wd-space-0-5); padding-inline:var(--wd-space-1); } .heading > span { min-inline-size:18px; min-block-size:18px; padding-inline:var(--wd-space-0-5); font-size:var(--wd-text-2xs); } .column[data-empty=true] .heading > span { display:none; } .card { gap:var(--wd-space-1); padding:var(--wd-space-2); } .cardBody { gap:var(--wd-space-1); } .card strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; font-size:var(--wd-text-xs); line-height:1.3; } .chipRow { gap:var(--wd-space-0-5); } .projectIdentity > b { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; } .locationChip,.resourceChip { padding:var(--wd-space-0-5) var(--wd-space-1); font-size:var(--wd-text-2xs); } .cardFooter { display:flex; flex-wrap:wrap; justify-content:space-between; gap:var(--wd-space-1); } .projectFooter { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--wd-space-0-5); } .projectFooter .due > span { display:none; } .due { font-size:var(--wd-text-2xs); } }
 
 .waitingFor { font-size:var(--wd-text-xs); line-height:1.35; color:var(--wd-color-warning); }
 .waitingFor[data-blocked] { color:var(--wd-color-danger); }
 .due[data-overdue] { color:var(--wd-color-danger); font-weight:600; }
+
+/* The column is tinted; its cards are the plain surface so each one stands apart. */
+.column :global(.wd-card) { background:var(--wd-color-surface); }

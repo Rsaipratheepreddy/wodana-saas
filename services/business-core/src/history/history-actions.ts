@@ -22,6 +22,10 @@ const MESSAGES = new Set<HistoryVerb>(["commented", "messaged", "logged_contact"
 const RULES: Array<[RegExp, HistoryVerb]> = [
   // PLM-155: a timeline question is asked (raised) and answered, not "completed".
   [/^crm\.opportunity\.timeline_check_(completed|answered)$/, "answered"],
+  // §0.3 P0: the intro's outcome is decided (going ahead, needs time, lost).
+  [/^crm\.opportunity\.qualification_outcome$/, "decided"],
+  // §0.3: a message in the job's team thread.
+  [/^job\.message_posted$/, "messaged"],
   [/^commercial\.(issue|resend)$/, "sent"],
   [/^commercial\.execute_agreement$/, "signed"],
   [/^commercial\.(submit_owner_review|submit_material_approval)$/, "submitted"],

@@ -1,14 +1,15 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { FormDialog, FormSection, InlineNotice, MoneyField, SelectField, TextInput } from "@/design-system";
+import { FormDialog, FormSection, InlineNotice, MoneyField, QuantityInput, SelectField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { StockRow, StockState } from "@/lib/inventory/types";
 import { quantityText } from "../purchasing/order-labels";
+import { EvidenceField } from "@/components/evidence/evidence-field";
+import type { EvidenceFile } from "@/lib/evidence/evidence";
 
 export type ChangeMode = "issue" | "allocate" | "release" | "count" | "return" | "add";
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const FREE = "free";
 const NEW_ITEM = "new";
 
@@ -31,6 +32,9 @@ export function StockChangeDialog({ api, state, mode, row, itemId: initialItemId
   const [unit, setUnit] = useState("");
   const [locationId, setLocationId] = useState<string | null>(row?.locationId ?? state.locations.find((location) => location.kind === "warehouse")?.id ?? state.locations[0]?.id ?? null);
   const [cost, setCost] = useState("");
+  // §0.3 P0: a corrected count comes with the count sheet or a photo of the shelf, read by whoever approves it.
+  const [files, setFiles] = useState<EvidenceFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   // Every item kept, also those with nothing on hand yet, so adding stock never makes a second one.
   const items = useMemo(() => [...new Map([...(state.items ?? []), ...state.rows].map((item) => [item.itemId, item])).values()].sort((a, b) => a.itemName.localeCompare(b.itemName)),
     [state.items, state.rows]);
@@ -40,7 +44,7 @@ export function StockChangeDialog({ api, state, mode, row, itemId: initialItemId
     return: t("Take back from a project"), add: t("Add stock") }[mode];
   const over = row && ["issue", "allocate", "release"].includes(mode) && Number(quantity) > Number(row.onHand);
   const differs = mode === "count" && row && Number(quantity || 0) !== Number(row.onHand);
-  const ready = Boolean(locationId) && quantity !== "" && (mode === "count" || Number(quantity) > 0) && !over
+  const ready = Boolean(locationId) && quantity !== "" && (mode === "count" || Number(quantity) > 0) && !over && !uploading && (!differs || files.length > 0)
     && (mode !== "issue" || row?.projectId || projectId) && (mode !== "allocate" || projectId) && (mode !== "return" || projectId)
     && (!differs || reason.trim()) && (mode !== "add" || ((itemId !== NEW_ITEM || name.trim()) && reason.trim())) && (mode !== "return" || reason.trim());
 
@@ -51,7 +55,7 @@ export function StockChangeDialog({ api, state, mode, row, itemId: initialItemId
     {
       const base = { id, action: mode, locationId, reason: reason.trim() };
       const input = mode === "add" ? { ...base, ...(itemId === NEW_ITEM ? { name: name.trim(), unit: unit.trim() } : { itemId }), projectId, quantity, unitCost: cost || null }
-        : mode === "count" ? { ...base, itemId: row!.itemId, projectId: row!.projectId, counted: quantity }
+        : mode === "count" ? { ...base, itemId: row!.itemId, projectId: row!.projectId, counted: quantity, evidenceFileIds: files.map((file) => file.id) }
         : mode === "return" ? { ...base, itemId: row!.itemId, projectId: null, forProjectId: projectId, quantity }
         : { ...base, itemId: row!.itemId, projectId: row!.projectId, quantity, ...(mode === "issue" || mode === "allocate" ? { forProjectId: row!.projectId ?? projectId } : {}) };
       onDone(await api.change(input));
@@ -77,12 +81,14 @@ export function StockChangeDialog({ api, state, mode, row, itemId: initialItemId
         </> : null}
         {(mode === "issue" && !row?.projectId) || mode === "allocate" || mode === "return" ? <SelectField label={mode === "return" ? t("Back from") : t("Project")} isRequired
           selectedKey={projectId} onSelectionChange={(key) => setProjectId(key === null ? null : String(key))} items={projectItems} /> : null}
-        <TextInput label={mode === "count" ? t("Counted") : t("Quantity")} isRequired inputMode="decimal" suffix={unitOf || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
+        <QuantityInput label={mode === "count" ? t("Counted") : t("Quantity")} isRequired unit={unitOf} minValue={0} formatOptions={{ maximumFractionDigits: 4 }}
+          value={quantity === "" ? Number.NaN : Number(quantity)} onChange={(next) => setQuantity(Number.isFinite(next) ? String(next) : "")} />
         {mode === "add" ? <MoneyField label={t("Cost each")} value={cost} onChange={setCost} /> : null}
         {over ? <InlineNotice tone="error" message={t("Only {quantity} there.", { quantity: `${quantityText(row!.onHand)} ${row!.unit}`.trim() })} /> : null}
         {mode === "add" || mode === "count" || mode === "return" || mode === "issue" ? <TextInput
           label={mode === "add" ? t("Where it comes from") : mode === "count" ? t("Why it's different") : mode === "return" ? t("Why it's coming back") : t("Note")}
           isRequired={mode === "add" || mode === "return" || Boolean(differs)} maxLength={500} value={reason} onChange={setReason} /> : null}
+        {differs ? <EvidenceField workspaceId={api.workspaceId} kind="stock_correction" isRequired label={t("Count sheet or photo")} value={files} onChange={setFiles} onBusy={setUploading} /> : null}
       </>)}
   </FormDialog>;
 }

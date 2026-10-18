@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { businessApiUrl } from "@/lib/auth/server";
 import { PORTAL_SLUG, portalCookie } from "@/lib/client-portal/server";
 
-const KINDS = ["design", "photo", "handover", "agreement", "asset", "change", "drawing", "minutes"];
+const KINDS = ["design", "photo", "handover", "agreement", "asset", "change", "drawing", "item_drawing", "minutes"];
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A file shared with the signed-in client, streamed privately: never cached, never scriptable. */

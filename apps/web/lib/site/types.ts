@@ -115,9 +115,13 @@ export type HandoverPack = {
   documents: Array<{ id: string; kind: HandoverKind; title: string; name: string; size: number; sha256: string }>;
   /** Money still due when it was accepted, and why it was accepted anyway (staff), in the project's currency. */
   balanceDue?: string | null; balanceCurrency?: string | null; balanceReason?: string | null;
+  /** The file the client's decision came in, when staff recorded it. */
+  decisionFiles?: Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>;
 };
 export type HandoverState = {
   packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean; open: { stages: string[]; snags: string[] };
+  /** §0.3 P3: each pack's handover checklist (Setup → Questionnaires) and its answers. */
+  checklists?: Record<string, import("@/lib/setup/questionnaires").QuestionnaireAnswers>;
   /** What the client still owes (agreed less verified receipts) and the milestones not invoiced yet. */
   balance?: { currency: string; due: string; toInvoice: Array<{ id: string; title: string; amount: string; dueDate: string | null }> };
   /** Whether this person may accept a handover while money is still due. */
@@ -133,6 +137,8 @@ export type WarrantyClaim = {
   lineTitle: string | null; status: ClaimStatus; decisionNote: string; decidedByName: string | null; snagId: string | null; snagNumber: number | null; snagStatus: string | null; version: number;
   /** A chargeable claim's variation: its number and state, and the label it was applied as (VO-n). */
   variationId?: string | null; variationNumber?: number | null; variationStatus?: string | null; variationApplied?: string | null;
+  /** Photos of the problem, recorded with the claim. */
+  files?: Array<{ id: string; name: string; mimeType: string; hasPreview: boolean; uploadedAt: string }>;
 };
 export type WarrantyState = {
   items: WarrantyItem[]; claims: WarrantyClaim[]; lines: Array<{ id: string; title: string }>; areas: Array<{ id: string; name: string }>; today: string; canRecord: boolean; canManage: boolean;

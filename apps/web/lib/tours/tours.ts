@@ -205,9 +205,9 @@ export const tours: Tour[] = [
       {
         id: "deal",
         actor: "finance",
-        route: "/workspace/pre-projects/cases/{case}/execution-release",
+        route: "/workspace/pre-projects/cases/{case}/deal-file",
         // The deal's summary (accepted quote, internal approval); before the client's yes, the Internal approval tab.
-        target: "deal-approvals|deal-approvals-owner",
+        target: "deal-approvals",
         action: "point",
         woddy: "thinking",
         narration: "Back in the office. When the client accepts, Sales submits the deal with the signed agreement and the payment proof. Finance verifies the payment, then an owner approves, and nobody can approve their own submission.",

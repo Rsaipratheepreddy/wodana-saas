@@ -97,3 +97,26 @@ export const approvalsApi = (workspaceId: string) => ({
   decide: (row: Pick<ApprovalRow, "kind" | "id">, decision: "approve" | "return" | "reject", note = "") =>
     request<WaitingForYou>(path(workspaceId), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: row.kind, id: row.id, decision, note }) }),
 });
+
+/**
+ * A row's files as links the review opens, each through its module's own file route (a project file, a client's
+ * upload, a site photo, a petty-cash receipt, a supplier bill, an opportunity's proof, a request's or change's file,
+ * or a file added to the decision).
+ */
+export function approvalFileLinks(workspaceId: string, row: ApprovalRow) {
+  const query = (preview: boolean) => new URLSearchParams({ workspaceId, ...(preview ? { preview: "1" } : {}) }).toString();
+  const url = (file: NonNullable<ApprovalRow["files"]>[number], preview: boolean) => {
+    switch (file.store) {
+      case "case_asset": return `/api/workspace/pre-projects/${file.owner}/assets/${file.id}?${query(preview)}`;
+      case "client_file": return `/api/client-portal-admin/cases/${file.owner}/files/${file.id}?${query(preview)}`;
+      case "site_photo": return `/api/site/projects/${file.owner}/photos/${file.id}?${query(preview)}`;
+      case "petty_cash_receipt": return `/api/petty-cash/claims/${file.id}/receipt?${query(false)}`;
+      case "bill": return `/api/payables/bills/${file.id}/file?${query(false)}`;
+      case "opportunity_proof": return `/api/workspace/crm/opportunity-proofs/${file.owner}/${file.id}?${query(preview)}`;
+      case "request_file": return `/api/finance-requests/requests/${file.owner}/files/${file.id}?${query(false)}`;
+      case "change_file": return `/api/project-changes/${file.owner}/files/${file.id}?${query(preview)}`;
+      case "evidence": return `/api/workspace/evidence/${file.id}?${query(preview)}`;
+    }
+  };
+  return row.files?.map((file) => ({ id: `${file.store}:${file.id}`, name: file.name, href: url(file, false), previewHref: file.preview ? url(file, true) : null }));
+}

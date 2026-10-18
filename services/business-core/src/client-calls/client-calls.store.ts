@@ -107,7 +107,7 @@ function formatWhen(at: Date, clock: Clock) {
  * set there; the Account Manager hears it and can change it or turn it off on the case. Idempotent: a job that already
  * has its updates keeps them.
  */
-export async function startClientCalls(db: Db, workspaceId: string, caseId: string, source: "design_approval" | "estimate_accepted" | "manual", userId: string | null,
+export async function startClientCalls(db: Db, workspaceId: string, caseId: string, source: "design_start" | "design_approval" | "estimate_accepted" | "manual", userId: string | null,
   chosenFrequency?: Exclude<Frequency, "off">, chosenMode?: Mode) {
   const facts = await caseFacts(db, workspaceId, caseId);
   if (!facts) return null;

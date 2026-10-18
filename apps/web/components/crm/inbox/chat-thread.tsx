@@ -4,11 +4,12 @@ import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, FolderInput, ImageIcon, Info, Mail, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
-import { Avatar, Badge, Button, FormDialog, IconButton, IconMenuButton, InspectorSheet, MenuButton, TextAreaField, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { Avatar, Badge, Button, EmptyState, ErrorState, FormDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, Spinner, SplitButton, TextAreaField, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { CrmRequestError, crmRequest, label, type RecordData } from "@/lib/crm/client";
 import { attachmentUrl, CLIENT_EVENT_LABELS, CLOSING_KINDS, CLOSING_LABELS, channelName, eventLine, fileSizeText, jobHref, jobName, renderClosingText, snoozePresets, type ChatAttachment, type ChatClosing, type ChatContext, type ChatEmail, type ChatEvent, type ClosingKind, type ClosingSettings, type EmailReplying, type ConversationJob, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey } from "@/lib/i18n/keys";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmDateTimeField } from "../crm-date-time-field";
 import { ChatContextPanel } from "./chat-context";
@@ -31,9 +32,11 @@ export type ThreadLookups = { labels: InboxLabel[]; owners: InboxOwner[]; quickR
 
 /**
  * One chat: who owns it, its state (Open, Unresolved, Snoozed, Resolved or Spam) and labels in the header, the
- * messages with the chat's own history between them, and the composer. The ⋯ menu changes the state, sends one of
- * the three closing messages after a confirmation (PLM-137), and marks the chat as spam or, with a reason, not spam
- * (PLM-138). `onDone` opens the next chat after Resolve, Snooze or a closing message that resolves it.
+ * messages with the chat's own history between them, and the composer. Resolve also offers "Resolve as spam"; Reopen
+ * shows only to whoever resolved the chat or an inbox manager. The ⋯ menu changes the state, sends one of the three
+ * closing messages after a confirmation (PLM-137), and marks a resolved chat as spam or, with a reason, any chat not
+ * spam (PLM-138). Opening the chat reads it for this person. `onDone` opens the next chat after Resolve, Snooze or a
+ * closing message that resolves it.
  */
 export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onChanged, onDone, onLeft, lookups, registerActions, listVersion }: {
   workspaceId: string; id: string; draft: string; onDraftChange: (value: string) => void; onBack: () => void;
@@ -80,9 +83,10 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     try { setContext(await crmRequest<ChatContext>(workspaceId, `conversations/${id}/context`, "GET", undefined, timeout())); } catch { setContext((current) => current ?? { conversationId: id, leadId: null, party: null, enquiries: null, opportunities: null, projects: null, variables: {} }); }
   }, [workspaceId, id]);
   useEffect(() => { const timer = setTimeout(() => void loadContext(), 0); return () => clearTimeout(timer); }, [loadContext]);
+  // Opening the chat reads it: for this person (the Unread view) and the chat's shared counter.
   useEffect(() => {
-    if (!thread || !Number(thread.unreadCount) || document.visibilityState !== "visible") return;
-    const key = `${thread.version}/${thread.unreadCount}`;
+    if (!thread || !(thread.unread === true || Number(thread.unreadCount) > 0) || document.visibilityState !== "visible") return;
+    const key = `${thread.version}/${thread.unreadCount}/${thread.unread}`;
     if (readVersion.current === key) return;
     readVersion.current = key;
     void crmRequest(workspaceId, `conversations/${id}/read`, "POST", {}, timeout()).then(() => { void refresh(); void onChanged(); }).catch(() => { readVersion.current = null; });
@@ -124,7 +128,7 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       body: t("Their messages are still kept here, but nobody is told and they get no automatic messages."), onConfirm: () => void command(`conversations/${id}/block`, { blocked }, t("The number could not be blocked.")) })
     : void command(`conversations/${id}/block`, { blocked: false }, t("The number could not be unblocked."));
   // PLM-138: spam is the contact's: its enquiry is created (or marked) spam, its later messages are spam; nothing is sent.
-  const markSpam = () => thread && requestConfirmation({ title: t("Mark as spam?"), confirmLabel: t("Mark as spam"),
+  const markSpam = (resolving = false) => thread && requestConfirmation({ title: resolving ? t(tKey("Resolve as spam?")) : t("Mark as spam?"), confirmLabel: resolving ? t(tKey("Resolve as spam")) : t("Mark as spam"),
     body: t("The contact and its enquiry are marked as spam. Their messages are kept, nobody is told, and nothing is sent to them."),
     onConfirm: () => void command(`conversations/${id}/spam`, { version: thread.version, spam: true }, t("The chat could not be marked as spam."), "PUT", true) });
   // PLM-137: a closing message goes after a confirmation showing the text as the client reads it.
@@ -146,12 +150,14 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     catch (error) { setFailure(error instanceof Error ? error.message : t("Labels could not be saved.")); }
     finally { setBusy(false); }
   };
+  // "e" resolves, or reopens a resolved chat for whoever may.
   useEffect(() => {
-    registerActions?.(thread?.canSend ? { resolve: () => void change({ status: thread.status === "closed" ? "open" : "closed" }, thread.status !== "closed") } : null);
+    const usable = thread?.canSend && (thread.status !== "closed" || thread.canReopen === true);
+    registerActions?.(usable ? { resolve: () => void change({ status: thread.status === "closed" ? "open" : "closed" }, thread.status !== "closed") } : null);
     return () => registerActions?.(null);
-  }, [registerActions, thread?.canSend, thread?.status, change]);
+  }, [registerActions, thread?.canSend, thread?.status, thread?.canReopen, change]);
 
-  if (!thread) return <section className={styles.empty}><IconButton aria-label={t("Back to chats")} onPress={onBack}><ArrowLeft size={18} /></IconButton>{loadFailure ? <><p role="alert">{loadFailure}</p><Button onPress={() => void refresh()}>{t("Retry")}</Button></> : <p role="status">{t("Loading chat…")}</p>}</section>;
+  if (!thread) return <section className={styles.empty}><IconButton aria-label={t("Back to chats")} onPress={onBack}><ArrowLeft size={18} /></IconButton>{loadFailure ? <ErrorState description={loadFailure} onRetry={() => void refresh()} /> : <Spinner label={t("Loading chat…")} />}</section>;
   const isWhatsApp = thread.channel === "whatsapp";
   const isEmail = thread.channel === "email";
   const closingState = (thread.closing ?? null) as ChatClosing | null;
@@ -161,7 +167,7 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
   const chatLabels = (thread.labels ?? []) as InboxLabel[];
   const replyingAs = thread.replyingAs as { businessName: string | null; number: string | null } | undefined;
   const blocked = !thread.canSend ? t("You can view this conversation. Ask an administrator for permission to reply.")
-    : status === "closed" ? t("This conversation is resolved. Reopen it to reply.")
+    : status === "closed" ? (thread.canReopen === true ? t("This conversation is resolved. Reopen it to reply.") : t(tKey("This conversation is resolved.")))
     : status === "spam" ? t("This chat is marked as spam.")
     : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Connections to reply.")
     : isWhatsApp && thread.numberHealth === "blocked" ? t("Meta has stopped sending from this number. Check it in Connections.")
@@ -207,20 +213,24 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
           onAction={(key) => void setLabels(applied.has(key) ? [...applied].filter((labelId) => labelId !== key) : [...applied, key])} /> : null}
         {thread.canSend && status !== "closed" && status !== "spam" ? <MenuButton size="compact" label={status === "snoozed" ? t("Snoozed") : t("Snooze")} items={[...presets.map((preset) => ({ id: preset.id, label: t(preset.label) })), { id: "custom", label: t("Pick a date and time…") }, ...(status === "snoozed" ? [{ id: "wake", label: t("Wake now") }] : [])]}
           onAction={(key) => { if (key === "custom") setCustomSnooze(true); else if (key === "wake") void change({ status: "open" }); else { const preset = presets.find((item) => item.id === key); if (preset) void change({ status: "snoozed", snoozedUntil: preset.until }, true); } }} /> : null}
-        {thread.canSend && status !== "spam" ? <Button size="compact" variant={status === "closed" ? "secondary" : "primary"} isDisabled={busy} onPress={() => void change({ status: status === "closed" ? "open" : "closed" }, status !== "closed")}>{status === "closed" ? t("Reopen") : t("Resolve")}</Button> : null}
+        {thread.canSend && status === "closed" && thread.canReopen === true ? <Button size="compact" variant="secondary" isDisabled={busy} onPress={() => void change({ status: "open" })}>{t("Reopen")}</Button> : null}
+        {thread.canSend && status !== "closed" && status !== "spam" ? (thread.partyId
+          ? <SplitButton size="compact" isDisabled={busy} label={t("Resolve")} onPress={() => void change({ status: "closed" }, true)} items={[{ id: "spam", label: t(tKey("Resolve as spam")), tone: "danger" }]} onAction={() => markSpam(true)} />
+          : <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void change({ status: "closed" }, true)}>{t("Resolve")}</Button>) : null}
         <IconButton aria-label={t("Contact details")} className={styles.detailsToggle} size="compact" onPress={() => setDetailsOpen(true)}><Info size={16} /></IconButton>
         <IconButton aria-label={t("Refresh conversation")} size="compact" onPress={() => void refresh()}><RefreshCw size={16} /></IconButton>
         {thread.canSend && thread.partyId ? <IconMenuButton ariaLabel={t("More chat actions")} items={[
           ...(status === "open" ? [{ id: "unresolved", label: t("Mark unresolved") }] : status === "unresolved" ? [{ id: "open", label: t("Mark open") }] : []),
           ...(status === "open" || status === "unresolved" ? CLOSING_KINDS.filter((kind) => kind !== "closing" || closingDue).map((kind) => ({ id: `closing:${kind}`, label: t("Send {name}", { name: t(CLOSING_LABELS[kind]) }) })) : []),
           ...(thread.blockedAt ? [{ id: "unblock", label: t("Unblock number") }] : [{ id: "block", label: t("Block number"), tone: "danger" as const }]),
-          ...(status === "spam" ? (thread.canUnmarkSpam ? [{ id: "unspam", label: t("Not spam") }] : []) : [{ id: "spam", label: t("Mark as spam"), tone: "danger" as const }]),
+          // Spam is offered once: beside Resolve while the chat is still work, here once it is resolved.
+          ...(status === "spam" ? (thread.canUnmarkSpam ? [{ id: "unspam", label: t("Not spam") }] : []) : status === "closed" ? [{ id: "spam", label: t("Mark as spam"), tone: "danger" as const }] : []),
         ]}
           onAction={(key) => key === "unresolved" || key === "open" ? void change({ status: key }) : key.startsWith("closing:") ? sendClosing(key.slice(8) as ClosingKind)
             : key === "unblock" ? block(false) : key === "block" ? block(true) : key === "spam" ? markSpam() : setUnmarking(true)} /> : null}
       </div>
     </header>
-    {loadFailure || failure ? <p className={styles.error} role="alert">{failure || loadFailure} {loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : null}</p> : null}
+    {loadFailure || failure ? <InlineNotice action={loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : undefined} message={failure || loadFailure} tone="error" /> : null}
     {notice && !failure ? <p className={styles.notice} role="status">{notice}</p> : null}
     {status === "spam" || thread.spamAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Spam: messages are kept, nobody is told.")}</p>
       : thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{t("Blocked: messages are kept, nobody is told.")}</p> : null}
@@ -355,7 +365,7 @@ function MessageHistory({ workspaceId, thread, onHide, canShowHidden, after, rev
   const partyName = String(thread.partyName ?? t("Contact"));
   return <div className={styles.messages} ref={scroller} tabIndex={0} role="log" aria-label={t("Message history")} onScroll={() => { const element = scroller.current; if (element) stayAtBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
     {cursor ? <Button size="compact" isLoading={busy} onPress={async () => { setBusy(true); setFailure(""); try { const result = await crmRequest<ChatPage>(workspaceId, `conversations/${thread.id}/messages?limit=100&cursor=${encodeURIComponent(cursor)}`, "GET", undefined, timeout()); if (scroller.current) olderAnchor.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; setOlderMessages((old) => [...result.data.filter((item) => !old.some((value) => value.id === item.id)), ...old]); setOlderCursor(result.nextCursor ?? ""); } catch (error) { setFailure((error as Error).message); } finally { setBusy(false); } }}>{t("Load earlier messages")}</Button> : null}
-    {failure ? <p role="alert">{failure}</p> : null}
+    {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {entries.map((entry, index) => <Fragment key={`${entry.kind}:${entry.kind === "message" ? entry.message.id : entry.kind === "album" ? entry.messages[0].id : entry.event.id}`}>
       {dateOf(entry.at) !== dateOf(entries[index - 1]?.at) ? <div className={styles.dateDivider}><span>{dateOf(entry.at)}</span></div> : null}
       {entry.kind === "event" ? <EventLine event={entry.event} time={inboxTime(entry.at, locale, timeZone)} />
@@ -363,7 +373,7 @@ function MessageHistory({ workspaceId, thread, onHide, canShowHidden, after, rev
         : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} conversationId={String(thread.id)} time={inboxTime(entry.at, locale, timeZone)} onHide={onHide} canShowHidden={canShowHidden}
           continued={continues(entries[index - 1], entry, dateOf)} />}
     </Fragment>)}
-    {!entries.length ? <div className={styles.empty}><MessageCircle size={30} /><p>{t("No messages yet.")}</p></div> : null}
+    {!entries.length ? <EmptyState icon={<MessageCircle aria-hidden="true" size={30} />} title={t("No messages yet.")} /> : null}
     {after}
   </div>;
 }

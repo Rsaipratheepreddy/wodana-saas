@@ -5,3 +5,8 @@
 .facts dd { margin: 0; }
 .notes { display: grid; gap: var(--wd-space-1); padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .notes p { margin: 0; }
+
+/* §0.3 P3/P4: the firm's own wording on an invoice (how to pay, terms, a footer line). */
+.noteTitle { margin: 0 0 var(--wd-space-1); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.notes p { white-space: pre-line; }
+.footerLine { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }

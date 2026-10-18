@@ -275,12 +275,17 @@ describe("People", () => {
       // Behind the sheet: To approve, with what's waiting counted.
       expect(await screen.findByRole("button", { name: /^To approve\s*2$/, hidden: true })).toHaveAttribute("aria-pressed", "true");
       expect(within(sheet).getByText("Family visit")).toBeInTheDocument();
-      expect(within(sheet).getByRole("button", { name: "Approve" })).toBeDisabled();
-      expect(within(sheet).getByRole("button", { name: "Reject" })).toBeDisabled();
-      await userEvent.type(within(sheet).getByRole("textbox", { name: /Reason for your decision/ }), "ok");
-      expect(within(sheet).getByRole("button", { name: "Approve" })).toBeDisabled();
-      await userEvent.type(within(sheet).getByRole("textbox", { name: /Reason for your decision/ }), " enjoy");
-      await userEvent.click(within(sheet).getByRole("button", { name: "Approve" }));
+      await userEvent.click(within(sheet).getByRole("button", { name: "Review" }));
+      const decision = await screen.findByRole("dialog", { name: "Leave request" });
+      expect(within(decision).getByRole("radio", { name: "Reject" })).toBeInTheDocument();
+      expect(within(decision).getByRole("button", { name: "Approve" })).toBeDisabled();
+      // A reason of at least three characters, either way.
+      await userEvent.type(within(decision).getByRole("textbox", { name: /Why it's approved/ }), "ok");
+      await userEvent.click(within(decision).getByRole("button", { name: "Approve" }));
+      expect(await within(decision).findByText("At least 3 characters")).toBeInTheDocument();
+      expect(writes(calls, "leave/requests/r1/decision")).toEqual([]);
+      await userEvent.type(within(decision).getByRole("textbox", { name: /Why it's approved/ }), " enjoy");
+      await userEvent.click(within(decision).getByRole("button", { name: "Approve" }));
       await waitFor(() => expect(writes(calls, "leave/requests/r1/decision")).toEqual([{ decision: "approve", reason: "ok enjoy" }]));
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Omar Joiner" })).toBeNull());
       expect(await screen.findByRole("button", { name: /^To approve\s*1$/ })).toBeInTheDocument();

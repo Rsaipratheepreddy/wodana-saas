@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
+import { noticeDecision, planNotice, readNoticeChoice, type NoticeSkip } from "./notice-choices";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -246,6 +247,12 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "{{meeting}} with {{clientName}}\n\nWhen: {{when}}\nWhere: {{place}}\nBooked by: {{bookedBy}}\n\nThe floor plan and the client's details are on the opportunity.",
     variables: ["meeting", "clientName", "when", "place", "bookedBy"],
   },
+  // §0.3 P0 (guide J): Proposal 2 withdrawn by the client: asked of whoever approves deals, and their answer.
+  { code: "crm.proposal_withdrawal_requested", channel: "in_app", subject: "Confirm the withdrawal · {{reference}} · {{clientName}}", body: "{{actor}}: the client is withdrawing from Proposal 2. {{reason}}", variables: ["reference", "clientName", "actor", "reason"] },
+  { code: "crm.proposal_withdrawal_decided", channel: "in_app", subject: "Proposal 2 withdrawal {{decision}} · {{reference}}", body: "{{actor}} {{decision}} it. {{note}}", variables: ["reference", "clientName", "actor", "decision", "note"] },
+  // §0.3 P0: someone tagged on an enquiry's team (the designer, for one) is told (crm/leads/lead-team.ts).
+  { code: "crm.enquiry_team_tagged", channel: "in_app", subject: "You're on {{reference}} as {{role}} · {{clientName}}", body: "{{actor}} added you to the enquiry's team.", variables: ["role", "reference", "clientName", "actor"] },
+  { code: "crm.enquiry_team_tagged", channel: "email", subject: "You're on {{reference}} for {{clientName}} as {{role}}", body: "{{actor}} added you to {{reference}} for {{clientName}} as {{role}}.\n\nOpen the enquiry to see the client's details and what happens next.", variables: ["role", "reference", "clientName", "actor"] },
   {
     code: "crm.designer_assigned",
     channel: "in_app",
@@ -280,6 +287,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "design.approved_estimate", channel: "in_app", subject: "Design approved · {{clientName}}", body: "Approved {{approvedOn}}. Share the estimate by {{due}}.", variables: ["clientName", "approvedOn", "due"] },
   { code: "design.approved_estimate", channel: "email", subject: "Design approved: {{clientName}}", body: "{{clientName}} approved the final design on {{approvedOn}}.\n\nThe estimate (Proposal 2) is due by {{due}}. Open the case to prepare it.", variables: ["clientName", "approvedOn", "due"] },
   // A design-only job (Full ID) ends at the design approval: no estimate follows.
+  { code: "design.missing_before_approval", channel: "in_app", subject: "Before the design approval · {{clientName}}", body: "Still missing: {{note}}", variables: ["clientName", "note"] },
+  { code: "design.missing_before_approval", channel: "email", subject: "Before the design approval · {{clientName}}", body: "The design approval for {{clientName}} can't be recorded yet. Still missing: {{note}}\n\nOpen the design to finish it.", variables: ["clientName", "note"] },
   { code: "design.completed", channel: "in_app", subject: "Design complete · {{clientName}}", body: "Approved {{approvedOn}}. The design job is complete.", variables: ["clientName", "approvedOn"] },
   { code: "design.completed", channel: "email", subject: "Design complete: {{clientName}}", body: "{{clientName}} approved the final design on {{approvedOn}}.\n\nThe design job is complete.", variables: ["clientName", "approvedOn"] },
   { code: "design.ledger_confirmed", channel: "in_app", subject: "{{clientName}} confirmed {{title}}", body: "{{note}}", variables: ["clientName", "title", "note"] },
@@ -349,6 +358,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   // Client payments on a planning case (commercial/commercial-notices.ts): Finance verifies, the reporter hears back.
   { code: "commercial.receipt_reported", channel: "in_app", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "commercial.receipt_reported", channel: "email", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}} ({{clientName}}).\n\nOpen it to check the receipt and verify it.", variables: ["title", "clientName", "actor", "amount", "note"] },
+  { code: "commercial.receipt_returned", channel: "in_app", subject: "Receipt returned · {{clientName}}", body: "{{actor}} returned {{amount}} for {{title}}: {{note}}", variables: ["title", "clientName", "actor", "amount", "note"] },
+  { code: "commercial.receipt_returned", channel: "email", subject: "Receipt returned · {{clientName}}", body: "{{actor}} returned the receipt of {{amount}} for {{title}} ({{clientName}}): {{note}}\n\nOpen the payment to record it again.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "commercial.receipt_verified", channel: "in_app", subject: "Payment verified · {{clientName}}", body: "{{actor}} verified {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
   // A sent quote running out, and one that ran out (commercial/quote-expiry.ts, Q-6).
   { code: "quotation.expiring", channel: "in_app", subject: "{{title}} expires {{due}}", body: "{{clientName}} hasn't decided yet. Follow up, or extend its validity.", variables: ["title", "clientName", "due"] },
@@ -491,6 +502,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.drawings_changes", channel: "in_app", subject: "Drawings {{revision}} need changes · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note", "date"] },
   { code: "project.drawings_approved", channel: "in_app", subject: "Drawings approved · {{title}}", body: "{{clientName}} approved drawings {{revision}} on {{date}}. The drawings, material list and BOQ are in the project.", variables: ["title", "clientName", "actor", "revision", "note", "date"] },
   { code: "project.drawings_approved", channel: "email", subject: "Drawings approved: {{title}}", body: "{{clientName}} approved drawings {{revision}} on {{date}}.\n\nThe approved drawings, the material list and the BOQ are in the project, read-only.", variables: ["title", "clientName", "actor", "revision", "note", "date"] },
+  // Shop drawings per item (project-core/project-item-notices.ts): a version to check, changes asked, items signed by the client.
+  { code: "project.item_drawing_uploaded", channel: "in_app", subject: "Shop drawing to check · {{title}}", body: "{{actor}} uploaded the shop drawing for {{item}}. {{note}}", variables: ["title", "clientName", "actor", "item", "note"] },
+  { code: "project.item_drawing_returned", channel: "in_app", subject: "Shop drawing changes · {{title}}", body: "{{actor}} asked for changes to {{item}}: {{note}}", variables: ["title", "clientName", "actor", "item", "note"] },
+  { code: "project.item_drawings_signed", channel: "in_app", subject: "Shop drawings signed · {{title}}", body: "{{actor}} signed the shop drawings for {{item}}. They are locked. {{note}}", variables: ["title", "clientName", "actor", "item", "note"] },
+  { code: "project.item_drawings_signed", channel: "email", subject: "Shop drawings signed: {{title}}", body: "{{actor}} signed the shop drawings for {{item}}.\n\nThe signed items are locked to the sizes and quantities on their drawings, and their materials follow them. {{note}}", variables: ["title", "clientName", "actor", "item", "note"] },
+  { code: "project.item_supplies_signed", channel: "in_app", subject: "Supplies signed off · {{title}}", body: "{{actor}} signed off the supplies for {{item}}. Production is about to start. {{note}}", variables: ["title", "clientName", "actor", "item", "note"] },
+  { code: "project.item_supplies_signed", channel: "email", subject: "Supplies signed off: {{title}}", body: "{{actor}} signed off the supplies for {{item}}. Production is about to start.\n\n{{note}}", variables: ["title", "clientName", "actor", "item", "note"] },
   { code: "project.factory_slot_due", channel: "in_app", subject: "Book the factory slot · {{title}}", body: "The deposit is in and the project is released. Record the slot date on the project.", variables: ["title", "clientName", "actor", "revision", "note", "date"] },
   { code: "project.factory_slot_due", channel: "email", subject: "Book the factory slot: {{title}}", body: "The deposit for {{clientName}} is in and the project is released.\n\nBook the factory slot and record its date on the project.", variables: ["title", "clientName", "actor", "revision", "note", "date"] },
   { code: "project.factory_slot_booked", channel: "in_app", subject: "Factory slot booked · {{title}}", body: "{{actor}} booked the factory for {{date}}.", variables: ["title", "clientName", "actor", "revision", "note", "date"] },
@@ -671,6 +689,9 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "portal.payment_checked", channel: "email", subject: "Your payment on {{project}}", body: "{{note}}\n\nOpen your project page to see your payments.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.issue_triaged", channel: "email", subject: "The issue you reported on {{project}}", body: "{{note}}\n\nOpen your project page to follow it.", variables: ["company", "project", "title", "due", "note"] },
   // PLM-153: the minutes of a client meeting shared in the portal (the client); the client's comment on them (the author).
+  // §0.3 P0: a design-only job is complete: the client is thanked (portal-notices.ts design_completed).
+  // Guide J: {{name}} is the client's first name, {{title}} the design package.
+  { code: "portal.design_completed", channel: "email", subject: "Your design is complete · {{project}}", body: "Dear {{name}}, thank you for choosing {{company}}. Your {{title}} design is complete, and you'll find all your final files in your client portal. Whenever you're ready to bring the design to life with furniture or fit-out, our team will be happy to help.\n\n– {{company}}", variables: ["company", "project", "title", "due", "note", "name"] },
   { code: "portal.minutes_shared", channel: "email", subject: "Notes from your meeting · {{project}}", body: "{{company}} shared the notes from {{title}}.\n\n{{note}}\n\nOpen your project page to read them and comment.", variables: ["company", "project", "title", "due", "note"] },
   { code: "meeting.minutes_comment", channel: "in_app", subject: "{{actor}} commented on the minutes · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "meeting.minutes_comment", channel: "email", subject: "{{actor}} commented on the minutes of {{title}}", body: "{{actor}} commented on the minutes of {{title}} in the client portal:\n\n{{note}}\n\nOpen the meeting to reply.", variables: ["title", "clientName", "actor", "note"] },
@@ -682,6 +703,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   // D-29: a delivery to site is coming; the client confirms someone lets the team in, or asks to move it.
   { code: "portal.site_access", channel: "email", subject: "Confirm site access for {{title}}", body: "{{company}} has a delivery for {{project}} on {{title}}: {{note}}\n\nOpen your project page to confirm someone can let the team in, or ask to move it.", variables: ["company", "project", "title", "due", "note"] },
   // Client portal access (client-portal/portal-invitations.ts): the project's manager hears the client's first sign-in.
+  { code: "job.mentioned", channel: "in_app", subject: "{{author}} mentioned you on {{job}}", body: "{{author}}: {{text}}", variables: ["author", "job", "text"] },
   { code: "client_portal.client_signed_in", channel: "in_app", subject: "{{client}} opened the client portal", body: "{{client}} signed in to the portal for {{title}} for the first time.", variables: ["client", "title"] },
   { code: "design.site_visit_booked", channel: "in_app", subject: "Site visit with {{clientName}}", body: "{{when}} · {{place}}. Booked by {{bookedBy}}.", variables: ["clientName", "when", "place", "bookedBy"] },
   { code: "design.site_visit_booked", channel: "email", subject: "Invitation: site visit with {{clientName}}", body: "Site visit with {{clientName}}\n\nWhen: {{when}}\nWhere: {{place}}\nBooked by: {{bookedBy}}\n\nRecord every wall's measurements and photos in the project.", variables: ["clientName", "when", "place", "bookedBy"] },
@@ -739,11 +761,37 @@ export async function seedDefaultNotificationTemplates(db: Db, workspaceId: stri
 export const renderNoticeText = (template: string, variables: Record<string, string>) =>
   template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
 
+/** Keys are at most 160 characters; a long one is hashed rather than cut. */
+const derivedKey = (key: string, suffix: string) => (key.length <= 160 - suffix.length - 1 ? `${key}:${suffix}` : `${suffix}:${createHash("sha256").update(key).digest("hex")}`);
+
+/** Writes one queued email or push for a person (idempotent on its key) and wakes the worker for one due now. */
+async function insertUserSend(db: Db, input: {
+  workspaceId: string; recipientUserId: string; channel: "email" | "push"; eventType: string; templateId: string | null; subject: string | null; body: string;
+  deepLink?: string | null; idempotencyKey: string; critical: boolean; at: Date; held: boolean;
+}) {
+  // The channel is one of two literals; a send held for the end of quiet hours waits ('scheduled') until then.
+  const inserted = await db.query<{ id: string; correlationId: string }>(
+    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
+       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id, critical)
+     VALUES ($1, $2, 'user', $3, '${input.channel === "push" ? "push" : "email"}', $4, $10::notification_status, $9, $5, $6, $7, $8, gen_random_uuid(), $11)
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+     RETURNING id, correlation_id AS "correlationId"`,
+    [input.workspaceId, input.templateId, input.recipientUserId, input.eventType, input.subject, input.body, input.deepLink ?? null, input.idempotencyKey,
+      input.at, input.held ? "scheduled" : "pending", input.critical],
+  );
+  const notification = inserted.rows[0];
+  // A send held for the end of quiet hours is picked up by the worker's next poll after it is due.
+  if (notification && !input.held) await wakeDelivery(db, input.workspaceId, notification.id, notification.correlationId, input.channel);
+  return notification ?? null;
+}
+
 /**
  * Records an in-app notification for one user from the workspace's approved template, inside the
- * caller's tenant transaction. Honours the recipient's preference and is idempotent per key.
- * `critical` (R13) ignores the person's mutes and marks the notice critical.
- * (Module 10 folds this and the CRM notification engine into one notification service.)
+ * caller's tenant transaction, and the same notice on the phone for the events people act on away from a
+ * desk (PUSH_NOTICES). Every channel follows the person's choices (notice-choices.ts): the group's switches,
+ * a mute of this kind of notice, quiet hours (the in-app notice lands silently, the push waits). Idempotent per key.
+ * `critical` (R13) ignores the person's switches and quiet hours, marks the notice critical and also sends it by the
+ * person's fastest channel (push, else email).
  */
 export async function notifyUserInApp(db: Db, input: {
   workspaceId: string;
@@ -756,14 +804,10 @@ export async function notifyUserInApp(db: Db, input: {
   critical?: boolean;
 }) {
   const critical = input.critical === true;
-  const preference = await db.query<{ enabled: boolean }>(
-    `SELECT enabled FROM notification_preferences
-     WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app'
-       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')
-     ORDER BY CASE WHEN event_type::text=$3::text THEN 0 WHEN event_type::text='*' THEN 2 ELSE 1 END LIMIT 1`,
-    [input.workspaceId, input.recipientUserId, input.eventType],
-  );
-  if (!critical && preference.rows[0]?.enabled === false) return { queued: false as const, reason: "recipient_preference" };
+  const choices = await readNoticeChoice(db, input.workspaceId, input.recipientUserId, input.eventType);
+  const plan = planNotice(choices, { channels: PUSH_NOTICES.has(input.code) ? ["in_app", "push"] : ["in_app"], available: ["in_app", "push", "email"], critical, now: new Date() });
+  const inApp = plan.sends.find((send) => send.channel === "in_app");
+  if (!inApp) return { queued: false as const, reason: "recipient_preference" };
   const template = await db.query<{ id: string; subject: string | null; body: string }>(
     `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
      WHERE workspace_id=$1 AND code=$2 AND channel='in_app' AND status='approved' AND locale='en'
@@ -776,27 +820,31 @@ export async function notifyUserInApp(db: Db, input: {
   const body = renderNoticeText(row.body, input.variables);
   const inserted = await db.query(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
-       subject, body, deep_link, idempotency_key, correlation_id, delivered_at, critical)
-     VALUES ($1, $2, 'user', $3, 'in_app', $4, 'delivered', $5, $6, $7, $8, gen_random_uuid(), now(), $9)
+       subject, body, deep_link, idempotency_key, correlation_id, delivered_at, critical, silent)
+     VALUES ($1, $2, 'user', $3, 'in_app', $4, 'delivered', $5, $6, $7, $8, gen_random_uuid(), now(), $9, $10)
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING`,
-    [input.workspaceId, row.id, input.recipientUserId, input.eventType, subject, body, input.deepLink ?? null, input.idempotencyKey, critical],
+    [input.workspaceId, row.id, input.recipientUserId, input.eventType, subject, body, input.deepLink ?? null, input.idempotencyKey, critical, inApp.silent],
   );
   // A key already used means this notice was already sent: nothing new is queued.
   if (!inserted.rowCount) return { queued: false as const, reason: "already_sent" };
-  // The same notice on the phone, for the events people act on away from a desk.
-  if (PUSH_NOTICES.has(input.code)) {
-    // Keys are at most 160 characters; a long one is hashed rather than cut.
-    const pushKey = input.idempotencyKey.length <= 155 ? `${input.idempotencyKey}:push` : `push:${createHash("sha256").update(input.idempotencyKey).digest("hex")}`;
-    await queueUserPush(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, eventType: input.eventType, subject, body, deepLink: input.deepLink, templateId: row.id, idempotencyKey: pushKey, critical });
+  // The same words on the phone (or, for an alert to someone without a phone, by email), held through quiet hours.
+  for (const send of plan.sends) {
+    if (send.channel !== "push" && send.channel !== "email") continue;
+    await insertUserSend(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, channel: send.channel, eventType: input.eventType, templateId: row.id,
+      subject, body, deepLink: input.deepLink, idempotencyKey: derivedKey(input.idempotencyKey, send.channel), critical, at: send.at, held: send.held });
   }
   return { queued: true as const };
 }
 
+/** The reason a push isn't queued, as callers know it. */
+const pushSkip = (reason: NoticeSkip) => (reason === "no_device" || reason === "channel_off" ? "no_device" : "push_off");
+
 /**
  * Queues a push to one user's phone from the workspace's approved push template, inside the caller's
- * tenant transaction. Only when the person turned push on and has a registered device; the in-app
- * notice is always the record. The worker delivers it (and falls back to the inbox on failure).
- * `critical` (R13) ignores the person's mutes of this event or its module, never the phone's own switch.
+ * tenant transaction. Only when the person turned push on and has a registered device, and kept push on for
+ * this notice's group; the in-app notice is always the record. Held through the person's quiet hours. The
+ * worker delivers it (and falls back to the inbox on failure). `critical` (R13) ignores the person's switches
+ * and quiet hours, never the phone's own switch.
  */
 export async function queueUserPushFromTemplate(db: Db, input: {
   workspaceId: string;
@@ -809,17 +857,8 @@ export async function queueUserPushFromTemplate(db: Db, input: {
   critical?: boolean;
 }) {
   const critical = input.critical === true;
-  const reachable = await db.query(
-    `SELECT 1 FROM notification_preferences preference
-      WHERE preference.workspace_id=$1 AND preference.recipient_type='user' AND preference.recipient_id=$2
-        AND preference.channel='push' AND preference.event_type='*' AND preference.enabled
-        AND EXISTS (SELECT 1 FROM device_endpoints endpoint WHERE endpoint.workspace_id=$1 AND endpoint.user_id=$2 AND endpoint.status='active')
-        AND ($4::boolean OR NOT EXISTS (SELECT 1 FROM notification_preferences muted WHERE muted.workspace_id=$1 AND muted.recipient_type='user'
-          AND muted.recipient_id=$2 AND muted.channel='push' AND muted.event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*') AND NOT muted.enabled))
-      LIMIT 1`,
-    [input.workspaceId, input.recipientUserId, input.eventType, critical],
-  );
-  if (!reachable.rowCount) return { queued: false as const, reason: "push_off" };
+  const decision = await noticeDecision(db, { workspaceId: input.workspaceId, userId: input.recipientUserId, eventType: input.eventType, channel: "push", critical });
+  if (!decision.send) return { queued: false as const, reason: pushSkip(decision.reason) };
   const template = await db.query<{ id: string; subject: string | null; body: string }>(
     `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
      WHERE workspace_id=$1 AND code=$2 AND channel='push' AND status='approved' AND locale='en'
@@ -828,32 +867,18 @@ export async function queueUserPushFromTemplate(db: Db, input: {
   );
   if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
   const row = template.rows[0];
-  const inserted = await db.query(
-    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
-       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id, critical)
-     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid(), $9)
-     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
-     RETURNING id, correlation_id AS "correlationId"`,
-    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
-      input.deepLink ?? null, input.idempotencyKey, critical],
-  );
-  const notification = inserted.rows[0] as { id: string; correlationId: string } | undefined;
+  const notification = await insertUserSend(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, channel: "push", eventType: input.eventType,
+    templateId: row.id, subject: row.subject ? renderNoticeText(row.subject, input.variables) : null, body: renderNoticeText(row.body, input.variables),
+    deepLink: input.deepLink, idempotencyKey: input.idempotencyKey, critical, at: decision.at, held: decision.held });
   if (!notification) return { queued: false as const, reason: "already_sent" };
-  // Wake the worker now instead of waiting for its next poll.
-  const eventId = randomUUID();
-  await db.query(
-    `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload)
-     VALUES ($4, $1, 'notification', $2, 'notification.delivery_requested.v1', $3::jsonb)`,
-    [input.workspaceId, notification.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: notification.id, actorUserId: null, occurredAt: new Date().toISOString(), correlationId: notification.correlationId, causationId: null, data: { channel: "push" } }), eventId],
-  );
   return { queued: true as const };
 }
 
 /**
  * Queues an email for one user from the workspace's approved email template, inside the caller's
  * tenant transaction; the notification worker renders it with the tenant brand and sends it.
- * Sent unless the person switched this event off; `critical` (R13) ignores that. Idempotent per key.
+ * Sent unless the person switched email off for this notice (or its group), held through their quiet
+ * hours; `critical` (R13) ignores both. Idempotent per key.
  */
 export async function queueUserEmail(db: Db, input: {
   workspaceId: string;
@@ -866,14 +891,8 @@ export async function queueUserEmail(db: Db, input: {
   critical?: boolean;
 }) {
   const critical = input.critical === true;
-  const preference = await db.query<{ enabled: boolean }>(
-    `SELECT enabled FROM notification_preferences
-     WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='email'
-       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')
-     ORDER BY CASE WHEN event_type::text=$3::text THEN 0 WHEN event_type::text='*' THEN 2 ELSE 1 END LIMIT 1`,
-    [input.workspaceId, input.recipientUserId, input.eventType],
-  );
-  if (!critical && preference.rows[0]?.enabled === false) return { queued: false as const, reason: "recipient_preference" };
+  const decision = await noticeDecision(db, { workspaceId: input.workspaceId, userId: input.recipientUserId, eventType: input.eventType, channel: "email", critical });
+  if (!decision.send) return { queued: false as const, reason: decision.reason };
   const template = await db.query<{ id: string; subject: string | null; body: string }>(
     `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
      WHERE workspace_id=$1 AND code=$2 AND channel='email' AND status='approved' AND locale='en'
@@ -882,18 +901,9 @@ export async function queueUserEmail(db: Db, input: {
   );
   if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
   const row = template.rows[0];
-  const inserted = await db.query<{ id: string; correlationId: string }>(
-    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
-       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id, critical)
-     VALUES ($1, $2, 'user', $3, 'email', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid(), $9)
-     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
-     RETURNING id, correlation_id AS "correlationId"`,
-    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
-      input.deepLink ?? null, input.idempotencyKey, critical],
-  );
-  const notification = inserted.rows[0];
-  if (notification) await wakeDelivery(db, input.workspaceId, notification.id, notification.correlationId, "email");
+  await insertUserSend(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, channel: "email", eventType: input.eventType, templateId: row.id,
+    subject: row.subject ? renderNoticeText(row.subject, input.variables) : null, body: renderNoticeText(row.body, input.variables),
+    deepLink: input.deepLink, idempotencyKey: input.idempotencyKey, critical, at: decision.at, held: decision.held });
   return { queued: true as const };
 }
 
@@ -956,9 +966,10 @@ export function quietUntil(quietHours: Record<string, unknown> | null | undefine
 
 /**
  * Queues a push to one person's phone, inside the caller's tenant transaction, when they turned push on
- * (the app does it on sign-in) and have a registered phone; a preference for this event (or its module)
- * can switch it off, except for a `critical` one (R13), which never overrides the phone's own switch.
- * Idempotent per key. The worker sends it through Expo and falls back to the inbox.
+ * (the app does it on sign-in), have a registered phone and kept push on for this notice (its group, or this
+ * kind of notice), except for a `critical` one (R13), which ignores those switches but never the phone's own
+ * switch. Held through the person's quiet hours. Idempotent per key. The worker sends it through Expo and
+ * falls back to the inbox.
  */
 export async function queueUserPush(db: Db, input: {
   workspaceId: string;
@@ -972,33 +983,10 @@ export async function queueUserPush(db: Db, input: {
   critical?: boolean;
 }) {
   const critical = input.critical === true;
-  // The phone's switch ("*") must be on; the event's or its module's setting can still turn this one off.
-  const preferences = await db.query<{ eventType: string; enabled: boolean; quietHours: Record<string, unknown> | null }>(
-    `SELECT event_type AS "eventType", enabled, quiet_hours AS "quietHours" FROM notification_preferences
-     WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='push'
-       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')`,
-    [input.workspaceId, input.recipientUserId, input.eventType],
-  );
-  const master = preferences.rows.find((row) => row.eventType === "*");
-  const specific = preferences.rows.find((row) => row.eventType === input.eventType) ?? preferences.rows.find((row) => row.eventType !== "*");
-  if (master?.enabled !== true || (!critical && specific?.enabled === false)) return { queued: false as const, reason: "push_off" };
-  // The person's quiet hours (on the phone's switch) hold a push until they end; the in-app notice is already there.
-  const scheduledFor = quietUntil(master.quietHours) ?? new Date();
-  const device = await db.query(
-    `SELECT 1 FROM device_endpoints WHERE workspace_id=$1 AND user_id=$2 AND status='active' LIMIT 1`,
-    [input.workspaceId, input.recipientUserId],
-  );
-  if (!device.rowCount) return { queued: false as const, reason: "no_device" };
-  const inserted = await db.query<{ id: string; correlationId: string }>(
-    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
-       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id, critical)
-     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', $9, $5, $6, $7, $8, gen_random_uuid(), $10)
-     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
-     RETURNING id, correlation_id AS "correlationId"`,
-    [input.workspaceId, input.templateId ?? null, input.recipientUserId, input.eventType, input.subject, input.body, input.deepLink ?? null, input.idempotencyKey, scheduledFor, critical],
-  );
-  const notification = inserted.rows[0];
+  const decision = await noticeDecision(db, { workspaceId: input.workspaceId, userId: input.recipientUserId, eventType: input.eventType, channel: "push", critical });
+  if (!decision.send) return { queued: false as const, reason: pushSkip(decision.reason) };
+  const notification = await insertUserSend(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, channel: "push", eventType: input.eventType,
+    templateId: input.templateId ?? null, subject: input.subject, body: input.body, deepLink: input.deepLink, idempotencyKey: input.idempotencyKey, critical, at: decision.at, held: decision.held });
   if (!notification) return { queued: false as const, reason: "already_sent" };
-  await wakeDelivery(db, input.workspaceId, notification.id, notification.correlationId, "push");
   return { queued: true as const };
 }

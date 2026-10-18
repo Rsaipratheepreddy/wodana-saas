@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { Check, Circle, CircleDot, FileText, Mail, MessageCircle, Minus, Phone } from "lucide-react";
-import { Avatar } from "@/design-system";
+import { Avatar, Badge, PersonChip as SharedPersonChip, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { whatsappUrl, countryForPhone } from "@/lib/phone";
 import styles from "./record-parts.module.css";
@@ -11,6 +11,8 @@ import styles from "./record-parts.module.css";
 /** One step of a record's journey: done, the one now, or still to come, with who does it and when. */
 export type TimelineStep = {
   id: string; label: string; state: "done" | "current" | "upcoming" | "skipped" | "blocked";
+  /** Shows the state line as a chip of this tone instead of plain text. */
+  tone?: StatusTone;
   /** When it finished, or when it is planned, as the person reads it. */
   date?: string | null;
   /** A short state line ("2 days late", "3 of 5"). */
@@ -36,7 +38,7 @@ export function RecordTimeline({ label, steps, layout = "steps" }: { label: stri
         <span className={styles.stepBody}>
           <span className={styles.stepLabel} title={step.label}>{step.label}<span className="wd-visually-hidden"> · {step.state === "done" ? t("Done") : step.state === "current" ? t("Now") : step.state === "skipped" ? t("Skipped") : t("Not started")}</span></span>
           {step.date ? <span className={styles.stepDate}>{step.date}</span> : null}
-          {step.late ? <span className={styles.stepLate}>{step.late}</span> : step.detail ? <span className={styles.stepDate}>{step.detail}</span> : null}
+          {step.late ? <span className={styles.stepLate}>{step.late}</span> : step.detail && step.tone ? <Badge tone={step.tone}>{step.detail}</Badge> : step.detail ? <span className={styles.stepDate}>{step.detail}</span> : null}
           {step.people?.length ? <span className={styles.stepPeople}>{step.people.map((person) => <span key={person.id} title={person.name}><Avatar name={person.name} seed={person.id} size="sm" /></span>)}</span> : null}
         </span>
       </li>;
@@ -61,9 +63,9 @@ export function PersonRow({ id, name, role, phone, email, extra }: { id: string;
   </li>;
 }
 
-/** A person inline (in the status strip or the next step): avatar and name. */
+/** A person inline (in the status strip or the next step): the shared person chip, its avatar seeded by the record's id for them. */
 export function PersonChip({ id, name }: { id: string; name: string }) {
-  return <span className={styles.chip}><span aria-hidden="true"><Avatar name={name} seed={id} size="sm" /></span><span>{name}</span></span>;
+  return <SharedPersonChip person={name} seed={id} />;
 }
 
 /** The people on a record, one row each. `compact`: shorter rows, the ways to reach someone on hover or focus. */

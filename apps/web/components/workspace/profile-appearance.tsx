@@ -1,11 +1,11 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- static brand files from /public */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Check, Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { AVATAR_KEYS, AVATAR_ROLES, avatarPath, chosenAvatarKey, roleAvatarKey, type AvatarRole } from "@wodana/contracts/brand";
-import { Avatar, Button, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Switch } from "@/design-system";
+import { Avatar, Button, FileUploader, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Spinner, Switch } from "@/design-system";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey } from "@/lib/i18n/keys";
@@ -38,7 +38,6 @@ export function ProfileAppearance({ workspaceId, userId, name, email, roles, ini
   };
   const [busy, setBusy] = useState<"photo" | "avatar" | null>(null);
   const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
-  const input = useRef<HTMLInputElement>(null);
 
   const run = async (kind: "photo" | "avatar", work: () => Promise<MyProfile>, success: string) => {
     setBusy(kind); setMessage(null);
@@ -59,8 +58,8 @@ export function ProfileAppearance({ workspaceId, userId, name, email, roles, ini
     <SettingsSection id="profile-photo" title={t("Photo")}>
       <SettingsRow hint={<span dir="ltr">{email}</span>} label={name}>
         <Avatar name={name} preset={selected ?? "auto"} roles={roles} seed={userId} size="lg" src={profile.photoUrl} />
-        <input accept={PHOTO_TYPES.join(",")} className={styles.fileInput} onChange={(event) => { choose(event.target.files?.[0]); event.target.value = ""; }} ref={input} tabIndex={-1} type="file" aria-hidden="true" />
-        <Button isLoading={busy === "photo"} onPress={() => input.current?.click()} size="compact" variant="quiet"><Camera aria-hidden="true" size={14} />{profile.photoUrl ? t("Change photo") : t("Upload photo")}</Button>
+        <FileUploader accept={PHOTO_TYPES.join(",")} appearance="button" label={profile.photoUrl ? t("Change photo") : t("Upload photo")} multiple={false} onFiles={(files) => choose(files[0])} />
+        {busy === "photo" ? <Spinner label={t("Uploading…")} /> : null}
         {profile.photoUrl ? <Button isDisabled={busy !== null} onPress={() => void run("photo", () => removeMyPhoto(workspaceId), t("Photo removed."))} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
       </SettingsRow>
     </SettingsSection>

@@ -2,7 +2,7 @@
 
 import { CheckCircle2, History, Pencil, RotateCcw } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, InspectorSheet, TextInput, Skeleton, useDesignSystem, FormDialog } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, EmptyState, InspectorSheet, TextInput, Skeleton, useDesignSystem, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkspaceConfigurationRevision, WorkspaceTerminologyData, WorkspaceTerminologyItem } from "@/lib/workspace/company-profile";
 import styles from "./company-profile.module.css";
@@ -219,7 +219,7 @@ export function TerminologyPanel({
     >
       {historyLoading ? <Skeleton lines={3} /> : null}
       {historyError ? <Callout title={t("History unavailable")} tone="danger">{historyError}</Callout> : null}
-      {!historyLoading && !historyError && !revisions.length ? <p className={styles.historyStatus}>{t("No changes have been saved yet.")}</p> : null}
+      {!historyLoading && !historyError && !revisions.length ? <EmptyState illustration={null} title={t("No changes have been saved yet.")} /> : null}
       {revisions.length ? <ol className={styles.revisionList}>
         {revisions.map((revision) => {
           const current = items.find((item) => item.key === historyTarget?.key) ?? historyTarget;

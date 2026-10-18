@@ -1,7 +1,7 @@
 import { tKey } from "@/lib/i18n/keys";
 
 /** `flow` is an enquiry type's pipeline flow (PLM-121/122): furniture, design, fit_out or basic. */
-export type LeadOption = { id: string; label: string; allowedRoles?: string[]; flow?: string | null };
+export type LeadOption = { id: string; label: string; allowedRoles?: string[]; flow?: string | null; /** An enquiry type whose flow is furniture-only. */ furniture?: boolean };
 export const UNRESOLVED_ENQUIRY_TYPE_ID = "not_sure";
 export function hasResolvedEnquiryType(value: string | null | undefined): boolean {
   return Boolean(value?.trim() && value.trim() !== UNRESOLVED_ENQUIRY_TYPE_ID);
@@ -12,8 +12,12 @@ export type LeadOptions = {
   enquiryTypes: LeadOption[];
   budgetRanges: LeadOption[];
   customerTypes: LeadOption[];
+  /** The firm's project types (a villa, an apartment, an office); empty when it keeps none. */
+  projectTypes?: LeadOption[];
   emirates: LeadOption[];
   areas: Record<string, LeadOption[]>;
+  /** Area / city suggestions by region id ("" without regions): the areas already used here (most used first), then the listed ones. */
+  areaSuggestions?: Record<string, string[]>;
   referralBrokers?: LeadOption[];
   referralPartners?: LeadOption[];
   /** The signed-in member's role and team codes, lower-case (sent with the options). */
@@ -77,8 +81,19 @@ export type LeadContact = {
   phoneCountryCode?: string; mobileCountryCode?: string;
   company?: string; jobPosition?: string; website?: string; address?: string;
 };
+/**
+ * §0.3 P0: the floor plan: one of the enquiry's files, not available yet with a size estimate (converting then adds a
+ * task to get the real plan before the site visit), or not needed for this job.
+ */
+export type FloorPlan = { status: "uploaded" | "not_available" | "not_required"; assetId?: string; builtUpArea?: string; /** Guide D: optional (villas). */ plotSize?: string };
+export function floorPlanReady(plan: FloorPlan | null | undefined) {
+  if (plan?.status === "uploaded") return Boolean(plan.assetId);
+  if (plan?.status === "not_available") return Boolean(plan.builtUpArea?.trim());
+  return plan?.status === "not_required";
+}
 export type EnquiryDetails = {
   emirate?: string; area?: string; location?: string; customerType?: string; budgetRange?: string; campaign?: string;
+  projectType?: string; floorPlan?: FloorPlan;
   /** PLM-155: the date the client wants it finished (YYYY-MM-DD); collected, never promised by Sales. */
   targetCompletion?: string;
   internalNotes?: string; contact?: LeadContact;

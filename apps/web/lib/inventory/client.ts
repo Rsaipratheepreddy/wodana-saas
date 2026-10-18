@@ -15,6 +15,7 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
 export function inventoryApi(workspaceId: string) {
   const at = (value: string, query: Record<string, string> = {}) => `/api/inventory/${value}?${new URLSearchParams({ workspaceId, ...query })}`;
   return {
+    workspaceId,
     stock: () => request<StockState>(at("stock")),
     /** One stock change (issue, return, allocate, release, count, add), replayed safely by its id. */
     change: (input: Record<string, unknown>) => request<StockState>(at("stock"), "POST", input),

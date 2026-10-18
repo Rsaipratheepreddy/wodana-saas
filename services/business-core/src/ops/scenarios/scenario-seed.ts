@@ -517,7 +517,8 @@ export class ScenarioSeed extends ShowcaseSeed {
       if (!payment) throw new Skip("no unpaid handover milestone to report");
       const salesAdmin = await this.as("salesAdmin");
       await this.advance("handover payment reported, waiting for Finance", false, () => this.commercialCommand(caseId, salesAdmin, "report_payment_receipt",
-        { paymentId: payment.id, reference: `TRF-${ctx.s.reference.replace(/[^A-Z0-9]/gi, "").slice(-8)}`, evidence: "Bank transfer confirmation on file.", evidenceKind: "operational" }));
+        { paymentId: payment.id, reference: `TRF-${ctx.s.reference.replace(/[^A-Z0-9]/gi, "").slice(-8)}`, evidence: "Bank transfer confirmation on file.", evidenceKind: "operational",
+          method: "bank", receivedOn: new Date().toISOString().slice(0, 10) }));
     });
   }
 

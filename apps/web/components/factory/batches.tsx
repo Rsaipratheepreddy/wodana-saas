@@ -60,7 +60,7 @@ function BatchSheet({ api, batch, state, onChanged, onClose, onOpenOrder }: {
       <div className={styles.headRow}><span className={styles.muted}>{[t("Batch {number}", { number: batch.number }), batch.workcenterName, format.day(batch.plannedOn)].filter(Boolean).join(" · ")}</span></div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       <ul className={styles.list}>{orders.map((order) => <li key={order.id}>
-        <span className={styles.nameCell}><button type="button" className={styles.linkButton} onClick={() => onOpenOrder(order.id)}>{`${orderNumber(order.number)} · ${order.title}`}</button>
+        <span className={styles.nameCell}><span><Button size="compact" variant="quiet" onPress={() => onOpenOrder(order.id)}>{`${orderNumber(order.number)} · ${order.title}`}</Button></span>
           <small>{`${order.projectReference} · ${quantityText(order.quantity)} ${order.unit}`.trim()}</small></span>
         <span className={styles.filters}><WorkOrderStatusLabel status={order.status} />
           {state.canManage && batch.status === "open" && ["planned", "released"].includes(order.status) ? <Button size="compact" variant="quiet" isLoading={busy}

@@ -5,8 +5,10 @@ import { ExternalLink, ImageIcon } from "lucide-react";
 import { Badge, Button, Card, InlineNotice, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
-import type { PortalAlternative, PortalChoice, PortalDesignChoices, PortalPresentation } from "@/lib/client-portal/types";
+import type { PortalAlternative, PortalChange, PortalChoice, PortalDesignChoices, PortalPresentation } from "@/lib/client-portal/types";
 import type { PortalFormat } from "../portal-format";
+import portal from "../portal.module.css";
+import { DecisionRow } from "./decision-row";
 import home from "../portal-home.module.css";
 import styles from "../../pre-project/design-decisions.module.css";
 
@@ -14,9 +16,15 @@ import styles from "../../pre-project/design-decisions.module.css";
  * The client's design choices (plan §6.7a): pick one of the presented concepts or ask for changes, and confirm
  * (or decline) each material and design choice the team recorded. Every answer is kept with the client's name.
  */
-export function DesignChoices({ caseId, choices, api, format, onChanged }: { caseId: string; choices: PortalDesignChoices; api: PortalApi; format: PortalFormat; onChanged: () => Promise<void> | void }) {
+export function DesignChoices({ caseId, choices, api, format, onChanged, changes = [], onOpenChange }: {
+  caseId: string; choices: PortalDesignChoices; api: PortalApi; format: PortalFormat; onChanged: () => Promise<void> | void;
+  /** PLM-049/051: the change requests shown to the client, and how one opens (the extra revisions' changes are listed here too). */
+  changes?: PortalChange[]; onOpenChange?: (id: string) => void;
+}) {
   const t = useT();
   const open = choices.presentations.filter((item) => item.canDecide);
+  // The extra revisions' change requests the team sent: the same row as in the decisions list.
+  const extras = (choices.extraRevisions ?? []).map((extra) => changes.find((change) => change.id === extra.changeId)).filter((change): change is PortalChange => Boolean(change));
   // A declined choice with alternatives to pick from waits for the client too (R2).
   const pending = (item: PortalChoice) => item.canDecide || Boolean(item.alternatives?.some((alternative) => alternative.canChoose));
   const waiting = choices.choices.filter(pending);
@@ -24,6 +32,10 @@ export function DesignChoices({ caseId, choices, api, format, onChanged }: { cas
   if (!choices.presentations.length && !choices.choices.length) return null;
   return <div className={styles.section}>
     {open.map((round) => <PresentationCard key={round.id} round={round} caseId={caseId} api={api} onChanged={onChanged} />)}
+    {extras.length && onOpenChange ? <ul aria-label={t("Extra revisions")} className={portal.list}>{extras.map((change) => <li key={change.id}>
+      <DecisionRow title={`${change.reference} · ${change.title}`} state={change.status} waiting={change.canDecide} onOpen={() => onOpenChange(change.id)}
+        meta={change.priceImpact !== null && change.currency ? `${change.priceImpact.startsWith("-") ? "" : "+"}${format.money(change.priceImpact, change.currency)}` : ""} />
+    </li>)}</ul> : null}
     {choices.choices.length ? <Card title={t("Your choices")} chip={choices.locked ? <Badge tone="success">{t("Signed off")}</Badge> : waiting.length ? <Badge tone="info">{t("{count} to confirm", { count: waiting.length })}</Badge> : undefined}>
       <ul className={styles.checks}>{[...waiting, ...settled].map((choice) => <ChoiceRow key={choice.versionId} choice={choice} caseId={caseId} api={api} format={format} onChanged={onChanged} />)}</ul>
     </Card> : null}
@@ -45,7 +57,7 @@ function PresentationCard({ round, caseId, api, onChanged }: { round: PortalPres
     finally { setBusy(false); }
   };
   return <Card title={round.round > 1 ? t("{stage} · revision {number}", { stage: round.label, number: round.round - 1 }) : round.label} chip={<Badge tone="info">{t("Choose one")}</Badge>}
-    footer={<div className={styles.bar}><span className={styles.spacer} />
+    footer={<div className={styles.bar}>{round.paidChanges ? <span className={styles.muted}>{t("Further changes are a paid change.")}</span> : null}<span className={styles.spacer} />
       {changes ? <>
         <Button size="compact" variant="quiet" onPress={() => setChanges(false)}>{t("Back")}</Button>
         <Button size="compact" variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => void send({ decision: "changes", note: note.trim() })}>{t("Send")}</Button>
@@ -64,7 +76,7 @@ function PresentationCard({ round, caseId, api, onChanged }: { round: PortalPres
           <span className={styles.optionTitle}>{option.title}</span>
           {option.note ? <span className={styles.muted}>{option.note}</span> : null}
         </button>
-        {option.linkUrl ? <a className={styles.link} href={option.linkUrl} rel="noreferrer" target="_blank">{t("Open link")}<ExternalLink aria-hidden="true" size={12} data-directional="true" /></a> : null}
+        {option.linkUrl ? <a className="wd-button" data-variant="quiet" data-size="compact" href={option.linkUrl} rel="noreferrer" target="_blank">{t("Open link")}<ExternalLink aria-hidden="true" size={14} data-directional="true" /></a> : null}
       </li>)}</ul>}
   </Card>;
 }

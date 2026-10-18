@@ -204,7 +204,8 @@ async function approveDesignRoundThroughApi(caseId: string, quoteId: string) {
     item.sourceQuoteId === quoteId && item.requiredForRelease);
   assert(payment?.amount >= 15000, "The design deposit must be at least AED 15,000");
   await command(caseId, "report_payment_receipt", { paymentId: payment.id,
-    reference: `QA-RECEIPT-${suffix}`, evidence: "Synthetic bank receipt evidence", evidenceKind: "operational" });
+    reference: `QA-RECEIPT-${suffix}`, evidence: "Synthetic bank receipt evidence", evidenceKind: "operational",
+    method: "bank", receivedOn: new Date().toISOString().slice(0, 10) });
   const finance = await createQaActor("finance_reviewer");
   token = finance.token;
   await command(caseId, "verify_payment", { paymentId: payment.id });
@@ -305,7 +306,8 @@ async function approveMainRoundThroughApi(caseId: string, quoteId: string, actor
     item.sourceQuoteId === quoteId && item.requiredForRelease);
   assert(payment, "The main agreement must have its own payment");
   await command(caseId, "report_payment_receipt", { paymentId: payment.id,
-    reference: `QA-MAIN-RECEIPT-${suffix}`, evidence: "Synthetic main receipt evidence", evidenceKind: "operational" });
+    reference: `QA-MAIN-RECEIPT-${suffix}`, evidence: "Synthetic main receipt evidence", evidenceKind: "operational",
+    method: "bank", receivedOn: new Date().toISOString().slice(0, 10) });
   token = actors.finance.token;
   await command(caseId, "verify_payment", { paymentId: payment.id });
   token = submitterToken;
@@ -453,7 +455,8 @@ try {
   assert.equal(afterMain.data.ownerReview.status, "approved");
   assert.equal(afterMain.data.ownerReview.quoteId, mainQuoteId);
   assert.equal(afterMain.data.payments.length, 2);
-  assert.equal(afterMain.data.payments[0].agreementReference, `QA-DESIGN-${suffix}`);
+  // §0.3 P0: agreement references come from the workspace's numbering, never from what was typed.
+  assert.match(String(afterMain.data.payments[0].agreementReference), /-AGR-\d{4}-\d{5}$/);
   // The old release step is gone: a project starts from the accepted quotation.
   const oldRelease = await command(designCase, "release", { note: "Old path" }, 409);
   assert.match(JSON.stringify(oldRelease), /accepted quotation/);

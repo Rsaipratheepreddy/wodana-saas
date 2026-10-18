@@ -22,8 +22,8 @@ describe("site, a card per room", () => {
     const kitchen = screen.getByRole("article", { name: "Kitchen" });
     expect(kitchen).toHaveTextContent("Awaiting verification");
     expect(kitchen).toHaveTextContent("Wall A 4.2 m · Ceiling height 2.9 m");
-    expect(kitchen).toHaveTextContent("Photos1");
-    expect(kitchen).toHaveTextContent("Issues1 open");
+    expect(kitchen).toHaveTextContent("Photos 1");
+    expect(kitchen).toHaveTextContent("1 open");
     expect(within(kitchen).getByRole("button", { name: "View Kitchen" })).toBeInTheDocument();
     expect(within(kitchen).getByRole("button", { name: "Edit measurements of Kitchen" })).toBeInTheDocument();
     expect(within(kitchen).getByRole("button", { name: "Add photos to Kitchen" })).toBeInTheDocument();
@@ -61,7 +61,7 @@ describe("site, a card per room", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add room" }));
     fireEvent.click(await screen.findByRole("button", { name: "Master bedroom" }));
     const bedroom = await screen.findByRole("article", { name: "Master bedroom" });
-    expect(within(bedroom).getByRole("button", { name: /Add photos of every wall/ })).toBeInTheDocument();
+    expect(within(bedroom).getByRole("button", { name: "Add photos" })).toBeInTheDocument();
     expect(bedroom).toHaveTextContent("Not measured");
     expect(within(bedroom).getByRole("button", { name: "Measure Master bedroom" })).toBeInTheDocument();
     vi.unstubAllGlobals();
@@ -84,7 +84,7 @@ describe("site visit state tells the truth (D10, PLM-128)", () => {
     expect(room).toHaveTextContent("Verified");
     expect(room).not.toHaveTextContent("Not measured");
     expect(room).toHaveTextContent("Opening width 2.4 m");
-    expect(room).toHaveTextContent("Photos1");
+    expect(room).toHaveTextContent("Photos 1");
     expect(within(screen.getByRole("region", { name: "Visits" })).getByText("Done")).toBeInTheDocument();
   });
 

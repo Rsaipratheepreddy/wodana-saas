@@ -16,7 +16,7 @@ import {
 import type { CommercialState } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
 
-const approvalSections = new Set(["approvals", "execution-release"]);
+const approvalSections = new Set(["approvals", "deal-file", "execution-release"]);
 
 export function PreExecutionFlow({
   state,

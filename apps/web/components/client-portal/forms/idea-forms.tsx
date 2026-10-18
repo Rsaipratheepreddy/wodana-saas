@@ -1,8 +1,8 @@
 "use client";
 
-import { ExternalLink, FileText } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useState } from "react";
-import { Button, Form, InlineNotice, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { Button, Form, InlineNotice, ReviewFiles, SelectField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalMoodboard, PortalProject } from "@/lib/client-portal/types";
@@ -22,7 +22,7 @@ export function BoardDetail({ board, caseId, api, format, onChanged }: { board: 
     {board.hasImage
       // eslint-disable-next-line @next/next/no-img-element -- a private file streamed through the portal's signed-in route
       ? <img alt={`${board.title} · V${board.number}`} className={styles.preview} src={api.file("design", board.id)} />
-      : <a className={styles.fileName} href={api.file("design", board.id)} rel="noreferrer" target="_blank"><FileText aria-hidden="true" size={16} /> {t("Open the file")}</a>}
+      : <ReviewFiles label={t("Open the file")} files={[{ id: board.id, name: board.title, href: api.file("design", board.id) }]} />}
     <Reactions target={target} reaction={board.reaction} api={api} onChanged={onChanged} name={board.title} />
     <Comments comments={board.comments} format={format} />
     <CommentBox target={target} api={api} onSent={onChanged} />
@@ -43,10 +43,8 @@ export function PinDetail({ pin, caseId, api, format, onChanged, onRemoved }: { 
   };
   return <div className={styles.sheet}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
-    {pin.photos.length ? <div className={styles.photos}>{pin.photos.map((photo) => <a className={styles.photo} href={api.file("asset", photo.id)} key={photo.id} rel="noreferrer" target="_blank">
-      {/* eslint-disable-next-line @next/next/no-img-element -- a private file streamed through the portal's signed-in route */}
-      <img alt={pin.title} loading="lazy" src={api.file("asset", photo.id, true)} />
-    </a>)}</div> : null}
+    {pin.photos.length ? <ReviewFiles label={t("Photos")} files={pin.photos.map((photo, index) => ({ id: photo.id, name: pin.photos.length > 1 ? `${pin.title} · ${index + 1}` : pin.title,
+      href: api.file("asset", photo.id), previewHref: api.file("asset", photo.id, true) }))} /> : null}
     {pin.note ? <p className={styles.body} dir="auto">{pin.note}</p> : null}
     {pin.link ? <a className={styles.fileName} href={pin.link} rel="noreferrer noopener" target="_blank" dir="ltr"><ExternalLink aria-hidden="true" size={16} />{pin.link}</a> : null}
     <Reactions target={target} reaction={pin.reaction} api={api} onChanged={onChanged} name={pin.title} />

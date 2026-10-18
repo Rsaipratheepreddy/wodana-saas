@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Timer } from "lucide-react";
-import { useDesignSystem } from "@/design-system";
+import { Badge, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { deadlineText, durationParts, respondBy } from "@/lib/crm/sales-time";
-import styles from "./respond-by-chip.module.css";
 
 /** The current time, re-read every `interval` so countdowns tick while the page is open (S-5). */
 export function useNow(interval = 60_000) {
@@ -39,5 +38,5 @@ export function RespondByChip({ lead, now, compact = false }: { lead: { slaStatu
   const left = durationText(timer.minutesLeft, t);
   const label = timer.state === "breached" ? t("Respond by {when} · {duration} overdue", { when: at, duration: left }) : t("Respond by {when} · {duration}", { when: at, duration: left });
   const shown = !compact ? label : timer.state === "breached" ? t("{duration} overdue", { duration: left }) : left;
-  return <span className={styles.chip} data-chip data-state={timer.state} title={label}><Timer aria-hidden="true" size={12} /><span>{shown}</span></span>;
+  return <Badge data-chip="" data-icon="" data-state={timer.state} title={label} tone={timer.state === "breached" ? "danger" : timer.state === "warning" ? "warning" : "neutral"}><Timer aria-hidden="true" size={12} /><span>{shown}</span></Badge>;
 }

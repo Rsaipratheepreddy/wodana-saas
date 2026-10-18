@@ -1,0 +1,49 @@
+/* §0.3 P5: the top of the client's home. A quiet surface (no border), the brand colour for what is theirs. */
+.now { display: grid; gap: var(--wd-space-4); padding: var(--wd-space-4); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); }
+.chapters { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; }
+.chapters li {
+  display: inline-flex; align-items: center; gap: var(--wd-space-1-5);
+  padding: var(--wd-space-1) var(--wd-space-2-5) var(--wd-space-1) var(--wd-space-1);
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-xs);
+}
+.chapterMark {
+  display: inline-grid; place-items: center;
+  inline-size: var(--wd-space-5); block-size: var(--wd-space-5);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface-muted);
+  font-size: var(--wd-text-2xs);
+  font-weight: var(--wd-weight-semibold);
+}
+/* Each chapter wears its own colour (the same as the team sees); later chapters stay quiet. */
+.chapters li[data-state="done"] .chapterMark { background: var(--wd-hue-soft); color: var(--wd-hue); }
+.chapters li[data-state="now"] { background: var(--wd-hue-soft); color: var(--wd-hue); font-weight: var(--wd-weight-semibold); }
+.chapters li[data-state="now"] .chapterMark { background: var(--wd-hue); color: var(--wd-color-text-inverse); }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--wd-space-4); }
+.copy { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.kicker { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.kicker[data-yours] { color: var(--wd-color-action-primary); }
+.title { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); line-height: 1.25; color: var(--wd-color-text); }
+.due { font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+.person { display: inline-flex; align-items: center; gap: var(--wd-space-2-5); }
+.personText { display: grid; gap: 0; font-size: var(--wd-text-sm); }
+.personText span { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.next { display: grid; gap: var(--wd-space-2); }
+.nextTitle { margin: 0; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.next ol { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; counter-reset: next; }
+.next li {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--wd-space-1) var(--wd-space-3);
+  padding: var(--wd-space-2) var(--wd-space-3);
+  border-radius: var(--wd-radius-sm);
+  background: var(--wd-color-surface);
+}
+.next li[data-yours] { box-shadow: inset 3px 0 0 var(--wd-color-action-primary); }
+.next li[data-yours]:dir(rtl) { box-shadow: inset -3px 0 0 var(--wd-color-action-primary); }
+.nextLabel { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+.nextMeta { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); font-variant-numeric: tabular-nums; }
+@media (max-width: 40rem) {
+  .now { padding: var(--wd-space-3); }
+  .title { font-size: var(--wd-text-lg); }
+}

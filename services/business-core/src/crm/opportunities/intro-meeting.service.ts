@@ -126,6 +126,7 @@ export class IntroMeetingService {
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.appointment.changed.v1", entityType: "crm_activity", entityId: activity.id, after: { ...appointment, purpose: "intro", opportunityId } });
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "crm.opportunity.intro_booked.v1", entityType: "crm_opportunity", entityId: opportunityId,
         before: current ? { designerMembershipId: current.membershipId } : null, after: { activityId: activity.id, designerMembershipId: designer.membershipId, startsAt: input.startsAt, endsAt: input.endsAt, timezone: input.timezone, mode: input.mode } });
+      await this.moveToIntroBooked(client, workspaceId, opportunityId, user.userId);
 
       const bookedBy = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [user.userId])).rows[0]?.name ?? "";
       const variables = {
@@ -257,6 +258,34 @@ export class IntroMeetingService {
     const context = await requirementContext(client, workspaceId, facts.serviceType, await teamRolesForType(client, workspaceId, facts.serviceType));
     const enquiry = requirementProblems(facts, context, "book_intro").filter((item) => !(item.key === "email" && !discoveryEmail));
     return { discovery, enquiry };
+  }
+
+  /**
+   * §0.3 P0: booking the intro moves an open opportunity into its pipeline's Intro booked column, when the pipeline
+   * has one and the card stands before it. Recorded like any stage change (history, forecast snapshot, event).
+   */
+  private async moveToIntroBooked(client: PoolClient, workspaceId: string, opportunityId: string, actorUserId: string) {
+    const moved = await client.query<Record<string, unknown> & { from_stage: string }>(
+      `WITH target AS (
+         SELECT opportunity.id, opportunity.stage_id AS from_stage, stage.id AS to_stage, stage.probability, stage.forecast_category
+           FROM crm_opportunities opportunity
+           JOIN crm_pipeline_stages current ON current.workspace_id = opportunity.workspace_id AND current.id = opportunity.stage_id
+           JOIN crm_pipeline_stages stage ON stage.workspace_id = opportunity.workspace_id AND stage.pipeline_id = opportunity.pipeline_id
+            AND stage.code = 'intro_booked' AND stage.status = 'active'
+          WHERE opportunity.workspace_id = $1 AND opportunity.id = $2 AND opportunity.status = 'open' AND current.position < stage.position)
+       UPDATE crm_opportunities opportunity
+          SET stage_id = target.to_stage, probability = target.probability, forecast_category = target.forecast_category, version = opportunity.version + 1
+         FROM target WHERE opportunity.workspace_id = $1 AND opportunity.id = target.id
+       RETURNING opportunity.*, target.from_stage`, [workspaceId, opportunityId]);
+    const after = moved.rows[0];
+    if (!after) return;
+    await client.query(`INSERT INTO crm_stage_history (workspace_id, opportunity_id, from_stage_id, to_stage_id, from_status, to_status, reason, changed_by)
+      VALUES ($1,$2,$3,$4,'open','open','Intro booked',$5)`, [workspaceId, opportunityId, after.from_stage, after.stage_id, actorUserId]);
+    await client.query(`INSERT INTO crm_forecast_snapshots (workspace_id, opportunity_id, owner_membership_id, stage_id, status, amount, currency_code, reporting_amount, reporting_currency_code, probability, snapshot_reason)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'stage_changed')`,
+      [workspaceId, opportunityId, after.owner_membership_id, after.stage_id, after.status, after.amount, after.currency_code, after.reporting_amount, after.reporting_currency_code, after.probability]);
+    await this.events.record(client, { workspaceId, actorUserId, source: "user", action: "crm.opportunity.stage_changed.v1", entityType: "crm_opportunity", entityId: opportunityId,
+      before: { stage_id: after.from_stage }, after: { stage_id: after.stage_id, reason: "Intro booked" } });
   }
 
   private async opportunity(client: PoolClient, workspaceId: string, opportunityId: string, lock: boolean): Promise<Opportunity> {

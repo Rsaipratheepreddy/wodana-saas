@@ -25,7 +25,6 @@
 
 .mfaDialogBody { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
 .qrPanel { inline-size: 12.75rem; min-block-size: 12.75rem; display: grid; place-items: center; justify-self: center; overflow: hidden; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
-.qrPanel span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .manualKey { min-inline-size: 0; display: grid; justify-items: center; gap: var(--wd-space-1-5); border-radius: var(--wd-radius-md); padding: var(--wd-space-3); background: var(--wd-color-surface-muted); text-align: center; }
 .manualKey > span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
 .manualKey code { max-inline-size: 100%; color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: 650; letter-spacing: .08em; overflow-wrap: anywhere; user-select: all; }

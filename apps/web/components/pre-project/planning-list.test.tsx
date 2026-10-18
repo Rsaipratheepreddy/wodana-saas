@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PreProjectListItem } from "@/lib/pre-project/types";
 import type { PortfolioRow } from "@/components/projects/project-portfolio";
 import { PlanningList, planningRows, type WorkflowPhases } from "./planning-list";
+import { clearJobNowCache } from "@/lib/jobs/job-now";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
 beforeEach(() => push.mockReset());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); clearJobNowCache(); });
 
 const planning = { id: "case-1", title: "Villa interiors", customerName: "Amira", status: "active", phase: "design", leadManagerName: "Owner", amount: "48000.00", currencyCode: "AED" } as PreProjectListItem;
 const project = { id: "project-1", caseId: "case-1", name: "Villa interiors", customer: "Amira", phase: "active", manager: "Owner", onHold: false, nextAction: "", reference: "PRJ-0007" } as PortfolioRow;
@@ -24,13 +25,17 @@ describe("Planning rows (D-31)", () => {
     expect(planningRows([{ ...project, phase: "planning" }], [planning])).toEqual([expect.objectContaining({ stage: "Execution planning", href: "/workspace/pre-projects/cases/case-1/overview", amount: "48000.00" })]);
   });
 
-  it("moves a case on once its quotation is sent: the next step waits for the client, not Send the quotation", () => {
+  it("§0.3 P10: takes each row's next step from its job's journey, the same words as the job page", async () => {
+    clearJobNowCache();
     const sent = { ...planning, phase: "price", commercial: { data: { quotes: [{ id: "q1", number: 1, kind: "quotation", round: "main", status: "issued" }], agreement: null },
       quoteReferences: { q1: "PLM-QUO-2026-00001" } } } as PreProjectListItem;
-    expect(planningRows([], [sent])).toEqual([expect.objectContaining({ stage: "Quotation", next: "Waiting for the client's decision" })]);
+    expect(planningRows([], [sent])).toEqual([expect.objectContaining({ stage: "Quotation" })]);
+    const fetcher = vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("/jobs/now")
+      ? { items: [{ type: "case", id: sent.id, jobId: "job-1", reference: "J-000001", chapter: "price", now: { label: "Estimate proposal signed", owner: null, dueAt: null, late: false, href: null } }] } : {} }));
+    vi.stubGlobal("fetch", fetcher);
     render(<PlanningList projects={[]} planning={list([sent])} />);
-    expect(within(screen.getByRole("table", { name: "Planning" })).getByText("Waiting for the client's decision")).toBeVisible();
-    expect(screen.queryByText("Send the quotation")).not.toBeInTheDocument();
+    expect(await within(screen.getByRole("table", { name: "Planning" })).findByText("Estimate proposal signed")).toBeVisible();
+    expect(fetcher.mock.calls[0][0]).toContain(`records=case:${sent.id}`);
   });
 
   it("opens the planning case, never the project, when a project in planning has one; otherwise its plan", () => {

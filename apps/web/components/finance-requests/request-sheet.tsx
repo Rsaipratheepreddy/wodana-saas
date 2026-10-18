@@ -3,7 +3,10 @@
 import { RecordHistory } from "../history/record-history";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button, ErrorState, FileUploader, InlineNotice, InspectorSheet, MoneyField, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import {
+  Badge, Button, EditableFieldList, EmptyState, ErrorState, FactRow, FileUploader, InlineNotice, InspectorSheet, MoneyField, ReviewDialog, ReviewFiles, SelectField, Skeleton, StateChip, TextAreaField, TextInput,
+  type ItemState,
+} from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FinanceRequestsApi } from "@/lib/finance-requests/client";
 import type { FileKind, FinanceRequestDetail } from "@/lib/finance-requests/types";
@@ -37,6 +40,7 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
   const [statement, setStatement] = useState("");
   const [fileKind, setFileKind] = useState<FileKind>("quote");
   const [answering, setAnswering] = useState(false);
+  const [deciding, setDeciding] = useState(false);
   const show = (next: FinanceRequestDetail) => {
     setDetail(next); setReference(next.request.financeReference); setInternalNote(next.request.internalNote ?? ""); setStatement(plain(next.request.statementAmount));
   };
@@ -54,7 +58,15 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
   const request = detail?.request;
   const money = (value: string | null) => (value && request ? format.money(value, request.currency) : "");
   const open = request ? ["new", "in_progress", "needs_info"].includes(request.status) : false;
+  const files = (detail?.files ?? []).map((file) => ({ id: file.id, name: [file.name, fileKinds[file.kind], file.uploadedByName].join(" · "), href: api.fileUrl(id, file.id) }));
   const finance = Boolean(detail?.canManage);
+  /** An approver's decision, made in the review; a refusal keeps the review open with why. */
+  const decide = async (decision: "approve" | "return" | "reject", text: string) => {
+    setBusy(decision === "reject" ? "decline" : decision); setNotice("");
+    try { show(await api.command("decide", { id, decision, note: text, approvalVersion: detail!.approval!.version })); onChanged(); setDeciding(false); }
+    finally { setBusy(""); }
+  };
+  const stepStates: Record<string, ItemState> = { done: "done", current: "waiting", upcoming: "upcoming", returned: "returned", rejected: "rejected" };
   const move = (action: "start" | "ask" | "done" | "reject") => act(action, () => api.command(action, { id, version: request!.version, note: note.trim(),
     ...(action === "done" ? { financeReference: reference.trim() } : {}) }));
 
@@ -72,35 +84,35 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
     {loadError ? <ErrorState description={loadError} /> : !detail || !request ? <Skeleton shape="facts" lines={6} /> : <div className={styles.sheet}>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {request.status === "needs_info" && !finance ? <InlineNotice tone="info" message={[...detail.events].reverse().find((event) => event.kind === "needs_info")?.note || statuses.needs_info} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Status")}</dt><dd><RequestStatusLabel status={request.status} />{request.closeNote && request.status === "rejected" ? <span>{request.closeNote}</span> : null}</dd></div>
+      <EditableFieldList>
+        <FactRow label={t("Status")}><RequestStatusLabel status={request.status} />{request.closeNote && request.status === "rejected" ? <span className={styles.text}>{request.closeNote}</span> : null}</FactRow>
         {request.kind === "payable"
-          ? <div><dt>{t("Supplier")}</dt><dd>{request.supplierName}{request.supplierTaxNumber ? <span className={styles.muted}>{request.supplierTaxNumber}</span> : null}</dd></div>
-          : <div><dt>{t("Client")}</dt><dd>{request.partyId ? <Link href={`/workspace/crm/customers?record=${request.partyId}`}>{request.clientName}</Link> : request.clientName}
-            {request.clientEmail ? <span className={styles.muted}>{request.clientEmail}</span> : null}</dd></div>}
-        {request.clientTaxNumber ? <div><dt>{t("Client tax number")}</dt><dd>{request.clientTaxNumber}</dd></div> : null}
-        {request.opportunityReference ? <div><dt>{t("Deal")}</dt><dd>{`${request.opportunityReference} · ${request.opportunityTitle ?? ""}`}</dd></div> : null}
-        {request.projectId ? <div><dt>{t("Project")}</dt><dd><Link href={`/workspace/projects/${request.projectId}`}>{[request.projectReference, request.projectName].filter(Boolean).join(" · ")}</Link></dd></div> : null}
-        <div><dt>{t("Requested by")}</dt><dd>{request.requesterName}<span className={styles.muted}>{format.when(request.createdAt)}</span></dd></div>
-        {request.salespersonName ? <div><dt>{t("Salesperson")}</dt><dd>{request.salespersonName}</dd></div> : null}
-        {request.companyName ? <div><dt>{request.kind === "payable" ? t("Paying company") : t("Issuing company")}</dt><dd>{request.companyName}</dd></div> : null}
-        {request.invoiceKind ? <div><dt>{t("Kind of invoice")}</dt><dd>{invoiceKinds[request.invoiceKind]}</dd></div> : null}
-        {request.paymentStageTitle ? <div><dt>{t("Payment stage")}</dt><dd>{request.paymentStageTitle}</dd></div> : null}
-        {request.paymentTerms ? <div><dt>{t("Payment terms")}</dt><dd>{request.paymentTerms}</dd></div> : null}
-        {request.contractReference ? <div><dt>{t("Contract reference")}</dt><dd>{request.contractReference}</dd></div> : null}
-        {request.orderNumber ? <div><dt>{t("Order")}</dt><dd>{request.orderNumber}{request.orderGross ? <span>{money(request.orderGross)}</span> : null}</dd></div> : null}
-        {request.invoiceNumber ? <div><dt>{t("Client invoice number")}</dt><dd>{request.invoiceNumber}</dd></div> : null}
-        {request.reason ? <div><dt>{t("Reason")}</dt><dd>{request.reason}</dd></div> : null}
-        {request.paymentMethod ? <div><dt>{request.kind === "refund" ? t("Refund method") : t("Payment method")}</dt><dd>{request.paymentMethod}</dd></div> : null}
-        {request.kind === "refund" && request.hasBankDetails ? <div><dt>{t("Client bank details")}</dt><dd>{request.bankDetails ?? t("Given (Finance only)")}</dd></div> : null}
-        {request.expectedRefundOn ? <div><dt>{t("Expected refund")}</dt><dd>{format.day(request.expectedRefundOn)}</dd></div> : null}
-        {request.supplierReference ? <div><dt>{t("Supplier quote or invoice")}</dt><dd>{request.supplierReference}{request.invoicePending ? <span className={styles.status} data-tone="warning">{t("Invoice pending")}</span> : null}</dd></div> : null}
-        {request.authorisedByName ? <div><dt>{t("Authorised by")}</dt><dd>{request.authorisedByName}</dd></div> : null}
-        {request.materialLocation ? <div><dt>{t("Material needed at")}</dt><dd>{locations[request.materialLocation]}</dd></div> : null}
-        {request.paidOnStatement ? <div><dt>{t("Monthly statement")}</dt><dd>{request.statementAmount ? t("Checked: {amount}", { amount: money(request.statementAmount) }) : t("Provisional until the statement arrives")}</dd></div> : null}
-        {request.remarks ? <div><dt>{t("Remarks")}</dt><dd>{request.remarks}</dd></div> : null}
-        {request.financeReference ? <div><dt>{t("Accounting reference")}</dt><dd>{request.financeReference}</dd></div> : null}
-      </dl>
+          ? <FactRow label={t("Supplier")}>{request.supplierName}{request.supplierTaxNumber ? <span className={styles.muted}>{request.supplierTaxNumber}</span> : null}</FactRow>
+          : <FactRow label={t("Client")}>{request.partyId ? <Link href={`/workspace/crm/customers?record=${request.partyId}`}>{request.clientName}</Link> : request.clientName}
+            {request.clientEmail ? <span className={styles.muted}>{request.clientEmail}</span> : null}</FactRow>}
+        {request.clientTaxNumber ? <FactRow label={t("Client tax number")}>{request.clientTaxNumber}</FactRow> : null}
+        {request.opportunityReference ? <FactRow label={t("Deal")}>{`${request.opportunityReference} · ${request.opportunityTitle ?? ""}`}</FactRow> : null}
+        {request.projectId ? <FactRow label={t("Project")}><Link href={`/workspace/projects/${request.projectId}`}>{[request.projectReference, request.projectName].filter(Boolean).join(" · ")}</Link></FactRow> : null}
+        <FactRow label={t("Requested by")}>{request.requesterName}<span className={styles.muted}>{format.when(request.createdAt)}</span></FactRow>
+        {request.salespersonName ? <FactRow label={t("Salesperson")}>{request.salespersonName}</FactRow> : null}
+        {request.companyName ? <FactRow label={request.kind === "payable" ? t("Paying company") : t("Issuing company")}>{request.companyName}</FactRow> : null}
+        {request.invoiceKind ? <FactRow label={t("Kind of invoice")}>{invoiceKinds[request.invoiceKind]}</FactRow> : null}
+        {request.paymentStageTitle ? <FactRow label={t("Payment stage")}>{request.paymentStageTitle}</FactRow> : null}
+        {request.paymentTerms ? <FactRow label={t("Payment terms")}><span className={styles.text}>{request.paymentTerms}</span></FactRow> : null}
+        {request.contractReference ? <FactRow label={t("Contract reference")}>{request.contractReference}</FactRow> : null}
+        {request.orderNumber ? <FactRow label={t("Order")}>{request.orderNumber}{request.orderGross ? <span>{money(request.orderGross)}</span> : null}</FactRow> : null}
+        {request.invoiceNumber ? <FactRow label={t("Client invoice number")}>{request.invoiceNumber}</FactRow> : null}
+        {request.reason ? <FactRow label={t("Reason")}><span className={styles.text}>{request.reason}</span></FactRow> : null}
+        {request.paymentMethod ? <FactRow label={request.kind === "refund" ? t("Refund method") : t("Payment method")}>{request.paymentMethod}</FactRow> : null}
+        {request.kind === "refund" && request.hasBankDetails ? <FactRow label={t("Client bank details")}><span className={styles.text}>{request.bankDetails ?? t("Given (Finance only)")}</span></FactRow> : null}
+        {request.expectedRefundOn ? <FactRow label={t("Expected refund")}>{format.day(request.expectedRefundOn)}</FactRow> : null}
+        {request.supplierReference ? <FactRow label={t("Supplier quote or invoice")}>{request.supplierReference}{request.invoicePending ? <Badge tone="warning">{t("Invoice pending")}</Badge> : null}</FactRow> : null}
+        {request.authorisedByName ? <FactRow label={t("Authorised by")}>{request.authorisedByName}</FactRow> : null}
+        {request.materialLocation ? <FactRow label={t("Material needed at")}>{locations[request.materialLocation]}</FactRow> : null}
+        {request.paidOnStatement ? <FactRow label={t("Monthly statement")}>{request.statementAmount ? t("Checked: {amount}", { amount: money(request.statementAmount) }) : t("Provisional until the statement arrives")}</FactRow> : null}
+        {request.remarks ? <FactRow label={t("Remarks")}><span className={styles.text}>{request.remarks}</span></FactRow> : null}
+        {request.financeReference ? <FactRow label={t("Accounting reference")}>{request.financeReference}</FactRow> : null}
+      </EditableFieldList>
 
       {detail.lines.length ? <section className={styles.part}>
         <h3 className={styles.subhead}>{request.kind === "refund" ? t("Items not delivered") : t("Lines")}</h3>
@@ -118,18 +130,18 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
         </> : <div><dt>{t("To refund")}</dt><dd><strong>{money(request.total)}</strong></dd></div>}
       </dl>
 
-      {detail.approval ? <section className={styles.part}>
+      {detail.approval ? <section className={styles.part} aria-label={t("Approval")}>
         <h3 className={styles.subhead}>{t("Approval")}</h3>
-        <ul className={styles.list}>{detail.approval.steps.map((step) => <li key={step.position}><span>{step.label}</span>
-          <small>{step.state === "current" ? detail.approval!.waitingFor.join(", ") || t("Waiting") : [step.decidedBy, step.decidedAt ? format.when(step.decidedAt) : "", step.note].filter(Boolean).join(" · ")}</small></li>)}</ul>
-        {detail.canDecide ? <div className={styles.actions}>
-          <Button variant="primary" isLoading={busy === "approve"} isDisabled={Boolean(busy)} onPress={() => void act("approve", () => api.command("decide", { id, decision: "approve", note: note.trim(), approvalVersion: detail.approval!.version }))}>{t("Approve")}</Button>
-          <Button intent="write" isLoading={busy === "return"} isDisabled={Boolean(busy)} onPress={() => (note.trim() ? void act("return", () => api.command("decide", { id, decision: "return", note: note.trim(), approvalVersion: detail.approval!.version })) : setNotice(t("Say what needs to change.")))}>{t("Send back")}</Button>
-          <Button variant="danger" intent="write" isLoading={busy === "decline"} isDisabled={Boolean(busy)} onPress={() => (note.trim() ? void act("decline", () => api.command("decide", { id, decision: "reject", note: note.trim(), approvalVersion: detail.approval!.version })) : setNotice(t("Say why it's rejected.")))}>{t("Reject")}</Button>
-        </div> : null}
+        <EditableFieldList>{detail.approval.steps.map((step) => <FactRow key={step.position} label={step.label}>
+          <StateChip state={stepStates[step.state] ?? "upcoming"} label={step.state === "done" ? t("Approved") : undefined} />
+          <span className={styles.muted}>{step.state === "current" ? detail.approval!.waitingFor.join(", ")
+            : [step.decidedBy, step.decidedAt ? format.when(step.decidedAt) : "", step.note].filter(Boolean).join(" · ")}</span>
+        </FactRow>)}</EditableFieldList>
+        {/* §0.3 P0: the request is approved, sent back or rejected in a review of what was asked and its files, never one click. */}
+        {detail.canDecide ? <div><Button variant="primary" isDisabled={Boolean(busy)} onPress={() => { setNotice(""); setDeciding(true); }}>{t("Review")}</Button></div> : null}
       </section> : null}
 
-      {(finance && open) || detail.canDecide ? <TextAreaField label={finance && open ? t("Note to the requester") : t("Note")} maxLength={1000} value={note} onChange={setNote} /> : null}
+      {finance && open ? <TextAreaField label={t("Note to the requester")} maxLength={1000} value={note} onChange={setNote} /> : null}
 
       {finance ? <section className={styles.part}>
         <h3 className={styles.subhead}>{t("Finance")}</h3>
@@ -141,10 +153,7 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
       </section> : null}
 
       <section className={styles.part}>
-        <h3 className={styles.subhead}>{t("Files")}</h3>
-        {detail.files.length ? <ul className={styles.list}>{detail.files.map((file) => <li key={file.id}>
-          <a href={api.fileUrl(id, file.id)} target="_blank" rel="noreferrer">{file.name}</a><small>{[fileKinds[file.kind], file.uploadedByName, format.when(file.uploadedAt)].join(" · ")}</small></li>)}</ul>
-          : <p className={styles.muted}>{t("No files yet.")}</p>}
+        <ReviewFiles label={t("Files")} files={files} empty={<EmptyState illustration={null} title={t("No files yet.")} />} />
         {detail.canAttach ? <div className={styles.actions}>
           <SelectField label={t("Kind of file")} selectedKey={fileKind} onSelectionChange={(key) => setFileKind((key as FileKind) ?? "quote")}
             items={(request.kind === "payable" ? ["quote", "tax_invoice", "proof", "other"] as const : ["quote", "proof", "other"] as const).map((kind) => ({ id: kind, label: fileKinds[kind] }))} />
@@ -158,6 +167,16 @@ export function RequestSheet({ api, id, onChanged, onClose }: { api: FinanceRequ
         <RecordHistory workspaceId={api.workspaceId} recordType="finance_request" recordId={id} />
       </section>
     </div>}
+    {deciding && detail?.approval && request ? <ReviewDialog title={t("Review")} description={`${request.reference} · ${kinds[request.kind]}`} onClose={() => setDeciding(false)}
+      confirmLabel={t("Approve")} returnLabel={t("Send back")} rejectLabel={t("Reject")}
+      facts={[
+        { label: request.kind === "payable" ? t("Pay now") : request.kind === "refund" ? t("To refund") : t("Total"), value: money(request.kind === "payable" ? request.payNow : request.total) },
+        { label: request.kind === "payable" ? t("Supplier") : t("Client"), value: (request.kind === "payable" ? request.supplierName : request.clientName) ?? "" },
+        { label: t("Requested by"), value: request.requesterName },
+        ...(request.reason ? [{ label: t("Reason"), value: request.reason }] : []),
+      ]}
+      files={files}
+      onConfirm={(text) => decide("approve", text)} onReturn={(text) => decide("return", text)} onReject={(text) => decide("reject", text)} /> : null}
     {answering && detail ? <RequestForm api={api} existing={detail} onClose={() => setAnswering(false)} onSaved={(next) => { setAnswering(false); show(next); onChanged(); }} /> : null}
   </InspectorSheet>;
 }

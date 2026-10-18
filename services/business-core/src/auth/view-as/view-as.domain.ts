@@ -43,15 +43,15 @@ export type ViewAsStartInput = {
 );
 
 /**
- * Who may view as whom. Owners and administrators (anyone granted `workspace.view_as`) view as an active team
- * member for up to 30 minutes, read-only. Never as themselves, never from inside another view (no chaining),
- * never as a Wodana operator or someone who is not a staff member (client-portal users have no membership),
- * and an administrator never as an owner. A role preview follows the same rules for the role itself.
+ * Who may view as whom. Only an owner (who also holds `workspace.view_as`) views as an active team member for up
+ * to 30 minutes, read-only; an administrator or any other role never does, whatever it was granted. Never as
+ * oneself, never from inside another view (no chaining), never as a Wodana operator or someone who is not a staff
+ * member (client-portal users have no membership). A role preview follows the same rules.
  */
 export function planViewAsStart(input: ViewAsStartInput): { minutes: number } {
   if (input.chained) throw new ViewAsRuleError("view_as_chained");
-  if (!input.viewer.canViewAs) throw new ViewAsRuleError("view_as_not_allowed");
   const viewerIsOwner = input.viewer.roles.includes(OWNER);
+  if (!input.viewer.canViewAs || !viewerIsOwner) throw new ViewAsRuleError("view_as_not_allowed");
   if (input.kind === "role") {
     if (!input.role) throw new ViewAsRuleError("view_as_role_not_found");
     if (input.role.code === OWNER && !viewerIsOwner) throw new ViewAsRuleError("view_as_owner_protected");
@@ -70,7 +70,7 @@ export function clampViewAsMinutes(minutes: number | undefined) {
   return Math.min(VIEW_AS_MAX_MINUTES, Math.max(5, Math.round(minutes)));
 }
 
-/** True for the two roles that may hold `workspace.view_as` by default. */
+/** True for the two roles that manage the workspace (only an owner may view as someone else). */
 export function isWorkspaceAdministrator(roles: readonly string[]) {
   return roles.includes(OWNER) || roles.includes(ADMINISTRATOR);
 }

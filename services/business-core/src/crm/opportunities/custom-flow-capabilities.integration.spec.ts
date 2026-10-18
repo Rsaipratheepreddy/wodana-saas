@@ -60,8 +60,12 @@ integration("an enquiry type's own flow keeps its starter's features", () => {
       for (const [index, key] of Object.keys(stage).entries())
         await client.query("INSERT INTO crm_pipeline_stages(id,workspace_id,pipeline_id,code,name,position,probability) VALUES($1,$2,$3,$4,$4,$5,10)", [stage[key], workspaceId, pipelineId, key, index + 1]);
       await client.query("INSERT INTO crm_parties(id,workspace_id,type,display_name,normalized_name) VALUES($1,$2,'person','Yasmin','yasmin')", [partyId, workspaceId]);
+      // A real intake event, so saving the enquiry later passes its cross-workspace check.
+      const intakeId = randomUUID();
+      await client.query(`INSERT INTO crm_intake_events(id,workspace_id,source,channel,intake_method,idempotency_key,payload_hash,original_payload,correlation_id,received_at)
+        VALUES($1,$2,'referral','external','manual',$3,repeat('c',64),'{}',$1,now())`, [intakeId, workspaceId, `key-${intakeId}`]);
       await client.query(`INSERT INTO crm_enquiries(id,workspace_id,intake_event_id,party_id,title,source,channel,received_at,reference,service_type,details)
-        VALUES($1,$2,$3,$4,'Villa','referral','external',now(),'E-1',$5,'{"customerType":"homeowner"}')`, [enquiryId, workspaceId, randomUUID(), partyId, code]);
+        VALUES($1,$2,$3,$4,'Villa','referral','external',now(),'E-1',$5,'{"customerType":"homeowner","targetCompletion":"2031-09-01"}')`, [enquiryId, workspaceId, intakeId, partyId, code]);
       await client.query("INSERT INTO crm_leads(id,workspace_id,enquiry_id,party_id) VALUES($1,$2,$3,$4)", [leadId, workspaceId, enquiryId, partyId]);
       await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,lead_id,pipeline_id,stage_id,owner_membership_id,title,reference,next_action_at,
           conversion_origin,conversion_request_hash,qualification_evidence,qualification_evidence_hash,converted_at)
@@ -101,6 +105,9 @@ integration("an enquiry type's own flow keeps its starter's features", () => {
     expect(booked.designer).toMatchObject({ membershipId: job.designer, name: "Dana Designer" });
     await client.query("UPDATE crm_activities SET status = 'completed', completed_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2", [job.workspaceId, booked.intro!.activityId]);
   };
+  /** §0.3 P0: the intro's outcome: going ahead with this enquiry type, by a target date. */
+  const goAhead = async (client: PoolClient, job: Job, scope: string) =>
+    job.opportunities.recordOutcome(actor, job.workspaceId, job.opportunityId, { version: await version(client, job.opportunityId), outcome: "proceed", scope, targetCompletion: "2031-09-01" });
   const toQualification = async (client: PoolClient, job: Job) =>
     job.opportunities.transition(actor, job.workspaceId, job.opportunityId, { version: await version(client, job.opportunityId), stageId: job.stage.qualification });
 
@@ -115,15 +122,49 @@ integration("an enquiry type's own flow keeps its starter's features", () => {
         { area: "120", areaUnit: "sqm", clientEmail: "yasmin@example.com", propertyLocation: "Villa 4, Palm", floorPlanAssetId: job.floorPlanId, designPackageId: job.packageId });
       expect((await summary(client, job)).facts.packageCode).toBe("bespoke");
       // Without the intro the opportunity can't qualify: the flow asks for it.
-      await expect(toQualification(client, job)).rejects.toMatchObject({ response: { missing: [{ key: "introMeeting", label: "Intro meeting completed" }] } });
+      await expect(toQualification(client, job)).rejects.toMatchObject({ response: { missing: [{ key: "introMeeting", label: "Intro meeting completed" },
+        { key: "qualificationOutcome" }] } });
 
       await holdIntro(client, job);
+      await goAhead(client, job, "interior_design_furniture");
       const moved = await toQualification(client, job);
       expect(moved.stage_id).toBe(job.stage.qualification);
 
       // Proposal 1 (the design fee) belongs to the job: a proof that names no round wins it first.
       expect(await hasDesignRound(client, job.workspaceId, job.opportunityId)).toBe(true);
       expect(wonProposalKind([], null, await hasDesignRound(client, job.workspaceId, job.opportunityId))).toBe("design");
+    });
+  });
+
+  it("§0.3 P0: the intro outcome: each answer needs its own facts; needs time books the follow-up as the next action; lost closes it", async () => {
+    await withJob("design", "interior_design_furniture", async (client, job) => {
+      const outcome = async (input: Record<string, unknown>) => job.opportunities.recordOutcome(actor, job.workspaceId, job.opportunityId, { version: await version(client, job.opportunityId), ...input } as never);
+      const missing = async (input: Record<string, unknown>) => (await outcome(input).catch((error) => error)).response?.missing?.map((item: { key: string }) => item.key);
+      expect(await missing({ outcome: "proceed" })).toEqual(["scope", "targetCompletion"]);
+      expect(await missing({ outcome: "proceed", scope: "not_sure", targetCompletion: "2020-01-01" })).toEqual(["scope", "targetCompletion"]);
+      expect(await missing({ outcome: "proceed", scope: "castle", targetCompletion: "2031-02-30" })).toEqual(["scope", "targetCompletion"]);
+      expect(await missing({ outcome: "needs_time", followUpOn: "2020-01-01" })).toEqual(["followUpOn"]);
+      expect(await missing({ outcome: "lost", reason: " " })).toEqual(["reason"]);
+      await expect(job.opportunities.recordOutcome(actor, job.workspaceId, job.opportunityId, { version: 999, outcome: "needs_time", followUpOn: "2031-04-01" })).rejects.toThrow("Opportunity changed");
+
+      // Needs time: the follow-up is the next action, at 09:00 on the firm's calendar.
+      const thinking = await outcome({ outcome: "needs_time", followUpOn: "2031-04-01" });
+      expect(thinking).toMatchObject({ qualificationOutcome: "needs_time", qualificationScope: null });
+      const task = (await client.query("SELECT title, due_at, is_next_action FROM crm_activities WHERE opportunity_id = $1 AND is_next_action", [job.opportunityId])).rows;
+      expect(task).toEqual([{ title: "Follow up: the client is thinking it over", due_at: new Date("2031-04-01T08:00:00Z"), is_next_action: true }]);
+      expect((await client.query("SELECT next_action_at FROM crm_opportunities WHERE id = $1", [job.opportunityId])).rows[0].next_action_at).toEqual(new Date("2031-04-01T08:00:00Z"));
+      expect((await summary(client, job)).facts.qualificationProceed).toBe(false);
+
+      // Going ahead later records the scope and the client's target date on the enquiry.
+      await outcome({ outcome: "proceed", scope: "interior_design_furniture", targetCompletion: "2031-12-01" });
+      const facts = (await summary(client, job)).facts;
+      expect([facts.qualificationProceed, facts.targetCompletionSet]).toEqual([true, true]);
+      expect((await client.query("SELECT details->>'targetCompletion' AS at FROM crm_enquiries WHERE workspace_id = $1", [job.workspaceId])).rows[0].at).toBe("2031-12-01");
+
+      // Lost closes the opportunity with its reason, through the Lost transition.
+      const lost = await outcome({ outcome: "lost", reason: "Went with another studio" });
+      expect(lost).toMatchObject({ status: "lost", stageId: job.stage.lost, outcomeReason: "Went with another studio" });
+      await expect(outcome({ outcome: "needs_time", followUpOn: "2031-05-01" })).rejects.toThrow("Reopen the opportunity");
     });
   });
 
@@ -135,8 +176,10 @@ integration("an enquiry type's own flow keeps its starter's features", () => {
 
       await job.discovery.save(actor, job.workspaceId, job.opportunityId,
         { area: "300", areaUnit: "sqm", clientEmail: "yasmin@example.com", propertyLocation: "Villa 4, Palm", floorPlanAssetId: job.floorPlanId });
-      await expect(toQualification(client, job)).rejects.toMatchObject({ response: { missing: [{ key: "introMeeting", label: "Intro meeting completed" }] } });
+      await expect(toQualification(client, job)).rejects.toMatchObject({ response: { missing: [{ key: "introMeeting", label: "Intro meeting completed" },
+        { key: "qualificationOutcome" }] } });
       await holdIntro(client, job);
+      await goAhead(client, job, "full_fit_out");
       expect((await toQualification(client, job)).stage_id).toBe(job.stage.qualification);
       expect(await hasDesignRound(client, job.workspaceId, job.opportunityId)).toBe(false);
     });

@@ -95,3 +95,9 @@
   .bubble, .bubble[data-flip-x], .bubble[data-flip-y], .bubble[data-flip-x][data-flip-y] { position: fixed; inset-inline: var(--wd-space-3); inset-block: auto var(--wd-space-3); inline-size: auto; max-inline-size: none; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) { .pin { transition: none; } }
+
+/* The client's decision staff took down: its chip, who and when, the words and the file it came in. */
+.decision { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); }
+.decision p { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.decisionHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.decisionHead small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }

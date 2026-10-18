@@ -16,6 +16,7 @@ import { factoryApi } from "@/lib/factory/client";
 import { SampleRequests } from "../factory/samples";
 import { ProjectMaterials } from "./project-materials";
 import { ProjectDrawings } from "./project-drawings";
+import { ItemDrawings } from "./item-drawings";
 import { FinishesSchedule } from "../finishes/finishes-schedule";
 import { ProjectReadiness } from "./project-readiness";
 import { ProjectTechnicalHandover } from "./project-technical-handover";
@@ -192,7 +193,11 @@ export function ProjectScope({ workspaceId, projectId, version, run, onChanged }
     </>
     // PLM-156: the finishes schedule (design and installation views, the drawings schedule), the same record as on the case.
     : view === "finishes" ? <FinishesSchedule source={{ kind: "project", workspaceId, projectId }} />
-    : view === "drawings" ? <ProjectDrawings workspaceId={workspaceId} projectId={projectId} version={version} onChanged={onChanged} />
+    // Shop drawings per item first (upload, the lead designer's check, the client's signature), then the project's drawing revisions.
+    : view === "drawings" ? <>
+      <ItemDrawings workspaceId={workspaceId} projectId={projectId} onChanged={onChanged} />
+      <ProjectDrawings workspaceId={workspaceId} projectId={projectId} version={version} onChanged={onChanged} />
+    </>
     : view === "changes" ? <ProjectChanges workspaceId={workspaceId} projectId={projectId} onChanged={onChanged} />
     : seal ? <SealedDocument workspaceId={workspaceId} projectId={projectId} sealId={seal} onBack={() => setSeal(null)} />
       : <ul className={styles.sealList} aria-label={t("Sealed documents")}>
@@ -224,6 +229,14 @@ function LineSheet({ workspaceId, projectId, line, scope, run, onClose }: { work
     const detail = entry.detail as Record<string, string | null>;
     if (entry.kind === "agreed") return t("Agreed in {revision} · {quantity}", { revision: String(detail.revision ?? ""), quantity: `${Number(detail.quantity ?? 0).toLocaleString()} ${current.unit}` });
     if (entry.kind === "packaged") return detail.package ? t("Put in {package}", { package: String(detail.package) }) : t("Taken out of its package");
+    const amount = (value: unknown) => `${Number(value ?? 0).toLocaleString()} ${current.unit}`;
+    if (entry.kind === "added") return t("Added in {revision} · {quantity}", { revision: String(detail.variation ?? ""), quantity: amount(detail.quantity) });
+    if (entry.kind === "reduced") return t("Reduced in {revision} · {quantity} left", { revision: String(detail.variation ?? ""), quantity: amount(detail.left) });
+    if (entry.kind === "omitted") return t("Removed in {revision}", { revision: String(detail.variation ?? "") });
+    if (entry.kind === "moved") return t("Moved in {revision}", { revision: String(detail.variation ?? "") });
+    // A signed item whose quantity changed: its shop drawing needs a new signed version.
+    if (entry.kind === "drawing_reopened") return t("Shop drawing reopened in {revision}: signed for {signed}, now {quantity}",
+      { revision: String(detail.variation ?? ""), signed: amount(detail.signedQuantity), quantity: amount(detail.quantity) });
     return entry.kind;
   };
   return <InspectorSheet isOpen size="md" title={current.title} onOpenChange={(open) => { if (!open) onClose(); }}>
