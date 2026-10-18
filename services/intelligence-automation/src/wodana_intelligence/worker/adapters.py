@@ -14,15 +14,30 @@ from wodana_intelligence.integrations.provider_models import OperationRequest
 from wodana_intelligence.integrations.provider_service import ProviderService
 from wodana_intelligence.worker.models import DeliveryJob, DeliveryResult, PushReceiptJob
 
+# The most Wodana keeps of one chat file (Business Core's ATTACHMENT_MAX_BYTES).
+MEDIA_MAX_BYTES = 20 * 1024 * 1024
+
 
 class NotificationAdapter(Protocol):
     async def deliver(self, job: DeliveryJob) -> DeliveryResult: ...
     async def verify_push(self, receipt: PushReceiptJob) -> DeliveryResult: ...
 
 
+class MediaUnavailable(RuntimeError):
+    """No provider can hand over a client's file here (test or unconfigured): not retried."""
+
+    code = "provider_unconfigured"
+    status_code = 409
+
+
 class DeterministicTestAdapter:
     def __init__(self, provider: str = "deterministic-test") -> None:
         self.provider = provider
+
+    async def download_whatsapp_media(
+        self, workspace_id: str, connection_id: str | None, media_id: str
+    ) -> tuple[bytes, str]:
+        raise MediaUnavailable("Test delivery never fetches files from WhatsApp")
 
     async def deliver(self, job: DeliveryJob) -> DeliveryResult:
         message_id = sha256(f"{job.id}:{job.channel}".encode()).hexdigest()[:24]
@@ -38,6 +53,11 @@ class DeterministicTestAdapter:
 
 
 class UnconfiguredAdapter:
+    async def download_whatsapp_media(
+        self, workspace_id: str, connection_id: str | None, media_id: str
+    ) -> tuple[bytes, str]:
+        raise MediaUnavailable("No live WhatsApp provider is configured")
+
     async def deliver(self, job: DeliveryJob) -> DeliveryResult:
         return DeliveryResult(
             result="permanent_failure",
@@ -65,6 +85,25 @@ class ConnectedProviderAdapter:
         self.core = core
         self.google = google
         self.providers = providers
+
+    async def whatsapp_templates(self, workspace_id: str) -> list[dict[str, Any]]:
+        return await self.providers.whatsapp_templates_internal(workspace_id)
+
+    async def whatsapp_health(self, workspace_id: str) -> dict[str, Any]:
+        return await self.providers.whatsapp_health_internal(workspace_id)
+
+    async def submit_whatsapp_template(
+        self, workspace_id: str, template: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self.providers.submit_whatsapp_template_internal(workspace_id, template)
+
+    async def download_whatsapp_media(
+        self, workspace_id: str, connection_id: str | None, media_id: str
+    ) -> tuple[bytes, str]:
+        """A client's file from WhatsApp, on the number it arrived at, up to what Wodana keeps."""
+        return await self.providers.whatsapp_media_internal(
+            workspace_id, connection_id, media_id, MEDIA_MAX_BYTES
+        )
 
     async def deliver(self, job: DeliveryJob) -> DeliveryResult:
         try:
@@ -108,11 +147,28 @@ class ConnectedProviderAdapter:
                     "to": phone,
                     "optInConfirmed": True,
                 }
-                if job.template_code:
+                # The chat's own number when it has one; otherwise the workspace's default number.
+                connection = str(job.connection_id) if job.connection_id else None
+                upload: tuple[bytes, str, str] | None = None
+                if job.media:
+                    # A file: its bytes from Business Core, uploaded to WhatsApp on send (inside
+                    # the 24-hour window Business Core checked); the message names its media id.
+                    body, mime_type = await self.core.attachment_content(
+                        str(job.workspace_id), str(job.media.attachment_id)
+                    )
+                    upload = (body, job.media.mime_type or mime_type, job.media.file_name or "file")
+                    payload["mediaType"] = job.media.kind
+                    if job.media.caption and job.media.kind != "audio":
+                        payload["caption"] = job.media.caption[:1024]
+                    if job.media.kind == "document" and job.media.file_name:
+                        payload["filename"] = job.media.file_name
+                elif job.template_code:
                     payload.update(
                         {
                             "templateName": job.template_code,
                             "language": (job.locale or "en_US").replace("-", "_"),
+                            # The values of the template's {{1}}…{{n}}, snapshotted by business-core.
+                            "bodyParameters": list(job.template_parameters),
                         }
                     )
                 else:
@@ -122,9 +178,12 @@ class ConnectedProviderAdapter:
                     OperationRequest(
                         action="message.send", idempotency_key=job.id, payload=payload
                     ),
+                    connection=connection,
+                    upload=upload,
                 )
+                # Meta accepting a message is not delivery: its status webhook says delivered or read.
                 return DeliveryResult(
-                    result="delivered",
+                    result="accepted",
                     provider="whatsapp",
                     provider_message_id=str(result["id"]),
                 )
@@ -146,18 +205,27 @@ class ConnectedProviderAdapter:
                         error_code="DeviceNotRegistered",
                         error_message="The registered push token is no longer available",
                     )
+                message: dict[str, Any] = {
+                    "to": token,
+                    "title": job.subject or "Wodana",
+                    "body": job.body,
+                    "data": {
+                        "notificationId": str(job.id),
+                        "workspaceId": str(job.workspace_id),
+                        "deepLink": job.deep_link,
+                    },
+                }
+                # An approval the phone can decide from the lock screen shows Approve and Open.
+                if job.push_category and job.approval:
+                    message["categoryId"] = job.push_category
+                    message["data"]["approval"] = {
+                        "kind": job.approval.kind,
+                        "id": str(job.approval.id),
+                        "version": job.approval.version,
+                    }
                 response = await self.providers.client.http.post(
                     "https://exp.host/--/api/v2/push/send",
-                    json={
-                        "to": token,
-                        "title": job.subject or "Wodana",
-                        "body": job.body,
-                        "data": {
-                            "notificationId": str(job.id),
-                            "workspaceId": str(job.workspace_id),
-                            "deepLink": job.deep_link,
-                        },
-                    },
+                    json=message,
                     headers={"Accept": "application/json", "Content-Type": "application/json"},
                 )
                 if response.status_code == 429 or response.status_code >= 500:

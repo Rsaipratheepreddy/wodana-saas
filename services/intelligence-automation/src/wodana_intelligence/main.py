@@ -9,6 +9,7 @@ from wodana_intelligence import __version__
 from wodana_intelligence.api.router import api_router
 from wodana_intelligence.config import get_settings
 from wodana_intelligence.container import close_clients
+from wodana_intelligence.error_reporting import install_error_reporting
 from wodana_intelligence.integrations.business_core import BusinessCoreError
 from wodana_intelligence.integrations.google_client import GoogleApiError
 from wodana_intelligence.integrations.google_service import IntegrationFlowError
@@ -16,6 +17,7 @@ from wodana_intelligence.integrations.vault import CredentialNotFoundError
 
 settings = get_settings()
 settings.validate_integration_settings()
+install_error_reporting("intelligence-api")
 
 
 @asynccontextmanager

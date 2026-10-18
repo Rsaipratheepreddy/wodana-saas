@@ -29,6 +29,26 @@ class OAuthStartRequest(ApiModel):
     access_mode: GoogleAccessMode = GoogleAccessMode.MANAGE
     gmail_send: bool = False
     drive_files: bool = False
+    return_origin: str = Field(default="", max_length=200)
+
+
+class PickerTokenRequest(ApiModel):
+    workspace_id: UUID
+    connection_id: UUID
+
+
+class PickerTokenResponse(ApiModel):
+    access_token: str
+    expires_in: int
+    account_email: str
+
+
+class SheetReadRequest(ApiModel):
+    workspace_id: UUID
+    connection_id: UUID
+    spreadsheet_id: str = Field(pattern=r"^[A-Za-z0-9_-]{10,200}$")
+    sheet_name: Optional[str] = Field(default=None, max_length=200)
+    preview_rows: Optional[int] = Field(default=None, ge=1, le=5000)
 
 
 class OAuthStartResponse(ApiModel):
@@ -40,6 +60,7 @@ class OAuthStartResponse(ApiModel):
 class OAuthState(ApiModel):
     workspace_id: UUID
     connection_id: UUID
+    return_origin: str = ""
     expected_version: int = Field(ge=1)
     expected_domain: str
     expected_email: Optional[str] = None

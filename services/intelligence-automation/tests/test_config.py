@@ -69,7 +69,6 @@ def test_production_optional_providers_require_https_callbacks(
             },
             "INTEGRATIONS_ENCRYPTION_KEY",
         ),
-        ({"google_client_secret": ""}, "Google OAuth client credentials"),
         ({"web_origin": "http://app.wodana.ai"}, "HTTPS WEB_ORIGIN"),
         (
             {"google_redirect_uri": "http://api.wodana.ai/oauth/callback"},
@@ -82,3 +81,20 @@ def test_production_integration_settings_reject_insecure_defaults(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         production_settings(**override).validate_integration_settings()
+
+
+def test_production_starts_without_app_credentials_in_env() -> None:
+    """Wodana Control supplies them; an env redirect only matters with an env client."""
+    production_settings(
+        google_client_id="",
+        google_client_secret="",
+        google_redirect_uri="http://localhost:8001/api/v1/integrations/google/oauth/callback",
+    ).validate_integration_settings()
+
+
+@pytest.mark.parametrize("mode", ["unconfigured", "test"])
+def test_a_production_worker_must_deliver_live(mode: str) -> None:
+    with pytest.raises(ValueError, match="NOTIFICATION_ADAPTER_MODE=live"):
+        production_settings(notification_adapter_mode=mode).validate_worker_settings()
+    production_settings(notification_adapter_mode="live").validate_worker_settings()
+    Settings(environment="uat", notification_adapter_mode="test").validate_worker_settings()

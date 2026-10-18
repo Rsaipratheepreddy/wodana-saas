@@ -1,5 +1,6 @@
+import logging
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import quote, urlencode
 
 import httpx
@@ -11,11 +12,30 @@ from wodana_intelligence.integrations.models import (
     GoogleUserInfo,
 )
 
+if TYPE_CHECKING:
+    from wodana_intelligence.integrations.platform_credentials import PlatformCredentialResolver
+
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3"
+GOOGLE_SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
+_SHEET_LINK_CELL = "hyperlink,textFormatRuns(format(link(uri)))"
+_SHEET_CHIP_CELL = "chipRuns(chip(richLinkProperties(uri)))"
+SHEET_LINK_FIELDS = (
+    "sheets(properties(title),data(startRow,startColumn,"
+    f"rowData(values({_SHEET_LINK_CELL},{_SHEET_CHIP_CELL}))))"
+)
+SHEET_LINK_FIELDS_WITHOUT_CHIPS = (
+    f"sheets(properties(title),data(startRow,startColumn,rowData(values({_SHEET_LINK_CELL}))))"
+)
+
+
+logger = logging.getLogger("wodana.google")
+
+# A Google connection whose access ended (revoked or expired): the person must connect it again.
+RECONNECT_REQUIRED = "reconnect_required"
 
 
 class GoogleApiError(RuntimeError):
@@ -33,23 +53,38 @@ class GoogleCalendarClient:
         redirect_uri: str,
         timeout_seconds: float = 15.0,
         http_client: Optional[httpx.AsyncClient] = None,
+        credentials: Optional["PlatformCredentialResolver"] = None,
     ) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
+        # When given, Wodana's Google app is read live from it (Wodana Control, else env).
+        self._credentials = credentials
         self._owns_client = http_client is None
         self._client = http_client or httpx.AsyncClient(timeout=timeout_seconds)
 
-    def authorization_url(
+    async def app(self) -> tuple[str, str, str]:
+        """Wodana's Google app now: client ID, client secret and the central callback."""
+        if self._credentials is None:
+            return self.client_id, self.client_secret, self.redirect_uri
+        current = await self._credentials.current()
+        return current.google_client_id, current.google_client_secret, current.google_redirect_uri
+
+    async def configured(self) -> bool:
+        client_id, client_secret, _ = await self.app()
+        return bool(client_id and client_secret)
+
+    async def authorization_url(
         self,
         state: str,
         code_challenge: str,
         scopes: Sequence[str],
         hosted_domain: Optional[str] = None,
     ) -> str:
+        client_id, _, redirect_uri = await self.app()
         params = {
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": " ".join(scopes),
             "access_type": "offline",
@@ -65,13 +100,14 @@ class GoogleCalendarClient:
         return f"{GOOGLE_AUTHORIZATION_URL}?{query}"
 
     async def exchange_code(self, code: str, code_verifier: str) -> GoogleTokenResponse:
+        client_id, client_secret, redirect_uri = await self.app()
         response = await self._client.post(
             GOOGLE_TOKEN_URL,
             data={
                 "code": code,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "redirect_uri": self.redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
                 "code_verifier": code_verifier,
             },
@@ -84,16 +120,20 @@ class GoogleCalendarClient:
                 "oauth_exchange_failed", "Google returned an incomplete token response"
             ) from error
 
-    async def refresh_token(self, refresh_token: str) -> GoogleTokenResponse:
-        response = await self._client.post(
-            GOOGLE_TOKEN_URL,
-            data={
-                "refresh_token": refresh_token,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "grant_type": "refresh_token",
-            },
-        )
+    async def refresh_token(
+        self, refresh_token: str, scopes: Optional[Sequence[str]] = None
+    ) -> GoogleTokenResponse:
+        """A new access token; with `scopes`, one narrowed to those granted scopes only."""
+        client_id, client_secret, _ = await self.app()
+        data = {
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "refresh_token",
+        }
+        if scopes:
+            data["scope"] = " ".join(scopes)
+        response = await self._client.post(GOOGLE_TOKEN_URL, data=data)
         payload = self._json(response, "oauth_refresh_failed")
         try:
             return GoogleTokenResponse.model_validate(payload)
@@ -270,6 +310,57 @@ class GoogleCalendarClient:
         if response.status_code not in {204, 410}:
             self._json(response, "event_cancel_failed")
 
+    async def spreadsheet(self, access_token: str, spreadsheet_id: str) -> dict[str, Any]:
+        """A spreadsheet's title and its tabs (drive.file: only a file picked for Wodana)."""
+        response = await self._client.get(
+            f"{GOOGLE_SHEETS_API}/{quote(spreadsheet_id, safe='')}",
+            params={"fields": "properties.title,sheets.properties(title,sheetType,hidden)"},
+            headers=self._authorization(access_token),
+        )
+        return self._json(response, "sheet_read_failed")
+
+    async def sheet_values(
+        self, access_token: str, spreadsheet_id: str, ranges: Sequence[str]
+    ) -> list[list[list[Any]]]:
+        """The cells of each range as the sheet shows them (formatted), row by row."""
+        response = await self._client.get(
+            f"{GOOGLE_SHEETS_API}/{quote(spreadsheet_id, safe='')}/values:batchGet",
+            params=[
+                *(("ranges", value) for value in ranges),
+                ("valueRenderOption", "FORMATTED_VALUE"),
+                ("majorDimension", "ROWS"),
+            ],
+            headers=self._authorization(access_token),
+        )
+        payload = self._json(response, "sheet_read_failed")
+        return [
+            value_range.get("values", []) if isinstance(value_range, dict) else []
+            for value_range in payload.get("valueRanges", [])
+        ]
+
+    async def sheet_links(
+        self, access_token: str, spreadsheet_id: str, ranges: Sequence[str]
+    ) -> dict[str, Any]:
+        """
+        The links behind each range's cells: a cell's hyperlink, a link on part of its text, or a
+        Drive file smart chip. Asks without chips once if Google refuses that field mask.
+        """
+        response = await self._sheet_grid(access_token, spreadsheet_id, ranges, SHEET_LINK_FIELDS)
+        if response.status_code == 400:
+            response = await self._sheet_grid(
+                access_token, spreadsheet_id, ranges, SHEET_LINK_FIELDS_WITHOUT_CHIPS
+            )
+        return self._json(response, "sheet_read_failed")
+
+    async def _sheet_grid(
+        self, access_token: str, spreadsheet_id: str, ranges: Sequence[str], fields: str
+    ) -> httpx.Response:
+        return await self._client.get(
+            f"{GOOGLE_SHEETS_API}/{quote(spreadsheet_id, safe='')}",
+            params=[*(("ranges", value) for value in ranges), ("fields", fields)],
+            headers=self._authorization(access_token),
+        )
+
     async def revoke(self, token: str) -> None:
         response = await self._client.post(
             GOOGLE_REVOKE_URL,
@@ -294,10 +385,26 @@ class GoogleCalendarClient:
         except ValueError as error:
             raise GoogleApiError(code, "Google returned an invalid response") from error
         if response.is_error:
-            detail = payload.get("error_description") or payload.get("error", {}).get("message")
-            if not isinstance(detail, str):
-                detail = "Google request failed"
-            raise GoogleApiError(code, detail, response.status_code)
+            error = payload.get("error") if isinstance(payload, dict) else None
+            # Google's own words ("Token has been expired or revoked.") are for the logs only.
+            detail = payload.get("error_description") if isinstance(payload, dict) else None
+            if isinstance(error, dict):
+                detail = detail or error.get("message")
+            logger.warning(
+                "Google request failed: %s (HTTP %s): %s",
+                code,
+                response.status_code,
+                detail if isinstance(detail, str) else "no detail",
+            )
+            # The person's access ended (revoked, expired, new password): only reconnecting helps.
+            # (A 401 from the token endpoint is Wodana's app credentials, not the person's.)
+            if error == "invalid_grant" or (
+                response.status_code == 401 and not code.startswith("oauth_")
+            ):
+                raise GoogleApiError(RECONNECT_REQUIRED, "Reconnect Google in Connections", 409)
+            raise GoogleApiError(
+                code, "Google could not complete the request", response.status_code
+            )
         if not isinstance(payload, dict):
             raise GoogleApiError(code, "Google returned an invalid response")
         return payload

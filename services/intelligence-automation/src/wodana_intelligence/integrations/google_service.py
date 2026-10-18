@@ -1,5 +1,7 @@
 import hashlib
 import json
+import logging
+import re
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
@@ -7,7 +9,11 @@ from typing import Any, Optional
 from uuid import UUID
 
 from wodana_intelligence.integrations.business_core import BusinessCoreClient, BusinessCoreError
-from wodana_intelligence.integrations.google_client import GoogleApiError, GoogleCalendarClient
+from wodana_intelligence.integrations.google_client import (
+    RECONNECT_REQUIRED,
+    GoogleApiError,
+    GoogleCalendarClient,
+)
 from wodana_intelligence.integrations.models import (
     AvailabilityRequest,
     AvailabilityResponse,
@@ -23,6 +29,7 @@ from wodana_intelligence.integrations.models import (
     OAuthStartRequest,
     OAuthStartResponse,
     OAuthState,
+    PickerTokenResponse,
     RuntimeConnection,
     StoredGoogleCredential,
     UpdateCalendarEventRequest,
@@ -40,6 +47,17 @@ FREE_BUSY_SCOPE = "https://www.googleapis.com/auth/calendar.events.freebusy"
 READ_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly"
 MANAGE_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+# A linked sheet is read up to these bounds (Wodana's importer refuses more).
+SHEET_TABS = 50
+SHEET_ROWS = 5000
+SHEET_COLUMNS = 100
+# The links behind a linked sheet's cells (e.g. a drawing's name linking to its file).
+SHEET_LINKS_PER_TAB = 5000
+SHEET_LINK_LENGTH = 2000
+_SHEET_LINK = re.compile(r"https?://\S+", re.IGNORECASE)
+
+logger = logging.getLogger("wodana.google-sheets")
 
 
 class IntegrationFlowError(RuntimeError):
@@ -69,11 +87,9 @@ class GoogleIntegrationService:
         request: OAuthStartRequest,
         actor_headers: Mapping[str, str],
     ) -> OAuthStartResponse:
-        if not self._google.client_id or not self._google.client_secret:
+        if not await self._google.configured():
             raise IntegrationFlowError(
-                "google_not_configured",
-                "Google OAuth credentials have not been configured",
-                503,
+                "google_not_configured", "Not available yet. Wodana is setting this up.", 503
             )
 
         public = await self._business_core.validate_connection(
@@ -109,6 +125,7 @@ class GoogleIntegrationService:
             access_mode=request.access_mode,
             requested_scopes=scopes,
             issued_at=self._state_store.issued_now(),
+            return_origin=request.return_origin,
         )
         try:
             state_id = await self._state_store.issue(oauth_state)
@@ -119,7 +136,7 @@ class GoogleIntegrationService:
                 "Google authorization could not be started; try again",
                 503,
             ) from error
-        authorization_url = self._google.authorization_url(
+        authorization_url = await self._google.authorization_url(
             state_id,
             self._state_store.code_challenge(verifier),
             scopes,
@@ -130,6 +147,14 @@ class GoogleIntegrationService:
             expires_in_seconds=self._state_ttl_seconds,
             connection_version=int(connection["version"]),
         )
+
+    async def return_origin(self, state_id: str) -> str:
+        """Where this sign-in started, before the state is used up; empty when unknown."""
+        try:
+            state = await self._state_store.peek(state_id)
+        except Exception:
+            return ""
+        return state.return_origin if state else ""
 
     async def complete_oauth(
         self,
@@ -300,56 +325,86 @@ class GoogleIntegrationService:
         self, request: AvailabilityRequest, actor_headers: Mapping[str, str]
     ) -> dict[str, Any]:
         events: list[dict[str, Any]] = []
+        # One account that can't be read (access revoked, no calendar chosen) doesn't hide the
+        # others: their events come back with the failed account's code. Only when every account
+        # fails is it an error.
+        failures: list[dict[str, str]] = []
+        first_error: Optional[IntegrationFlowError | GoogleApiError] = None
         for connection_id in request.connection_ids:
-            public = await self._business_core.validate_connection(
-                str(request.workspace_id), str(connection_id), actor_headers
-            )
-            runtime = await self._active_runtime(request.workspace_id, connection_id, public)
-            if not {READ_EVENTS_SCOPE, MANAGE_EVENTS_SCOPE}.intersection(runtime.granted_scopes):
-                raise IntegrationFlowError(
-                    "calendar_read_consent_required",
-                    "Reconnect Google with calendar read access",
-                    403,
-                )
-            selected = [r for r in runtime.resources if r.enabled and r.direction != "outbound"]
-            if not selected:
-                raise IntegrationFlowError(
-                    "no_calendars_selected", "Select a calendar in Integrations", 422
-                )
-            if len(selected) > 20:
-                raise IntegrationFlowError("too_many_calendars", "Select at most 20 calendars", 422)
-            credential = await self._access_credential(runtime)
-            for calendar in selected:
-                items = await self._google.list_events(
-                    credential.access_token,
-                    calendar.external_id,
-                    request.time_min.isoformat(),
-                    request.time_max.isoformat(),
-                    request.time_zone,
-                )
-                for event in items:
-                    events.append(
-                        {
-                            "id": event.get("id"),
-                            "connectionId": str(connection_id),
-                            "calendarId": calendar.external_id,
-                            "calendarName": calendar.display_name,
-                            "title": event.get("summary") or "Busy",
-                            "start": event.get("start", {}),
-                            "end": event.get("end", {}),
-                            "status": event.get("status"),
-                            "htmlLink": event.get("htmlLink"),
-                            "etag": event.get("etag"),
-                        }
-                    )
-            await self._business_core.record_health(
-                str(connection_id), str(request.workspace_id), "google.events.read", True
-            )
+            try:
+                events.extend(await self._connection_events(request, connection_id, actor_headers))
+            except (IntegrationFlowError, GoogleApiError) as error:
+                first_error = first_error or error
+                failures.append({"connectionId": str(connection_id), "code": error.code})
+        if first_error is not None and len(failures) == len(request.connection_ids):
+            raise first_error
         return {
             "events": events,
+            "failures": failures,
             "fetchedAt": datetime.now(timezone.utc).isoformat(),
             "mode": "live_read",
         }
+
+    async def _connection_events(
+        self, request: AvailabilityRequest, connection_id: UUID, actor_headers: Mapping[str, str]
+    ) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        public = await self._business_core.validate_connection(
+            str(request.workspace_id), str(connection_id), actor_headers
+        )
+        runtime = await self._active_runtime(request.workspace_id, connection_id, public)
+        if not {READ_EVENTS_SCOPE, MANAGE_EVENTS_SCOPE}.intersection(runtime.granted_scopes):
+            raise IntegrationFlowError(
+                "calendar_read_consent_required",
+                "Reconnect Google with calendar read access",
+                403,
+            )
+        selected = [r for r in runtime.resources if r.enabled and r.direction != "outbound"]
+        if not selected:
+            raise IntegrationFlowError(
+                "no_calendars_selected", "Select a calendar in Integrations", 422
+            )
+        if len(selected) > 20:
+            raise IntegrationFlowError("too_many_calendars", "Select at most 20 calendars", 422)
+        credential = await self._access_credential(runtime)
+        for calendar in selected:
+            items = await self._google.list_events(
+                credential.access_token,
+                calendar.external_id,
+                request.time_min.isoformat(),
+                request.time_max.isoformat(),
+                request.time_zone,
+            )
+            for event in items:
+                events.append(
+                    {
+                        "id": event.get("id"),
+                        "connectionId": str(connection_id),
+                        "calendarId": calendar.external_id,
+                        "calendarName": calendar.display_name,
+                        "title": event.get("summary") or "Busy",
+                        "start": event.get("start", {}),
+                        "end": event.get("end", {}),
+                        "status": event.get("status"),
+                        "htmlLink": event.get("htmlLink"),
+                        "etag": event.get("etag"),
+                        "description": event.get("description"),
+                        "location": event.get("location"),
+                        "attendees": [
+                            {
+                                "email": attendee.get("email"),
+                                "displayName": attendee.get("displayName"),
+                                "responseStatus": attendee.get("responseStatus"),
+                            }
+                            for attendee in event.get("attendees", [])
+                            if attendee.get("email")
+                        ],
+                    }
+                )
+        await self._business_core.record_health(
+            str(connection_id), str(request.workspace_id), "google.events.read", True
+        )
+        return events
 
     async def availability(
         self,
@@ -572,6 +627,142 @@ class GoogleIntegrationService:
         )
         return {"eventId": event_id, "status": "cancelled"}
 
+    async def picker_token(
+        self,
+        workspace_id: UUID,
+        connection_id: UUID,
+        actor_headers: Mapping[str, str],
+    ) -> PickerTokenResponse:
+        """
+        A short-lived token for the Google Picker, narrowed to drive.file: picking a sheet gives
+        Wodana that one file and nothing else. Refused when Google can't narrow it (never the
+        connection's full token).
+        """
+        await self._business_core.authorize_connection(
+            str(workspace_id), str(connection_id), actor_headers, write=True
+        )
+        public = await self._business_core.validate_connection(
+            str(workspace_id), str(connection_id), actor_headers
+        )
+        runtime = await self._active_runtime(workspace_id, connection_id, public)
+        if DRIVE_FILE_SCOPE not in runtime.granted_scopes:
+            raise IntegrationFlowError(
+                "drive_file_not_granted",
+                "Turn on Drive files for this Google connection in Connections, then reconnect it",
+                409,
+            )
+        credential = await self._vault.get(runtime.secret_reference or "")
+        try:
+            token = await self._google.refresh_token(credential.refresh_token, [DRIVE_FILE_SCOPE])
+        except GoogleApiError as error:
+            raise IntegrationFlowError(error.code, str(error), error.status_code) from error
+        if set(token.scope.split()) != {DRIVE_FILE_SCOPE}:
+            raise IntegrationFlowError(
+                "picker_scope_unavailable",
+                "Google couldn't give file-only access for picking a sheet; try again later",
+                409,
+            )
+        return PickerTokenResponse(
+            access_token=token.access_token,
+            expires_in=token.expires_in,
+            account_email=credential.account_email,
+        )
+
+    async def read_sheet(
+        self,
+        workspace_id: UUID,
+        connection_id: UUID,
+        spreadsheet_id: str,
+        sheet_name: Optional[str] = None,
+        preview_rows: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """
+        A linked sheet's cells as text (as the sheet shows them), one tab or every tab, for
+        Wodana's importer. Internal: the importer has already checked who asked; drive.file means
+        only a sheet someone picked for Wodana can be read.
+        """
+        public = await self._business_core.runtime_context(str(workspace_id), str(connection_id))
+        runtime = await self._active_runtime(workspace_id, connection_id, public)
+        if DRIVE_FILE_SCOPE not in runtime.granted_scopes:
+            raise IntegrationFlowError(
+                "drive_file_not_granted",
+                "Turn on Drive files for this Google connection in Connections, then reconnect it",
+                409,
+            )
+        credential = await self._access_credential(runtime)
+        try:
+            meta = await self._google.spreadsheet(credential.access_token, spreadsheet_id)
+            grid_tabs = [
+                sheet["properties"]
+                for sheet in meta.get("sheets", [])
+                if isinstance(sheet, dict)
+                and isinstance(sheet.get("properties"), dict)
+                and sheet["properties"].get("title")
+                and sheet["properties"].get("sheetType", "GRID") == "GRID"
+            ]
+            tabs = [str(properties["title"]) for properties in grid_tabs]
+            hidden = {
+                str(properties["title"]) for properties in grid_tabs if properties.get("hidden")
+            }
+            if sheet_name is not None:
+                if sheet_name not in tabs:
+                    raise IntegrationFlowError(
+                        "sheet_tab_missing",
+                        f"The tab {sheet_name} isn't in the sheet any more",
+                        409,
+                    )
+                tabs = [sheet_name]
+            tabs = tabs[:SHEET_TABS]
+            last_row = min(preview_rows or SHEET_ROWS, SHEET_ROWS)
+            ranges = ["'" + tab.replace("'", "''") + f"'!A1:CV{last_row}" for tab in tabs]
+            values = (
+                await self._google.sheet_values(credential.access_token, spreadsheet_id, ranges)
+                if ranges
+                else []
+            )
+        except GoogleApiError as error:
+            if error.status_code in {403, 404}:
+                raise IntegrationFlowError(
+                    "sheet_unavailable",
+                    "Wodana can't open this sheet any more. Link it again from Google",
+                    409,
+                ) from error
+            raise IntegrationFlowError(error.code, str(error), error.status_code) from error
+        links: dict[str, dict[str, str]] = {}
+        if ranges:
+            try:
+                links = _sheet_links(
+                    await self._google.sheet_links(credential.access_token, spreadsheet_id, ranges),
+                    tabs,
+                    last_row,
+                )
+            except Exception as error:  # links are a bonus; the cells still import without them
+                logger.warning("Sheet links could not be read (%s)", type(error).__name__)
+        sheets: list[dict[str, Any]] = []
+        for tab, rows in zip(tabs, values):
+            sheet: dict[str, Any] = {
+                "name": tab,
+                "rows": [
+                    ["" if cell is None else str(cell) for cell in row[:SHEET_COLUMNS]]
+                    for row in rows
+                    if isinstance(row, list)
+                ],
+            }
+            if links.get(tab):
+                sheet["links"] = links[tab]
+            if tab in hidden:
+                sheet["hidden"] = True
+            sheets.append(sheet)
+        with suppress(Exception):
+            await self._business_core.record_health(
+                str(connection_id), str(workspace_id), "google.sheets.read", True
+            )
+        return {
+            "title": str(meta.get("properties", {}).get("title") or "Sheet"),
+            "sheets": sheets,
+            "rowCounts": {sheet["name"]: len(sheet["rows"]) for sheet in sheets},
+        }
+
     async def _active_runtime(
         self,
         workspace_id: UUID,
@@ -648,6 +839,17 @@ class GoogleIntegrationService:
         try:
             refreshed = await self._google.refresh_token(credential.refresh_token)
         except GoogleApiError as error:
+            if error.code == RECONNECT_REQUIRED:
+                # Google revoked or expired the access: the connection needs attention (Connections
+                # offers Reconnect), and the calendar shows Wodana's events with a quiet note.
+                with suppress(Exception):
+                    await self._business_core.record_health(
+                        str(runtime.id),
+                        str(runtime.workspace_id),
+                        "google.token.refresh",
+                        False,
+                        RECONNECT_REQUIRED,
+                    )
             raise IntegrationFlowError(error.code, str(error), error.status_code) from error
         updated = credential.model_copy(
             update={
@@ -769,3 +971,75 @@ class GoogleIntegrationService:
             start=event.get("start", {}),
             end=event.get("end", {}),
         )
+
+
+def _sheet_links(
+    payload: Mapping[str, Any], tabs: list[str], last_row: int
+) -> dict[str, dict[str, str]]:
+    """Each tab's cell links keyed "row:col" (0-based, absolute), http(s) only, within bounds."""
+    wanted = set(tabs)
+    found: dict[str, dict[str, str]] = {}
+    for sheet in payload.get("sheets") or []:
+        if not isinstance(sheet, dict) or not isinstance(sheet.get("properties"), dict):
+            continue
+        title = sheet["properties"].get("title")
+        if not isinstance(title, str) or title not in wanted:
+            continue
+        tab_links = found.setdefault(title, {})
+        for grid in sheet.get("data") or []:
+            if not isinstance(grid, dict):
+                continue
+            start_row = _grid_offset(grid.get("startRow"))
+            start_column = _grid_offset(grid.get("startColumn"))
+            for row_index, row_data in enumerate(grid.get("rowData") or []):
+                row = start_row + row_index
+                if row >= last_row:
+                    break
+                if not isinstance(row_data, dict):
+                    continue
+                for column_index, cell in enumerate(row_data.get("values") or []):
+                    column = start_column + column_index
+                    if column >= SHEET_COLUMNS:
+                        break
+                    if len(tab_links) >= SHEET_LINKS_PER_TAB:
+                        break
+                    url = _cell_link(cell)
+                    if url is not None:
+                        tab_links[f"{row}:{column}"] = url
+    return {title: tab_links for title, tab_links in found.items() if tab_links}
+
+
+def _grid_offset(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _cell_link(cell: Any) -> Optional[str]:
+    """A cell's link: its hyperlink, else the first linked text run, else the first file chip."""
+    if not isinstance(cell, dict):
+        return None
+    candidates: list[Any] = [
+        cell.get("hyperlink"),
+        _first_run_link(cell.get("textFormatRuns"), ("format", "link", "uri")),
+        _first_run_link(cell.get("chipRuns"), ("chip", "richLinkProperties", "uri")),
+    ]
+    for candidate in candidates:
+        if (
+            isinstance(candidate, str)
+            and len(candidate) <= SHEET_LINK_LENGTH
+            and _SHEET_LINK.fullmatch(candidate)
+        ):
+            return candidate
+    return None
+
+
+def _first_run_link(runs: Any, path: tuple[str, ...]) -> Optional[str]:
+    """The first run (of a cell's text or chips) that carries a link at path."""
+    if not isinstance(runs, list):
+        return None
+    for run in runs:
+        value: Any = run
+        for key in path:
+            value = value.get(key) if isinstance(value, dict) else None
+        if isinstance(value, str) and value:
+            return value
+    return None

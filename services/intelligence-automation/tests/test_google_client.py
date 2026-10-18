@@ -5,6 +5,7 @@ import pytest
 
 from wodana_intelligence.integrations.google_client import (
     GOOGLE_AUTHORIZATION_URL,
+    RECONNECT_REQUIRED,
     GoogleApiError,
     GoogleCalendarClient,
 )
@@ -39,10 +40,11 @@ async def test_event_list_expands_recurrence_paginates_and_omits_cancellations()
     assert len(calls) == 2
 
 
-def test_authorization_url_uses_offline_consent_state_and_pkce() -> None:
+@pytest.mark.asyncio
+async def test_authorization_url_uses_offline_consent_state_and_pkce() -> None:
     client = GoogleCalendarClient("client-id", "client-secret", "https://app.test/callback")
 
-    url = client.authorization_url(
+    url = await client.authorization_url(
         "opaque-state",
         "pkce-challenge",
         ["openid", "calendar"],
@@ -140,7 +142,48 @@ async def test_google_error_is_normalized() -> None:
         await client.list_calendars("bad-token")
 
     assert raised.value.code == "calendar_discovery_failed"
-    assert str(raised.value) == "denied"
+    # Google's own words stay in the logs; people see Wodana's.
+    assert str(raised.value) == "Google could not complete the request"
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (
+            400,
+            {"error": "invalid_grant", "error_description": "Token has been expired or revoked."},
+        ),
+        (400, {"error": "invalid_grant"}),
+    ],
+)
+async def test_a_revoked_refresh_token_asks_to_reconnect(status: int, body: dict[str, str]) -> None:
+    transport = httpx.MockTransport(lambda _request: httpx.Response(status, json=body))
+    http_client = httpx.AsyncClient(transport=transport)
+    client = GoogleCalendarClient("id", "secret", "https://app.test", http_client=http_client)
+
+    with pytest.raises(GoogleApiError) as raised:
+        await client.refresh_token("revoked")
+
+    assert raised.value.code == RECONNECT_REQUIRED
+    assert raised.value.status_code == 409
+    assert "expired or revoked" not in str(raised.value)
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_access_token_asks_to_reconnect() -> None:
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(401, json={"error": {"message": "Invalid Credentials"}})
+    )
+    http_client = httpx.AsyncClient(transport=transport)
+    client = GoogleCalendarClient("id", "secret", "https://app.test", http_client=http_client)
+
+    with pytest.raises(GoogleApiError) as raised:
+        await client.list_calendars("stale")
+
+    assert raised.value.code == RECONNECT_REQUIRED
     await http_client.aclose()
 
 

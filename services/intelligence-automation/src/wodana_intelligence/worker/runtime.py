@@ -16,6 +16,9 @@ logger = logging.getLogger("wodana.worker.runtime")
 class CrmWorker:
     stream = "wodana:domain-events"
     dead_letter_stream = "wodana:domain-events:dead-letter"
+    # Read by Business Core's /health/ready (keep the key in step with health.controller.ts).
+    heartbeat_key = "wodana:worker:heartbeat"
+    heartbeat_ttl_seconds = 86_400
 
     def __init__(
         self,
@@ -24,12 +27,19 @@ class CrmWorker:
         adapter: NotificationAdapter,
         group: str,
         consumer: str,
+        *,
+        release: str = "",
+        adapter_mode: str = "",
+        heartbeat_file: str = "",
     ) -> None:
         self.redis = redis_client
         self.business_core = business_core
         self.adapter = adapter
         self.group = group
         self.consumer = consumer
+        self.release = release
+        self.adapter_mode = adapter_mode
+        self.heartbeat_file = heartbeat_file
 
     async def ensure_group(self) -> None:
         try:
@@ -73,6 +83,7 @@ class CrmWorker:
             workspace_id = str(event.workspace_id)
             if event_type == "notification.delivery_requested.v1":
                 await self.drain_notifications(workspace_id)
+                await self.business_core.dispatch_staff_emails(workspace_id)
             if event_type == "automation.approval.decided.v1":
                 run_id = event.data.get("runId")
                 step_key = event.data.get("stepKey")
@@ -320,6 +331,80 @@ class CrmWorker:
                 },
             )
 
+    async def whatsapp_templates(self, workspace_id: str) -> None:
+        """Submits starter templates to Meta and, once a day, stores every template's Meta status."""
+        submit = getattr(self.adapter, "submit_whatsapp_template", None)
+        list_all = getattr(self.adapter, "whatsapp_templates", None)
+        if submit is None or list_all is None:
+            return
+        work_for = getattr(self.business_core, "whatsapp_template_work", None)
+        if work_for is None:
+            return
+        work = await work_for(workspace_id)
+        for template in work.get("submissions", []):
+            try:
+                created = await submit(workspace_id, template)
+                result: dict[str, Any] = {"providerTemplateId": created["id"], "status": created["status"]}
+            except Exception as error:  # Meta refused it: the reason is stored and the owner told.
+                result = {"error": str(getattr(error, "message", error))[:500] or "Meta refused the template"}
+            await self.business_core.whatsapp_template_submitted(workspace_id, str(template["id"]), result)
+        if work.get("sync"):
+            try:
+                templates = await list_all(workspace_id)
+            except Exception:
+                logger.warning("WhatsApp template sync failed for %s; retrying within the hour", workspace_id)
+                return
+            health = None
+            check_health = getattr(self.adapter, "whatsapp_health", None)
+            if check_health is not None:
+                try:
+                    health = await check_health(workspace_id)
+                except Exception:
+                    logger.warning("WhatsApp number health check failed for %s", workspace_id)
+            await self.business_core.whatsapp_templates_synced(workspace_id, templates, True, health)
+
+    async def fetch_chat_files(self, workspace_id: str) -> int:
+        """Clients' files (photos, documents, voice notes, videos) fetched into private storage.
+
+        A failure the provider may recover from (rate limit, outage) is tried again later; anything
+        else marks the file unavailable. The message itself was stored when it arrived.
+        """
+        download = getattr(self.adapter, "download_whatsapp_media", None)
+        claim = getattr(self.business_core, "claim_attachment_fetches", None)
+        if download is None or claim is None:
+            return 0
+        fetched = 0
+        for item in await claim(workspace_id):
+            attachment_id = str(item["id"])
+            try:
+                body, mime_type = await download(
+                    workspace_id, item.get("connectionId"), str(item["providerMediaId"])
+                )
+            except Exception as error:
+                status = int(getattr(error, "status_code", 502) or 502)
+                code = str(getattr(error, "code", "media_download_failed"))
+                retryable = status == 429 or status >= 500 or code in {
+                    "provider_unavailable", "refresh_in_progress", "routing_unavailable"
+                }
+                await self.business_core.attachment_fetch_failed(
+                    workspace_id, attachment_id, code, retryable
+                )
+                continue
+            try:
+                await self.business_core.store_attachment(
+                    workspace_id,
+                    attachment_id,
+                    body,
+                    str(item.get("mimeType") or mime_type),
+                    str(item.get("fileName") or f"{item.get('kind') or 'file'}"),
+                )
+            except Exception:
+                # Its lease runs out and a later pass fetches it again.
+                logger.warning("A chat file could not be stored; it is fetched again later")
+                continue
+            fetched += 1
+        return fetched
+
     async def drain_notifications(self, workspace_id: str) -> int:
         jobs = await self.business_core.claim_notification_jobs(workspace_id)
         delivered = 0
@@ -360,31 +445,95 @@ class CrmWorker:
                 delivered += verified.result == "delivered"
         return delivered
 
+    async def beat(self) -> None:
+        """Proves the timer loop runs; Business Core's readiness fails in production otherwise.
+
+        The Redis beat names the release and the delivery mode (Business Core shows both to the
+        deploy and to workspace owners); the local file is this container's own liveness proof.
+        """
+        now = datetime.now(timezone.utc)
+        try:
+            await self.redis.set(
+                self.heartbeat_key,
+                json.dumps(
+                    {
+                        "at": now.isoformat(),
+                        "consumer": self.consumer,
+                        "release": self.release or None,
+                        "adapter": self.adapter_mode or None,
+                    }
+                ),
+                ex=self.heartbeat_ttl_seconds,
+            )
+        except Exception:  # the heartbeat never stops the worker's real work
+            logger.warning("Worker heartbeat could not be written")
+            return
+        if self.heartbeat_file:
+            try:
+                with open(self.heartbeat_file, "w", encoding="utf-8") as beat_file:
+                    beat_file.write(now.isoformat())
+            except OSError:
+                logger.warning("Worker heartbeat file could not be written")
+
     async def poll_due_work(self) -> None:
         while True:
-            # Reclaim transient failures continuously. A dependency can become
-            # unavailable after startup, so a one-time recovery pass is not enough.
-            await self.recover_pending()
-            for workspace_id in await self.business_core.due_crm_workspaces():
-                await self.business_core.process_due_slas(workspace_id)
-                await self.business_core.process_due_takeovers(workspace_id)
-                await self.business_core.process_due_sequences(workspace_id)
-                await self.drain_notifications(workspace_id)
-                waits = await self.business_core.claim_automation_waits(workspace_id)
-                for wait in waits:
-                    run = await self.business_core.automation_run_context(
-                        workspace_id, str(wait["runId"])
-                    )
-                    await self._execute_safe(
-                        workspace_id,
-                        run,
-                        run.get("definition", {}),
-                        resume_after=str(wait["stepKey"]),
-                    )
-                    await self.business_core.complete_automation_wait(
-                        str(wait["id"]), workspace_id, str(wait["claimToken"])
-                    )
+            await self.beat()
+            try:
+                await self.run_due_work()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # One failed pass (Business Core restarting, Redis blip) must not end the timers:
+                # the next pass retries, and the heartbeat keeps proving the loop is alive.
+                logger.exception("Due-work pass failed; retrying on the next pass")
             await asyncio.sleep(5)
+
+    async def run_due_work(self) -> None:
+        # Reclaim transient failures continuously. A dependency can become
+        # unavailable after startup, so a one-time recovery pass is not enough.
+        await self.recover_pending()
+        for workspace_id in await self.business_core.due_crm_workspaces():
+            await self.beat()  # a long pass over many workspaces is still alive
+            try:
+                await self._due_work_for(workspace_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # One workspace's failure never holds up the others' deliveries and timers.
+                logger.exception("Due work failed for one workspace; continuing with the rest")
+
+    async def _due_work_for(self, workspace_id: str) -> None:
+        await self.business_core.process_due_slas(workspace_id)
+        await self.business_core.process_due_takeovers(workspace_id)
+        await self.business_core.process_due_sequences(workspace_id)
+        await self.business_core.wake_snoozed_conversations(workspace_id)
+        await self.business_core.run_payment_reminders(workspace_id)
+        await self.whatsapp_templates(workspace_id)
+        await self.fetch_chat_files(workspace_id)
+        # Scheduled chat messages and due client follow-ups become queued messages, sent by the
+        # drain just below.
+        send_scheduled = getattr(self.business_core, "send_due_scheduled_messages", None)
+        if send_scheduled is not None:
+            await send_scheduled(workspace_id)
+        follow_ups = getattr(self.business_core, "run_client_follow_ups", None)
+        if follow_ups is not None:
+            await follow_ups(workspace_id)
+        await self.drain_notifications(workspace_id)
+        await self.business_core.dispatch_staff_emails(workspace_id)
+        waits = await self.business_core.claim_automation_waits(workspace_id)
+        for wait in waits:
+            run = await self.business_core.automation_run_context(
+                workspace_id, str(wait["runId"])
+            )
+            await self._execute_safe(
+                workspace_id,
+                run,
+                run.get("definition", {}),
+                resume_after=str(wait["stepKey"]),
+            )
+            await self.business_core.complete_automation_wait(
+                str(wait["id"]), workspace_id, str(wait["claimToken"])
+            )
 
     @staticmethod
     def _due_at(configuration: dict[str, Any]) -> str:

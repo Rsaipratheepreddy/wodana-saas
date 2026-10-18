@@ -4,6 +4,8 @@ from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from wodana_intelligence.integrations.delivery_allowlist import DeliveryAllowlist
+
 
 class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables."""
@@ -27,6 +29,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     worker_consumer_group: str = "wodana-intelligence"
     worker_consumer_name: str = "worker-1"
+    # The container's own liveness proof, touched on every loop; `python -m
+    # wodana_intelligence.worker.healthcheck` reads it (the Redis heartbeat is shared by releases).
+    worker_heartbeat_file: str = "/tmp/wodana-worker.beat"
+    # Set by the deploy (same value as Business Core); the heartbeat carries it so a release can
+    # prove its own worker is the one running.
+    wodana_release_id: str = ""
     notification_adapter_mode: str = "unconfigured"
     dependency_checks_enabled: bool = False
     integrations_encryption_key: str = "local-development-integration-key-change-me"
@@ -54,8 +62,31 @@ class Settings(BaseSettings):
     whatsapp_graph_version: str = "v23.0"
     whatsapp_webhook_verify_token: str = ""
     integration_public_url: str = "http://localhost:8001/api/v1/integrations/providers"
+    # Local and UAT only: external deliveries go only to these emails, *@domains and E.164 numbers.
+    delivery_allowlist: str = ""
+
+    def allowlist(self) -> DeliveryAllowlist:
+        return DeliveryAllowlist.parse(self.delivery_allowlist)
+
+    def validate_delivery_settings(self) -> None:
+        """The guard parses, and is never set in production (it would drop real messages)."""
+        if self.allowlist().enabled and self.environment.lower() == "production":
+            raise ValueError(
+                "DELIVERY_ALLOWLIST is for local and UAT environments; remove it in production"
+            )
+
+    def validate_worker_settings(self) -> None:
+        """A production worker delivers for real: "unconfigured" would fail every message and
+        "test" would mark them delivered without sending."""
+        self.validate_delivery_settings()
+        if (
+            self.environment.lower() == "production"
+            and self.notification_adapter_mode.lower() != "live"
+        ):
+            raise ValueError("Production requires NOTIFICATION_ADAPTER_MODE=live for the worker")
 
     def validate_integration_settings(self) -> None:
+        self.validate_delivery_settings()
         if self.environment.lower() == "production":
             if (
                 len(self.business_core_internal_token) < 32
@@ -71,12 +102,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Production requires INTEGRATIONS_ENCRYPTION_KEY with at least 32 characters"
                 )
-            if not self.google_client_id or not self.google_client_secret:
-                raise ValueError("Production requires Google OAuth client credentials")
-            secure_urls = [
-                ("WEB_ORIGIN", self.web_origin.split(",", 1)[0]),
-                ("GOOGLE_REDIRECT_URI", self.google_redirect_uri),
-            ]
+            # Wodana's app credentials may come from Wodana Control instead; any given here are
+            # the fallback, and their callbacks must be HTTPS.
+            secure_urls = [("WEB_ORIGIN", self.web_origin.split(",", 1)[0])]
+            if self.google_client_id:
+                secure_urls.append(("GOOGLE_REDIRECT_URI", self.google_redirect_uri))
             if self.quickbooks_client_id:
                 secure_urls.append(("QUICKBOOKS_REDIRECT_URI", self.quickbooks_redirect_uri))
             if self.zoho_client_id:

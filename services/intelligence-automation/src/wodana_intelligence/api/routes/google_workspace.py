@@ -1,9 +1,10 @@
+import hmac
 from collections.abc import Mapping
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 from urllib.parse import urlencode
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import RedirectResponse
 
 from wodana_intelligence.config import get_settings
@@ -21,8 +22,12 @@ from wodana_intelligence.integrations.models import (
     CreateCalendarEventRequest,
     OAuthStartRequest,
     OAuthStartResponse,
+    PickerTokenRequest,
+    PickerTokenResponse,
+    SheetReadRequest,
     UpdateCalendarEventRequest,
 )
+from wodana_intelligence.integrations.return_origin import web_base
 
 router = APIRouter()
 GoogleService = Annotated[GoogleIntegrationService, Depends(get_google_integration_service)]
@@ -58,7 +63,7 @@ async def oauth_callback(
     code: Optional[str] = Query(default=None),
     error: Optional[str] = Query(default=None),
 ) -> RedirectResponse:
-    base_url = get_settings().web_origin.split(",", 1)[0].rstrip("/")
+    base_url = web_base(await service.return_origin(state))
     try:
         workspace_id, connection_id = await service.complete_oauth(state, code, error)
     except IntegrationFlowError as flow_error:
@@ -156,3 +161,39 @@ async def cancel_event(
     service: GoogleService,
 ) -> dict[str, object]:
     return await service.cancel_event(event_id, payload, actor_headers(request))
+
+
+@router.post(
+    "/picker-token",
+    response_model=PickerTokenResponse,
+    response_model_by_alias=True,
+)
+async def picker_token(
+    payload: PickerTokenRequest,
+    request: Request,
+    service: GoogleService,
+) -> PickerTokenResponse:
+    """A drive.file-only token for the Google Picker, so someone can link one sheet to Wodana."""
+    return await service.picker_token(
+        payload.workspace_id, payload.connection_id, actor_headers(request)
+    )
+
+
+@router.post("/internal/sheets/read", include_in_schema=False)
+async def read_sheet(
+    payload: SheetReadRequest,
+    request: Request,
+    service: GoogleService,
+) -> dict[str, Any]:
+    """Business Core's importer reads a linked sheet (it has checked who asked)."""
+    expected = get_settings().business_core_internal_token
+    supplied = request.headers.get("x-wodana-internal-token", "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(401, "Internal service credentials required")
+    return await service.read_sheet(
+        payload.workspace_id,
+        payload.connection_id,
+        payload.spreadsheet_id,
+        payload.sheet_name,
+        payload.preview_rows,
+    )

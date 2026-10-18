@@ -2,16 +2,16 @@ import base64
 import hashlib
 import hmac
 import json
-from typing import Annotated, Any, cast
+from datetime import date
+from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse, Response
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from wodana_intelligence.api.routes.google_workspace import actor_headers
-from wodana_intelligence.config import get_settings
 from wodana_intelligence.container import get_google_integration_service, get_provider_service
 from wodana_intelligence.integrations.gmail_sync import sync_gmail
 from wodana_intelligence.integrations.google_actions import execute_google
@@ -19,6 +19,8 @@ from wodana_intelligence.integrations.google_service import (
     GoogleIntegrationService,
     IntegrationFlowError,
 )
+from wodana_intelligence.integrations.platform_checks import check_platform_credentials
+from wodana_intelligence.integrations.platform_credentials import SecretField, Vendor
 from wodana_intelligence.integrations.provider_models import (
     OperationRequest,
     Provider,
@@ -26,6 +28,7 @@ from wodana_intelligence.integrations.provider_models import (
     WhatsAppCompleteRequest,
 )
 from wodana_intelligence.integrations.provider_service import ProviderService
+from wodana_intelligence.integrations.return_origin import web_base
 
 router = APIRouter()
 Service = Annotated[ProviderService, Depends(get_provider_service)]
@@ -34,14 +37,11 @@ Google = Annotated[GoogleIntegrationService, Depends(get_google_integration_serv
 
 @router.get("/readiness")
 async def readiness(service: Service) -> dict[str, Any]:
+    """Which providers firms can connect now (Wodana's app credentials are in place)."""
+    app = await service.credentials.current()
     return {
-        "google_workspace": bool(
-            service.settings.google_client_id and service.settings.google_client_secret
-        ),
-        **{
-            provider: service.client.configured(cast(Provider, provider))
-            for provider in ("quickbooks", "zoho_books", "whatsapp")
-        },
+        provider: app.configured(provider)
+        for provider in ("google_workspace", "quickbooks", "zoho_books", "whatsapp")
     }
 
 
@@ -63,6 +63,7 @@ async def callback(
 ) -> RedirectResponse:
     result = "connected"
     error_code = ""
+    base = web_base(await service.return_origin(state))
     try:
         if provider == "whatsapp":
             raise IntegrationFlowError("embedded_signup_required", "Use WhatsApp Embedded Signup")
@@ -73,7 +74,6 @@ async def callback(
             exc.code if isinstance(exc, IntegrationFlowError) else "oauth_failed",
         )
     query = urlencode({"provider": provider, "integration": result, "code": error_code})
-    base = get_settings().web_origin.split(",", 1)[0].rstrip("/")
     return RedirectResponse(
         f"{base}/workspace/integrations?{query}",
         status_code=303,
@@ -209,7 +209,7 @@ async def inbox_sync(
 @router.get("/webhooks/whatsapp", response_class=PlainTextResponse)
 async def verify_whatsapp(request: Request, service: Service) -> str:
     query = request.query_params
-    expected = service.settings.whatsapp_webhook_verify_token
+    expected = (await service.credentials.current()).whatsapp_webhook_verify_token
     if (
         not expected
         or query.get("hub.mode") != "subscribe"
@@ -226,12 +226,13 @@ async def webhook(provider: Provider, request: Request, service: Service) -> dic
         raw.extend(chunk)
         if len(raw) > 1_000_000:
             raise HTTPException(413, "Webhook exceeds the size limit")
+    app = await service.credentials.current()
     if provider == "whatsapp":
-        secret = service.settings.whatsapp_app_secret
+        secret = app.whatsapp_app_secret
         expected = "sha256=" + hmac.new(secret.encode(), bytes(raw), hashlib.sha256).hexdigest()
         provided = request.headers.get("x-hub-signature-256", "")
     elif provider == "quickbooks":
-        secret = service.settings.quickbooks_webhook_verifier
+        secret = app.quickbooks_webhook_verifier
         expected = base64.b64encode(
             hmac.new(secret.encode(), bytes(raw), hashlib.sha256).digest()
         ).decode()
@@ -262,6 +263,52 @@ async def webhook(provider: Provider, request: Request, service: Service) -> dic
             ):
                 continue
             if provider == "whatsapp":
+                # Meta's template review results arrive per account, not per phone number.
+                template_updates = [
+                    change.get("value", {})
+                    for change in entry.get("changes", [])
+                    if change.get("field") == "message_template_status_update"
+                    and isinstance(change.get("value"), dict)
+                ]
+                if template_updates:
+                    await service.core.whatsapp_templates_synced(
+                        workspace,
+                        [
+                            {
+                                "id": str(update.get("message_template_id", "")),
+                                "name": str(update.get("message_template_name", "")),
+                                "language": str(update.get("message_template_language", "")),
+                                "status": str(update.get("event", "PENDING")),
+                                "reason": (
+                                    str(update.get("reason"))[:500]
+                                    if update.get("reason") not in (None, "", "NONE")
+                                    else None
+                                ),
+                            }
+                            for update in template_updates
+                        ],
+                        False,
+                    )
+                # The number's standing (quality, messaging limit) changes are per account too.
+                quality_updates = [
+                    change.get("value", {})
+                    for change in entry.get("changes", [])
+                    if change.get("field") == "phone_number_quality_update"
+                    and isinstance(change.get("value"), dict)
+                ]
+                for update in quality_updates:
+                    event_name = str(update.get("event", "")).upper()
+                    await service.core.whatsapp_templates_synced(
+                        workspace,
+                        [],
+                        False,
+                        {
+                            "quality": "RED" if event_name == "FLAGGED" else "GREEN" if event_name == "UNFLAGGED" else None,
+                            "limit": update.get("current_limit"),
+                            "status": None,
+                            "event": event_name or None,
+                        },
+                    )
                 changes = [
                     change
                     for change in entry.get("changes", [])
@@ -303,6 +350,28 @@ async def webhook(provider: Provider, request: Request, service: Service) -> dic
                                     "connectionId": connection,
                                     "messageType": kind,
                                     **_whatsapp_media_metadata(message, kind),
+                                },
+                            }
+                        )
+                    # Coexistence: what the owner sent from the WhatsApp Business app shows in the thread.
+                    for echo in value.get("message_echoes", []):
+                        if not isinstance(echo, dict) or not echo.get("id") or not echo.get("to"):
+                            continue
+                        kind = str(echo.get("type", "text"))
+                        await service.core.ingest_provider_echo(
+                            {
+                                "workspaceId": workspace,
+                                "channel": "whatsapp",
+                                "providerThreadId": str(echo["to"]),
+                                "providerMessageId": str(echo["id"]),
+                                "contact": f"+{str(echo['to']).lstrip('+')}",
+                                "bodyText": _whatsapp_body(echo, kind),
+                                "metadata": {
+                                    "provider": "whatsapp",
+                                    "connectionId": connection,
+                                    "messageType": kind,
+                                    "sentFromPhone": True,
+                                    **_whatsapp_media_metadata(echo, kind),
                                 },
                             }
                         )
@@ -376,6 +445,85 @@ def _whatsapp_media_metadata(message: dict[str, Any], kind: str) -> dict[str, An
     }
 
 
+def require_internal(request: Request, service: ProviderService) -> None:
+    expected = service.settings.business_core_internal_token
+    supplied = request.headers.get("x-wodana-internal-token", "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(401, "Internal service credentials required")
+
+
+class PlatformSecret(BaseModel):
+    provider: Vendor
+    field: SecretField
+    value: str = Field(pattern=r"^[\x21-\x7e]{16,256}$")
+
+
+@router.post("/internal/platform-credentials/seal", include_in_schema=False)
+async def seal_platform_secret(
+    payload: PlatformSecret, request: Request, service: Service
+) -> dict[str, str]:
+    """Business Core stores Wodana Control's secrets sealed with this service's key, never in the clear."""
+    require_internal(request, service)
+    if payload.field == "webhookSecret" and payload.provider not in ("meta", "intuit"):
+        raise HTTPException(422, "This provider has no webhook secret")
+    return {"sealed": service.credentials.seal(payload.provider, payload.field, payload.value)}
+
+
+@router.post("/internal/platform-credentials/{vendor}/test", include_in_schema=False)
+async def test_platform_credentials(
+    vendor: Vendor, request: Request, service: Service
+) -> dict[str, Any]:
+    """Wodana Control's Test: a safe live check of what this service would use now."""
+    require_internal(request, service)
+    app = await service.credentials.refresh()
+    result = await check_platform_credentials(vendor, app, service.client.http)
+    if not result.ok and not app.versions:
+        return {"ok": False, "reason": "store_unavailable", "version": None}
+    return {"ok": result.ok, "reason": result.reason, "version": app.versions.get(vendor)}
+
+
+class ReportPeriod(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    start: date = Field(alias="from")
+    end: date = Field(alias="to")
+
+
+class AccountingReportRequest(BaseModel):
+    workspaceId: UUID
+    connectionId: UUID
+    provider: Literal["quickbooks", "zoho_books"]
+    report: Literal["profit_and_loss", "cash_flow"]
+    basis: Literal["accrual", "cash"] = "accrual"
+    columns: Literal["total", "month"] = "total"
+    periods: list[ReportPeriod] = Field(min_length=1, max_length=24)
+
+    @model_validator(mode="after")
+    def periods_in_order(self) -> "AccountingReportRequest":
+        previous: date | None = None
+        for period in self.periods:
+            if period.end < period.start or (previous is not None and period.start <= previous):
+                raise ValueError("Periods must run forward without overlapping")
+            previous = period.end
+        return self
+
+
+@router.post("/internal/accounting/reports", include_in_schema=False)
+async def accounting_report(
+    payload: AccountingReportRequest, request: Request, service: Service
+) -> dict[str, Any]:
+    """Business Core's financial statements read a connected company's P&L or cash flow."""
+    require_internal(request, service)
+    return await service.accounting_report_internal(
+        str(payload.workspaceId),
+        str(payload.connectionId),
+        payload.provider,
+        payload.report,
+        [(period.start, period.end) for period in payload.periods],
+        basis=payload.basis,
+        columns=payload.columns,
+    )
+
+
 class PortalOtpDelivery(BaseModel):
     workspaceId: UUID
     challengeId: UUID
@@ -387,10 +535,7 @@ class PortalOtpDelivery(BaseModel):
 async def deliver_portal_otp(
     payload: PortalOtpDelivery, request: Request, service: Service
 ) -> dict[str, Any]:
-    expected = service.settings.business_core_internal_token
-    supplied = request.headers.get("x-wodana-internal-token", "")
-    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
-        raise HTTPException(401, "Internal service credentials required")
+    require_internal(request, service)
     if not service.settings.portal_otp_template:
         raise HTTPException(503, "Configure the approved WhatsApp authentication template")
     # The requested authentication code is identical in the body and copy-code button.

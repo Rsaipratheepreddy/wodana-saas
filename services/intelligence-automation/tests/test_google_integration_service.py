@@ -34,7 +34,10 @@ class FakeGoogle:
         self.email = email
         self.requested_scopes: list[str] = []
 
-    def authorization_url(
+    async def configured(self) -> bool:
+        return bool(self.client_id and self.client_secret)
+
+    async def authorization_url(
         self,
         state: str,
         code_challenge: str,

@@ -1,10 +1,11 @@
 import base64
 import hashlib
 import json
+import logging
 import secrets
 from collections.abc import Mapping
 from contextlib import suppress
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -12,8 +13,19 @@ from cryptography.fernet import Fernet
 
 from wodana_intelligence.config import Settings
 from wodana_intelligence.integrations.business_core import BusinessCoreClient, BusinessCoreError
+from wodana_intelligence.integrations.delivery_allowlist import NOT_ALLOWLISTED
 from wodana_intelligence.integrations.google_service import IntegrationFlowError
-from wodana_intelligence.integrations.provider_client import SCOPES, ZOHO_REGIONS, ProviderClient
+from wodana_intelligence.integrations.provider_client import (
+    SCOPES,
+    ZOHO_REGIONS,
+    ZOHO_REPORT_SCOPES,
+    AccountingProvider,
+    ProviderCallError,
+    ProviderClient,
+    ReportBasis,
+    ReportColumns,
+    ReportKind,
+)
 from wodana_intelligence.integrations.provider_models import (
     InvoiceRequest,
     OperationRequest,
@@ -26,12 +38,48 @@ from wodana_intelligence.integrations.provider_models import (
     WhatsAppMessageRequest,
 )
 
+logger = logging.getLogger("wodana.providers")
+
+
+def guard_delivery(
+    settings: Settings, *, email: str | None = None, phone: str | None = None
+) -> None:
+    """Local and UAT: refuses a recipient not on DELIVERY_ALLOWLIST before anything is sent."""
+    allowlist = settings.allowlist()
+    allowed = allowlist.allows_email(email) if email is not None else allowlist.allows_phone(phone)
+    if not allowed:
+        logger.warning("External delivery suppressed (%s)", NOT_ALLOWLISTED)
+        raise IntegrationFlowError(
+            NOT_ALLOWLISTED, "This recipient isn't on DELIVERY_ALLOWLIST in this environment", 403
+        )
+
+
+def report_failure(error: ProviderCallError) -> IntegrationFlowError:
+    """A failed report read as a fixed code and sentence: expired access asks for a reconnect."""
+    if error.failure == "auth":
+        return IntegrationFlowError(
+            "reconnect_required", "Reconnect the accounting connection to read its reports", 409
+        )
+    if error.failure == "rate_limited":
+        return IntegrationFlowError(
+            "provider_rate_limited", "The accounting system is busy. Try again in a minute.", 429
+        )
+    if error.failure in ("timeout", "network", "unavailable"):
+        return IntegrationFlowError(
+            "provider_unavailable", "The accounting system didn't answer. Try again shortly.", 502
+        )
+    return IntegrationFlowError(
+        "provider_request_failed", "The accounting system refused the report request.", 502
+    )
+
 
 class ProviderService:
     def __init__(
         self, settings: Settings, client: ProviderClient, core: BusinessCoreClient, redis: Any
     ) -> None:
         self.settings, self.client, self.core, self.redis = settings, client, core, redis
+        # Wodana's app credentials in effect (Wodana Control, else env), shared with the client.
+        self.credentials = client.credentials
         self.cipher = Fernet(
             base64.urlsafe_b64encode(
                 hashlib.sha256(settings.integrations_encryption_key.encode()).digest()
@@ -52,11 +100,10 @@ class ProviderService:
         )
         if public.get("provider") != provider:
             raise IntegrationFlowError("invalid_provider", "Connection belongs to another provider")
-        if not self.client.configured(provider):
+        app = await self.credentials.current()
+        if not app.configured(provider):
             raise IntegrationFlowError(
-                "provider_not_configured",
-                f"Configure the platform’s {provider} application credentials first",
-                503,
+                "provider_not_configured", "Not available yet. Wodana is setting this up.", 503
             )
         connected = await self.core.request_connection(
             str(request.workspace_id), str(request.connection_id), request.version, headers
@@ -66,7 +113,10 @@ class ProviderService:
             connection_id=request.connection_id,
             version=connected["version"],
             provider=provider,
-            region=public.get("configuration", {}).get("region", "us"),
+            # A Zoho connection without a data center uses the one Wodana's app is registered in.
+            region=public.get("configuration", {}).get(
+                "region", app.zoho_region if provider == "zoho_books" else "us"
+            ),
             issued_at=datetime.now(timezone.utc),
         )
         nonce = secrets.token_urlsafe(32)
@@ -79,17 +129,29 @@ class ProviderService:
         if provider == "whatsapp":
             return {
                 "state": nonce,
-                "appId": self.settings.whatsapp_app_id,
-                "configId": self.settings.whatsapp_config_id,
-                "version": self.settings.whatsapp_graph_version,
+                "appId": app.whatsapp_app_id,
+                "configId": app.whatsapp_config_id,
+                "version": app.whatsapp_graph_version,
                 "connectionVersion": connected["version"],
                 "mode": "embedded_signup",
             }
         return {
-            "authorizationUrl": self.client.authorization_url(provider, state.region, nonce),
+            "authorizationUrl": await self.client.authorization_url(
+                provider, state.region, nonce
+            ),
             "connectionVersion": connected["version"],
             "expiresInSeconds": 600,
         }
+
+    async def return_origin(self, nonce: str) -> str:
+        """Where this sign-in started, before the state is used up; empty when unknown."""
+        if not nonce or len(nonce) > 200:
+            return ""
+        try:
+            value = await self.redis.get(f"wodana:provider-oauth:{nonce}")
+            return ProviderState.model_validate(self.open(value)).return_origin if value else ""
+        except Exception:
+            return ""
 
     async def consume(self, provider: Provider, nonce: str) -> ProviderState:
         if not nonce or len(nonce) > 200:
@@ -136,7 +198,8 @@ class ProviderService:
                         "company_missing", "QuickBooks did not identify a company"
                     )
                 credential.account_id = realm_id
-                credential.configuration = {"environment": self.settings.quickbooks_environment}
+                app = await self.credentials.current()
+                credential.configuration = {"environment": app.quickbooks_environment}
                 company = await self.client.api(credential, "GET", f"/companyinfo/{realm_id}")
                 credential.configuration["accountName"] = company["CompanyInfo"]["CompanyName"]
                 preferences = await self.client.api(credential, "GET", "/preferences")
@@ -217,15 +280,13 @@ class ProviderService:
             credential = self.credential(
                 "whatsapp", "us", await self.client.token("whatsapp", "us", code=request.code)
             )
+            app = await self.credentials.current()
             debug = await self.client.request(
                 "GET",
-                f"{self.client.graph}/debug_token",
+                f"{app.graph}/debug_token",
                 params={"input_token": credential.access_token},
                 headers={
-                    "Authorization": (
-                        f"Bearer {self.settings.whatsapp_app_id}|"
-                        f"{self.settings.whatsapp_app_secret}"
-                    )
+                    "Authorization": f"Bearer {app.whatsapp_app_id}|{app.whatsapp_app_secret}"
                 },
             )
             details = debug.get("data", {})
@@ -237,7 +298,7 @@ class ProviderService:
             }
             if (
                 not details.get("is_valid")
-                or str(details.get("app_id")) != self.settings.whatsapp_app_id
+                or str(details.get("app_id")) != app.whatsapp_app_id
                 or request.waba_id not in targets
                 or not set(SCOPES["whatsapp"]).issubset(set(details.get("scopes", [])))
             ):
@@ -479,11 +540,43 @@ class ProviderService:
             )
         return await self.credential_runtime(workspace, str(runtime["id"]), runtime)
 
-    async def send_whatsapp_notification(
-        self, workspace: str, request: OperationRequest
+    async def whatsapp_templates_internal(self, workspace: str) -> list[dict[str, Any]]:
+        """The worker's daily template sync: every template on the connected account."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        return await self.client.all_templates(credential)
+
+    async def whatsapp_health_internal(self, workspace: str) -> dict[str, Any]:
+        """The worker's daily check of the connected number's quality, limit and status."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        return await self.client.phone_number_health(credential)
+
+    async def submit_whatsapp_template_internal(
+        self, workspace: str, template: dict[str, Any]
     ) -> dict[str, Any]:
-        runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        """Submits a starter template to Meta on the workspace's own account."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        return await self.client.create_template(credential, template)
+
+    async def whatsapp_media_internal(
+        self, workspace: str, connection: str | None, media_id: str, max_bytes: int
+    ) -> tuple[bytes, str]:
+        """The worker's fetch of a client's file, on the number it arrived at."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp", connection)
+        return await self.client.download_media(credential, media_id, max_bytes)
+
+    async def send_whatsapp_notification(
+        self,
+        workspace: str,
+        request: OperationRequest,
+        connection: str | None = None,
+        upload: tuple[bytes, str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Sends from the chat's number (else the default one); a file is uploaded first."""
         payload = WhatsAppMessageRequest.model_validate(request.payload)
+        guard_delivery(self.settings, phone=payload.to)
+        if payload.media_type and not upload and not payload.media_id:
+            raise IntegrationFlowError("media_missing", "The file to send is missing", 422)
+        runtime, credential = await self.runtime_internal(workspace, "whatsapp", connection)
         key = f"wodana:provider-operation:{workspace}:{runtime['id']}:{request.idempotency_key}"
         digest = hashlib.sha256(
             request.model_dump_json(exclude={"idempotency_key"}).encode()
@@ -508,6 +601,16 @@ class ProviderService:
             key, self.seal({"hash": digest, "state": "processing"}), nx=True
         ):
             raise IntegrationFlowError("operation_in_progress", "Message is processing", 409)
+        if upload and not payload.media_id:
+            body, mime_type, filename = upload
+            try:
+                payload.media_id = await self.client.upload_media(
+                    credential, body, mime_type, filename
+                )
+            except Exception:
+                # Nothing reached the client yet: the send may be tried again from the start.
+                await self.redis.delete(key)
+                raise
         result = await self.client.send_template(credential, payload)
         await self.redis.set(key, self.seal({"hash": digest, "result": result}))
         await self.core.record_activity(
@@ -540,6 +643,53 @@ class ProviderService:
         try:
             _, credential = await self.runtime(workspace, connection, headers)
             result = await self.client.list_records(credential, kind, page)
+            await self.core.record_health(connection, workspace, operation, True)
+            return result
+        except Exception as error:
+            with suppress(Exception):
+                await self.core.record_health(
+                    connection, workspace, operation, False,
+                    (
+                        error.code
+                        if isinstance(error, IntegrationFlowError)
+                        else "provider_unavailable"
+                    ),
+                )
+            raise
+
+    async def accounting_report_internal(
+        self,
+        workspace: str,
+        connection: str,
+        provider: AccountingProvider,
+        report: ReportKind,
+        periods: list[tuple[date, date]],
+        *,
+        basis: ReportBasis = "accrual",
+        columns: ReportColumns = "total",
+    ) -> dict[str, Any]:
+        """Business Core's statements read a company's report (Business Core checked who asked).
+
+        Failures leave here as fixed codes and sentences: never the provider's text, the request
+        URL or a token. Each read records the connection's health like any other provider use.
+        """
+        operation = f"provider.reports.{report}"
+        try:
+            _, credential = await self.runtime_internal(workspace, provider, connection)
+            if (
+                provider == "zoho_books"
+                and credential.scopes
+                and not set(ZOHO_REPORT_SCOPES).issubset(credential.scopes)
+            ):
+                raise IntegrationFlowError(
+                    "reconnect_required", "Reconnect Zoho Books so Wodana can read its reports", 409
+                )
+            try:
+                result = await self.client.books_report(
+                    credential, report, periods, basis=basis, columns=columns
+                )
+            except ProviderCallError as error:
+                raise report_failure(error) from None
             await self.core.record_health(connection, workspace, operation, True)
             return result
         except Exception as error:
@@ -590,22 +740,7 @@ class ProviderService:
         _, credential = await self.runtime(workspace, connection, headers)
         if credential.provider != "whatsapp":
             raise IntegrationFlowError("invalid_provider", "Select a WhatsApp connection")
-        metadata = await self.client.api(credential, "GET", f"/{media_id}")
-        url = str(metadata.get("url", ""))
-        if not url.startswith("https://"):
-            raise IntegrationFlowError("media_unavailable", "WhatsApp media is unavailable", 404)
-        response = await self.client.http.get(
-            url, headers={"Authorization": f"Bearer {credential.access_token}"}
-        )
-        if response.is_error:
-            raise IntegrationFlowError(
-                "media_download_failed",
-                "WhatsApp media could not be downloaded",
-                response.status_code,
-            )
-        if len(response.content) > 20 * 1024 * 1024:
-            raise IntegrationFlowError("media_too_large", "WhatsApp media exceeds 20 MB", 413)
-        return response.content, str(metadata.get("mime_type") or "application/octet-stream")
+        return await self.client.download_media(credential, media_id, 20 * 1024 * 1024)
 
     async def execute(
         self, workspace: str, connection: str, request: OperationRequest, headers: Mapping[str, str]
@@ -628,6 +763,7 @@ class ProviderService:
             action_payload: Any = invoice
         elif request.action == "message.send" and credential.provider == "whatsapp":
             action_payload = WhatsAppMessageRequest.model_validate(request.payload)
+            guard_delivery(self.settings, phone=action_payload.to)
         else:
             raise IntegrationFlowError(
                 "invalid_operation", "This action is not supported by the selected connection"

@@ -62,6 +62,10 @@ class BusinessCoreClient:
             json={"access": "write" if write else "read"},
         )
 
+    async def platform_credentials(self) -> dict[str, Any]:
+        """Wodana's app credentials as saved in Wodana Control (secrets still sealed)."""
+        return await self._internal_request("GET", "/internal/platform-integrations/runtime")
+
     async def runtime_context(self, workspace_id: str, connection_id: str) -> dict[str, Any]:
         return await self._internal_request(
             "GET", f"/internal/integrations/{workspace_id}/{connection_id}/runtime"
@@ -235,6 +239,52 @@ class BusinessCoreClient:
             json={"limit": 50},
         )
 
+    async def wake_snoozed_conversations(self, workspace_id: str) -> dict[str, Any]:
+        """Snoozed chats whose time has come are open again and their owner is told."""
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/conversations/wake",
+            json={"limit": 50},
+        )
+
+    async def run_payment_reminders(self, workspace_id: str) -> dict[str, Any]:
+        """Today's scheduled payment reminders to clients (checked hourly, in working hours)."""
+        return await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/payment-reminders/run", json={}
+        )
+
+    async def whatsapp_template_work(self, workspace_id: str) -> dict[str, Any]:
+        """Starter templates to submit to Meta, and whether the daily status sync is due."""
+        return await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/whatsapp-templates/due", json={}
+        )
+
+    async def whatsapp_templates_synced(
+        self,
+        workspace_id: str,
+        templates: list[dict[str, Any]],
+        full: bool,
+        health: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/whatsapp-templates/sync",
+            json={"full": full, "templates": templates, **({"health": health} if health else {})},
+        )
+
+    async def ingest_provider_echo(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """A message the owner sent from the WhatsApp Business app on the same number (coexistence)."""
+        return await self._internal_request("POST", "/internal/crm/provider-echoes", json=payload)
+
+    async def whatsapp_template_submitted(
+        self, workspace_id: str, template_id: str, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/whatsapp-templates/{template_id}/submitted",
+            json=result,
+        )
+
     async def enqueue_notification(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._internal_request(
             "POST", "/internal/crm/notifications/enqueue", json=payload
@@ -248,6 +298,14 @@ class BusinessCoreClient:
         )
         items = payload.get("items", [])
         return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+    async def dispatch_staff_emails(self, workspace_id: str) -> dict[str, Any]:
+        """Staff emails are sent by Business Core in the tenant's brand."""
+        return await self._internal_request(
+            "POST",
+            "/internal/crm/notifications/staff-email/dispatch",
+            json={"workspaceId": workspace_id, "limit": 50},
+        )
 
     async def record_notification_result(
         self, notification_id: str, payload: dict[str, Any]
@@ -274,9 +332,76 @@ class BusinessCoreClient:
             json=payload,
         )
 
+    async def run_client_follow_ups(self, workspace_id: str) -> dict[str, Any]:
+        """Visit reminders, quiet-enquiry nudges and quotation follow-ups that are due."""
+        return await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/client-follow-ups/run", json={}
+        )
+
+    async def send_due_scheduled_messages(self, workspace_id: str) -> dict[str, Any]:
+        """Chat messages someone scheduled ("Send later") whose time has come go out now."""
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/scheduled-messages/run",
+            json={"limit": 50},
+        )
+
+    async def claim_attachment_fetches(self, workspace_id: str) -> list[dict[str, Any]]:
+        """Clients' files waiting to be fetched from the provider (each leased for ten minutes)."""
+        payload = await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/attachments/due", json={"limit": 20}
+        )
+        items = payload.get("items", [])
+        return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+    async def store_attachment(
+        self, workspace_id: str, attachment_id: str, body: bytes, mime_type: str, file_name: str
+    ) -> dict[str, Any]:
+        """A fetched client file, handed to Business Core to keep in private storage."""
+        response = await self._raw_request(
+            "PUT",
+            f"/internal/crm/workspaces/{workspace_id}/attachments/{attachment_id}/content",
+            files={"file": (file_name, body, mime_type)},
+        )
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
+    async def attachment_fetch_failed(
+        self, workspace_id: str, attachment_id: str, code: str, retryable: bool
+    ) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/attachments/{attachment_id}/failed",
+            json={"code": code[:120], "retryable": retryable},
+        )
+
+    async def attachment_content(self, workspace_id: str, attachment_id: str) -> tuple[bytes, str]:
+        """Our file for a chat message, to upload to the provider when the message is sent."""
+        response = await self._raw_request(
+            "GET", f"/internal/crm/workspaces/{workspace_id}/attachments/{attachment_id}/content"
+        )
+        mime_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
+        return response.content, mime_type
+
     async def close(self) -> None:
         if self._owns_client:
             await self._client.aclose()
+
+    async def _raw_request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """An internal call whose body is a file, either way (not JSON)."""
+        try:
+            response = await self._client.request(
+                method,
+                f"{self._base_url}{path}",
+                headers={"x-wodana-internal-token": self._internal_token},
+                timeout=60.0,
+                **kwargs,
+            )
+        except httpx.HTTPError as error:
+            raise BusinessCoreError("Business Core is unavailable") from error
+        if response.is_error:
+            raise BusinessCoreError("Business Core refused the file", response.status_code)
+        return response
 
     async def _internal_request(
         self,

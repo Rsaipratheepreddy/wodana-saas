@@ -1,9 +1,11 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 import pytest
+from fakes import FakeRedis
 
 from wodana_intelligence.worker.adapters import DeterministicTestAdapter, UnconfiguredAdapter
 from wodana_intelligence.worker.models import DeliveryJob, DomainEventV1
@@ -118,6 +120,9 @@ class FakeCrmCore:
         self.results.append({"notificationId": notification_id, **payload})
         return {"status": "delivered"}
 
+    async def dispatch_staff_emails(self, _workspace: str) -> dict[str, Any]:
+        return {"claimed": 0, "delivered": 0}
+
 
 class FakeAutomationCore:
     def __init__(self) -> None:
@@ -156,9 +161,33 @@ class FakeDueWorkCore:
         self.calls.append("sequences")
         return {"processed": 1}
 
+    async def wake_snoozed_conversations(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("snoozed")
+        return {"woken": 0}
+
+    async def run_payment_reminders(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("reminders")
+        return {"sent": 0}
+
+    async def claim_attachment_fetches(self, _workspace: str) -> list[dict[str, Any]]:
+        self.calls.append("files")
+        return []
+
+    async def send_due_scheduled_messages(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("scheduled")
+        return {"processed": 0}
+
+    async def run_client_follow_ups(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("follow-ups")
+        return {"reminders": 0, "quiet": 0, "quotes": 0}
+
     async def claim_notification_jobs(self, _workspace: str) -> list[dict[str, Any]]:
         self.calls.append("notifications")
         return []
+
+    async def dispatch_staff_emails(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("staff-emails")
+        return {"claimed": 0, "delivered": 0}
 
     async def claim_automation_waits(self, _workspace: str) -> list[dict[str, Any]]:
         self.calls.append("waits")
@@ -231,7 +260,11 @@ async def test_due_work_polls_sequences_before_notification_delivery(
     with pytest.raises(asyncio.CancelledError):
         await worker.poll_due_work()
 
-    assert core.calls == ["slas", "takeovers", "sequences", "notifications", "waits"]
+    assert core.calls == [
+        "slas", "takeovers", "sequences", "snoozed", "reminders", "files", "scheduled",
+        "follow-ups",
+        "notifications", "staff-emails", "waits"
+    ]
 
 
 @pytest.mark.asyncio
@@ -315,3 +348,173 @@ async def test_bounded_iteration_exits_after_configured_visits() -> None:
     assert [item["stepKey"] for item in core.executed] == ["work", "work"]
     assert core.advanced[-1]["stepKey"] == "finish"
     assert core.advanced[-1]["status"] == "completed"
+
+
+class HeartbeatRedis(FakeStreamRedis, FakeRedis):
+    def __init__(self) -> None:
+        FakeStreamRedis.__init__(self)
+        FakeRedis.__init__(self)
+
+
+@pytest.mark.asyncio
+async def test_every_worker_loop_writes_the_heartbeat_business_core_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = HeartbeatRedis()
+    worker = CrmWorker(
+        redis, FakeDueWorkCore(), DeterministicTestAdapter(), "group", "worker-7"  # type: ignore[arg-type]
+    )
+
+    async def stop_after_one_cycle(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", stop_after_one_cycle)
+    with pytest.raises(asyncio.CancelledError):
+        await worker.poll_due_work()
+
+    beat: dict[str, Any] = json.loads(redis.values["wodana:worker:heartbeat"])
+    assert beat["consumer"] == "worker-7"
+    age = datetime.now(timezone.utc) - datetime.fromisoformat(beat["at"])
+    assert age.total_seconds() < 5
+
+
+@pytest.mark.asyncio
+async def test_a_heartbeat_failure_never_stops_the_worker() -> None:
+    worker = CrmWorker(
+        FakeStreamRedis(), FakeDueWorkCore(), DeterministicTestAdapter(), "g", "w"  # type: ignore[arg-type]
+    )
+    await worker.beat()
+
+
+@pytest.mark.asyncio
+async def test_the_heartbeat_names_the_release_and_delivery_mode_and_touches_its_file(
+    tmp_path: Any,
+) -> None:
+    redis = HeartbeatRedis()
+    beat_file = tmp_path / "worker.beat"
+    worker = CrmWorker(
+        redis, FakeDueWorkCore(), DeterministicTestAdapter(), "g", "worker-2",  # type: ignore[arg-type]
+        release="20260928-web", adapter_mode="live", heartbeat_file=str(beat_file),
+    )
+    await worker.beat()
+
+    beat: dict[str, Any] = json.loads(redis.values["wodana:worker:heartbeat"])
+    assert beat["release"] == "20260928-web"
+    assert beat["adapter"] == "live"
+    assert beat_file.exists()
+
+
+class FlakyDueWorkCore(FakeDueWorkCore):
+    """Two workspaces; the first one's SLA pass fails."""
+
+    async def due_crm_workspaces(self) -> list[str]:
+        return ["broken", WORKSPACE_ID]
+
+    async def process_due_slas(self, workspace: str) -> dict[str, Any]:
+        if workspace == "broken":
+            raise RuntimeError("business core restarted")
+        return await super().process_due_slas(workspace)
+
+
+class UnreachableDueWorkCore(FakeDueWorkCore):
+    async def due_crm_workspaces(self) -> list[str]:
+        raise RuntimeError("business core is down")
+
+
+@pytest.mark.asyncio
+async def test_one_workspace_failing_never_stops_the_others_or_the_timer_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core = FlakyDueWorkCore()
+    worker = CrmWorker(
+        FakeStreamRedis(), core, DeterministicTestAdapter(), "g", "w"  # type: ignore[arg-type]
+    )
+    await worker.run_due_work()
+    # Scheduled chat messages are queued before the drain that sends them.
+    assert core.calls == [
+        "slas", "takeovers", "sequences", "snoozed", "reminders", "files", "scheduled",
+        "follow-ups",
+        "notifications", "staff-emails", "waits",
+    ]
+
+    passes = 0
+
+    async def two_passes(_seconds: float) -> None:
+        nonlocal passes
+        passes += 1
+        if passes == 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", two_passes)
+    looping = CrmWorker(
+        FakeStreamRedis(), UnreachableDueWorkCore(), DeterministicTestAdapter(), "g", "w"  # type: ignore[arg-type]
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await looping.poll_due_work()
+    assert passes == 2
+
+
+class FileCore(FakeDueWorkCore):
+    """Three clients' files: one arrives, one hits a WhatsApp outage, one is gone for good."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stored: list[tuple[str, bytes, str, str]] = []
+        self.failed: list[tuple[str, str, bool]] = []
+
+    async def claim_attachment_fetches(self, _workspace: str) -> list[dict[str, Any]]:
+        return [
+            {"id": "a-photo", "providerMediaId": "111", "connectionId": "n-2", "kind": "image",
+             "mimeType": "image/jpeg", "fileName": None},
+            {"id": "a-outage", "providerMediaId": "222", "connectionId": None, "kind": "document",
+             "mimeType": "application/pdf", "fileName": "plan.pdf"},
+            {"id": "a-gone", "providerMediaId": "333", "connectionId": None, "kind": "audio",
+             "mimeType": "audio/ogg", "fileName": None},
+        ]
+
+    async def store_attachment(
+        self, _workspace: str, attachment: str, body: bytes, mime: str, name: str
+    ) -> dict[str, Any]:
+        self.stored.append((attachment, body, mime, name))
+        return {}
+
+    async def attachment_fetch_failed(
+        self, _workspace: str, attachment: str, code: str, retryable: bool
+    ) -> dict[str, Any]:
+        self.failed.append((attachment, code, retryable))
+        return {}
+
+
+class MediaFailure(RuntimeError):
+    def __init__(self, code: str, status_code: int) -> None:
+        super().__init__(code)
+        self.code, self.status_code = code, status_code
+
+
+class FilesAdapter(DeterministicTestAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.asked: list[tuple[str | None, str]] = []
+
+    async def download_whatsapp_media(
+        self, workspace_id: str, connection_id: str | None, media_id: str
+    ) -> tuple[bytes, str]:
+        self.asked.append((connection_id, media_id))
+        if media_id == "222":
+            raise MediaFailure("provider_unavailable", 502)
+        if media_id == "333":
+            raise MediaFailure("media_unavailable", 404)
+        return b"\xff\xd8\xff photo", "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_client_files_are_fetched_on_their_number_and_failures_retried_or_closed() -> None:
+    core, adapter = FileCore(), FilesAdapter()
+    worker = CrmWorker(FakeStreamRedis(), core, adapter, "g", "w")  # type: ignore[arg-type]
+    assert await worker.fetch_chat_files(WORKSPACE_ID) == 1
+    assert adapter.asked == [("n-2", "111"), (None, "222"), (None, "333")]
+    assert core.stored == [("a-photo", b"\xff\xd8\xff photo", "image/jpeg", "image")]
+    # An outage is tried again later; media WhatsApp no longer has is marked unavailable.
+    assert core.failed == [
+        ("a-outage", "provider_unavailable", True), ("a-gone", "media_unavailable", False)
+    ]
