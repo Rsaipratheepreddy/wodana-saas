@@ -7,7 +7,7 @@ import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { move, onHand, stockItemFor, stockItemInCatalogUnit } from "../inventory/stock";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
-import { activeMembers, membershipOf, readProject } from "../project-core/project-core.store";
+import { activeMembers, membershipOf, readProject, readTeam } from "../project-core/project-core.store";
 import { raiseBlocker, raiseSnag, setWorkProgress } from "../project-core/project-work";
 import { ProjectWorkService } from "../project-core/project-work.service";
 import { readCalendar, workdays } from "../project-core/work-calendar";
@@ -386,7 +386,9 @@ export class SiteService {
     if (forecast !== "none") {
       if (!impact) throw new BadRequestException("Say what's at risk and how it will be recovered.");
       if (!recoveryOwnerId || !recoveryOn) throw new BadRequestException("Name who recovers it and by when.");
-      if (!(await activeMembers(client, workspaceId)).some((member) => member.membershipId === recoveryOwnerId)) throw new BadRequestException("Choose someone from your team.");
+      const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
+      const allowed = team.length ? team.map((member) => member.membershipId) : (await activeMembers(client, workspaceId)).map((member) => member.membershipId);
+      if (!allowed.includes(recoveryOwnerId)) throw new BadRequestException("Choose someone assigned to this project.");
     }
     const workforce = Array.isArray(body.workforce) ? (body.workforce as Array<Record<string, unknown>>) : [];
     const people = workforce.map((row, index) => {
@@ -468,9 +470,9 @@ export class SiteService {
       // An issue keeps its id (a snag or a material request raised from it points back at it).
       const known = new Map((await client.query<{ id: string; reportId: string }>(`SELECT id, report_id AS "reportId" FROM site_report_issues WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
         [workspaceId, issues.map((issue) => issue.id)])).rows.map((row) => [row.id, row.reportId]));
-      if ([...known.values()].some((reportId) => reportId !== id)) throw new ConflictException("This issue belongs to another report.");
-      const members = new Set((await activeMembers(client, workspaceId)).map((member) => member.membershipId));
-      if (issues.some((issue) => issue.ownerId && !members.has(issue.ownerId))) throw new BadRequestException("Choose someone from your team.");
+      const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
+      const members = new Set(team.length ? team.map((member) => member.membershipId) : (await activeMembers(client, workspaceId)).map((member) => member.membershipId));
+      if (issues.some((issue) => issue.ownerId && !members.has(issue.ownerId))) throw new BadRequestException("Choose someone assigned to this project.");
       await client.query(`DELETE FROM site_report_issues WHERE workspace_id = $1 AND report_id = $2 AND NOT (id = ANY($3::uuid[]))`, [workspaceId, id, issues.map((issue) => issue.id)]);
       for (const [position, issue] of issues.entries())
         await client.query(`INSERT INTO site_report_issues (id, workspace_id, report_id, severity, description, internal, position, owner_membership_id, due_on) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -643,7 +645,11 @@ export class SiteService {
     let ownerId = issue.ownerId, dueOn = issue.dueOn, status = issue.status;
     if (body.ownerId !== undefined) {
       ownerId = body.ownerId ? uuid(body.ownerId, "Owner") : null;
-      if (ownerId && !(await activeMembers(client, workspaceId)).some((member) => member.membershipId === ownerId)) throw new BadRequestException("Choose someone from your team.");
+      if (ownerId) {
+        const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
+        const allowed = team.length ? team.map((member) => member.membershipId) : (await activeMembers(client, workspaceId)).map((member) => member.membershipId);
+        if (!allowed.includes(ownerId)) throw new BadRequestException("Choose someone assigned to this project.");
+      }
       changed.ownerId = ownerId;
     }
     if (body.dueOn !== undefined) { dueOn = optionalDate(body.dueOn, "Due date"); changed.dueOn = dueOn; }
@@ -889,7 +895,7 @@ export class SiteService {
       site: { startedOn: dates.started, finishedOn: dates.finished },
       reports,
       lines: await this.lines(client, workspaceId, projectId),
-      members: await activeMembers(client, workspaceId),
+      members: (await readTeam(client, workspaceId, [projectId])).get(projectId)?.map((m) => ({ membershipId: m.membershipId, name: m.name })) ?? await activeMembers(client, workspaceId),
       today, dueTime,
       // What the day's report starts from: today's planned work, tomorrow's, the rooms, deliveries and the last crew.
       plan: { today: await readTodayPlan(client, workspaceId, projectId, today), tomorrow },
