@@ -1891,6 +1891,13 @@
       "when": 1801740060500,
       "tag": "0410_item_supplies_signoff",
       "breakpoints": true
+    },
+    {
+      "idx": 270,
+      "version": "7",
+      "when": 1801740061500,
+      "tag": "0411_factory_permission_split",
+      "breakpoints": true
     }
   ]
 }

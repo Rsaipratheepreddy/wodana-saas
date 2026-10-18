@@ -24,6 +24,9 @@
 /* The canvas: a quiet backdrop the drawing floats on; it scrolls when zoomed in. */
 .canvas { position: relative; min-inline-size: 0; min-block-size: 0; overflow: auto; background: var(--wd-color-surface-muted); }
 .stage { display: flex; align-items: center; justify-content: center; inline-size: max-content; min-inline-size: 100%; min-block-size: 100%; padding: var(--wd-space-8); }
+.stage[data-pdf] { inline-size: 100%; block-size: 100%; min-inline-size: 0; min-block-size: 0; padding: var(--wd-space-2); align-items: stretch; justify-content: stretch; }
+.pdfContainer { display: flex; flex: 1 1 auto; inline-size: 100%; block-size: 100%; min-block-size: calc(100vh - 10rem); border-radius: var(--wd-radius-md); overflow: hidden; background: var(--wd-color-surface); box-shadow: var(--wd-shadow-sm); }
+.pdfFrame { inline-size: 100%; block-size: 100%; min-block-size: calc(100vh - 10rem); border: 0; display: block; }
 .drawing { position: relative; flex: none; line-height: 0; box-shadow: var(--wd-shadow-sm); }
 .drawing img { display: block; inline-size: 100%; block-size: 100%; object-fit: contain; user-select: none; }
 .document { display: grid; place-items: center; min-inline-size: 20rem; }

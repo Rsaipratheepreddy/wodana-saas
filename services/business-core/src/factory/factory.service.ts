@@ -46,7 +46,7 @@ type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
-const VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve"];
+const VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve", "factory.recipe.verify", "factory.dispatch.signoff"];
 type Notice = { code: "factory.released" | "factory.report_waiting" | "factory.check_failed" | "factory.ready" | "factory.substitution" | "factory.drawing_revised"; users: string[]; note: string; key: string };
 const MATERIAL_ACTIONS = ["add_material", "set_material", "remove_material", "suggest_materials", "issue_material", "return_material", "substitute", "decide_substitution"];
 
@@ -217,13 +217,14 @@ export class FactoryService {
 
   /** One change to a work order, version-checked (reports and checks also by their own id). */
   command(actor: RequestActor, workspaceId: string, orderId: string, body: Record<string, unknown>) {
-    return this.access.withAnyPermission(actor, workspaceId, ["factory.manage", "factory.report", "factory.approve", "stock.manage"], async (client, user) => {
+    return this.access.withAnyPermission(actor, workspaceId, ["factory.manage", "factory.report", "factory.approve", "factory.recipe.verify", "factory.dispatch.signoff", "stock.manage"], async (client, user) => {
       await client.query(`SELECT 1 FROM work_orders WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, uuid(orderId, "Work order")]);
       const order = (await readWorkOrders(client, workspaceId, { id: orderId }))[0];
       if (!order) throw new NotFoundException("Work order not found.");
       const action = String(body.action ?? "");
       const has = (code: string) => this.access.hasPermission(client, workspaceId, user.userId, code);
       const need = async (code: string, message: string) => { if (!(await has(code))) throw new ForbiddenException(message); };
+      const needAny = async (codes: string[], message: string) => { for (const code of codes) { if (await has(code)) return; } throw new ForbiddenException(message); };
       const status = (...allowed: string[]) => { if (!allowed.includes(order.status)) throw new ConflictException(statusMessage(order.status)); };
       // Reports, checks and stock issued or returned carry their own id: sent twice, they're recorded once.
       const recordId = ["report", "check", "issue_material", "return_material", "dispatch"].includes(action)
@@ -270,7 +271,7 @@ export class FactoryService {
         // Work already going stops until someone else decides it goes on with the new drawing.
         if (running) await set(`status = 'on_hold', hold_kind = 'drawing', hold_reason = $3, held_from = CASE WHEN status = 'on_hold' THEN held_from ELSE status END`,
           [`Drawing changed to ${reference}: ${note}`.slice(0, 500)]);
-        if (running) notices.push({ code: "factory.drawing_revised", users: [...await this.team(client, workspaceId, order.projectId, ["factory_lead"], true), ...await this.holders(client, workspaceId, ["factory.approve"])],
+        if (running) notices.push({ code: "factory.drawing_revised", users: [...await this.team(client, workspaceId, order.projectId, ["factory_lead"], true), ...await this.holders(client, workspaceId, ["factory.recipe.verify", "factory.approve"])],
           note: `${reference}: ${note}`, key: `drawing:${orderId}:${reference}` });
         audit = { reference, note, held: running };
       } else if (action === "update") {
@@ -329,11 +330,11 @@ export class FactoryService {
         // §0.3 P0: a photo of what was made, read by whoever approves the output.
         await bindEvidence(client, workspaceId, user.userId, "factory_output", recordId!, evidenceIds(body.evidenceFileIds));
         await set(`notes = notes`);
-        notices.push({ code: "factory.report_waiting", users: (await this.holders(client, workspaceId, ["factory.approve"])).filter((id) => id !== user.userId),
+        notices.push({ code: "factory.report_waiting", users: (await this.holders(client, workspaceId, ["factory.dispatch.signoff", "factory.approve"])).filter((id) => id !== user.userId),
           note: `${plain(good)} ${order.unit} made${Dec.of(scrap).cmp(0) > 0 ? `, ${plain(scrap)} scrapped` : ""}`.replace("  ", " "), key: `report:${recordId}` });
         audit = { reportId: recordId, good, scrap, scrapReason, hours };
       } else if (action === "decide_report") {
-        await need("factory.approve", "You can't approve output.");
+        await needAny(["factory.dispatch.signoff", "factory.approve"], "You can't approve output.");
         const report = (await client.query<{ id: string; good: string; scrap: string; status: string; reportedBy: string }>(
           `SELECT id, good::text AS good, scrap::text AS scrap, status, reported_by AS "reportedBy" FROM work_order_reports WHERE workspace_id = $1 AND work_order_id = $2 AND id = $3`,
           [workspaceId, orderId, uuid(body.reportId, "Report")])).rows[0];
@@ -351,7 +352,7 @@ export class FactoryService {
         else await set(`notes = notes`);
         audit = { reportId: report.id, decision: approve ? "approved" : "refused", note };
       } else if (action === "check") {
-        await need("factory.approve", "You can't check quality.");
+        await needAny(["factory.dispatch.signoff", "factory.approve"], "You can't check quality.");
         status("in_production", "ready");
         // Goods out for a step done elsewhere are checked once they're back.
         const away = (await this.operations(client, workspaceId, orderId)).find((operation) => operation.out);
@@ -369,7 +370,7 @@ export class FactoryService {
         audit = { checkId: recordId, passed, failed, failReason, note };
       } else if (action === "set_ready_date") {
         // The day it was ready, when it was checked later than that (recorded on the day it became ready).
-        if (!(await has("factory.manage")) && !(await has("factory.approve"))) throw new ForbiddenException("You can't change the ready date.");
+        if (!(await has("factory.manage")) && !(await has("factory.dispatch.signoff")) && !(await has("factory.approve"))) throw new ForbiddenException("You can't change the ready date.");
         status("ready");
         const readyOn = optionalDate(body.readyOn, "Ready date");
         if (!readyOn) throw new BadRequestException("Choose the day it was ready.");
@@ -404,7 +405,7 @@ export class FactoryService {
         status("on_hold");
         if (order.holdKind === "drawing") {
           // Going on after a drawing change is someone else's decision.
-          await need("factory.approve", "Someone who approves factory work decides whether it goes on with the new drawing.");
+          await needAny(["factory.recipe.verify", "factory.approve"], "Someone who approves factory work decides whether it goes on with the new drawing.");
           const reviser = (await client.query<{ by: string | null }>(`SELECT drawing_revised_by AS by FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId])).rows[0]?.by;
           if (reviser === user.userId) throw new ForbiddenException("Someone else decides whether it goes on with the drawing you changed.");
         } else await need("factory.manage", "You can't resume work orders.");
@@ -482,7 +483,7 @@ export class FactoryService {
         await set(`notes = notes`);
         audit = { transferId, quantity };
       } else if (MATERIAL_ACTIONS.includes(action)) {
-        audit = await this.materialCommand(client, workspaceId, order, action, body, recordId, user.userId, notices, need);
+        audit = await this.materialCommand(client, workspaceId, order, action, body, recordId, user.userId, notices, need, needAny);
       } else {
         throw new BadRequestException("Unknown action.");
       }
@@ -561,7 +562,7 @@ export class FactoryService {
     if (!prepared.mimeType.startsWith("image/")) throw new BadRequestException("Choose a photo (JPG, PNG, WebP or HEIC).");
     const storage = this.storage;
     if (!storage) throw new ConflictException("Photos can't be stored here yet.");
-    return this.access.withPermission(actor, workspaceId, "factory.approve", async (client, user) => {
+    return this.access.withAnyPermission(actor, workspaceId, ["factory.dispatch.signoff", "factory.approve"], async (client, user) => {
       const id = uuid(photoId, "Photo");
       const check = (await client.query<{ id: string }>(`SELECT id FROM work_order_checks WHERE workspace_id = $1 AND work_order_id = $2 AND id = $3 FOR UPDATE`,
         [workspaceId, uuid(orderId, "Work order"), uuid(checkId, "Check")])).rows[0];
@@ -768,7 +769,7 @@ export class FactoryService {
    * swapped for another item with why — which someone else approves.
    */
   private async materialCommand(client: Db, workspaceId: string, order: WorkOrderRow, action: string, body: Record<string, unknown>, commandId: string | null, userId: string,
-    notices: Notice[], need: (code: string, message: string) => Promise<void>) {
+    notices: Notice[], need: (code: string, message: string) => Promise<void>, needAny: (codes: string[], message: string) => Promise<void>) {
     if (!["planned", "released", "in_production", "on_hold"].includes(order.status)) throw new ConflictException(statusMessage(order.status));
     const materials = await readWorkOrderMaterials(client, workspaceId, order.id);
     const find = (value: unknown, statuses = ["active"]) => {
@@ -898,13 +899,13 @@ export class FactoryService {
       const id = uuid(body.materialId, "Material");
       await insert(id, item, quantity, { status: "pending", replacesId: row.id, reason });
       await bump();
-      notices.push({ code: "factory.substitution", users: (await this.holders(client, workspaceId, ["factory.approve"])).filter((person) => person !== userId),
+      notices.push({ code: "factory.substitution", users: (await this.holders(client, workspaceId, ["factory.recipe.verify", "factory.approve"])).filter((person) => person !== userId),
         note: `${row.itemName} → ${(await client.query<{ name: string }>(`SELECT name FROM stock_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, item.itemId])).rows[0].name}: ${reason}`,
         key: `swap:${id}` });
       return { materialId: id, replacesId: row.id, quantity, reason };
     }
     // decide_substitution
-    await need("factory.approve", "You can't decide material swaps.");
+    await needAny(["factory.recipe.verify", "factory.approve"], "You can't decide material swaps.");
     const swap = find(body.materialId, ["pending"]);
     if (swap.requestedBy === userId) throw new ForbiddenException("Someone else decides your swap.");
     const approve = body.decision === "approve";
@@ -1099,7 +1100,16 @@ export class FactoryService {
   private async rights(client: Db, workspaceId: string, userId: string) {
     const has = (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
     const canManage = await has("factory.manage");
-    return { canManage, canReport: await has("factory.report"), canApprove: await has("factory.approve"), canIssue: canManage || (await has("stock.manage")) };
+    const canVerifyRecipe = (await has("factory.recipe.verify")) || (await has("factory.approve"));
+    const canSignoffDispatch = (await has("factory.dispatch.signoff")) || (await has("factory.approve"));
+    return {
+      canManage,
+      canReport: await has("factory.report"),
+      canApprove: canVerifyRecipe || canSignoffDispatch,
+      canVerifyRecipe,
+      canSignoffDispatch,
+      canIssue: canManage || (await has("stock.manage")),
+    };
   }
 
   private async event(client: Db, workspaceId: string, orderId: string, kind: string, detail: Record<string, unknown>, actorId: string) {

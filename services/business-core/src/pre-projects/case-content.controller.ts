@@ -35,7 +35,11 @@ export class CaseContentController {
   const file=await this.brief.asset(a,w,c,id,preview==='1');
   response.setHeader('Cache-Control','private, no-store');
   response.setHeader('X-Content-Type-Options','nosniff');
-  response.setHeader('Content-Security-Policy',"sandbox; default-src 'none'");
+  if (!(view === '1' && file.contentType === 'application/pdf')) {
+    response.setHeader('Content-Security-Policy',"sandbox; default-src 'none'");
+  } else {
+    response.setHeader('Content-Security-Policy',"default-src 'self' data: blob:; style-src 'unsafe-inline'");
+  }
   return new StreamableFile(file.body,{type:file.contentType,disposition:`${file.preview||(view==='1'&&file.contentType==='application/pdf')?'inline':'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`});
  }
  @Put('design-folders') folder(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:SaveDesignFolderDto) {return this.designs.saveFolder(a,w,c,b);}

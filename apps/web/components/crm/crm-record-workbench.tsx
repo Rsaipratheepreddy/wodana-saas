@@ -1,7 +1,7 @@
 "use client";
 import { RecordHistory } from "../history/record-history";
 import { useState } from "react";
-import { Pencil, Route } from "lucide-react";
+import { CalendarDays, CircleDot, Coins, Layers, Pencil, Route, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
@@ -9,7 +9,7 @@ import { DiscoverySheet, useDiscovery, type DiscoveryGroup } from "./opportunity
 import { introWhen, useIntro } from "./opportunity-intro";
 import { ClientContact, OpportunityActivity, OpportunityCards } from "./opportunity-sections";
 import { TimelineChecks } from "./timeline-checks";
-import { RecordColumns, RecordFrame, RecordHeader, RecordPanel, SideSection } from "./record/record-layout";
+import { RecordColumns, RecordFrame, RecordHeader, RecordPanel, RecordStrip, SideSection, StripItem } from "./record/record-layout";
 import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
 import { FurniturePathDialog, PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
 import { SiteVisitDialog } from "./site-visit-dialog";
@@ -283,6 +283,25 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
         <Button size="compact" isDisabled={!resource.data} onPress={() => setEditing(true)}><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
         <IconMenuButton ariaLabel={t("More actions")} items={resource.data ? menu : []} onAction={onMenu} />
       </>} />
+    <RecordStrip label={t("{title} properties", { title: t("Opportunity") })} tour="opportunity-properties">
+      <StripItem icon={<CircleDot size={14} aria-hidden="true" />} label={t("Stage")}>{stageChip}</StripItem>
+      <StripItem icon={<UserRound size={14} aria-hidden="true" />} label={t("Sales owner")}>
+        {owner ? <PersonChip id={owner.id} name={owner.label} /> : <span className="wd-editable-empty">{t("Unassigned")}</span>}
+      </StripItem>
+      {live.valueHidden ? null : (
+        <StripItem icon={<Coins size={14} aria-hidden="true" />} label={t("Value")}>
+          {hasValue ? value : <span className="wd-editable-empty">{t("From quotation")}</span>}
+        </StripItem>
+      )}
+      <StripItem icon={<CalendarDays size={14} aria-hidden="true" />} label={t("Expected close")}>
+        {closeDate ? <span>{dateText(live.expectedCloseAt ?? live.expected_close_at, { locale, timeZone })}</span> : <span className="wd-editable-empty">{t("Not set")}</span>}
+      </StripItem>
+      {flow?.enquiryType ? (
+        <StripItem icon={<Layers size={14} aria-hidden="true" />} label={t("Enquiry type")}>
+          <span>{flow.enquiryType}</span>
+        </StripItem>
+      ) : null}
+    </RecordStrip>
     {outcomeMismatch ? <p className={styles.opportunityWarning} role="status">{t("This record is in the {stage} stage but its status is {status}. Review and confirm the outcome.", { stage: String(currentStage?.name), status: label(status) })}</p> : null}
     {caseError ? <Callout title={t("Could not open Planning")} tone="warning">{caseError}</Callout> : null}
     {flowError ? <Callout title={t("Could not update the opportunity")} tone="warning">{flowError}</Callout> : null}

@@ -422,7 +422,7 @@ export class ProjectCoreService {
       // The people who run the factory book its slot (PLM-068) and take the technical measure (PLM-149) on a project they aren't on;
       // the factory also records and confirms a custom line's requirements and accepts the technical pack (PLM-165, PLM-166).
       const factoryHand = (body.action === "book_factory_slot" || body.action === "record_technical_measure") ? await this.any(client, workspaceId, user.userId, ["factory.manage"])
-        : FACTORY_ACTIONS.includes(String(body.action)) ? await this.any(client, workspaceId, user.userId, ["factory.manage", "factory.approve"]) : false;
+        : FACTORY_ACTIONS.includes(String(body.action)) ? await this.any(client, workspaceId, user.userId, ["factory.manage", "factory.approve", "factory.recipe.verify", "factory.dispatch.signoff"]) : false;
       // PLM-168 / PLM-159: the QS approves or returns the BOQ and confirms the material list on a project they aren't on.
       const qsHand = (String(body.action) in BOQ_COMMANDS || body.action === "confirm_material_list") && await this.any(client, workspaceId, user.userId, ["commercial.estimate"]);
       const { all } = factoryHand || qsHand ? { all: await this.any(client, workspaceId, user.userId, ["projects.manage"]) } : await this.viewer(client, workspaceId, user);
@@ -712,7 +712,7 @@ export class ProjectCoreService {
       } else if (action === "confirm_factory_requirement") {
         // PLM-166: the Factory Lead (whoever approves factory work) confirms a line's requirements; from then on they are its quantities.
         open();
-        if (!(await this.any(client, workspaceId, user.userId, ["factory.approve"]))) throw new ForbiddenException("Only the factory lead confirms factory requirements.");
+        if (!(await this.any(client, workspaceId, user.userId, ["factory.recipe.verify", "factory.approve"]))) throw new ForbiddenException("Only the factory lead confirms factory requirements.");
         if (typeof body.lineId !== "string" || !UUID.test(body.lineId)) throw new BadRequestException("Choose the item.");
         const result = await confirmFactoryRequirement(client, { workspaceId, projectId, lineId: body.lineId, version: body.requirementVersion, userId: user.userId });
         if (!result.changed) return this.detail(client, workspaceId, projectId, user);

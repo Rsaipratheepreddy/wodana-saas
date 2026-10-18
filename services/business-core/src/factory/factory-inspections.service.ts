@@ -10,7 +10,7 @@ import { markInspectionSnagFixed, readInspection, readOpenInspections, recordIns
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const FACTORY_VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve"];
+const FACTORY_VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve", "factory.recipe.verify", "factory.dispatch.signoff"];
 const MAX_PHOTOS = 10;
 
 /**

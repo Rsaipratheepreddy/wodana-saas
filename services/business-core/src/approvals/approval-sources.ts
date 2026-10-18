@@ -283,23 +283,26 @@ const workOrderNumber = (number: number) => `WO-${String(number).padStart(4, "0"
 
 /** Factory output reported and material swaps asked for, waiting for someone who approves factory work. */
 const factory: Source = async (db, ctx) => {
-  if (!(await ctx.can("factory.approve"))) return [];
-  const reports = (await db.query<{ id: string; orderId: string; number: number; title: string; good: string; unit: string; since: Date; reportedBy: string; version: number;
+  const canApprove = await ctx.can("factory.approve");
+  const canDispatch = await ctx.can("factory.dispatch.signoff");
+  const canRecipe = await ctx.can("factory.recipe.verify");
+  if (!canApprove && !canDispatch && !canRecipe) return [];
+  const reports = (canApprove || canDispatch) ? (await db.query<{ id: string; orderId: string; number: number; title: string; good: string; unit: string; since: Date; reportedBy: string; version: number;
     projectId: string | null; projectReference: string | null; projectName: string | null }>(
     `SELECT report.id, work_order.id AS "orderId", work_order.number, work_order.title, trim_scale(report.good)::text AS good, work_order.unit, report.reported_at AS since, report.reported_by AS "reportedBy", work_order.version,
             project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName"
        FROM work_order_reports report
        JOIN work_orders work_order ON work_order.workspace_id = report.workspace_id AND work_order.id = report.work_order_id
        LEFT JOIN delivery_projects project ON project.workspace_id = work_order.workspace_id AND project.id = work_order.project_id
-      WHERE report.workspace_id = $1 AND report.status = 'pending' ORDER BY report.reported_at LIMIT 100`, [ctx.workspaceId])).rows;
-  const swaps = (await db.query<{ id: string; orderId: string; number: number; title: string; since: Date; requestedBy: string;
+      WHERE report.workspace_id = $1 AND report.status = 'pending' ORDER BY report.reported_at LIMIT 100`, [ctx.workspaceId])).rows : [];
+  const swaps = (canApprove || canRecipe) ? (await db.query<{ id: string; orderId: string; number: number; title: string; since: Date; requestedBy: string;
     projectId: string | null; projectReference: string | null; projectName: string | null }>(
     `SELECT material.id, work_order.id AS "orderId", work_order.number, work_order.title, material.requested_at AS since, material.requested_by AS "requestedBy",
             project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName"
        FROM work_order_materials material
        JOIN work_orders work_order ON work_order.workspace_id = material.workspace_id AND work_order.id = material.work_order_id
        LEFT JOIN delivery_projects project ON project.workspace_id = work_order.workspace_id AND project.id = work_order.project_id
-      WHERE material.workspace_id = $1 AND material.status = 'pending' ORDER BY material.requested_at LIMIT 100`, [ctx.workspaceId])).rows;
+      WHERE material.workspace_id = $1 AND material.status = 'pending' ORDER BY material.requested_at LIMIT 100`, [ctx.workspaceId])).rows : [];
   return [
     ...reports.map((report) => row({
       kind: "output", group: "factory", id: report.id, parentId: report.orderId, title: `${workOrderNumber(report.number)} · ${report.title}`, subject: `${report.good} ${report.unit}`,

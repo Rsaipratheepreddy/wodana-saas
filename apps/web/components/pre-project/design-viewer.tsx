@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
-import { Check, Download, Maximize2, MessageSquarePlus, Minimize2, Minus, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Send, X } from "lucide-react";
+import { Check, Download, ExternalLink, Maximize2, MessageSquarePlus, Minimize2, Minus, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Send, X } from "lucide-react";
 import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, InlineNotice, PillTabs, ReviewFiles, SegmentedControl, useDesignSystem, useModalPortal, usePortalThemeAttributes } from "@/design-system";
 import { evidenceFiles } from "@/lib/evidence/evidence";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -34,7 +34,8 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
   const writable = data.canEdit && !design.archivedAt && revision?.id === latest?.id;
   const members: Member[] = options.members ?? options.reviewers;
   const asset = revision?.asset;
-  const pinnable = Boolean(asset && (asset.mimeType.startsWith("image/") || asset.hasPreview));
+  const isPdf = Boolean(asset && (asset.mimeType === "application/pdf" || asset.name?.toLowerCase().endsWith(".pdf")));
+  const pinnable = Boolean(asset && !isPdf && (asset.mimeType.startsWith("image/") || asset.hasPreview));
 
   const [zoom, setZoom] = useState(1);
   const [fitSize, setFitSize] = useState({ width: 0, height: 0 });
@@ -126,6 +127,7 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
             {writable && pinnable ? <Button size="compact" variant={commenting ? "primary" : "secondary"} aria-pressed={commenting} aria-keyshortcuts="C"
               onPress={() => { setCommenting((value) => !value); setOpenThread(null); }}><MessageSquarePlus aria-hidden="true" size={15} />{t("Comment")}</Button> : null}
             {asset ? <a className={styles.iconLink} href={caseApi(data.workspaceId, data.caseId, `assets/${asset.id}`)} download aria-label={t("Download")} title={t("Download")}><Download aria-hidden="true" size={16} /></a> : null}
+            {asset && isPdf ? <a className={styles.iconLink} href={caseApi(data.workspaceId, data.caseId, `assets/${asset.id}?view=1`)} target="_blank" rel="noreferrer" aria-label={t("Open original file")} title={t("Open original file")}><ExternalLink aria-hidden="true" size={16} /></a> : null}
             <IconButton aria-label={fullScreen ? t("Exit full screen") : t("Full screen")} size="compact" variant="quiet" onPress={toggleFullScreen}>{fullScreen ? <Minimize2 aria-hidden="true" size={16} /> : <Maximize2 aria-hidden="true" size={16} />}</IconButton>
             <IconButton aria-label={panel ? t("Hide panel") : t("Show panel")} size="compact" variant="quiet" onPress={() => setPanel((value) => !value)}>{panel ? <PanelRightClose aria-hidden="true" data-directional="true" size={16} /> : <PanelRightOpen aria-hidden="true" data-directional="true" size={16} />}</IconButton>
             <IconButton aria-label={t("Close")} size="compact" variant="quiet" onPress={close}><X aria-hidden="true" size={16} /></IconButton>
@@ -133,33 +135,45 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
 
           <div className={styles.body} data-panel={panel || undefined}>
             <div className={styles.canvas} ref={canvas} data-commenting={commenting || undefined}>
-              <div className={styles.stage}>
-                {pinnable && asset ? <div className={styles.drawing} dir="ltr" style={fitSize.width ? { inlineSize: fitSize.width * zoom, blockSize: fitSize.height * zoom } : undefined}>
-                  {/* Authenticated same-origin file; pin positions are fractions of the image itself. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img ref={image} key={asset.id} alt={asset.name} onLoad={fit} src={caseApi(data.workspaceId, data.caseId, `assets/${asset.id}${asset.hasPreview && !asset.mimeType.startsWith("image/") ? "?preview=1" : "?view=1"}`)} />
-                  {commenting ? <button type="button" className={styles.placeSurface} aria-label={t("Place a comment on the drawing")}
-                    onClick={(event) => {
-                      const box = event.currentTarget.getBoundingClientRect();
-                      const point = event.detail === 0 ? { x: 0.5, y: 0.5 } : { x: clamp((event.clientX - box.left) / box.width), y: clamp((event.clientY - box.top) / box.height) };
-                      setDraft(point); setCommenting(false); setOpenThread(null);
-                    }} /> : null}
-                  {threads.filter((thread) => thread.anchor && (thread.status !== "resolved" || filter === "resolved" || openThread === thread.id)).map((thread) =>
-                    <Pin key={thread.id} id={`pin-${thread.id}`} point={thread.anchor!} name={thread.createdByName} active={openThread === thread.id} resolved={thread.status === "resolved"}
-                      label={t("Comment by {name}", { name: thread.createdByName })} onPress={() => setOpenThread((current) => current === thread.id ? null : thread.id)} />)}
-                  {draft ? <Pin point={draft} name={members.find((member) => member.id === options.actorId)?.name ?? t("You")} active label={t("New comment")} /> : null}
-                  {draft && revision ? <Bubble point={draft}>
-                    <NewComment data={data} design={design} versionId={revision.id} point={draft} members={members} allowBlocking={revision.status !== "approved"} locked={!writable}
-                      onDirty={setDirty} onCancel={() => { setDraft(null); setDirty(false); }} onPosted={(next, id) => { onUpdate(next); setDraft(null); setDirty(false); setOpenThread(id); }} />
-                  </Bubble> : null}
-                  {(() => {
-                    const thread = threads.find((item) => item.id === openThread && item.anchor);
-                    return thread ? <Bubble point={thread.anchor!}>
-                      <ThreadCard data={data} design={design} thread={thread} options={options} reviewerId={revision?.reviewerId ?? null} writable={writable} date={date}
-                        onDirty={setDirty} onClose={() => { setOpenThread(null); setDirty(false); }} onUpdate={onUpdate} />
-                    </Bubble> : null;
-                  })()}
-                </div> : <div className={styles.document}><FileCover data={data} design={{ ...design, versions: revision ? [revision] : [] }} full /></div>}
+              <div className={styles.stage} data-pdf={isPdf || undefined}>
+                {isPdf && asset ? (
+                  <div className={styles.pdfContainer}>
+                    <iframe
+                      src={caseApi(data.workspaceId, data.caseId, `assets/${asset.id}?view=1`)}
+                      className={styles.pdfFrame}
+                      title={asset.name}
+                    />
+                  </div>
+                ) : pinnable && asset ? (
+                  <div className={styles.drawing} dir="ltr" style={fitSize.width ? { inlineSize: fitSize.width * zoom, blockSize: fitSize.height * zoom } : undefined}>
+                    {/* Authenticated same-origin file; pin positions are fractions of the image itself. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img ref={image} key={asset.id} alt={asset.name} onLoad={fit} src={caseApi(data.workspaceId, data.caseId, `assets/${asset.id}${asset.hasPreview && !asset.mimeType.startsWith("image/") ? "?preview=1" : "?view=1"}`)} />
+                    {commenting ? <button type="button" className={styles.placeSurface} aria-label={t("Place a comment on the drawing")}
+                      onClick={(event) => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        const point = event.detail === 0 ? { x: 0.5, y: 0.5 } : { x: clamp((event.clientX - box.left) / box.width), y: clamp((event.clientY - box.top) / box.height) };
+                        setDraft(point); setCommenting(false); setOpenThread(null);
+                      }} /> : null}
+                    {threads.filter((thread) => thread.anchor && (thread.status !== "resolved" || filter === "resolved" || openThread === thread.id)).map((thread) =>
+                      <Pin key={thread.id} id={`pin-${thread.id}`} point={thread.anchor!} name={thread.createdByName} active={openThread === thread.id} resolved={thread.status === "resolved"}
+                        label={t("Comment by {name}", { name: thread.createdByName })} onPress={() => setOpenThread((current) => current === thread.id ? null : thread.id)} />)}
+                    {draft ? <Pin point={draft} name={members.find((member) => member.id === options.actorId)?.name ?? t("You")} active label={t("New comment")} /> : null}
+                    {draft && revision ? <Bubble point={draft}>
+                      <NewComment data={data} design={design} versionId={revision.id} point={draft} members={members} allowBlocking={revision.status !== "approved"} locked={!writable}
+                        onDirty={setDirty} onCancel={() => { setDraft(null); setDirty(false); }} onPosted={(next, id) => { onUpdate(next); setDraft(null); setDirty(false); setOpenThread(id); }} />
+                    </Bubble> : null}
+                    {(() => {
+                      const thread = threads.find((item) => item.id === openThread && item.anchor);
+                      return thread ? <Bubble point={thread.anchor!}>
+                        <ThreadCard data={data} design={design} thread={thread} options={options} reviewerId={revision?.reviewerId ?? null} writable={writable} date={date}
+                          onDirty={setDirty} onClose={() => { setOpenThread(null); setDirty(false); }} onUpdate={onUpdate} />
+                      </Bubble> : null;
+                    })()}
+                  </div>
+                ) : (
+                  <div className={styles.document}><FileCover data={data} design={{ ...design, versions: revision ? [revision] : [] }} full /></div>
+                )}
               </div>
               {commenting ? <p className={styles.hint} role="status">{t("Click where the comment belongs · Esc to cancel")}</p> : null}
               {revision?.id !== latest?.id ? <p className={styles.hint}>{t("Earlier revision · read-only")}</p> : null}

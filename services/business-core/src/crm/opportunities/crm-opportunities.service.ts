@@ -747,11 +747,25 @@ export class CrmOpportunitiesService {
     if (requirements.discovery === true && opportunity.id && this.discovery) {
       for (const item of await this.discovery.missing(client, workspaceId, String(opportunity.id))) missing.push({ key: `discovery:${item.key}`, label: item.label });
     }
+    if ((String(stage.code ?? "") === "intro_booked" || requirements.introBooked === true) && opportunity.id) {
+      const intro = await client.query<{ id: string }>(
+        `SELECT 1 FROM crm_opportunity_designer designer
+           JOIN crm_activities activity ON activity.workspace_id = designer.workspace_id AND activity.id = designer.intro_activity_id
+          WHERE designer.workspace_id = $1 AND designer.opportunity_id = $2 AND activity.status <> 'cancelled'
+         UNION ALL
+         SELECT 1 FROM crm_activities activity
+          WHERE activity.workspace_id = $1 AND activity.opportunity_id = $2 AND activity.type = 'meeting' AND activity.status <> 'cancelled'
+            AND lower(activity.title) LIKE '%intro%'
+         LIMIT 1`,
+        [workspaceId, opportunity.id],
+      );
+      if (!intro.rowCount) missing.push({ key: "introBooked", label: "Book an intro meeting before moving to Intro booked" });
+    }
     if (missing.length) throw new UnprocessableEntityException({ message: "Stage requirements are not met", missing });
   }
 
   private validateRequirements(requirements: Record<string, unknown>) {
-    const allowed = new Set(["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders", "discovery"]);
+    const allowed = new Set(["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders", "discovery", "introBooked"]);
     for (const [key, value] of Object.entries(requirements)) {
       if (!allowed.has(key) || typeof value !== "boolean") throw new UnprocessableEntityException(`Invalid stage requirement: ${key}`);
     }

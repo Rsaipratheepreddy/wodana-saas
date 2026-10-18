@@ -22,8 +22,23 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
     if(result.unauthenticated||!result.upstream?.ok) {
       const response=NextResponse.json({message:result.unauthenticated?t('Sign in again to open this file.'):t('The file could not be loaded.')},{status:result.unauthenticated?401:result.upstream?.status??503});applyRotatedSession(response,result.rotatedSession);return response;
     }
-    const response=new NextResponse(result.upstream.body,{headers:{'content-type':result.upstream.headers.get('content-type')??'application/octet-stream','content-disposition':result.upstream.headers.get('content-disposition')??'attachment','cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':"sandbox; default-src 'none'"}});
-    applyRotatedSession(response,result.rotatedSession);return response;
+    const upstreamContentType = result.upstream.headers.get('content-type') ?? 'application/octet-stream';
+    const isPdfView = query.get('view') === '1' && upstreamContentType.includes('pdf');
+    const upstreamDisposition = result.upstream.headers.get('content-disposition') ?? (isPdfView ? 'inline' : 'attachment');
+    const csp = isPdfView
+      ? (result.upstream.headers.get('content-security-policy') ?? "default-src 'self' data: blob:; style-src 'unsafe-inline'")
+      : "sandbox; default-src 'none'";
+    const response = new NextResponse(result.upstream.body, {
+      headers: {
+        'content-type': upstreamContentType,
+        'content-disposition': upstreamDisposition,
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': csp,
+      },
+    });
+    applyRotatedSession(response, result.rotatedSession);
+    return response;
   }
   if(asset) {
     if(Number(request.headers.get('content-length'))>21*1024*1024)return invalidRequest(t('Choose a file up to 20 MB.'));

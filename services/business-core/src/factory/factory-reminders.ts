@@ -56,7 +56,7 @@ export async function holdStaleDrawings(db: Db, workspaceId: string) {
           EXISTS (SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id = membership.workspace_id AND assignment.membership_id = membership.id
                    AND assignment.project_id = $2 AND assignment.active AND (assignment.is_manager OR assignment.role_keys && ARRAY['factory_lead']::varchar[]))
           OR EXISTS (SELECT 1 FROM effective_member_roles effective_role JOIN role_permissions granted ON granted.role_id = effective_role.role_id
-                      JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'factory.approve'
+                      JOIN permissions permission ON permission.id = granted.permission_id AND permission.code IN ('factory.approve', 'factory.recipe.verify')
                      WHERE effective_role.membership_id = membership.id))`, [workspaceId, order.projectId])).rows.map((row) => row.userId);
     for (const userId of people) {
       const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "factory.drawing_stale", eventType: "factory.drawing_stale",
