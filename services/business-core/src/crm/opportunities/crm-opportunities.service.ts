@@ -360,7 +360,7 @@ export class CrmOpportunitiesService {
       const expectedClose = input.expectedCloseAt !== undefined ? this.date(input.expectedCloseAt, "expectedCloseAt") : before.expected_close_at;
       const nextAction = input.nextActionAt !== undefined ? this.date(input.nextActionAt, "nextActionAt") : before.next_action_at;
       if (before.status !== "open" && input.nextActionAt) throw new UnprocessableEntityException("Reopen the opportunity before scheduling a next action");
-      if (String(before.status) === "open" && !nextAction && !before.paused_reason && !input.pausedReason) throw new UnprocessableEntityException("An open opportunity requires a next action or paused reason");
+      if (String(before.status) === "open" && input.nextActionAt !== undefined && !nextAction && !before.paused_reason && !input.pausedReason) throw new UnprocessableEntityException("An open opportunity requires a next action or paused reason");
       const result = await client.query(
         `UPDATE crm_opportunities SET title = COALESCE($1, title),
            description = CASE WHEN $2::boolean THEN $3 ELSE description END,
@@ -477,7 +477,8 @@ export class CrmOpportunitiesService {
       }
     }
     const nextActionAt = input.nextActionAt ? this.date(input.nextActionAt, "nextActionAt") : before.next_action_at;
-    if (targetStatus === "open" && !nextActionAt && !before.paused_reason) throw new UnprocessableEntityException("Schedule the next action when reopening an opportunity");
+    const isReopening = String(before.status) !== "open" && targetStatus === "open";
+    if (isReopening && !nextActionAt) throw new UnprocessableEntityException("Schedule the next action when reopening an opportunity");
     if (targetStatus === "open" || targetStatus === "won") await this.assertEntryRequirements(client, workspaceId, { ...before, next_action_at: nextActionAt }, targetStage);
     // PLM-121/122: one step at a time, by what the enquiry type's flow needs at every column passed.
     await this.assertFlowGates(client, workspaceId, before, targetStage, targetStatus, actorUser.userId);
