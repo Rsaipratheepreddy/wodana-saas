@@ -47,7 +47,10 @@ export function browserPrinter(env: NodeJS.ProcessEnv = process.env): QuotationP
   if (!secret) return null;
   const origin = (env.WEB_ORIGIN ?? "http://localhost:3000").split(",")[0].trim().replace(/\/$/, "");
   return async (target) => {
-    const { chromium } = await import("playwright-core");
+    // playwright-core is optional and only loaded when PROPOSAL_PDF_PRINTER=browser is set
+    const playwrightModule = "playwright-core";
+    // @ts-ignore
+    const { chromium } = (await import(playwrightModule)) as any;
     const browser = await chromium.launch({ channel: env.PROPOSAL_PDF_BROWSER || "chrome", headless: true });
     try {
       const page = await browser.newPage();
