@@ -31,6 +31,7 @@ export type EditableEnquiry = {
   team?: LeadTeamEntry[] | null;
   /** PLM-024: false when this person can't read the internal notes (the field is left out). */
   notesVisible?: boolean;
+  isConverted?: boolean;
 };
 
 /** The system sets this source for a known client; nobody picks it by hand. */
@@ -49,10 +50,14 @@ type Identity = { kind: "existing"; partyId: string; name: string } | { kind: "n
  * client is recognised while they are on the phone. The required fields come next; everything
  * else waits under More details. Also edits an enquiry's details.
  */
-export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSaved, onOpenLead, initialProblems }: {
+export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSaved, onOpenLead, initialProblems, focusField, highlightFields, gate }: {
   initialData: LeadsPageData; existing?: EditableEnquiry; onClose: () => void;
   /** What the enquiry still needs (before converting), listed when the form opens to complete it. */
   initialProblems?: SaveProblem[];
+  /** When redirected from a blocked gate (e.g. intro booking): the field to focus and highlight. */
+  focusField?: string;
+  highlightFields?: string[];
+  gate?: string;
   /**
    * A new enquiry started from somewhere else (a chat): the person, the channel and a summary. `partyId` is the chat's
    * own contact, already chosen as the client (the Sales Admin isn't asked "Existing client?" about the person writing).
@@ -99,8 +104,16 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
       .map(role => ({ role, ...(team[role] === TEAM_NOT_APPLICABLE ? { notApplicable: true } : team[role] ? { membershipId: team[role] } : {}) }));
     return entries.length ? { team: entries } : {};
   };
-  // PLM-096: what this enquiry type requires from the start.
-  const needed = (key: string) => requiredBy(options, serviceType, key, "create");
+  const effectiveGate: "create" | "convert" | "book_intro" =
+    gate === "book_intro" || gate === "convert" || gate === "create"
+      ? gate
+      : existing?.isConverted ? "book_intro" : existing ? "convert" : "create";
+  // PLM-096: what this enquiry type requires at this gate.
+  const needed = (key: string) => {
+    if (initialProblems?.some(item => item.key === key)) return true;
+    if (highlightFields?.includes(key)) return true;
+    return requiredBy(options, serviceType, key, effectiveGate);
+  };
   const [summary, setSummary] = useState(existing?.summary ?? prefill?.summary ?? "");
   // Area / city takes any typed place and suggests the region's areas: the ones used here most first, then the listed ones.
   // An area from the workspace's own list is saved by its id, as before, and shows by its name.
@@ -137,7 +150,27 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   const [queueId, setQueue] = useState("");
 
   const [savedId, setSavedId] = useState<string>();
-  const [more, setMore] = useState(() => Boolean(initialProblems?.length || (existing && (existing.party.email || existing.party.company || existing.party.phone || existing.summary || existing.details?.budgetRange || existing.details?.campaign || existing.details?.internalNotes))));
+  const [more, setMore] = useState(() => Boolean(
+    initialProblems?.length ||
+    highlightFields?.some(key => IN_MORE_DETAILS.has(key)) ||
+    (focusField && IN_MORE_DETAILS.has(focusField)) ||
+    (existing && (existing.party.email || existing.party.company || existing.party.phone || existing.summary || existing.details?.budgetRange || existing.details?.campaign || existing.details?.internalNotes))
+  ));
+
+  useEffect(() => {
+    const targetKey = focusField ?? highlightFields?.[0];
+    if (!targetKey) return;
+    const timer = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-problem-key="${CSS.escape(targetKey)}"]`)
+        ?? document.querySelector<HTMLElement>(`[name="${CSS.escape(targetKey)}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        const input = el.matches("input, select, textarea") ? el : el.querySelector<HTMLElement>("input, select, textarea, button");
+        input?.focus();
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [focusField, highlightFields]);
 
   // Who already has this mobile or email (LF-1). Results belong to the query that found them.
   const [found, setFound] = useState<{ key: string; matches: ClientMatch[] }>({ key: "", matches: [] });
@@ -201,7 +234,16 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
 
   // PLM-092: every problem at once, each on its field. Own checks run on submit; the server's `missing` joins them.
   const [attempted, setAttempted] = useState(false);
-  const [serverProblems, setServerProblems] = useState<SaveProblem[]>(initialProblems ?? []);
+  const syntheticProblems: SaveProblem[] = (highlightFields ?? []).map((key) => {
+    if (key === "targetCompletion") return { key, label: t("Enter the client's target completion date") };
+    if (key === "area") return { key, label: t("Enter the area") };
+    if (key === "email") return { key, label: t("Enter the client's email") };
+    if (key === "address") return { key, label: t("Enter the address") };
+    if (key === "budgetRange") return { key, label: t("Choose the budget range") };
+    if (key === "summary") return { key, label: t("Describe the project") };
+    return { key, label: t("Complete the required enquiry field") };
+  });
+  const [serverProblems, setServerProblems] = useState<SaveProblem[]>(() => initialProblems?.length ? initialProblems : syntheticProblems);
   const regionWord = translateKnown(t, areaLabel);
   const phoneMessages = phoneProblemText(t);
   // The name is checked only when it is typed here: an existing client's name, or one that came from a channel and
@@ -330,7 +372,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   };
   const moreFilled = [contact.email, details.budgetRange, details.floorPlan?.status, details.targetCompletion, summary, contact.company, contact.jobPosition, contact.phone, contact.website, contact.address, details.campaign, details.internalNotes].filter(Boolean).length;
   const notesShown = existing?.notesVisible !== false;
-  return <FormDialog draft={existing ? draft : undefined} errorTitle={initialProblems?.length && !attempted ? t("Before converting") : t("Enquiry not saved")} isDirty={dirty} isSubmitDisabled={!options} onClose={onClose} onSubmit={save} validation="caller"
+  return <FormDialog draft={existing ? draft : undefined} errorTitle={effectiveGate === "book_intro" ? t("Before booking the intro") : initialProblems?.length && !attempted ? t("Before converting") : t("Enquiry not saved")} isDirty={dirty} isSubmitDisabled={!options} onClose={onClose} onSubmit={save} validation="caller"
     problems={problems.map(item => ({ ...item, text: problemText(item, t, { regionLabel: regionWord }) }))}
     title={existing ? t("Edit enquiry") : t("New enquiry")} description={existing?.reference ?? undefined} formClassName={styles.leadForm} formId={formId}
     submitLabel={savedId ? t("Refresh enquiry") : existing ? t("Save changes") : t("Create enquiry")}

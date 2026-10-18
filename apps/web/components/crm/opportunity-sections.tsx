@@ -52,6 +52,8 @@ export type CardsProps = {
   onEdit: (group: DiscoveryGroup) => void; onFurniture: () => void; onSaved: () => Promise<void>;
   onClientApproval: (approved: boolean) => void;
   bookIntro: boolean; onBookingStarted: () => void; onIntroBlocked: (blockers: IntroView["blockers"]) => void;
+  /** When the meeting is booked, allows marking it complete. */
+  onCompleteIntro?: () => void;
   /** PLM-103: the opportunity is Won (Proposal 2 can be a second Won with its own proof). */
   won?: boolean; onSecondProof?: () => void;
 };
@@ -108,7 +110,7 @@ export function OpportunityCards(props: CardsProps) {
     </FactCard> : null}
     {props.showIntro ? <FactCard id="intro" title={t("Intro meeting")} open={isOpen("intro")} onToggle={() => onToggle("intro")} {...(introStatus ?? {})}>
       <OpportunityIntro workspaceId={props.workspaceId} opportunityId={props.opportunityId} locale={locale} intro={props.intro} onSaved={props.onSaved}
-        startBooking={props.bookIntro} onBookingStarted={props.onBookingStarted} onBlocked={props.onIntroBlocked} />
+        startBooking={props.bookIntro} onBookingStarted={props.onBookingStarted} onBlocked={props.onIntroBlocked} onCompleteIntro={props.onCompleteIntro} />
     </FactCard> : null}
     {flow?.furniture ? <FactCard id="supply" title={t("Supply")} open={isOpen("supply")} onToggle={() => onToggle("supply")} {...count([flow.furniture.path, flow.furniture.path !== "bespoke" || flow.furniture.feasibility].filter(Boolean).length, 2)}
       action={!closed ? <Button size="compact" variant="quiet" onPress={props.onFurniture}><Pencil aria-hidden="true" size={13} />{pathChoice ? t("Change") : t("Choose")}</Button> : null}>

@@ -201,10 +201,36 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const nextTask = pendingFollowUp(rows(activities.data));
   // Booking a follow-up is offered only when the flow asks for one; that row then stands in for the checklist's own.
   const needsFollowUp = status === "open" && !nextTask && Boolean(flow?.missing?.some((item) => item.key === "nextAction"));
+  // What the job's flow does, read from its steps (any enquiry type's own flow, whatever its code); with no flow yet, both show.
+  const capabilities = flow ? flowCapabilities(flow) : null;
+  const showIntro = !capabilities || capabilities.intro;
+  const discovery = useDiscovery(workspaceId, row.id);
+  const intro = useIntro(workspaceId, row.id, showIntro);
+  const introPending = intro.view?.intro?.status === "pending";
+  const resolveIntroActivity = (): RecordData => {
+    const actId = intro.view?.intro?.activityId;
+    return (rows(activities.data) as RecordData[]).find((a) => a.id === actId)
+      ?? (nextTask && (nextTask as RecordData).id === actId ? (nextTask as RecordData) : null)
+      ?? ({ id: actId, title: intro.view?.intro?.title || t("Intro meeting"), status: "pending", type: "meeting" } as RecordData);
+  };
   const project = live.projectId ? { id: String(live.projectId), reference: live.projectReference ? String(live.projectReference) : null } : null;
-  const plan = nowPlan({ flow, status, funnel, caseId, project });
+  const basePlan = nowPlan({ flow, status, funnel, caseId, project });
+  const plan = introPending && basePlan.now?.id === "introMeeting" ? {
+    ...basePlan,
+    now: { ...basePlan.now, title: tKey("Complete the intro meeting"), short: tKey("Complete intro") },
+  } : basePlan;
   const fullChecklist = nextChecklist(flow, status);
-  const checklist = fullChecklist && needsFollowUp ? { ...fullChecklist, rows: fullChecklist.rows.filter((item) => item.id !== "nextAction") } : fullChecklist;
+  const checklist = fullChecklist ? {
+    ...fullChecklist,
+    rows: fullChecklist.rows
+      .filter((item) => !needsFollowUp || item.id !== "nextAction")
+      .map((item) => {
+        if (introPending && (item.group === "intro" || item.id === "introMeeting")) {
+          return { ...item, action: tKey("Complete") };
+        }
+        return item;
+      }),
+  } : null;
   // The client (the opportunity's party), never the sales owner; without a client name the task keeps its own title.
   const clientFirst = firstName(String(live.partyName ?? live.party_name ?? ""));
   const followUpRow = status !== "open" ? null
@@ -212,11 +238,6 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       onComplete={() => setAction(completeActivityAction(t, nextTask))} onReschedule={() => setAction(rescheduleActivityAction(t, nextTask))} />
     : followUp ? <FollowUpRow title={clientFirst ? t("Follow up with {name}", { name: clientFirst }) : t("Next follow-up")} due={followUp} onReschedule={() => setEditing(true)} />
     : needsFollowUp ? <FollowUpRow onBook={() => setAction(addActivityAction(t, activityTarget))} /> : null;
-  // What the job's flow does, read from its steps (any enquiry type's own flow, whatever its code); with no flow yet, both show.
-  const capabilities = flow ? flowCapabilities(flow) : null;
-  const showIntro = !capabilities || capabilities.intro;
-  const discovery = useDiscovery(workspaceId, row.id);
-  const intro = useIntro(workspaceId, row.id, showIntro);
   // The intro meeting can be booked once the property details are in: saving them refreshes what still blocks it, with the record.
   const factsSaved = async () => { discovery.refresh(); intro.refresh(); await saved(); };
   const needed = new Set((checklist?.rows ?? []).filter((item) => item.state === "missing").map((item) => item.group));
@@ -229,19 +250,40 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     else if (step.target === "furniture") setFurnitureOpen(true);
     else if (step.target === "siteVisit") setSiteVisitOpen(true);
     else if (step.target === "materials") setMaterialsOpen(true);
-    else if (step.target === "intro") { unfold("intro"); setBookIntro(true); }
+    else if (step.target === "intro") {
+      if (introPending) {
+        setAction(completeActivityAction(t, resolveIntroActivity()));
+      } else {
+        unfold("intro");
+        setBookIntro(true);
+      }
+    }
     else if (step.target === "outcome") setOutcomeOpen(true);
     else if (step.target === "discovery") openSheet(groupForRequirement(step.keys[0] ?? ""), step.keys[0]);
     else if (step.target === "quote" || step.target === "planning") { if (caseId) router.push(caseLink(step.target === "quote" ? "quotations" : step.section ?? "overview")); else void openCase(); }
     else if (step.target === "project" && project) router.push(`/workspace/projects/${encodeURIComponent(project.id)}`);
-    else if (step.target === "enquiry" && leadId) router.push(`/workspace/crm/leads?lead=${leadId}`);
+    else if (step.target === "enquiry" && leadId) {
+      const missingKeys = step.keys.map((k) => k.replace(/^enquiry\./, "")).filter(Boolean);
+      const params = new URLSearchParams();
+      params.set("lead", String(leadId));
+      params.set("edit", "1");
+      params.set("gate", "book_intro");
+      if (missingKeys.length) {
+        params.set("focus", missingKeys[0]);
+        params.set("highlight", missingKeys.join(","));
+      }
+      router.push(`/workspace/crm/leads?${params.toString()}`);
+    }
     else if (step.target === "advance") void advance();
     else if (step.target === "win") startWin();
     else if (step.target === "reopen") startStageChange();
     else setEditing(true);
   };
   const actOnRow = (item: ChecklistRow) => {
-    if (item.target === "intro" && intro.view?.intro?.status === "pending") { unfold("intro"); return; }
+    if (item.target === "intro" && introPending) {
+      setAction(completeActivityAction(t, resolveIntroActivity()));
+      return;
+    }
     if (item.group === "client" && item.keys[0] === "contact") { setAction(addActivityAction(t, activityTarget)); return; }
     if (item.target) act({ id: item.id, title: tKey("Add"), short: tKey("Add"), target: item.target, keys: item.keys, fields: [] });
   };
@@ -349,6 +391,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
             onEdit={(group) => setSheet({ group })} onFurniture={() => setFurnitureOpen(true)} onSaved={factsSaved}
             onClientApproval={(next) => { void saveFlow({ clientApproved: next }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}
             bookIntro={bookIntro} onBookingStarted={() => setBookIntro(false)}
+            onCompleteIntro={introPending ? () => setAction(completeActivityAction(t, resolveIntroActivity())) : undefined}
             // PLM-155: everything the intro waits for, at once, each with where it's completed (Discovery, or the enquiry).
             onIntroBlocked={(items) => setBlocked({ stage: "", title: t("Before booking the intro"),
               items: items.map((item) => item.where === "enquiry" ? { key: `enquiry.${item.key}`, label: item.label } : item) })} /> },

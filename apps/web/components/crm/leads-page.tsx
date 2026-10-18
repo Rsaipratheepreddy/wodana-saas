@@ -129,9 +129,10 @@ const SETTINGS_SECTIONS = SALES_SETTINGS_SECTIONS;
 type SettingsSection = SalesSettingsSection;
 const SETTINGS_LABELS: Record<SettingsSection, "Assignment" | "Response targets" | "Fields" | "Automations"> = { assignment: "Assignment", sla: "Response targets", options: "Fields", automations: "Automations" };
 
-export function LeadsPage({ initialData: serverData, integrationsData, integrationsDenied = false, formBranding, initialLeadId, initialCreate = false, initialSection = "leads", sectionDenied = false, settingsSections = SETTINGS_SECTIONS }: { initialData: LeadsPageData; integrationsData?: IntegrationsPageData; integrationsDenied?: boolean; formBranding?: LeadFormBranding; initialLeadId?: string; initialCreate?: boolean; initialSection?: EnquirySection; sectionDenied?: boolean;
+export function LeadsPage({ initialData: serverData, integrationsData, integrationsDenied = false, formBranding, initialLeadId, initialCreate = false, initialSection = "leads", sectionDenied = false, settingsSections = SETTINGS_SECTIONS, initialEdit, initialFocus, initialHighlight, initialGate }: { initialData: LeadsPageData; integrationsData?: IntegrationsPageData; integrationsDenied?: boolean; formBranding?: LeadFormBranding; initialLeadId?: string; initialCreate?: boolean; initialSection?: EnquirySection; sectionDenied?: boolean;
   /** The settings sections this person may open (each a tab under the Sales settings title). */
-  settingsSections?: readonly SettingsSection[] }) {
+  settingsSections?: readonly SettingsSection[];
+  initialEdit?: boolean; initialFocus?: string; initialHighlight?: string[]; initialGate?: string; }) {
   const router = useRouter();
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
@@ -466,7 +467,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
         : inSettings && settingsTabs.length > 1 ? <ListTabs label={t("Sales settings")} value={activeSection} onChange={openSection} items={settingsTabs} /> : undefined}>
 
       {!initialData.canView ? <NoAccessState area={t("Enquiries")} /> : sectionDenied ? <NoAccessState area={t(SECTION_AREA[activeSection])} /> : <>
-        {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="xl" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} onOpenRecord={openRecord} /></InspectorSheet> : null}
+        {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="xl" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} onOpenRecord={openRecord} initialEdit={initialEdit} initialFocus={initialFocus} initialHighlight={initialHighlight} initialGate={initialGate} /></InspectorSheet> : null}
         {failure ? <Callout title={t("Enquiries could not be updated")} tone="danger">{failure}</Callout> : null}
         {statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{statusMessage}</p> : null}
         {converted && !statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{t("{name}: opportunity created.", { name: converted.name })} <Link href={`/workspace/crm/opportunities?record=${encodeURIComponent(converted.id)}`}>{t("View opportunity")}</Link></p> : null}

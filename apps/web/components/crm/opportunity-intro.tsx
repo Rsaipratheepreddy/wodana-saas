@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarPlus, UserRoundPen } from "lucide-react";
+import { CalendarPlus, Check, UserRoundPen } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
 import { Avatar, Badge, Button, DateField, EditableFieldList, FactRow, FormDialog, FormRow, FormSection, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -43,12 +43,14 @@ export function introWhen(intro: NonNullable<IntroView["intro"]>, timeZone: stri
  * PLM-043 / PLM-088: book the intro meeting in a designer's calendar; that designer stays with the client.
  * What blocks booking is listed once, on the opportunity's checklist.
  */
-export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, startBooking, onBookingStarted, onBlocked, intro: lifted }: {
+export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, startBooking, onBookingStarted, onBlocked, onCompleteIntro, intro: lifted }: {
   workspaceId: string; opportunityId: string; locale?: string; onSaved?: () => void | Promise<void>;
   /** The checklist asked to book: the booking opens once the view has loaded (when nothing blocks it). */
   startBooking?: boolean; onBookingStarted?: () => void;
   /** Asked to book while facts are still missing: what is missing, each with where it is completed. */
   onBlocked?: (blockers: IntroView["blockers"]) => void;
+  /** When the meeting is booked, allows marking it complete directly from the card. */
+  onCompleteIntro?: () => void;
   /** The view, when the opportunity already reads it. */
   intro?: Intro;
 }) {
@@ -80,7 +82,7 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, 
   return <div className={styles.intro}>
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
     <EditableFieldList>
-      <FactRow label={t("Meeting")} action={!booked ? <Button isDisabled={view.blockers.length > 0} size="compact" variant="secondary" onPress={() => setDialog("book")}><CalendarPlus aria-hidden="true" size={14} />{t("Book intro meeting")}</Button> : null}>
+      <FactRow label={t("Meeting")} action={!booked ? <Button isDisabled={view.blockers.length > 0} size="compact" variant="secondary" onPress={() => setDialog("book")}><CalendarPlus aria-hidden="true" size={14} />{t("Book intro meeting")}</Button> : onCompleteIntro ? <Button size="compact" variant="secondary" onPress={onCompleteIntro}><Check aria-hidden="true" size={14} />{t("Complete")}</Button> : null}>
         {intro?.startsAt && intro.endsAt ? <span className={styles.meeting}>
           <strong>{introWhen(intro, view.timezone, locale)}</strong>
           <small>{intro.location?.mode === "online" ? (intro.location.url ? <a href={intro.location.url} rel="noreferrer" target="_blank">{t("Online meeting link")}</a> : t("Online")) : intro.location?.address || t("In person")}</small>

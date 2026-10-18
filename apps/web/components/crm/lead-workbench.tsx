@@ -36,24 +36,24 @@ import { RespondByChip, useNow } from "./respond-by-chip";
 
 type OpenRecord = (href: string) => void;
 
-export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify, onOpenRecord }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void; onOpenRecord?: OpenRecord }) {
+export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify, onOpenRecord, initialEdit, initialFocus, initialHighlight, initialGate }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void; onOpenRecord?: OpenRecord; initialEdit?: boolean; initialFocus?: string; initialHighlight?: string[]; initialGate?: string }) {
   const t = useT();
   const resource = useCrmResource<RecordData>(initialData.workspaceId, `leads/${leadId}`);
   if (!resource.data) return <ResourceState {...resource} retry={resource.refresh} />;
   const enquiry = resource.data.enquiry as RecordData;
   const lead = { ...resource.data, ...enquiry, id: leadId, partyName: enquiry?.partyName ?? t("Customer"), title: enquiry?.title ?? t("Enquiry") } as unknown as CrmLeadListItem;
-  return <LeadWorkbench lead={lead} initialData={initialData} onChanged={onChanged} onQualify={onQualify} onOpenRecord={onOpenRecord} />;
+  return <LeadWorkbench lead={lead} initialData={initialData} onChanged={onChanged} onQualify={onQualify} onOpenRecord={onOpenRecord} initialEdit={initialEdit} initialFocus={initialFocus} initialHighlight={initialHighlight} initialGate={initialGate} />;
 }
 
 /** `onOpenRecord` leaves for a linked record once the sheet is closed; navigating with the sheet open leaves its modal blocking the next page. */
-export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenRecord }: { lead: CrmLeadListItem; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void; onOpenRecord?: OpenRecord }) {
+export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenRecord, initialEdit = false, initialFocus, initialHighlight, initialGate }: { lead: CrmLeadListItem; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void; onOpenRecord?: OpenRecord; initialEdit?: boolean; initialFocus?: string; initialHighlight?: string[]; initialGate?: string }) {
   useWoddyRecord("lead", lead.id, lead.title);
   const t = useT();
   const zoned = useDesignSystem();
   const { workspaceId } = initialData;
   const [contacting, setContacting] = useState(false);
   const resource = useCrmResource<RecordData>(workspaceId, `leads/${lead.id}`);
-  const [editing, setEditing] = useState<"edit" | "complete" | false>(false);
+  const [editing, setEditing] = useState<"edit" | "complete" | false>(() => initialEdit ? "edit" : false);
   const [stageEditing, setStageEditing] = useState(false);
   const [selectedStage, setSelectedStage] = useState("");
   const [activityRevision, setActivityRevision] = useState(0);
@@ -280,7 +280,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
         { id: "files", label: t("Files"), panel: <RecordAttachments workspaceId={workspaceId} leadId={lead.id} /> },
       ]} />
 
-    {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") }, customFields: lead.customFields, team, notesVisible }} initialProblems={editing === "complete" ? conversionMissing : undefined} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
+    {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") }, customFields: lead.customFields, team, notesVisible, isConverted: Boolean(live.isConverted || opportunities.length) }} initialProblems={editing === "complete" ? conversionMissing : undefined} focusField={initialFocus} highlightFields={initialHighlight} gate={initialGate} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
     {scheduling && <NewFollowUpDialog workspaceId={workspaceId} initialLead={{ ...live }} onClose={() => setScheduling(false)} onCreated={async () => { await saved(); setScheduling(false); }} />}
     {contacting && <LogContactDialog workspaceId={workspaceId} slaPolicies={initialData.slaPolicies} lead={{ id: lead.id, version: Number(version), name: customerDisplayName(lead.partyName) }} onClose={() => setContacting(false)} onLogged={async () => { setContacting(false); await saved(); }} />}
     {assigning && <LeadAssignmentDialog lead={live} members={salesOwnerChoices(initialData)} workspaceId={workspaceId} onClose={() => setAssigning(false)} onSaved={saved} />}

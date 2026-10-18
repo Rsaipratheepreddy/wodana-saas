@@ -174,7 +174,11 @@ export default async function WorkspaceScreen({
     const formBranding = companyData ? { ...companyData.profile.branding, workspaceName: companyData.profile.workspace.name, canManage: companyData.canManage } : undefined;
     // Settings' sections this person may open: the page's tabs under the Sales settings title.
     const settingsSections = SALES_SETTINGS_SECTIONS.filter((section) => !checkAccess || canOpen(SALES_SECTION_ACCESS[section], access));
-    return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} settingsSections={settingsSections} initialCreate={query.create === "true"} initialData={leadsData} integrationsData={integrationsData} integrationsDenied={integrationsDenied} formBranding={formBranding} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} sectionDenied={sectionDenied} />;
+    return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} settingsSections={settingsSections} initialCreate={query.create === "true"} initialData={leadsData} integrationsData={integrationsData} integrationsDenied={integrationsDenied} formBranding={formBranding} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} sectionDenied={sectionDenied}
+      initialEdit={query.edit === "1" || query.edit === "true"}
+      initialFocus={typeof query.focus === "string" ? query.focus : undefined}
+      initialHighlight={typeof query.highlight === "string" ? query.highlight.split(",") : undefined}
+      initialGate={typeof query.gate === "string" ? query.gate : undefined} />;
   }
 
   // Sales opens on Enquiries; one address per view keeps the breadcrumb and tabs truthful.
